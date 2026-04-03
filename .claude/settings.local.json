@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(find /home/rede/GolandProjects/world-cup-quiniela -type f \\\\\\( -name \"*.go\" -o -name \"*.mod\" -o -name \"*.yml\" -o -name \"*.yaml\" -o -name \"Dockerfile\" -o -name \"Makefile\" -o -name \".env*\" -o -name \".gitignore\" -o -name \"*.sql\" -o -name \"*.sh\" -o -name \"*.md\" \\\\\\) ! -path '*/.idea/*' ! -path '*/vendor/*' -exec ls -lh {} \\\\;)"
-    ]
-  }
-}

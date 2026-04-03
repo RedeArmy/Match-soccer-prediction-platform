@@ -48,3 +48,10 @@ Thumbs.db
 # machine-specific. It must not be committed to the shared repository.
 go.work
 go.work.sum
+
+# ── Claude Code local settings ────────────────────────────────────────────────
+# .claude/ contains machine-specific permission grants for the Claude Code CLI.
+# These settings are personal to each developer's environment and must not be
+# shared; another developer's permission set could grant or restrict access
+# that does not match their own workflow.
+.claude/
