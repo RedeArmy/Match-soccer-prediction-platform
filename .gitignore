@@ -1,0 +1,50 @@
+# ── Compiled binaries and build outputs ──────────────────────────────────────
+# The bin/ directory is the conventional output location for compiled binaries.
+# Binaries are platform-specific and must never be committed; they are
+# reproduced deterministically from source via `make build`.
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# ── Test artefacts ────────────────────────────────────────────────────────────
+*.test
+*.out
+coverage.html
+coverage.out
+
+# ── Dependency directories ────────────────────────────────────────────────────
+# The module cache is managed by `go mod download` and must not be committed.
+# Committing vendor/ is a valid alternative for air-gapped CI environments
+# but adds significant noise to pull request diffs; prefer go.sum for
+# reproducibility.
+vendor/
+
+# ── Environment files and secrets ─────────────────────────────────────────────
+# .env files contain real credentials and must never reach version control.
+# .env.example documents the required variables with safe placeholder values
+# and is the only env file that should be committed.
+.env
+.env.*
+!.env.example
+
+# ── IDE and editor directories ────────────────────────────────────────────────
+# IDE configuration is machine-specific. Committing it forces every team
+# member to use the same editor settings and pollutes the repository with
+# files that have no bearing on the application's behaviour.
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Operating system artefacts ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Go workspace files ────────────────────────────────────────────────────────
+# go.work is used for local multi-module development and is inherently
+# machine-specific. It must not be committed to the shared repository.
+go.work
+go.work.sum

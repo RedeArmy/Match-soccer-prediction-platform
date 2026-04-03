@@ -1,0 +1,50 @@
+# docker-compose.yml — Local development infrastructure.
+#
+# This file defines the stateful services required to run the application
+# locally. It intentionally does NOT include the application binary itself:
+# running the app via `make run` (or your IDE) rather than inside a container
+# makes the edit-run-debug cycle significantly faster during development.
+#
+# Usage:
+#   make docker-up     # start Postgres and Redis in the background
+#   make docker-down   # stop and remove containers (data is preserved in volumes)
+#
+# Data is persisted in named Docker volumes so that it survives container
+# restarts. To wipe all local data and start fresh, run:
+#   docker-compose down -v
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       quiniela
+      POSTGRES_USER:     quiniela
+      POSTGRES_PASSWORD: quiniela
+    ports:
+      # Expose on 127.0.0.1 only to prevent accidental exposure on networked
+      # interfaces when developing on a shared or public network.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quiniela -d quiniela"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
