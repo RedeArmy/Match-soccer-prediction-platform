@@ -21,6 +21,14 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+const (
+	fmtStatus          = "expected status %d, got %d"
+	originLocalhost    = "http://localhost:3000"
+	headerACAO         = "Access-Control-Allow-Origin"
+	pathMatches        = "/api/v1/matches"
+	msgMatchNotFound   = "match not found"
+)
+
 // okHandler is a trivial handler used as the "next" in middleware chain tests.
 // It always writes 200 with a fixed body so tests can assert the chain was
 // not short-circuited by the middleware under test.
@@ -75,7 +83,7 @@ func TestRecover_CatchesPanicAndReturns500(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("expected status %d after panic, got %d", http.StatusInternalServerError, rec.Code)
+		t.Errorf(fmtStatus, http.StatusInternalServerError, rec.Code)
 	}
 }
 
@@ -88,7 +96,7 @@ func TestRecover_DoesNotInterferWithNormalRequests(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected status %d for normal request, got %d", http.StatusOK, rec.Code)
+		t.Errorf(fmtStatus, http.StatusOK, rec.Code)
 	}
 }
 
@@ -103,7 +111,7 @@ func TestRequestLogger_PassesRequestToNextHandler(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
+		t.Errorf(fmtStatus, http.StatusOK, rec.Code)
 	}
 	if rec.Body.String() != "ok" {
 		t.Errorf("expected body %q, got %q", "ok", rec.Body.String())
@@ -122,44 +130,44 @@ func TestRequestLogger_CapturesNonOKStatus(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected status %d to pass through, got %d", http.StatusNotFound, rec.Code)
+		t.Errorf(fmtStatus, http.StatusNotFound, rec.Code)
 	}
 }
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 
 func TestCORS_AllowsConfiguredOrigin(t *testing.T) {
-	handler := middleware.CORS("http://localhost:3000")(http.HandlerFunc(okHandler))
+	handler := middleware.CORS(originLocalhost)(http.HandlerFunc(okHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Origin", originLocalhost)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
-	origin := rec.Header().Get("Access-Control-Allow-Origin")
-	if origin != "http://localhost:3000" {
-		t.Errorf("expected ACAO header %q, got %q", "http://localhost:3000", origin)
+	origin := rec.Header().Get(headerACAO)
+	if origin != originLocalhost {
+		t.Errorf("expected ACAO header %q, got %q", originLocalhost, origin)
 	}
 }
 
 func TestCORS_RejectsUnknownOrigin(t *testing.T) {
-	handler := middleware.CORS("http://localhost:3000")(http.HandlerFunc(okHandler))
+	handler := middleware.CORS(originLocalhost)(http.HandlerFunc(okHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Origin", "http://evil.example.com")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
-	origin := rec.Header().Get("Access-Control-Allow-Origin")
+	origin := rec.Header().Get(headerACAO)
 	if origin == "http://evil.example.com" {
 		t.Error("expected unknown origin to be rejected, but ACAO header was set")
 	}
 }
 
 func TestCORS_HandlesPreflight(t *testing.T) {
-	handler := middleware.CORS("http://localhost:3000")(http.HandlerFunc(okHandler))
-	req := httptest.NewRequest(http.MethodOptions, "/api/v1/matches", nil)
-	req.Header.Set("Origin", "http://localhost:3000")
+	handler := middleware.CORS(originLocalhost)(http.HandlerFunc(okHandler))
+	req := httptest.NewRequest(http.MethodOptions, pathMatches, nil)
+	req.Header.Set("Origin", originLocalhost)
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	rec := httptest.NewRecorder()
 
@@ -171,9 +179,9 @@ func TestCORS_HandlesPreflight(t *testing.T) {
 }
 
 func TestCORS_MultipleOriginsAllowed(t *testing.T) {
-	handler := middleware.CORS("http://localhost:3000,https://myapp.com")(http.HandlerFunc(okHandler))
+	handler := middleware.CORS(originLocalhost+",https://myapp.com")(http.HandlerFunc(okHandler))
 
-	for _, origin := range []string{"http://localhost:3000", "https://myapp.com"} {
+	for _, origin := range []string{originLocalhost, "https://myapp.com"} {
 		t.Run(origin, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.Header.Set("Origin", origin)
@@ -181,7 +189,7 @@ func TestCORS_MultipleOriginsAllowed(t *testing.T) {
 
 			handler.ServeHTTP(rec, req)
 
-			got := rec.Header().Get("Access-Control-Allow-Origin")
+			got := rec.Header().Get(headerACAO)
 			if got != origin {
 				t.Errorf("expected ACAO %q, got %q", origin, got)
 			}
@@ -196,17 +204,17 @@ func TestWriteError_AppError_WritesCorrectStatusAndBody(t *testing.T) {
 	req := requestWithID(httptest.NewRequest(http.MethodGet, "/", nil))
 	rec := httptest.NewRecorder()
 
-	middleware.WriteError(rec, req, log, apperrors.NotFound("match not found"))
+	middleware.WriteError(rec, req, log, apperrors.NotFound(msgMatchNotFound))
 
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+		t.Errorf(fmtStatus, http.StatusNotFound, rec.Code)
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "NOT_FOUND") {
 		t.Errorf("expected body to contain %q, got: %s", "NOT_FOUND", body)
 	}
-	if !strings.Contains(body, "match not found") {
-		t.Errorf("expected body to contain %q, got: %s", "match not found", body)
+	if !strings.Contains(body, msgMatchNotFound) {
+		t.Errorf("expected body to contain %q, got: %s", msgMatchNotFound, body)
 	}
 }
 
@@ -222,7 +230,7 @@ func TestWriteError_AppError_WithCause_DoesNotLeakCause(t *testing.T) {
 		t.Errorf("internal cause must not appear in response body, got: %s", body)
 	}
 	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+		t.Errorf(fmtStatus, http.StatusInternalServerError, rec.Code)
 	}
 }
 
@@ -234,7 +242,7 @@ func TestWriteError_UnexpectedError_Returns500(t *testing.T) {
 	middleware.WriteError(rec, req, log, errors.New("unexpected failure"))
 
 	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+		t.Errorf(fmtStatus, http.StatusInternalServerError, rec.Code)
 	}
 }
 
@@ -262,7 +270,7 @@ func TestRequireAuth_EmptyJWKSURL_BypassesAuth(t *testing.T) {
 	})
 
 	handler := middleware.RequireAuth("", log)(next)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -277,13 +285,13 @@ func TestRequireAuth_MissingAuthHeader_Returns401(t *testing.T) {
 	handler := middleware.RequireAuth("https://example.clerk.accounts.dev/.well-known/jwks.json", log)(
 		http.HandlerFunc(okHandler),
 	)
-	req := requestWithID(httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil))
+	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected status %d for missing auth header, got %d", http.StatusUnauthorized, rec.Code)
+		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
 	}
 }
 
@@ -292,14 +300,14 @@ func TestRequireAuth_NonBearerHeader_Returns401(t *testing.T) {
 	handler := middleware.RequireAuth("https://example.clerk.accounts.dev/.well-known/jwks.json", log)(
 		http.HandlerFunc(okHandler),
 	)
-	req := requestWithID(httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil))
+	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
 	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected status %d for non-Bearer token, got %d", http.StatusUnauthorized, rec.Code)
+		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
 	}
 }
 
