@@ -1,23 +1,98 @@
 // Package middleware provides HTTP middleware for the chi router.
 //
-// Each file in this package implements a single, self-contained middleware
-// function. Middleware is applied in the Routes() method of internal/api/Server
-// and must be stateless and safe for concurrent use by multiple goroutines.
+// Each file in this package implements a single, self-contained concern.
+// Middleware is applied in the Routes() method of internal/api/Server and
+// must be stateless and safe for concurrent use by multiple goroutines.
 //
 // Custom middleware in this package supplements — rather than replaces — the
-// middleware provided by go-chi/chi/v5/middleware. Use chi's built-in
-// middleware (RequestID, RealIP, Recoverer) for generic HTTP concerns, and
-// implement custom middleware here only for concerns specific to this
-// application (JWT validation, structured request logging with zap, etc.).
+// middleware provided by go-chi/chi/v5/middleware. Generic HTTP concerns
+// (RequestID, RealIP) are delegated to chi; application-specific concerns
+// (JWT validation, structured zap logging, Clerk authentication) are
+// implemented here to keep business context out of the chi package.
 package middleware
 
-// TODO: implement RequireJWT middleware.
+import (
+	"context"
+	"net/http"
+	"strings"
+
+	"github.com/lestrrat-go/jwx/v2/jwk"
+	"github.com/lestrrat-go/jwx/v2/jwt"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"go.uber.org/zap"
+)
+
+// contextKey is an unexported type for context keys defined in this package.
+// Using a named type prevents collisions with keys defined in other packages
+// that also use context.WithValue with a plain string or integer key.
+type contextKey int
+
+const (
+	contextKeyUserID contextKey = iota
+)
+
+// UserIDFromContext returns the Clerk user ID stored in ctx by RequireAuth.
+// The second return value is false when the request did not pass through
+// RequireAuth (e.g. public endpoints).
+func UserIDFromContext(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(contextKeyUserID).(string)
+	return id, ok
+}
+
+// RequireAuth returns a middleware that validates the Clerk JWT present in
+// the Authorization: Bearer header.
 //
-// RequireJWT validates the Bearer token in the Authorization header against
-// the application's JWT secret. On success, it extracts the user ID and role
-// from the token claims and stores them in the request context so that
-// downstream handlers can access them without re-parsing the token.
-// On failure, it writes a 401 response and does not call the next handler.
+// Clerk signs tokens with RS256 using a rotating key pair. Public keys are
+// fetched from the JWKS endpoint on the first request and cached in memory.
+// The cache refreshes automatically in the background every 15 minutes so
+// that key rotations are picked up without restarting the server.
 //
-// The JWT secret must be injected via a closure or a struct method, not
-// read from a global variable, to keep the middleware testable.
+// On success the Clerk user ID (the "sub" claim) is stored in the request
+// context and is retrievable via UserIDFromContext. On failure a 401
+// response is written and the next handler is not called.
+//
+// jwksURL is the Clerk JWKS endpoint (WCQ_CLERK_JWKSURL in config). If it
+// is empty the middleware is bypassed and a warning is logged — this allows
+// the server to start during local development before Clerk is configured,
+// but must never be used in production.
+func RequireAuth(jwksURL string, log *zap.Logger) func(http.Handler) http.Handler {
+	if jwksURL == "" {
+		log.Warn("RequireAuth: WCQ_CLERK_JWKSURL is not set — authentication is DISABLED; do not use in production")
+		return func(next http.Handler) http.Handler { return next }
+	}
+
+	cache := jwk.NewCache(context.Background())
+	if err := cache.Register(jwksURL); err != nil {
+		log.Error("RequireAuth: failed to register JWKS URL", zap.String("url", jwksURL), zap.Error(err))
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
+				return
+			}
+			tokenBytes := []byte(strings.TrimPrefix(authHeader, "Bearer "))
+
+			keySet, err := cache.Get(r.Context(), jwksURL)
+			if err != nil {
+				log.Error("RequireAuth: failed to fetch JWKS",
+					zap.String("request_id", GetRequestID(r.Context())),
+					zap.Error(err),
+				)
+				WriteError(w, r, log, apperrors.Internal(err))
+				return
+			}
+
+			token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(keySet), jwt.WithValidate(true))
+			if err != nil {
+				WriteError(w, r, log, apperrors.Unauthorised("invalid or expired token"))
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), contextKeyUserID, token.Subject())
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
