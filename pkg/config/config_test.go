@@ -22,6 +22,11 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/config"
 )
 
+const (
+	fmtUnexpectedError = "unexpected error: %v"
+	jwtTestSecret      = "my-secret"
+)
+
 // setRequiredEnv configures the minimum set of environment variables for
 // which Load has no safe default and would otherwise return a validation
 // error. Tests that want to exercise missing or invalid values should call
@@ -59,7 +64,7 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedError, err)
 	}
 
 	cases := []struct {
@@ -96,7 +101,7 @@ func TestLoad_EnvVarOverridesDefault(t *testing.T) {
 
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedError, err)
 	}
 
 	if cfg.Server.Port != "9090" {
@@ -115,17 +120,17 @@ func TestLoad_EnvVarOverridesDefault(t *testing.T) {
 
 func TestLoad_JWTSecretAndPortPopulated(t *testing.T) {
 	t.Setenv("WCQ_SERVER_PORT", "3000")
-	t.Setenv("WCQ_JWT_SECRET", "my-secret")
+	t.Setenv("WCQ_JWT_SECRET", jwtTestSecret)
 
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedError, err)
 	}
 
 	if cfg.Server.Port != "3000" {
 		t.Errorf("Server.Port: expected %q, got %q", "3000", cfg.Server.Port)
 	}
-	if cfg.JWT.Secret != "my-secret" {
-		t.Errorf("JWT.Secret: expected %q, got %q", "my-secret", cfg.JWT.Secret)
+	if cfg.JWT.Secret != jwtTestSecret {
+		t.Errorf("JWT.Secret: expected %q, got %q", jwtTestSecret, cfg.JWT.Secret)
 	}
 }
