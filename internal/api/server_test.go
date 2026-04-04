@@ -25,6 +25,8 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+const healthPath = "/health"
+
 // newTestServer constructs a Server with a nil database pool and a
 // test-scoped logger that writes to t.Log. It is intended for use in
 // tests that exercise routing and infrastructure endpoints only.
@@ -36,7 +38,7 @@ func newTestServer(t *testing.T) *api.Server {
 func TestHealthEndpoint_ReturnsOK(t *testing.T) {
 	handler := newTestServer(t).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, healthPath, nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -48,7 +50,7 @@ func TestHealthEndpoint_ReturnsOK(t *testing.T) {
 func TestHealthEndpoint_ReturnsJSONContentType(t *testing.T) {
 	handler := newTestServer(t).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, healthPath, nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -61,7 +63,7 @@ func TestHealthEndpoint_ReturnsJSONContentType(t *testing.T) {
 func TestHealthEndpoint_BodyContainsStatusOK(t *testing.T) {
 	handler := newTestServer(t).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, healthPath, nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -80,7 +82,7 @@ func TestHealthEndpoint_OnlyAcceptsGET(t *testing.T) {
 	// chi returns 405 for registered paths with wrong method, and
 	// 404 for unregistered paths. /health is registered for GET only.
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
-		req := httptest.NewRequest(method, "/health", nil)
+		req := httptest.NewRequest(method, healthPath, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
