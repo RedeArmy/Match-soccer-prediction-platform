@@ -36,10 +36,16 @@ jobs:
       # This step is a no-op for PRs targeting develop.
       - name: Verify source branch for PRs targeting main
         if: github.base_ref == 'main'
+        # HEAD_REF is assigned from the GitHub expression before entering the
+        # shell script. This prevents script injection: an attacker-controlled
+        # branch name with shell metacharacters is never interpolated directly
+        # into the run block — it is treated as a plain string by the shell.
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          if [ "${{ github.head_ref }}" != "develop" ]; then
+          if [ "$HEAD_REF" != "develop" ]; then
             echo "::error::Only the develop branch may be merged into main."
-            echo "::error::Source branch detected: ${{ github.head_ref }}"
+            echo "::error::Source branch detected: $HEAD_REF"
             echo "::error::Merge your changes into develop first, then open a PR from develop → main."
             exit 1
           fi
