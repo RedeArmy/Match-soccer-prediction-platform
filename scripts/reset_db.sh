@@ -50,9 +50,9 @@ if [[ "${confirm,,}" != "y" ]]; then
 fi
 
 echo "==> Dropping and recreating database..."
-docker-compose -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
+docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
     psql -U "$POSTGRES_USER" -c "DROP DATABASE IF EXISTS $POSTGRES_DB;"
-docker-compose -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
+docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
     psql -U "$POSTGRES_USER" -c "CREATE DATABASE $POSTGRES_DB;"
 
 echo "==> Running migrations..."

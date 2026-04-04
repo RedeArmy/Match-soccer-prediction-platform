@@ -55,11 +55,11 @@ clean:
 
 ## docker-up: Start Postgres and Redis containers in the background
 docker-up:
-	docker-compose up -d
+	docker compose up -d
 
 ## docker-down: Stop and remove all containers (data volumes are preserved)
 docker-down:
-	docker-compose down
+	docker compose down
 
 ## migrate: Apply pending database schema migrations
 migrate:
