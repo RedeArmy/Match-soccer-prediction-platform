@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"go.uber.org/zap"
 )
@@ -63,22 +64,26 @@ func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger) *Server {
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 
+	// Global middleware — applied to every request including /health.
+	// Order matters: RequestID must be first so its value is available to
+	// every subsequent middleware (logging, recovery) via GetRequestID.
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
-	r.Use(chimiddleware.Recoverer)
+	r.Use(middleware.Recover(s.log))
+	r.Use(middleware.RequestLogger(s.log))
+	r.Use(middleware.CORS(s.cfg.CORS.AllowedOrigins))
 
 	// Infrastructure endpoints — not versioned, no authentication required.
 	r.Get("/health", s.handleHealth)
 
-	// Versioned API surface. All business routes are registered here.
-	// When authentication middleware is implemented, apply it inside this
-	// sub-router so that /health remains publicly accessible.
+	// Versioned API surface. Authentication is enforced here so that /health
+	// remains publicly accessible to load balancers and monitoring systems.
 	r.Route("/api/v1", func(r chi.Router) {
-		// TODO: mount authenticated route groups as handlers are implemented.
-		// Example pattern:
-		//   r.Use(middleware.RequireJWT(s.cfg.JWT.Secret))
-		//   r.Mount("/users",   userHandler.New(s.db, s.log).Routes())
-		//   r.Mount("/matches", matchHandler.New(s.db, s.log).Routes())
+		r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, s.log))
+		// TODO: mount route groups as handlers are implemented.
+		// Example:
+		//   r.Mount("/matches",     matchHandler.New(s.db, s.log).Routes())
+		//   r.Mount("/predictions", predictionHandler.New(s.db, s.log).Routes())
 	})
 
 	return r

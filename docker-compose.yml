@@ -11,7 +11,7 @@
 #
 # Data is persisted in named Docker volumes so that it survives container
 # restarts. To wipe all local data and start fresh, run:
-#   docker-compose down -v
+#   docker compose down -v
 
 services:
   postgres:

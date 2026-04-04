@@ -21,6 +21,8 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	Logger   LoggerConfig   `mapstructure:"logger"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
+	CORS     CORSConfig     `mapstructure:"cors"`
+	Clerk    ClerkConfig    `mapstructure:"clerk"`
 }
 
 // ServerConfig holds HTTP server tuning parameters.
@@ -85,4 +87,26 @@ type LoggerConfig struct {
 type JWTConfig struct {
 	Secret     string        `mapstructure:"secret"`
 	Expiration time.Duration `mapstructure:"expiration"`
+}
+
+// CORSConfig controls which origins, methods, and headers are permitted by
+// the CORS middleware.
+//
+// AllowedOrigins is a comma-separated list of origins that may make
+// cross-origin requests to the API. In production this must be set to the
+// exact frontend domain (e.g. "https://myapp.com"). Using a wildcard in
+// production would allow any website to make credentialed requests on behalf
+// of a logged-in user, which is effectively a CSRF vulnerability.
+type CORSConfig struct {
+	AllowedOrigins string `mapstructure:"allowedOrigins"`
+}
+
+// ClerkConfig holds the parameters required to validate JWTs issued by Clerk.
+//
+// Clerk signs tokens with RS256 using a rotating key pair. The public keys
+// are published at the JWKS endpoint and must be fetched and cached at
+// startup. The JWKSURL value is available in the Clerk dashboard under
+// API Keys → Advanced → JWKS URL.
+type ClerkConfig struct {
+	JWKSURL string `mapstructure:"jwksUrl"`
 }

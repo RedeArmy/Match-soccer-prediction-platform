@@ -40,4 +40,8 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("jwt.secret", "")
 	v.SetDefault("jwt.expiration", 24*time.Hour)
+
+	v.SetDefault("cors.allowedOrigins", "http://localhost:3000")
+
+	v.SetDefault("clerk.jwksUrl", "")
 }

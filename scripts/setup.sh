@@ -14,12 +14,20 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "==> Checking prerequisites..."
 
-for cmd in docker docker-compose go; do
+for cmd in docker go; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "ERROR: '$cmd' is required but not installed. Aborting." >&2
         exit 1
     fi
 done
+
+# Docker Compose v2 ships as a Docker plugin (docker compose) rather than
+# a standalone binary (docker-compose). Verify the plugin is available.
+if ! docker compose version >/dev/null 2>&1; then
+    echo "ERROR: 'docker compose' plugin is required but not available." >&2
+    echo "       Install Docker Desktop or the docker-compose-plugin package." >&2
+    exit 1
+fi
 
 echo "==> Creating .env from .env.example (skipped if .env already exists)..."
 if [[ ! -f "$ROOT_DIR/.env" ]]; then
@@ -30,11 +38,11 @@ else
 fi
 
 echo "==> Starting infrastructure services (Postgres, Redis)..."
-docker-compose -f "$ROOT_DIR/docker-compose.yml" up -d
+docker compose -f "$ROOT_DIR/docker-compose.yml" up -d
 
 echo "==> Waiting for Postgres to become ready..."
-until docker-compose -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
-    pg_isready -U quiniela -d quiniela >/dev/null 2>&1; do
+until docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
+    pg_isready -U "${POSTGRES_USER:-quiniela}" -d "${POSTGRES_DB:-quiniela}" >/dev/null 2>&1; do
     printf "."
     sleep 1
 done

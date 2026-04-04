@@ -1,13 +1,72 @@
 package middleware
 
-// TODO: implement structured HTTP request logging middleware using zap.
+import (
+	"net/http"
+	"time"
+
+	"go.uber.org/zap"
+)
+
+// responseWriter wraps http.ResponseWriter to capture the status code and
+// response size written by downstream handlers.
 //
-// Log the following fields on every completed request:
-//   - request_id  (from chi's RequestID middleware, already in context)
-//   - method, path, status, latency_ms
-//   - user_id     (from JWT claims, if authenticated)
-//   - remote_ip   (from RealIP middleware)
+// http.ResponseWriter does not expose the status code after it has been
+// written, so wrapping is the only way to observe it in middleware that runs
+// after the handler (post-handler logging). The default status is 200 because
+// a handler that calls Write without calling WriteHeader first implicitly
+// sends a 200 response.
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+	size   int
+}
+
+func (rw *responseWriter) WriteHeader(status int) {
+	rw.status = status
+	rw.ResponseWriter.WriteHeader(status)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	n, err := rw.ResponseWriter.Write(b)
+	rw.size += n
+	return n, err
+}
+
+// RequestLogger returns a middleware that logs one structured entry per
+// completed HTTP request using the provided zap logger.
 //
-// Use zap.Logger rather than chi's built-in Logger middleware, which writes
-// to a plain io.Writer. Structured fields allow log aggregation tools to
-// filter and alert on specific request paths or status codes without regex.
+// The following fields are logged on every request:
+//   - request_id  — correlates log entries with a specific request
+//   - method      — HTTP verb
+//   - path        — URL path (query string excluded to avoid logging PII)
+//   - status      — HTTP status code written by the handler
+//   - latency_ms  — wall-clock duration from first byte received to last byte sent
+//   - remote_ip   — client IP address as set by chi's RealIP middleware
+//
+// The user_id field is appended only when the request context contains a
+// Clerk user ID (i.e. the request passed through RequireAuth).
+func RequestLogger(log *zap.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			wrapped := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+
+			next.ServeHTTP(wrapped, r)
+
+			fields := []zap.Field{
+				zap.String("request_id", GetRequestID(r.Context())),
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+				zap.Int("status", wrapped.status),
+				zap.Int64("latency_ms", time.Since(start).Milliseconds()),
+				zap.String("remote_ip", r.RemoteAddr),
+			}
+
+			if userID, ok := UserIDFromContext(r.Context()); ok {
+				fields = append(fields, zap.String("user_id", userID))
+			}
+
+			log.Info("request completed", fields...)
+		})
+	}
+}
