@@ -6,8 +6,8 @@
 # makes the edit-run-debug cycle significantly faster during development.
 #
 # Usage:
-#   make docker-up     # start Postgres and Redis in the background
-#   make docker-down   # stop and remove containers (data is preserved in volumes)
+#   make docker-up # start Postgres and Redis in the background
+#   make docker-down # stop and remove containers (data is preserved in volumes)
 #
 # Data is persisted in named Docker volumes so that it survives container
 # restarts. To wipe all local data and start fresh, run:
@@ -18,9 +18,9 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       quiniela
-      POSTGRES_USER:     quiniela
-      POSTGRES_PASSWORD: quiniela
+      POSTGRES_DB:       ${POSTGRES_DB:-quiniela}
+      POSTGRES_USER:     ${POSTGRES_USER:-quiniela}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quiniela}
     ports:
       # Expose on 127.0.0.1 only to prevent accidental exposure on networked
       # interfaces when developing on a shared or public network.
@@ -28,7 +28,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U quiniela -d quiniela"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quiniela} -d ${POSTGRES_DB:-quiniela}"]
       interval: 5s
       timeout: 5s
       retries: 5

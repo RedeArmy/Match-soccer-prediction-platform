@@ -16,13 +16,13 @@ echo "==> Checking prerequisites..."
 
 for cmd in docker docker-compose go; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "ERROR: '$cmd' is required but not installed. Aborting."
+        echo "ERROR: '$cmd' is required but not installed. Aborting." >&2
         exit 1
     fi
 done
 
 echo "==> Creating .env from .env.example (skipped if .env already exists)..."
-if [ ! -f "$ROOT_DIR/.env" ]; then
+if [[ ! -f "$ROOT_DIR/.env" ]]; then
     cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
     echo "    Created .env — set WCQ_JWT_SECRET before running the server."
 else
