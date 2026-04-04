@@ -1,0 +1,99 @@
+# Deploy pipeline — production build triggered on merge to main.
+#
+# Runs only on direct pushes to main (i.e. when a PR from develop is merged).
+# It does NOT run on PRs — the CI pipeline handles those.
+#
+# Job graph:
+#   test  →  docker
+#
+# test:   re-runs the full test suite before building the image.
+#         Production deployments must never skip the test gate, even when the
+#         CI pipeline already passed on the PR — the merge commit is a new
+#         artefact and must be verified independently.
+#
+# docker: builds the production Docker image and pushes it to the GitHub
+#         Container Registry (ghcr.io). The image is tagged with both the
+#         short commit SHA (immutable, for rollbacks) and `latest` (moving,
+#         for convenience).
+#
+# Registry: ghcr.io/<owner>/<repo>
+# No extra secrets are required — GITHUB_TOKEN has write access to the
+# package registry for the same repository.
+
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Test gate — must pass before the Docker image is built
+  # --------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: make test
+
+  # --------------------------------------------------------------------------
+  # Build and push Docker image to GitHub Container Registry
+  # --------------------------------------------------------------------------
+  docker:
+    name: Build & Push Docker image
+    runs-on: ubuntu-latest
+    needs: test
+
+    # packages: write is required to push images to ghcr.io.
+    # contents: read is the minimum required to checkout the repository.
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Derives two tags from the current commit:
+      #   - short SHA (e.g. a1b2c3d) — immutable, used for rollbacks
+      #   - latest                   — always points to the most recent build
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=latest
+
+      # BuildKit is enabled by default in docker/build-push-action.
+      # The multi-stage Dockerfile in the repo root is used automatically.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

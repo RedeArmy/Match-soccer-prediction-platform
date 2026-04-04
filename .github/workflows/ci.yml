@@ -1,0 +1,84 @@
+# CI pipeline — quality gate for pull requests.
+#
+# Triggers on every PR targeting develop or main.
+#
+# Job graph:
+#   guard  →  test
+#
+# guard: enforces that only the develop branch may open a PR against main.
+#        Any other source branch targeting main causes an immediate failure,
+#        preventing accidental direct merges from feature branches.
+#
+# test:  runs go vet, the full test suite with coverage, and SonarCloud.
+#        It depends on guard so that the branch-policy check always runs first.
+#
+# Both jobs must be registered as required status checks in Branch Protection
+# Rules for develop and main respectively (see README or docs/branching.md).
+
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Branch policy guard
+  # --------------------------------------------------------------------------
+  guard:
+    name: Branch policy
+    runs-on: ubuntu-latest
+    steps:
+      # PRs to main are only permitted from develop. Any other source branch
+      # (feature/*, hotfix/*, etc.) must be merged into develop first.
+      # This step is a no-op for PRs targeting develop.
+      - name: Verify source branch for PRs targeting main
+        if: github.base_ref == 'main'
+        run: |
+          if [ "${{ github.head_ref }}" != "develop" ]; then
+            echo "::error::Only the develop branch may be merged into main."
+            echo "::error::Source branch detected: ${{ github.head_ref }}"
+            echo "::error::Merge your changes into develop first, then open a PR from develop → main."
+            exit 1
+          fi
+
+  # --------------------------------------------------------------------------
+  # Vet, test and SonarCloud analysis
+  # --------------------------------------------------------------------------
+  test:
+    name: Vet, Test & SonarCloud
+    runs-on: ubuntu-latest
+    needs: guard
+
+    steps:
+      # fetch-depth: 0 is required by SonarCloud to attribute coverage data
+      # to the correct commit author via git blame.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      # Produces coverage.out in the workspace root.
+      # SonarCloud reads this file directly via sonar.go.coverage.reportPaths.
+      - name: Test with coverage
+        run: make test-cover
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v3
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}

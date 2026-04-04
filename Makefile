@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run test lint clean docker-up docker-down migrate help
+.PHONY: build run test test-cover lint clean docker-up docker-down migrate help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -33,6 +33,16 @@ run:
 ##       The -count=1 flag disables the test cache, ensuring each run is fresh.
 test:
 	go test -race -count=1 -timeout=60s ./...
+
+## test-cover: Run the full test suite and emit a coverage profile for SonarCloud
+##             Output: coverage.out (Go native format, read directly by SonarCloud)
+##             The -covermode=atomic flag is required when -race is enabled; it
+##             uses atomic operations to update counters safely across goroutines.
+test-cover:
+	go test -race -count=1 -timeout=60s \
+		-coverprofile=coverage.out \
+		-covermode=atomic \
+		./...
 
 ## lint: Run golangci-lint across the entire module
 ##       Install golangci-lint: https://golangci-lint.run/usage/install/
