@@ -23,19 +23,26 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const (
+	msgMatchNotFound    = "match not found"
+	msgQuinielaNotFound = "quiniela not found"
+	fmtCode             = "Code: expected %q, got %q"
+	fmtHTTPStatus       = "HTTPStatus: expected %d, got %d"
+)
+
 // ── Constructor tests ─────────────────────────────────────────────────────────
 
 func TestNotFound_SetsFields(t *testing.T) {
-	err := apperrors.NotFound("match not found")
+	err := apperrors.NotFound(msgMatchNotFound)
 
 	if err.Code != apperrors.CodeNotFound {
-		t.Errorf("Code: expected %q, got %q", apperrors.CodeNotFound, err.Code)
+		t.Errorf(fmtCode, apperrors.CodeNotFound, err.Code)
 	}
-	if err.Message != "match not found" {
-		t.Errorf("Message: expected %q, got %q", "match not found", err.Message)
+	if err.Message != msgMatchNotFound {
+		t.Errorf("Message: expected %q, got %q", msgMatchNotFound, err.Message)
 	}
 	if err.HTTPStatus != http.StatusNotFound {
-		t.Errorf("HTTPStatus: expected %d, got %d", http.StatusNotFound, err.HTTPStatus)
+		t.Errorf(fmtHTTPStatus, http.StatusNotFound, err.HTTPStatus)
 	}
 	if err.Cause != nil {
 		t.Errorf("Cause: expected nil, got %v", err.Cause)
@@ -46,10 +53,10 @@ func TestUnauthorised_SetsFields(t *testing.T) {
 	err := apperrors.Unauthorised("token expired")
 
 	if err.Code != apperrors.CodeUnauthorised {
-		t.Errorf("Code: expected %q, got %q", apperrors.CodeUnauthorised, err.Code)
+		t.Errorf(fmtCode, apperrors.CodeUnauthorised, err.Code)
 	}
 	if err.HTTPStatus != http.StatusUnauthorized {
-		t.Errorf("HTTPStatus: expected %d, got %d", http.StatusUnauthorized, err.HTTPStatus)
+		t.Errorf(fmtHTTPStatus, http.StatusUnauthorized, err.HTTPStatus)
 	}
 }
 
@@ -57,10 +64,10 @@ func TestForbidden_SetsFields(t *testing.T) {
 	err := apperrors.Forbidden("admin only")
 
 	if err.Code != apperrors.CodeForbidden {
-		t.Errorf("Code: expected %q, got %q", apperrors.CodeForbidden, err.Code)
+		t.Errorf(fmtCode, apperrors.CodeForbidden, err.Code)
 	}
 	if err.HTTPStatus != http.StatusForbidden {
-		t.Errorf("HTTPStatus: expected %d, got %d", http.StatusForbidden, err.HTTPStatus)
+		t.Errorf(fmtHTTPStatus, http.StatusForbidden, err.HTTPStatus)
 	}
 }
 
@@ -68,10 +75,10 @@ func TestConflict_SetsFields(t *testing.T) {
 	err := apperrors.Conflict("prediction already submitted")
 
 	if err.Code != apperrors.CodeConflict {
-		t.Errorf("Code: expected %q, got %q", apperrors.CodeConflict, err.Code)
+		t.Errorf(fmtCode, apperrors.CodeConflict, err.Code)
 	}
 	if err.HTTPStatus != http.StatusConflict {
-		t.Errorf("HTTPStatus: expected %d, got %d", http.StatusConflict, err.HTTPStatus)
+		t.Errorf(fmtHTTPStatus, http.StatusConflict, err.HTTPStatus)
 	}
 }
 
@@ -79,10 +86,10 @@ func TestValidation_SetsFields(t *testing.T) {
 	err := apperrors.Validation("score must not be negative")
 
 	if err.Code != apperrors.CodeValidation {
-		t.Errorf("Code: expected %q, got %q", apperrors.CodeValidation, err.Code)
+		t.Errorf(fmtCode, apperrors.CodeValidation, err.Code)
 	}
 	if err.HTTPStatus != http.StatusUnprocessableEntity {
-		t.Errorf("HTTPStatus: expected %d, got %d", http.StatusUnprocessableEntity, err.HTTPStatus)
+		t.Errorf(fmtHTTPStatus, http.StatusUnprocessableEntity, err.HTTPStatus)
 	}
 }
 
@@ -91,10 +98,10 @@ func TestInternal_SetsFieldsAndStoredCause(t *testing.T) {
 	err := apperrors.Internal(cause)
 
 	if err.Code != apperrors.CodeInternal {
-		t.Errorf("Code: expected %q, got %q", apperrors.CodeInternal, err.Code)
+		t.Errorf(fmtCode, apperrors.CodeInternal, err.Code)
 	}
 	if err.HTTPStatus != http.StatusInternalServerError {
-		t.Errorf("HTTPStatus: expected %d, got %d", http.StatusInternalServerError, err.HTTPStatus)
+		t.Errorf(fmtHTTPStatus, http.StatusInternalServerError, err.HTTPStatus)
 	}
 	if err.Message != apperrors.MsgInternal {
 		t.Errorf("Message: expected generic internal message, got %q", err.Message)
@@ -107,10 +114,10 @@ func TestInternal_SetsFieldsAndStoredCause(t *testing.T) {
 // TestError_ReturnsMessage verifies that the error interface is satisfied and
 // returns the user-facing message, not the internal cause details.
 func TestError_ReturnsMessage(t *testing.T) {
-	err := apperrors.NotFound("quiniela not found")
+	err := apperrors.NotFound(msgQuinielaNotFound)
 
-	if err.Error() != "quiniela not found" {
-		t.Errorf("Error(): expected %q, got %q", "quiniela not found", err.Error())
+	if err.Error() != msgQuinielaNotFound {
+		t.Errorf("Error(): expected %q, got %q", msgQuinielaNotFound, err.Error())
 	}
 }
 
@@ -179,10 +186,10 @@ func TestAs_ExtractsAppError(t *testing.T) {
 		t.Fatal("errors.As: expected to extract *AppError, got false")
 	}
 	if appErr.Code != apperrors.CodeValidation {
-		t.Errorf("Code: expected %q, got %q", apperrors.CodeValidation, appErr.Code)
+		t.Errorf(fmtCode, apperrors.CodeValidation, appErr.Code)
 	}
 	if appErr.HTTPStatus != http.StatusUnprocessableEntity {
-		t.Errorf("HTTPStatus: expected %d, got %d", http.StatusUnprocessableEntity, appErr.HTTPStatus)
+		t.Errorf(fmtHTTPStatus, http.StatusUnprocessableEntity, appErr.HTTPStatus)
 	}
 }
 
