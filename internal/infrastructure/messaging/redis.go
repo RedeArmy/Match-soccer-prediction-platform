@@ -33,7 +33,11 @@ type RedisBus struct {
 // NewRedisBus constructs a RedisBus that publishes and subscribes using the
 // provided Redis client. The client is not owned by the bus and must be closed
 // by the caller after the bus is shut down.
+// If log is nil a no-op logger is used so that tests do not need to provide one.
 func NewRedisBus(client *redis.Client, log *zap.Logger) *RedisBus {
+	if log == nil {
+		log = zap.NewNop()
+	}
 	return &RedisBus{
 		client:   client,
 		log:      log,
