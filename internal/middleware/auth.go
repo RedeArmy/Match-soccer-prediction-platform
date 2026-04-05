@@ -31,6 +31,13 @@ const (
 	contextKeyUserID contextKey = iota
 )
 
+// ContextWithUserID returns a new context with the given Clerk user ID stored
+// under the same key as RequireAuth. Use this in tests to simulate an
+// authenticated request without real JWT validation.
+func ContextWithUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, contextKeyUserID, userID)
+}
+
 // UserIDFromContext returns the Clerk user ID stored in ctx by RequireAuth.
 // The second return value is false when the request did not pass through
 // RequireAuth (e.g. public endpoints).

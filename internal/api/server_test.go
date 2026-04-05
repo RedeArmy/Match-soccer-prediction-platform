@@ -15,15 +15,32 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap/zaptest"
+
 	"github.com/rede/world-cup-quiniela/internal/api"
 	"github.com/rede/world-cup-quiniela/pkg/config"
-	"go.uber.org/zap/zaptest"
 )
+
+// fakePool creates a pgxpool.Pool pointing at an unreachable address. pgxpool
+// connects lazily, so the pool object is valid for dependency construction even
+// though any actual query will return a connection error.
+func fakePool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(),
+		"postgres://fake:fake@localhost:1/fake?sslmode=disable&connect_timeout=1")
+	if err != nil {
+		t.Fatalf("create fake pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
 
 const healthPath = "/health"
 
@@ -102,5 +119,57 @@ func TestUnknownRoute_Returns404(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+// ── nil db — known routes return 503, unknown return 404 ─────────────────────
+
+func TestRoutes_DBNil_MatchRoute_Returns503(t *testing.T) {
+	h := newTestServer(t).Routes()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 (db unavailable), got %d", rec.Code)
+	}
+}
+
+func TestRoutes_DBNil_PredictionRoute_Returns503(t *testing.T) {
+	h := newTestServer(t).Routes()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 (db unavailable), got %d", rec.Code)
+	}
+}
+
+// ── non-nil db (exercises buildBus + buildHandlers) ───────────────────────────
+
+// TestRoutes_WithFakeDB_MatchRouteRegistered verifies that Routes() builds the
+// full handler tree when db != nil without panicking. The fake pool is
+// unreachable so the request returns 500, but a 404 would mean the route was
+// never registered.
+func TestRoutes_WithFakeDB_MatchRouteRegistered(t *testing.T) {
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusNotFound {
+		t.Errorf("expected route to be registered, got 404")
+	}
+}
+
+func TestRoutes_WithFakeDB_PredictionRouteRegistered(t *testing.T) {
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions?user_id=1", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusNotFound {
+		t.Errorf("expected route to be registered, got 404")
 	}
 }
