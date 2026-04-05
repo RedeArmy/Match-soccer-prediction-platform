@@ -24,7 +24,7 @@ import (
 // UpdateResult enforces the transition rules: a result may only be set when
 // the match is in the Live or Finished status. After confirming the result
 // the implementation must emit a MatchFinished domain event so that downstream
-// consumers (ScoringService, NotificationService) react without being called
+// consumers (MatchScorer, Notifier) react without being called
 // directly.
 type MatchService interface {
 	CreateMatch(ctx context.Context, match *domain.Match) error
@@ -48,18 +48,18 @@ type PredictionService interface {
 	GetByMatch(ctx context.Context, matchID int) ([]*domain.Prediction, error)
 }
 
-// ScoringService calculates and persists points for all predictions on a
+// MatchScorer calculates and persists points for all predictions on a
 // finished match.
 //
 // ScoreMatch is intended to be called from a MatchFinished event handler, not
 // directly from an HTTP handler, which is why it does not return a full list
 // of updated predictions — the caller's context is asynchronous.
-type ScoringService interface {
+type MatchScorer interface {
 	ScoreMatch(ctx context.Context, matchID int) error
 }
 
-// RankingService computes leaderboard standings for a given Quiniela.
-type RankingService interface {
+// Ranker computes leaderboard standings for a given Quiniela.
+type Ranker interface {
 	GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.User, error)
 }
 
@@ -70,11 +70,11 @@ type QuinielaService interface {
 	GetByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
 }
 
-// NotificationService dispatches notifications in response to domain events.
+// Notifier dispatches notifications in response to domain events.
 //
 // Notify is a fire-and-forget operation: failures are logged but not returned
 // to the caller because notification delivery is best-effort and must not
 // block or fail the primary operation that triggered the event.
-type NotificationService interface {
+type Notifier interface {
 	Notify(ctx context.Context, userID int, message string) error
 }

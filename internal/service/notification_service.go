@@ -6,7 +6,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// notificationService is the concrete implementation of NotificationService.
+// notificationService is the concrete implementation of Notifier.
 //
 // The current implementation is a no-op logger stub. It satisfies the
 // interface so that the composition root can wire it without leaving
@@ -17,7 +17,7 @@ type notificationService struct {
 }
 
 // NewNotificationService constructs a notificationService.
-func NewNotificationService(log *zap.Logger) NotificationService {
+func NewNotificationService(log *zap.Logger) Notifier {
 	return &notificationService{log: log}
 }
 

@@ -11,7 +11,7 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
-// scoringService is the concrete implementation of ScoringService.
+// scoringService is the concrete implementation of MatchScorer.
 type scoringService struct {
 	matchRepo  repository.MatchRepository
 	predRepo   repository.PredictionRepository
@@ -23,7 +23,7 @@ func NewScoringService(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 	log *zap.Logger,
-) ScoringService {
+) MatchScorer {
 	return &scoringService{matchRepo: matchRepo, predRepo: predRepo, log: log}
 }
 

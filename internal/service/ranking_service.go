@@ -8,7 +8,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
-// rankingService is the concrete implementation of RankingService.
+// rankingService is the concrete implementation of Ranker.
 type rankingService struct {
 	quinielaRepo  repository.QuinielaRepository
 	predRepo      repository.PredictionRepository
@@ -20,7 +20,7 @@ func NewRankingService(
 	quinielaRepo repository.QuinielaRepository,
 	predRepo repository.PredictionRepository,
 	userRepo repository.UserRepository,
-) RankingService {
+) Ranker {
 	return &rankingService{
 		quinielaRepo: quinielaRepo,
 		predRepo:     predRepo,
