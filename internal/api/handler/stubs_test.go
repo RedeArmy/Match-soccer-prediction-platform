@@ -6,6 +6,11 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
+const (
+	fmtExpect422 = "expected 422, got %d"
+	fmtExpect200 = "expected 200, got %d"
+)
+
 // stubMatchSvc implements service.MatchService with configurable returns.
 type stubMatchSvc struct {
 	match   *domain.Match

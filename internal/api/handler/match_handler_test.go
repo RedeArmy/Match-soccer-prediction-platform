@@ -48,7 +48,7 @@ func TestListMatches_Success_Returns200(t *testing.T) {
 	svc := &stubMatchSvc{matches: []*domain.Match{{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina"}}}
 	w := do(newMatchRouter(svc), http.MethodGet, "/", "")
 	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+		t.Errorf(fmtExpect200, w.Code)
 	}
 }
 
@@ -66,14 +66,14 @@ func TestGetMatch_Success_Returns200(t *testing.T) {
 	svc := &stubMatchSvc{match: &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina"}}
 	w := do(newMatchRouter(svc), http.MethodGet, "/1", "")
 	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+		t.Errorf(fmtExpect200, w.Code)
 	}
 }
 
 func TestGetMatch_InvalidID_Returns422(t *testing.T) {
 	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodGet, "/abc", "")
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestCreateMatch_Success_Returns201(t *testing.T) {
 func TestCreateMatch_InvalidJSON_Returns422(t *testing.T) {
 	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPost, "/", `not json`)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -109,7 +109,7 @@ func TestCreateMatch_ServiceError_Returns422(t *testing.T) {
 	svc := &stubMatchSvc{err: apperrors.Validation("teams must differ")}
 	w := do(newMatchRouter(svc), http.MethodPost, "/", body)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -119,21 +119,21 @@ func TestUpdateResult_Success_Returns200(t *testing.T) {
 	svc := &stubMatchSvc{match: &domain.Match{ID: 1}}
 	w := do(newMatchRouter(svc), http.MethodPatch, "/1", `{"home_score":2,"away_score":1}`)
 	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+		t.Errorf(fmtExpect200, w.Code)
 	}
 }
 
 func TestUpdateResult_InvalidID_Returns422(t *testing.T) {
 	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPatch, "/abc", `{"home_score":2,"away_score":1}`)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
 func TestUpdateResult_InvalidJSON_Returns422(t *testing.T) {
 	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPatch, "/1", `not json`)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -141,7 +141,7 @@ func TestUpdateResult_MissingScores_Returns422(t *testing.T) {
 	// Valid JSON but home_score/away_score are absent (nil pointers after decode).
 	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPatch, "/1", `{}`)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestUpdateResult_ServiceError_Returns422(t *testing.T) {
 	svc := &stubMatchSvc{err: apperrors.Validation("match is not live")}
 	w := do(newMatchRouter(svc), http.MethodPatch, "/1", `{"home_score":2,"away_score":1}`)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -159,14 +159,14 @@ func TestStartMatch_Success_Returns200(t *testing.T) {
 	svc := &stubMatchSvc{match: &domain.Match{ID: 1, Status: domain.MatchStatusLive}}
 	w := do(newMatchRouter(svc), http.MethodPost, "/1/start", "")
 	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+		t.Errorf(fmtExpect200, w.Code)
 	}
 }
 
 func TestStartMatch_InvalidID_Returns422(t *testing.T) {
 	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPost, "/abc/start", "")
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -174,6 +174,6 @@ func TestStartMatch_ServiceError_Returns422(t *testing.T) {
 	svc := &stubMatchSvc{err: apperrors.Validation("already live")}
 	w := do(newMatchRouter(svc), http.MethodPost, "/1/start", "")
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }

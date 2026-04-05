@@ -56,7 +56,7 @@ func TestSubmit_NoAuthContext_Returns401(t *testing.T) {
 func TestSubmit_InvalidJSON_Returns422(t *testing.T) {
 	w := doPred(newPredRouter(&stubPredSvc{}, true), http.MethodPost, "/", `not json`)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -85,7 +85,7 @@ func TestSubmit_ServiceError_Returns422(t *testing.T) {
 	w := doPred(newPredRouter(svc, true), http.MethodPost, "/",
 		`{"match_id":1,"home_score":2,"away_score":1}`)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -111,14 +111,14 @@ func TestPredUpdate_Success_Returns200(t *testing.T) {
 func TestPredUpdate_InvalidID_Returns422(t *testing.T) {
 	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPatch, "/abc", `{"home_score":2,"away_score":1}`)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
 func TestPredUpdate_InvalidJSON_Returns422(t *testing.T) {
 	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPatch, "/1", `not json`)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -147,7 +147,7 @@ func TestListByUser_MissingUserID_Returns422(t *testing.T) {
 	w := httptest.NewRecorder()
 	newPredRouter(&stubPredSvc{}, false).ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
@@ -156,7 +156,7 @@ func TestListByUser_InvalidUserID_Returns422(t *testing.T) {
 	w := httptest.NewRecorder()
 	newPredRouter(&stubPredSvc{}, false).ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d", w.Code)
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
