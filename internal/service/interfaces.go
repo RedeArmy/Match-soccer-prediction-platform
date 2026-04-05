@@ -13,12 +13,68 @@
 // without touching a real database.
 package service
 
-// TODO: define service interfaces once their method signatures stabilise.
-// Sketch of the intended surface:
+import (
+	"context"
+
+	"github.com/rede/world-cup-quiniela/internal/domain"
+)
+
+// MatchService defines operations on the Match entity.
 //
-//   MatchService       — CreateMatch, UpdateResult, ListMatches, GetMatch
-//   PredictionService  — Submit, Update, GetByUser, GetByMatch
-//   ScoringService     — ScoreMatch (triggered by MatchFinished event)
-//   RankingService     — GetLeaderboard (for a given Quiniela)
-//   QuinielaService    — Create, Join, GetByOwner
-//   NotificationService — Notify (dispatch push/email on significant events)
+// UpdateResult enforces the transition rules: a result may only be set when
+// the match is in the Live or Finished status. After confirming the result
+// the implementation must emit a MatchFinished domain event so that downstream
+// consumers (MatchScorer, Notifier) react without being called
+// directly.
+type MatchService interface {
+	CreateMatch(ctx context.Context, match *domain.Match) error
+	GetMatch(ctx context.Context, id int) (*domain.Match, error)
+	ListMatches(ctx context.Context) ([]*domain.Match, error)
+	ListMatchesByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
+	UpdateResult(ctx context.Context, id int, homeScore, awayScore int) (*domain.Match, error)
+	StartMatch(ctx context.Context, id int) (*domain.Match, error)
+}
+
+// PredictionService defines operations on the Prediction entity.
+//
+// Submit enforces the prediction deadline: it delegates to the domain
+// validator which rejects submissions after kick-off. It also rejects
+// duplicate predictions (one per user per match) by checking for an existing
+// record before creating a new one. Update follows the same deadline rules.
+type PredictionService interface {
+	Submit(ctx context.Context, prediction *domain.Prediction) error
+	Update(ctx context.Context, id int, homeScore, awayScore int) (*domain.Prediction, error)
+	GetByUser(ctx context.Context, userID int) ([]*domain.Prediction, error)
+	GetByMatch(ctx context.Context, matchID int) ([]*domain.Prediction, error)
+}
+
+// MatchScorer calculates and persists points for all predictions on a
+// finished match.
+//
+// ScoreMatch is intended to be called from a MatchFinished event handler, not
+// directly from an HTTP handler, which is why it does not return a full list
+// of updated predictions — the caller's context is asynchronous.
+type MatchScorer interface {
+	ScoreMatch(ctx context.Context, matchID int) error
+}
+
+// Ranker computes leaderboard standings for a given Quiniela.
+type Ranker interface {
+	GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.User, error)
+}
+
+// QuinielaService defines operations on the Quiniela entity.
+type QuinielaService interface {
+	Create(ctx context.Context, quiniela *domain.Quiniela) error
+	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
+	GetByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
+}
+
+// Notifier dispatches notifications in response to domain events.
+//
+// Notify is a fire-and-forget operation: failures are logged but not returned
+// to the caller because notification delivery is best-effort and must not
+// block or fail the primary operation that triggered the event.
+type Notifier interface {
+	Notify(ctx context.Context, userID int, message string) error
+}
