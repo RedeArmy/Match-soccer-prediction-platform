@@ -1,9 +1,14 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // TestCalculatePoints verifies the full scoring decision table:
@@ -148,7 +153,57 @@ func TestCalculatePoints(t *testing.T) {
 	}
 }
 
-// TestGoalDiff verifies the absolute-value goal-margin helper.
+// ── ScoreMatch ────────────────────────────────────────────────────────────────
+
+func TestScoreMatch_FinishedMatch_CalculatesAndPersistsPoints(t *testing.T) {
+	home, away := 2, 1
+	match := &domain.Match{
+		ID: 1, Status: domain.MatchStatusFinished,
+		HomeScore: &home, AwayScore: &away,
+	}
+	preds := []*domain.Prediction{
+		{ID: 1, HomeScore: 2, AwayScore: 1}, // exact → 5
+		{ID: 2, HomeScore: 1, AwayScore: 0}, // correct outcome + margin 1 → 3
+		{ID: 3, HomeScore: 0, AwayScore: 1}, // wrong outcome → 0
+	}
+	predRepo := &stubPredRepo{list: preds}
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(predRepo.updated) != 3 {
+		t.Errorf("expected 3 updated predictions, got %d", len(predRepo.updated))
+	}
+}
+
+func TestScoreMatch_MatchNotFound_ReturnsNotFound(t *testing.T) {
+	svc := NewScoringService(&stubMatchRepo{match: nil}, &stubPredRepo{}, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 99); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found error, got %v", err)
+	}
+}
+
+func TestScoreMatch_MatchNotFinished_ReturnsValidation(t *testing.T) {
+	match := &domain.Match{ID: 1, Status: domain.MatchStatusLive}
+	svc := NewScoringService(&stubMatchRepo{match: match}, &stubPredRepo{}, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for non-finished match, got %v", err)
+	}
+}
+
+func TestScoreMatch_NilScores_ReturnsValidation(t *testing.T) {
+	match := &domain.Match{ID: 1, Status: domain.MatchStatusFinished} // HomeScore/AwayScore are nil
+	svc := NewScoringService(&stubMatchRepo{match: match}, &stubPredRepo{}, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for nil scores, got %v", err)
+	}
+}
+
+// ── TestGoalDiff verifies the absolute-value goal-margin helper.
 func TestGoalDiff(t *testing.T) {
 	cases := []struct{ home, away, want int }{
 		{3, 1, 2},
