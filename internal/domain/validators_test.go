@@ -9,6 +9,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const fmtUnexpectedErr = "expected nil, got %v"
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 func isValidation(err error) bool {
@@ -24,7 +26,7 @@ func TestValidateMatch_ValidMatch_ReturnsNil(t *testing.T) {
 		KickoffAt: time.Now().Add(24 * time.Hour),
 	}
 	if err := domain.ValidateMatch(m); err != nil {
-		t.Errorf("expected nil, got %v", err)
+		t.Errorf(fmtUnexpectedErr, err)
 	}
 }
 
@@ -61,7 +63,7 @@ func TestValidateMatch_ZeroKickoff_ReturnsValidation(t *testing.T) {
 func TestValidateMatchResult_ValidScores_ReturnsNil(t *testing.T) {
 	home, away := 2, 1
 	if err := domain.ValidateMatchResult(&home, &away); err != nil {
-		t.Errorf("expected nil, got %v", err)
+		t.Errorf(fmtUnexpectedErr, err)
 	}
 }
 
@@ -156,7 +158,7 @@ func TestValidatePrediction_NegativeAwayScore_ReturnsValidation(t *testing.T) {
 func TestValidateQuiniela_Valid_ReturnsNil(t *testing.T) {
 	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
 	if err := domain.ValidateQuiniela(q); err != nil {
-		t.Errorf("expected nil, got %v", err)
+		t.Errorf(fmtUnexpectedErr, err)
 	}
 }
 
