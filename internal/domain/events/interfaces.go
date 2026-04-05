@@ -1,15 +1,38 @@
 package events
 
-// TODO: define the Publisher and Subscriber interfaces for the event bus.
+import "context"
+
+// Publisher is the outbound port for emitting domain events.
 //
-// Publisher is the outbound port: the service layer depends on it to emit
-// domain events without knowing whether the underlying transport is an
-// in-memory channel, Redis pub/sub, or a message broker.
+// The service layer depends on this interface rather than on a concrete
+// transport implementation. This keeps business logic portable across
+// different messaging backends (in-memory for tests, Redis for production)
+// without any change to the service code.
 //
-// Subscriber is the inbound port: background workers implement it to
-// consume events and trigger side effects (scoring, notifications).
+// Publish is synchronous from the caller's perspective: it returns once the
+// event has been accepted by the bus. Whether delivery to subscribers is
+// synchronous or asynchronous is an implementation detail hidden behind this
+// interface.
+type Publisher interface {
+	Publish(ctx context.Context, envelope Envelope) error
+}
+
+// Subscriber is the inbound port for consuming domain events.
 //
-// Keeping these interfaces in the domain package rather than in
-// internal/infrastructure/messaging ensures that the domain layer owns
-// the contract and infrastructure implementations adapt to it,
-// not the other way around.
+// Subscribe registers a handler function that is invoked for each event
+// whose Type matches the given EventType. A single handler may be registered
+// for multiple event types by calling Subscribe once per type.
+//
+// The handler receives the full Envelope; the concrete payload is accessible
+// via a type assertion on Envelope.Payload using the expected event struct.
+type Subscriber interface {
+	Subscribe(eventType EventType, handler func(ctx context.Context, envelope Envelope))
+}
+
+// Bus combines Publisher and Subscriber into a single interface for
+// components (such as the composition root) that need to both publish
+// and register handlers on the same bus instance.
+type Bus interface {
+	Publisher
+	Subscriber
+}
