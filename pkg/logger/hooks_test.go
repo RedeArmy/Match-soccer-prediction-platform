@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewLevelCounter_ReturnsNonNil(t *testing.T) {
-	if logger.NewLevelCounter(zapcore.ErrorLevel, func() {}) == nil {
+	if logger.NewLevelCounter(zapcore.ErrorLevel, func() { /* no-op: only the constructor return value is under test */ }) == nil {
 		t.Error("expected non-nil LevelCounter")
 	}
 }
