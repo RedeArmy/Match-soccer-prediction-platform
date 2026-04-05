@@ -13,15 +13,23 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rede/world-cup-quiniela/internal/middleware"
-	"github.com/rede/world-cup-quiniela/pkg/config"
 	"go.uber.org/zap"
+
+	"github.com/rede/world-cup-quiniela/internal/api/handler"
+	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/internal/service"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/config"
 )
 
 // Server holds the shared dependencies made available to all HTTP handlers.
@@ -80,13 +88,82 @@ func (s *Server) Routes() http.Handler {
 	// remains publicly accessible to load balancers and monitoring systems.
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, s.log))
-		// TODO: mount route groups as handlers are implemented.
-		// Example:
-		//   r.Mount("/matches",     matchHandler.New(s.db, s.log).Routes())
-		//   r.Mount("/predictions", predictionHandler.New(s.db, s.log).Routes())
+
+		if s.db == nil {
+			// When the database is unavailable, register the known routes with
+			// a stub that returns 503 so that registered paths return 503 and
+			// unregistered paths still return 404 (chi's default).
+			dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
+				middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
+			}
+			r.Route("/matches", func(r chi.Router) {
+				r.HandleFunc("/*", dbUnavailable)
+				r.HandleFunc("/", dbUnavailable)
+			})
+			r.Route("/predictions", func(r chi.Router) {
+				r.HandleFunc("/*", dbUnavailable)
+				r.HandleFunc("/", dbUnavailable)
+			})
+			return
+		}
+
+		bus := s.buildBus()
+		matchHandler, predHandler := s.buildHandlers(bus)
+
+		r.Route("/matches", func(r chi.Router) {
+			r.Get("/", matchHandler.ListMatches)
+			r.Post("/", matchHandler.CreateMatch)
+			r.Get("/{id}", matchHandler.GetMatch)
+			r.Patch("/{id}", matchHandler.UpdateResult)
+			r.Post("/{id}/start", matchHandler.StartMatch)
+		})
+
+		r.Route("/predictions", func(r chi.Router) {
+			r.Post("/", predHandler.Submit)
+			r.Get("/", predHandler.ListByUser)
+			r.Patch("/{id}", predHandler.Update)
+		})
 	})
 
 	return r
+}
+
+// buildBus creates the in-memory event bus and wires up the scoring subscriber.
+func (s *Server) buildBus() events.Bus {
+	bus := messaging.NewInMemoryBus()
+
+	matchRepo := repository.NewPostgresMatchRepository(s.db)
+	predRepo := repository.NewPostgresPredictionRepository(s.db)
+	scorer := service.NewScoringService(matchRepo, predRepo, s.log)
+
+	// Subscribe ScoringService to MatchFinished so scores are calculated
+	// automatically whenever a match result is confirmed.
+	bus.Subscribe(events.EventMatchFinished, func(ctx context.Context, env events.Envelope) {
+		mf, ok := env.Payload.(events.MatchFinished)
+		if !ok {
+			return
+		}
+		if err := scorer.ScoreMatch(ctx, mf.MatchID); err != nil {
+			s.log.Error("scoring failed after MatchFinished event",
+				zap.Int("match_id", mf.MatchID),
+				zap.Error(err),
+			)
+		}
+	})
+	return bus
+}
+
+// buildHandlers constructs the repository and service layers, then returns
+// the route handlers that depend on them.
+func (s *Server) buildHandlers(bus events.Bus) (*handler.MatchHandler, *handler.PredictionHandler) {
+	matchRepo := repository.NewPostgresMatchRepository(s.db)
+	predRepo := repository.NewPostgresPredictionRepository(s.db)
+
+	matchSvc := service.NewMatchService(matchRepo, bus, s.log)
+	predSvc := service.NewPredictionService(predRepo, matchRepo, bus, s.log)
+
+	return handler.NewMatchHandler(matchSvc, s.log),
+		handler.NewPredictionHandler(predSvc, s.log)
 }
 
 // handleHealth responds to liveness probes issued by load balancers and
@@ -99,7 +176,7 @@ func (s *Server) Routes() http.Handler {
 // to restart the pod, which would not fix the database and would instead
 // discard all in-flight requests. Readiness probes (a separate concern) are
 // the appropriate mechanism for gating traffic on dependency availability.
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok","service":"world-cup-quiniela"}`)
