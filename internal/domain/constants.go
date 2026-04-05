@@ -20,7 +20,7 @@ import "time"
 //   PointsIncorrectResult (0)
 //     — player predicts the wrong outcome, or no prediction was submitted.
 //
-// These constants are the single source of truth referenced by ScoringService;
+// These constants are the single source of truth referenced by MatchScorer;
 // no other package should hard-code scoring values.
 const (
 	PointsExactScore      = 5
