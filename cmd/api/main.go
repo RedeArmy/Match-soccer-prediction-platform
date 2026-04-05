@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rede/world-cup-quiniela/internal/api"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/database"
+	"github.com/rede/world-cup-quiniela/migrations"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
@@ -51,6 +52,20 @@ func main() {
 	// preventing the entire process from starting.
 	var db *pgxpool.Pool
 	if cfg.Database.DSN != "" {
+		// Apply pending migrations before opening the connection pool.
+		// golang-migrate holds a PostgreSQL advisory lock during execution, so
+		// concurrent starts (multiple replicas) are safe: one instance applies
+		// the migrations while the others wait and then find no further changes.
+		// A migration failure is fatal: starting the server against an
+		// out-of-date schema would cause unpredictable runtime errors that are
+		// far harder to diagnose than a clean startup failure.
+		log.Sugar().Info("applying database migrations...")
+		if err = database.Migrate(cfg.Database.DSN, migrations.FS); err != nil {
+			fmt.Fprintf(os.Stderr, "migration failed: %v\n", err)
+			os.Exit(1)
+		}
+		log.Sugar().Info("migrations up to date")
+
 		db, err = database.NewPool(ctx, database.Config{
 			DSN:             cfg.Database.DSN,
 			MaxOpenConns:    cfg.Database.MaxOpenConns,
