@@ -23,6 +23,7 @@ import (
 	"github.com/rede/world-cup-quiniela/migrations"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -50,34 +51,13 @@ func main() {
 	// or cold-start sequences in container orchestration platforms. Handlers
 	// that require a live connection will fail at request time rather than
 	// preventing the entire process from starting.
-	var db *pgxpool.Pool
-	if cfg.Database.DSN != "" {
-		// Apply pending migrations before opening the connection pool.
-		// golang-migrate holds a PostgreSQL advisory lock during execution, so
-		// concurrent starts (multiple replicas) are safe: one instance applies
-		// the migrations while the others wait and then find no further changes.
-		// A migration failure is fatal: starting the server against an
-		// out-of-date schema would cause unpredictable runtime errors that are
-		// far harder to diagnose than a clean startup failure.
-		log.Sugar().Info("applying database migrations...")
-		if err = database.Migrate(cfg.Database.DSN, migrations.FS); err != nil {
-			fmt.Fprintf(os.Stderr, "migration failed: %v\n", err)
-			os.Exit(1)
-		}
-		log.Sugar().Info("migrations up to date")
-
-		db, err = database.NewPool(ctx, database.Config{
-			DSN:             cfg.Database.DSN,
-			MaxOpenConns:    cfg.Database.MaxOpenConns,
-			MaxIdleConns:    cfg.Database.MaxIdleConns,
-			ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
-		})
-		if err != nil {
-			log.Sugar().Warnf("database unavailable: %v", err)
-		} else {
-			defer db.Close()
-			log.Sugar().Info("database connection established")
-		}
+	db, err := setupDB(ctx, cfg, log)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "migration failed: %v\n", err)
+		os.Exit(1)
+	}
+	if db != nil {
+		defer db.Close()
 	}
 
 	// The api.Server owns the routing table and receives all shared
@@ -126,4 +106,48 @@ func main() {
 		os.Exit(1)
 	}
 	log.Sugar().Info("server stopped")
+}
+
+// setupDB applies pending migrations and opens a connection pool.
+//
+// Returns (nil, nil) when DSN is empty — the database is treated as optional
+// so /health remains reachable during rolling deploys or cold starts.
+// Returns (nil, error) when migrations fail — starting against a stale schema
+// would cause unpredictable runtime errors, so the error is fatal at the
+// call site. A failed pool ping is non-fatal: it logs a warning and returns
+// (nil, nil) so the server can still start and serve non-DB endpoints.
+//
+// Extracting this logic out of main keeps the composition root thin and lets
+// tests exercise the migration and connection paths without spawning a full
+// server or intercepting os.Exit.
+func setupDB(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool.Pool, error) {
+	if cfg.Database.DSN == "" {
+		return nil, nil
+	}
+
+	// Apply pending migrations before opening the connection pool.
+	// golang-migrate holds a PostgreSQL advisory lock during execution, so
+	// concurrent starts (multiple replicas) are safe: one instance applies
+	// the migrations while the others wait and then find no further changes.
+	// A migration failure is fatal: starting the server against an
+	// out-of-date schema would cause unpredictable runtime errors that are
+	// far harder to diagnose than a clean startup failure.
+	log.Sugar().Info("applying database migrations...")
+	if err := database.Migrate(cfg.Database.DSN, migrations.FS); err != nil {
+		return nil, fmt.Errorf("migration failed: %w", err)
+	}
+	log.Sugar().Info("migrations up to date")
+
+	pool, err := database.NewPool(ctx, database.Config{
+		DSN:             cfg.Database.DSN,
+		MaxOpenConns:    cfg.Database.MaxOpenConns,
+		MaxIdleConns:    cfg.Database.MaxIdleConns,
+		ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
+	})
+	if err != nil {
+		log.Sugar().Warnf("database unavailable: %v", err)
+		return nil, nil
+	}
+	log.Sugar().Info("database connection established")
+	return pool, nil
 }

@@ -5,53 +5,20 @@ import (
 	"testing"
 	"time"
 
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/database"
+	"github.com/rede/world-cup-quiniela/internal/testutil"
 	"github.com/rede/world-cup-quiniela/migrations"
 )
 
 const (
-	fmtUnexpectedErr  = "unexpected error: %v"
-	fmtExpectedErr    = "expected an error, got nil"
-	dbImage           = "postgres:17-alpine"
-	dbName            = "quiniela_test"
-	dbUser            = "test"
-	dbPassword        = "test"
+	fmtUnexpectedErr = "unexpected error: %v"
+	fmtExpectedErr   = "expected an error, got nil"
 )
-
-// setupPostgres starts a throwaway PostgreSQL container and returns its DSN.
-// The container is terminated automatically when the test finishes.
-func setupPostgres(t *testing.T) string {
-	t.Helper()
-	ctx := context.Background()
-
-	container, err := tcpostgres.Run(ctx, dbImage,
-		tcpostgres.WithDatabase(dbName),
-		tcpostgres.WithUsername(dbUser),
-		tcpostgres.WithPassword(dbPassword),
-		tcpostgres.BasicWaitStrategies(),
-	)
-	if err != nil {
-		t.Fatalf("failed to start postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("failed to terminate postgres container: %v", err)
-		}
-	})
-
-	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("failed to get connection string: %v", err)
-	}
-	return dsn
-}
 
 // ── Migrate ───────────────────────────────────────────────────────────────────
 
 func TestMigrate_AppliesPendingMigrations(t *testing.T) {
-	dsn := setupPostgres(t)
+	dsn := testutil.SetupPostgres(t)
 
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -59,7 +26,7 @@ func TestMigrate_AppliesPendingMigrations(t *testing.T) {
 }
 
 func TestMigrate_IdempotentOnSecondCall(t *testing.T) {
-	dsn := setupPostgres(t)
+	dsn := testutil.SetupPostgres(t)
 
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
 		t.Fatalf("first migration: %v", err)
@@ -79,7 +46,7 @@ func TestMigrate_InvalidDSN_ReturnsError(t *testing.T) {
 // ── Seed ─────────────────────────────────────────────────────────────────────
 
 func TestSeed_InsertsFixtures(t *testing.T) {
-	dsn := setupPostgres(t)
+	dsn := testutil.SetupPostgres(t)
 
 	// Schema must exist before seeding.
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
@@ -120,7 +87,7 @@ func TestSeed_InsertsFixtures(t *testing.T) {
 }
 
 func TestSeed_IdempotentOnSecondCall(t *testing.T) {
-	dsn := setupPostgres(t)
+	dsn := testutil.SetupPostgres(t)
 
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
 		t.Fatalf("migrate: %v", err)

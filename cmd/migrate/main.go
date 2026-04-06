@@ -24,23 +24,21 @@ import (
 	"github.com/rede/world-cup-quiniela/migrations"
 )
 
-func main() {
-	seed := flag.Bool("seed", false, "seed development fixtures after migrating (never use in production)")
-	flag.Parse()
-
-	dsn := os.Getenv("WCQ_DATABASE_DSN")
+// run applies pending migrations and, if seed is true, inserts development
+// fixtures. It returns an error instead of calling os.Exit so it can be
+// exercised by tests without killing the test process.
+func run(dsn string, seed bool) error {
 	if dsn == "" {
-		log.Fatal("migrate: WCQ_DATABASE_DSN environment variable is required")
+		return fmt.Errorf("WCQ_DATABASE_DSN environment variable is required")
 	}
 
 	log.Println("migrate: applying migrations...")
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
-		fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("migrate: %w", err)
 	}
 	log.Println("migrate: schema is up to date")
 
-	if *seed {
+	if seed {
 		log.Println("migrate: seeding development fixtures...")
 		cfg := database.Config{
 			DSN:             dsn,
@@ -53,15 +51,24 @@ func main() {
 
 		pool, err := database.NewPool(ctx, cfg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "migrate: connect for seed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("migrate: connect for seed: %w", err)
 		}
 		defer pool.Close()
 
 		if err := database.Seed(ctx, pool); err != nil {
-			fmt.Fprintf(os.Stderr, "migrate: seed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("migrate: seed: %w", err)
 		}
 		log.Println("migrate: seed complete")
+	}
+	return nil
+}
+
+func main() {
+	seed := flag.Bool("seed", false, "seed development fixtures after migrating (never use in production)")
+	flag.Parse()
+
+	if err := run(os.Getenv("WCQ_DATABASE_DSN"), *seed); err != nil {
+		fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
+		os.Exit(1)
 	}
 }
