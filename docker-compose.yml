@@ -33,18 +33,38 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - quiniela_net
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # AOF persistence writes every command to disk so in-flight data survives
+    # a clean shutdown. RDB snapshots alone risk losing the last few seconds
+    # of writes on an unclean stop (e.g. SIGKILL from the OS).
+    command: redis-server --appendonly yes
     ports:
       - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - quiniela_net
 
 volumes:
   postgres_data:
     driver: local
+  redis_data:
+    driver: local
+
+# An explicit bridge network gives the containers predictable hostnames
+# (postgres, redis) for inter-container communication and prevents the
+# default network name from clashing with other Compose projects on the
+# same machine.
+networks:
+  quiniela_net:
+    driver: bridge
