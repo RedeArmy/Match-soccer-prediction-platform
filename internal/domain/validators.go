@@ -46,9 +46,12 @@ func ValidateMatchResult(homeScore, awayScore *int) error {
 // ValidatePrediction checks that a Prediction carries a plausible scoreline
 // and that it was submitted before the match deadline.
 //
-// The caller must pass the KickoffAt of the corresponding Match so that the
-// deadline check can be performed here rather than scattered across services.
-func ValidatePrediction(p *Prediction, kickoffAt time.Time) error {
+// The caller must pass the KickoffAt of the corresponding Match and the current
+// wall-clock time (now). Accepting now as a parameter rather than calling
+// time.Now() internally makes the function deterministic: tests can pass any
+// reference time without racing against the real clock, and the service layer
+// controls the time source consistently (e.g. always UTC).
+func ValidatePrediction(p *Prediction, kickoffAt, now time.Time) error {
 	if p.HomeScore < 0 {
 		return apperrors.Validation("predicted home score must not be negative")
 	}
@@ -56,7 +59,7 @@ func ValidatePrediction(p *Prediction, kickoffAt time.Time) error {
 		return apperrors.Validation("predicted away score must not be negative")
 	}
 	deadline := kickoffAt.Add(-PredictionDeadlineOffset)
-	if time.Now().After(deadline) {
+	if now.After(deadline) {
 		return apperrors.Validation("predictions are no longer accepted for this match")
 	}
 	return nil
