@@ -38,10 +38,14 @@ test:
 ##             Output: coverage.out (Go native format, read directly by SonarCloud)
 ##             The -covermode=atomic flag is required when -race is enabled; it
 ##             uses atomic operations to update counters safely across goroutines.
+##             The -coverpkg=./... flag instruments every package in the module,
+##             not just the one under test, so cross-package helpers such as
+##             internal/testutil are counted when called from other packages' tests.
 test-cover:
 	go test -race -count=1 -timeout=60s \
 		-coverprofile=coverage.out \
 		-covermode=atomic \
+		-coverpkg=./... \
 		./...
 
 ## lint: Run golangci-lint across the entire module
