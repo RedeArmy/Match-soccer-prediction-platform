@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	fmtExpect422 = "expected 422, got %d"
-	fmtExpect200 = "expected 200, got %d"
+	fmtExpect422      = "expected 422, got %d"
+	fmtExpect200      = "expected 200, got %d"
+	urlListByUserID1  = "/?user_id=1"
 )
 
 // stubMatchSvc implements service.MatchService with configurable returns.
