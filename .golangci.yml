@@ -19,17 +19,11 @@ linters:
     - ineffassign     # assignments whose result is never used
     - staticcheck     # comprehensive static analysis (includes gosimple in v2)
     - unused          # exported and unexported identifiers never referenced
-    - gofmt           # formatting must match gofmt output
-    - goimports       # import ordering and grouping
     - bodyclose       # http response bodies that are never closed
     - noctx           # http requests created without a context
     - revive          # opinionated but configurable style linter
 
   settings:
-    goimports:
-      # Enforce three import groups: stdlib / external / internal.
-      local-prefixes: github.com/rede/world-cup-quiniela
-
     revive:
       rules:
         - name: exported
@@ -51,20 +45,35 @@ linters:
         - fmt.Fprintf
         - (*go.uber.org/zap.Logger).Sync
 
+  exclusions:
+    rules:
+      # Test files: relax errcheck and unused rules — test helpers often
+      # intentionally ignore errors and define unexported helpers.
+      - path: "_test\\.go"
+        linters:
+          - errcheck
+          - unused
+
+    # Generated Swagger docs should not be linted.
+    paths:
+      - "docs/"
+
+formatters:
+  enable:
+    - gofmt           # formatting must match gofmt output
+    - goimports       # import ordering and grouping
+
+  settings:
+    goimports:
+      # Enforce three import groups: stdlib / external / internal.
+      local-prefixes:
+        - github.com/rede/world-cup-quiniela
+
+  exclusions:
+    paths:
+      - "docs/"
+
 issues:
   # Show all issues, not just the first 3 per linter.
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  exclude-rules:
-    # Test files: relax errcheck and unused rules — test helpers often
-    # intentionally ignore errors and define unexported helpers.
-    - path: "_test\\.go"
-      linters:
-        - errcheck
-        - unused
-
-    # Generated Swagger docs should not be linted.
-    - path: "docs/"
-      linters:
-        - all
