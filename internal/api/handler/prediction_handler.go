@@ -38,9 +38,23 @@ type updatePredictionRequest struct {
 
 // Submit handles POST /api/v1/predictions.
 //
-// The authenticated user ID is extracted from the request context (set by
-// RequireAuth middleware) so that users can only submit predictions for
-// themselves.
+// @Summary      Submit a prediction
+// @Description  Submits a score forecast for a scheduled match. The user identity
+//
+//	is taken from the Bearer token; predictions cannot be submitted on behalf
+//	of other users.
+//
+// @Tags         predictions
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      handler.submitPredictionRequest  true  "Prediction"
+// @Success      201   {object}  handler.PredictionResponse
+// @Failure      401   {object}  handler.ErrorResponse
+// @Failure      409   {object}  handler.ErrorResponse  "Prediction already exists for this match"
+// @Failure      422   {object}  handler.ErrorResponse
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/predictions [post]
 func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
@@ -73,10 +87,27 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, prediction)
+	writeJSON(w, http.StatusCreated, predToResponse(prediction))
 }
 
 // Update handles PATCH /api/v1/predictions/{id}.
+//
+// @Summary      Update a prediction
+// @Description  Updates the score forecast for an existing prediction. Only
+//
+//	permitted while the match is still scheduled.
+//
+// @Tags         predictions
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                              true  "Prediction ID"
+// @Param        body  body      handler.updatePredictionRequest  true  "Updated scores"
+// @Success      200   {object}  handler.PredictionResponse
+// @Failure      404   {object}  handler.ErrorResponse
+// @Failure      422   {object}  handler.ErrorResponse
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/predictions/{id} [patch]
 func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
@@ -93,25 +124,60 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, prediction)
+	writeJSON(w, http.StatusOK, predToResponse(prediction))
 }
 
 // ListByUser handles GET /api/v1/predictions?user_id={id}.
+//
+// @Summary      List predictions by user
+// @Description  Returns all predictions submitted by a specific user. When the
+//
+//	request is authenticated, the caller may only retrieve their own
+//	predictions; querying another user's predictions returns 403.
+//	In local development (auth disabled), any user_id is accepted.
+//
+// @Tags         predictions
+// @Produce      json
+// @Security     BearerAuth
+// @Param        user_id  query     int  true  "Internal user ID"
+// @Success      200      {array}   handler.PredictionResponse
+// @Failure      403      {object}  handler.ErrorResponse  "Caller requested another user's predictions"
+// @Failure      422      {object}  handler.ErrorResponse  "Missing or invalid user_id"
+// @Failure      500      {object}  handler.ErrorResponse
+// @Router       /api/v1/predictions [get]
 func (h *PredictionHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 	userIDStr := r.URL.Query().Get("user_id")
 	if userIDStr == "" {
 		middleware.WriteError(w, r, h.log, apperrors.Validation("user_id query parameter is required"))
 		return
 	}
-	userID, err := parseIntParam(userIDStr)
+	requestedID, err := parseIntParam(userIDStr)
 	if err != nil {
 		middleware.WriteError(w, r, h.log, apperrors.Validation("user_id must be a positive integer"))
 		return
 	}
-	predictions, err := h.svc.GetByUser(r.Context(), userID)
+	// When authentication is active, enforce that callers may only retrieve
+	// their own predictions. When auth is disabled (local development), the
+	// check is skipped and any user_id is accepted via the query parameter.
+	if clerkSubject, ok := middleware.UserIDFromContext(r.Context()); ok {
+		callerID, err := clerkSubjectToUserID(clerkSubject)
+		if err != nil {
+			middleware.WriteError(w, r, h.log, apperrors.Unauthorised("invalid user identity"))
+			return
+		}
+		if requestedID != callerID {
+			middleware.WriteError(w, r, h.log, apperrors.Forbidden("cannot access another user's predictions"))
+			return
+		}
+	}
+	predictions, err := h.svc.GetByUser(r.Context(), requestedID)
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, predictions)
+	out := make([]PredictionResponse, len(predictions))
+	for i, p := range predictions {
+		out[i] = predToResponse(p)
+	}
+	writeJSON(w, http.StatusOK, out)
 }

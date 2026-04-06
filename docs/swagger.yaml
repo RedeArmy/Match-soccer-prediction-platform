@@ -1,0 +1,381 @@
+basePath: /
+definitions:
+  internal_api_handler.ErrorDetail:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
+  internal_api_handler.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/internal_api_handler.ErrorDetail'
+    type: object
+  internal_api_handler.MatchResponse:
+    properties:
+      away_score:
+        type: integer
+      away_team:
+        type: string
+      created_at:
+        type: string
+      home_score:
+        type: integer
+      home_team:
+        type: string
+      id:
+        type: integer
+      kickoff_at:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api_handler.PredictionResponse:
+    properties:
+      away_score:
+        type: integer
+      created_at:
+        type: string
+      home_score:
+        type: integer
+      id:
+        type: integer
+      match_id:
+        type: integer
+      points:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  internal_api_handler.createMatchRequest:
+    properties:
+      away_team:
+        type: string
+      home_team:
+        type: string
+      kickoff_at:
+        type: string
+    type: object
+  internal_api_handler.submitPredictionRequest:
+    properties:
+      away_score:
+        type: integer
+      home_score:
+        type: integer
+      match_id:
+        type: integer
+    type: object
+  internal_api_handler.updatePredictionRequest:
+    properties:
+      away_score:
+        type: integer
+      home_score:
+        type: integer
+    type: object
+  internal_api_handler.updateResultRequest:
+    properties:
+      away_score:
+        type: integer
+      home_score:
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: REST API for the World Cup prediction game. Manage fixtures, submit
+    score forecasts, and track leaderboards.
+  title: World Cup Quiniela API
+  version: "1.0"
+paths:
+  /api/v1/matches:
+    get:
+      description: Returns all fixtures in the tournament schedule.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.MatchResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List matches
+      tags:
+      - matches
+    post:
+      consumes:
+      - application/json
+      description: Admin only. Creates a new fixture in the tournament schedule.
+      parameters:
+      - description: Match to create
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.createMatchRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api_handler.MatchResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a match
+      tags:
+      - matches
+  /api/v1/matches/{id}:
+    get:
+      description: Returns a single fixture by ID.
+      parameters:
+      - description: Match ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.MatchResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a match
+      tags:
+      - matches
+    patch:
+      consumes:
+      - application/json
+      description: Admin only. Sets the final score for a finished match.
+      parameters:
+      - description: Match ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Final score
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.updateResultRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.MatchResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update match result
+      tags:
+      - matches
+  /api/v1/matches/{id}/start:
+    post:
+      description: Admin only. Transitions a match from scheduled to live.
+      parameters:
+      - description: Match ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.MatchResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Start a match
+      tags:
+      - matches
+  /api/v1/predictions:
+    get:
+      description: Returns all predictions submitted by a specific user.
+      parameters:
+      - description: Internal user ID
+        in: query
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.PredictionResponse'
+            type: array
+        "422":
+          description: Missing or invalid user_id
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List predictions by user
+      tags:
+      - predictions
+    post:
+      consumes:
+      - application/json
+      description: Submits a score forecast for a scheduled match. The user identity
+      parameters:
+      - description: Prediction
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.submitPredictionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api_handler.PredictionResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Prediction already exists for this match
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Submit a prediction
+      tags:
+      - predictions
+  /api/v1/predictions/{id}:
+    patch:
+      consumes:
+      - application/json
+      description: Updates the score forecast for an existing prediction. Only
+      parameters:
+      - description: Prediction ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Updated scores
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.updatePredictionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.PredictionResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a prediction
+      tags:
+      - predictions
+  /health:
+    get:
+      description: Liveness probe for load balancers and container orchestrators.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - infrastructure
+securityDefinitions:
+  BearerAuth:
+    description: 'Clerk JWT token. Format: "Bearer <token>"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
