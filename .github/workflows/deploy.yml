@@ -49,6 +49,8 @@ jobs:
         run: go vet ./...
 
       - name: Test
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
         run: make test
 
   # --------------------------------------------------------------------------
