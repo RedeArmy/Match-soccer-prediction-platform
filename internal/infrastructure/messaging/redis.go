@@ -23,32 +23,48 @@ import (
 // project's requirements (real-time scoring after match completion) this is
 // acceptable. If at-least-once delivery becomes a requirement, migrate to
 // Redis Streams or a dedicated message broker.
+//
+// Call Close to stop all active subscription goroutines and release their
+// Redis connections. The underlying Redis client is not owned by the bus;
+// the caller must close it separately after calling Close.
 type RedisBus struct {
 	client   *redis.Client
 	log      *zap.Logger
+	ctx      context.Context
+	cancel   context.CancelFunc
 	mu       sync.RWMutex
 	handlers map[events.EventType][]func(context.Context, events.Envelope)
 }
 
 // NewRedisBus constructs a RedisBus that publishes and subscribes using the
 // provided Redis client. The client is not owned by the bus and must be closed
-// by the caller after the bus is shut down.
+// by the caller after Close has been called.
 // If log is nil a no-op logger is used so that tests do not need to provide one.
 func NewRedisBus(client *redis.Client, log *zap.Logger) *RedisBus {
 	if log == nil {
 		log = zap.NewNop()
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &RedisBus{
 		client:   client,
 		log:      log,
+		ctx:      ctx,
+		cancel:   cancel,
 		handlers: make(map[events.EventType][]func(context.Context, events.Envelope)),
 	}
 }
 
+// Close cancels the bus's internal context, which causes all active
+// subscription goroutines to exit once the Redis pub/sub channel is closed.
+// It is safe to call Close multiple times.
+func (b *RedisBus) Close() {
+	b.cancel()
+}
+
 // Subscribe registers handler and starts a Redis subscription goroutine for
-// eventType if one is not already running. The goroutine runs until the
-// process exits; there is intentionally no stop mechanism because bus
-// subscriptions are expected to live for the entire lifetime of the service.
+// eventType if one is not already running. The goroutine exits when Close is
+// called, which cancels the bus's internal context and causes the underlying
+// Redis subscription channel to be closed.
 func (b *RedisBus) Subscribe(eventType events.EventType, handler func(context.Context, events.Envelope)) {
 	b.mu.Lock()
 	existing := b.handlers[eventType]
@@ -76,10 +92,19 @@ func (b *RedisBus) Publish(ctx context.Context, envelope events.Envelope) error 
 }
 
 // consume runs a blocking Redis subscription loop for the given event type.
+// It exits when the bus's internal context is cancelled (i.e. Close is called),
+// which causes the Redis pub/sub channel to be drained and closed.
 // Messages are unmarshalled and dispatched to all registered handlers.
 func (b *RedisBus) consume(eventType events.EventType) {
-	pubsub := b.client.Subscribe(context.Background(), string(eventType))
-	defer pubsub.Close() //nolint:errcheck
+	pubsub := b.client.Subscribe(b.ctx, string(eventType))
+	defer func() {
+		if err := pubsub.Close(); err != nil {
+			b.log.Warn("redis bus: failed to close subscription",
+				zap.String("event_type", string(eventType)),
+				zap.Error(err),
+			)
+		}
+	}()
 
 	ch := pubsub.Channel()
 	for msg := range ch {
