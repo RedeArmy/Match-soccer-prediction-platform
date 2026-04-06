@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run test test-cover lint clean docker-up docker-down migrate help
+.PHONY: build run test test-cover lint swagger-gen clean docker-up docker-down migrate help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -52,6 +52,11 @@ test-cover:
 ##       Install golangci-lint: https://golangci-lint.run/usage/install/
 lint:
 	golangci-lint run ./...
+
+## swagger-gen: Regenerate OpenAPI spec and Swagger UI assets from annotations
+##              Requires swag CLI: go install github.com/swaggo/swag/cmd/swag@latest
+swagger-gen:
+	swag init -g cmd/api/main.go -o docs/
 
 ## clean: Remove compiled binaries
 clean:
