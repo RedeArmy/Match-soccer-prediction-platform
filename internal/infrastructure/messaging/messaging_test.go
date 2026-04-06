@@ -198,7 +198,9 @@ func TestRedisBus_Close_IsIdempotent(t *testing.T) {
 	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {})
 	time.Sleep(50 * time.Millisecond)
 
-	// Close must be safe to call multiple times without panicking.
+	// No assertion needed: the test verifies that calling Close more than once
+	// does not panic. context.CancelFunc is safe to call multiple times and
+	// all registered cancels are idempotent.
 	bus.Close()
 	bus.Close()
 }
@@ -210,11 +212,12 @@ func TestRedisBus_Close_SubscriptionCloseError_DoesNotPanic(t *testing.T) {
 	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {})
 	time.Sleep(50 * time.Millisecond)
 
-	// Stop the Redis server before closing the bus so that pubsub.Close()
-	// encounters a connection error, exercising the warning log path.
+	// No assertion needed: stopping miniredis before Close forces pubsub.Close()
+	// to return a connection error, exercising the warning-log branch in
+	// closeSubscription without panicking.
 	mr.Close()
 	bus.Close()
-	time.Sleep(100 * time.Millisecond) // let the goroutine exit cleanly
+	time.Sleep(100 * time.Millisecond) // allow the goroutine to exit cleanly
 }
 
 func TestRedisBus_Publish_DoesNotCrossDeliver(t *testing.T) {
