@@ -3,14 +3,18 @@
 # Triggers on every PR targeting develop or main.
 #
 # Job graph:
-#   guard  →  test
+#   guard  →  lint  →  test
 #
 # guard: enforces that only the develop branch may open a PR against main.
 #        Any other source branch targeting main causes an immediate failure,
 #        preventing accidental direct merges from feature branches.
 #
+# lint:  runs golangci-lint with the project's .golangci.yml configuration.
+#        Fast feedback — fails before the slower integration test suite runs.
+#
 # test:  runs go vet, the full test suite with coverage, and SonarCloud.
-#        It depends on guard so that the branch-policy check always runs first.
+#        Depends on lint so that style/error issues are caught before spinning
+#        up testcontainers.
 #
 # Both jobs must be registered as required status checks in Branch Protection
 # Rules for develop and main respectively (see README or docs/branching.md).
@@ -51,12 +55,39 @@ jobs:
           fi
 
   # --------------------------------------------------------------------------
+  # Lint — fast static analysis before the slower test suite
+  # --------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: guard
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false # golangci-lint manages its own cache
+
+      # Uses .golangci.yml in the repository root.
+      # The version is pinned so that linter upgrades are a deliberate choice,
+      # not a silent change on the next PR.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v6
+        with:
+          version: v1.64.8
+          args: --timeout=5m
+
+  # --------------------------------------------------------------------------
   # Vet, test and SonarCloud analysis
   # --------------------------------------------------------------------------
   test:
     name: Vet, Test & SonarCloud
     runs-on: ubuntu-latest
-    needs: guard
+    needs: [guard, lint]
 
     steps:
       # fetch-depth: 0 is required by SonarCloud to attribute coverage data
@@ -71,6 +102,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Install swag CLI
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+
+      # Regenerates docs/ and fails if the committed spec differs from what
+      # the annotations produce. Prevents stale docs from reaching main.
+      - name: Verify Swagger docs are up to date
+        run: |
+          make swagger-gen
+          git diff --exit-code docs/
 
       - name: Vet
         run: go vet ./...
