@@ -5,8 +5,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"go.uber.org/zap"
+
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // errorResponse is the JSON envelope written for all error responses.

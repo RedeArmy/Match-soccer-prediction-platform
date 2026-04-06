@@ -15,18 +15,19 @@ import (
 	"testing"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/rede/world-cup-quiniela/internal/middleware"
-	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
+
+	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 const (
-	fmtStatus          = "expected status %d, got %d"
-	originLocalhost    = "http://localhost:3000"
-	headerACAO         = "Access-Control-Allow-Origin"
-	pathMatches        = "/api/v1/matches"
-	msgMatchNotFound   = "match not found"
+	fmtStatus        = "expected status %d, got %d"
+	originLocalhost  = "http://localhost:3000"
+	headerACAO       = "Access-Control-Allow-Origin"
+	pathMatches      = "/api/v1/matches"
+	msgMatchNotFound = "match not found"
 )
 
 // okHandler is a trivial handler used as the "next" in middleware chain tests.
@@ -179,7 +180,7 @@ func TestCORS_HandlesPreflight(t *testing.T) {
 }
 
 func TestCORS_MultipleOriginsAllowed(t *testing.T) {
-	handler := middleware.CORS(originLocalhost+",https://myapp.com")(http.HandlerFunc(okHandler))
+	handler := middleware.CORS(originLocalhost + ",https://myapp.com")(http.HandlerFunc(okHandler))
 
 	for _, origin := range []string{originLocalhost, "https://myapp.com"} {
 		t.Run(origin, func(t *testing.T) {

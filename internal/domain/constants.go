@@ -6,19 +6,19 @@ import "time"
 //
 // The full matrix, from best to worst:
 //
-//   PointsExactScore (5)
-//     — player predicts the exact scoreline (e.g. 2–1 → 2–1).
+//	PointsExactScore (5)
+//	  — player predicts the exact scoreline (e.g. 2–1 → 2–1).
 //
-//   PointsCorrectOutcome (2) [+ PointsGoalDifference (1) when applicable]
-//     — player predicts the correct winner or draw but not the exact score.
-//     — an extra PointsGoalDifference point is added when the predicted
-//       goal margin equals the actual margin (e.g. predict 2–0, result 3–1:
-//       both are a 2-goal home win). This bonus does NOT apply to draws
-//       because every draw has a goal difference of 0, making the check
-//       trivially true and not a meaningful prediction skill.
+//	PointsCorrectOutcome (2) [+ PointsGoalDifference (1) when applicable]
+//	  — player predicts the correct winner or draw but not the exact score.
+//	  — an extra PointsGoalDifference point is added when the predicted
+//	    goal margin equals the actual margin (e.g. predict 2–0, result 3–1:
+//	    both are a 2-goal home win). This bonus does NOT apply to draws
+//	    because every draw has a goal difference of 0, making the check
+//	    trivially true and not a meaningful prediction skill.
 //
-//   PointsIncorrectResult (0)
-//     — player predicts the wrong outcome, or no prediction was submitted.
+//	PointsIncorrectResult (0)
+//	  — player predicts the wrong outcome, or no prediction was submitted.
 //
 // These constants are the single source of truth referenced by MatchScorer;
 // no other package should hard-code scoring values.

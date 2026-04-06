@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
 	"github.com/rede/world-cup-quiniela/internal/testutil"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/logger"

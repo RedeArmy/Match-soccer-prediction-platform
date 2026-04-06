@@ -102,7 +102,7 @@ func TestUpdateResult_ScheduledMatch_ReturnsValidationError(t *testing.T) {
 func TestUpdateResult_FinishedMatch_ReturnsValidationError(t *testing.T) {
 	home, away := 2, 1
 	match := &domain.Match{ID: 1, HomeTeam: "Spain", AwayTeam: "England",
-		Status: domain.MatchStatusFinished,
+		Status:    domain.MatchStatusFinished,
 		HomeScore: &home, AwayScore: &away,
 		KickoffAt: time.Now().Add(-2 * time.Hour)}
 	svc, _ := newMatchSvc(match)

@@ -43,6 +43,7 @@ type User struct {
 // silently by passing an arbitrary string.
 type UserRole string
 
+// Allowed values for UserRole.
 const (
 	RoleAdmin  UserRole = "admin"
 	RolePlayer UserRole = "player"
@@ -77,6 +78,7 @@ type Match struct {
 // corresponding database enum and any event consumers that branch on status.
 type MatchStatus string
 
+// Allowed values for MatchStatus.
 const (
 	MatchStatusScheduled MatchStatus = "scheduled"
 	MatchStatusLive      MatchStatus = "live"

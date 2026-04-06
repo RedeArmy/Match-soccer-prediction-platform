@@ -14,11 +14,11 @@ type stubUserRepo struct {
 	err   error
 }
 
-func (r *stubUserRepo) Create(_ context.Context, _ *domain.User) error            { return r.err }
-func (r *stubUserRepo) GetByID(_ context.Context, _ int) (*domain.User, error)    { return r.user, r.err }
-func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error            { return r.err }
-func (r *stubUserRepo) Delete(_ context.Context, _ int) error                     { return r.err }
-func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error)            { return r.users, r.err }
+func (r *stubUserRepo) Create(_ context.Context, _ *domain.User) error         { return r.err }
+func (r *stubUserRepo) GetByID(_ context.Context, _ int) (*domain.User, error) { return r.user, r.err }
+func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error         { return r.err }
+func (r *stubUserRepo) Delete(_ context.Context, _ int) error                  { return r.err }
+func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error)         { return r.users, r.err }
 
 // ── RankingService tests ──────────────────────────────────────────────────────
 
