@@ -18,8 +18,9 @@ import (
 
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jwt"
-	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"go.uber.org/zap"
+
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // contextKey is an unexported type for context keys defined in this package.

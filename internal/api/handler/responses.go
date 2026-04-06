@@ -8,25 +8,25 @@ import (
 // Domain entities are intentionally free of json tags, so this struct acts
 // as an explicit HTTP contract with snake_case field names.
 type MatchResponse struct {
-	ID        int     `json:"id"`
-	HomeTeam  string  `json:"home_team"`
-	AwayTeam  string  `json:"away_team"`
-	HomeScore *int    `json:"home_score"`
-	AwayScore *int    `json:"away_score"`
-	Status    string  `json:"status"`
-	KickoffAt string  `json:"kickoff_at"`
-	CreatedAt string  `json:"created_at"`
-	UpdatedAt string  `json:"updated_at"`
+	ID        int    `json:"id"`
+	HomeTeam  string `json:"home_team"`
+	AwayTeam  string `json:"away_team"`
+	HomeScore *int   `json:"home_score"`
+	AwayScore *int   `json:"away_score"`
+	Status    string `json:"status"`
+	KickoffAt string `json:"kickoff_at"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // PredictionResponse is the JSON representation of a Prediction.
 type PredictionResponse struct {
-	ID        int  `json:"id"`
-	UserID    int  `json:"user_id"`
-	MatchID   int  `json:"match_id"`
-	HomeScore int  `json:"home_score"`
-	AwayScore int  `json:"away_score"`
-	Points    *int `json:"points"`
+	ID        int    `json:"id"`
+	UserID    int    `json:"user_id"`
+	MatchID   int    `json:"match_id"`
+	HomeScore int    `json:"home_score"`
+	AwayScore int    `json:"away_score"`
+	Points    *int   `json:"points"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }

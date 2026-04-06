@@ -16,10 +16,10 @@ import (
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const (
-	fmtHandlerNotCalled  = "handler was not called within timeout"
-	fmtWrongPayload      = "expected payload %v, got %v"
-	fmtUnexpectedErr     = "unexpected error: %v"
-	fmtWrongCallCount    = "expected handler call count %d, got %d"
+	fmtHandlerNotCalled = "handler was not called within timeout"
+	fmtWrongPayload     = "expected payload %v, got %v"
+	fmtUnexpectedErr    = "unexpected error: %v"
+	fmtWrongCallCount   = "expected handler call count %d, got %d"
 )
 
 func newMiniRedis(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
