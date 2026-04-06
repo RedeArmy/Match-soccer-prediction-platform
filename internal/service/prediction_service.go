@@ -48,7 +48,7 @@ func (s *predictionService) Submit(ctx context.Context, prediction *domain.Predi
 	if match == nil {
 		return apperrors.NotFound(fmt.Sprintf("match %d not found", prediction.MatchID))
 	}
-	if err := domain.ValidatePrediction(prediction, match.KickoffAt); err != nil {
+	if err := domain.ValidatePrediction(prediction, match.KickoffAt, time.Now().UTC()); err != nil {
 		return err
 	}
 	existing, err := s.predRepo.GetByUserAndMatch(ctx, prediction.UserID, prediction.MatchID)
@@ -101,7 +101,7 @@ func (s *predictionService) Update(ctx context.Context, id int, homeScore, awayS
 		HomeScore: homeScore,
 		AwayScore: awayScore,
 	}
-	if err := domain.ValidatePrediction(updated, match.KickoffAt); err != nil {
+	if err := domain.ValidatePrediction(updated, match.KickoffAt, time.Now().UTC()); err != nil {
 		return nil, err
 	}
 	pred.HomeScore = homeScore
