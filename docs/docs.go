@@ -265,7 +265,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all predictions submitted by a specific user.",
+                "description": "Returns all predictions submitted by a specific user. When the",
                 "produces": [
                     "application/json"
                 ],
@@ -290,6 +290,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/internal_api_handler.PredictionResponse"
                             }
+                        }
+                    },
+                    "403": {
+                        "description": "Caller requested another user's predictions",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
                     },
                     "422": {

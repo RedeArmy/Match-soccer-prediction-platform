@@ -248,7 +248,7 @@ paths:
       - matches
   /api/v1/predictions:
     get:
-      description: Returns all predictions submitted by a specific user.
+      description: Returns all predictions submitted by a specific user. When the
       parameters:
       - description: Internal user ID
         in: query
@@ -264,6 +264,10 @@ paths:
             items:
               $ref: '#/definitions/internal_api_handler.PredictionResponse'
             type: array
+        "403":
+          description: Caller requested another user's predictions
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "422":
           description: Missing or invalid user_id
           schema:
