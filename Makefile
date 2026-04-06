@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run test test-cover lint swagger-gen clean docker-up docker-down migrate help
+.PHONY: build run test test-cover lint clean docker-up docker-down docker-logs migrate dev swagger-gen swagger-clean help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -76,9 +76,35 @@ docker-up:
 docker-down:
 	docker compose down
 
+## docker-logs: Tail logs from all running compose services
+docker-logs:
+	docker compose logs -f
+
+## dev: Start infrastructure and apply migrations in one command (full local setup)
+##      Requires Docker to be running. Blocks until Postgres is healthy, then migrates.
+dev: docker-up
+	@echo "Waiting for Postgres to be healthy..."
+	@docker compose exec postgres sh -c 'until pg_isready -U $${POSTGRES_USER:-quiniela} -d $${POSTGRES_DB:-quiniela}; do sleep 1; done'
+	$(MAKE) migrate
+
 ## migrate: Apply pending database schema migrations
 migrate:
 	go run ./cmd/migrate
+
+## swagger-gen: Generate OpenAPI spec and Swagger UI assets from handler annotations.
+##              Install the CLI once with: go install github.com/swaggo/swag/cmd/swag@latest
+swagger-gen:
+	swag init \
+		--generalInfo cmd/api/main.go \
+		--output docs \
+		--outputTypes go,json,yaml \
+		--parseDependency \
+		--parseInternal \
+		--dir .
+
+## swagger-clean: Remove all generated Swagger docs (re-run swagger-gen to rebuild)
+swagger-clean:
+	rm -rf docs/*.go docs/*.json docs/*.yaml
 
 ## help: Display this help message
 help:
