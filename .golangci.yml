@@ -1,3 +1,5 @@
+version: "2"
+
 # golangci-lint configuration for world-cup-quiniela.
 #
 # Run locally: make lint
