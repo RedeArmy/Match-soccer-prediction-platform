@@ -20,8 +20,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"go.uber.org/zap"
 
+	_ "github.com/rede/world-cup-quiniela/docs" // registers the Swagger spec at init time
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
@@ -84,6 +86,13 @@ func (s *Server) Routes() http.Handler {
 	// Infrastructure endpoints — not versioned, no authentication required.
 	r.Get("/health", s.handleHealth)
 
+	// Swagger UI — served at /swagger/index.html.
+	// Disabled in production by removing the docs import; controlled by build tags if needed.
+	r.Get("/swagger/*", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+		httpSwagger.DeepLinking(true),
+	))
+
 	// Versioned API surface. Authentication is enforced here so that /health
 	// remains publicly accessible to load balancers and monitoring systems.
 	r.Route("/api/v1", func(r chi.Router) {
@@ -107,8 +116,15 @@ func (s *Server) Routes() http.Handler {
 			return
 		}
 
-		bus := s.buildBus()
-		matchHandler, predHandler := s.buildHandlers(bus)
+		// Construct repository instances once and share them across the event bus
+		// and handler layers. Instantiating separate instances for each would create
+		// independently-managed connection handles pointing at the same pool, making
+		// future per-repository caches inconsistent across the two sites.
+		matchRepo := repository.NewPostgresMatchRepository(s.db)
+		predRepo := repository.NewPostgresPredictionRepository(s.db)
+
+		bus := s.buildBus(matchRepo, predRepo)
+		matchHandler, predHandler := s.buildHandlers(bus, matchRepo, predRepo)
 
 		r.Route("/matches", func(r chi.Router) {
 			r.Get("/", matchHandler.ListMatches)
@@ -129,11 +145,13 @@ func (s *Server) Routes() http.Handler {
 }
 
 // buildBus creates the in-memory event bus and wires up the scoring subscriber.
-func (s *Server) buildBus() events.Bus {
+// The provided repositories are reused from the caller's shared instances rather
+// than constructed anew, preventing duplicate connection-pool handles.
+func (s *Server) buildBus(
+	matchRepo repository.MatchRepository,
+	predRepo repository.PredictionRepository,
+) events.Bus {
 	bus := messaging.NewInMemoryBus()
-
-	matchRepo := repository.NewPostgresMatchRepository(s.db)
-	predRepo := repository.NewPostgresPredictionRepository(s.db)
 	scorer := service.NewScoringService(matchRepo, predRepo, s.log)
 
 	// Subscribe ScoringService to MatchFinished so scores are calculated
@@ -153,12 +171,13 @@ func (s *Server) buildBus() events.Bus {
 	return bus
 }
 
-// buildHandlers constructs the repository and service layers, then returns
-// the route handlers that depend on them.
-func (s *Server) buildHandlers(bus events.Bus) (*handler.MatchHandler, *handler.PredictionHandler) {
-	matchRepo := repository.NewPostgresMatchRepository(s.db)
-	predRepo := repository.NewPostgresPredictionRepository(s.db)
-
+// buildHandlers constructs the service layer and returns the route handlers.
+// The provided repositories are reused from the caller's shared instances.
+func (s *Server) buildHandlers(
+	bus events.Bus,
+	matchRepo repository.MatchRepository,
+	predRepo repository.PredictionRepository,
+) (*handler.MatchHandler, *handler.PredictionHandler) {
 	matchSvc := service.NewMatchService(matchRepo, bus, s.log)
 	predSvc := service.NewPredictionService(predRepo, matchRepo, bus, s.log)
 
@@ -176,6 +195,16 @@ func (s *Server) buildHandlers(bus events.Bus) (*handler.MatchHandler, *handler.
 // to restart the pod, which would not fix the database and would instead
 // discard all in-flight requests. Readiness probes (a separate concern) are
 // the appropriate mechanism for gating traffic on dependency availability.
+//
+// @Summary      Health check
+// @Description  Liveness probe for load balancers and container orchestrators.
+//
+//	Does not verify database connectivity by design.
+//
+// @Tags         infrastructure
+// @Produce      json
+// @Success      200  {object}  map[string]string
+// @Router       /health [get]
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
