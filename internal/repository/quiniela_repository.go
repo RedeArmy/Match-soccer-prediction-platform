@@ -89,7 +89,10 @@ func (r *PostgresQuinielaRepository) ListByOwner(ctx context.Context, ownerID in
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
+	return collectQuinielas(rows)
+}
 
+func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 	var quinielas []*domain.Quiniela
 	for rows.Next() {
 		q := &domain.Quiniela{}

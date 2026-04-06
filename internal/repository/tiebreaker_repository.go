@@ -81,7 +81,10 @@ func (r *PostgresTiebreakerRepository) ListByQuiniela(ctx context.Context, quini
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
+	return collectTiebreakers(rows)
+}
 
+func collectTiebreakers(rows pgx.Rows) ([]*domain.Tiebreaker, error) {
 	var tbs []*domain.Tiebreaker
 	for rows.Next() {
 		tb := &domain.Tiebreaker{}
