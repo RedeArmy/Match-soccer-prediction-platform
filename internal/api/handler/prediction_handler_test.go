@@ -169,3 +169,27 @@ func TestListByUser_ServiceError_Returns500(t *testing.T) {
 		t.Errorf("expected 500, got %d", w.Code)
 	}
 }
+
+// TestListByUser_AuthContextMismatch_Returns403 verifies that an authenticated
+// caller cannot retrieve another user's predictions. The auth middleware injects
+// userID "1" into context; the request asks for user_id=2.
+func TestListByUser_AuthContextMismatch_Returns403(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/?user_id=2", nil)
+	w := httptest.NewRecorder()
+	newPredRouter(&stubPredSvc{}, true).ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", w.Code)
+	}
+}
+
+// TestListByUser_AuthContextMatch_Returns200 verifies that the authenticated
+// caller can retrieve their own predictions when user_id matches the token.
+func TestListByUser_AuthContextMatch_Returns200(t *testing.T) {
+	svc := &stubPredSvc{preds: []*domain.Prediction{{ID: 1, UserID: 1}}}
+	req := httptest.NewRequest(http.MethodGet, "/?user_id=1", nil)
+	w := httptest.NewRecorder()
+	newPredRouter(svc, true).ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
