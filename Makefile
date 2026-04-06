@@ -53,10 +53,16 @@ test-cover:
 lint:
 	golangci-lint run ./...
 
-## swagger-gen: Regenerate OpenAPI spec and Swagger UI assets from annotations
-##              Requires swag CLI: go install github.com/swaggo/swag/cmd/swag@latest
+## swagger-gen: Generate OpenAPI spec and Swagger UI assets from handler annotations.
+##              Install the CLI once with: go install github.com/swaggo/swag/cmd/swag@latest
 swagger-gen:
-	swag init -g cmd/api/main.go -o docs/
+	swag init \
+		--generalInfo cmd/api/main.go \
+		--output docs \
+		--outputTypes go,json,yaml \
+		--parseDependency \
+		--parseInternal \
+		--dir .
 
 ## clean: Remove compiled binaries
 clean:
