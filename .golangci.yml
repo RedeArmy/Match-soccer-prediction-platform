@@ -10,13 +10,12 @@
 linters:
   # Disable the default set and opt in explicitly so that linter upgrades
   # do not silently introduce new failures on existing code.
-  disable-all: true
+  default: none
   enable:
     - errcheck        # unhandled errors (the #1 Go bug category)
-    - gosimple        # simplification opportunities
     - govet           # suspicious constructs (shadow, printf format, etc.)
     - ineffassign     # assignments whose result is never used
-    - staticcheck     # comprehensive static analysis (replaces megacheck)
+    - staticcheck     # comprehensive static analysis (includes gosimple in v2)
     - unused          # exported and unexported identifiers never referenced
     - gofmt           # formatting must match gofmt output
     - goimports       # import ordering and grouping
@@ -24,31 +23,31 @@ linters:
     - noctx           # http requests created without a context
     - revive          # opinionated but configurable style linter
 
-linters-settings:
-  goimports:
-    # Enforce three import groups: stdlib / external / internal.
-    local-prefixes: github.com/rede/world-cup-quiniela
+  settings:
+    goimports:
+      # Enforce three import groups: stdlib / external / internal.
+      local-prefixes: github.com/rede/world-cup-quiniela
 
-  revive:
-    rules:
-      - name: exported
-        severity: warning
-        arguments:
-          - "checkPrivateReceivers"
-      - name: error-return
-        severity: warning
-      - name: error-strings
-        severity: warning
-      - name: increment-decrement
-        severity: warning
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+          arguments:
+            - "checkPrivateReceivers"
+        - name: error-return
+          severity: warning
+        - name: error-strings
+          severity: warning
+        - name: increment-decrement
+          severity: warning
 
-  errcheck:
-    # Ignore errors from fmt.Fprintf (write to http.ResponseWriter cannot
-    # fail in practice — the connection is already established) and
-    # (*zap.Logger).Sync (best-effort flush on shutdown).
-    exclude-functions:
-      - fmt.Fprintf
-      - (*go.uber.org/zap.Logger).Sync
+    errcheck:
+      # Ignore errors from fmt.Fprintf (write to http.ResponseWriter cannot
+      # fail in practice — the connection is already established) and
+      # (*zap.Logger).Sync (best-effort flush on shutdown).
+      exclude-functions:
+        - fmt.Fprintf
+        - (*go.uber.org/zap.Logger).Sync
 
 issues:
   # Show all issues, not just the first 3 per linter.
