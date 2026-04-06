@@ -119,6 +119,8 @@ jobs:
       # Produces coverage.out in the workspace root.
       # SonarCloud reads this file directly via sonar.go.coverage.reportPaths.
       - name: Test with coverage
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
         run: make test-cover
 
       - name: SonarCloud Scan
