@@ -90,7 +90,10 @@ func (r *PostgresUserRepository) List(ctx context.Context) ([]*domain.User, erro
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
+	return collectUsers(rows)
+}
 
+func collectUsers(rows pgx.Rows) ([]*domain.User, error) {
 	var users []*domain.User
 	for rows.Next() {
 		u := &domain.User{}
