@@ -361,6 +361,21 @@ paths:
       summary: Update a prediction
       tags:
       - predictions
+  /health:
+    get:
+      description: Liveness probe for load balancers and container orchestrators.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - infrastructure
 securityDefinitions:
   BearerAuth:
     description: 'Clerk JWT token. Format: "Bearer <token>"'
