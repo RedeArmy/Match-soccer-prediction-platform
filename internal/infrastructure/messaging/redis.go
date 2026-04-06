@@ -91,20 +91,25 @@ func (b *RedisBus) Publish(ctx context.Context, envelope events.Envelope) error 
 	return nil
 }
 
+// closeSubscription closes a Redis pub/sub handle and logs a warning on failure.
+// Extracted from consume's defer to keep cognitive complexity low and allow the
+// error path to be exercised in isolation.
+func (b *RedisBus) closeSubscription(pubsub *redis.PubSub, eventType events.EventType) {
+	if err := pubsub.Close(); err != nil {
+		b.log.Warn("redis bus: failed to close subscription",
+			zap.String("event_type", string(eventType)),
+			zap.Error(err),
+		)
+	}
+}
+
 // consume runs a blocking Redis subscription loop for the given event type.
 // It exits when the bus's internal context is cancelled (i.e. Close is called),
 // which causes the Redis pub/sub channel to be drained and closed.
 // Messages are unmarshalled and dispatched to all registered handlers.
 func (b *RedisBus) consume(eventType events.EventType) {
 	pubsub := b.client.Subscribe(b.ctx, string(eventType))
-	defer func() {
-		if err := pubsub.Close(); err != nil {
-			b.log.Warn("redis bus: failed to close subscription",
-				zap.String("event_type", string(eventType)),
-				zap.Error(err),
-			)
-		}
-	}()
+	defer b.closeSubscription(pubsub, eventType)
 
 	ch := pubsub.Channel()
 	for msg := range ch {
