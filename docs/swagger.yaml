@@ -1,18 +1,18 @@
 basePath: /
 definitions:
-  internal_api_handler.ErrorDetail:
+  handler.ErrorDetail:
     properties:
       code:
         type: string
       message:
         type: string
     type: object
-  internal_api_handler.ErrorResponse:
+  handler.ErrorResponse:
     properties:
       error:
-        $ref: '#/definitions/internal_api_handler.ErrorDetail'
+        $ref: '#/definitions/handler.ErrorDetail'
     type: object
-  internal_api_handler.MatchResponse:
+  handler.MatchResponse:
     properties:
       away_score:
         type: integer
@@ -33,7 +33,7 @@ definitions:
       updated_at:
         type: string
     type: object
-  internal_api_handler.PredictionResponse:
+  handler.PredictionResponse:
     properties:
       away_score:
         type: integer
@@ -52,7 +52,7 @@ definitions:
       user_id:
         type: integer
     type: object
-  internal_api_handler.createMatchRequest:
+  handler.createMatchRequest:
     properties:
       away_team:
         type: string
@@ -61,7 +61,7 @@ definitions:
       kickoff_at:
         type: string
     type: object
-  internal_api_handler.submitPredictionRequest:
+  handler.submitPredictionRequest:
     properties:
       away_score:
         type: integer
@@ -70,14 +70,14 @@ definitions:
       match_id:
         type: integer
     type: object
-  internal_api_handler.updatePredictionRequest:
+  handler.updatePredictionRequest:
     properties:
       away_score:
         type: integer
       home_score:
         type: integer
     type: object
-  internal_api_handler.updateResultRequest:
+  handler.updateResultRequest:
     properties:
       away_score:
         type: integer
@@ -102,12 +102,12 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/internal_api_handler.MatchResponse'
+              $ref: '#/definitions/handler.MatchResponse'
             type: array
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List matches
@@ -123,22 +123,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_api_handler.createMatchRequest'
+          $ref: '#/definitions/handler.createMatchRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/internal_api_handler.MatchResponse'
+            $ref: '#/definitions/handler.MatchResponse'
         "422":
           description: Unprocessable Entity
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create a match
@@ -159,15 +159,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api_handler.MatchResponse'
+            $ref: '#/definitions/handler.MatchResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get a match
@@ -188,26 +188,26 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_api_handler.updateResultRequest'
+          $ref: '#/definitions/handler.updateResultRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api_handler.MatchResponse'
+            $ref: '#/definitions/handler.MatchResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "422":
           description: Unprocessable Entity
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Update match result
@@ -228,19 +228,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api_handler.MatchResponse'
+            $ref: '#/definitions/handler.MatchResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "422":
           description: Unprocessable Entity
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Start a match
@@ -248,7 +248,7 @@ paths:
       - matches
   /api/v1/predictions:
     get:
-      description: Returns all predictions submitted by a specific user.
+      description: Returns all predictions submitted by a specific user. When the
       parameters:
       - description: Internal user ID
         in: query
@@ -262,16 +262,20 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/internal_api_handler.PredictionResponse'
+              $ref: '#/definitions/handler.PredictionResponse'
             type: array
+        "403":
+          description: Caller requested another user's predictions
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
         "422":
           description: Missing or invalid user_id
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List predictions by user
@@ -287,30 +291,30 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_api_handler.submitPredictionRequest'
+          $ref: '#/definitions/handler.submitPredictionRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/internal_api_handler.PredictionResponse'
+            $ref: '#/definitions/handler.PredictionResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "409":
           description: Prediction already exists for this match
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "422":
           description: Unprocessable Entity
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Submit a prediction
@@ -332,46 +336,31 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_api_handler.updatePredictionRequest'
+          $ref: '#/definitions/handler.updatePredictionRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api_handler.PredictionResponse'
+            $ref: '#/definitions/handler.PredictionResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "422":
           description: Unprocessable Entity
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Update a prediction
       tags:
       - predictions
-  /health:
-    get:
-      description: Liveness probe for load balancers and container orchestrators.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Health check
-      tags:
-      - infrastructure
 securityDefinitions:
   BearerAuth:
     description: 'Clerk JWT token. Format: "Bearer <token>"'

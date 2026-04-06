@@ -1,3 +1,5 @@
+version: "2"
+
 # golangci-lint configuration for world-cup-quiniela.
 #
 # Run locally: make lint
@@ -10,60 +12,74 @@
 linters:
   # Disable the default set and opt in explicitly so that linter upgrades
   # do not silently introduce new failures on existing code.
-  disable-all: true
+  default: none
   enable:
     - errcheck        # unhandled errors (the #1 Go bug category)
-    - gosimple        # simplification opportunities
     - govet           # suspicious constructs (shadow, printf format, etc.)
     - ineffassign     # assignments whose result is never used
-    - staticcheck     # comprehensive static analysis (replaces megacheck)
+    - staticcheck     # comprehensive static analysis (includes gosimple in v2)
     - unused          # exported and unexported identifiers never referenced
-    - gofmt           # formatting must match gofmt output
-    - goimports       # import ordering and grouping
     - bodyclose       # http response bodies that are never closed
     - noctx           # http requests created without a context
     - revive          # opinionated but configurable style linter
 
-linters-settings:
-  goimports:
-    # Enforce three import groups: stdlib / external / internal.
-    local-prefixes: github.com/rede/world-cup-quiniela
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+        - name: error-return
+          severity: warning
+        - name: error-strings
+          severity: warning
+        - name: increment-decrement
+          severity: warning
 
-  revive:
+    errcheck:
+      # Ignore errors from fmt.Fprintf (write to http.ResponseWriter cannot
+      # fail in practice — the connection is already established) and
+      # (*zap.Logger).Sync (best-effort flush on shutdown).
+      exclude-functions:
+        - fmt.Fprintf
+        - (*go.uber.org/zap.Logger).Sync
+
+  exclusions:
     rules:
-      - name: exported
-        severity: warning
-        arguments:
-          - "checkPrivateReceivers"
-      - name: error-return
-        severity: warning
-      - name: error-strings
-        severity: warning
-      - name: increment-decrement
-        severity: warning
+      # Test files: relax errcheck, unused, and noctx rules — test helpers
+      # often ignore errors, define unexported helpers, and use
+      # httptest.NewRequest without context for simplicity.
+      - path: "_test\\.go"
+        linters:
+          - errcheck
+          - unused
+          - noctx
 
-  errcheck:
-    # Ignore errors from fmt.Fprintf (write to http.ResponseWriter cannot
-    # fail in practice — the connection is already established) and
-    # (*zap.Logger).Sync (best-effort flush on shutdown).
-    exclude-functions:
-      - fmt.Fprintf
-      - (*go.uber.org/zap.Logger).Sync
+      # Repository and service files implement interfaces; per-method
+      # comments on private receivers are redundant noise.
+      - path: "internal/(repository|service|middleware)/"
+        linters:
+          - revive
+
+    # Generated Swagger docs should not be linted.
+    paths:
+      - "docs/"
+
+formatters:
+  enable:
+    - gofmt           # formatting must match gofmt output
+    - goimports       # import ordering and grouping
+
+  settings:
+    goimports:
+      # Enforce three import groups: stdlib / external / internal.
+      local-prefixes:
+        - github.com/rede/world-cup-quiniela
+
+  exclusions:
+    paths:
+      - "docs/"
 
 issues:
   # Show all issues, not just the first 3 per linter.
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  exclude-rules:
-    # Test files: relax errcheck and unused rules — test helpers often
-    # intentionally ignore errors and define unexported helpers.
-    - path: "_test\\.go"
-      linters:
-        - errcheck
-        - unused
-
-    # Generated Swagger docs should not be linted.
-    - path: "docs/"
-      linters:
-        - all
