@@ -195,7 +195,10 @@ func TestRedisBus_Close_IsIdempotent(t *testing.T) {
 	_, client := newMiniRedis(t)
 	bus := messaging.NewRedisBus(client, nil)
 
-	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {})
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {
+		// No-op handler: this test only needs a live subscription goroutine;
+		// the handler body is intentionally empty.
+	})
 	time.Sleep(50 * time.Millisecond)
 
 	// No assertion needed: the test verifies that calling Close more than once
@@ -209,7 +212,10 @@ func TestRedisBus_Close_SubscriptionCloseError_DoesNotPanic(t *testing.T) {
 	mr, client := newMiniRedis(t)
 	bus := messaging.NewRedisBus(client, nil)
 
-	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {})
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {
+		// No-op handler: this test only needs a live subscription goroutine to
+		// exist so that closeSubscription is invoked when the bus shuts down.
+	})
 	time.Sleep(50 * time.Millisecond)
 
 	// No assertion needed: stopping miniredis before Close forces pubsub.Close()
