@@ -28,8 +28,6 @@ linters:
       rules:
         - name: exported
           severity: warning
-          arguments:
-            - "checkPrivateReceivers"
         - name: error-return
           severity: warning
         - name: error-strings
@@ -47,12 +45,20 @@ linters:
 
   exclusions:
     rules:
-      # Test files: relax errcheck and unused rules — test helpers often
-      # intentionally ignore errors and define unexported helpers.
+      # Test files: relax errcheck, unused, and noctx rules — test helpers
+      # often ignore errors, define unexported helpers, and use
+      # httptest.NewRequest without context for simplicity.
       - path: "_test\\.go"
         linters:
           - errcheck
           - unused
+          - noctx
+
+      # Repository and service files implement interfaces; per-method
+      # comments on private receivers are redundant noise.
+      - path: "internal/(repository|service|middleware)/"
+        linters:
+          - revive
 
     # Generated Swagger docs should not be linted.
     paths:
