@@ -5,6 +5,18 @@
 // Keeping this file intentionally thin ensures that each concern — config,
 // logging, persistence, and routing — can be tested and replaced in isolation
 // without modifying the composition root.
+//
+// @title           World Cup Quiniela API
+// @version         1.0
+// @description     REST API for the World Cup prediction game. Manage fixtures, submit score forecasts, and track leaderboards.
+//
+// @host            localhost:8080
+// @BasePath        /
+//
+// @securityDefinitions.apikey  BearerAuth
+// @in                          header
+// @name                        Authorization
+// @description                 Clerk JWT token. Format: "Bearer <token>"
 package main
 
 import (

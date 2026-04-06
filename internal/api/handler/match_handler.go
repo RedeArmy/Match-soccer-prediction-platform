@@ -51,16 +51,40 @@ type updateResultRequest struct {
 }
 
 // ListMatches handles GET /api/v1/matches.
+//
+// @Summary      List matches
+// @Description  Returns all fixtures in the tournament schedule.
+// @Tags         matches
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}   handler.MatchResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/matches [get]
 func (h *MatchHandler) ListMatches(w http.ResponseWriter, r *http.Request) {
 	matches, err := h.svc.ListMatches(r.Context())
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, matches)
+	out := make([]MatchResponse, len(matches))
+	for i, m := range matches {
+		out[i] = matchToResponse(m)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // GetMatch handles GET /api/v1/matches/{id}.
+//
+// @Summary      Get a match
+// @Description  Returns a single fixture by ID.
+// @Tags         matches
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Match ID"
+// @Success      200  {object}  handler.MatchResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/matches/{id} [get]
 func (h *MatchHandler) GetMatch(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
@@ -72,10 +96,22 @@ func (h *MatchHandler) GetMatch(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, match)
+	writeJSON(w, http.StatusOK, matchToResponse(match))
 }
 
 // CreateMatch handles POST /api/v1/matches (admin only).
+//
+// @Summary      Create a match
+// @Description  Admin only. Creates a new fixture in the tournament schedule.
+// @Tags         matches
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      handler.createMatchRequest  true  "Match to create"
+// @Success      201   {object}  handler.MatchResponse
+// @Failure      422   {object}  handler.ErrorResponse
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/matches [post]
 func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 	var req createMatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -91,10 +127,24 @@ func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, match)
+	writeJSON(w, http.StatusCreated, matchToResponse(match))
 }
 
 // UpdateResult handles PATCH /api/v1/matches/{id} (admin only).
+//
+// @Summary      Update match result
+// @Description  Admin only. Sets the final score for a finished match.
+// @Tags         matches
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                          true  "Match ID"
+// @Param        body  body      handler.updateResultRequest  true  "Final score"
+// @Success      200   {object}  handler.MatchResponse
+// @Failure      404   {object}  handler.ErrorResponse
+// @Failure      422   {object}  handler.ErrorResponse
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/matches/{id} [patch]
 func (h *MatchHandler) UpdateResult(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
@@ -115,10 +165,22 @@ func (h *MatchHandler) UpdateResult(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, match)
+	writeJSON(w, http.StatusOK, matchToResponse(match))
 }
 
 // StartMatch handles POST /api/v1/matches/{id}/start (admin only).
+//
+// @Summary      Start a match
+// @Description  Admin only. Transitions a match from scheduled to live.
+// @Tags         matches
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Match ID"
+// @Success      200  {object}  handler.MatchResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      422  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/matches/{id}/start [post]
 func (h *MatchHandler) StartMatch(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
@@ -130,7 +192,7 @@ func (h *MatchHandler) StartMatch(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, match)
+	writeJSON(w, http.StatusOK, matchToResponse(match))
 }
 
 // pathID extracts a numeric path parameter from the chi URL context.
