@@ -10,9 +10,9 @@ import (
 
 // rankingService is the concrete implementation of Ranker.
 type rankingService struct {
-	quinielaRepo  repository.QuinielaRepository
-	predRepo      repository.PredictionRepository
-	userRepo      repository.UserRepository
+	quinielaRepo repository.QuinielaRepository
+	predRepo     repository.PredictionRepository
+	userRepo     repository.UserRepository
 }
 
 // NewRankingService constructs a rankingService with the given dependencies.

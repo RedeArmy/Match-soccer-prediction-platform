@@ -35,7 +35,7 @@ func Migrate(dsn string, sqlFS fs.FS) error {
 	if err != nil {
 		return fmt.Errorf("migrate: initialise: %w", err)
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("migrate: up: %w", err)

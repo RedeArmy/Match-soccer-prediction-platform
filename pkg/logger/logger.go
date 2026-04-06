@@ -33,13 +33,13 @@ type Config struct {
 //
 // Two encoding modes are supported:
 //   - "json":    Structured JSON output intended for production. Fields are
-//                machine-parseable, which allows log aggregation tools
-//                (Datadog, CloudWatch, GCP Logging) to index and alert on
-//                specific field values without fragile regex patterns.
+//     machine-parseable, which allows log aggregation tools
+//     (Datadog, CloudWatch, GCP Logging) to index and alert on
+//     specific field values without fragile regex patterns.
 //   - "console": Human-readable, coloured output for local development.
-//                This mode is substantially slower than JSON encoding and
-//                produces output that most log aggregators cannot parse;
-//                it must never be used in production.
+//     This mode is substantially slower than JSON encoding and
+//     produces output that most log aggregators cannot parse;
+//     it must never be used in production.
 //
 // All log levels are written to stdout, and internal logger errors are
 // written to stderr. This follows the twelve-factor app convention of

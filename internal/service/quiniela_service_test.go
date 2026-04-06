@@ -16,12 +16,12 @@ type stubQuinielaRepo struct {
 	err       error
 }
 
-func (r *stubQuinielaRepo) Create(_ context.Context, _ *domain.Quiniela) error    { return r.err }
+func (r *stubQuinielaRepo) Create(_ context.Context, _ *domain.Quiniela) error { return r.err }
 func (r *stubQuinielaRepo) GetByID(_ context.Context, _ int) (*domain.Quiniela, error) {
 	return r.quiniela, r.err
 }
-func (r *stubQuinielaRepo) Update(_ context.Context, _ *domain.Quiniela) error    { return r.err }
-func (r *stubQuinielaRepo) Delete(_ context.Context, _ int) error                 { return r.err }
+func (r *stubQuinielaRepo) Update(_ context.Context, _ *domain.Quiniela) error { return r.err }
+func (r *stubQuinielaRepo) Delete(_ context.Context, _ int) error              { return r.err }
 func (r *stubQuinielaRepo) ListByOwner(_ context.Context, _ int) ([]*domain.Quiniela, error) {
 	return r.quinielas, r.err
 }

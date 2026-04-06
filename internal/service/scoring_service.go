@@ -13,9 +13,9 @@ import (
 
 // scoringService is the concrete implementation of MatchScorer.
 type scoringService struct {
-	matchRepo  repository.MatchRepository
-	predRepo   repository.PredictionRepository
-	log        *zap.Logger
+	matchRepo repository.MatchRepository
+	predRepo  repository.PredictionRepository
+	log       *zap.Logger
 }
 
 // NewScoringService constructs a scoringService with the given dependencies.
