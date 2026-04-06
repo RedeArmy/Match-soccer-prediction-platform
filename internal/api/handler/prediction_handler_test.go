@@ -104,7 +104,7 @@ func TestPredUpdate_Success_Returns200(t *testing.T) {
 	svc := &stubPredSvc{pred: &domain.Prediction{ID: 1, HomeScore: 2, AwayScore: 1}}
 	w := doPred(newPredRouter(svc, false), http.MethodPatch, "/1", `{"home_score":2,"away_score":1}`)
 	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+		t.Errorf(fmtExpect200, w.Code)
 	}
 }
 
@@ -134,11 +134,11 @@ func TestPredUpdate_ServiceError_Returns404(t *testing.T) {
 
 func TestListByUser_Success_Returns200(t *testing.T) {
 	svc := &stubPredSvc{preds: []*domain.Prediction{{ID: 1, UserID: 1}}}
-	req := httptest.NewRequest(http.MethodGet, "/?user_id=1", nil)
+	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
 	w := httptest.NewRecorder()
 	newPredRouter(svc, false).ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+		t.Errorf(fmtExpect200, w.Code)
 	}
 }
 
@@ -162,10 +162,34 @@ func TestListByUser_InvalidUserID_Returns422(t *testing.T) {
 
 func TestListByUser_ServiceError_Returns500(t *testing.T) {
 	svc := &stubPredSvc{err: apperrors.Internal(nil)}
-	req := httptest.NewRequest(http.MethodGet, "/?user_id=1", nil)
+	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
 	w := httptest.NewRecorder()
 	newPredRouter(svc, false).ServeHTTP(w, req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", w.Code)
+	}
+}
+
+// TestListByUser_AuthContextMismatch_Returns403 verifies that an authenticated
+// caller cannot retrieve another user's predictions. The auth middleware injects
+// userID "1" into context; the request asks for user_id=2.
+func TestListByUser_AuthContextMismatch_Returns403(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/?user_id=2", nil)
+	w := httptest.NewRecorder()
+	newPredRouter(&stubPredSvc{}, true).ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", w.Code)
+	}
+}
+
+// TestListByUser_AuthContextMatch_Returns200 verifies that the authenticated
+// caller can retrieve their own predictions when user_id matches the token.
+func TestListByUser_AuthContextMatch_Returns200(t *testing.T) {
+	svc := &stubPredSvc{preds: []*domain.Prediction{{ID: 1, UserID: 1}}}
+	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
+	w := httptest.NewRecorder()
+	newPredRouter(svc, true).ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
 	}
 }
