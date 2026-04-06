@@ -1,0 +1,69 @@
+# golangci-lint configuration for world-cup-quiniela.
+#
+# Run locally: make lint
+# CI enforces the same configuration via golangci/golangci-lint-action.
+#
+# Philosophy: prefer a small set of high-signal linters over an exhaustive
+# list. Every enabled linter must earn its place by catching real bugs or
+# enforcing a style rule that genuinely matters for this codebase.
+
+linters:
+  # Disable the default set and opt in explicitly so that linter upgrades
+  # do not silently introduce new failures on existing code.
+  disable-all: true
+  enable:
+    - errcheck        # unhandled errors (the #1 Go bug category)
+    - gosimple        # simplification opportunities
+    - govet           # suspicious constructs (shadow, printf format, etc.)
+    - ineffassign     # assignments whose result is never used
+    - staticcheck     # comprehensive static analysis (replaces megacheck)
+    - unused          # exported and unexported identifiers never referenced
+    - gofmt           # formatting must match gofmt output
+    - goimports       # import ordering and grouping
+    - bodyclose       # http response bodies that are never closed
+    - noctx           # http requests created without a context
+    - revive          # opinionated but configurable style linter
+
+linters-settings:
+  goimports:
+    # Enforce three import groups: stdlib / external / internal.
+    local-prefixes: github.com/rede/world-cup-quiniela
+
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        arguments:
+          - "checkPrivateReceivers"
+      - name: error-return
+        severity: warning
+      - name: error-strings
+        severity: warning
+      - name: increment-decrement
+        severity: warning
+
+  errcheck:
+    # Ignore errors from fmt.Fprintf (write to http.ResponseWriter cannot
+    # fail in practice — the connection is already established) and
+    # (*zap.Logger).Sync (best-effort flush on shutdown).
+    exclude-functions:
+      - fmt.Fprintf
+      - (*go.uber.org/zap.Logger).Sync
+
+issues:
+  # Show all issues, not just the first 3 per linter.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Test files: relax errcheck and unused rules — test helpers often
+    # intentionally ignore errors and define unexported helpers.
+    - path: "_test\\.go"
+      linters:
+        - errcheck
+        - unused
+
+    # Generated Swagger docs should not be linted.
+    - path: "docs/"
+      linters:
+        - all
