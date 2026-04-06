@@ -76,7 +76,7 @@ jobs:
       # The version is pinned so that linter upgrades are a deliberate choice,
       # not a silent change on the next PR.
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v6
+        uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
           args: --timeout=5m
