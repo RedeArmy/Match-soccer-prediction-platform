@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -50,6 +51,11 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 		return err
 	}
 
+	// Score every prediction independently so that a single failure does not
+	// prevent the remaining predictions from being persisted. All failures are
+	// collected and returned as an aggregate error so the caller can surface
+	// partial failure to monitoring without losing the successfully-saved scores.
+	var errs []error
 	for _, pred := range predictions {
 		points := calculatePoints(pred, *match.HomeScore, *match.AwayScore)
 		pred.Points = &points
@@ -58,9 +64,10 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 				zap.Int("prediction_id", pred.ID),
 				zap.Error(err),
 			)
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // calculatePoints applies the scoring rules defined in domain/constants.go.

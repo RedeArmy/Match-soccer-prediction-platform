@@ -118,6 +118,19 @@ func TestLoad_EnvVarOverridesDefault(t *testing.T) {
 	}
 }
 
+func TestLoad_InvalidLogLevel_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WCQ_LOGGER_LEVEL", "verbose")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for invalid log level, got nil")
+	}
+	if !strings.Contains(err.Error(), "logger.level") {
+		t.Errorf("expected error message to reference logger.level, got: %v", err)
+	}
+}
+
 func TestLoad_JWTSecretAndPortPopulated(t *testing.T) {
 	t.Setenv("WCQ_SERVER_PORT", "3000")
 	t.Setenv("WCQ_JWT_SECRET", jwtTestSecret)

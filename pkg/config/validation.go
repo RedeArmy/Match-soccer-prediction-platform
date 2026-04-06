@@ -1,6 +1,22 @@
 package config
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
+
+// knownLogLevels is the set of level strings accepted by the zap logger factory.
+// Any value outside this set would cause pkg/logger.New to fall back silently,
+// which is harder to diagnose than a startup error.
+var knownLogLevels = map[string]struct{}{
+	"debug":  {},
+	"info":   {},
+	"warn":   {},
+	"error":  {},
+	"dpanic": {},
+	"panic":  {},
+	"fatal":  {},
+}
 
 // validate enforces the subset of configuration invariants that cannot be
 // expressed as safe defaults.
@@ -16,10 +32,16 @@ import "errors"
 // or a descriptive error.
 func validate(cfg *Config) error {
 	if cfg.Server.Port == "" {
-		return errors.New("server.port must not be empty")
+		return errors.New("server.port must not be empty (WCQ_SERVER_PORT)")
 	}
 	if cfg.JWT.Secret == "" {
 		return errors.New("jwt.secret is required (WCQ_JWT_SECRET)")
+	}
+	if _, ok := knownLogLevels[cfg.Logger.Level]; !ok {
+		return fmt.Errorf(
+			"logger.level %q is not valid (WCQ_LOGGER_LEVEL); accepted values: debug, info, warn, error, dpanic, panic, fatal",
+			cfg.Logger.Level,
+		)
 	}
 	return nil
 }
