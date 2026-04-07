@@ -59,29 +59,33 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 // role, the request is rejected with 403.
 func RequireRole(userRepo repository.UserRepository, log *zap.Logger, roles ...domain.UserRole) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			subject, ok := UserIDFromContext(r.Context())
-			if !ok {
-				WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
+		return requireRoleHandler(next, userRepo, log, roles)
+	}
+}
+
+func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, log *zap.Logger, roles []domain.UserRole) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		subject, ok := UserIDFromContext(r.Context())
+		if !ok {
+			WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
+			return
+		}
+		user, err := userRepo.GetByClerkSubject(r.Context(), subject)
+		if err != nil {
+			WriteError(w, r, log, apperrors.Internal(err))
+			return
+		}
+		if user == nil {
+			WriteError(w, r, log, apperrors.Unauthorised("user account not found; please try again shortly"))
+			return
+		}
+		for _, role := range roles {
+			if user.Role == role {
+				next.ServeHTTP(w, r)
 				return
 			}
-			user, err := userRepo.GetByClerkSubject(r.Context(), subject)
-			if err != nil {
-				WriteError(w, r, log, apperrors.Internal(err))
-				return
-			}
-			if user == nil {
-				WriteError(w, r, log, apperrors.Unauthorised("user account not found; please try again shortly"))
-				return
-			}
-			for _, role := range roles {
-				if user.Role == role {
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
-			WriteError(w, r, log, apperrors.Forbidden(apperrors.MsgForbidden))
-		})
+		}
+		WriteError(w, r, log, apperrors.Forbidden(apperrors.MsgForbidden))
 	}
 }
 
