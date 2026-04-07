@@ -109,4 +109,9 @@ type CORSConfig struct {
 // API Keys → Advanced → JWKS URL.
 type ClerkConfig struct {
 	JWKSURL string `mapstructure:"jwksUrl"`
+	// WebhookSecret is the signing secret from the Clerk webhook dashboard
+	// (format "whsec_<base64>"). It is used to validate the Svix signature on
+	// incoming webhook events. If empty, signature validation is skipped and a
+	// warning is logged — acceptable for local development, never for production.
+	WebhookSecret string `mapstructure:"webhookSecret"`
 }

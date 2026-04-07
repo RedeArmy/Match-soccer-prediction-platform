@@ -175,6 +175,42 @@ func TestUserRepository_GetByID_NotFound_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestUserRepository_GetByClerkSubject_Found(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	// Set a clerk_subject via Update so GetByClerkSubject can find it.
+	u.ClerkSubject = "user_clerk_abc123"
+	if err := repo.Update(context.Background(), u); err != nil {
+		t.Fatalf("set clerk_subject: %v", err)
+	}
+
+	got, err := repo.GetByClerkSubject(context.Background(), "user_clerk_abc123")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected user, got nil")
+	}
+	if got.ID != u.ID {
+		t.Errorf("id: got %d, want %d", got.ID, u.ID)
+	}
+}
+
+func TestUserRepository_GetByClerkSubject_NotFound_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	got, err := repo.GetByClerkSubject(context.Background(), "user_nonexistent")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for unknown clerk subject, got %+v", got)
+	}
+}
+
 func TestUserRepository_Update_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)

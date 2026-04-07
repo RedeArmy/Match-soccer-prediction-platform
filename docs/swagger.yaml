@@ -376,6 +376,28 @@ paths:
       summary: Health check
       tags:
       - infrastructure
+  /webhooks/clerk:
+    post:
+      consumes:
+      - application/json
+      description: Receives and processes Clerk user lifecycle events (user.created,
+        user.updated).
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Event processed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      summary: Clerk webhook receiver
+      tags:
+      - webhooks
 securityDefinitions:
   BearerAuth:
     description: 'Clerk JWT token. Format: "Bearer <token>"'

@@ -20,6 +20,8 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwt"
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -45,6 +47,46 @@ func ContextWithUserID(ctx context.Context, userID string) context.Context {
 func UserIDFromContext(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(contextKeyUserID).(string)
 	return id, ok
+}
+
+// RequireRole returns a middleware that verifies the authenticated user holds
+// at least one of the specified roles. It must be placed after RequireAuth in
+// the middleware chain so that a valid Clerk subject is already in the context.
+//
+// The subject is resolved to an internal User row via GetByClerkSubject. If the
+// subject has no matching row — i.e. the user-sync webhook has not yet fired —
+// the request is rejected with 401. If the user exists but lacks the required
+// role, the request is rejected with 403.
+func RequireRole(userRepo repository.UserRepository, log *zap.Logger, roles ...domain.UserRole) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return requireRoleHandler(next, userRepo, log, roles)
+	}
+}
+
+func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, log *zap.Logger, roles []domain.UserRole) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		subject, ok := UserIDFromContext(r.Context())
+		if !ok {
+			WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
+			return
+		}
+		user, err := userRepo.GetByClerkSubject(r.Context(), subject)
+		if err != nil {
+			WriteError(w, r, log, apperrors.Internal(err))
+			return
+		}
+		if user == nil {
+			WriteError(w, r, log, apperrors.Unauthorised("user account not found; please try again shortly"))
+			return
+		}
+		for _, role := range roles {
+			if user.Role == role {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		WriteError(w, r, log, apperrors.Forbidden(apperrors.MsgForbidden))
+	}
 }
 
 // RequireAuth returns a middleware that validates the Clerk JWT present in
@@ -75,32 +117,36 @@ func RequireAuth(jwksURL string, log *zap.Logger) func(http.Handler) http.Handle
 	}
 
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if !strings.HasPrefix(authHeader, "Bearer ") {
-				WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
-				return
-			}
-			tokenBytes := []byte(strings.TrimPrefix(authHeader, "Bearer "))
+		return requireAuthHandler(next, cache, jwksURL, log)
+	}
+}
 
-			keySet, err := cache.Get(r.Context(), jwksURL)
-			if err != nil {
-				log.Error("RequireAuth: failed to fetch JWKS",
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.Error(err),
-				)
-				WriteError(w, r, log, apperrors.Internal(err))
-				return
-			}
+func requireAuthHandler(next http.Handler, cache *jwk.Cache, jwksURL string, log *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
+			return
+		}
+		tokenBytes := []byte(strings.TrimPrefix(authHeader, "Bearer "))
 
-			token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(keySet), jwt.WithValidate(true))
-			if err != nil {
-				WriteError(w, r, log, apperrors.Unauthorised("invalid or expired token"))
-				return
-			}
+		keySet, err := cache.Get(r.Context(), jwksURL)
+		if err != nil {
+			log.Error("RequireAuth: failed to fetch JWKS",
+				zap.String("request_id", GetRequestID(r.Context())),
+				zap.Error(err),
+			)
+			WriteError(w, r, log, apperrors.Internal(err))
+			return
+		}
 
-			ctx := context.WithValue(r.Context(), contextKeyUserID, token.Subject())
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
+		token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(keySet), jwt.WithValidate(true))
+		if err != nil {
+			WriteError(w, r, log, apperrors.Unauthorised("invalid or expired token"))
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), contextKeyUserID, token.Subject())
+		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
