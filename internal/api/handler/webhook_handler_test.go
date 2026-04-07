@@ -20,8 +20,8 @@ import (
 )
 
 // testWebhookSecret is a well-formed whsec_ value used in signature tests.
-// Decoded bytes = "test-secret-key".
-const testWebhookSecret = "whsec_dGVzdC1zZWNyZXQta2V5"
+// Decoded bytes = "test-secret-key". Not a real credential.
+const testWebhookSecret = "whsec_dGVzdC1zZWNyZXQta2V5" // NOSONAR
 
 // svixRequest builds a request with Svix HMAC-SHA256 headers signed against
 // secret using the provided timestamp.
