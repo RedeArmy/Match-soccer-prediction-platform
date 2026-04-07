@@ -22,14 +22,14 @@ func NewPostgresMatchRepository(db *pgxpool.Pool) *PostgresMatchRepository {
 	return &PostgresMatchRepository{db: db}
 }
 
-const matchColumns = "id, home_team, away_team, home_score, away_score, status, kickoff_at, created_at, updated_at"
+const matchColumns = "id, home_team, away_team, home_score, away_score, status, stadium_id, kickoff_at, created_at, updated_at"
 
 func scanMatch(row pgx.Row) (*domain.Match, error) {
 	m := &domain.Match{}
 	err := row.Scan(
 		&m.ID, &m.HomeTeam, &m.AwayTeam,
 		&m.HomeScore, &m.AwayScore,
-		&m.Status, &m.KickoffAt,
+		&m.Status, &m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -43,10 +43,10 @@ func scanMatch(row pgx.Row) (*domain.Match, error) {
 
 func (r *PostgresMatchRepository) Create(ctx context.Context, m *domain.Match) error {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO matches (home_team, away_team, status, kickoff_at)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO matches (home_team, away_team, status, stadium_id, kickoff_at)
+		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING `+matchColumns,
-		m.HomeTeam, m.AwayTeam, m.Status, m.KickoffAt,
+		m.HomeTeam, m.AwayTeam, m.Status, m.StadiumID, m.KickoffAt,
 	)
 	result, err := scanMatch(row)
 	if err != nil {
@@ -67,11 +67,11 @@ func (r *PostgresMatchRepository) Update(ctx context.Context, m *domain.Match) e
 	row := r.db.QueryRow(ctx,
 		`UPDATE matches
 		 SET home_team=$1, away_team=$2, home_score=$3, away_score=$4,
-		     status=$5, kickoff_at=$6, updated_at=NOW()
-		 WHERE id=$7
+		     status=$5, stadium_id=$6, kickoff_at=$7, updated_at=NOW()
+		 WHERE id=$8
 		 RETURNING `+matchColumns,
 		m.HomeTeam, m.AwayTeam, m.HomeScore, m.AwayScore,
-		m.Status, m.KickoffAt, m.ID,
+		m.Status, m.StadiumID, m.KickoffAt, m.ID,
 	)
 	result, err := scanMatch(row)
 	if err != nil {
@@ -113,7 +113,7 @@ func collectMatches(rows pgx.Rows) ([]*domain.Match, error) {
 		if err := rows.Scan(
 			&m.ID, &m.HomeTeam, &m.AwayTeam,
 			&m.HomeScore, &m.AwayScore,
-			&m.Status, &m.KickoffAt,
+			&m.Status, &m.StadiumID, &m.KickoffAt,
 			&m.CreatedAt, &m.UpdatedAt,
 		); err != nil {
 			return nil, apperrors.Internal(err)
