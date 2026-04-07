@@ -8,6 +8,7 @@
 package middleware_test
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -18,9 +19,27 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
+
+// stubUserRepo implements repository.UserRepository for middleware tests.
+type stubUserRepo struct {
+	user *domain.User
+	err  error
+}
+
+func (r *stubUserRepo) Create(_ context.Context, _ *domain.User) error { return r.err }
+func (r *stubUserRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
+	return r.user, r.err
+}
+func (r *stubUserRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
+	return r.user, r.err
+}
+func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }
+func (r *stubUserRepo) Delete(_ context.Context, _ int) error          { return r.err }
+func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error) { return nil, r.err }
 
 const (
 	fmtStatus        = "expected status %d, got %d"
@@ -320,5 +339,69 @@ func TestUserIDFromContext_ReturnsFalseWhenNotSet(t *testing.T) {
 	_, ok := middleware.UserIDFromContext(req.Context())
 	if ok {
 		t.Error("expected ok=false when user ID not in context, got true")
+	}
+}
+
+// ── RequireRole ───────────────────────────────────────────────────────────────
+
+func requireRoleHandler(repo *stubUserRepo, roles ...domain.UserRole) http.Handler {
+	log := zap.NewNop()
+	return middleware.RequireRole(repo, log, roles...)(http.HandlerFunc(okHandler))
+}
+
+func requireRoleRequest(subject string) *http.Request {
+	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
+	if subject != "" {
+		req = req.WithContext(middleware.ContextWithUserID(req.Context(), subject))
+	}
+	return req
+}
+
+func TestRequireRole_NoSubjectInContext_Returns401(t *testing.T) {
+	h := requireRoleHandler(&stubUserRepo{}, domain.RoleAdmin)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, requireRoleRequest(""))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestRequireRole_RepoError_Returns500(t *testing.T) {
+	repo := &stubUserRepo{err: errors.New("db down")}
+	h := requireRoleHandler(repo, domain.RoleAdmin)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, requireRoleRequest("user_abc"))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtStatus, http.StatusInternalServerError, rec.Code)
+	}
+}
+
+func TestRequireRole_UserNotFound_Returns401(t *testing.T) {
+	repo := &stubUserRepo{user: nil} // subject has no matching row
+	h := requireRoleHandler(repo, domain.RoleAdmin)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, requireRoleRequest("user_abc"))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestRequireRole_WrongRole_Returns403(t *testing.T) {
+	repo := &stubUserRepo{user: &domain.User{ID: 1, Role: domain.RolePlayer}}
+	h := requireRoleHandler(repo, domain.RoleAdmin)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, requireRoleRequest("user_abc"))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf(fmtStatus, http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestRequireRole_CorrectRole_CallsNext(t *testing.T) {
+	repo := &stubUserRepo{user: &domain.User{ID: 1, Role: domain.RoleAdmin}}
+	h := requireRoleHandler(repo, domain.RoleAdmin)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, requireRoleRequest("user_abc"))
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtStatus, http.StatusOK, rec.Code)
 	}
 }

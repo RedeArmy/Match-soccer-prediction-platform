@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -62,6 +63,21 @@ func TestSubmit_InvalidJSON_Returns422(t *testing.T) {
 	w := doPred(newPredRouter(&stubPredSvc{}, true), http.MethodPost, "/", `not json`)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestSubmit_RepoError_Returns500(t *testing.T) {
+	// resolveUserID: GetByClerkSubject returns an error → 500
+	userRepo := &stubUserRepo{err: errors.New("db down")}
+	r := newPredRouterWithRepo(&stubPredSvc{}, true, userRepo)
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"match_id":1,"home_score":1,"away_score":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
 	}
 }
 

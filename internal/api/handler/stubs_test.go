@@ -26,8 +26,11 @@ func (r *stubUserRepo) Delete(_ context.Context, _ int) error          { return 
 func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error) { return nil, r.err }
 
 const (
-	fmtExpect422     = "expected 422, got %d"
 	fmtExpect200     = "expected 200, got %d"
+	fmtExpect204     = "expected 204, got %d"
+	fmtExpect400     = "expected 400, got %d"
+	fmtExpect422     = "expected 422, got %d"
+	fmtExpect500     = "expected 500, got %d"
 	urlListByUserID1 = "/?user_id=1"
 )
 
