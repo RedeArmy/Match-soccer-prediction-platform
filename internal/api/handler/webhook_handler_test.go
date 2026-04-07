@@ -40,15 +40,15 @@ func svixRequest(t *testing.T, body, secret string, ts time.Time) *http.Request 
 	mac.Write([]byte(toSign))
 	sig := "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/clerk", strings.NewReader(body))
-	req.Header.Set("svix-id", msgID)
-	req.Header.Set("svix-timestamp", tsStr)
-	req.Header.Set("svix-signature", sig)
+	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(body))
+	req.Header.Set(headerSvixID, msgID)
+	req.Header.Set(headerSvixTimestamp, tsStr)
+	req.Header.Set(headerSvixSignature, sig)
 	return req
 }
 
 func doWebhook(h *handler.WebhookHandler, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/clerk", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(body))
 	w := httptest.NewRecorder()
 	h.HandleClerkWebhook(w, req)
 	return w
@@ -143,7 +143,7 @@ func TestWebhook_WithSecret_ValidSignature_Returns204(t *testing.T) {
 
 func TestWebhook_WithSecret_MissingHeaders_Returns400(t *testing.T) {
 	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/clerk", strings.NewReader(userCreatedBody))
+	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
 	w := httptest.NewRecorder()
 	h.HandleClerkWebhook(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -153,10 +153,10 @@ func TestWebhook_WithSecret_MissingHeaders_Returns400(t *testing.T) {
 
 func TestWebhook_WithSecret_WrongSignature_Returns400(t *testing.T) {
 	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/clerk", strings.NewReader(userCreatedBody))
-	req.Header.Set("svix-id", "msg_test_01")
-	req.Header.Set("svix-timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-	req.Header.Set("svix-signature", "v1,invalidsignature==")
+	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
+	req.Header.Set(headerSvixID, "msg_test_01")
+	req.Header.Set(headerSvixTimestamp, fmt.Sprintf("%d", time.Now().Unix()))
+	req.Header.Set(headerSvixSignature, "v1,invalidsignature==")
 	w := httptest.NewRecorder()
 	h.HandleClerkWebhook(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -176,10 +176,10 @@ func TestWebhook_WithSecret_OldTimestamp_Returns400(t *testing.T) {
 
 func TestWebhook_WithSecret_InvalidBase64Secret_Returns400(t *testing.T) {
 	h := handler.NewWebhookHandler(&stubUserRepo{}, "whsec_!!!notbase64!!!", zap.NewNop())
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/clerk", strings.NewReader(userCreatedBody))
-	req.Header.Set("svix-id", "msg_test_01")
-	req.Header.Set("svix-timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-	req.Header.Set("svix-signature", "v1,anysignature==")
+	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
+	req.Header.Set(headerSvixID, "msg_test_01")
+	req.Header.Set(headerSvixTimestamp, fmt.Sprintf("%d", time.Now().Unix()))
+	req.Header.Set(headerSvixSignature, "v1,anysignature==")
 	w := httptest.NewRecorder()
 	h.HandleClerkWebhook(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -189,10 +189,10 @@ func TestWebhook_WithSecret_InvalidBase64Secret_Returns400(t *testing.T) {
 
 func TestWebhook_WithSecret_InvalidTimestampFormat_Returns400(t *testing.T) {
 	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/clerk", strings.NewReader(userCreatedBody))
-	req.Header.Set("svix-id", "msg_test_01")
-	req.Header.Set("svix-timestamp", "not-a-number")
-	req.Header.Set("svix-signature", "v1,anysignature==")
+	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
+	req.Header.Set(headerSvixID, "msg_test_01")
+	req.Header.Set(headerSvixTimestamp, "not-a-number")
+	req.Header.Set(headerSvixSignature, "v1,anysignature==")
 	w := httptest.NewRecorder()
 	h.HandleClerkWebhook(w, req)
 	if w.Code != http.StatusBadRequest {

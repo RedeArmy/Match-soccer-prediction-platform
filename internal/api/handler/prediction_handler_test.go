@@ -42,7 +42,7 @@ func newPredRouterWithRepo(svc *stubPredSvc, withAuth bool, userRepo *stubUserRe
 
 func doPred(router http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerContentType, contentTypeJSON)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	return w
@@ -72,12 +72,12 @@ func TestSubmit_RepoError_Returns500(t *testing.T) {
 	r := newPredRouterWithRepo(&stubPredSvc{}, true, userRepo)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"match_id":1,"home_score":1,"away_score":0}`))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerContentType, contentTypeJSON)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", w.Code)
+		t.Errorf(fmtExpect500, w.Code)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestSubmit_UserNotFound_Returns401(t *testing.T) {
 	r := newPredRouterWithRepo(&stubPredSvc{}, true, userRepo)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"match_id":1,"home_score":1,"away_score":0}`))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerContentType, contentTypeJSON)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

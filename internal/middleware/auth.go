@@ -113,32 +113,36 @@ func RequireAuth(jwksURL string, log *zap.Logger) func(http.Handler) http.Handle
 	}
 
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if !strings.HasPrefix(authHeader, "Bearer ") {
-				WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
-				return
-			}
-			tokenBytes := []byte(strings.TrimPrefix(authHeader, "Bearer "))
+		return requireAuthHandler(next, cache, jwksURL, log)
+	}
+}
 
-			keySet, err := cache.Get(r.Context(), jwksURL)
-			if err != nil {
-				log.Error("RequireAuth: failed to fetch JWKS",
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.Error(err),
-				)
-				WriteError(w, r, log, apperrors.Internal(err))
-				return
-			}
+func requireAuthHandler(next http.Handler, cache *jwk.Cache, jwksURL string, log *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
+			return
+		}
+		tokenBytes := []byte(strings.TrimPrefix(authHeader, "Bearer "))
 
-			token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(keySet), jwt.WithValidate(true))
-			if err != nil {
-				WriteError(w, r, log, apperrors.Unauthorised("invalid or expired token"))
-				return
-			}
+		keySet, err := cache.Get(r.Context(), jwksURL)
+		if err != nil {
+			log.Error("RequireAuth: failed to fetch JWKS",
+				zap.String("request_id", GetRequestID(r.Context())),
+				zap.Error(err),
+			)
+			WriteError(w, r, log, apperrors.Internal(err))
+			return
+		}
 
-			ctx := context.WithValue(r.Context(), contextKeyUserID, token.Subject())
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
+		token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(keySet), jwt.WithValidate(true))
+		if err != nil {
+			WriteError(w, r, log, apperrors.Unauthorised("invalid or expired token"))
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), contextKeyUserID, token.Subject())
+		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

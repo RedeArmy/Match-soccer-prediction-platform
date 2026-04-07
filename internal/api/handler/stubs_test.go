@@ -32,6 +32,14 @@ const (
 	fmtExpect422     = "expected 422, got %d"
 	fmtExpect500     = "expected 500, got %d"
 	urlListByUserID1 = "/?user_id=1"
+
+	headerContentType = "Content-Type"
+	contentTypeJSON   = "application/json"
+
+	pathWebhookClerk    = "/webhooks/clerk"
+	headerSvixID        = "svix-id"
+	headerSvixTimestamp = "svix-timestamp"
+	headerSvixSignature = "svix-signature"
 )
 
 // stubMatchSvc implements service.MatchService with configurable returns.
