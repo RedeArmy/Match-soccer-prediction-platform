@@ -30,6 +30,7 @@ type User struct {
 	Email        string
 	PasswordHash string
 	Role         UserRole
+	ClerkSubject string // opaque Clerk user ID, e.g. "user_2abc…"; empty for legacy rows
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

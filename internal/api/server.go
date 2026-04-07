@@ -117,10 +117,9 @@ func (s *Server) Routes() http.Handler {
 	userRepo := repository.NewPostgresUserRepository(s.db)
 	matchRepo := repository.NewPostgresMatchRepository(s.db)
 	predRepo := repository.NewPostgresPredictionRepository(s.db)
-	stadiumRepo := repository.NewPostgresStadiumRepository(s.db)
 
 	bus := s.buildBus(matchRepo, predRepo)
-	matchHandler, predHandler := s.buildHandlers(bus, userRepo, matchRepo, predRepo, stadiumRepo)
+	matchHandler, predHandler := s.buildHandlers(bus, userRepo, matchRepo, predRepo)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -185,7 +184,6 @@ func (s *Server) buildHandlers(
 	userRepo repository.UserRepository,
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
-	_ repository.StadiumRepository, // reserved for future stadium endpoints
 ) (*handler.MatchHandler, *handler.PredictionHandler) {
 	matchSvc := service.NewMatchService(matchRepo, bus, s.log)
 	predSvc := service.NewPredictionService(predRepo, matchRepo, bus, s.log)
