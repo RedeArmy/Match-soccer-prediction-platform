@@ -25,13 +25,14 @@ import "time"
 // choice for this project's scale; revisit this if the authentication model
 // grows to support multiple credential types or external identity providers.
 type User struct {
-	ID           int
-	Name         string
-	Email        string
-	PasswordHash string
-	Role         UserRole
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID            int
+	Name          string
+	Email         string
+	PasswordHash  string
+	Role          UserRole
+	ClerkSubject  string // opaque Clerk user ID, e.g. "user_2abc…"; empty for legacy rows
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // UserRole is a typed string that constrains the roles a User may hold.
@@ -49,6 +50,21 @@ const (
 	RolePlayer UserRole = "player"
 )
 
+// Stadium represents an official FIFA World Cup 2026 venue.
+//
+// This is reference data: the 16 host stadiums are fixed for the tournament
+// and change only in exceptional circumstances (host-city withdrawal). Capacity
+// is stored for display purposes; it is not used in any business rule.
+type Stadium struct {
+	ID        int
+	Name      string
+	City      string
+	Country   string
+	Capacity  int
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // Match represents a single World Cup fixture in the tournament schedule.
 //
 // HomeScore and AwayScore are pointers because a nil value is semantically
@@ -57,6 +73,10 @@ const (
 // confirmed. Using pointers makes this nullable semantics explicit at the
 // type level, avoiding the need for a sentinel value (e.g. -1) that could
 // be confused with a real score by accident.
+//
+// StadiumID is nullable: knockout-stage fixtures may be created before their
+// venue is confirmed. Stadium is hydrated by the repository when loading a
+// match with venue detail; it is nil when only the match metadata is needed.
 type Match struct {
 	ID        int
 	HomeTeam  string
@@ -64,6 +84,8 @@ type Match struct {
 	HomeScore *int
 	AwayScore *int
 	Status    MatchStatus
+	StadiumID *int
+	Stadium   *Stadium
 	KickoffAt time.Time
 	CreatedAt time.Time
 	UpdatedAt time.Time

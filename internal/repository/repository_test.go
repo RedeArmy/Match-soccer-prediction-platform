@@ -80,7 +80,7 @@ func TestMain(m *testing.M) {
 func cleanTables(t *testing.T) {
 	t.Helper()
 	_, err := testDB.Exec(context.Background(),
-		`TRUNCATE tiebreakers, predictions, quinielas, matches, users RESTART IDENTITY CASCADE`)
+		`TRUNCATE tiebreakers, predictions, quinielas, matches, stadiums, users RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("clean tables: %v", err)
 	}
