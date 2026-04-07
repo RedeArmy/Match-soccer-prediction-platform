@@ -25,6 +25,7 @@ import (
 
 	_ "github.com/rede/world-cup-quiniela/docs" // registers the Swagger spec at init time
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
@@ -57,26 +58,26 @@ func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger) *Server {
 
 // Routes returns the fully configured http.Handler for the application.
 //
-// The routing table is arranged in two tiers:
+// The routing table is arranged in three tiers:
 //
-//  1. Infrastructure endpoints (/health) are mounted at the root without a
-//     version prefix. They are consumed by load balancers and monitoring
-//     systems, not by API clients, and must not be versioned — a load
-//     balancer should not need to know which API version it is probing.
+//  1. Infrastructure endpoints (/health, /swagger) are mounted at the root.
+//     They are consumed by load balancers and monitoring systems and must
+//     not be versioned or gated behind authentication.
 //
-//  2. Business endpoints are mounted under /api/v1 via a sub-router. The
-//     sub-router is the correct place to attach authentication middleware so
-//     that it applies to all business routes without touching /health.
+//  2. Webhook endpoints (/webhooks/clerk) are mounted at the root without
+//     JWT authentication. They are authenticated via Svix HMAC-SHA256
+//     signature validation instead.
 //
-// Middleware is applied in declaration order. Each middleware wraps all
-// middleware declared after it, so RequestID must be declared first to ensure
-// its value is available to every subsequent handler and middleware.
+//  3. Business endpoints are mounted under /api/v1. The sub-router is the
+//     correct place to attach RequireAuth so it applies to all business
+//     routes without touching /health or /webhooks.
+//
+// Middleware is applied in declaration order. RequestID must be declared
+// first so its value is available to every subsequent handler.
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 
-	// Global middleware — applied to every request including /health.
-	// Order matters: RequestID must be first so its value is available to
-	// every subsequent middleware (logging, recovery) via GetRequestID.
+	// Global middleware — applied to every request.
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.Recover(s.log))
@@ -85,26 +86,20 @@ func (s *Server) Routes() http.Handler {
 
 	// Infrastructure endpoints — not versioned, no authentication required.
 	r.Get("/health", s.handleHealth)
-
-	// Swagger UI — served at /swagger/index.html.
-	// Disabled in production by removing the docs import; controlled by build tags if needed.
 	r.Get("/swagger/*", httpSwagger.Handler(
 		httpSwagger.URL("/swagger/doc.json"),
 		httpSwagger.DeepLinking(true),
 	))
 
-	// Versioned API surface. Authentication is enforced here so that /health
-	// remains publicly accessible to load balancers and monitoring systems.
-	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, s.log))
-
-		if s.db == nil {
-			// When the database is unavailable, register the known routes with
-			// a stub that returns 503 so that registered paths return 503 and
-			// unregistered paths still return 404 (chi's default).
-			dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
-				middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
-			}
+	if s.db == nil {
+		// When the database is unavailable, register the known routes with
+		// a stub that returns 503 so that registered paths return 503 and
+		// unregistered paths still return 404 (chi's default).
+		dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
+			middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
+		}
+		r.Route("/api/v1", func(r chi.Router) {
+			r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, s.log))
 			r.Route("/matches", func(r chi.Router) {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
@@ -113,25 +108,37 @@ func (s *Server) Routes() http.Handler {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
-			return
-		}
+		})
+		return r
+	}
 
-		// Construct repository instances once and share them across the event bus
-		// and handler layers. Instantiating separate instances for each would create
-		// independently-managed connection handles pointing at the same pool, making
-		// future per-repository caches inconsistent across the two sites.
-		matchRepo := repository.NewPostgresMatchRepository(s.db)
-		predRepo := repository.NewPostgresPredictionRepository(s.db)
+	// Construct repository instances once and share them across the event bus,
+	// webhook handler, and API handler layers.
+	userRepo := repository.NewPostgresUserRepository(s.db)
+	matchRepo := repository.NewPostgresMatchRepository(s.db)
+	predRepo := repository.NewPostgresPredictionRepository(s.db)
+	stadiumRepo := repository.NewPostgresStadiumRepository(s.db)
 
-		bus := s.buildBus(matchRepo, predRepo)
-		matchHandler, predHandler := s.buildHandlers(bus, matchRepo, predRepo)
+	bus := s.buildBus(matchRepo, predRepo)
+	matchHandler, predHandler := s.buildHandlers(bus, userRepo, matchRepo, predRepo, stadiumRepo)
 
+	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
+	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
+	webhookHandler := handler.NewWebhookHandler(userRepo, s.cfg.Clerk.WebhookSecret, s.log)
+	r.Post("/webhooks/clerk", webhookHandler.HandleClerkWebhook)
+
+	// Versioned API surface with Clerk JWT authentication.
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, s.log))
+
+		// Admin-only match mutations are guarded by RequireRole. Read endpoints
+		// (List, Get) are accessible to all authenticated users.
 		r.Route("/matches", func(r chi.Router) {
 			r.Get("/", matchHandler.ListMatches)
-			r.Post("/", matchHandler.CreateMatch)
 			r.Get("/{id}", matchHandler.GetMatch)
-			r.Patch("/{id}", matchHandler.UpdateResult)
-			r.Post("/{id}/start", matchHandler.StartMatch)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/", matchHandler.CreateMatch)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/{id}", matchHandler.UpdateResult)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/{id}/start", matchHandler.StartMatch)
 		})
 
 		r.Route("/predictions", func(r chi.Router) {
@@ -175,14 +182,16 @@ func (s *Server) buildBus(
 // The provided repositories are reused from the caller's shared instances.
 func (s *Server) buildHandlers(
 	bus events.Bus,
+	userRepo repository.UserRepository,
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
+	_ repository.StadiumRepository, // reserved for future stadium endpoints
 ) (*handler.MatchHandler, *handler.PredictionHandler) {
 	matchSvc := service.NewMatchService(matchRepo, bus, s.log)
 	predSvc := service.NewPredictionService(predRepo, matchRepo, bus, s.log)
 
 	return handler.NewMatchHandler(matchSvc, s.log),
-		handler.NewPredictionHandler(predSvc, s.log)
+		handler.NewPredictionHandler(predSvc, userRepo, s.log)
 }
 
 // handleHealth responds to liveness probes issued by load balancers and

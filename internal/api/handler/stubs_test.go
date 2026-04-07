@@ -6,6 +6,25 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
+// stubUserRepo implements repository.UserRepository for handler tests.
+// By default all methods return nil/nil; set the user or err fields to
+// control behaviour per test.
+type stubUserRepo struct {
+	user *domain.User
+	err  error
+}
+
+func (r *stubUserRepo) Create(_ context.Context, _ *domain.User) error { return r.err }
+func (r *stubUserRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
+	return r.user, r.err
+}
+func (r *stubUserRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
+	return r.user, r.err
+}
+func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }
+func (r *stubUserRepo) Delete(_ context.Context, _ int) error          { return r.err }
+func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error) { return nil, r.err }
+
 const (
 	fmtExpect422     = "expected 422, got %d"
 	fmtExpect200     = "expected 200, got %d"

@@ -16,18 +16,23 @@ import (
 )
 
 // newPredRouter wires PredictionHandler into a chi router.
-// When withAuth is true, a middleware is prepended that injects userID "1"
-// (a valid numeric Clerk subject) into the request context.
+// When withAuth is true, a middleware is prepended that injects the Clerk
+// subject "user_1" into the request context. The default stubUserRepo
+// resolves any subject to the user with ID=1.
 func newPredRouter(svc *stubPredSvc, withAuth bool) http.Handler {
+	return newPredRouterWithRepo(svc, withAuth, &stubUserRepo{user: &domain.User{ID: 1}})
+}
+
+func newPredRouterWithRepo(svc *stubPredSvc, withAuth bool, userRepo *stubUserRepo) http.Handler {
 	r := chi.NewRouter()
 	if withAuth {
 		r.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				next.ServeHTTP(w, req.WithContext(middleware.ContextWithUserID(req.Context(), "1")))
+				next.ServeHTTP(w, req.WithContext(middleware.ContextWithUserID(req.Context(), "user_1")))
 			})
 		})
 	}
-	h := handler.NewPredictionHandler(svc, zap.NewNop())
+	h := handler.NewPredictionHandler(svc, userRepo, zap.NewNop())
 	r.Post("/", h.Submit)
 	r.Get("/", h.ListByUser)
 	r.Patch("/{id}", h.Update)
@@ -60,18 +65,14 @@ func TestSubmit_InvalidJSON_Returns422(t *testing.T) {
 	}
 }
 
-func TestSubmit_InvalidUserID_Returns401(t *testing.T) {
-	// Inject a non-numeric Clerk subject — clerkSubjectToUserID will fail.
-	r := chi.NewRouter()
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			next.ServeHTTP(w, req.WithContext(middleware.ContextWithUserID(req.Context(), "user_abc")))
-		})
-	})
-	h := handler.NewPredictionHandler(&stubPredSvc{}, zap.NewNop())
-	r.Post("/", h.Submit)
+func TestSubmit_UserNotFound_Returns401(t *testing.T) {
+	// stubUserRepo with no user simulates the case where the Clerk subject has
+	// no matching row — the user-sync webhook has not fired yet.
+	userRepo := &stubUserRepo{user: nil}
+	r := newPredRouterWithRepo(&stubPredSvc{}, true, userRepo)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"match_id":1,"home_score":1,"away_score":0}`))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
