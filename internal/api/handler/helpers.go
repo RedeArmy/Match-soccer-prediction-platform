@@ -35,4 +35,3 @@ func parseIntParam(s string) (int, error) {
 	}
 	return n, nil
 }
-
