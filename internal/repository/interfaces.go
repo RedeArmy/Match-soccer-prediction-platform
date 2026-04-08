@@ -48,17 +48,6 @@ type UserRepository interface {
 	List(ctx context.Context) ([]*domain.User, error)
 }
 
-// StadiumRepository defines the persistence operations for the Stadium entity.
-//
-// Stadiums are reference data — the 16 FIFA World Cup 2026 venues — and are
-// read far more often than they are written. The interface intentionally omits
-// Create/Update/Delete to reflect this: venue management is done via
-// migrations and seed data, not through the application API.
-type StadiumRepository interface {
-	GetByID(ctx context.Context, id int) (*domain.Stadium, error)
-	List(ctx context.Context) ([]*domain.Stadium, error)
-}
-
 // MatchRepository defines the persistence operations for the Match entity.
 //
 // ListByStatus is provided as a first-class method rather than a filter
@@ -71,6 +60,7 @@ type MatchRepository interface {
 	GetByID(ctx context.Context, id int) (*domain.Match, error)
 	Update(ctx context.Context, match *domain.Match) error
 	List(ctx context.Context) ([]*domain.Match, error)
+	ListByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error)
 	ListByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
 }
 

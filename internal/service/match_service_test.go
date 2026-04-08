@@ -42,6 +42,9 @@ func (r *stubMatchRepo) Update(_ context.Context, m *domain.Match) error {
 func (r *stubMatchRepo) List(_ context.Context) ([]*domain.Match, error) {
 	return r.matches, r.err
 }
+func (r *stubMatchRepo) ListByPhase(_ context.Context, _ domain.MatchPhase) ([]*domain.Match, error) {
+	return r.matches, r.err
+}
 func (r *stubMatchRepo) ListByStatus(_ context.Context, _ domain.MatchStatus) ([]*domain.Match, error) {
 	return r.matches, r.err
 }
