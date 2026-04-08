@@ -15,12 +15,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/testutil"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
+
+const fmtUnexpectedErr = "unexpected error: %v"
 
 func newTestLogger(t *testing.T) *zap.Logger {
 	t.Helper()
@@ -38,7 +41,7 @@ func TestSetupDB_EmptyDSN_ReturnsNilPool(t *testing.T) {
 	pool, err := setupDB(context.Background(), cfg, log)
 
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if pool != nil {
 		pool.Close()
@@ -60,7 +63,7 @@ func TestSetupDB_ValidDSN_MigratesAndReturnsPool(t *testing.T) {
 
 	pool, err := setupDB(context.Background(), cfg, log)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if pool == nil {
 		t.Fatal("expected non-nil pool for valid DSN, got nil")
@@ -83,4 +86,76 @@ func TestSetupDB_InvalidDSN_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid DSN, got nil")
 	}
+}
+
+// ── setupEventBus ─────────────────────────────────────────────────────────────
+
+func TestSetupEventBus_InMemoryDriver_ReturnsBusAndNoopCleanup(t *testing.T) {
+	log := newTestLogger(t)
+	cfg := &config.Config{EventBus: config.EventBusConfig{Driver: "in_memory"}}
+
+	bus, cleanup, err := setupEventBus(context.Background(), cfg, log)
+
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if bus == nil {
+		t.Fatal("expected non-nil bus")
+	}
+	// cleanup must not panic for the in-memory driver (no-op)
+	cleanup()
+}
+
+func TestSetupEventBus_UnknownDriver_FallsBackToInMemory(t *testing.T) {
+	log := newTestLogger(t)
+	cfg := &config.Config{EventBus: config.EventBusConfig{Driver: "kafka"}}
+
+	bus, cleanup, err := setupEventBus(context.Background(), cfg, log)
+
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if bus == nil {
+		t.Fatal("expected non-nil bus after fallback")
+	}
+	cleanup()
+}
+
+func TestSetupEventBus_RedisDriver_InvalidAddr_ReturnsError(t *testing.T) {
+	log := newTestLogger(t)
+	cfg := &config.Config{
+		EventBus: config.EventBusConfig{Driver: "redis"},
+		Redis:    config.RedisConfig{Addr: "localhost:0", Password: "", DB: 0},
+	}
+
+	bus, cleanup, err := setupEventBus(context.Background(), cfg, log)
+
+	if err == nil {
+		t.Fatal("expected error for unreachable Redis, got nil")
+	}
+	if bus != nil {
+		t.Fatal("expected nil bus on connection failure")
+	}
+	// cleanup must not panic even when construction failed
+	cleanup()
+}
+
+func TestSetupEventBus_RedisDriver_ValidAddr_ReturnsBusAndCleanup(t *testing.T) {
+	mr := miniredis.RunT(t)
+	log := newTestLogger(t)
+	cfg := &config.Config{
+		EventBus: config.EventBusConfig{Driver: "redis"},
+		Redis:    config.RedisConfig{Addr: mr.Addr(), Password: "", DB: 0},
+	}
+
+	bus, cleanup, err := setupEventBus(context.Background(), cfg, log)
+
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if bus == nil {
+		t.Fatal("expected non-nil bus")
+	}
+	// cleanup must stop goroutines and close the client without panicking
+	cleanup()
 }

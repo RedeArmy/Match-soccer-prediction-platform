@@ -27,18 +27,38 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 // to Clerk and no credential is stored in the application database.
 const userColumns = "id, name, email, role, clerk_subject, created_at, updated_at"
 
-func scanUser(row pgx.Row) (*domain.User, error) {
+// rowScanner is satisfied by both pgx.Row (single-row query) and pgx.Rows
+// (multi-row iteration). Accepting this interface lets scanUserFields serve
+// both callers without duplicating the Scan call and clerkSubject unwrap.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanUserFields populates a domain.User from any rowScanner. It returns the
+// filled struct and a raw scan error (not wrapped). Callers are responsible for
+// interpreting sentinel errors such as pgx.ErrNoRows.
+func scanUserFields(s rowScanner) (*domain.User, error) {
 	u := &domain.User{}
 	var clerkSubject *string // nullable in DB; empty string in domain when NULL
-	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt)
+	if err := s.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if clerkSubject != nil {
+		u.ClerkSubject = *clerkSubject
+	}
+	return u, nil
+}
+
+// scanUser wraps scanUserFields for single-row queries. pgx.ErrNoRows is
+// translated to (nil, nil) so callers can distinguish "not found" from a
+// real database error without importing pgx in the service layer.
+func scanUser(row pgx.Row) (*domain.User, error) {
+	u, err := scanUserFields(row)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, apperrors.Internal(err)
-	}
-	if clerkSubject != nil {
-		u.ClerkSubject = *clerkSubject
 	}
 	return u, nil
 }
@@ -121,13 +141,11 @@ func (r *PostgresUserRepository) List(ctx context.Context) ([]*domain.User, erro
 func collectUsers(rows pgx.Rows) ([]*domain.User, error) {
 	var users []*domain.User
 	for rows.Next() {
-		u := &domain.User{}
-		var clerkSubject *string
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		// pgx.Rows satisfies rowScanner, so scanUserFields is reused directly
+		// instead of duplicating the Scan call and clerkSubject unwrap here.
+		u, err := scanUserFields(rows)
+		if err != nil {
 			return nil, apperrors.Internal(err)
-		}
-		if clerkSubject != nil {
-			u.ClerkSubject = *clerkSubject
 		}
 		users = append(users, u)
 	}

@@ -1,5 +1,23 @@
 basePath: /
 definitions:
+  github_com_rede_world-cup-quiniela_pkg_health.Response:
+    properties:
+      checks:
+        additionalProperties:
+          $ref: '#/definitions/github_com_rede_world-cup-quiniela_pkg_health.Result'
+        type: object
+      status:
+        type: string
+    type: object
+  github_com_rede_world-cup-quiniela_pkg_health.Result:
+    properties:
+      error:
+        type: string
+      latency_ms:
+        type: integer
+      status:
+        type: string
+    type: object
   internal_api_handler.ErrorDetail:
     properties:
       code:
@@ -402,6 +420,23 @@ paths:
               type: string
             type: object
       summary: Health check
+      tags:
+      - infrastructure
+  /health/ready:
+    get:
+      description: 'Readiness probe: runs all registered infrastructure checkers'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_rede_world-cup-quiniela_pkg_health.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_rede_world-cup-quiniela_pkg_health.Response'
+      summary: Readiness check
       tags:
       - infrastructure
   /webhooks/clerk:

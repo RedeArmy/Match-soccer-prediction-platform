@@ -2,6 +2,7 @@ package messaging_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ const (
 	fmtWrongPayload     = "expected payload %v, got %v"
 	fmtUnexpectedErr    = "unexpected error: %v"
 	fmtWrongCallCount   = "expected handler call count %d, got %d"
+	errTransientFail    = "fail"
 )
 
 func newMiniRedis(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
@@ -41,12 +43,13 @@ func matchFinishedEnvelope() events.Envelope {
 // ── InMemoryBus ───────────────────────────────────────────────────────────────
 
 func TestInMemoryBus_Publish_DeliversToSubscriber(t *testing.T) {
-	bus := messaging.NewInMemoryBus()
+	bus := messaging.NewInMemoryBus(nil)
 	want := matchFinishedEnvelope()
 
 	received := make(chan events.Envelope, 1)
-	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, env events.Envelope) {
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, env events.Envelope) error {
 		received <- env
+		return nil
 	})
 
 	if err := bus.Publish(context.Background(), want); err != nil {
@@ -64,15 +67,16 @@ func TestInMemoryBus_Publish_DeliversToSubscriber(t *testing.T) {
 }
 
 func TestInMemoryBus_Publish_DeliversToMultipleHandlers(t *testing.T) {
-	bus := messaging.NewInMemoryBus()
+	bus := messaging.NewInMemoryBus(nil)
 	var mu sync.Mutex
 	count := 0
 
 	for range 3 {
-		bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {
+		bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
 			mu.Lock()
 			count++
 			mu.Unlock()
+			return nil
 		})
 	}
 
@@ -89,18 +93,19 @@ func TestInMemoryBus_Publish_DeliversToMultipleHandlers(t *testing.T) {
 }
 
 func TestInMemoryBus_Publish_NoSubscribers_IsNoop(t *testing.T) {
-	bus := messaging.NewInMemoryBus()
+	bus := messaging.NewInMemoryBus(nil)
 	if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 }
 
 func TestInMemoryBus_Publish_DoesNotCrossDeliver(t *testing.T) {
-	bus := messaging.NewInMemoryBus()
+	bus := messaging.NewInMemoryBus(nil)
 	called := false
 
-	bus.Subscribe(events.EventMatchStarted, func(_ context.Context, _ events.Envelope) {
+	bus.Subscribe(events.EventMatchStarted, func(_ context.Context, _ events.Envelope) error {
 		called = true
+		return nil
 	})
 
 	// Publish a different event type — the MatchStarted handler must not fire.
@@ -113,12 +118,13 @@ func TestInMemoryBus_Publish_DoesNotCrossDeliver(t *testing.T) {
 }
 
 func TestInMemoryBus_Publish_ConcurrentSafe(t *testing.T) {
-	bus := messaging.NewInMemoryBus()
+	bus := messaging.NewInMemoryBus(nil)
 	var wg sync.WaitGroup
 	received := make(chan struct{}, 20)
 
-	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
 		received <- struct{}{}
+		return nil
 	})
 
 	for range 20 {
@@ -135,6 +141,81 @@ func TestInMemoryBus_Publish_ConcurrentSafe(t *testing.T) {
 	}
 }
 
+func TestInMemoryBus_Publish_RetriesAndDLQ_OnHandlerError(t *testing.T) {
+	// Override backoff so retries complete in milliseconds.
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	bus := messaging.NewInMemoryBus(nil)
+	var calls int
+
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		calls++
+		return errors.New("transient failure")
+	})
+
+	if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// Handler must be called exactly maxHandlerAttempts times (3).
+	if calls != 3 {
+		t.Errorf("expected 3 handler attempts (retry exhaustion), got %d", calls)
+	}
+}
+
+func TestInMemoryBus_Publish_ContextCancelled_StopsRetrying(t *testing.T) {
+	// Use a long backoff so the cancelled context fires before the sleep ends.
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{500 * time.Millisecond, time.Second}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	bus := messaging.NewInMemoryBus(nil)
+	calls := 0
+
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		calls++
+		return errors.New(errTransientFail)
+	})
+
+	// A pre-cancelled context causes callWithRetry to exit during the first
+	// inter-attempt sleep, so the handler is called exactly once.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_ = bus.Publish(ctx, matchFinishedEnvelope())
+
+	if calls != 1 {
+		t.Errorf("expected 1 call before context cancelled, got %d", calls)
+	}
+}
+
+func TestInMemoryBus_Publish_SucceedsOnSecondAttempt(t *testing.T) {
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	bus := messaging.NewInMemoryBus(nil)
+	attempt := 0
+
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		attempt++
+		if attempt == 1 {
+			return errors.New("first attempt fails")
+		}
+		return nil
+	})
+
+	if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	if attempt != 2 {
+		t.Errorf("expected handler called 2 times (fail then succeed), got %d", attempt)
+	}
+}
+
 // ── RedisBus ──────────────────────────────────────────────────────────────────
 
 func TestRedisBus_Publish_DeliversToSubscriber(t *testing.T) {
@@ -142,8 +223,9 @@ func TestRedisBus_Publish_DeliversToSubscriber(t *testing.T) {
 	bus := messaging.NewRedisBus(client, nil)
 
 	received := make(chan events.Envelope, 1)
-	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, env events.Envelope) {
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, env events.Envelope) error {
 		received <- env
+		return nil
 	})
 
 	// Give the background consumer goroutine time to subscribe before publishing.
@@ -170,8 +252,9 @@ func TestRedisBus_Publish_DeliversToMultipleHandlers(t *testing.T) {
 
 	received := make(chan struct{}, 3)
 	for range 3 {
-		bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {
+		bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
 			received <- struct{}{}
+			return nil
 		})
 	}
 
@@ -195,9 +278,10 @@ func TestRedisBus_Close_IsIdempotent(t *testing.T) {
 	_, client := newMiniRedis(t)
 	bus := messaging.NewRedisBus(client, nil)
 
-	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
 		// No-op handler: this test only needs a live subscription goroutine;
 		// the handler body is intentionally empty.
+		return nil
 	})
 	time.Sleep(50 * time.Millisecond)
 
@@ -212,9 +296,10 @@ func TestRedisBus_Close_SubscriptionCloseError_DoesNotPanic(t *testing.T) {
 	mr, client := newMiniRedis(t)
 	bus := messaging.NewRedisBus(client, nil)
 
-	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) {
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
 		// No-op handler: this test only needs a live subscription goroutine to
 		// exist so that closeSubscription is invoked when the bus shuts down.
+		return nil
 	})
 	time.Sleep(50 * time.Millisecond)
 
@@ -231,8 +316,9 @@ func TestRedisBus_Publish_DoesNotCrossDeliver(t *testing.T) {
 	bus := messaging.NewRedisBus(client, nil)
 
 	called := make(chan struct{}, 1)
-	bus.Subscribe(events.EventMatchStarted, func(_ context.Context, _ events.Envelope) {
+	bus.Subscribe(events.EventMatchStarted, func(_ context.Context, _ events.Envelope) error {
 		called <- struct{}{}
+		return nil
 	})
 
 	time.Sleep(50 * time.Millisecond)
@@ -247,4 +333,128 @@ func TestRedisBus_Publish_DoesNotCrossDeliver(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 		// correct — no cross-delivery
 	}
+}
+
+func TestRedisBus_ContextCancelled_StopsRetrying(t *testing.T) {
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{500 * time.Millisecond, time.Second}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	_, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	calls := make(chan struct{}, 10)
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		calls <- struct{}{}
+		return errors.New(errTransientFail)
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// Close cancels the subscription context, which interrupts the retry sleep.
+	// Wait for the first handler call then close immediately.
+	select {
+	case <-calls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never called")
+	}
+	bus.Close()
+
+	// Allow the goroutine to process the cancellation.
+	time.Sleep(100 * time.Millisecond)
+
+	// At most one additional attempt may have completed before Close fired.
+	if len(calls) > 1 {
+		t.Errorf("expected at most 1 extra call after Close, got %d", len(calls))
+	}
+}
+
+func TestRedisBus_DLQPushError_DoesNotPanic(t *testing.T) {
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	mr, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	// Count handler calls so we know when all retries are exhausted.
+	var mu sync.Mutex
+	callCount := 0
+	ready := make(chan struct{}) // closed after the 3rd attempt
+
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		mu.Lock()
+		callCount++
+		done := callCount == 3
+		mu.Unlock()
+		if done {
+			close(ready)
+		}
+		return errors.New(errTransientFail)
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// Wait until all 3 attempts have run, then kill Redis so the DLQ RPush fails.
+	select {
+	case <-ready:
+		mr.Close() // stop Redis before pushDLQ can write
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler was not called 3 times within timeout")
+	}
+
+	// Give the goroutine time to attempt the failing RPush — must not panic.
+	time.Sleep(150 * time.Millisecond)
+}
+
+func TestRedisBus_RetriesAndPushesToDLQ_OnHandlerError(t *testing.T) {
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	mr, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	calls := make(chan struct{}, 10)
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		calls <- struct{}{}
+		return errors.New("transient failure")
+	})
+
+	time.Sleep(50 * time.Millisecond)
+
+	if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// Wait for all 3 attempts to complete.
+	deadline := time.After(2 * time.Second)
+	for range 3 {
+		select {
+		case <-calls:
+		case <-deadline:
+			t.Fatal("handler was not retried 3 times within timeout")
+		}
+	}
+
+	// Allow DLQ push to land.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify the event was pushed to the DLQ list in Redis.
+	dlqLen, err := client.LLen(context.Background(), "dlq:match.finished").Result()
+	if err != nil {
+		t.Fatalf("redis LLEN: %v", err)
+	}
+	if dlqLen == 0 {
+		t.Error("expected at least one entry in dlq:match.finished, got 0")
+	}
+
+	// miniredis does not persist between tests; closing it cleans up automatically.
+	mr.Close()
 }
