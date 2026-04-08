@@ -33,7 +33,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/api"
+	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/database"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/migrations"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
@@ -73,11 +76,22 @@ func main() {
 		defer db.Close()
 	}
 
+	// Select and construct the event bus implementation based on configuration.
+	// The bus is constructed here — at the composition root — so its full
+	// lifecycle (construction → subscriber wiring → graceful shutdown) is
+	// visible in one place without any hidden state inside the Server.
+	bus, closeBus, err := setupEventBus(ctx, cfg, log)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "event bus error: %v\n", err)
+		os.Exit(1)
+	}
+	defer closeBus()
+
 	// The api.Server owns the routing table and receives all shared
 	// dependencies. Constructing it here — at the composition root —
 	// rather than inside a package-level init function makes every
 	// dependency explicit and eliminates hidden global state.
-	app := api.New(db, cfg, log)
+	app := api.New(db, cfg, log, bus)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
@@ -119,6 +133,62 @@ func main() {
 		os.Exit(1)
 	}
 	log.Sugar().Info("server stopped")
+}
+
+// setupEventBus constructs the appropriate events.Bus implementation based on
+// the WCQ_EVENTBUS_DRIVER configuration value and returns a cleanup function
+// that must be deferred by the caller to release resources on shutdown.
+//
+// Supported drivers:
+//   - "in_memory" (default): synchronous InMemoryBus; no external dependencies.
+//     Safe for single-replica deployments and local development only.
+//   - "redis": asynchronous RedisBus backed by the configured Redis instance.
+//     Required when running multiple API replicas so that domain events
+//     (e.g. MatchFinished) reach all replicas and the worker process.
+//
+// An unknown driver value causes an immediate fatal error at startup rather
+// than silently falling back to a default, preventing configuration mistakes
+// from going unnoticed in production.
+func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (events.Bus, func(), error) {
+	switch cfg.EventBus.Driver {
+	case "redis":
+		// Construct a dedicated Redis client for the event bus. Although the
+		// same Redis instance may also be used for caching, a separate client
+		// is intentional: pub/sub connections are long-lived blocking calls that
+		// should not compete for connections with short-lived cache operations.
+		redisClient, err := cache.NewClient(ctx, cache.Config{
+			Addr:     cfg.Redis.Addr,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+		if err != nil {
+			return nil, func() {}, fmt.Errorf("redis bus: connect: %w", err)
+		}
+		log.Sugar().Infof("event bus: using Redis driver (%s)", cfg.Redis.Addr)
+
+		bus := messaging.NewRedisBus(redisClient, log)
+
+		// The cleanup function stops all subscription goroutines and closes
+		// the Redis client. Both steps are required to avoid goroutine leaks
+		// and connection exhaustion during graceful shutdown.
+		cleanup := func() {
+			bus.Close()
+			if err := redisClient.Close(); err != nil {
+				log.Sugar().Warnf("redis bus: close client: %v", err)
+			}
+		}
+		return bus, cleanup, nil
+
+	default:
+		// "in_memory" is the default. Any unrecognised value also falls here
+		// to keep startup safe; a warning is logged so mis-spellings are visible.
+		if cfg.EventBus.Driver != "in_memory" {
+			log.Sugar().Warnf("event bus: unknown driver %q, falling back to in_memory", cfg.EventBus.Driver)
+		} else {
+			log.Sugar().Info("event bus: using in_memory driver (single-replica only)")
+		}
+		return messaging.NewInMemoryBus(), func() {}, nil
+	}
 }
 
 // setupDB applies pending migrations and opens a connection pool.

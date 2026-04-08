@@ -19,6 +19,7 @@ type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
+	EventBus EventBusConfig `mapstructure:"eventBus"`
 	Logger   LoggerConfig   `mapstructure:"logger"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	CORS     CORSConfig     `mapstructure:"cors"`
@@ -99,6 +100,24 @@ type JWTConfig struct {
 // of a logged-in user, which is effectively a CSRF vulnerability.
 type CORSConfig struct {
 	AllowedOrigins string `mapstructure:"allowedOrigins"`
+}
+
+// EventBusConfig selects which event bus implementation the application uses.
+//
+// Two drivers are available:
+//   - "in_memory": synchronous, in-process delivery. Safe for single-replica
+//     deployments and local development. Events are lost on process restart
+//     and cannot cross process boundaries.
+//   - "redis": asynchronous pub/sub via the Redis instance declared in
+//     RedisConfig. Required when running multiple API replicas so that a
+//     MatchFinished event published by one replica triggers scoring on all
+//     replicas (or on the dedicated worker process).
+//
+// The default is "in_memory" so that the application starts without a Redis
+// dependency in development environments where Redis is not available.
+type EventBusConfig struct {
+	// Driver must be either "in_memory" or "redis".
+	Driver string `mapstructure:"driver"`
 }
 
 // ClerkConfig holds the parameters required to validate JWTs issued by Clerk.

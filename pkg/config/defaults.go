@@ -35,6 +35,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("redis.password", "")
 	v.SetDefault("redis.db", 0)
 
+	// eventBus.driver defaults to "in_memory" so the application starts
+	// without requiring a Redis connection in development environments.
+	// Set WCQ_EVENTBUS_DRIVER=redis to use the Redis-backed bus in production.
+	v.SetDefault("eventBus.driver", "in_memory")
+
 	v.SetDefault("logger.level", "info")
 	v.SetDefault("logger.encoding", "json")
 
