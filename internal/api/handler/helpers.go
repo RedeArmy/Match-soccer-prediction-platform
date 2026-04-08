@@ -35,18 +35,3 @@ func parseIntParam(s string) (int, error) {
 	}
 	return n, nil
 }
-
-// clerkSubjectToUserID converts a Clerk subject string to an internal user ID.
-//
-// Production Clerk subjects use the opaque format "user_<base58>", which cannot
-// be parsed as an integer. This function is a development placeholder that
-// works only when numeric subjects are injected via ContextWithUserID in tests
-// or when the auth middleware is disabled.
-//
-// Replace this function with a UserRepository.GetByClerkSubject lookup once
-// the user-sync webhook (Clerk → internal users table) is implemented. The
-// webhook must populate a clerk_subject column on the users table, and this
-// function must accept a repository dependency to perform the lookup.
-func clerkSubjectToUserID(subject string) (int, error) {
-	return parseIntParam(subject)
-}

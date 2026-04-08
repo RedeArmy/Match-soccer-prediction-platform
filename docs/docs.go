@@ -460,6 +460,38 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/webhooks/clerk": {
+            "post": {
+                "description": "Receives and processes Clerk user lifecycle events (user.created, user.updated).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "webhooks"
+                ],
+                "summary": "Clerk webhook receiver",
+                "responses": {
+                    "204": {
+                        "description": "Event processed"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -506,6 +538,12 @@ const docTemplate = `{
                 "kickoff_at": {
                     "type": "string"
                 },
+                "stadium": {
+                    "$ref": "#/definitions/internal_api_handler.StadiumResponse"
+                },
+                "stadium_id": {
+                    "type": "integer"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -540,6 +578,26 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.StadiumResponse": {
+            "type": "object",
+            "properties": {
+                "capacity": {
+                    "type": "integer"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "country": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

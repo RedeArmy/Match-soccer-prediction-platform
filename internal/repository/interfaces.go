@@ -38,9 +38,25 @@ import (
 type UserRepository interface {
 	Create(ctx context.Context, user *domain.User) error
 	GetByID(ctx context.Context, id int) (*domain.User, error)
+	// GetByClerkSubject resolves a Clerk opaque subject (e.g. "user_2abc…") to
+	// an internal User. Returns nil, nil when no matching row exists so callers
+	// can distinguish "not found" from a database error without importing
+	// apperrors directly.
+	GetByClerkSubject(ctx context.Context, subject string) (*domain.User, error)
 	Update(ctx context.Context, user *domain.User) error
 	Delete(ctx context.Context, id int) error
 	List(ctx context.Context) ([]*domain.User, error)
+}
+
+// StadiumRepository defines the persistence operations for the Stadium entity.
+//
+// Stadiums are reference data — the 16 FIFA World Cup 2026 venues — and are
+// read far more often than they are written. The interface intentionally omits
+// Create/Update/Delete to reflect this: venue management is done via
+// migrations and seed data, not through the application API.
+type StadiumRepository interface {
+	GetByID(ctx context.Context, id int) (*domain.Stadium, error)
+	List(ctx context.Context) ([]*domain.Stadium, error)
 }
 
 // MatchRepository defines the persistence operations for the Match entity.

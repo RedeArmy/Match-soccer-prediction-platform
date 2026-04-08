@@ -28,6 +28,10 @@ definitions:
         type: integer
       kickoff_at:
         type: string
+      stadium:
+        $ref: '#/definitions/internal_api_handler.StadiumResponse'
+      stadium_id:
+        type: integer
       status:
         type: string
       updated_at:
@@ -51,6 +55,19 @@ definitions:
         type: string
       user_id:
         type: integer
+    type: object
+  internal_api_handler.StadiumResponse:
+    properties:
+      capacity:
+        type: integer
+      city:
+        type: string
+      country:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
     type: object
   internal_api_handler.createMatchRequest:
     properties:
@@ -376,6 +393,28 @@ paths:
       summary: Health check
       tags:
       - infrastructure
+  /webhooks/clerk:
+    post:
+      consumes:
+      - application/json
+      description: Receives and processes Clerk user lifecycle events (user.created,
+        user.updated).
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Event processed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      summary: Clerk webhook receiver
+      tags:
+      - webhooks
 securityDefinitions:
   BearerAuth:
     description: 'Clerk JWT token. Format: "Bearer <token>"'
