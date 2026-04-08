@@ -37,6 +37,8 @@ const (
 	fmtCreateErr     = "create: %v"
 	msgNonZeroID     = "expected non-zero ID after create"
 	fmtNotFoundErr   = "expected not-found error, got %v"
+	fmtIDMismatch    = "id: got %d, want %d"
+	fmtExpectNilGot  = "expected nil, got %+v"
 )
 
 // testDB is shared across all tests in this package. It is initialised once in
@@ -232,7 +234,7 @@ func TestUserRepository_GetByClerkSubject_Found(t *testing.T) {
 		t.Fatal("expected user, got nil")
 	}
 	if got.ID != u.ID {
-		t.Errorf("id: got %d, want %d", got.ID, u.ID)
+		t.Errorf(fmtIDMismatch, got.ID, u.ID)
 	}
 }
 
@@ -566,7 +568,7 @@ func TestPredictionRepository_GetByUserAndMatch_NotFound_ReturnsNil(t *testing.T
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if got != nil {
-		t.Errorf("expected nil, got %+v", got)
+		t.Errorf(fmtExpectNilGot, got)
 	}
 }
 
@@ -767,7 +769,7 @@ func TestTiebreakerRepository_GetByUserAndQuiniela_NotFound_ReturnsNil(t *testin
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if got != nil {
-		t.Errorf("expected nil, got %+v", got)
+		t.Errorf(fmtExpectNilGot, got)
 	}
 }
 
@@ -867,7 +869,7 @@ func TestQuinielaRepository_GetByInviteCode_Found(t *testing.T) {
 		t.Fatal("expected quiniela, got nil")
 	}
 	if got.ID != q.ID {
-		t.Errorf("id: got %d, want %d", got.ID, q.ID)
+		t.Errorf(fmtIDMismatch, got.ID, q.ID)
 	}
 }
 
@@ -949,7 +951,7 @@ func TestGroupMembershipRepository_GetByQuinielaAndUser_Found(t *testing.T) {
 		t.Fatal("expected membership, got nil")
 	}
 	if got.ID != created.ID {
-		t.Errorf("id: got %d, want %d", got.ID, created.ID)
+		t.Errorf(fmtIDMismatch, got.ID, created.ID)
 	}
 	if got.Status != domain.MembershipActive {
 		t.Errorf("status: got %q, want active", got.Status)
@@ -965,7 +967,7 @@ func TestGroupMembershipRepository_GetByQuinielaAndUser_NotFound_ReturnsNil(t *t
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if got != nil {
-		t.Errorf("expected nil, got %+v", got)
+		t.Errorf(fmtExpectNilGot, got)
 	}
 }
 
