@@ -132,9 +132,15 @@ func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 		handlers := b.handlers[eventType]
 		b.mu.RUnlock()
 
-		ctx := context.Background()
+		// Detach cancellation from the subscription context so that handlers
+		// are not aborted when Close() cancels the consumer goroutine mid-message.
+		// context.WithoutCancel preserves any values on ctx (e.g. trace IDs set
+		// by the subscriber) while removing the cancellation signal, giving each
+		// handler a clean deadline-free context that still carries observability
+		// metadata — unlike context.Background() which discards all values.
+		handlerCtx := context.WithoutCancel(ctx)
 		for _, h := range handlers {
-			h(ctx, envelope)
+			h(handlerCtx, envelope)
 		}
 	}
 }
