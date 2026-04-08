@@ -162,7 +162,10 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 			DB:       cfg.Redis.DB,
 		})
 		if err != nil {
-			return nil, func() {}, fmt.Errorf("redis bus: connect: %w", err)
+			// No resources were allocated before the connection failed, so the
+			// cleanup function is a no-op. The caller still defers it for a
+			// consistent call-site pattern regardless of which driver is used.
+			return nil, func() { /* nothing to release: Redis client was never opened */ }, fmt.Errorf("redis bus: connect: %w", err)
 		}
 		log.Sugar().Infof("event bus: using Redis driver (%s)", cfg.Redis.Addr)
 
@@ -187,7 +190,11 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 		} else {
 			log.Sugar().Info("event bus: using in_memory driver (single-replica only)")
 		}
-		return messaging.NewInMemoryBus(), func() {}, nil
+		// InMemoryBus holds no external connections or goroutines, so there is
+		// nothing to close on shutdown. The no-op cleanup keeps the call-site
+		// pattern uniform: the caller always defers closeBus() without needing
+		// to know which driver is active.
+		return messaging.NewInMemoryBus(), func() { /* nothing to release: in-memory bus has no external resources */ }, nil
 	}
 }
 
