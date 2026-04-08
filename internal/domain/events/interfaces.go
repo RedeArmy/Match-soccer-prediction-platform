@@ -25,8 +25,12 @@ type Publisher interface {
 //
 // The handler receives the full Envelope; the concrete payload is accessible
 // via a type assertion on Envelope.Payload using the expected event struct.
+//
+// Handlers must return an error to signal transient failures. The bus
+// implementation retries the handler with exponential backoff before routing
+// the event to the dead-letter queue.
 type Subscriber interface {
-	Subscribe(eventType EventType, handler func(ctx context.Context, envelope Envelope))
+	Subscribe(eventType EventType, handler func(ctx context.Context, envelope Envelope) error)
 }
 
 // Bus combines Publisher and Subscriber into a single interface for

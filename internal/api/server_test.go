@@ -20,11 +20,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/rede/world-cup-quiniela/internal/api"
+	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 )
@@ -51,7 +53,7 @@ const healthPath = "/health"
 func newTestServer(t *testing.T) *api.Server {
 	t.Helper()
 	// Use InMemoryBus in tests: no external dependencies required.
-	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus())
+	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil))
 }
 
 func TestHealthEndpoint_ReturnsOK(t *testing.T) {
@@ -155,7 +157,7 @@ func TestRoutes_DBNil_PredictionRoute_Returns503(t *testing.T) {
 // unreachable so the request returns 500, but a 404 would mean the route was
 // never registered.
 func TestRoutes_WithFakeDB_MatchRouteRegistered(t *testing.T) {
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus())
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
@@ -165,8 +167,55 @@ func TestRoutes_WithFakeDB_MatchRouteRegistered(t *testing.T) {
 	}
 }
 
+// ── wireSubscribers ───────────────────────────────────────────────────────────
+
+// TestWireSubscribers_MalformedPayload_DoesNotPanic verifies that the
+// MatchFinished subscriber silently drops events whose payload cannot be
+// type-asserted to events.MatchFinished, returning nil so the bus does not
+// route them to the dead-letter queue.
+func TestWireSubscribers_MalformedPayload_DoesNotPanic(t *testing.T) {
+	// Override backoff so any retry completes instantly.
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	bus := messaging.NewInMemoryBus(nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus)
+	srv.Routes() // registers wireSubscribers
+
+	env := events.Envelope{
+		Type:       events.EventMatchFinished,
+		OccurredAt: time.Now().UTC(),
+		Payload:    "not-a-MatchFinished-struct",
+	}
+	// Must not panic; the !ok branch returns nil immediately.
+	_ = bus.Publish(context.Background(), env)
+}
+
+// TestWireSubscribers_ScoringError_DoesNotPanic verifies that when ScoreMatch
+// returns an error (here because the fake pool has no real DB connection), the
+// subscriber returns the error so the bus can retry, without panicking.
+func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	bus := messaging.NewInMemoryBus(nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus)
+	srv.Routes()
+
+	env := events.Envelope{
+		Type:       events.EventMatchFinished,
+		OccurredAt: time.Now().UTC(),
+		Payload:    events.MatchFinished{MatchID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina"},
+	}
+	// ScoreMatch will fail (fake pool, no real DB); handler returns the error,
+	// bus retries and eventually dead-letters — none of this must panic.
+	_ = bus.Publish(context.Background(), env)
+}
+
 func TestRoutes_WithFakeDB_PredictionRouteRegistered(t *testing.T) {
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus())
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions?user_id=1", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)

@@ -82,7 +82,7 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 		// nothing to close on shutdown. The no-op cleanup keeps the call-site
 		// pattern uniform: the caller always defers closeBus() without needing
 		// to know which driver is active.
-		return messaging.NewInMemoryBus(), func() { /* nothing to release: in-memory bus has no external resources */ }, nil
+		return messaging.NewInMemoryBus(log), func() { /* nothing to release: in-memory bus has no external resources */ }, nil
 	}
 }
 

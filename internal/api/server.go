@@ -171,17 +171,26 @@ func (s *Server) wireSubscribers(
 	// MatchFinished → ScoringService: calculate points for every prediction
 	// on the finished match. The handler runs inside a fresh background context
 	// so a cancelled HTTP request context does not abort the scoring job.
-	s.bus.Subscribe(events.EventMatchFinished, func(ctx context.Context, env events.Envelope) {
+	s.bus.Subscribe(events.EventMatchFinished, func(ctx context.Context, env events.Envelope) error {
 		mf, ok := env.Payload.(events.MatchFinished)
 		if !ok {
-			return
+			// Malformed payload: retrying will not help, so return nil to
+			// prevent the bus from routing this to the dead-letter queue.
+			s.log.Error("scoring: unexpected payload type for MatchFinished event",
+				zap.String("event_type", string(env.Type)),
+			)
+			return nil
 		}
 		if err := scorer.ScoreMatch(ctx, mf.MatchID); err != nil {
 			s.log.Error("scoring failed after MatchFinished event",
 				zap.Int("match_id", mf.MatchID),
 				zap.Error(err),
 			)
+			// Return the error so the bus can retry and, if all attempts
+			// fail, push the event to the dead-letter queue for manual replay.
+			return err
 		}
+		return nil
 	})
 }
 
