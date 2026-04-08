@@ -21,6 +21,7 @@ const (
 	fmtWrongPayload     = "expected payload %v, got %v"
 	fmtUnexpectedErr    = "unexpected error: %v"
 	fmtWrongCallCount   = "expected handler call count %d, got %d"
+	errTransientFail    = "fail"
 )
 
 func newMiniRedis(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
@@ -161,6 +162,32 @@ func TestInMemoryBus_Publish_RetriesAndDLQ_OnHandlerError(t *testing.T) {
 	// Handler must be called exactly maxHandlerAttempts times (3).
 	if calls != 3 {
 		t.Errorf("expected 3 handler attempts (retry exhaustion), got %d", calls)
+	}
+}
+
+func TestInMemoryBus_Publish_ContextCancelled_StopsRetrying(t *testing.T) {
+	// Use a long backoff so the cancelled context fires before the sleep ends.
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{500 * time.Millisecond, time.Second}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	bus := messaging.NewInMemoryBus(nil)
+	calls := 0
+
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		calls++
+		return errors.New(errTransientFail)
+	})
+
+	// A pre-cancelled context causes callWithRetry to exit during the first
+	// inter-attempt sleep, so the handler is called exactly once.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_ = bus.Publish(ctx, matchFinishedEnvelope())
+
+	if calls != 1 {
+		t.Errorf("expected 1 call before context cancelled, got %d", calls)
 	}
 }
 
@@ -306,6 +333,84 @@ func TestRedisBus_Publish_DoesNotCrossDeliver(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 		// correct — no cross-delivery
 	}
+}
+
+func TestRedisBus_ContextCancelled_StopsRetrying(t *testing.T) {
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{500 * time.Millisecond, time.Second}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	_, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	calls := make(chan struct{}, 10)
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		calls <- struct{}{}
+		return errors.New(errTransientFail)
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// Close cancels the subscription context, which interrupts the retry sleep.
+	// Wait for the first handler call then close immediately.
+	select {
+	case <-calls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never called")
+	}
+	bus.Close()
+
+	// Allow the goroutine to process the cancellation.
+	time.Sleep(100 * time.Millisecond)
+
+	// At most one additional attempt may have completed before Close fired.
+	if len(calls) > 1 {
+		t.Errorf("expected at most 1 extra call after Close, got %d", len(calls))
+	}
+}
+
+func TestRedisBus_DLQPushError_DoesNotPanic(t *testing.T) {
+	orig := messaging.RetryBackoff
+	messaging.RetryBackoff = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	defer func() { messaging.RetryBackoff = orig }()
+
+	mr, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	// Count handler calls so we know when all retries are exhausted.
+	var mu sync.Mutex
+	callCount := 0
+	ready := make(chan struct{}) // closed after the 3rd attempt
+
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		mu.Lock()
+		callCount++
+		done := callCount == 3
+		mu.Unlock()
+		if done {
+			close(ready)
+		}
+		return errors.New(errTransientFail)
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// Wait until all 3 attempts have run, then kill Redis so the DLQ RPush fails.
+	select {
+	case <-ready:
+		mr.Close() // stop Redis before pushDLQ can write
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler was not called 3 times within timeout")
+	}
+
+	// Give the goroutine time to attempt the failing RPush — must not panic.
+	time.Sleep(150 * time.Millisecond)
 }
 
 func TestRedisBus_RetriesAndPushesToDLQ_OnHandlerError(t *testing.T) {

@@ -77,10 +77,15 @@ func (b *InMemoryBus) Publish(ctx context.Context, envelope events.Envelope) err
 	// values carried by ctx (trace IDs, request IDs) so they remain available
 	// to handlers for structured logging and distributed tracing — something
 	// context.Background() would silently discard.
+	// handlerCtx strips cancellation so a cancelled HTTP request does not
+	// abort event side-effects, while preserving trace/request-ID values.
+	// The original ctx (which may be cancelled) is passed to callWithRetry
+	// so that the inter-attempt sleep is interrupted if the caller cancels,
+	// preventing a stuck goroutine during tests or graceful shutdown.
 	handlerCtx := context.WithoutCancel(ctx)
 	for _, h := range handlers {
 		h := h // capture loop variable
-		if err := callWithRetry(handlerCtx, func() error { return h(handlerCtx, envelope) }); err != nil {
+		if err := callWithRetry(ctx, func() error { return h(handlerCtx, envelope) }); err != nil {
 			b.logDLQ(envelope, err)
 		}
 	}

@@ -156,16 +156,16 @@ func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 		handlers := b.handlers[eventType]
 		b.mu.RUnlock()
 
-		// Detach cancellation from the subscription context so that handlers
-		// are not aborted when Close() cancels the consumer goroutine mid-message.
-		// context.WithoutCancel preserves any values on ctx (e.g. trace IDs set
-		// by the subscriber) while removing the cancellation signal, giving each
-		// handler a clean deadline-free context that still carries observability
-		// metadata — unlike context.Background() which discards all values.
+		// handlerCtx strips cancellation so Close() shutting down the consumer
+		// goroutine does not abort a handler mid-execution. Trace/request-ID
+		// values carried by ctx are preserved for structured logging.
+		// The original ctx (cancellable by Close) is passed to callWithRetry
+		// so that the inter-attempt sleep is interrupted on bus shutdown,
+		// avoiding a stuck goroutine waiting for the full backoff duration.
 		handlerCtx := context.WithoutCancel(ctx)
 		for _, h := range handlers {
 			h := h // capture loop variable
-			if err := callWithRetry(handlerCtx, func() error { return h(handlerCtx, envelope) }); err != nil {
+			if err := callWithRetry(ctx, func() error { return h(handlerCtx, envelope) }); err != nil {
 				b.pushDLQ(envelope, err)
 			}
 		}
