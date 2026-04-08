@@ -44,14 +44,14 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/internal_api_handler.MatchResponse"
+                                "$ref": "#/definitions/handler.MatchResponse"
                             }
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -80,7 +80,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.createMatchRequest"
+                            "$ref": "#/definitions/handler.createMatchRequest"
                         }
                     }
                 ],
@@ -88,19 +88,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.MatchResponse"
+                            "$ref": "#/definitions/handler.MatchResponse"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -134,19 +134,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.MatchResponse"
+                            "$ref": "#/definitions/handler.MatchResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -182,7 +182,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.updateResultRequest"
+                            "$ref": "#/definitions/handler.updateResultRequest"
                         }
                     }
                 ],
@@ -190,25 +190,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.MatchResponse"
+                            "$ref": "#/definitions/handler.MatchResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -242,25 +242,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.MatchResponse"
+                            "$ref": "#/definitions/handler.MatchResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -296,26 +296,26 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/internal_api_handler.PredictionResponse"
+                                "$ref": "#/definitions/handler.PredictionResponse"
                             }
                         }
                     },
                     "403": {
                         "description": "Caller requested another user's predictions",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "422": {
                         "description": "Missing or invalid user_id",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -344,7 +344,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.submitPredictionRequest"
+                            "$ref": "#/definitions/handler.submitPredictionRequest"
                         }
                     }
                 ],
@@ -352,31 +352,31 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.PredictionResponse"
+                            "$ref": "#/definitions/handler.PredictionResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Prediction already exists for this match",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -414,7 +414,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.updatePredictionRequest"
+                            "$ref": "#/definitions/handler.updatePredictionRequest"
                         }
                     }
                 ],
@@ -422,25 +422,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.PredictionResponse"
+                            "$ref": "#/definitions/handler.PredictionResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -469,6 +469,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/health/ready": {
+            "get": {
+                "description": "Readiness probe: runs all registered infrastructure checkers",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "infrastructure"
+                ],
+                "summary": "Readiness check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/health.Response"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/health.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/webhooks/clerk": {
             "post": {
                 "description": "Receives and processes Clerk user lifecycle events (user.created, user.updated).",
@@ -489,13 +515,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -503,7 +529,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "internal_api_handler.ErrorDetail": {
+        "handler.ErrorDetail": {
             "type": "object",
             "properties": {
                 "code": {
@@ -514,15 +540,15 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_handler.ErrorResponse": {
+        "handler.ErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
-                    "$ref": "#/definitions/internal_api_handler.ErrorDetail"
+                    "$ref": "#/definitions/handler.ErrorDetail"
                 }
             }
         },
-        "internal_api_handler.MatchResponse": {
+        "handler.MatchResponse": {
             "type": "object",
             "properties": {
                 "away_score": {
@@ -550,7 +576,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "stadium": {
-                    "$ref": "#/definitions/internal_api_handler.StadiumResponse"
+                    "$ref": "#/definitions/handler.StadiumResponse"
                 },
                 "stadium_id": {
                     "type": "integer"
@@ -563,7 +589,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_handler.PredictionResponse": {
+        "handler.PredictionResponse": {
             "type": "object",
             "properties": {
                 "away_score": {
@@ -592,7 +618,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_handler.StadiumResponse": {
+        "handler.StadiumResponse": {
             "type": "object",
             "properties": {
                 "capacity": {
@@ -612,7 +638,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_handler.createMatchRequest": {
+        "handler.createMatchRequest": {
             "type": "object",
             "properties": {
                 "away_team": {
@@ -629,7 +655,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_handler.submitPredictionRequest": {
+        "handler.submitPredictionRequest": {
             "type": "object",
             "properties": {
                 "away_score": {
@@ -643,7 +669,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_handler.updatePredictionRequest": {
+        "handler.updatePredictionRequest": {
             "type": "object",
             "properties": {
                 "away_score": {
@@ -654,7 +680,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_handler.updateResultRequest": {
+        "handler.updateResultRequest": {
             "type": "object",
             "properties": {
                 "away_score": {
@@ -662,6 +688,34 @@ const docTemplate = `{
                 },
                 "home_score": {
                     "type": "integer"
+                }
+            }
+        },
+        "health.Response": {
+            "type": "object",
+            "properties": {
+                "checks": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/health.Result"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "health.Result": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "latency_ms": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         }
