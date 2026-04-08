@@ -47,7 +47,15 @@ func fakePool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-const healthPath = "/health"
+const (
+	healthPath       = "/health"
+	readyPath        = "/health/ready"
+	contentTypeJSON  = "application/json"
+	checkerNameDB    = "db"
+	checkerNameRedis = "redis"
+	statusOK         = "ok"
+	statusError      = "error"
+)
 
 // newTestServer constructs a Server with a nil database pool and a
 // test-scoped logger that writes to t.Log. It is intended for use in
@@ -70,11 +78,11 @@ func (s *stubChecker) Name() string                          { return s.name }
 func (s *stubChecker) Check(_ context.Context) health.Result { return s.result }
 
 func okChecker(name string) health.Checker {
-	return &stubChecker{name: name, result: health.Result{Status: "ok", LatencyMS: 1}}
+	return &stubChecker{name: name, result: health.Result{Status: statusOK, LatencyMS: 1}}
 }
 
-func errChecker(name string, msg string) health.Checker {
-	return &stubChecker{name: name, result: health.Result{Status: "error", Error: msg}}
+func errChecker(name, msg string) health.Checker {
+	return &stubChecker{name: name, result: health.Result{Status: statusError, Error: msg}}
 }
 
 func newTestServerWithCheckers(t *testing.T, checkers []health.Checker) *api.Server {
@@ -102,8 +110,8 @@ func TestHealthEndpoint_ReturnsJSONContentType(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	ct := rec.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("expected Content-Type %q, got %q", "application/json", ct)
+	if ct != contentTypeJSON {
+		t.Errorf("expected Content-Type %q, got %q", contentTypeJSON, ct)
 	}
 }
 
@@ -256,7 +264,7 @@ func TestRoutes_WithFakeDB_PredictionRouteRegistered(t *testing.T) {
 func TestReadinessEndpoint_NoCheckers_Returns200(t *testing.T) {
 	h := newTestServer(t).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -267,11 +275,11 @@ func TestReadinessEndpoint_NoCheckers_Returns200(t *testing.T) {
 
 func TestReadinessEndpoint_AllCheckersOK_Returns200(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
-		okChecker("db"),
-		okChecker("redis"),
+		okChecker(checkerNameDB),
+		okChecker(checkerNameRedis),
 	}).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -282,11 +290,11 @@ func TestReadinessEndpoint_AllCheckersOK_Returns200(t *testing.T) {
 
 func TestReadinessEndpoint_OneCheckerFails_Returns503(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
-		okChecker("db"),
-		errChecker("redis", "connection refused"),
+		okChecker(checkerNameDB),
+		errChecker(checkerNameRedis, "connection refused"),
 	}).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -297,10 +305,10 @@ func TestReadinessEndpoint_OneCheckerFails_Returns503(t *testing.T) {
 
 func TestReadinessEndpoint_ResponseJSON_AllOK(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
-		okChecker("db"),
+		okChecker(checkerNameDB),
 	}).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -308,24 +316,24 @@ func TestReadinessEndpoint_ResponseJSON_AllOK(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Status != "ok" {
-		t.Errorf("expected status %q, got %q", "ok", resp.Status)
+	if resp.Status != statusOK {
+		t.Errorf("expected status %q, got %q", statusOK, resp.Status)
 	}
-	dbResult, ok := resp.Checks["db"]
+	dbResult, ok := resp.Checks[checkerNameDB]
 	if !ok {
-		t.Fatal("expected \"db\" key in checks")
+		t.Fatalf("expected %q key in checks", checkerNameDB)
 	}
-	if dbResult.Status != "ok" {
-		t.Errorf("expected db status %q, got %q", "ok", dbResult.Status)
+	if dbResult.Status != statusOK {
+		t.Errorf("expected db status %q, got %q", statusOK, dbResult.Status)
 	}
 }
 
 func TestReadinessEndpoint_ResponseJSON_CheckerError(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
-		errChecker("redis", "connection refused"),
+		errChecker(checkerNameRedis, "connection refused"),
 	}).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -333,12 +341,12 @@ func TestReadinessEndpoint_ResponseJSON_CheckerError(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Status != "error" {
-		t.Errorf("expected status %q, got %q", "error", resp.Status)
+	if resp.Status != statusError {
+		t.Errorf("expected status %q, got %q", statusError, resp.Status)
 	}
-	redisResult, ok := resp.Checks["redis"]
+	redisResult, ok := resp.Checks[checkerNameRedis]
 	if !ok {
-		t.Fatal("expected \"redis\" key in checks")
+		t.Fatalf("expected %q key in checks", checkerNameRedis)
 	}
 	if redisResult.Error != "connection refused" {
 		t.Errorf("expected error %q, got %q", "connection refused", redisResult.Error)
@@ -348,12 +356,12 @@ func TestReadinessEndpoint_ResponseJSON_CheckerError(t *testing.T) {
 func TestReadinessEndpoint_ContentType_IsJSON(t *testing.T) {
 	h := newTestServer(t).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	ct := rec.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("expected Content-Type %q, got %q", "application/json", ct)
+	if ct != contentTypeJSON {
+		t.Errorf("expected Content-Type %q, got %q", contentTypeJSON, ct)
 	}
 }
