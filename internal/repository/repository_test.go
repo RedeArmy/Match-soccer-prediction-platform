@@ -95,7 +95,7 @@ func isNotFound(err error) bool {
 func seedUser(t *testing.T) *domain.User {
 	t.Helper()
 	repo := repository.NewPostgresUserRepository(testDB)
-	u := &domain.User{Name: "Alice", Email: "alice@example.com", PasswordHash: "hash", Role: domain.RolePlayer}
+	u := &domain.User{Name: "Alice", Email: "alice@example.com", Role: domain.RolePlayer}
 	if err := repo.Create(context.Background(), u); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -133,7 +133,7 @@ func seedQuiniela(t *testing.T, ownerID int) *domain.Quiniela {
 func TestUserRepository_Create_HydratesID(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresUserRepository(testDB)
-	u := &domain.User{Name: "Bob", Email: "bob@example.com", PasswordHash: "h", Role: domain.RolePlayer}
+	u := &domain.User{Name: "Bob", Email: "bob@example.com", Role: domain.RolePlayer}
 
 	if err := repo.Create(context.Background(), u); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
