@@ -53,17 +53,20 @@ func (b *InMemoryBus) Subscribe(eventType events.EventType, handler func(context
 // Publish delivers envelope synchronously to all handlers registered for its
 // type. If no handler is registered the call is a no-op. Handler panics are
 // not recovered here; the caller's recovery middleware handles them.
-func (b *InMemoryBus) Publish(_ context.Context, envelope events.Envelope) error {
+func (b *InMemoryBus) Publish(ctx context.Context, envelope events.Envelope) error {
 	b.mu.RLock()
 	handlers := b.handlers[envelope.Type]
 	b.mu.RUnlock()
 
-	// Use a fresh background context for handler execution so that a
-	// cancelled request context does not prevent event side effects from
-	// completing (e.g. scoring must finish even if the HTTP client disconnected).
-	ctx := context.Background()
+	// Detach cancellation from the caller's context so that a cancelled HTTP
+	// request does not abort event side-effects (e.g. scoring must complete
+	// even if the client disconnected). context.WithoutCancel preserves any
+	// values carried by ctx (trace IDs, request IDs) so they remain available
+	// to handlers for structured logging and distributed tracing — something
+	// context.Background() would silently discard.
+	handlerCtx := context.WithoutCancel(ctx)
 	for _, h := range handlers {
-		h(ctx, envelope)
+		h(handlerCtx, envelope)
 	}
 	return nil
 }
