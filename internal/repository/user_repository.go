@@ -20,12 +20,17 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 	return &PostgresUserRepository{db: db}
 }
 
-const userColumns = "id, name, email, password_hash, role, clerk_subject, created_at, updated_at"
+// userColumns is the canonical SELECT/RETURNING column list for the users table.
+// Keeping it in a single constant ensures that scanUser and every query that
+// uses RETURNING stay in sync automatically when columns are added or removed.
+// password_hash was removed in migration 000010: authentication is delegated
+// to Clerk and no credential is stored in the application database.
+const userColumns = "id, name, email, role, clerk_subject, created_at, updated_at"
 
 func scanUser(row pgx.Row) (*domain.User, error) {
 	u := &domain.User{}
 	var clerkSubject *string // nullable in DB; empty string in domain when NULL
-	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -39,11 +44,14 @@ func scanUser(row pgx.Row) (*domain.User, error) {
 }
 
 func (r *PostgresUserRepository) Create(ctx context.Context, u *domain.User) error {
+	// password_hash is no longer a column: only name, email, and role are
+	// required at creation time. clerk_subject is set later via Update when
+	// the Clerk webhook delivers the user.created event.
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO users (name, email, password_hash, role)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO users (name, email, role)
+		 VALUES ($1, $2, $3)
 		 RETURNING `+userColumns,
-		u.Name, u.Email, u.PasswordHash, u.Role,
+		u.Name, u.Email, u.Role,
 	)
 	result, err := scanUser(row)
 	if err != nil {
@@ -72,10 +80,12 @@ func (r *PostgresUserRepository) Update(ctx context.Context, u *domain.User) err
 	if u.ClerkSubject != "" {
 		clerkSubject = &u.ClerkSubject
 	}
+	// password_hash is no longer updated; only name, email, role, and
+	// clerk_subject are mutable through the application layer.
 	row := r.db.QueryRow(ctx,
-		`UPDATE users SET name=$1, email=$2, password_hash=$3, role=$4, clerk_subject=$5, updated_at=NOW()
-		 WHERE id=$6 RETURNING `+userColumns,
-		u.Name, u.Email, u.PasswordHash, u.Role, clerkSubject, u.ID,
+		`UPDATE users SET name=$1, email=$2, role=$3, clerk_subject=$4, updated_at=NOW()
+		 WHERE id=$5 RETURNING `+userColumns,
+		u.Name, u.Email, u.Role, clerkSubject, u.ID,
 	)
 	result, err := scanUser(row)
 	if err != nil {
@@ -113,7 +123,7 @@ func collectUsers(rows pgx.Rows) ([]*domain.User, error) {
 	for rows.Next() {
 		u := &domain.User{}
 		var clerkSubject *string
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		if clerkSubject != nil {

@@ -27,7 +27,6 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
-	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -46,14 +45,21 @@ type Server struct {
 	db  *pgxpool.Pool
 	cfg *config.Config
 	log *zap.Logger
+	// bus is the event bus used to publish and receive domain events.
+	// The implementation is selected at startup via WCQ_EVENTBUS_DRIVER:
+	//   "in_memory" — InMemoryBus, safe for single-replica / local dev.
+	//   "redis"     — RedisBus, required for multi-replica production deployments.
+	bus events.Bus
 }
 
 // New constructs a Server with the provided dependencies.
 //
+// bus must not be nil; pass messaging.NewInMemoryBus() for local development
+// or a *messaging.RedisBus connected to the production Redis instance.
 // db may be nil when the database is unreachable at startup time; see the
 // field comment on Server.db for the expected handler behaviour in that case.
-func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger) *Server {
-	return &Server{db: db, cfg: cfg, log: log}
+func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger, bus events.Bus) *Server {
+	return &Server{db: db, cfg: cfg, log: log, bus: bus}
 }
 
 // Routes returns the fully configured http.Handler for the application.
@@ -118,8 +124,8 @@ func (s *Server) Routes() http.Handler {
 	matchRepo := repository.NewPostgresMatchRepository(s.db)
 	predRepo := repository.NewPostgresPredictionRepository(s.db)
 
-	bus := s.buildBus(matchRepo, predRepo)
-	matchHandler, predHandler := s.buildHandlers(bus, userRepo, matchRepo, predRepo)
+	s.wireSubscribers(matchRepo, predRepo)
+	matchHandler, predHandler := s.buildHandlers(userRepo, matchRepo, predRepo)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -150,19 +156,22 @@ func (s *Server) Routes() http.Handler {
 	return r
 }
 
-// buildBus creates the in-memory event bus and wires up the scoring subscriber.
-// The provided repositories are reused from the caller's shared instances rather
-// than constructed anew, preventing duplicate connection-pool handles.
-func (s *Server) buildBus(
+// wireSubscribers registers all domain event handlers on s.bus.
+//
+// This method is intentionally separate from bus construction: the bus
+// implementation (InMemory vs Redis) is selected at the composition root in
+// main.go and injected via New(). wireSubscribers only adds subscribers,
+// keeping routing logic in one place and bus lifecycle management in another.
+func (s *Server) wireSubscribers(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
-) events.Bus {
-	bus := messaging.NewInMemoryBus()
+) {
 	scorer := service.NewScoringService(matchRepo, predRepo, s.log)
 
-	// Subscribe ScoringService to MatchFinished so scores are calculated
-	// automatically whenever a match result is confirmed.
-	bus.Subscribe(events.EventMatchFinished, func(ctx context.Context, env events.Envelope) {
+	// MatchFinished → ScoringService: calculate points for every prediction
+	// on the finished match. The handler runs inside a fresh background context
+	// so a cancelled HTTP request context does not abort the scoring job.
+	s.bus.Subscribe(events.EventMatchFinished, func(ctx context.Context, env events.Envelope) {
 		mf, ok := env.Payload.(events.MatchFinished)
 		if !ok {
 			return
@@ -174,19 +183,18 @@ func (s *Server) buildBus(
 			)
 		}
 	})
-	return bus
 }
 
 // buildHandlers constructs the service layer and returns the route handlers.
 // The provided repositories are reused from the caller's shared instances.
+// s.bus is passed to the services so they can publish domain events.
 func (s *Server) buildHandlers(
-	bus events.Bus,
 	userRepo repository.UserRepository,
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 ) (*handler.MatchHandler, *handler.PredictionHandler) {
-	matchSvc := service.NewMatchService(matchRepo, bus, s.log)
-	predSvc := service.NewPredictionService(predRepo, matchRepo, bus, s.log)
+	matchSvc := service.NewMatchService(matchRepo, s.bus, s.log)
+	predSvc := service.NewPredictionService(predRepo, matchRepo, s.bus, s.log)
 
 	return handler.NewMatchHandler(matchSvc, s.log),
 		handler.NewPredictionHandler(predSvc, userRepo, s.log)
