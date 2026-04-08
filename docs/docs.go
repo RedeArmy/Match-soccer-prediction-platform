@@ -538,6 +538,12 @@ const docTemplate = `{
                 "kickoff_at": {
                     "type": "string"
                 },
+                "stadium": {
+                    "$ref": "#/definitions/internal_api_handler.StadiumResponse"
+                },
+                "stadium_id": {
+                    "type": "integer"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -572,6 +578,26 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.StadiumResponse": {
+            "type": "object",
+            "properties": {
+                "capacity": {
+                    "type": "integer"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "country": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

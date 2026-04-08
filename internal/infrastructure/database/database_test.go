@@ -13,6 +13,8 @@ import (
 const (
 	fmtUnexpectedErr = "unexpected error: %v"
 	fmtExpectedErr   = "expected an error, got nil"
+	fmtMigrateErr    = "migrate: %v"
+	fmtNewPoolErr    = "new pool: %v"
 )
 
 // ── Migrate ───────────────────────────────────────────────────────────────────
@@ -50,7 +52,7 @@ func TestSeed_InsertsFixtures(t *testing.T) {
 
 	// Schema must exist before seeding.
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
-		t.Fatalf("migrate: %v", err)
+		t.Fatalf(fmtMigrateErr, err)
 	}
 
 	pool, err := database.NewPool(context.Background(), database.Config{
@@ -60,7 +62,7 @@ func TestSeed_InsertsFixtures(t *testing.T) {
 		ConnMaxLifetime: time.Minute,
 	})
 	if err != nil {
-		t.Fatalf("new pool: %v", err)
+		t.Fatalf(fmtNewPoolErr, err)
 	}
 	defer pool.Close()
 
@@ -86,11 +88,11 @@ func TestSeed_InsertsFixtures(t *testing.T) {
 	}
 }
 
-func TestSeed_IdempotentOnSecondCall(t *testing.T) {
+func TestSeed_StadiumsTableMissing_ReturnsError(t *testing.T) {
 	dsn := testutil.SetupPostgres(t)
 
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
-		t.Fatalf("migrate: %v", err)
+		t.Fatalf(fmtMigrateErr, err)
 	}
 
 	pool, err := database.NewPool(context.Background(), database.Config{
@@ -100,7 +102,34 @@ func TestSeed_IdempotentOnSecondCall(t *testing.T) {
 		ConnMaxLifetime: time.Minute,
 	})
 	if err != nil {
-		t.Fatalf("new pool: %v", err)
+		t.Fatalf(fmtNewPoolErr, err)
+	}
+	defer pool.Close()
+
+	if _, err := pool.Exec(context.Background(), "DROP TABLE IF EXISTS stadiums CASCADE"); err != nil {
+		t.Fatalf("drop stadiums: %v", err)
+	}
+
+	if err := database.Seed(context.Background(), pool); err == nil {
+		t.Fatal("expected error when stadiums table is missing, got nil")
+	}
+}
+
+func TestSeed_IdempotentOnSecondCall(t *testing.T) {
+	dsn := testutil.SetupPostgres(t)
+
+	if err := database.Migrate(dsn, migrations.FS); err != nil {
+		t.Fatalf(fmtMigrateErr, err)
+	}
+
+	pool, err := database.NewPool(context.Background(), database.Config{
+		DSN:             dsn,
+		MaxOpenConns:    5,
+		MaxIdleConns:    2,
+		ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf(fmtNewPoolErr, err)
 	}
 	defer pool.Close()
 

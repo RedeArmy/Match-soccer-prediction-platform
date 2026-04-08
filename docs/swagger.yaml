@@ -28,6 +28,10 @@ definitions:
         type: integer
       kickoff_at:
         type: string
+      stadium:
+        $ref: '#/definitions/internal_api_handler.StadiumResponse'
+      stadium_id:
+        type: integer
       status:
         type: string
       updated_at:
@@ -51,6 +55,19 @@ definitions:
         type: string
       user_id:
         type: integer
+    type: object
+  internal_api_handler.StadiumResponse:
+    properties:
+      capacity:
+        type: integer
+      city:
+        type: string
+      country:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
     type: object
   internal_api_handler.createMatchRequest:
     properties:
