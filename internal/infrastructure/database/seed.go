@@ -29,11 +29,13 @@ func Seed(ctx context.Context, db *pgxpool.Pool) error {
 }
 
 func seedUsers(ctx context.Context, db *pgxpool.Pool) error {
+	// password_hash was removed in migration 000010: authentication is delegated
+	// to Clerk and no credential is stored in the application database.
 	_, err := db.Exec(ctx, `
-		INSERT INTO users (name, email, password_hash, role) VALUES
-			('Admin User',  'admin@quiniela.local',  'not-a-real-hash', 'admin'),
-			('Player One',  'player1@quiniela.local', 'not-a-real-hash', 'player'),
-			('Player Two',  'player2@quiniela.local', 'not-a-real-hash', 'player')
+		INSERT INTO users (name, email, role) VALUES
+			('Admin User',  'admin@quiniela.local',  'admin'),
+			('Player One',  'player1@quiniela.local', 'player'),
+			('Player Two',  'player2@quiniela.local', 'player')
 		ON CONFLICT (email) DO NOTHING
 	`)
 	return err

@@ -18,17 +18,15 @@ import "time"
 
 // User represents a registered participant in the quiniela platform.
 //
-// PasswordHash stores the output of a one-way hashing function (bcrypt or
-// argon2id). The plain-text password is discarded immediately after hashing
-// at the service layer and must never appear in logs, error messages, or
-// any persistence layer. Storing the hash directly on User is a pragmatic
-// choice for this project's scale; revisit this if the authentication model
-// grows to support multiple credential types or external identity providers.
+// Authentication is delegated entirely to Clerk: users log in via Clerk's
+// hosted flow and the API validates the resulting JWT. No password or
+// credential is stored here. ClerkSubject is the opaque identifier Clerk
+// assigns to each user (format "user_2abc…") and is the stable link between
+// a Clerk identity and the internal User record.
 type User struct {
 	ID           int
 	Name         string
 	Email        string
-	PasswordHash string
 	Role         UserRole
 	ClerkSubject string // opaque Clerk user ID, e.g. "user_2abc…"; empty for legacy rows
 	CreatedAt    time.Time
