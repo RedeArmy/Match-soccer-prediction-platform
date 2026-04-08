@@ -23,6 +23,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
 
+const fmtUnexpectedErr = "unexpected error: %v"
+
 func newTestLogger(t *testing.T) *zap.Logger {
 	t.Helper()
 	log, err := logger.New(logger.Config{Level: "debug", Encoding: "console"})
@@ -39,7 +41,7 @@ func TestSetupDB_EmptyDSN_ReturnsNilPool(t *testing.T) {
 	pool, err := setupDB(context.Background(), cfg, log)
 
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if pool != nil {
 		pool.Close()
@@ -61,7 +63,7 @@ func TestSetupDB_ValidDSN_MigratesAndReturnsPool(t *testing.T) {
 
 	pool, err := setupDB(context.Background(), cfg, log)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if pool == nil {
 		t.Fatal("expected non-nil pool for valid DSN, got nil")
@@ -95,7 +97,7 @@ func TestSetupEventBus_InMemoryDriver_ReturnsBusAndNoopCleanup(t *testing.T) {
 	bus, cleanup, err := setupEventBus(context.Background(), cfg, log)
 
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if bus == nil {
 		t.Fatal("expected non-nil bus")
@@ -111,7 +113,7 @@ func TestSetupEventBus_UnknownDriver_FallsBackToInMemory(t *testing.T) {
 	bus, cleanup, err := setupEventBus(context.Background(), cfg, log)
 
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if bus == nil {
 		t.Fatal("expected non-nil bus after fallback")
@@ -149,7 +151,7 @@ func TestSetupEventBus_RedisDriver_ValidAddr_ReturnsBusAndCleanup(t *testing.T) 
 	bus, cleanup, err := setupEventBus(context.Background(), cfg, log)
 
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if bus == nil {
 		t.Fatal("expected non-nil bus")
