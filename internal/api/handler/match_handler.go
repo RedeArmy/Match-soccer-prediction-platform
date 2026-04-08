@@ -38,9 +38,11 @@ func NewMatchHandler(svc service.MatchService, log *zap.Logger) *MatchHandler {
 }
 
 // createMatchRequest is the JSON body accepted by POST /api/v1/matches.
+// Valid phase values: group_stage, round_of_32, round_of_16, quarter_final, semi_final, third_place, final.
 type createMatchRequest struct {
 	HomeTeam  string    `json:"home_team"`
 	AwayTeam  string    `json:"away_team"`
+	Phase     string    `json:"phase"`
 	KickoffAt time.Time `json:"kickoff_at"`
 }
 
@@ -53,15 +55,24 @@ type updateResultRequest struct {
 // ListMatches handles GET /api/v1/matches.
 //
 // @Summary      List matches
-// @Description  Returns all fixtures in the tournament schedule.
+// @Description  Returns fixtures in the tournament schedule, optionally filtered by phase.
 // @Tags         matches
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {array}   handler.MatchResponse
-// @Failure      500  {object}  handler.ErrorResponse
+// @Param        phase  query     string  false  "Tournament phase (group_stage, round_of_32, round_of_16, quarter_final, semi_final, third_place, final)"
+// @Success      200    {array}   handler.MatchResponse
+// @Failure      500    {object}  handler.ErrorResponse
 // @Router       /api/v1/matches [get]
 func (h *MatchHandler) ListMatches(w http.ResponseWriter, r *http.Request) {
-	matches, err := h.svc.ListMatches(r.Context())
+	var (
+		matches []*domain.Match
+		err     error
+	)
+	if phase := domain.MatchPhase(r.URL.Query().Get("phase")); phase != "" {
+		matches, err = h.svc.ListMatchesByPhase(r.Context(), phase)
+	} else {
+		matches, err = h.svc.ListMatches(r.Context())
+	}
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return
@@ -121,6 +132,7 @@ func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 	match := &domain.Match{
 		HomeTeam:  req.HomeTeam,
 		AwayTeam:  req.AwayTeam,
+		Phase:     domain.MatchPhase(req.Phase),
 		KickoffAt: req.KickoffAt,
 	}
 	if err := h.svc.CreateMatch(r.Context(), match); err != nil {

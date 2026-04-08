@@ -58,6 +58,9 @@ func (s *stubMatchSvc) GetMatch(_ context.Context, _ int) (*domain.Match, error)
 func (s *stubMatchSvc) ListMatches(_ context.Context) ([]*domain.Match, error) {
 	return s.matches, s.err
 }
+func (s *stubMatchSvc) ListMatchesByPhase(_ context.Context, _ domain.MatchPhase) ([]*domain.Match, error) {
+	return s.matches, s.err
+}
 func (s *stubMatchSvc) ListMatchesByStatus(_ context.Context, _ domain.MatchStatus) ([]*domain.Match, error) {
 	return s.matches, s.err
 }

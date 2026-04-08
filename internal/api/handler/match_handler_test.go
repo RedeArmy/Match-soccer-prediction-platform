@@ -60,6 +60,14 @@ func TestListMatches_ServiceError_Returns500(t *testing.T) {
 	}
 }
 
+func TestListMatches_WithPhaseFilter_Returns200(t *testing.T) {
+	svc := &stubMatchSvc{matches: []*domain.Match{{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Phase: domain.PhaseGroupStage}}}
+	w := do(newMatchRouter(svc), http.MethodGet, "/?phase=group_stage", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
 // ── GetMatch ──────────────────────────────────────────────────────────────────
 
 func TestGetMatch_Success_Returns200(t *testing.T) {

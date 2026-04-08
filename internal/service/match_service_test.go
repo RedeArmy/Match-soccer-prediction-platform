@@ -16,6 +16,7 @@ import (
 const (
 	fmtExpectNil    = "expected nil, got %v"
 	fmtExpectNilErr = "expected nil error, got %v"
+	fmtExpect1Match = "expected 1 match, got %d"
 	fmtNotFoundErr  = "expected not-found error, got %v"
 )
 
@@ -40,6 +41,9 @@ func (r *stubMatchRepo) Update(_ context.Context, m *domain.Match) error {
 	return nil
 }
 func (r *stubMatchRepo) List(_ context.Context) ([]*domain.Match, error) {
+	return r.matches, r.err
+}
+func (r *stubMatchRepo) ListByPhase(_ context.Context, _ domain.MatchPhase) ([]*domain.Match, error) {
 	return r.matches, r.err
 }
 func (r *stubMatchRepo) ListByStatus(_ context.Context, _ domain.MatchStatus) ([]*domain.Match, error) {
@@ -209,7 +213,23 @@ func TestListMatches_ReturnsSlice(t *testing.T) {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match, got %d", len(got))
+		t.Errorf(fmtExpect1Match, len(got))
+	}
+}
+
+func TestListMatchesByPhase_ReturnsFilteredSlice(t *testing.T) {
+	pub := &stubPublisher{}
+	matches := []*domain.Match{
+		{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Phase: domain.PhaseGroupStage},
+	}
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, zap.NewNop())
+
+	got, err := svc.ListMatchesByPhase(context.Background(), domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	if len(got) != 1 {
+		t.Errorf(fmtExpect1Match, len(got))
 	}
 }
 
@@ -225,6 +245,6 @@ func TestListMatchesByStatus_ReturnsFilteredSlice(t *testing.T) {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match, got %d", len(got))
+		t.Errorf(fmtExpect1Match, len(got))
 	}
 }
