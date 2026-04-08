@@ -28,7 +28,7 @@ func TestGroupMembershipService_Join_NewMember_ReturnsActive(t *testing.T) {
 
 	m, err := svc.Join(context.Background(), "VALIDCODE", 42)
 	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+		t.Fatalf(fmtExpectNil, err)
 	}
 	if m.Status != domain.MembershipActive {
 		t.Errorf("expected active status, got %s", m.Status)
@@ -84,7 +84,7 @@ func TestGroupMembershipService_Join_PreviouslyLeft_ReturnsActive(t *testing.T) 
 
 	m, err := svc.Join(context.Background(), "CODE", 42)
 	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+		t.Fatalf(fmtExpectNil, err)
 	}
 	if m.Status != domain.MembershipActive {
 		t.Errorf("expected active status, got %s", m.Status)
@@ -121,7 +121,7 @@ func TestGroupMembershipService_ListByQuiniela_ReturnsMemberships(t *testing.T) 
 
 	got, err := svc.ListByQuiniela(context.Background(), 1)
 	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+		t.Fatalf(fmtExpectNil, err)
 	}
 	if len(got) != 2 {
 		t.Errorf("expected 2 memberships, got %d", len(got))
@@ -139,7 +139,7 @@ func TestGroupMembershipService_ListByUser_ReturnsMemberships(t *testing.T) {
 
 	got, err := svc.ListByUser(context.Background(), 10)
 	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+		t.Fatalf(fmtExpectNil, err)
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 membership, got %d", len(got))
@@ -156,7 +156,7 @@ func TestGroupMembershipService_Join_FreeGroup_AutoPaid(t *testing.T) {
 
 	m, err := svc.Join(context.Background(), "FREECODE", 42)
 	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+		t.Fatalf(fmtExpectNil, err)
 	}
 	if !m.Paid {
 		t.Error("expected Paid = true for free group")
@@ -173,7 +173,7 @@ func TestGroupMembershipService_Join_PaidGroup_NotAutoPaid(t *testing.T) {
 
 	m, err := svc.Join(context.Background(), "PAIDCODE", 42)
 	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+		t.Fatalf(fmtExpectNil, err)
 	}
 	if m.Paid {
 		t.Error("expected Paid = false for paid group until payment confirmed")
@@ -193,7 +193,7 @@ func TestGroupMembershipService_MarkPaid_ReturnsMembership(t *testing.T) {
 
 	got, err := svc.MarkPaid(context.Background(), 1, 42)
 	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+		t.Fatalf(fmtExpectNil, err)
 	}
 	if !got.Paid {
 		t.Error("expected Paid = true after MarkPaid")
