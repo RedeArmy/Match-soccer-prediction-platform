@@ -48,13 +48,14 @@ func fakePool(t *testing.T) *pgxpool.Pool {
 }
 
 const (
-	healthPath       = "/health"
-	readyPath        = "/health/ready"
-	contentTypeJSON  = "application/json"
-	checkerNameDB    = "db"
-	checkerNameRedis = "redis"
-	statusOK         = "ok"
-	statusError      = "error"
+	healthPath           = "/health"
+	readyPath            = "/health/ready"
+	contentTypeJSON      = "application/json"
+	checkerNameDB        = "db"
+	checkerNameRedis     = "redis"
+	statusOK             = "ok"
+	statusError          = "error"
+	errConnectionRefused = "connection refused"
 )
 
 // newTestServer constructs a Server with a nil database pool and a
@@ -291,7 +292,7 @@ func TestReadinessEndpoint_AllCheckersOK_Returns200(t *testing.T) {
 func TestReadinessEndpoint_OneCheckerFails_Returns503(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
 		okChecker(checkerNameDB),
-		errChecker(checkerNameRedis, "connection refused"),
+		errChecker(checkerNameRedis, errConnectionRefused),
 	}).Routes()
 
 	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
@@ -330,7 +331,7 @@ func TestReadinessEndpoint_ResponseJSON_AllOK(t *testing.T) {
 
 func TestReadinessEndpoint_ResponseJSON_CheckerError(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
-		errChecker(checkerNameRedis, "connection refused"),
+		errChecker(checkerNameRedis, errConnectionRefused),
 	}).Routes()
 
 	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
@@ -348,8 +349,8 @@ func TestReadinessEndpoint_ResponseJSON_CheckerError(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected %q key in checks", checkerNameRedis)
 	}
-	if redisResult.Error != "connection refused" {
-		t.Errorf("expected error %q, got %q", "connection refused", redisResult.Error)
+	if redisResult.Error != errConnectionRefused {
+		t.Errorf("expected error %q, got %q", errConnectionRefused, redisResult.Error)
 	}
 }
 
