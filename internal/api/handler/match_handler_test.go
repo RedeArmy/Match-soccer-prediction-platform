@@ -70,6 +70,24 @@ func TestGetMatch_Success_Returns200(t *testing.T) {
 	}
 }
 
+func TestGetMatch_WithStadium_IncludesStadiumInResponse(t *testing.T) {
+	stadiumID := 1
+	svc := &stubMatchSvc{match: &domain.Match{
+		ID:        1,
+		HomeTeam:  "Brazil",
+		AwayTeam:  "Argentina",
+		StadiumID: &stadiumID,
+		Stadium:   &domain.Stadium{ID: 1, Name: "MetLife Stadium", City: "East Rutherford", Country: "USA", Capacity: 82500},
+	}}
+	w := do(newMatchRouter(svc), http.MethodGet, "/1", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "MetLife Stadium") {
+		t.Errorf("expected stadium name in response, got: %s", w.Body.String())
+	}
+}
+
 func TestGetMatch_InvalidID_Returns422(t *testing.T) {
 	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodGet, "/abc", "")
 	if w.Code != http.StatusUnprocessableEntity {
