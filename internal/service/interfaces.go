@@ -30,6 +30,7 @@ type MatchService interface {
 	CreateMatch(ctx context.Context, match *domain.Match) error
 	GetMatch(ctx context.Context, id int) (*domain.Match, error)
 	ListMatches(ctx context.Context) ([]*domain.Match, error)
+	ListMatchesByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error)
 	ListMatchesByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
 	UpdateResult(ctx context.Context, id int, homeScore, awayScore int) (*domain.Match, error)
 	StartMatch(ctx context.Context, id int) (*domain.Match, error)

@@ -48,6 +48,10 @@ func (s *matchService) ListMatches(ctx context.Context) ([]*domain.Match, error)
 	return s.repo.List(ctx)
 }
 
+func (s *matchService) ListMatchesByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error) {
+	return s.repo.ListByPhase(ctx, phase)
+}
+
 func (s *matchService) ListMatchesByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error) {
 	return s.repo.ListByStatus(ctx, status)
 }

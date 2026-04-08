@@ -23,6 +23,7 @@ type MatchResponse struct {
 	HomeScore *int             `json:"home_score"`
 	AwayScore *int             `json:"away_score"`
 	Status    string           `json:"status"`
+	Phase     string           `json:"phase"`
 	StadiumID *int             `json:"stadium_id"`
 	Stadium   *StadiumResponse `json:"stadium,omitempty"`
 	KickoffAt string           `json:"kickoff_at"`
@@ -63,6 +64,7 @@ func matchToResponse(m *domain.Match) MatchResponse {
 		HomeScore: m.HomeScore,
 		AwayScore: m.AwayScore,
 		Status:    string(m.Status),
+		Phase:     string(m.Phase),
 		StadiumID: m.StadiumID,
 		KickoffAt: m.KickoffAt.Format(timeFormat),
 		CreatedAt: m.CreatedAt.Format(timeFormat),

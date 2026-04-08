@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all fixtures in the tournament schedule.",
+                "description": "Returns fixtures in the tournament schedule, optionally filtered by phase.",
                 "produces": [
                     "application/json"
                 ],
@@ -30,6 +30,14 @@ const docTemplate = `{
                     "matches"
                 ],
                 "summary": "List matches",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tournament phase (group_stage, round_of_32, round_of_16, quarter_final, semi_final, third_place, final)",
+                        "name": "phase",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -538,6 +546,9 @@ const docTemplate = `{
                 "kickoff_at": {
                     "type": "string"
                 },
+                "phase": {
+                    "type": "string"
+                },
                 "stadium": {
                     "$ref": "#/definitions/internal_api_handler.StadiumResponse"
                 },
@@ -611,6 +622,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "kickoff_at": {
+                    "type": "string"
+                },
+                "phase": {
                     "type": "string"
                 }
             }

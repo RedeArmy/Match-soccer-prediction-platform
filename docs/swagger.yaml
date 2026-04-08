@@ -28,6 +28,8 @@ definitions:
         type: integer
       kickoff_at:
         type: string
+      phase:
+        type: string
       stadium:
         $ref: '#/definitions/internal_api_handler.StadiumResponse'
       stadium_id:
@@ -77,6 +79,8 @@ definitions:
         type: string
       kickoff_at:
         type: string
+      phase:
+        type: string
     type: object
   internal_api_handler.submitPredictionRequest:
     properties:
@@ -111,7 +115,14 @@ info:
 paths:
   /api/v1/matches:
     get:
-      description: Returns all fixtures in the tournament schedule.
+      description: Returns fixtures in the tournament schedule, optionally filtered
+        by phase.
+      parameters:
+      - description: Tournament phase (group_stage, round_of_32, round_of_16, quarter_final,
+          semi_final, third_place, final)
+        in: query
+        name: phase
+        type: string
       produces:
       - application/json
       responses:
