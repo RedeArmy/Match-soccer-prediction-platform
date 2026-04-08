@@ -47,7 +47,7 @@ definitions:
       kickoff_at:
         type: string
       phase:
-        $ref: '#/definitions/domain.MatchPhase'
+        type: string
       stadium:
         $ref: '#/definitions/handler.StadiumResponse'
       stadium_id:
