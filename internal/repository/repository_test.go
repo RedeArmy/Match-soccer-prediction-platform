@@ -393,6 +393,29 @@ func TestMatchRepository_ListByStatus_FiltersCorrectly(t *testing.T) {
 	}
 }
 
+func TestMatchRepository_ListByPhase_FiltersCorrectly(t *testing.T) {
+	cleanTables(t)
+	seedMatch(t) // phase = group_stage
+
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	got, err := repo.ListByPhase(context.Background(), domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected 1 group_stage match, got %d", len(got))
+	}
+
+	none, err := repo.ListByPhase(context.Background(), domain.PhaseFinal)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(none) != 0 {
+		t.Errorf("expected 0 final matches, got %d", len(none))
+	}
+}
+
 // ── PredictionRepository ──────────────────────────────────────────────────────
 
 func TestPredictionRepository_Create_HydratesID(t *testing.T) {

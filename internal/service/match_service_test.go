@@ -216,6 +216,22 @@ func TestListMatches_ReturnsSlice(t *testing.T) {
 	}
 }
 
+func TestListMatchesByPhase_ReturnsFilteredSlice(t *testing.T) {
+	pub := &stubPublisher{}
+	matches := []*domain.Match{
+		{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Phase: domain.PhaseGroupStage},
+	}
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, zap.NewNop())
+
+	got, err := svc.ListMatchesByPhase(context.Background(), domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected 1 match, got %d", len(got))
+	}
+}
+
 func TestListMatchesByStatus_ReturnsFilteredSlice(t *testing.T) {
 	pub := &stubPublisher{}
 	matches := []*domain.Match{
