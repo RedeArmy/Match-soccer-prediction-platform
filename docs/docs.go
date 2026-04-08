@@ -568,7 +568,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "phase": {
-                    "type": "string"
+                    "$ref": "#/definitions/domain.MatchPhase"
                 },
                 "stadium": {
                     "$ref": "#/definitions/handler.StadiumResponse"
