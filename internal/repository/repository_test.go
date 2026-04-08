@@ -3,8 +3,10 @@ package repository_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +19,13 @@ import (
 	"github.com/rede/world-cup-quiniela/migrations"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
+
+// codeSeq generates unique invite codes across the test run.
+var codeSeq int32
+
+func nextCode() string {
+	return fmt.Sprintf("CODE%06d", atomic.AddInt32(&codeSeq, 1))
+}
 
 const (
 	dbImage    = "postgres:17-alpine"
@@ -80,7 +89,7 @@ func TestMain(m *testing.M) {
 func cleanTables(t *testing.T) {
 	t.Helper()
 	_, err := testDB.Exec(context.Background(),
-		`TRUNCATE tiebreakers, predictions, quinielas, matches, stadiums, users RESTART IDENTITY CASCADE`)
+		`TRUNCATE group_memberships, tiebreakers, predictions, quinielas, matches, stadiums, users RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("clean tables: %v", err)
 	}
@@ -95,7 +104,8 @@ func isNotFound(err error) bool {
 func seedUser(t *testing.T) *domain.User {
 	t.Helper()
 	repo := repository.NewPostgresUserRepository(testDB)
-	u := &domain.User{Name: "Alice", Email: "alice@example.com", Role: domain.RolePlayer}
+	code := nextCode()
+	u := &domain.User{Name: "User " + code, Email: code + "@example.com", Role: domain.RolePlayer}
 	if err := repo.Create(context.Background(), u); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -121,11 +131,28 @@ func seedMatch(t *testing.T) *domain.Match {
 func seedQuiniela(t *testing.T, ownerID int) *domain.Quiniela {
 	t.Helper()
 	repo := repository.NewPostgresQuinielaRepository(testDB)
-	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: ownerID}
+	q := &domain.Quiniela{Name: fmt.Sprintf("Oficina %s", nextCode()), OwnerID: ownerID, InviteCode: nextCode(), Currency: "MXN"}
 	if err := repo.Create(context.Background(), q); err != nil {
 		t.Fatalf("seed quiniela: %v", err)
 	}
 	return q
+}
+
+func seedMembership(t *testing.T, quinielaID, userID int, status domain.MembershipStatus, paid bool) *domain.GroupMembership {
+	t.Helper()
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	now := time.Now().UTC()
+	m := &domain.GroupMembership{
+		QuinielaID: quinielaID,
+		UserID:     userID,
+		Status:     status,
+		Paid:       paid,
+		JoinedAt:   &now,
+	}
+	if err := repo.Create(context.Background(), m); err != nil {
+		t.Fatalf("seed membership: %v", err)
+	}
+	return m
 }
 
 // ── UserRepository ────────────────────────────────────────────────────────────
@@ -780,5 +807,276 @@ func TestTiebreakerRepository_ListByQuiniela_ReturnsRows(t *testing.T) {
 	}
 	if len(tbs) != 1 {
 		t.Errorf("expected 1 tiebreaker, got %d", len(tbs))
+	}
+}
+
+// ── QuinielaRepository (new fields) ──────────────────────────────────────────
+
+func TestQuinielaRepository_Create_HydratesInviteCode(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+	code := nextCode()
+	q := &domain.Quiniela{Name: "Pool A", OwnerID: u.ID, InviteCode: code, Currency: "MXN"}
+
+	if err := repo.Create(context.Background(), q); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if q.InviteCode != code {
+		t.Errorf("invite_code: got %q, want %q", q.InviteCode, code)
+	}
+}
+
+func TestQuinielaRepository_Create_DuplicateName_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	q1 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: "MXN"}
+	if err := repo.Create(context.Background(), q1); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	q2 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: "MXN"}
+	err := repo.Create(context.Background(), q2)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict error for duplicate name, got %v", err)
+	}
+}
+
+func TestQuinielaRepository_GetByInviteCode_Found(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	got, err := repo.GetByInviteCode(context.Background(), q.InviteCode)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected quiniela, got nil")
+	}
+	if got.ID != q.ID {
+		t.Errorf("id: got %d, want %d", got.ID, q.ID)
+	}
+}
+
+func TestQuinielaRepository_GetByInviteCode_NotFound_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	got, err := repo.GetByInviteCode(context.Background(), "NOTEXISTS")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for unknown code, got %+v", got)
+	}
+}
+
+// ── GroupMembershipRepository ─────────────────────────────────────────────────
+
+func TestGroupMembershipRepository_Create_HydratesID(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	now := time.Now().UTC()
+	m := &domain.GroupMembership{
+		QuinielaID: q.ID,
+		UserID:     u.ID,
+		Status:     domain.MembershipActive,
+		Paid:       true,
+		JoinedAt:   &now,
+	}
+
+	if err := repo.Create(context.Background(), m); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if m.ID == 0 {
+		t.Error(msgNonZeroID)
+	}
+	if !m.Paid {
+		t.Error("expected Paid = true after hydration")
+	}
+}
+
+func TestGroupMembershipRepository_Create_FreeMembership_PaidFalse(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	m := &domain.GroupMembership{
+		QuinielaID: q.ID,
+		UserID:     u.ID,
+		Status:     domain.MembershipPending,
+		Paid:       false,
+	}
+
+	if err := repo.Create(context.Background(), m); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if m.Paid {
+		t.Error("expected Paid = false")
+	}
+	if m.JoinedAt != nil {
+		t.Error("expected JoinedAt = nil for pending membership")
+	}
+}
+
+func TestGroupMembershipRepository_GetByQuinielaAndUser_Found(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	created := seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	got, err := repo.GetByQuinielaAndUser(context.Background(), q.ID, u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected membership, got nil")
+	}
+	if got.ID != created.ID {
+		t.Errorf("id: got %d, want %d", got.ID, created.ID)
+	}
+	if got.Status != domain.MembershipActive {
+		t.Errorf("status: got %q, want active", got.Status)
+	}
+}
+
+func TestGroupMembershipRepository_GetByQuinielaAndUser_NotFound_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	got, err := repo.GetByQuinielaAndUser(context.Background(), 99999, 99999)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+}
+
+func TestGroupMembershipRepository_Update_ChangesStatus(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	m := seedMembership(t, q.ID, u.ID, domain.MembershipPending, false)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	now := time.Now().UTC()
+	m.Status = domain.MembershipActive
+	m.Paid = true
+	m.JoinedAt = &now
+	if err := repo.Update(context.Background(), m); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if m.Status != domain.MembershipActive {
+		t.Errorf("status not updated: got %q", m.Status)
+	}
+	if !m.Paid {
+		t.Error("paid not updated to true")
+	}
+}
+
+func TestGroupMembershipRepository_Update_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	ghost := &domain.GroupMembership{ID: 99999, Status: domain.MembershipLeft}
+
+	if err := repo.Update(context.Background(), ghost); !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestGroupMembershipRepository_MarkPaid_SetsPaidTrue(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, false)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	got, err := repo.MarkPaid(context.Background(), q.ID, u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if !got.Paid {
+		t.Error("expected Paid = true after MarkPaid")
+	}
+}
+
+func TestGroupMembershipRepository_MarkPaid_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	if _, err := repo.MarkPaid(context.Background(), 99999, 99999); !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestGroupMembershipRepository_ListByQuiniela_ReturnsAllMembers(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	member := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, member.ID, domain.MembershipActive, false)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	members, err := repo.ListByQuiniela(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(members) != 2 {
+		t.Errorf("expected 2 members, got %d", len(members))
+	}
+}
+
+func TestGroupMembershipRepository_ListByQuiniela_Empty(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	members, err := repo.ListByQuiniela(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(members) != 0 {
+		t.Errorf("expected 0 members, got %d", len(members))
+	}
+}
+
+func TestGroupMembershipRepository_ListByUser_ReturnsGroups(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q1 := seedQuiniela(t, u.ID)
+	q2 := seedQuiniela(t, u.ID)
+	seedMembership(t, q1.ID, u.ID, domain.MembershipActive, true)
+	seedMembership(t, q2.ID, u.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	groups, err := repo.ListByUser(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(groups) != 2 {
+		t.Errorf("expected 2 groups, got %d", len(groups))
+	}
+}
+
+func TestGroupMembershipRepository_ListByUser_Empty(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	groups, err := repo.ListByUser(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(groups) != 0 {
+		t.Errorf("expected 0 groups, got %d", len(groups))
 	}
 }

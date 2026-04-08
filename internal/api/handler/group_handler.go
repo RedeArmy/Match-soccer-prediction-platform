@@ -39,7 +39,7 @@ func (h *GroupHandler) resolveCallerID(r *http.Request, subject string) (int, er
 		return 0, apperrors.Internal(err)
 	}
 	if user == nil {
-		return 0, apperrors.Unauthorised("user account not found; please try again shortly")
+		return 0, apperrors.Unauthorised(msgUserNotFound)
 	}
 	return user.ID, nil
 }
@@ -78,7 +78,7 @@ type joinGroupRequest struct {
 func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 	subject, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised("authentication required"))
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 	callerID, err := h.resolveCallerID(r, subject)
@@ -155,7 +155,7 @@ func (h *GroupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) Join(w http.ResponseWriter, r *http.Request) {
 	subject, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised("authentication required"))
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 	callerID, err := h.resolveCallerID(r, subject)
@@ -225,7 +225,7 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 	subject, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised("authentication required"))
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 	callerID, err := h.resolveCallerID(r, subject)

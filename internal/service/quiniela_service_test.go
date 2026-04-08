@@ -119,3 +119,48 @@ func TestQuinielaService_GetByOwner_ReturnsSlice(t *testing.T) {
 		t.Errorf("expected 1 quiniela, got %d", len(got))
 	}
 }
+
+func TestQuinielaService_Create_DefaultsCurrencyToMXN(t *testing.T) {
+	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	q := &domain.Quiniela{Name: "Pool", OwnerID: 1} // no Currency set
+
+	if err := svc.Create(context.Background(), q); err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if q.Currency != "MXN" {
+		t.Errorf("expected default currency MXN, got %q", q.Currency)
+	}
+}
+
+func TestQuinielaService_Create_RepoConflict_ReturnsConflict(t *testing.T) {
+	svc := NewQuinielaService(
+		&stubQuinielaRepo{err: apperrors.Conflict("a group with this name already exists")},
+		&stubMemberRepo{},
+	)
+	q := &domain.Quiniela{Name: "Duplicate", OwnerID: 1}
+
+	if err := svc.Create(context.Background(), q); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict error, got %v", err)
+	}
+}
+
+func TestQuinielaService_GetByInviteCode_Found(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: "Pool", InviteCode: "ABC123"}
+	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
+
+	got, err := svc.GetByInviteCode(context.Background(), "ABC123")
+	if err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if got.ID != 1 {
+		t.Errorf("expected ID 1, got %d", got.ID)
+	}
+}
+
+func TestQuinielaService_GetByInviteCode_NotFound_ReturnsNotFound(t *testing.T) {
+	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: nil}, &stubMemberRepo{})
+
+	if _, err := svc.GetByInviteCode(context.Background(), "BADCODE"); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found error, got %v", err)
+	}
+}

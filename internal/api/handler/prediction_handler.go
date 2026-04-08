@@ -34,7 +34,7 @@ func (h *PredictionHandler) resolveUserID(r *http.Request, subject string) (int,
 		return 0, apperrors.Internal(err)
 	}
 	if user == nil {
-		return 0, apperrors.Unauthorised("user account not found; please try again shortly")
+		return 0, apperrors.Unauthorised(msgUserNotFound)
 	}
 	return user.ID, nil
 }
@@ -74,7 +74,7 @@ type updatePredictionRequest struct {
 func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised("authentication required"))
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 

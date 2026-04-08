@@ -3,6 +3,7 @@ package handler_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -328,5 +329,112 @@ func TestGroupListMyGroups_Returns401_WhenUserNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestGroupListMyGroups_Returns500_OnServiceError(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubUserRepo{user: &domain.User{ID: 10}},
+	)
+	req := httptest.NewRequest(http.MethodGet, groupsMePath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+// ── error paths ───────────────────────────────────────────────────────────────
+
+func TestGroupCreate_Returns400_OnMalformedJSON(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{},
+		&stubUserRepo{user: &domain.User{ID: 10}},
+	)
+	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(`{bad json`))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestGroupCreate_Returns500_OnServiceError(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubMemberSvc{},
+		&stubUserRepo{user: &domain.User{ID: 10}},
+	)
+	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(`{"name":"Pool"}`))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+func TestGroupGetByID_Returns500_OnServiceError(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubMemberSvc{},
+		&stubUserRepo{user: &domain.User{ID: 10}},
+	)
+	req := httptest.NewRequest(http.MethodGet, groupByIDPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+func TestGroupJoin_Returns400_OnMalformedJSON(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{},
+		&stubUserRepo{user: &domain.User{ID: 10}},
+	)
+	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(`{bad`))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestGroupJoin_Returns500_OnServiceError(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubUserRepo{user: &domain.User{ID: 10}},
+	)
+	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(`{"invite_code":"ABC123DEFG"}`))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+func TestGroupListMembers_Returns500_OnServiceError(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubUserRepo{user: &domain.User{ID: 10}},
+	)
+	req := httptest.NewRequest(http.MethodGet, groupMembersPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
 	}
 }

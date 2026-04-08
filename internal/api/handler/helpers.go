@@ -8,6 +8,11 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const (
+	msgAuthRequired = "authentication required"
+	msgUserNotFound = "user account not found; please try again shortly"
+)
+
 // writeJSON serialises v to JSON and writes it to w with the given status code.
 // The Content-Type header is set before writing the body.
 func writeJSON(w http.ResponseWriter, status int, v any) {
