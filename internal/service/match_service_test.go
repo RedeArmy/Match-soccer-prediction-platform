@@ -16,6 +16,7 @@ import (
 const (
 	fmtExpectNil    = "expected nil, got %v"
 	fmtExpectNilErr = "expected nil error, got %v"
+	fmtExpect1Match = "expected 1 match, got %d"
 	fmtNotFoundErr  = "expected not-found error, got %v"
 )
 
@@ -212,7 +213,7 @@ func TestListMatches_ReturnsSlice(t *testing.T) {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match, got %d", len(got))
+		t.Errorf(fmtExpect1Match, len(got))
 	}
 }
 
@@ -228,7 +229,7 @@ func TestListMatchesByPhase_ReturnsFilteredSlice(t *testing.T) {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match, got %d", len(got))
+		t.Errorf(fmtExpect1Match, len(got))
 	}
 }
 
@@ -244,6 +245,6 @@ func TestListMatchesByStatus_ReturnsFilteredSlice(t *testing.T) {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match, got %d", len(got))
+		t.Errorf(fmtExpect1Match, len(got))
 	}
 }
