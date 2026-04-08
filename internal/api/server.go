@@ -14,8 +14,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -32,6 +34,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/health"
 )
 
 // Server holds the shared dependencies made available to all HTTP handlers.
@@ -49,7 +52,8 @@ type Server struct {
 	// The implementation is selected at startup via WCQ_EVENTBUS_DRIVER:
 	//   "in_memory" — InMemoryBus, safe for single-replica / local dev.
 	//   "redis"     — RedisBus, required for multi-replica production deployments.
-	bus events.Bus
+	bus      events.Bus
+	checkers []health.Checker
 }
 
 // New constructs a Server with the provided dependencies.
@@ -58,8 +62,10 @@ type Server struct {
 // or a *messaging.RedisBus connected to the production Redis instance.
 // db may be nil when the database is unreachable at startup time; see the
 // field comment on Server.db for the expected handler behaviour in that case.
-func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger, bus events.Bus) *Server {
-	return &Server{db: db, cfg: cfg, log: log, bus: bus}
+// checkers is the list of health checkers executed by GET /health/ready; pass
+// nil (or an empty slice) when no dependency checks are needed (e.g. tests).
+func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger, bus events.Bus, checkers []health.Checker) *Server {
+	return &Server{db: db, cfg: cfg, log: log, bus: bus, checkers: checkers}
 }
 
 // Routes returns the fully configured http.Handler for the application.
@@ -92,6 +98,7 @@ func (s *Server) Routes() http.Handler {
 
 	// Infrastructure endpoints — not versioned, no authentication required.
 	r.Get("/health", s.handleHealth)
+	r.Get("/health/ready", s.handleReadiness)
 	r.Get("/swagger/*", httpSwagger.Handler(
 		httpSwagger.URL("/swagger/doc.json"),
 		httpSwagger.DeepLinking(true),
@@ -207,6 +214,67 @@ func (s *Server) buildHandlers(
 
 	return handler.NewMatchHandler(matchSvc, s.log),
 		handler.NewPredictionHandler(predSvc, userRepo, s.log)
+}
+
+// handleReadiness executes all registered health checkers and returns a
+// detailed JSON report. It answers the question "are all dependencies ready?"
+// rather than "is the process alive?" (which is /health's concern).
+//
+// All checkers run concurrently under a 5-second timeout. The response is:
+//   - HTTP 200 with {"status":"ok",   "checks":{…}} when every check passes.
+//   - HTTP 503 with {"status":"error","checks":{…}} when any check fails.
+//
+// This separation follows the Kubernetes liveness / readiness probe model:
+// a failing readiness probe removes the pod from the load balancer's
+// rotation without restarting it, which is the correct response to a
+// transient database or Redis outage.
+//
+// @Summary      Readiness check
+// @Description  Readiness probe: runs all registered infrastructure checkers
+//
+//	and returns a detailed JSON report. Returns 503 if any check fails.
+//
+// @Tags         infrastructure
+// @Produce      json
+// @Success      200  {object}  health.Response
+// @Failure      503  {object}  health.Response
+// @Router       /health/ready [get]
+func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	resp := health.Response{
+		Status: "ok",
+		Checks: make(map[string]health.Result, len(s.checkers)),
+	}
+
+	type item struct {
+		name   string
+		result health.Result
+	}
+	ch := make(chan item, len(s.checkers))
+
+	for _, c := range s.checkers {
+		c := c
+		go func() { ch <- item{c.Name(), c.Check(ctx)} }()
+	}
+
+	for range s.checkers {
+		it := <-ch
+		resp.Checks[it.name] = it.result
+		if it.result.Status != "ok" {
+			resp.Status = "error"
+		}
+	}
+
+	data, _ := json.Marshal(resp)
+	w.Header().Set("Content-Type", "application/json")
+	if resp.Status != "ok" {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	_, _ = w.Write(data)
 }
 
 // handleHealth responds to liveness probes issued by load balancers and

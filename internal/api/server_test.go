@@ -16,6 +16,7 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +30,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/health"
 )
 
 // fakePool creates a pgxpool.Pool pointing at an unreachable address. pgxpool
@@ -45,7 +47,16 @@ func fakePool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-const healthPath = "/health"
+const (
+	healthPath           = "/health"
+	readyPath            = "/health/ready"
+	contentTypeJSON      = "application/json"
+	checkerNameDB        = "db"
+	checkerNameRedis     = "redis"
+	statusOK             = "ok"
+	statusError          = "error"
+	errConnectionRefused = "connection refused"
+)
 
 // newTestServer constructs a Server with a nil database pool and a
 // test-scoped logger that writes to t.Log. It is intended for use in
@@ -53,7 +64,31 @@ const healthPath = "/health"
 func newTestServer(t *testing.T) *api.Server {
 	t.Helper()
 	// Use InMemoryBus in tests: no external dependencies required.
-	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil))
+	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil)
+}
+
+// stubChecker is a test-only health.Checker whose Check result is fixed at
+// construction time. Using a stub keeps readiness tests free of real network
+// dependencies while exercising the handler's aggregation logic.
+type stubChecker struct {
+	name   string
+	result health.Result
+}
+
+func (s *stubChecker) Name() string                          { return s.name }
+func (s *stubChecker) Check(_ context.Context) health.Result { return s.result }
+
+func okChecker(name string) health.Checker {
+	return &stubChecker{name: name, result: health.Result{Status: statusOK, LatencyMS: 1}}
+}
+
+func errChecker(name, msg string) health.Checker {
+	return &stubChecker{name: name, result: health.Result{Status: statusError, Error: msg}}
+}
+
+func newTestServerWithCheckers(t *testing.T, checkers []health.Checker) *api.Server {
+	t.Helper()
+	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), checkers)
 }
 
 func TestHealthEndpoint_ReturnsOK(t *testing.T) {
@@ -76,8 +111,8 @@ func TestHealthEndpoint_ReturnsJSONContentType(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	ct := rec.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("expected Content-Type %q, got %q", "application/json", ct)
+	if ct != contentTypeJSON {
+		t.Errorf("expected Content-Type %q, got %q", contentTypeJSON, ct)
 	}
 }
 
@@ -157,7 +192,7 @@ func TestRoutes_DBNil_PredictionRoute_Returns503(t *testing.T) {
 // unreachable so the request returns 500, but a 404 would mean the route was
 // never registered.
 func TestRoutes_WithFakeDB_MatchRouteRegistered(t *testing.T) {
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil))
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
@@ -180,7 +215,7 @@ func TestWireSubscribers_MalformedPayload_DoesNotPanic(t *testing.T) {
 	defer func() { messaging.RetryBackoff = orig }()
 
 	bus := messaging.NewInMemoryBus(nil)
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil)
 	srv.Routes() // registers wireSubscribers
 
 	env := events.Envelope{
@@ -201,7 +236,7 @@ func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
 	defer func() { messaging.RetryBackoff = orig }()
 
 	bus := messaging.NewInMemoryBus(nil)
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil)
 	srv.Routes()
 
 	env := events.Envelope{
@@ -215,12 +250,119 @@ func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
 }
 
 func TestRoutes_WithFakeDB_PredictionRouteRegistered(t *testing.T) {
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil))
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions?user_id=1", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code == http.StatusNotFound {
 		t.Errorf("expected route to be registered, got 404")
+	}
+}
+
+// ── /health/ready ─────────────────────────────────────────────────────────────
+
+func TestReadinessEndpoint_NoCheckers_Returns200(t *testing.T) {
+	h := newTestServer(t).Routes()
+
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestReadinessEndpoint_AllCheckersOK_Returns200(t *testing.T) {
+	h := newTestServerWithCheckers(t, []health.Checker{
+		okChecker(checkerNameDB),
+		okChecker(checkerNameRedis),
+	}).Routes()
+
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestReadinessEndpoint_OneCheckerFails_Returns503(t *testing.T) {
+	h := newTestServerWithCheckers(t, []health.Checker{
+		okChecker(checkerNameDB),
+		errChecker(checkerNameRedis, errConnectionRefused),
+	}).Routes()
+
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestReadinessEndpoint_ResponseJSON_AllOK(t *testing.T) {
+	h := newTestServerWithCheckers(t, []health.Checker{
+		okChecker(checkerNameDB),
+	}).Routes()
+
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	var resp health.Response
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != statusOK {
+		t.Errorf("expected status %q, got %q", statusOK, resp.Status)
+	}
+	dbResult, ok := resp.Checks[checkerNameDB]
+	if !ok {
+		t.Fatalf("expected %q key in checks", checkerNameDB)
+	}
+	if dbResult.Status != statusOK {
+		t.Errorf("expected db status %q, got %q", statusOK, dbResult.Status)
+	}
+}
+
+func TestReadinessEndpoint_ResponseJSON_CheckerError(t *testing.T) {
+	h := newTestServerWithCheckers(t, []health.Checker{
+		errChecker(checkerNameRedis, errConnectionRefused),
+	}).Routes()
+
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	var resp health.Response
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != statusError {
+		t.Errorf("expected status %q, got %q", statusError, resp.Status)
+	}
+	redisResult, ok := resp.Checks[checkerNameRedis]
+	if !ok {
+		t.Fatalf("expected %q key in checks", checkerNameRedis)
+	}
+	if redisResult.Error != errConnectionRefused {
+		t.Errorf("expected error %q, got %q", errConnectionRefused, redisResult.Error)
+	}
+}
+
+func TestReadinessEndpoint_ContentType_IsJSON(t *testing.T) {
+	h := newTestServer(t).Routes()
+
+	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	ct := rec.Header().Get("Content-Type")
+	if ct != contentTypeJSON {
+		t.Errorf("expected Content-Type %q, got %q", contentTypeJSON, ct)
 	}
 }

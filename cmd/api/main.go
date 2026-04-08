@@ -29,8 +29,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/rede/world-cup-quiniela/internal/api"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/health"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
 
@@ -79,11 +82,32 @@ func main() {
 	}
 	defer closeBus()
 
+	// Build health checkers for GET /health/ready. Each checker probes one
+	// infrastructure dependency. The list is passed to the Server rather than
+	// constructed inside it so that future binaries (e.g. the worker) can
+	// register a different set of checkers without changing the Server itself.
+	var checkers []health.Checker
+	if db != nil {
+		checkers = append(checkers, health.NewDBChecker(db))
+	}
+	if cfg.Redis.Addr != "" {
+		// A dedicated client is used for health checks so that ping latency
+		// reflects the health-check connection path rather than a shared pool
+		// that may already be saturated by pub/sub or caching operations.
+		rc := redis.NewClient(&redis.Options{
+			Addr:     cfg.Redis.Addr,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+		defer rc.Close() //nolint:errcheck
+		checkers = append(checkers, health.NewRedisChecker(rc))
+	}
+
 	// The api.Server owns the routing table and receives all shared
 	// dependencies. Constructing it here — at the composition root —
 	// rather than inside a package-level init function makes every
 	// dependency explicit and eliminates hidden global state.
-	app := api.New(db, cfg, log, bus)
+	app := api.New(db, cfg, log, bus, checkers)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,

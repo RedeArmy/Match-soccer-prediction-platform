@@ -463,6 +463,32 @@
                 }
             }
         },
+        "/health/ready": {
+            "get": {
+                "description": "Readiness probe: runs all registered infrastructure checkers",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "infrastructure"
+                ],
+                "summary": "Readiness check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_rede_world-cup-quiniela_pkg_health.Response"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_rede_world-cup-quiniela_pkg_health.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/webhooks/clerk": {
             "post": {
                 "description": "Receives and processes Clerk user lifecycle events (user.created, user.updated).",
@@ -497,6 +523,34 @@
         }
     },
     "definitions": {
+        "github_com_rede_world-cup-quiniela_pkg_health.Response": {
+            "type": "object",
+            "properties": {
+                "checks": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_rede_world-cup-quiniela_pkg_health.Result"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_rede_world-cup-quiniela_pkg_health.Result": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "latency_ms": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.ErrorDetail": {
             "type": "object",
             "properties": {
