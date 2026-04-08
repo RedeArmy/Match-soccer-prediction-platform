@@ -109,6 +109,7 @@ func seedMatch(t *testing.T) *domain.Match {
 		HomeTeam:  "Brazil",
 		AwayTeam:  "Argentina",
 		Status:    domain.MatchStatusScheduled,
+		Phase:     domain.PhaseGroupStage,
 		KickoffAt: time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
 	}
 	if err := repo.Create(context.Background(), m); err != nil {
@@ -125,80 +126,6 @@ func seedQuiniela(t *testing.T, ownerID int) *domain.Quiniela {
 		t.Fatalf("seed quiniela: %v", err)
 	}
 	return q
-}
-
-// ── StadiumRepository ─────────────────────────────────────────────────────────
-
-// seedStadium inserts a stadium row directly via SQL because StadiumRepository
-// is intentionally read-only (no Create method in the interface).
-func seedStadium(t *testing.T) *domain.Stadium {
-	t.Helper()
-	var id int
-	err := testDB.QueryRow(context.Background(),
-		`INSERT INTO stadiums (name, city, country, capacity) VALUES ($1,$2,$3,$4) RETURNING id`,
-		"MetLife Stadium", "East Rutherford", "USA", 82500,
-	).Scan(&id)
-	if err != nil {
-		t.Fatalf("seed stadium: %v", err)
-	}
-	return &domain.Stadium{ID: id, Name: "MetLife Stadium", City: "East Rutherford", Country: "USA", Capacity: 82500}
-}
-
-func TestStadiumRepository_GetByID_Found(t *testing.T) {
-	cleanTables(t)
-	created := seedStadium(t)
-	repo := repository.NewPostgresStadiumRepository(testDB)
-
-	got, err := repo.GetByID(context.Background(), created.ID)
-	if err != nil {
-		t.Fatalf(fmtUnexpectedErr, err)
-	}
-	if got == nil {
-		t.Fatal("expected stadium, got nil")
-	}
-	if got.Name != created.Name {
-		t.Errorf("name: got %q, want %q", got.Name, created.Name)
-	}
-}
-
-func TestStadiumRepository_GetByID_NotFound_ReturnsNil(t *testing.T) {
-	cleanTables(t)
-	repo := repository.NewPostgresStadiumRepository(testDB)
-
-	got, err := repo.GetByID(context.Background(), 99999)
-	if err != nil {
-		t.Fatalf(fmtUnexpectedErr, err)
-	}
-	if got != nil {
-		t.Errorf("expected nil for missing stadium, got %+v", got)
-	}
-}
-
-func TestStadiumRepository_List_ReturnsAll(t *testing.T) {
-	cleanTables(t)
-	seedStadium(t)
-	repo := repository.NewPostgresStadiumRepository(testDB)
-
-	stadiums, err := repo.List(context.Background())
-	if err != nil {
-		t.Fatalf(fmtUnexpectedErr, err)
-	}
-	if len(stadiums) != 1 {
-		t.Errorf("expected 1 stadium, got %d", len(stadiums))
-	}
-}
-
-func TestStadiumRepository_List_Empty(t *testing.T) {
-	cleanTables(t)
-	repo := repository.NewPostgresStadiumRepository(testDB)
-
-	stadiums, err := repo.List(context.Background())
-	if err != nil {
-		t.Fatalf(fmtUnexpectedErr, err)
-	}
-	if len(stadiums) != 0 {
-		t.Errorf("expected 0 stadiums, got %d", len(stadiums))
-	}
 }
 
 // ── UserRepository ────────────────────────────────────────────────────────────
@@ -358,6 +285,7 @@ func TestMatchRepository_Create_HydratesID(t *testing.T) {
 		HomeTeam:  "France",
 		AwayTeam:  "Germany",
 		Status:    domain.MatchStatusScheduled,
+		Phase:     domain.PhaseGroupStage,
 		KickoffAt: time.Now().Add(48 * time.Hour).UTC(),
 	}
 
