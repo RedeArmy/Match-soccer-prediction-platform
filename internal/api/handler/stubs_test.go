@@ -88,3 +88,49 @@ func (s *stubPredSvc) GetByUser(_ context.Context, _ int) ([]*domain.Prediction,
 func (s *stubPredSvc) GetByMatch(_ context.Context, _ int) ([]*domain.Prediction, error) {
 	return s.preds, s.err
 }
+
+// stubQuinielaSvc implements service.QuinielaService with configurable returns.
+type stubQuinielaSvc struct {
+	quiniela  *domain.Quiniela
+	quinielas []*domain.Quiniela
+	err       error
+}
+
+func (s *stubQuinielaSvc) Create(_ context.Context, q *domain.Quiniela) error {
+	if s.err != nil {
+		return s.err
+	}
+	if s.quiniela != nil {
+		*q = *s.quiniela
+	}
+	return nil
+}
+func (s *stubQuinielaSvc) GetByID(_ context.Context, _ int) (*domain.Quiniela, error) {
+	return s.quiniela, s.err
+}
+func (s *stubQuinielaSvc) GetByInviteCode(_ context.Context, _ string) (*domain.Quiniela, error) {
+	return s.quiniela, s.err
+}
+func (s *stubQuinielaSvc) GetByOwner(_ context.Context, _ int) ([]*domain.Quiniela, error) {
+	return s.quinielas, s.err
+}
+
+// stubMemberSvc implements service.GroupMembershipService with configurable returns.
+type stubMemberSvc struct {
+	membership  *domain.GroupMembership
+	memberships []*domain.GroupMembership
+	err         error
+}
+
+func (s *stubMemberSvc) Join(_ context.Context, _ string, _ int) (*domain.GroupMembership, error) {
+	return s.membership, s.err
+}
+func (s *stubMemberSvc) MarkPaid(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
+	return s.membership, s.err
+}
+func (s *stubMemberSvc) ListByQuiniela(_ context.Context, _ int) ([]*domain.GroupMembership, error) {
+	return s.memberships, s.err
+}
+func (s *stubMemberSvc) ListByUser(_ context.Context, _ int) ([]*domain.GroupMembership, error) {
+	return s.memberships, s.err
+}

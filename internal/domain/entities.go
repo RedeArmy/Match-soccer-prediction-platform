@@ -142,22 +142,58 @@ type Prediction struct {
 	UpdatedAt time.Time
 }
 
-// Quiniela is a named collection of predictions submitted by one user.
+// Quiniela represents a named prediction group in the tournament.
 //
-// Predictions is embedded here as a denormalised slice for in-memory
-// operations (scoring, ranking calculations). In the persistence layer,
-// predictions are stored in a separate table referenced by quiniela_id;
-// the repository is responsible for hydrating this field only when the
-// caller explicitly requests it, rather than eager-loading on every read.
-// Callers that do not need predictions should use repository methods that
-// omit the hydration step to avoid unnecessary database round-trips.
+// Each Quiniela is created by an owner (OwnerID) who becomes its first active
+// member. Other users join via the InviteCode — a short, human-friendly token
+// shared out-of-band (WhatsApp, SMS). Membership records are stored in the
+// group_memberships table; this struct carries only the group metadata.
+//
+// EntryFee and Currency support future payment-tracking workflows; they
+// default to 0 / "MXN" and are never nil in a hydrated struct.
+// MaxMembers is nil when the group has no size cap.
 type Quiniela struct {
-	ID          int
-	Name        string
-	OwnerID     int
-	Predictions []Prediction
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID         int
+	Name       string
+	OwnerID    int
+	InviteCode string
+	EntryFee   int
+	Currency   string
+	MaxMembers *int
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// MembershipStatus tracks the lifecycle of a user's membership in a Quiniela.
+type MembershipStatus string
+
+// Allowed values for MembershipStatus.
+const (
+	MembershipPending MembershipStatus = "pending"
+	MembershipActive  MembershipStatus = "active"
+	MembershipLeft    MembershipStatus = "left"
+)
+
+// GroupMembership records one user's participation in one Quiniela.
+//
+// JoinedAt is nil for pending memberships and is populated when the user
+// transitions to active status. The owner of a Quiniela always receives an
+// active membership at creation time so they appear in leaderboards.
+//
+// Paid tracks whether the entry fee has been settled. It is set to true
+// automatically when the group is free (entry_fee = 0) or when the payment
+// system confirms a successful transaction. Members with Paid = false may
+// submit predictions, but their scores are excluded from all rankings until
+// payment is confirmed.
+type GroupMembership struct {
+	ID         int
+	QuinielaID int
+	UserID     int
+	Status     MembershipStatus
+	Paid       bool
+	JoinedAt   *time.Time
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // Tiebreaker is an auxiliary forecast used to break ranking ties between
