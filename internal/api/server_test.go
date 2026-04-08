@@ -66,8 +66,8 @@ type stubChecker struct {
 	result health.Result
 }
 
-func (s *stubChecker) Name() string                            { return s.name }
-func (s *stubChecker) Check(_ context.Context) health.Result  { return s.result }
+func (s *stubChecker) Name() string                          { return s.name }
+func (s *stubChecker) Check(_ context.Context) health.Result { return s.result }
 
 func okChecker(name string) health.Checker {
 	return &stubChecker{name: name, result: health.Result{Status: "ok", LatencyMS: 1}}
