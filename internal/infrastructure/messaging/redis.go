@@ -24,11 +24,11 @@ func dlqKey(eventType events.EventType) string {
 // exhausted all handler retry attempts. It carries enough context for an
 // operator to identify the event, understand the failure, and replay it.
 type dlqEntry struct {
-	EventType     string          `json:"event_type"`
-	Envelope      events.Envelope `json:"envelope"`
-	Error         string          `json:"error"`
-	DeadLetteredAt time.Time      `json:"dead_lettered_at"`
-	Attempts      int             `json:"attempts"`
+	EventType      string          `json:"event_type"`
+	Envelope       events.Envelope `json:"envelope"`
+	Error          string          `json:"error"`
+	DeadLetteredAt time.Time       `json:"dead_lettered_at"`
+	Attempts       int             `json:"attempts"`
 }
 
 // RedisBus implements events.Bus using Redis pub/sub as the transport layer.
