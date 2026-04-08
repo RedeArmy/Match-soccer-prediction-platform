@@ -121,6 +121,10 @@ func (s *Server) Routes() http.Handler {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
+			r.Route("/groups", func(r chi.Router) {
+				r.HandleFunc("/*", dbUnavailable)
+				r.HandleFunc("/", dbUnavailable)
+			})
 		})
 		return r
 	}
@@ -130,9 +134,10 @@ func (s *Server) Routes() http.Handler {
 	userRepo := repository.NewPostgresUserRepository(s.db)
 	matchRepo := repository.NewPostgresMatchRepository(s.db)
 	predRepo := repository.NewPostgresPredictionRepository(s.db)
+	memberRepo := repository.NewPostgresGroupMembershipRepository(s.db)
 
 	s.wireSubscribers(matchRepo, predRepo)
-	matchHandler, predHandler := s.buildHandlers(userRepo, matchRepo, predRepo)
+	matchHandler, predHandler, groupHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -157,6 +162,14 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/", predHandler.Submit)
 			r.Get("/", predHandler.ListByUser)
 			r.Patch("/{id}", predHandler.Update)
+		})
+
+		r.Route("/groups", func(r chi.Router) {
+			r.Post("/", groupHandler.Create)
+			r.Post("/join", groupHandler.Join)
+			r.Get("/me", groupHandler.ListMyGroups)
+			r.Get("/{id}", groupHandler.GetByID)
+			r.Get("/{id}/members", groupHandler.ListMembers)
 		})
 	})
 
@@ -208,12 +221,22 @@ func (s *Server) buildHandlers(
 	userRepo repository.UserRepository,
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
-) (*handler.MatchHandler, *handler.PredictionHandler) {
+	memberRepo repository.GroupMembershipRepository,
+) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler) {
 	matchSvc := service.NewMatchService(matchRepo, s.bus, s.log)
 	predSvc := service.NewPredictionService(predRepo, matchRepo, s.bus, s.log)
+	quinielaSvc := service.NewQuinielaService(
+		repository.NewPostgresQuinielaRepository(s.db),
+		memberRepo,
+	)
+	memberSvc := service.NewGroupMembershipService(
+		repository.NewPostgresQuinielaRepository(s.db),
+		memberRepo,
+	)
 
 	return handler.NewMatchHandler(matchSvc, s.log),
-		handler.NewPredictionHandler(predSvc, userRepo, s.log)
+		handler.NewPredictionHandler(predSvc, userRepo, s.log),
+		handler.NewGroupHandler(quinielaSvc, memberSvc, userRepo, s.log)
 }
 
 // handleReadiness executes all registered health checkers and returns a

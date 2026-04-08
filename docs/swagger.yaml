@@ -30,6 +30,27 @@ definitions:
       error:
         $ref: '#/definitions/internal_api_handler.ErrorDetail'
     type: object
+  internal_api_handler.GroupResponse:
+    properties:
+      created_at:
+        type: string
+      currency:
+        type: string
+      entry_fee:
+        type: integer
+      id:
+        type: integer
+      invite_code:
+        type: string
+      max_members:
+        type: integer
+      name:
+        type: string
+      owner_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   internal_api_handler.MatchResponse:
     properties:
       away_score:
@@ -56,6 +77,25 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  internal_api_handler.MemberResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      joined_at:
+        type: string
+      paid:
+        type: boolean
+      quiniela_id:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
     type: object
   internal_api_handler.PredictionResponse:
     properties:
@@ -89,6 +129,17 @@ definitions:
       name:
         type: string
     type: object
+  internal_api_handler.createGroupRequest:
+    properties:
+      currency:
+        type: string
+      entry_fee:
+        type: integer
+      max_members:
+        type: integer
+      name:
+        type: string
+    type: object
   internal_api_handler.createMatchRequest:
     properties:
       away_team:
@@ -98,6 +149,11 @@ definitions:
       kickoff_at:
         type: string
       phase:
+        type: string
+    type: object
+  internal_api_handler.joinGroupRequest:
+    properties:
+      invite_code:
         type: string
     type: object
   internal_api_handler.submitPredictionRequest:
@@ -131,6 +187,171 @@ info:
   title: World Cup Quiniela API
   version: "1.0"
 paths:
+  /api/v1/groups:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new prediction group. The caller becomes the owner
+      parameters:
+      - description: Group details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.createGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api_handler.GroupResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Group name already taken
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a group
+      tags:
+      - groups
+  /api/v1/groups/{id}:
+    get:
+      description: Returns group metadata by ID.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.GroupResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a group
+      tags:
+      - groups
+  /api/v1/groups/{id}/members:
+    get:
+      description: Returns all memberships for the given group.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.MemberResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List group members
+      tags:
+      - groups
+  /api/v1/groups/join:
+    post:
+      consumes:
+      - application/json
+      description: Joins the group identified by the invite code. The caller becomes
+      parameters:
+      - description: Invite code
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.joinGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.MemberResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Invite code not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Already a member or group is full
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Join a group
+      tags:
+      - groups
+  /api/v1/groups/me:
+    get:
+      description: Returns all groups the authenticated user belongs to.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.MemberResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my groups
+      tags:
+      - groups
   /api/v1/matches:
     get:
       description: Returns fixtures in the tournament schedule, optionally filtered

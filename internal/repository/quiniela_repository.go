@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -20,11 +22,11 @@ func NewPostgresQuinielaRepository(db *pgxpool.Pool) *PostgresQuinielaRepository
 	return &PostgresQuinielaRepository{db: db}
 }
 
-const quinielaColumns = "id, name, owner_id, created_at, updated_at"
+const quinielaColumns = "id, name, owner_id, invite_code, entry_fee, currency, max_members, created_at, updated_at"
 
 func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	q := &domain.Quiniela{}
-	err := row.Scan(&q.ID, &q.Name, &q.OwnerID, &q.CreatedAt, &q.UpdatedAt)
+	err := row.Scan(&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.EntryFee, &q.Currency, &q.MaxMembers, &q.CreatedAt, &q.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -34,13 +36,24 @@ func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	return q, nil
 }
 
+// isUniqueViolation reports whether err is a PostgreSQL unique-constraint
+// violation (SQLSTATE 23505).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
 func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quiniela) error {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO quinielas (name, owner_id) VALUES ($1, $2) RETURNING `+quinielaColumns,
-		q.Name, q.OwnerID,
+		`INSERT INTO quinielas (name, owner_id, invite_code, entry_fee, currency, max_members)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+quinielaColumns,
+		q.Name, q.OwnerID, q.InviteCode, q.EntryFee, q.Currency, q.MaxMembers,
 	)
 	result, err := scanQuiniela(row)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return apperrors.Conflict("a group with this name already exists")
+		}
 		return err
 	}
 	*q = *result
@@ -54,6 +67,13 @@ func (r *PostgresQuinielaRepository) GetByID(ctx context.Context, id int) (*doma
 	return scanQuiniela(row)
 }
 
+func (r *PostgresQuinielaRepository) GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error) {
+	row := r.db.QueryRow(ctx,
+		`SELECT `+quinielaColumns+` FROM quinielas WHERE invite_code=$1`, code,
+	)
+	return scanQuiniela(row)
+}
+
 func (r *PostgresQuinielaRepository) Update(ctx context.Context, q *domain.Quiniela) error {
 	row := r.db.QueryRow(ctx,
 		`UPDATE quinielas SET name=$1, updated_at=NOW() WHERE id=$2 RETURNING `+quinielaColumns,
@@ -61,6 +81,9 @@ func (r *PostgresQuinielaRepository) Update(ctx context.Context, q *domain.Quini
 	)
 	result, err := scanQuiniela(row)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return apperrors.Conflict("a group with this name already exists")
+		}
 		return err
 	}
 	if result == nil {
@@ -96,7 +119,7 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 	var quinielas []*domain.Quiniela
 	for rows.Next() {
 		q := &domain.Quiniela{}
-		if err := rows.Scan(&q.ID, &q.Name, &q.OwnerID, &q.CreatedAt, &q.UpdatedAt); err != nil {
+		if err := rows.Scan(&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.EntryFee, &q.Currency, &q.MaxMembers, &q.CreatedAt, &q.UpdatedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		quinielas = append(quinielas, q)

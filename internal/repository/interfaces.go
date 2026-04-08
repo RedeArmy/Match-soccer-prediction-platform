@@ -84,17 +84,33 @@ type PredictionRepository interface {
 // QuinielaRepository defines the persistence operations for the Quiniela
 // entity.
 //
-// The repository stores and retrieves a Quiniela's metadata only; the
-// embedded Predictions slice is hydrated separately by the service layer
-// using PredictionRepository.ListByUser when the full detail view is
-// required. This avoids loading the entire prediction set on every read
-// (e.g. a list of quinielas for a user's dashboard).
+// The repository stores and retrieves a Quiniela's metadata only. Membership
+// records are managed by GroupMembershipRepository. GetByInviteCode enables
+// the join-by-code flow without exposing the internal ID in share links.
 type QuinielaRepository interface {
 	Create(ctx context.Context, quiniela *domain.Quiniela) error
 	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
+	GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error)
 	Update(ctx context.Context, quiniela *domain.Quiniela) error
 	Delete(ctx context.Context, id int) error
 	ListByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
+}
+
+// GroupMembershipRepository defines the persistence operations for the
+// GroupMembership entity.
+//
+// GetByQuinielaAndUser enforces the one-membership-per-user-per-quiniela
+// invariant. ListByUser enables the "my groups" dashboard view.
+// ListByQuiniela returns the full member roster for a group detail page.
+// MarkPaid flips paid = true for the given member; it is called exclusively
+// by the payment system after a transaction is confirmed.
+type GroupMembershipRepository interface {
+	Create(ctx context.Context, m *domain.GroupMembership) error
+	GetByQuinielaAndUser(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
+	Update(ctx context.Context, m *domain.GroupMembership) error
+	MarkPaid(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
+	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.GroupMembership, error)
+	ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error)
 }
 
 // TiebreakerRepository defines the persistence operations for the Tiebreaker

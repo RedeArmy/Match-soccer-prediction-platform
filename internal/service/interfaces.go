@@ -65,10 +65,32 @@ type Ranker interface {
 }
 
 // QuinielaService defines operations on the Quiniela entity.
+//
+// Create generates a unique invite code and records the owner as the first
+// active member. GetByInviteCode enables the join flow: the caller obtains
+// the quiniela from a short code before creating the membership.
 type QuinielaService interface {
 	Create(ctx context.Context, quiniela *domain.Quiniela) error
 	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
+	GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error)
 	GetByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
+}
+
+// GroupMembershipService manages user membership in Quinielas.
+//
+// Join resolves the invite code to a Quiniela and creates or re-activates a
+// membership for the caller. ListByQuiniela returns the full roster. ListByUser
+// returns all groups a user belongs to, regardless of status.
+//
+// MarkPaid is called exclusively by the payment system after a transaction is
+// confirmed. It must never be exposed as a direct API action — callers cannot
+// mark themselves as paid. For free groups (entry_fee = 0), paid is set to
+// true automatically at join time and this method is never invoked.
+type GroupMembershipService interface {
+	Join(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error)
+	MarkPaid(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
+	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.GroupMembership, error)
+	ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error)
 }
 
 // Notifier dispatches notifications in response to domain events.

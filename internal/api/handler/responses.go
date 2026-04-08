@@ -4,6 +4,31 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
+// GroupResponse is the JSON representation of a Quiniela (group).
+type GroupResponse struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	OwnerID    int    `json:"owner_id"`
+	InviteCode string `json:"invite_code"`
+	EntryFee   int    `json:"entry_fee"`
+	Currency   string `json:"currency"`
+	MaxMembers *int   `json:"max_members"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+// MemberResponse is the JSON representation of a GroupMembership.
+type MemberResponse struct {
+	ID         int     `json:"id"`
+	QuinielaID int     `json:"quiniela_id"`
+	UserID     int     `json:"user_id"`
+	Status     string  `json:"status"`
+	Paid       bool    `json:"paid"`
+	JoinedAt   *string `json:"joined_at"`
+	CreatedAt  string  `json:"created_at"`
+	UpdatedAt  string  `json:"updated_at"`
+}
+
 // StadiumResponse is the JSON representation of a Stadium.
 type StadiumResponse struct {
 	ID       int    `json:"id"`
@@ -93,4 +118,35 @@ func predToResponse(p *domain.Prediction) PredictionResponse {
 		CreatedAt: p.CreatedAt.Format(timeFormat),
 		UpdatedAt: p.UpdatedAt.Format(timeFormat),
 	}
+}
+
+func groupToResponse(q *domain.Quiniela) GroupResponse {
+	return GroupResponse{
+		ID:         q.ID,
+		Name:       q.Name,
+		OwnerID:    q.OwnerID,
+		InviteCode: q.InviteCode,
+		EntryFee:   q.EntryFee,
+		Currency:   q.Currency,
+		MaxMembers: q.MaxMembers,
+		CreatedAt:  q.CreatedAt.Format(timeFormat),
+		UpdatedAt:  q.UpdatedAt.Format(timeFormat),
+	}
+}
+
+func memberToResponse(m *domain.GroupMembership) MemberResponse {
+	resp := MemberResponse{
+		ID:         m.ID,
+		QuinielaID: m.QuinielaID,
+		UserID:     m.UserID,
+		Status:     string(m.Status),
+		Paid:       m.Paid,
+		CreatedAt:  m.CreatedAt.Format(timeFormat),
+		UpdatedAt:  m.UpdatedAt.Format(timeFormat),
+	}
+	if m.JoinedAt != nil {
+		s := m.JoinedAt.Format(timeFormat)
+		resp.JoinedAt = &s
+	}
+	return resp
 }
