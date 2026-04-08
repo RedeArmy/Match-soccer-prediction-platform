@@ -29,10 +29,10 @@ func NewRankingService(
 
 // GetLeaderboard returns users ordered by total points for a given quiniela.
 //
-// TODO(Phase 3): The leaderboard must be scoped to group members. Once
-// GroupMembership is wired, retrieve the active member list for this quiniela,
-// load each member's scored predictions, aggregate points, and sort. For now
-// this returns an empty slice to avoid a broken implementation.
+// Phase 3 — not yet implemented: the leaderboard must be scoped to paid group
+// members. Implementation will retrieve the active+paid membership list for
+// the quiniela, load each member's scored predictions, aggregate points, and
+// sort descending. Returns nil until that phase is complete.
 func (s *rankingService) GetLeaderboard(_ context.Context, _ int) ([]*domain.User, error) {
 	return nil, nil
 }

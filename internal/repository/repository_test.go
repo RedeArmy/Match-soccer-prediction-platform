@@ -44,6 +44,16 @@ const (
 var testDB *pgxpool.Pool
 
 func TestMain(m *testing.M) {
+	var cleanup func()
+	testDB, cleanup = mustSetupDB()
+	defer cleanup()
+	os.Exit(m.Run())
+}
+
+// mustSetupDB starts a PostgreSQL container, runs migrations, and returns a
+// ready connection pool together with a cleanup function. Extracted from
+// TestMain to keep its cognitive complexity within the allowed limit.
+func mustSetupDB() (*pgxpool.Pool, func()) {
 	ctx := context.Background()
 
 	container, err := tcpostgres.Run(ctx, dbImage,
@@ -55,11 +65,6 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("start postgres container: %v", err)
 	}
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			log.Printf("terminate postgres container: %v", err)
-		}
-	}()
 
 	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
@@ -70,7 +75,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	testDB, err = database.NewPool(ctx, database.Config{
+	pool, err := database.NewPool(ctx, database.Config{
 		DSN:             dsn,
 		MaxOpenConns:    5,
 		MaxIdleConns:    2,
@@ -79,9 +84,14 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("new pool: %v", err)
 	}
-	defer testDB.Close()
 
-	os.Exit(m.Run())
+	cleanup := func() {
+		pool.Close()
+		if err := container.Terminate(ctx); err != nil {
+			log.Printf("terminate postgres container: %v", err)
+		}
+	}
+	return pool, cleanup
 }
 
 // cleanTables truncates every table in reverse foreign-key order so each test

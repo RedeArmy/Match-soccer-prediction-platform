@@ -3,7 +3,7 @@ package handler_test
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,6 +28,7 @@ const (
 	groupMembersPath = "/groups/1/members"
 
 	clerkSubject = "user_clerk_abc"
+	errDBDown    = "db down"
 )
 
 // testGroupRouter wires GroupHandler on a chi router that already has the
@@ -335,7 +336,7 @@ func TestGroupListMyGroups_Returns401_WhenUserNotFound(t *testing.T) {
 func TestGroupListMyGroups_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
-		&stubMemberSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubMemberSvc{err: apperrors.Internal(errors.New(errDBDown))},
 		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodGet, groupsMePath, nil)
@@ -366,7 +367,7 @@ func TestGroupCreate_Returns400_OnMalformedJSON(t *testing.T) {
 
 func TestGroupCreate_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
-		&stubQuinielaSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubQuinielaSvc{err: apperrors.Internal(errors.New(errDBDown))},
 		&stubMemberSvc{},
 		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
@@ -381,7 +382,7 @@ func TestGroupCreate_Returns500_OnServiceError(t *testing.T) {
 
 func TestGroupGetByID_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
-		&stubQuinielaSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubQuinielaSvc{err: apperrors.Internal(errors.New(errDBDown))},
 		&stubMemberSvc{},
 		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
@@ -412,7 +413,7 @@ func TestGroupJoin_Returns400_OnMalformedJSON(t *testing.T) {
 func TestGroupJoin_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
-		&stubMemberSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubMemberSvc{err: apperrors.Internal(errors.New(errDBDown))},
 		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(`{"invite_code":"ABC123DEFG"}`))
@@ -427,7 +428,7 @@ func TestGroupJoin_Returns500_OnServiceError(t *testing.T) {
 func TestGroupListMembers_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
-		&stubMemberSvc{err: apperrors.Internal(fmt.Errorf("db down"))},
+		&stubMemberSvc{err: apperrors.Internal(errors.New(errDBDown))},
 		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodGet, groupMembersPath, nil)
