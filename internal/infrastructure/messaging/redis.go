@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -12,11 +13,33 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 )
 
+// dlqKey returns the Redis list key used as the dead-letter queue for the
+// given event type. Failed events are appended with RPUSH so that the oldest
+// entry is at the head of the list, making LRANGE 0 N show them in order.
+func dlqKey(eventType events.EventType) string {
+	return "dlq:" + string(eventType)
+}
+
+// dlqEntry is the payload stored in the dead-letter queue for each event that
+// exhausted all handler retry attempts. It carries enough context for an
+// operator to identify the event, understand the failure, and replay it.
+type dlqEntry struct {
+	EventType     string          `json:"event_type"`
+	Envelope      events.Envelope `json:"envelope"`
+	Error         string          `json:"error"`
+	DeadLetteredAt time.Time      `json:"dead_lettered_at"`
+	Attempts      int             `json:"attempts"`
+}
+
 // RedisBus implements events.Bus using Redis pub/sub as the transport layer.
 //
 // Published events are serialised to JSON and sent to a Redis channel whose
 // name matches the EventType string. Subscribers receive messages from Redis
 // on a background goroutine and dispatch them to registered handlers.
+//
+// Each handler is retried up to maxHandlerAttempts times with exponential
+// backoff (see retry.go). Events that exhaust all attempts are pushed to a
+// Redis list at dlq:<event_type> so operators can inspect and replay them.
 //
 // Redis pub/sub is fire-and-forget: messages are not persisted and a
 // subscriber that is offline during publication will miss events. For this
@@ -32,7 +55,7 @@ type RedisBus struct {
 	log      *zap.Logger
 	cancels  []context.CancelFunc
 	mu       sync.RWMutex
-	handlers map[events.EventType][]func(context.Context, events.Envelope)
+	handlers map[events.EventType][]func(context.Context, events.Envelope) error
 }
 
 // NewRedisBus constructs a RedisBus that publishes and subscribes using the
@@ -46,7 +69,7 @@ func NewRedisBus(client *redis.Client, log *zap.Logger) *RedisBus {
 	return &RedisBus{
 		client:   client,
 		log:      log,
-		handlers: make(map[events.EventType][]func(context.Context, events.Envelope)),
+		handlers: make(map[events.EventType][]func(context.Context, events.Envelope) error),
 	}
 }
 
@@ -61,9 +84,10 @@ func (b *RedisBus) Close() {
 }
 
 // Subscribe registers handler and starts a Redis subscription goroutine for
-// eventType if one is not already running. A cancellable context is created
-// per unique event type; calling Close cancels all of them.
-func (b *RedisBus) Subscribe(eventType events.EventType, handler func(context.Context, events.Envelope)) {
+// eventType if one is not already running. Handlers must return an error to
+// signal transient failures; the bus retries up to maxHandlerAttempts times
+// before pushing the event to the dead-letter queue at dlq:<event_type>.
+func (b *RedisBus) Subscribe(eventType events.EventType, handler func(context.Context, events.Envelope) error) {
 	b.mu.Lock()
 	existing := b.handlers[eventType]
 	b.handlers[eventType] = append(existing, handler)
@@ -111,8 +135,8 @@ func (b *RedisBus) closeSubscription(pubsub *redis.PubSub, eventType events.Even
 
 // consume runs a blocking Redis subscription loop for the given event type.
 // It exits when ctx is cancelled (i.e. Close is called), which causes the
-// Redis pub/sub channel to be drained and closed.
-// Messages are unmarshalled and dispatched to all registered handlers.
+// Redis pub/sub channel to be drained and closed. Each message is dispatched
+// to all registered handlers with retry; failures are pushed to the DLQ.
 func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 	pubsub := b.client.Subscribe(ctx, string(eventType))
 	defer b.closeSubscription(pubsub, eventType)
@@ -140,7 +164,45 @@ func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 		// metadata — unlike context.Background() which discards all values.
 		handlerCtx := context.WithoutCancel(ctx)
 		for _, h := range handlers {
-			h(handlerCtx, envelope)
+			h := h // capture loop variable
+			if err := callWithRetry(handlerCtx, func() error { return h(handlerCtx, envelope) }); err != nil {
+				b.pushDLQ(envelope, err)
+			}
 		}
 	}
+}
+
+// pushDLQ appends a dead-letter entry to the Redis list at dlq:<event_type>.
+// Operators can inspect the list with LRANGE dlq:<event_type> 0 -1 and replay
+// events by re-publishing the stored envelope JSON to the appropriate channel.
+func (b *RedisBus) pushDLQ(envelope events.Envelope, handlerErr error) {
+	entry := dlqEntry{
+		EventType:      string(envelope.Type),
+		Envelope:       envelope,
+		Error:          handlerErr.Error(),
+		DeadLetteredAt: time.Now().UTC(),
+		Attempts:       maxHandlerAttempts,
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		b.log.Error("redis bus: marshal dlq entry",
+			zap.String("event_type", string(envelope.Type)),
+			zap.Error(err),
+		)
+		return
+	}
+	// RPUSH keeps entries in arrival order; LRANGE 0 N shows oldest-first.
+	// Use a fresh context so a cancelled handler context does not block the push.
+	if err := b.client.RPush(context.Background(), dlqKey(envelope.Type), data).Err(); err != nil {
+		b.log.Error("redis bus: push to dlq",
+			zap.String("event_type", string(envelope.Type)),
+			zap.Error(err),
+		)
+	}
+	b.log.Error("event handler failed after all retries — dead-lettered",
+		zap.String("event_type", string(envelope.Type)),
+		zap.String("dlq_key", dlqKey(envelope.Type)),
+		zap.Int("attempts", maxHandlerAttempts),
+		zap.Error(handlerErr),
+	)
 }
