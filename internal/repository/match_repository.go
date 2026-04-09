@@ -54,23 +54,28 @@ func scanMatch(row pgx.Row) (*domain.Match, error) {
 	return m, nil
 }
 
+// stadiumCols holds the nullable columns projected by the LEFT JOIN on
+// stadiums, cities, states, and countries. Grouping them in a struct keeps
+// scan call-sites readable and limits hydrateStadium to a single parameter.
+type stadiumCols struct {
+	sID, sCapacity, ciID, stID, coID              *int
+	sName, ciName, stName, stCode, coName, coCode *string
+}
+
 // hydrateStadium builds a Stadium with its full location hierarchy from the
 // nullable columns returned by the LEFT JOIN on stadiums/cities/states/countries.
 // Returns nil when sID is nil (no stadium is assigned to the match).
-func hydrateStadium(
-	sID, sCapacity, ciID, stID, coID *int,
-	sName, ciName, stName, stCode, coName, coCode *string,
-) *domain.Stadium {
-	if sID == nil {
+func hydrateStadium(c stadiumCols) *domain.Stadium {
+	if c.sID == nil {
 		return nil
 	}
-	s := &domain.Stadium{ID: *sID, Name: *sName, Capacity: *sCapacity}
-	if ciID != nil {
-		s.City = &domain.City{ID: *ciID, Name: *ciName}
-		if stID != nil {
-			s.City.State = &domain.State{ID: *stID, Name: *stName, Code: *stCode}
-			if coID != nil {
-				s.City.State.Country = &domain.Country{ID: *coID, Name: *coName, Code: *coCode}
+	s := &domain.Stadium{ID: *c.sID, Name: *c.sName, Capacity: *c.sCapacity}
+	if c.ciID != nil {
+		s.City = &domain.City{ID: *c.ciID, Name: *c.ciName}
+		if c.stID != nil {
+			s.City.State = &domain.State{ID: *c.stID, Name: *c.stName, Code: *c.stCode}
+			if c.coID != nil {
+				s.City.State.Country = &domain.Country{ID: *c.coID, Name: *c.coName, Code: *c.coCode}
 			}
 		}
 	}
@@ -80,17 +85,16 @@ func hydrateStadium(
 // scanMatchWithStadium scans a row from a SELECT … LEFT JOIN stadiums/cities/states/countries query.
 func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 	m := &domain.Match{}
-	var sID, sCapacity, ciID, stID, coID *int
-	var sName, ciName, stName, stCode, coName, coCode *string
+	var sc stadiumCols
 	err := row.Scan(
 		&m.ID, &m.HomeTeam, &m.AwayTeam,
 		&m.HomeScore, &m.AwayScore,
 		&m.Status, &m.Phase, &m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
-		&sID, &sName, &sCapacity,
-		&ciID, &ciName,
-		&stID, &stName, &stCode,
-		&coID, &coName, &coCode,
+		&sc.sID, &sc.sName, &sc.sCapacity,
+		&sc.ciID, &sc.ciName,
+		&sc.stID, &sc.stName, &sc.stCode,
+		&sc.coID, &sc.coName, &sc.coCode,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -98,7 +102,7 @@ func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	m.Stadium = hydrateStadium(sID, sCapacity, ciID, stID, coID, sName, ciName, stName, stCode, coName, coCode)
+	m.Stadium = hydrateStadium(sc)
 	return m, nil
 }
 
@@ -182,21 +186,20 @@ func collectMatches(rows pgx.Rows) ([]*domain.Match, error) {
 	var matches []*domain.Match
 	for rows.Next() {
 		m := &domain.Match{}
-		var sID, sCapacity, ciID, stID, coID *int
-		var sName, ciName, stName, stCode, coName, coCode *string
+		var sc stadiumCols
 		if err := rows.Scan(
 			&m.ID, &m.HomeTeam, &m.AwayTeam,
 			&m.HomeScore, &m.AwayScore,
 			&m.Status, &m.Phase, &m.StadiumID, &m.KickoffAt,
 			&m.CreatedAt, &m.UpdatedAt,
-			&sID, &sName, &sCapacity,
-			&ciID, &ciName,
-			&stID, &stName, &stCode,
-			&coID, &coName, &coCode,
+			&sc.sID, &sc.sName, &sc.sCapacity,
+			&sc.ciID, &sc.ciName,
+			&sc.stID, &sc.stName, &sc.stCode,
+			&sc.coID, &sc.coName, &sc.coCode,
 		); err != nil {
 			return nil, apperrors.Internal(err)
 		}
-		m.Stadium = hydrateStadium(sID, sCapacity, ciID, stID, coID, sName, ciName, stName, stCode, coName, coCode)
+		m.Stadium = hydrateStadium(sc)
 		matches = append(matches, m)
 	}
 	if err := rows.Err(); err != nil {
