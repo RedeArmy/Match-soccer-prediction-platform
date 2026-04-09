@@ -18,6 +18,24 @@ definitions:
       status:
         type: string
     type: object
+  internal_api_handler.CityResponse:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      state:
+        $ref: '#/definitions/internal_api_handler.StateResponse'
+    type: object
+  internal_api_handler.CountryResponse:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
   internal_api_handler.ErrorDetail:
     properties:
       code:
@@ -121,9 +139,18 @@ definitions:
       capacity:
         type: integer
       city:
+        $ref: '#/definitions/internal_api_handler.CityResponse'
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  internal_api_handler.StateResponse:
+    properties:
+      code:
         type: string
       country:
-        type: string
+        $ref: '#/definitions/internal_api_handler.CountryResponse'
       id:
         type: integer
       name:

@@ -45,7 +45,7 @@ func do(router http.Handler, method, path, body string) *httptest.ResponseRecord
 // ── ListMatches ───────────────────────────────────────────────────────────────
 
 func TestListMatches_Success_Returns200(t *testing.T) {
-	svc := &stubMatchSvc{matches: []*domain.Match{{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina"}}}
+	svc := &stubMatchSvc{matches: []*domain.Match{{ID: 1, HomeTeam: homeTeam, AwayTeam: awayTeam}}}
 	w := do(newMatchRouter(svc), http.MethodGet, "/", "")
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
@@ -61,7 +61,7 @@ func TestListMatches_ServiceError_Returns500(t *testing.T) {
 }
 
 func TestListMatches_WithPhaseFilter_Returns200(t *testing.T) {
-	svc := &stubMatchSvc{matches: []*domain.Match{{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Phase: domain.PhaseGroupStage}}}
+	svc := &stubMatchSvc{matches: []*domain.Match{{ID: 1, HomeTeam: homeTeam, AwayTeam: awayTeam, Phase: domain.PhaseGroupStage}}}
 	w := do(newMatchRouter(svc), http.MethodGet, "/?phase=group_stage", "")
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
@@ -71,7 +71,7 @@ func TestListMatches_WithPhaseFilter_Returns200(t *testing.T) {
 // ── GetMatch ──────────────────────────────────────────────────────────────────
 
 func TestGetMatch_Success_Returns200(t *testing.T) {
-	svc := &stubMatchSvc{match: &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina"}}
+	svc := &stubMatchSvc{match: &domain.Match{ID: 1, HomeTeam: homeTeam, AwayTeam: awayTeam}}
 	w := do(newMatchRouter(svc), http.MethodGet, "/1", "")
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
@@ -82,10 +82,28 @@ func TestGetMatch_WithStadium_IncludesStadiumInResponse(t *testing.T) {
 	stadiumID := 1
 	svc := &stubMatchSvc{match: &domain.Match{
 		ID:        1,
-		HomeTeam:  "Brazil",
-		AwayTeam:  "Argentina",
+		HomeTeam:  homeTeam,
+		AwayTeam:  awayTeam,
 		StadiumID: &stadiumID,
-		Stadium:   &domain.Stadium{ID: 1, Name: "MetLife Stadium", City: "East Rutherford", Country: "USA", Capacity: 82500},
+		Stadium: &domain.Stadium{
+			ID:       1,
+			Name:     "MetLife Stadium",
+			Capacity: 82500,
+			City: &domain.City{
+				ID:   1,
+				Name: "East Rutherford",
+				State: &domain.State{
+					ID:   1,
+					Name: "New Jersey",
+					Code: "NJ",
+					Country: &domain.Country{
+						ID:   1,
+						Name: "United States",
+						Code: "US",
+					},
+				},
+			},
+		},
 	}}
 	w := do(newMatchRouter(svc), http.MethodGet, "/1", "")
 	if w.Code != http.StatusOK {
@@ -115,7 +133,7 @@ func TestGetMatch_NotFound_Returns404(t *testing.T) {
 
 func TestCreateMatch_Success_Returns201(t *testing.T) {
 	kickoff := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
-	body := `{"home_team":"Brazil","away_team":"Argentina","kickoff_at":"` + kickoff + `"}`
+	body := `{"home_team":"` + homeTeam + `","away_team":"` + awayTeam + `","kickoff_at":"` + kickoff + `"}`
 	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPost, "/", body)
 	if w.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d", w.Code)
@@ -131,7 +149,7 @@ func TestCreateMatch_InvalidJSON_Returns422(t *testing.T) {
 
 func TestCreateMatch_ServiceError_Returns422(t *testing.T) {
 	kickoff := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
-	body := `{"home_team":"Brazil","away_team":"Argentina","kickoff_at":"` + kickoff + `"}`
+	body := `{"home_team":"` + homeTeam + `","away_team":"` + awayTeam + `","kickoff_at":"` + kickoff + `"}`
 	svc := &stubMatchSvc{err: apperrors.Validation("teams must differ")}
 	w := do(newMatchRouter(svc), http.MethodPost, "/", body)
 	if w.Code != http.StatusUnprocessableEntity {

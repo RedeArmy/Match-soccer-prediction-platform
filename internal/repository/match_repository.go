@@ -25,11 +25,16 @@ func NewPostgresMatchRepository(db *pgxpool.Pool) *PostgresMatchRepository {
 // matchColumns is used in RETURNING clauses for INSERT/UPDATE (no table alias).
 const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, stadium_id, kickoff_at, created_at, updated_at"
 
-// matchReadColumns selects match + stadium fields for read queries that LEFT JOIN stadiums.
+// matchReadColumns selects match + full stadium location hierarchy for read
+// queries that LEFT JOIN stadiums, cities, states, and countries.
 const matchReadColumns = "m.id, m.home_team, m.away_team, m.home_score, m.away_score, m.status, m.phase, m.stadium_id, m.kickoff_at, m.created_at, m.updated_at," +
-	" s.id, s.name, s.city, s.country, s.capacity"
+	" s.id, s.name, s.capacity, ci.id, ci.name, st.id, st.name, st.code, co.id, co.name, co.code"
 
-const matchFromStadium = " FROM matches m LEFT JOIN stadiums s ON s.id = m.stadium_id"
+const matchFromStadium = " FROM matches m" +
+	" LEFT JOIN stadiums  s  ON s.id  = m.stadium_id" +
+	" LEFT JOIN cities    ci ON ci.id = s.city_id" +
+	" LEFT JOIN states    st ON st.id = ci.state_id" +
+	" LEFT JOIN countries co ON co.id = st.country_id"
 
 // scanMatch scans a row returned by INSERT/UPDATE RETURNING (no stadium columns).
 func scanMatch(row pgx.Row) (*domain.Match, error) {
@@ -49,18 +54,47 @@ func scanMatch(row pgx.Row) (*domain.Match, error) {
 	return m, nil
 }
 
-// scanMatchWithStadium scans a row from a SELECT … LEFT JOIN stadiums query.
+// stadiumCols holds the nullable columns projected by the LEFT JOIN on
+// stadiums, cities, states, and countries. Grouping them in a struct keeps
+// scan call-sites readable and limits hydrateStadium to a single parameter.
+type stadiumCols struct {
+	sID, sCapacity, ciID, stID, coID              *int
+	sName, ciName, stName, stCode, coName, coCode *string
+}
+
+// hydrateStadium builds a Stadium with its full location hierarchy from the
+// nullable columns returned by the LEFT JOIN on stadiums/cities/states/countries.
+// Returns nil when sID is nil (no stadium is assigned to the match).
+func hydrateStadium(c stadiumCols) *domain.Stadium {
+	if c.sID == nil {
+		return nil
+	}
+	s := &domain.Stadium{ID: *c.sID, Name: *c.sName, Capacity: *c.sCapacity}
+	if c.ciID != nil {
+		s.City = &domain.City{ID: *c.ciID, Name: *c.ciName}
+		if c.stID != nil {
+			s.City.State = &domain.State{ID: *c.stID, Name: *c.stName, Code: *c.stCode}
+			if c.coID != nil {
+				s.City.State.Country = &domain.Country{ID: *c.coID, Name: *c.coName, Code: *c.coCode}
+			}
+		}
+	}
+	return s
+}
+
+// scanMatchWithStadium scans a row from a SELECT … LEFT JOIN stadiums/cities/states/countries query.
 func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 	m := &domain.Match{}
-	var sID *int
-	var sName, sCity, sCountry *string
-	var sCapacity *int
+	var sc stadiumCols
 	err := row.Scan(
 		&m.ID, &m.HomeTeam, &m.AwayTeam,
 		&m.HomeScore, &m.AwayScore,
 		&m.Status, &m.Phase, &m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
-		&sID, &sName, &sCity, &sCountry, &sCapacity,
+		&sc.sID, &sc.sName, &sc.sCapacity,
+		&sc.ciID, &sc.ciName,
+		&sc.stID, &sc.stName, &sc.stCode,
+		&sc.coID, &sc.coName, &sc.coCode,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -68,11 +102,7 @@ func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	if sID != nil {
-		m.Stadium = &domain.Stadium{
-			ID: *sID, Name: *sName, City: *sCity, Country: *sCountry, Capacity: *sCapacity,
-		}
-	}
+	m.Stadium = hydrateStadium(sc)
 	return m, nil
 }
 
@@ -156,23 +186,20 @@ func collectMatches(rows pgx.Rows) ([]*domain.Match, error) {
 	var matches []*domain.Match
 	for rows.Next() {
 		m := &domain.Match{}
-		var sID *int
-		var sName, sCity, sCountry *string
-		var sCapacity *int
+		var sc stadiumCols
 		if err := rows.Scan(
 			&m.ID, &m.HomeTeam, &m.AwayTeam,
 			&m.HomeScore, &m.AwayScore,
 			&m.Status, &m.Phase, &m.StadiumID, &m.KickoffAt,
 			&m.CreatedAt, &m.UpdatedAt,
-			&sID, &sName, &sCity, &sCountry, &sCapacity,
+			&sc.sID, &sc.sName, &sc.sCapacity,
+			&sc.ciID, &sc.ciName,
+			&sc.stID, &sc.stName, &sc.stCode,
+			&sc.coID, &sc.coName, &sc.coCode,
 		); err != nil {
 			return nil, apperrors.Internal(err)
 		}
-		if sID != nil {
-			m.Stadium = &domain.Stadium{
-				ID: *sID, Name: *sName, City: *sCity, Country: *sCountry, Capacity: *sCapacity,
-			}
-		}
+		m.Stadium = hydrateStadium(sc)
 		matches = append(matches, m)
 	}
 	if err := rows.Err(); err != nil {
