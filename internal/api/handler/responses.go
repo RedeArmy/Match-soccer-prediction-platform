@@ -29,13 +29,35 @@ type MemberResponse struct {
 	UpdatedAt  string  `json:"updated_at"`
 }
 
-// StadiumResponse is the JSON representation of a Stadium.
+// CountryResponse is the JSON representation of a Country.
+type CountryResponse struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
+// StateResponse is the JSON representation of a State or province.
+type StateResponse struct {
+	ID      int             `json:"id"`
+	Name    string          `json:"name"`
+	Code    string          `json:"code"`
+	Country CountryResponse `json:"country"`
+}
+
+// CityResponse is the JSON representation of a City.
+type CityResponse struct {
+	ID    int           `json:"id"`
+	Name  string        `json:"name"`
+	State StateResponse `json:"state"`
+}
+
+// StadiumResponse is the JSON representation of a Stadium with its full
+// location hierarchy (city → state → country).
 type StadiumResponse struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	City     string `json:"city"`
-	Country  string `json:"country"`
-	Capacity int    `json:"capacity"`
+	ID       int          `json:"id"`
+	Name     string       `json:"name"`
+	City     CityResponse `json:"city"`
+	Capacity int          `json:"capacity"`
 }
 
 // MatchResponse is the JSON representation of a Match returned by the API.
@@ -96,13 +118,26 @@ func matchToResponse(m *domain.Match) MatchResponse {
 		UpdatedAt: m.UpdatedAt.Format(timeFormat),
 	}
 	if m.Stadium != nil {
-		resp.Stadium = &StadiumResponse{
+		sr := &StadiumResponse{
 			ID:       m.Stadium.ID,
 			Name:     m.Stadium.Name,
-			City:     m.Stadium.City,
-			Country:  m.Stadium.Country,
 			Capacity: m.Stadium.Capacity,
 		}
+		if m.Stadium.City != nil {
+			sr.City = CityResponse{ID: m.Stadium.City.ID, Name: m.Stadium.City.Name}
+			if m.Stadium.City.State != nil {
+				st := m.Stadium.City.State
+				sr.City.State = StateResponse{ID: st.ID, Name: st.Name, Code: st.Code}
+				if st.Country != nil {
+					sr.City.State.Country = CountryResponse{
+						ID:   st.Country.ID,
+						Name: st.Country.Name,
+						Code: st.Country.Code,
+					}
+				}
+			}
+		}
+		resp.Stadium = sr
 	}
 	return resp
 }

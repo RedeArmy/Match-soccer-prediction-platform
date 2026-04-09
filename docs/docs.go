@@ -818,6 +818,34 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.CityResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "state": {
+                    "$ref": "#/definitions/internal_api_handler.StateResponse"
+                }
+            }
+        },
+        "internal_api_handler.CountryResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.ErrorDetail": {
             "type": "object",
             "properties": {
@@ -975,10 +1003,24 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "city": {
+                    "$ref": "#/definitions/internal_api_handler.CityResponse"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.StateResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
                     "type": "string"
                 },
                 "country": {
-                    "type": "string"
+                    "$ref": "#/definitions/internal_api_handler.CountryResponse"
                 },
                 "id": {
                     "type": "integer"
