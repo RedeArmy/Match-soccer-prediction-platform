@@ -54,6 +54,29 @@ func scanMatch(row pgx.Row) (*domain.Match, error) {
 	return m, nil
 }
 
+// hydrateStadium builds a Stadium with its full location hierarchy from the
+// nullable columns returned by the LEFT JOIN on stadiums/cities/states/countries.
+// Returns nil when sID is nil (no stadium is assigned to the match).
+func hydrateStadium(
+	sID, sCapacity, ciID, stID, coID *int,
+	sName, ciName, stName, stCode, coName, coCode *string,
+) *domain.Stadium {
+	if sID == nil {
+		return nil
+	}
+	s := &domain.Stadium{ID: *sID, Name: *sName, Capacity: *sCapacity}
+	if ciID != nil {
+		s.City = &domain.City{ID: *ciID, Name: *ciName}
+		if stID != nil {
+			s.City.State = &domain.State{ID: *stID, Name: *stName, Code: *stCode}
+			if coID != nil {
+				s.City.State.Country = &domain.Country{ID: *coID, Name: *coName, Code: *coCode}
+			}
+		}
+	}
+	return s
+}
+
 // scanMatchWithStadium scans a row from a SELECT … LEFT JOIN stadiums/cities/states/countries query.
 func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 	m := &domain.Match{}
@@ -75,18 +98,7 @@ func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	if sID != nil {
-		m.Stadium = &domain.Stadium{ID: *sID, Name: *sName, Capacity: *sCapacity}
-		if ciID != nil {
-			m.Stadium.City = &domain.City{ID: *ciID, Name: *ciName}
-			if stID != nil {
-				m.Stadium.City.State = &domain.State{ID: *stID, Name: *stName, Code: *stCode}
-				if coID != nil {
-					m.Stadium.City.State.Country = &domain.Country{ID: *coID, Name: *coName, Code: *coCode}
-				}
-			}
-		}
-	}
+	m.Stadium = hydrateStadium(sID, sCapacity, ciID, stID, coID, sName, ciName, stName, stCode, coName, coCode)
 	return m, nil
 }
 
@@ -184,18 +196,7 @@ func collectMatches(rows pgx.Rows) ([]*domain.Match, error) {
 		); err != nil {
 			return nil, apperrors.Internal(err)
 		}
-		if sID != nil {
-			m.Stadium = &domain.Stadium{ID: *sID, Name: *sName, Capacity: *sCapacity}
-			if ciID != nil {
-				m.Stadium.City = &domain.City{ID: *ciID, Name: *ciName}
-				if stID != nil {
-					m.Stadium.City.State = &domain.State{ID: *stID, Name: *stName, Code: *stCode}
-					if coID != nil {
-						m.Stadium.City.State.Country = &domain.Country{ID: *coID, Name: *coName, Code: *coCode}
-					}
-				}
-			}
-		}
+		m.Stadium = hydrateStadium(sID, sCapacity, ciID, stID, coID, sName, ciName, stName, stCode, coName, coCode)
 		matches = append(matches, m)
 	}
 	if err := rows.Err(); err != nil {
