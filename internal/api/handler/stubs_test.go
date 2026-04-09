@@ -33,6 +33,9 @@ const (
 	fmtExpect500     = "expected 500, got %d"
 	urlListByUserID1 = "/?user_id=1"
 
+	homeTeam = "Brazil"
+	awayTeam = "Argentina"
+
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"
 

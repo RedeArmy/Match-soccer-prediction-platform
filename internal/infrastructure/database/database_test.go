@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/database"
 	"github.com/rede/world-cup-quiniela/internal/testutil"
 	"github.com/rede/world-cup-quiniela/migrations"
@@ -112,6 +114,54 @@ func TestSeed_StadiumsTableMissing_ReturnsError(t *testing.T) {
 
 	if err := database.Seed(context.Background(), pool); err == nil {
 		t.Fatal("expected error when stadiums table is missing, got nil")
+	}
+}
+
+// newMigratedPool is a helper that runs migrations + returns a connected pool.
+// Each call gets its own Postgres container via SetupPostgres.
+func newMigratedPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := testutil.SetupPostgres(t)
+	if err := database.Migrate(dsn, migrations.FS); err != nil {
+		t.Fatalf(fmtMigrateErr, err)
+	}
+	pool, err := database.NewPool(context.Background(), database.Config{
+		DSN: dsn, MaxOpenConns: 5, MaxIdleConns: 2, ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf(fmtNewPoolErr, err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+func TestSeed_CountriesTableMissing_ReturnsError(t *testing.T) {
+	pool := newMigratedPool(t)
+	if _, err := pool.Exec(context.Background(), "DROP TABLE IF EXISTS countries CASCADE"); err != nil {
+		t.Fatalf("drop countries: %v", err)
+	}
+	if err := database.Seed(context.Background(), pool); err == nil {
+		t.Fatal("expected error when countries table is missing, got nil")
+	}
+}
+
+func TestSeed_CitiesTableMissing_ReturnsError(t *testing.T) {
+	pool := newMigratedPool(t)
+	if _, err := pool.Exec(context.Background(), "DROP TABLE IF EXISTS cities CASCADE"); err != nil {
+		t.Fatalf("drop cities: %v", err)
+	}
+	if err := database.Seed(context.Background(), pool); err == nil {
+		t.Fatal("expected error when cities table is missing, got nil")
+	}
+}
+
+func TestSeed_MatchesTableMissing_ReturnsError(t *testing.T) {
+	pool := newMigratedPool(t)
+	if _, err := pool.Exec(context.Background(), "DROP TABLE IF EXISTS matches CASCADE"); err != nil {
+		t.Fatalf("drop matches: %v", err)
+	}
+	if err := database.Seed(context.Background(), pool); err == nil {
+		t.Fatal("expected error when matches table is missing, got nil")
 	}
 }
 

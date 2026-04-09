@@ -39,6 +39,8 @@ const (
 	fmtNotFoundErr   = "expected not-found error, got %v"
 	fmtIDMismatch    = "id: got %d, want %d"
 	fmtExpectNilGot  = "expected nil, got %+v"
+
+	defaultCurrency = "MXN"
 )
 
 // testDB is shared across all tests in this package. It is initialised once in
@@ -143,7 +145,7 @@ func seedMatch(t *testing.T) *domain.Match {
 func seedQuiniela(t *testing.T, ownerID int) *domain.Quiniela {
 	t.Helper()
 	repo := repository.NewPostgresQuinielaRepository(testDB)
-	q := &domain.Quiniela{Name: fmt.Sprintf("Oficina %s", nextCode()), OwnerID: ownerID, InviteCode: nextCode(), Currency: "MXN"}
+	q := &domain.Quiniela{Name: fmt.Sprintf("Oficina %s", nextCode()), OwnerID: ownerID, InviteCode: nextCode(), Currency: defaultCurrency}
 	if err := repo.Create(context.Background(), q); err != nil {
 		t.Fatalf("seed quiniela: %v", err)
 	}
@@ -452,6 +454,103 @@ func TestMatchRepository_ListByPhase_FiltersCorrectly(t *testing.T) {
 	}
 	if len(none) != 0 {
 		t.Errorf("expected 0 final matches, got %d", len(none))
+	}
+}
+
+// seedMatchWithStadium inserts a stadium linked to an existing city (populated by
+// migration 000015) and a match referencing that stadium. cleanTables() does not
+// truncate cities/states/countries, so their migration data is always available.
+func seedMatchWithStadium(t *testing.T) *domain.Match {
+	t.Helper()
+	var cityID int
+	if err := testDB.QueryRow(context.Background(),
+		`SELECT ci.id FROM cities ci
+		 JOIN states  st ON ci.state_id   = st.id
+		 JOIN countries co ON st.country_id = co.id
+		 WHERE ci.name = 'East Rutherford' AND st.code = 'NJ' AND co.code = 'US'`,
+	).Scan(&cityID); err != nil {
+		t.Fatalf("get city id: %v", err)
+	}
+
+	var stadiumID int
+	if err := testDB.QueryRow(context.Background(),
+		`INSERT INTO stadiums (name, city_id, capacity) VALUES ('Test Arena', $1, 50000) RETURNING id`,
+		cityID,
+	).Scan(&stadiumID); err != nil {
+		t.Fatalf("seed stadium: %v", err)
+	}
+
+	repo := repository.NewPostgresMatchRepository(testDB)
+	m := &domain.Match{
+		HomeTeam:  "Brazil",
+		AwayTeam:  "Argentina",
+		Status:    domain.MatchStatusScheduled,
+		Phase:     domain.PhaseGroupStage,
+		StadiumID: &stadiumID,
+		KickoffAt: time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
+	}
+	if err := repo.Create(context.Background(), m); err != nil {
+		t.Fatalf("seed match with stadium: %v", err)
+	}
+	return m
+}
+
+func TestMatchRepository_GetByID_HydratesStadiumLocation(t *testing.T) {
+	cleanTables(t)
+	created := seedMatchWithStadium(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	got, err := repo.GetByID(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.Stadium == nil {
+		t.Fatal("expected stadium to be hydrated")
+	}
+	if got.Stadium.City == nil {
+		t.Fatal("expected city to be hydrated")
+	}
+	if got.Stadium.City.Name != "East Rutherford" {
+		t.Errorf("city: got %q, want %q", got.Stadium.City.Name, "East Rutherford")
+	}
+	if got.Stadium.City.State == nil {
+		t.Fatal("expected state to be hydrated")
+	}
+	if got.Stadium.City.State.Code != "NJ" {
+		t.Errorf("state code: got %q, want %q", got.Stadium.City.State.Code, "NJ")
+	}
+	if got.Stadium.City.State.Country == nil {
+		t.Fatal("expected country to be hydrated")
+	}
+	if got.Stadium.City.State.Country.Code != "US" {
+		t.Errorf("country code: got %q, want %q", got.Stadium.City.State.Country.Code, "US")
+	}
+}
+
+func TestMatchRepository_List_HydratesStadiumLocation(t *testing.T) {
+	cleanTables(t)
+	seedMatchWithStadium(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	matches, err := repo.List(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("expected at least one match")
+	}
+	m := matches[0]
+	if m.Stadium == nil {
+		t.Fatal("expected stadium to be hydrated in list result")
+	}
+	if m.Stadium.City == nil {
+		t.Fatal("expected city to be hydrated in list result")
+	}
+	if m.Stadium.City.State == nil {
+		t.Fatal("expected state to be hydrated in list result")
+	}
+	if m.Stadium.City.State.Country == nil {
+		t.Fatal("expected country to be hydrated in list result")
 	}
 }
 
@@ -829,7 +928,7 @@ func TestQuinielaRepository_Create_HydratesInviteCode(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 	code := nextCode()
-	q := &domain.Quiniela{Name: "Pool A", OwnerID: u.ID, InviteCode: code, Currency: "MXN"}
+	q := &domain.Quiniela{Name: "Pool A", OwnerID: u.ID, InviteCode: code, Currency: defaultCurrency}
 
 	if err := repo.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -844,11 +943,11 @@ func TestQuinielaRepository_Create_DuplicateName_ReturnsConflict(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	q1 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: "MXN"}
+	q1 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
 	if err := repo.Create(context.Background(), q1); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	q2 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: "MXN"}
+	q2 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
 	err := repo.Create(context.Background(), q2)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict error for duplicate name, got %v", err)
