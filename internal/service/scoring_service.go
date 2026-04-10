@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -31,6 +30,11 @@ func NewScoringService(
 // ScoreMatch calculates and persists points for every prediction on the given
 // match. It is idempotent: calling it a second time on an already-scored match
 // overwrites the existing points with the same values.
+//
+// All point updates are committed as a single atomic transaction via
+// UpdateManyPoints. If the process crashes mid-flight the entire batch is
+// rolled back, preventing the partial-scoring state where some predictions on
+// the same match show a score and others show nil.
 func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 	match, err := s.matchRepo.GetByID(ctx, matchID)
 	if err != nil {
@@ -50,24 +54,17 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 	if err != nil {
 		return err
 	}
-
-	// Score every prediction independently so that a single failure does not
-	// prevent the remaining predictions from being persisted. All failures are
-	// collected and returned as an aggregate error so the caller can surface
-	// partial failure to monitoring without losing the successfully-saved scores.
-	var errs []error
-	for _, pred := range predictions {
-		points := calculatePoints(pred, *match.HomeScore, *match.AwayScore)
-		pred.Points = &points
-		if err := s.predRepo.Update(ctx, pred); err != nil {
-			s.log.Error("failed to update prediction points",
-				zap.Int("prediction_id", pred.ID),
-				zap.Error(err),
-			)
-			errs = append(errs, err)
-		}
+	if len(predictions) == 0 {
+		return nil
 	}
-	return errors.Join(errs...)
+
+	// Calculate all points before touching the database so that a bug in
+	// calculatePoints cannot leave the batch half-committed.
+	points := make(map[int]int, len(predictions))
+	for _, pred := range predictions {
+		points[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore)
+	}
+	return s.predRepo.UpdateManyPoints(ctx, points)
 }
 
 // calculatePoints applies the scoring rules defined in domain/constants.go.

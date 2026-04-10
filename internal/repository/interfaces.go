@@ -79,6 +79,12 @@ type PredictionRepository interface {
 	GetByUserAndMatch(ctx context.Context, userID, matchID int) (*domain.Prediction, error)
 	ListByUser(ctx context.Context, userID int) ([]*domain.Prediction, error)
 	ListByMatch(ctx context.Context, matchID int) ([]*domain.Prediction, error)
+	// UpdateManyPoints atomically sets the points column for every prediction ID
+	// in the provided map inside a single database transaction. If any UPDATE
+	// fails the transaction is rolled back and no scores are persisted, preventing
+	// the partial-scoring state where some predictions on a finished match are
+	// scored and others are not. An empty map is a no-op.
+	UpdateManyPoints(ctx context.Context, points map[int]int) error
 }
 
 // QuinielaRepository defines the persistence operations for the Quiniela

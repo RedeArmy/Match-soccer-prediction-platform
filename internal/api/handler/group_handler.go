@@ -8,7 +8,6 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
-	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -17,7 +16,6 @@ import (
 type GroupHandler struct {
 	quinielaSvc service.QuinielaService
 	memberSvc   service.GroupMembershipService
-	userRepo    repository.UserRepository
 	log         *zap.Logger
 }
 
@@ -25,23 +23,9 @@ type GroupHandler struct {
 func NewGroupHandler(
 	quinielaSvc service.QuinielaService,
 	memberSvc service.GroupMembershipService,
-	userRepo repository.UserRepository,
 	log *zap.Logger,
 ) *GroupHandler {
-	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, userRepo: userRepo, log: log}
-}
-
-// resolveCallerID looks up the internal user ID for the Clerk subject stored
-// in the request context. Returns Unauthorised when no matching user row exists.
-func (h *GroupHandler) resolveCallerID(r *http.Request, subject string) (int, error) {
-	user, err := h.userRepo.GetByClerkSubject(r.Context(), subject)
-	if err != nil {
-		return 0, apperrors.Internal(err)
-	}
-	if user == nil {
-		return 0, apperrors.Unauthorised(msgUserNotFound)
-	}
-	return user.ID, nil
+	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, log: log}
 }
 
 // createGroupRequest is the JSON body accepted by POST /api/v1/groups.
@@ -76,14 +60,9 @@ type joinGroupRequest struct {
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/groups [post]
 func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
-	subject, ok := middleware.UserIDFromContext(r.Context())
+	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
 		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
-		return
-	}
-	callerID, err := h.resolveCallerID(r, subject)
-	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 
@@ -95,7 +74,7 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	quiniela := &domain.Quiniela{
 		Name:       req.Name,
-		OwnerID:    callerID,
+		OwnerID:    caller.ID,
 		EntryFee:   req.EntryFee,
 		Currency:   req.Currency,
 		MaxMembers: req.MaxMembers,
@@ -153,14 +132,9 @@ func (h *GroupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/join [post]
 func (h *GroupHandler) Join(w http.ResponseWriter, r *http.Request) {
-	subject, ok := middleware.UserIDFromContext(r.Context())
+	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
 		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
-		return
-	}
-	callerID, err := h.resolveCallerID(r, subject)
-	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 
@@ -174,7 +148,7 @@ func (h *GroupHandler) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	membership, err := h.memberSvc.Join(r.Context(), req.InviteCode, callerID)
+	membership, err := h.memberSvc.Join(r.Context(), req.InviteCode, caller.ID)
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return
@@ -223,17 +197,12 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 // @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/me [get]
 func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
-	subject, ok := middleware.UserIDFromContext(r.Context())
+	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
 		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
-	callerID, err := h.resolveCallerID(r, subject)
-	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
-		return
-	}
-	members, err := h.memberSvc.ListByUser(r.Context(), callerID)
+	members, err := h.memberSvc.ListByUser(r.Context(), caller.ID)
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return

@@ -1,10 +1,30 @@
 package domain
 
 import (
+	"regexp"
 	"time"
 
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
+
+// emailRE is a structural check that catches obvious mistakes (missing "@",
+// missing domain, empty local part). Full RFC 5322 compliance is intentionally
+// not attempted here — Clerk already validates email format at signup, so this
+// check is a defence-in-depth layer, not the primary gate.
+var emailRE = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+
+// ValidateEmail returns a validation error when email is empty or fails the
+// basic structural check. Call this wherever user email data enters the system
+// (webhook handler, user creation endpoints).
+func ValidateEmail(email string) error {
+	if email == "" {
+		return apperrors.Validation("email must not be empty")
+	}
+	if !emailRE.MatchString(email) {
+		return apperrors.Validation("email is not a valid address")
+	}
+	return nil
+}
 
 // ValidateMatch checks that the essential fields of a Match are coherent
 // before the entity is persisted for the first time.

@@ -158,13 +158,21 @@ func (s *Server) Routes() http.Handler {
 			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/{id}/start", matchHandler.StartMatch)
 		})
 
+		// ResolveUser is applied at the subrouter level so all prediction and
+		// group endpoints can read the caller's domain.User from context without
+		// each handler querying the database independently. GetByID and
+		// ListMembers do not use the caller's identity but the cost of a single
+		// indexed lookup (clerk_subject) is negligible compared to the handler
+		// work that follows.
 		r.Route("/predictions", func(r chi.Router) {
+			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.Post("/", predHandler.Submit)
 			r.Get("/", predHandler.ListByUser)
 			r.Patch("/{id}", predHandler.Update)
 		})
 
 		r.Route("/groups", func(r chi.Router) {
+			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.Post("/", groupHandler.Create)
 			r.Post("/join", groupHandler.Join)
 			r.Get("/me", groupHandler.ListMyGroups)
@@ -235,8 +243,8 @@ func (s *Server) buildHandlers(
 	)
 
 	return handler.NewMatchHandler(matchSvc, s.log),
-		handler.NewPredictionHandler(predSvc, userRepo, s.log),
-		handler.NewGroupHandler(quinielaSvc, memberSvc, userRepo, s.log)
+		handler.NewPredictionHandler(predSvc, s.log),
+		handler.NewGroupHandler(quinielaSvc, memberSvc, s.log)
 }
 
 // handleReadiness executes all registered health checkers and returns a
