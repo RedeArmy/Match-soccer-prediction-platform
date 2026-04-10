@@ -124,6 +124,11 @@ func (h *WebhookHandler) upsertUser(r *http.Request, data json.RawMessage) error
 	if len(payload.EmailAddresses) > 0 {
 		email = payload.EmailAddresses[0].EmailAddress
 	}
+	if email != "" {
+		if err := domain.ValidateEmail(email); err != nil {
+			return apperrors.Validation("webhook payload contains an invalid email address")
+		}
+	}
 
 	name := strings.TrimSpace(payload.FirstName + " " + payload.LastName)
 	if name == "" {

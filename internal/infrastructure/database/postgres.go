@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -61,6 +62,14 @@ func NewPool(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 	poolCfg.MaxConns = int32(cfg.MaxOpenConns)
 	poolCfg.MinConns = int32(cfg.MaxIdleConns)
 	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
+
+	// QueryExecModeCacheStatement instructs pgx to prepare each unique query
+	// string the first time it is executed on a connection and reuse the cached
+	// plan on subsequent calls. This avoids a round-trip parse/plan step for
+	// every repeated query (e.g. GetByID, ListByMatch) without requiring the
+	// application code to manage named prepared statements explicitly.
+	// The cache is per-connection; pgxpool handles the lifecycle transparently.
+	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {

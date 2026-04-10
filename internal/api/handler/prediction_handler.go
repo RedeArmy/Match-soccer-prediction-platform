@@ -8,35 +8,19 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
-	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // PredictionHandler handles HTTP requests for the /api/v1/predictions resource.
 type PredictionHandler struct {
-	svc      service.PredictionService
-	userRepo repository.UserRepository
-	log      *zap.Logger
+	svc service.PredictionService
+	log *zap.Logger
 }
 
 // NewPredictionHandler constructs a PredictionHandler.
-func NewPredictionHandler(svc service.PredictionService, userRepo repository.UserRepository, log *zap.Logger) *PredictionHandler {
-	return &PredictionHandler{svc: svc, userRepo: userRepo, log: log}
-}
-
-// resolveUserID looks up the internal user ID for the given Clerk subject.
-// Returns Unauthorised when the subject has no matching user row — this means
-// the user-sync webhook has not yet fired for this Clerk account.
-func (h *PredictionHandler) resolveUserID(r *http.Request, subject string) (int, error) {
-	user, err := h.userRepo.GetByClerkSubject(r.Context(), subject)
-	if err != nil {
-		return 0, apperrors.Internal(err)
-	}
-	if user == nil {
-		return 0, apperrors.Unauthorised(msgUserNotFound)
-	}
-	return user.ID, nil
+func NewPredictionHandler(svc service.PredictionService, log *zap.Logger) *PredictionHandler {
+	return &PredictionHandler{svc: svc, log: log}
 }
 
 // submitPredictionRequest is the JSON body accepted by POST /api/v1/predictions.
@@ -72,7 +56,7 @@ type updatePredictionRequest struct {
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/predictions [post]
 func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
 		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
@@ -84,14 +68,8 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	internalUserID, err := h.resolveUserID(r, userID)
-	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
-		return
-	}
-
 	prediction := &domain.Prediction{
-		UserID:    internalUserID,
+		UserID:    caller.ID,
 		MatchID:   req.MatchID,
 		HomeScore: req.HomeScore,
 		AwayScore: req.AwayScore,
@@ -169,17 +147,12 @@ func (h *PredictionHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, apperrors.Validation("user_id must be a positive integer"))
 		return
 	}
-	clerkSubject, ok := middleware.UserIDFromContext(r.Context())
+	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
 		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
-	callerID, err := h.resolveUserID(r, clerkSubject)
-	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
-		return
-	}
-	if requestedID != callerID {
+	if requestedID != caller.ID {
 		middleware.WriteError(w, r, h.log, apperrors.Forbidden("cannot access another user's predictions"))
 		return
 	}

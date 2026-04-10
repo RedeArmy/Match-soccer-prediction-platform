@@ -12,6 +12,11 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const (
+	teamBrazil    = "Brazil"
+	teamArgentina = "Argentina"
+)
+
 // stubPredRepo implements repository.PredictionRepository with configurable returns.
 // byID is returned by GetByID; byUserMatch is returned by GetByUserAndMatch;
 // list is returned by ListByUser and ListByMatch.
@@ -41,6 +46,15 @@ func (r *stubPredRepo) ListByUser(_ context.Context, _ int) ([]*domain.Predictio
 func (r *stubPredRepo) ListByMatch(_ context.Context, _ int) ([]*domain.Prediction, error) {
 	return r.list, r.err
 }
+func (r *stubPredRepo) UpdateManyPoints(_ context.Context, points map[int]int) error {
+	for _, p := range r.list {
+		if pts, ok := points[p.ID]; ok {
+			p.Points = &pts
+			r.updated = append(r.updated, p)
+		}
+	}
+	return r.err
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -51,7 +65,7 @@ func newPredSvc(match *domain.Match, existingPred *domain.Prediction) Prediction
 }
 
 func openMatch() *domain.Match {
-	return &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina",
+	return &domain.Match{ID: 1, HomeTeam: teamBrazil, AwayTeam: teamArgentina,
 		Status:    domain.MatchStatusScheduled,
 		KickoffAt: time.Now().Add(30 * time.Minute), // well outside the 5-min lock window
 	}
@@ -78,7 +92,7 @@ func TestSubmit_MatchNotFound_ReturnsNotFound(t *testing.T) {
 }
 
 func TestSubmit_PastDeadline_ReturnsValidation(t *testing.T) {
-	match := &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina",
+	match := &domain.Match{ID: 1, HomeTeam: teamBrazil, AwayTeam: teamArgentina,
 		Status:    domain.MatchStatusScheduled,
 		KickoffAt: time.Now().Add(3 * time.Minute), // inside the 5-min lock window
 	}
@@ -139,7 +153,7 @@ func TestUpdate_MatchNotFound_ReturnsNotFound(t *testing.T) {
 }
 
 func TestUpdate_PastDeadline_ReturnsValidation(t *testing.T) {
-	match := &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina",
+	match := &domain.Match{ID: 1, HomeTeam: teamBrazil, AwayTeam: teamArgentina,
 		Status:    domain.MatchStatusScheduled,
 		KickoffAt: time.Now().Add(2 * time.Minute), // inside the 5-min lock window
 	}
