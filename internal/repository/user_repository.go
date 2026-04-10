@@ -25,7 +25,7 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 // uses RETURNING stay in sync automatically when columns are added or removed.
 // password_hash was removed in migration 000010: authentication is delegated
 // to Clerk and no credential is stored in the application database.
-const userColumns = "id, name, email, role, clerk_subject, created_at, updated_at"
+const userColumns = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at"
 
 // rowScanner is satisfied by both pgx.Row (single-row query) and pgx.Rows
 // (multi-row iteration). Accepting this interface lets scanUserFields serve
@@ -40,7 +40,7 @@ type rowScanner interface {
 func scanUserFields(s rowScanner) (*domain.User, error) {
 	u := &domain.User{}
 	var clerkSubject *string // nullable in DB; empty string in domain when NULL
-	if err := s.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt); err != nil {
+	if err := s.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt, &u.DeletedAt); err != nil {
 		return nil, err
 	}
 	if clerkSubject != nil {
@@ -83,14 +83,14 @@ func (r *PostgresUserRepository) Create(ctx context.Context, u *domain.User) err
 
 func (r *PostgresUserRepository) GetByID(ctx context.Context, id int) (*domain.User, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+userColumns+` FROM users WHERE id=$1`, id,
+		`SELECT `+userColumns+` FROM users WHERE id=$1 AND deleted_at IS NULL`, id,
 	)
 	return scanUser(row)
 }
 
 func (r *PostgresUserRepository) GetByClerkSubject(ctx context.Context, subject string) (*domain.User, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+userColumns+` FROM users WHERE clerk_subject = $1`, subject,
+		`SELECT `+userColumns+` FROM users WHERE clerk_subject = $1 AND deleted_at IS NULL`, subject,
 	)
 	return scanUser(row)
 }
@@ -119,7 +119,9 @@ func (r *PostgresUserRepository) Update(ctx context.Context, u *domain.User) err
 }
 
 func (r *PostgresUserRepository) Delete(ctx context.Context, id int) error {
-	tag, err := r.db.Exec(ctx, `DELETE FROM users WHERE id=$1`, id)
+	tag, err := r.db.Exec(ctx,
+		`UPDATE users SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id,
+	)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
@@ -130,7 +132,7 @@ func (r *PostgresUserRepository) Delete(ctx context.Context, id int) error {
 }
 
 func (r *PostgresUserRepository) List(ctx context.Context) ([]*domain.User, error) {
-	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users ORDER BY id ASC`)
+	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users WHERE deleted_at IS NULL ORDER BY id ASC`)
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}

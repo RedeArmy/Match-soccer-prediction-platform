@@ -29,6 +29,7 @@ const (
 	fmtExpect200     = "expected 200, got %d"
 	fmtExpect204     = "expected 204, got %d"
 	fmtExpect400     = "expected 400, got %d"
+	fmtExpect401     = "expected 401, got %d"
 	fmtExpect422     = "expected 422, got %d"
 	fmtExpect500     = "expected 500, got %d"
 	urlListByUserID1 = "/?user_id=1"
@@ -43,6 +44,10 @@ const (
 	headerSvixID        = "svix-id"
 	headerSvixTimestamp = "svix-timestamp"
 	headerSvixSignature = "svix-signature"
+
+	bodySubmitPrediction = `{"match_id":1,"home_score":2,"away_score":1}`
+	bodyUpdatePrediction = `{"home_score":2,"away_score":1}`
+	pathPredictionID1    = "/1"
 )
 
 // stubMatchSvc implements service.MatchService with configurable returns.

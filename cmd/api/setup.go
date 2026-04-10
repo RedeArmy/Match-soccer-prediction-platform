@@ -88,12 +88,13 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 
 // setupDB applies pending migrations and opens a connection pool.
 //
-// Returns (nil, nil) when DSN is empty — the database is treated as optional
-// so /health remains reachable during rolling deploys or cold starts.
-// Returns (nil, error) when migrations fail — starting against a stale schema
-// would cause unpredictable runtime errors, so the error is fatal at the
-// call site. A failed pool ping is non-fatal: it logs a warning and returns
-// (nil, nil) so the server can still start and serve non-DB endpoints.
+// Returns (nil, nil) when DSN is empty — the server is intentionally started
+// without a database only in that case (e.g. a /health-only smoke test).
+// Any other failure — migration error or pool creation error — is returned as
+// a non-nil error so that main can call os.Exit(1) immediately.  Allowing the
+// server to start with a configured-but-unreachable database would serve
+// requests that silently fail at the query layer, which is far harder to
+// diagnose than a clean startup failure.
 //
 // Extracting this logic out of main keeps the composition root thin and lets
 // tests exercise the migration and connection paths without spawning a full
@@ -123,8 +124,7 @@ func setupDB(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool
 		ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
 	})
 	if err != nil {
-		log.Sugar().Warnf("database unavailable: %v", err)
-		return nil, nil
+		return nil, fmt.Errorf("database unavailable: %w", err)
 	}
 	log.Sugar().Info("database connection established")
 	return pool, nil
