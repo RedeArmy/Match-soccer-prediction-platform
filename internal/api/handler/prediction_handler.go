@@ -143,17 +143,17 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 // ListByUser handles GET /api/v1/predictions?user_id={id}.
 //
 // @Summary      List predictions by user
-// @Description  Returns all predictions submitted by a specific user. When the
+// @Description  Returns all predictions submitted by a specific user. The caller
 //
-//	request is authenticated, the caller may only retrieve their own
-//	predictions; querying another user's predictions returns 403.
-//	In local development (auth disabled), any user_id is accepted.
+//	may only retrieve their own predictions; querying another user's
+//	predictions returns 403. An unauthenticated request returns 401.
 //
 // @Tags         predictions
 // @Produce      json
 // @Security     BearerAuth
 // @Param        user_id  query     int  true  "Internal user ID"
 // @Success      200      {array}   handler.PredictionResponse
+// @Failure      401      {object}  handler.ErrorResponse  "Missing or invalid auth token"
 // @Failure      403      {object}  handler.ErrorResponse  "Caller requested another user's predictions"
 // @Failure      422      {object}  handler.ErrorResponse  "Missing or invalid user_id"
 // @Failure      500      {object}  handler.ErrorResponse
@@ -169,19 +169,19 @@ func (h *PredictionHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, apperrors.Validation("user_id must be a positive integer"))
 		return
 	}
-	// When authentication is active, enforce that callers may only retrieve
-	// their own predictions. When auth is disabled (local development), the
-	// check is skipped and any user_id is accepted via the query parameter.
-	if clerkSubject, ok := middleware.UserIDFromContext(r.Context()); ok {
-		callerID, err := h.resolveUserID(r, clerkSubject)
-		if err != nil {
-			middleware.WriteError(w, r, h.log, err)
-			return
-		}
-		if requestedID != callerID {
-			middleware.WriteError(w, r, h.log, apperrors.Forbidden("cannot access another user's predictions"))
-			return
-		}
+	clerkSubject, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	callerID, err := h.resolveUserID(r, clerkSubject)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	if requestedID != callerID {
+		middleware.WriteError(w, r, h.log, apperrors.Forbidden("cannot access another user's predictions"))
+		return
 	}
 	predictions, err := h.svc.GetByUser(r.Context(), requestedID)
 	if err != nil {
