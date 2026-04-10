@@ -542,7 +542,7 @@ paths:
       - matches
   /api/v1/predictions:
     get:
-      description: Returns all predictions submitted by a specific user. When the
+      description: Returns all predictions submitted by a specific user. The caller
       parameters:
       - description: Internal user ID
         in: query
@@ -558,6 +558,10 @@ paths:
             items:
               $ref: '#/definitions/internal_api_handler.PredictionResponse'
             type: array
+        "401":
+          description: Missing or invalid auth token
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "403":
           description: Caller requested another user's predictions
           schema:
