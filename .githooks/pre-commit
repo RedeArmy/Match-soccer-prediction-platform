@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# pre-commit: regenerate Swagger docs when handler annotations may have changed.
+#
+# Triggered automatically before every commit when hooks are installed via
+# `make hooks` (or `make dev`). Only runs when staged changes include files
+# that carry swag annotations — handler Go files or the main entry point.
+# The regenerated docs/ files are staged automatically so the commit always
+# includes an up-to-date spec without any extra developer action.
+#
+# Install once after cloning:
+#   make hooks
+
+set -euo pipefail
+
+SWAGGER_SOURCES_PATTERN='^(internal/api/handler/.*\.go|cmd/api/main\.go)'
+
+if git diff --cached --name-only | grep -qE "$SWAGGER_SOURCES_PATTERN"; then
+    echo "→ Swagger annotations changed — regenerating docs..."
+    make swagger-gen
+    git add docs/
+    echo "→ docs/ updated and staged."
+fi
