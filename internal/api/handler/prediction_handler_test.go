@@ -52,10 +52,9 @@ func doPred(router http.Handler, method, path, body string) *httptest.ResponseRe
 
 func TestSubmit_NoAuthContext_Returns401(t *testing.T) {
 	// Request reaches the handler without RequireAuth having set a user ID.
-	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPost, "/",
-		`{"match_id":1,"home_score":2,"away_score":1}`)
+	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPost, "/", bodySubmitPrediction)
 	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", w.Code)
+		t.Errorf(fmtExpect401, w.Code)
 	}
 }
 
@@ -93,14 +92,13 @@ func TestSubmit_UserNotFound_Returns401(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", w.Code)
+		t.Errorf(fmtExpect401, w.Code)
 	}
 }
 
 func TestSubmit_ServiceError_Returns422(t *testing.T) {
 	svc := &stubPredSvc{err: apperrors.Validation("past deadline")}
-	w := doPred(newPredRouter(svc, true), http.MethodPost, "/",
-		`{"match_id":1,"home_score":2,"away_score":1}`)
+	w := doPred(newPredRouter(svc, true), http.MethodPost, "/", bodySubmitPrediction)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
@@ -108,8 +106,7 @@ func TestSubmit_ServiceError_Returns422(t *testing.T) {
 
 func TestSubmit_Success_Returns201(t *testing.T) {
 	svc := &stubPredSvc{pred: &domain.Prediction{ID: 1, UserID: 1, MatchID: 1}}
-	w := doPred(newPredRouter(svc, true), http.MethodPost, "/",
-		`{"match_id":1,"home_score":2,"away_score":1}`)
+	w := doPred(newPredRouter(svc, true), http.MethodPost, "/", bodySubmitPrediction)
 	if w.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d", w.Code)
 	}
@@ -119,21 +116,21 @@ func TestSubmit_Success_Returns201(t *testing.T) {
 
 func TestPredUpdate_Success_Returns200(t *testing.T) {
 	svc := &stubPredSvc{pred: &domain.Prediction{ID: 1, HomeScore: 2, AwayScore: 1}}
-	w := doPred(newPredRouter(svc, false), http.MethodPatch, "/1", `{"home_score":2,"away_score":1}`)
+	w := doPred(newPredRouter(svc, false), http.MethodPatch, pathPredictionID1, bodyUpdatePrediction)
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
 	}
 }
 
 func TestPredUpdate_InvalidID_Returns422(t *testing.T) {
-	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPatch, "/abc", `{"home_score":2,"away_score":1}`)
+	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPatch, "/abc", bodyUpdatePrediction)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
 func TestPredUpdate_InvalidJSON_Returns422(t *testing.T) {
-	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPatch, "/1", `not json`)
+	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPatch, pathPredictionID1, `not json`)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
@@ -141,7 +138,7 @@ func TestPredUpdate_InvalidJSON_Returns422(t *testing.T) {
 
 func TestPredUpdate_ServiceError_Returns404(t *testing.T) {
 	svc := &stubPredSvc{err: apperrors.NotFound("prediction not found")}
-	w := doPred(newPredRouter(svc, false), http.MethodPatch, "/1", `{"home_score":2,"away_score":1}`)
+	w := doPred(newPredRouter(svc, false), http.MethodPatch, pathPredictionID1, bodyUpdatePrediction)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
 	}
@@ -149,11 +146,20 @@ func TestPredUpdate_ServiceError_Returns404(t *testing.T) {
 
 // ── ListByUser ────────────────────────────────────────────────────────────────
 
+func TestListByUser_NoAuthContext_Returns401(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
+	w := httptest.NewRecorder()
+	newPredRouter(&stubPredSvc{}, false).ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
 func TestListByUser_Success_Returns200(t *testing.T) {
 	svc := &stubPredSvc{preds: []*domain.Prediction{{ID: 1, UserID: 1}}}
 	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
 	w := httptest.NewRecorder()
-	newPredRouter(svc, false).ServeHTTP(w, req)
+	newPredRouter(svc, true).ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
 	}
@@ -162,7 +168,7 @@ func TestListByUser_Success_Returns200(t *testing.T) {
 func TestListByUser_MissingUserID_Returns422(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
-	newPredRouter(&stubPredSvc{}, false).ServeHTTP(w, req)
+	newPredRouter(&stubPredSvc{}, true).ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
@@ -171,7 +177,7 @@ func TestListByUser_MissingUserID_Returns422(t *testing.T) {
 func TestListByUser_InvalidUserID_Returns422(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?user_id=abc", nil)
 	w := httptest.NewRecorder()
-	newPredRouter(&stubPredSvc{}, false).ServeHTTP(w, req)
+	newPredRouter(&stubPredSvc{}, true).ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
@@ -181,7 +187,7 @@ func TestListByUser_ServiceError_Returns500(t *testing.T) {
 	svc := &stubPredSvc{err: apperrors.Internal(nil)}
 	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
 	w := httptest.NewRecorder()
-	newPredRouter(svc, false).ServeHTTP(w, req)
+	newPredRouter(svc, true).ServeHTTP(w, req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", w.Code)
 	}

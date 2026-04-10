@@ -22,11 +22,11 @@ func NewPostgresQuinielaRepository(db *pgxpool.Pool) *PostgresQuinielaRepository
 	return &PostgresQuinielaRepository{db: db}
 }
 
-const quinielaColumns = "id, name, owner_id, invite_code, entry_fee, currency, max_members, created_at, updated_at"
+const quinielaColumns = "id, name, owner_id, invite_code, entry_fee, currency, max_members, created_at, updated_at, deleted_at"
 
 func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	q := &domain.Quiniela{}
-	err := row.Scan(&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.EntryFee, &q.Currency, &q.MaxMembers, &q.CreatedAt, &q.UpdatedAt)
+	err := row.Scan(&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.EntryFee, &q.Currency, &q.MaxMembers, &q.CreatedAt, &q.UpdatedAt, &q.DeletedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -62,14 +62,14 @@ func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quini
 
 func (r *PostgresQuinielaRepository) GetByID(ctx context.Context, id int) (*domain.Quiniela, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+quinielaColumns+` FROM quinielas WHERE id=$1`, id,
+		`SELECT `+quinielaColumns+` FROM quinielas WHERE id=$1 AND deleted_at IS NULL`, id,
 	)
 	return scanQuiniela(row)
 }
 
 func (r *PostgresQuinielaRepository) GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+quinielaColumns+` FROM quinielas WHERE invite_code=$1`, code,
+		`SELECT `+quinielaColumns+` FROM quinielas WHERE invite_code=$1 AND deleted_at IS NULL`, code,
 	)
 	return scanQuiniela(row)
 }
@@ -94,7 +94,9 @@ func (r *PostgresQuinielaRepository) Update(ctx context.Context, q *domain.Quini
 }
 
 func (r *PostgresQuinielaRepository) Delete(ctx context.Context, id int) error {
-	tag, err := r.db.Exec(ctx, `DELETE FROM quinielas WHERE id=$1`, id)
+	tag, err := r.db.Exec(ctx,
+		`UPDATE quinielas SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id,
+	)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
@@ -106,7 +108,7 @@ func (r *PostgresQuinielaRepository) Delete(ctx context.Context, id int) error {
 
 func (r *PostgresQuinielaRepository) ListByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT `+quinielaColumns+` FROM quinielas WHERE owner_id=$1 ORDER BY created_at DESC`, ownerID,
+		`SELECT `+quinielaColumns+` FROM quinielas WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC`, ownerID,
 	)
 	if err != nil {
 		return nil, apperrors.Internal(err)
@@ -119,7 +121,7 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 	var quinielas []*domain.Quiniela
 	for rows.Next() {
 		q := &domain.Quiniela{}
-		if err := rows.Scan(&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.EntryFee, &q.Currency, &q.MaxMembers, &q.CreatedAt, &q.UpdatedAt); err != nil {
+		if err := rows.Scan(&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.EntryFee, &q.Currency, &q.MaxMembers, &q.CreatedAt, &q.UpdatedAt, &q.DeletedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		quinielas = append(quinielas, q)

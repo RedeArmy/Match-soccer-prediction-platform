@@ -534,7 +534,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all predictions submitted by a specific user. When the",
+                "description": "Returns all predictions submitted by a specific user. The caller",
                 "produces": [
                     "application/json"
                 ],
@@ -559,6 +559,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/internal_api_handler.PredictionResponse"
                             }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid auth token",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
                     },
                     "403": {

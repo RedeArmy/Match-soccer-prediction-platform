@@ -31,6 +31,7 @@ type User struct {
 	ClerkSubject string // opaque Clerk user ID, e.g. "user_2abc…"; empty for legacy rows
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	DeletedAt    *time.Time // nil for active users; set when the record is soft-deleted
 }
 
 // UserRole is a typed string that constrains the roles a User may hold.
@@ -192,6 +193,7 @@ type Quiniela struct {
 	MaxMembers *int
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	DeletedAt  *time.Time // nil for active groups; set when the record is soft-deleted
 }
 
 // MembershipStatus tracks the lifecycle of a user's membership in a Quiniela.

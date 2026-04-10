@@ -4,11 +4,16 @@
 -- validates, or stores passwords: users authenticate via Clerk's hosted login
 -- flow and the API validates the resulting JWT.
 --
--- The password_hash column was part of the original schema before Clerk was
+-- The password_hash column was introduced in migration 000001 before Clerk was
 -- adopted and has been dead weight since then — every row contains either an
 -- empty string (webhook-created users) or the placeholder 'not-a-real-hash'
 -- (seed data). Keeping it misleads future contributors into thinking the app
 -- manages credentials and forces every INSERT to supply a dummy value.
+--
+-- IF EXISTS is intentional: this guard makes the migration idempotent so that
+-- environments where the column was never populated (e.g. fresh CI containers
+-- spun up after Clerk adoption) can apply the full migration sequence without
+-- error. The DROP itself is a no-op on those instances.
 --
 -- The operation acquires an ACCESS EXCLUSIVE lock for the duration of the
 -- ALTER TABLE. On the expected dataset size (hundreds of users) this lock
