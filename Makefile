@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run test test-cover lint clean docker-up docker-down docker-logs migrate dev swagger-gen swagger-clean help
+.PHONY: build run test test-cover lint clean docker-up docker-down docker-logs migrate dev hooks swagger-gen swagger-clean help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -69,12 +69,19 @@ docker-down:
 docker-logs:
 	docker compose logs -f
 
-## dev: Start infrastructure and apply migrations in one command (full local setup)
+## dev: Start infrastructure, install git hooks, and apply migrations (full local setup)
 ##      Requires Docker to be running. Blocks until Postgres is healthy, then migrates.
-dev: docker-up
+dev: docker-up hooks
 	@echo "Waiting for Postgres to be healthy..."
 	@docker compose exec postgres sh -c 'until pg_isready -U $${POSTGRES_USER:-quiniela} -d $${POSTGRES_DB:-quiniela}; do sleep 1; done'
 	$(MAKE) migrate
+
+## hooks: Install project Git hooks (run once after cloning)
+##        Points Git at .githooks/ so the pre-commit hook regenerates Swagger
+##        docs automatically whenever handler annotations change.
+hooks:
+	git config core.hooksPath .githooks
+	@echo "Git hooks installed from .githooks/"
 
 ## migrate: Apply pending database schema migrations
 migrate:
