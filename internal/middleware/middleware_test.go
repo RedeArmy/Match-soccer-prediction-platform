@@ -45,6 +45,7 @@ const (
 	fmtStatus        = "expected status %d, got %d"
 	originLocalhost  = "http://localhost:3000"
 	headerACAO       = "Access-Control-Allow-Origin"
+	headerAuth       = "Authorization"
 	headerOrigin     = "Origin"
 	pathMatches      = "/api/v1/matches"
 	msgMatchNotFound = "match not found"
@@ -325,7 +326,52 @@ func TestRequireAuth_NonBearerHeader_Returns401(t *testing.T) {
 		http.HandlerFunc(okHandler),
 	)
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
-	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+	req.Header.Set(headerAuth, "Basic dXNlcjpwYXNz")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
+	}
+}
+
+// TestRequireAuth_JWKSFetchError_Returns500 verifies that a JWKS endpoint that
+// returns an error causes RequireAuth to respond 500.
+func TestRequireAuth_JWKSFetchError_Returns500(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	log := zap.NewNop()
+	handler := middleware.RequireAuth(srv.URL, log)(http.HandlerFunc(okHandler))
+	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
+	req.Header.Set(headerAuth, "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyXzEifQ.sig")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtStatus, http.StatusInternalServerError, rec.Code)
+	}
+}
+
+// TestRequireAuth_InvalidToken_Returns401 verifies that a valid JWKS endpoint
+// paired with a malformed/unsigned JWT causes RequireAuth to respond 401.
+func TestRequireAuth_InvalidToken_Returns401(t *testing.T) {
+	// Serve a minimal valid JWKS (empty key set). The token will fail to parse
+	// because no matching key exists — this exercises the jwt.Parse error branch.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"keys":[]}`))
+	}))
+	defer srv.Close()
+
+	log := zap.NewNop()
+	handler := middleware.RequireAuth(srv.URL, log)(http.HandlerFunc(okHandler))
+	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
+	req.Header.Set(headerAuth, "Bearer not.a.jwt")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
