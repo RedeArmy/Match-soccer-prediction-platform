@@ -49,4 +49,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("cors.allowedOrigins", "http://localhost:3000")
 
 	v.SetDefault("clerk.jwksUrl", "")
+
+	// worker.healthPort defaults to 8081 so the worker's health endpoints do
+	// not collide with the API server (8080) when both run on the same host.
+	v.SetDefault("worker.healthPort", "8081")
 }

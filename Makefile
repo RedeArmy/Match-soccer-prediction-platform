@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run test test-cover lint clean docker-up docker-down docker-logs migrate dev hooks swagger-gen swagger-clean help
+.PHONY: build run run-worker test test-cover lint clean docker-up docker-down docker-logs migrate dev hooks swagger-gen swagger-clean help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -28,6 +28,14 @@ run:
 	WCQ_LOGGER_ENCODING=console \
 	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:5432/quiniela?sslmode=disable \
 	go run ./cmd/api
+
+## run-worker: Run the background worker with local development settings
+##             Requires: `make docker-up` to be running first (Redis required).
+run-worker:
+	WCQ_LOGGER_ENCODING=console \
+	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:5432/quiniela?sslmode=disable \
+	WCQ_EVENTBUS_DRIVER=redis \
+	go run ./cmd/worker
 
 ## test: Run the full test suite with race detection enabled
 ##       The -count=1 flag disables the test cache, ensuring each run is fresh.
