@@ -7,6 +7,32 @@ import (
 	"github.com/spf13/viper"
 )
 
+// LoadWorker resolves the configuration for the background worker binary.
+//
+// It uses the same environment variable convention as Load (WCQ_ prefix, dot
+// notation mapped to underscores) but applies validateWorker instead of
+// validate, skipping API-only requirements such as jwt.secret and server.port.
+func LoadWorker() (*Config, error) {
+	v := viper.New()
+
+	v.SetEnvPrefix("WCQ")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	setDefaults(v)
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	if err := validateWorker(&cfg); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
 // Load resolves the application configuration in the following precedence
 // order (highest to lowest): environment variables → registered defaults.
 //

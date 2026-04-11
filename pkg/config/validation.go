@@ -18,6 +18,21 @@ var knownLogLevels = map[string]struct{}{
 	"fatal":  {},
 }
 
+// validateWorker enforces the configuration invariants required by the worker
+// binary. It is intentionally less strict than validate: the worker has no
+// HTTP router (no server.port), no JWT validation (no jwt.secret), and no
+// CORS policy. Infrastructure connectivity (database DSN, Redis address) is
+// validated at the point of use inside setupDB and setupEventBus.
+func validateWorker(cfg *Config) error {
+	if _, ok := knownLogLevels[cfg.Logger.Level]; !ok {
+		return fmt.Errorf(
+			"logger.level %q is not valid (WCQ_LOGGER_LEVEL); accepted values: debug, info, warn, error, dpanic, panic, fatal",
+			cfg.Logger.Level,
+		)
+	}
+	return nil
+}
+
 // validate enforces the subset of configuration invariants that cannot be
 // expressed as safe defaults.
 //
