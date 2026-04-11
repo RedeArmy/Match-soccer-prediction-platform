@@ -32,6 +32,7 @@ type contextKey int
 
 const (
 	contextKeyUserID contextKey = iota
+	contextKeyUser              // resolved *domain.User, set by ResolveUser middleware
 )
 
 // ContextWithUserID returns a new context with the given Clerk user ID stored

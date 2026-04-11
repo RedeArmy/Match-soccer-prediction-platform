@@ -5,10 +5,11 @@
 -- using the filter index (fast filter, slow sort) or the kickoff_at index
 -- (fast sort, slow filter via index scan + recheck). Neither option is optimal.
 --
--- Composite indexes on (status, kickoff_at DESC) and (phase, kickoff_at DESC)
+-- Composite indexes on (status, kickoff_at ASC) and (phase, kickoff_at ASC)
 -- let PostgreSQL satisfy the WHERE predicate and the ORDER BY in a single
 -- index scan with no additional sort step. The leading column is the equality
--- predicate; the trailing column provides pre-sorted order.
+-- predicate; the trailing column matches the ASC order used by ListByStatus
+-- and ListByPhase (nearest upcoming matches first).
 --
 -- The standalone idx_matches_status and idx_matches_phase indexes become
 -- redundant once the composite indexes exist: any query that previously used
@@ -21,7 +22,7 @@ DROP INDEX IF EXISTS idx_matches_status;
 DROP INDEX IF EXISTS idx_matches_phase;
 
 CREATE INDEX IF NOT EXISTS idx_matches_status_kickoff
-    ON matches (status, kickoff_at DESC);
+    ON matches (status, kickoff_at ASC);
 
 CREATE INDEX IF NOT EXISTS idx_matches_phase_kickoff
-    ON matches (phase, kickoff_at DESC);
+    ON matches (phase, kickoff_at ASC);

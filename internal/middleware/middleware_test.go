@@ -45,8 +45,13 @@ const (
 	fmtStatus        = "expected status %d, got %d"
 	originLocalhost  = "http://localhost:3000"
 	headerACAO       = "Access-Control-Allow-Origin"
+	headerAuth       = "Authorization"
+	headerOrigin     = "Origin"
 	pathMatches      = "/api/v1/matches"
 	msgMatchNotFound = "match not found"
+
+	subjectForRole    = "user_abc"
+	subjectForResolve = "user_clerk_abc"
 )
 
 // okHandler is a trivial handler used as the "next" in middleware chain tests.
@@ -159,7 +164,7 @@ func TestRequestLogger_CapturesNonOKStatus(t *testing.T) {
 func TestCORS_AllowsConfiguredOrigin(t *testing.T) {
 	handler := middleware.CORS(originLocalhost)(http.HandlerFunc(okHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Origin", originLocalhost)
+	req.Header.Set(headerOrigin, originLocalhost)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -173,7 +178,7 @@ func TestCORS_AllowsConfiguredOrigin(t *testing.T) {
 func TestCORS_RejectsUnknownOrigin(t *testing.T) {
 	handler := middleware.CORS(originLocalhost)(http.HandlerFunc(okHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Origin", "http://evil.example.com")
+	req.Header.Set(headerOrigin, "http://evil.example.com")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -187,7 +192,7 @@ func TestCORS_RejectsUnknownOrigin(t *testing.T) {
 func TestCORS_HandlesPreflight(t *testing.T) {
 	handler := middleware.CORS(originLocalhost)(http.HandlerFunc(okHandler))
 	req := httptest.NewRequest(http.MethodOptions, pathMatches, nil)
-	req.Header.Set("Origin", originLocalhost)
+	req.Header.Set(headerOrigin, originLocalhost)
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	rec := httptest.NewRecorder()
 
@@ -204,7 +209,7 @@ func TestCORS_MultipleOriginsAllowed(t *testing.T) {
 	for _, origin := range []string{originLocalhost, "https://myapp.com"} {
 		t.Run(origin, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req.Header.Set("Origin", origin)
+			req.Header.Set(headerOrigin, origin)
 			rec := httptest.NewRecorder()
 
 			handler.ServeHTTP(rec, req)
@@ -321,7 +326,52 @@ func TestRequireAuth_NonBearerHeader_Returns401(t *testing.T) {
 		http.HandlerFunc(okHandler),
 	)
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
-	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+	req.Header.Set(headerAuth, "Basic dXNlcjpwYXNz")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
+	}
+}
+
+// TestRequireAuth_JWKSFetchError_Returns500 verifies that a JWKS endpoint that
+// returns an error causes RequireAuth to respond 500.
+func TestRequireAuth_JWKSFetchError_Returns500(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	log := zap.NewNop()
+	handler := middleware.RequireAuth(srv.URL, log)(http.HandlerFunc(okHandler))
+	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
+	req.Header.Set(headerAuth, "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyXzEifQ.sig")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtStatus, http.StatusInternalServerError, rec.Code)
+	}
+}
+
+// TestRequireAuth_InvalidToken_Returns401 verifies that a valid JWKS endpoint
+// paired with a malformed/unsigned JWT causes RequireAuth to respond 401.
+func TestRequireAuth_InvalidToken_Returns401(t *testing.T) {
+	// Serve a minimal valid JWKS (empty key set). The token will fail to parse
+	// because no matching key exists — this exercises the jwt.Parse error branch.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"keys":[]}`))
+	}))
+	defer srv.Close()
+
+	log := zap.NewNop()
+	handler := middleware.RequireAuth(srv.URL, log)(http.HandlerFunc(okHandler))
+	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
+	req.Header.Set(headerAuth, "Bearer not.a.jwt")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -370,7 +420,7 @@ func TestRequireRole_RepoError_Returns500(t *testing.T) {
 	repo := &stubUserRepo{err: errors.New("db down")}
 	h := requireRoleHandler(repo, domain.RoleAdmin)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, requireRoleRequest("user_abc"))
+	h.ServeHTTP(rec, requireRoleRequest(subjectForRole))
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf(fmtStatus, http.StatusInternalServerError, rec.Code)
 	}
@@ -380,7 +430,7 @@ func TestRequireRole_UserNotFound_Returns401(t *testing.T) {
 	repo := &stubUserRepo{user: nil} // subject has no matching row
 	h := requireRoleHandler(repo, domain.RoleAdmin)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, requireRoleRequest("user_abc"))
+	h.ServeHTTP(rec, requireRoleRequest(subjectForRole))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
 	}
@@ -390,7 +440,7 @@ func TestRequireRole_WrongRole_Returns403(t *testing.T) {
 	repo := &stubUserRepo{user: &domain.User{ID: 1, Role: domain.RolePlayer}}
 	h := requireRoleHandler(repo, domain.RoleAdmin)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, requireRoleRequest("user_abc"))
+	h.ServeHTTP(rec, requireRoleRequest(subjectForRole))
 	if rec.Code != http.StatusForbidden {
 		t.Errorf(fmtStatus, http.StatusForbidden, rec.Code)
 	}
@@ -400,8 +450,80 @@ func TestRequireRole_CorrectRole_CallsNext(t *testing.T) {
 	repo := &stubUserRepo{user: &domain.User{ID: 1, Role: domain.RoleAdmin}}
 	h := requireRoleHandler(repo, domain.RoleAdmin)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, requireRoleRequest("user_abc"))
+	h.ServeHTTP(rec, requireRoleRequest(subjectForRole))
 	if rec.Code != http.StatusOK {
 		t.Errorf(fmtStatus, http.StatusOK, rec.Code)
+	}
+}
+
+// ── ResolveUser ───────────────────────────────────────────────────────────────
+
+func resolveUserHandler(repo *stubUserRepo) http.Handler {
+	log := zap.NewNop()
+	return middleware.ResolveUser(repo, log)(http.HandlerFunc(okHandler))
+}
+
+// resolveUserRequest builds a request with or without a Clerk subject in context.
+func resolveUserRequest(subject string) *http.Request {
+	return requireRoleRequest(subject)
+}
+
+func TestResolveUser_NoSubjectInContext_Returns401(t *testing.T) {
+	h := resolveUserHandler(&stubUserRepo{})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, resolveUserRequest(""))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestResolveUser_RepoError_Returns500(t *testing.T) {
+	repo := &stubUserRepo{err: errors.New("db down")}
+	h := resolveUserHandler(repo)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, resolveUserRequest(subjectForResolve))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtStatus, http.StatusInternalServerError, rec.Code)
+	}
+}
+
+func TestResolveUser_UserNotFound_Returns401(t *testing.T) {
+	repo := &stubUserRepo{user: nil}
+	h := resolveUserHandler(repo)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, resolveUserRequest(subjectForResolve))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestResolveUser_Success_CallsNext(t *testing.T) {
+	repo := &stubUserRepo{user: &domain.User{ID: 5, Name: "Alice"}}
+	h := resolveUserHandler(repo)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, resolveUserRequest(subjectForResolve))
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtStatus, http.StatusOK, rec.Code)
+	}
+}
+
+// ── UserFromContext / ContextWithUser ─────────────────────────────────────────
+
+func TestContextWithUser_RoundTrip(t *testing.T) {
+	want := &domain.User{ID: 42, Name: "Bob"}
+	ctx := middleware.ContextWithUser(context.Background(), want)
+	got, ok := middleware.UserFromContext(ctx)
+	if !ok {
+		t.Fatal("UserFromContext returned ok=false after ContextWithUser")
+	}
+	if got.ID != want.ID {
+		t.Errorf("expected user ID %d, got %d", want.ID, got.ID)
+	}
+}
+
+func TestUserFromContext_ReturnsFalseWhenNotSet(t *testing.T) {
+	_, ok := middleware.UserFromContext(context.Background())
+	if ok {
+		t.Error("expected ok=false when no user in context, got true")
 	}
 }

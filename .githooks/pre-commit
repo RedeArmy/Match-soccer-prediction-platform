@@ -12,6 +12,11 @@
 
 set -euo pipefail
 
+# GUI Git clients (GitHub Desktop, Tower, etc.) launch hooks in a minimal
+# shell that does not source ~/.bashrc or ~/.zshrc, so ~/go/bin is absent
+# from PATH. Prepend it explicitly so `swag` is always found.
+export PATH="$PATH:$(go env GOPATH)/bin"
+
 SWAGGER_SOURCES_PATTERN='^(internal/api/handler/.*\.go|cmd/api/main\.go)'
 
 if git diff --cached --name-only | grep -qE "$SWAGGER_SOURCES_PATTERN"; then

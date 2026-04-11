@@ -9,7 +9,11 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
-const fmtUnexpectedErr = "expected nil, got %v"
+const (
+	fmtUnexpectedErr = "expected nil, got %v"
+	teamBrazil       = "Brazil"
+	teamArgentina    = "Argentina"
+)
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -21,8 +25,8 @@ func isValidation(err error) bool {
 
 func TestValidateMatch_ValidMatch_ReturnsNil(t *testing.T) {
 	m := &domain.Match{
-		HomeTeam:  "Brazil",
-		AwayTeam:  "Argentina",
+		HomeTeam:  teamBrazil,
+		AwayTeam:  teamArgentina,
 		KickoffAt: time.Now().Add(24 * time.Hour),
 	}
 	if err := domain.ValidateMatch(m); err != nil {
@@ -31,28 +35,28 @@ func TestValidateMatch_ValidMatch_ReturnsNil(t *testing.T) {
 }
 
 func TestValidateMatch_EmptyHomeTeam_ReturnsValidation(t *testing.T) {
-	m := &domain.Match{AwayTeam: "Argentina", KickoffAt: time.Now().Add(time.Hour)}
+	m := &domain.Match{AwayTeam: teamArgentina, KickoffAt: time.Now().Add(time.Hour)}
 	if err := domain.ValidateMatch(m); !isValidation(err) {
 		t.Errorf("expected validation error for empty home team, got %v", err)
 	}
 }
 
 func TestValidateMatch_EmptyAwayTeam_ReturnsValidation(t *testing.T) {
-	m := &domain.Match{HomeTeam: "Brazil", KickoffAt: time.Now().Add(time.Hour)}
+	m := &domain.Match{HomeTeam: teamBrazil, KickoffAt: time.Now().Add(time.Hour)}
 	if err := domain.ValidateMatch(m); !isValidation(err) {
 		t.Errorf("expected validation error for empty away team, got %v", err)
 	}
 }
 
 func TestValidateMatch_SameTeams_ReturnsValidation(t *testing.T) {
-	m := &domain.Match{HomeTeam: "Brazil", AwayTeam: "Brazil", KickoffAt: time.Now().Add(time.Hour)}
+	m := &domain.Match{HomeTeam: teamBrazil, AwayTeam: teamBrazil, KickoffAt: time.Now().Add(time.Hour)}
 	if err := domain.ValidateMatch(m); !isValidation(err) {
 		t.Errorf("expected validation error for identical teams, got %v", err)
 	}
 }
 
 func TestValidateMatch_ZeroKickoff_ReturnsValidation(t *testing.T) {
-	m := &domain.Match{HomeTeam: "Brazil", AwayTeam: "Argentina"}
+	m := &domain.Match{HomeTeam: teamBrazil, AwayTeam: teamArgentina}
 	if err := domain.ValidateMatch(m); !isValidation(err) {
 		t.Errorf("expected validation error for zero kickoff, got %v", err)
 	}
@@ -150,6 +154,51 @@ func TestValidatePrediction_NegativeAwayScore_ReturnsValidation(t *testing.T) {
 	p := &domain.Prediction{HomeScore: 0, AwayScore: -1}
 	if err := domain.ValidatePrediction(p, kickoff, time.Now()); !isValidation(err) {
 		t.Errorf("expected validation error for negative away score, got %v", err)
+	}
+}
+
+// ── ValidateEmail ─────────────────────────────────────────────────────────────
+
+func TestValidateEmail_Valid_ReturnsNil(t *testing.T) {
+	cases := []string{
+		"user@example.com",
+		"user.name+tag@sub.domain.org",
+		"x@y.io",
+	}
+	for _, email := range cases {
+		if err := domain.ValidateEmail(email); err != nil {
+			t.Errorf("ValidateEmail(%q): expected nil, got %v", email, err)
+		}
+	}
+}
+
+func TestValidateEmail_Empty_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateEmail(""); !isValidation(err) {
+		t.Errorf("expected validation error for empty email, got %v", err)
+	}
+}
+
+func TestValidateEmail_MissingAt_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateEmail("userexample.com"); !isValidation(err) {
+		t.Errorf("expected validation error for missing @, got %v", err)
+	}
+}
+
+func TestValidateEmail_MissingDomain_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateEmail("user@"); !isValidation(err) {
+		t.Errorf("expected validation error for missing domain, got %v", err)
+	}
+}
+
+func TestValidateEmail_MissingTLD_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateEmail("user@domain"); !isValidation(err) {
+		t.Errorf("expected validation error for missing TLD, got %v", err)
+	}
+}
+
+func TestValidateEmail_WithSpaces_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateEmail("user @example.com"); !isValidation(err) {
+		t.Errorf("expected validation error for email with spaces, got %v", err)
 	}
 }
 

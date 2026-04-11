@@ -103,6 +103,34 @@ func (r *PostgresPredictionRepository) ListByMatch(ctx context.Context, matchID 
 	return collectPredictions(rows)
 }
 
+// UpdateManyPoints atomically updates the points column for every prediction
+// ID in the provided map. All UPDATEs run inside a single transaction; if any
+// statement fails the transaction is rolled back so the match is either fully
+// scored or not scored at all.
+func (r *PostgresPredictionRepository) UpdateManyPoints(ctx context.Context, points map[int]int) error {
+	if len(points) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback error is irrelevant after commit succeeds
+
+	for predID, pts := range points {
+		if _, err := tx.Exec(ctx,
+			`UPDATE predictions SET points=$1, updated_at=NOW() WHERE id=$2`,
+			pts, predID,
+		); err != nil {
+			return apperrors.Internal(err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
 func collectPredictions(rows pgx.Rows) ([]*domain.Prediction, error) {
 	var preds []*domain.Prediction
 	for rows.Next() {

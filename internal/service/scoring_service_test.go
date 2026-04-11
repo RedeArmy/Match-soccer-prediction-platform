@@ -203,6 +203,77 @@ func TestScoreMatch_NilScores_ReturnsValidation(t *testing.T) {
 	}
 }
 
+func TestScoreMatch_MatchRepoError_PropagatesError(t *testing.T) {
+	repoErr := errors.New("db timeout")
+	svc := NewScoringService(&stubMatchRepo{err: repoErr}, &stubPredRepo{}, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, repoErr) {
+		t.Errorf("expected repo error to propagate, got %v", err)
+	}
+}
+
+func TestScoreMatch_NoPredictions_ReturnsNil(t *testing.T) {
+	home, away := 1, 0
+	match := &domain.Match{ID: 1, Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away}
+	predRepo := &stubPredRepo{list: nil} // empty — no predictions for this match
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 1); err != nil {
+		t.Errorf("expected nil when no predictions exist, got %v", err)
+	}
+}
+
+func TestScoreMatch_PredListError_PropagatesError(t *testing.T) {
+	home, away := 2, 0
+	match := &domain.Match{ID: 1, Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away}
+	repoErr := errors.New("query failed")
+	predRepo := &stubPredRepo{err: repoErr}
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, repoErr) {
+		t.Errorf("expected pred repo error to propagate, got %v", err)
+	}
+}
+
+func TestScoreMatch_UpdateManyPointsError_PropagatesError(t *testing.T) {
+	home, away := 1, 1
+	match := &domain.Match{ID: 1, Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away}
+	updateErr := errors.New("tx rollback")
+	predRepo := &failOnUpdateRepo{
+		list:      []*domain.Prediction{{ID: 1, HomeScore: 1, AwayScore: 1}},
+		updateErr: updateErr,
+	}
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, updateErr) {
+		t.Errorf("expected update error to propagate, got %v", err)
+	}
+}
+
+// failOnUpdateRepo succeeds for all reads but fails UpdateManyPoints.
+type failOnUpdateRepo struct {
+	list      []*domain.Prediction
+	updateErr error
+}
+
+func (r *failOnUpdateRepo) Create(_ context.Context, _ *domain.Prediction) error { return nil }
+func (r *failOnUpdateRepo) GetByID(_ context.Context, _ int) (*domain.Prediction, error) {
+	return nil, nil
+}
+func (r *failOnUpdateRepo) Update(_ context.Context, _ *domain.Prediction) error { return nil }
+func (r *failOnUpdateRepo) GetByUserAndMatch(_ context.Context, _, _ int) (*domain.Prediction, error) {
+	return nil, nil
+}
+func (r *failOnUpdateRepo) ListByUser(_ context.Context, _ int) ([]*domain.Prediction, error) {
+	return r.list, nil
+}
+func (r *failOnUpdateRepo) ListByMatch(_ context.Context, _ int) ([]*domain.Prediction, error) {
+	return r.list, nil
+}
+func (r *failOnUpdateRepo) UpdateManyPoints(_ context.Context, _ map[int]int) error {
+	return r.updateErr
+}
+
 // ── TestGoalDiff verifies the absolute-value goal-margin helper.
 func TestGoalDiff(t *testing.T) {
 	cases := []struct{ home, away, want int }{
