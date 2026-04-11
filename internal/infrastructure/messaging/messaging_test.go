@@ -413,6 +413,60 @@ func TestRedisBus_DLQPushError_DoesNotPanic(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 }
 
+// TestRedisBus_ProcessMessage_MissingPayload_DoesNotPanic verifies that a stream
+// message without a "payload" field is acknowledged and skipped without panicking.
+func TestRedisBus_ProcessMessage_MissingPayload_DoesNotPanic(t *testing.T) {
+	_, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	handlerCalled := make(chan struct{}, 1)
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		handlerCalled <- struct{}{}
+		return nil
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	// Inject a raw message into the stream that has no "payload" field.
+	client.XAdd(context.Background(), &redis.XAddArgs{
+		Stream: "stream:match.finished",
+		Values: map[string]any{"not_payload": "ignored"},
+	})
+
+	// The handler must NOT be called — the message is dropped at the missing-payload check.
+	select {
+	case <-handlerCalled:
+		t.Error("handler must not be called for a message with no payload field")
+	case <-time.After(300 * time.Millisecond):
+		// correct — message was silently dropped
+	}
+}
+
+// TestRedisBus_ProcessMessage_InvalidJSONPayload_DoesNotPanic verifies that a
+// stream message whose payload is not valid JSON is acknowledged and skipped.
+func TestRedisBus_ProcessMessage_InvalidJSONPayload_DoesNotPanic(t *testing.T) {
+	_, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	handlerCalled := make(chan struct{}, 1)
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		handlerCalled <- struct{}{}
+		return nil
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	client.XAdd(context.Background(), &redis.XAddArgs{
+		Stream: "stream:match.finished",
+		Values: map[string]any{"payload": "not valid json{{"},
+	})
+
+	select {
+	case <-handlerCalled:
+		t.Error("handler must not be called for a message with invalid JSON payload")
+	case <-time.After(300 * time.Millisecond):
+		// correct — message was silently dropped
+	}
+}
+
 func TestRedisBus_RetriesAndPushesToDLQ_OnHandlerError(t *testing.T) {
 	orig := messaging.RetryBackoff
 	messaging.RetryBackoff = []time.Duration{time.Millisecond, 2 * time.Millisecond}

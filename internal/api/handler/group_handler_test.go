@@ -29,18 +29,36 @@ const (
 
 	clerkSubject = "user_clerk_abc"
 	errDBDown    = "db down"
+
+	groupName  = "Test Group"
+	inviteCode = "ABC123DEFG"
+
+	bodyCreateGroup = `{"name":"` + groupName + `"}`
+	bodyJoinGroup   = `{"invite_code":"` + inviteCode + `"}`
 )
 
-// testGroupRouter wires GroupHandler on a chi router that already has the
-// Clerk subject injected into the request context (simulating RequireAuth).
+// testGroupRouter wires GroupHandler on a chi router that injects a resolved
+// domain.User into the context (simulating RequireAuth + ResolveUser middleware).
 func testGroupRouter(h *handler.GroupHandler) http.Handler {
+	return buildGroupRouter(h, &domain.User{ID: 10})
+}
+
+// testGroupRouterNoUser wires GroupHandler without injecting any user into the
+// context — simulates a request where ResolveUser did not run (unauthenticated).
+func testGroupRouterNoUser(h *handler.GroupHandler) http.Handler {
+	return buildGroupRouter(h, nil)
+}
+
+func buildGroupRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
 	r := chi.NewRouter()
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			ctx := middleware.ContextWithUserID(req.Context(), clerkSubject)
-			next.ServeHTTP(w, req.WithContext(ctx))
+	if user != nil {
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				ctx := middleware.ContextWithUser(req.Context(), user)
+				next.ServeHTTP(w, req.WithContext(ctx))
+			})
 		})
-	})
+	}
 	r.Post("/groups", h.Create)
 	r.Post("/groups/join", h.Join)
 	r.Get("/groups/me", h.ListMyGroups)
@@ -52,9 +70,9 @@ func testGroupRouter(h *handler.GroupHandler) http.Handler {
 func fixedQuiniela() *domain.Quiniela {
 	return &domain.Quiniela{
 		ID:         1,
-		Name:       "Test Group",
+		Name:       groupName,
 		OwnerID:    10,
-		InviteCode: "ABC123DEFG",
+		InviteCode: inviteCode,
 		EntryFee:   0,
 		Currency:   "MXN",
 		CreatedAt:  time.Now(),
@@ -75,20 +93,16 @@ func fixedMembership() *domain.GroupMembership {
 	}
 }
 
-func newGroupHandler(t *testing.T, qs *stubQuinielaSvc, ms *stubMemberSvc, ur *stubUserRepo) *handler.GroupHandler {
+func newGroupHandler(t *testing.T, qs *stubQuinielaSvc, ms *stubMemberSvc) *handler.GroupHandler {
 	t.Helper()
-	return handler.NewGroupHandler(qs, ms, ur, zaptest.NewLogger(t))
+	return handler.NewGroupHandler(qs, ms, zaptest.NewLogger(t))
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
 func TestGroupCreate_Returns201(t *testing.T) {
-	h := newGroupHandler(t,
-		&stubQuinielaSvc{quiniela: fixedQuiniela()},
-		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
-	)
-	body := `{"name":"Test Group"}`
+	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: fixedQuiniela()}, &stubMemberSvc{})
+	body := bodyCreateGroup
 	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
@@ -102,7 +116,6 @@ func TestGroupCreate_Returns409_OnDuplicateName(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{err: apperrors.Conflict("a group with this name already exists")},
 		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	body := `{"name":"Duplicate"}`
 	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(body))
@@ -118,7 +131,6 @@ func TestGroupCreate_Returns422_OnEmptyBody(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{err: apperrors.Validation("quiniela name must not be empty")},
 		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	body := `{}`
 	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(body))
@@ -132,12 +144,8 @@ func TestGroupCreate_Returns422_OnEmptyBody(t *testing.T) {
 
 func TestGroupCreate_ResponseBody_ContainsInviteCode(t *testing.T) {
 	q := fixedQuiniela()
-	h := newGroupHandler(t,
-		&stubQuinielaSvc{quiniela: q},
-		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
-	)
-	body := `{"name":"Test Group"}`
+	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: q}, &stubMemberSvc{})
+	body := bodyCreateGroup
 	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
@@ -151,16 +159,14 @@ func TestGroupCreate_ResponseBody_ContainsInviteCode(t *testing.T) {
 	}
 }
 
-func TestGroupCreate_Returns401_WhenUserNotFound(t *testing.T) {
-	h := newGroupHandler(t,
-		&stubQuinielaSvc{},
-		&stubMemberSvc{},
-		&stubUserRepo{user: nil},
-	)
-	body := `{"name":"Test Group"}`
+// TestGroupCreate_Returns401_WhenNoUser verifies that Create returns 401 when
+// no resolved user is in the context (ResolveUser middleware did not run).
+func TestGroupCreate_Returns401_WhenNoUser(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	body := bodyCreateGroup
 	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
-	testGroupRouter(h).ServeHTTP(rec, req)
+	testGroupRouterNoUser(h).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rec.Code)
@@ -170,11 +176,7 @@ func TestGroupCreate_Returns401_WhenUserNotFound(t *testing.T) {
 // ── GetByID ───────────────────────────────────────────────────────────────────
 
 func TestGroupGetByID_Returns200(t *testing.T) {
-	h := newGroupHandler(t,
-		&stubQuinielaSvc{quiniela: fixedQuiniela()},
-		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
-	)
+	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: fixedQuiniela()}, &stubMemberSvc{})
 	req := httptest.NewRequest(http.MethodGet, groupByIDPath, nil)
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
@@ -188,7 +190,6 @@ func TestGroupGetByID_Returns404_WhenNotFound(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{err: apperrors.NotFound("quiniela 1 not found")},
 		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodGet, groupByIDPath, nil)
 	rec := httptest.NewRecorder()
@@ -202,12 +203,8 @@ func TestGroupGetByID_Returns404_WhenNotFound(t *testing.T) {
 // ── Join ──────────────────────────────────────────────────────────────────────
 
 func TestGroupJoin_Returns200(t *testing.T) {
-	h := newGroupHandler(t,
-		&stubQuinielaSvc{},
-		&stubMemberSvc{membership: fixedMembership()},
-		&stubUserRepo{user: &domain.User{ID: 10}},
-	)
-	body := `{"invite_code":"ABC123DEFG"}`
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{membership: fixedMembership()})
+	body := bodyJoinGroup
 	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
@@ -218,11 +215,7 @@ func TestGroupJoin_Returns200(t *testing.T) {
 }
 
 func TestGroupJoin_Returns422_WhenNoInviteCode(t *testing.T) {
-	h := newGroupHandler(t,
-		&stubQuinielaSvc{},
-		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
-	)
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
 	body := `{}`
 	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
@@ -237,9 +230,8 @@ func TestGroupJoin_Returns409_WhenAlreadyMember(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
 		&stubMemberSvc{err: apperrors.Conflict("you are already a member of this group")},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
-	body := `{"invite_code":"ABC123DEFG"}`
+	body := bodyJoinGroup
 	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
@@ -253,7 +245,6 @@ func TestGroupJoin_Returns404_WhenCodeNotFound(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
 		&stubMemberSvc{err: apperrors.NotFound("group not found for the given invite code")},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	body := `{"invite_code":"BADCODE123"}`
 	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(body))
@@ -271,7 +262,6 @@ func TestGroupListMembers_Returns200(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
 		&stubMemberSvc{memberships: []*domain.GroupMembership{fixedMembership()}},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodGet, groupMembersPath, nil)
 	rec := httptest.NewRecorder()
@@ -286,7 +276,6 @@ func TestGroupListMembers_ReturnsJSONArray(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
 		&stubMemberSvc{memberships: []*domain.GroupMembership{fixedMembership(), fixedMembership()}},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodGet, groupMembersPath, nil)
 	rec := httptest.NewRecorder()
@@ -307,7 +296,6 @@ func TestGroupListMyGroups_Returns200(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
 		&stubMemberSvc{memberships: []*domain.GroupMembership{fixedMembership()}},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodGet, groupsMePath, nil)
 	rec := httptest.NewRecorder()
@@ -318,15 +306,13 @@ func TestGroupListMyGroups_Returns200(t *testing.T) {
 	}
 }
 
-func TestGroupListMyGroups_Returns401_WhenUserNotFound(t *testing.T) {
-	h := newGroupHandler(t,
-		&stubQuinielaSvc{},
-		&stubMemberSvc{},
-		&stubUserRepo{user: nil},
-	)
+// TestGroupListMyGroups_Returns401_WhenNoUser verifies that ListMyGroups
+// returns 401 when no resolved user is in the context.
+func TestGroupListMyGroups_Returns401_WhenNoUser(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
 	req := httptest.NewRequest(http.MethodGet, groupsMePath, nil)
 	rec := httptest.NewRecorder()
-	testGroupRouter(h).ServeHTTP(rec, req)
+	testGroupRouterNoUser(h).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rec.Code)
@@ -337,7 +323,6 @@ func TestGroupListMyGroups_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
 		&stubMemberSvc{err: apperrors.Internal(errors.New(errDBDown))},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodGet, groupsMePath, nil)
 	rec := httptest.NewRecorder()
@@ -351,11 +336,7 @@ func TestGroupListMyGroups_Returns500_OnServiceError(t *testing.T) {
 // ── error paths ───────────────────────────────────────────────────────────────
 
 func TestGroupCreate_Returns400_OnMalformedJSON(t *testing.T) {
-	h := newGroupHandler(t,
-		&stubQuinielaSvc{},
-		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
-	)
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
 	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(`{bad json`))
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
@@ -369,7 +350,6 @@ func TestGroupCreate_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{err: apperrors.Internal(errors.New(errDBDown))},
 		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(`{"name":"Pool"}`))
 	rec := httptest.NewRecorder()
@@ -384,7 +364,6 @@ func TestGroupGetByID_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{err: apperrors.Internal(errors.New(errDBDown))},
 		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodGet, groupByIDPath, nil)
 	rec := httptest.NewRecorder()
@@ -396,11 +375,7 @@ func TestGroupGetByID_Returns500_OnServiceError(t *testing.T) {
 }
 
 func TestGroupJoin_Returns400_OnMalformedJSON(t *testing.T) {
-	h := newGroupHandler(t,
-		&stubQuinielaSvc{},
-		&stubMemberSvc{},
-		&stubUserRepo{user: &domain.User{ID: 10}},
-	)
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
 	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(`{bad`))
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
@@ -414,9 +389,8 @@ func TestGroupJoin_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
 		&stubMemberSvc{err: apperrors.Internal(errors.New(errDBDown))},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
-	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(`{"invite_code":"ABC123DEFG"}`))
+	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(bodyJoinGroup))
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
 
@@ -429,7 +403,6 @@ func TestGroupListMembers_Returns500_OnServiceError(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{},
 		&stubMemberSvc{err: apperrors.Internal(errors.New(errDBDown))},
-		&stubUserRepo{user: &domain.User{ID: 10}},
 	)
 	req := httptest.NewRequest(http.MethodGet, groupMembersPath, nil)
 	rec := httptest.NewRecorder()

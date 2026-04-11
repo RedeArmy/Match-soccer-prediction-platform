@@ -129,6 +129,15 @@ func TestWebhook_NoSecret_EmptyName_FallsBackToSubjectID(t *testing.T) {
 	}
 }
 
+func TestWebhook_NoSecret_InvalidEmail_Returns422(t *testing.T) {
+	h := handler.NewWebhookHandler(&stubUserRepo{}, "", zap.NewNop())
+	// "notanemail" has no "@" and no domain — ValidateEmail rejects it.
+	body := `{"type":"user.created","data":{"id":"user_bademail","first_name":"Bad","last_name":"Email","email_addresses":[{"email_address":"notanemail"}]}}`
+	if w := doWebhook(h, body); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
 // ── Svix signature verification ───────────────────────────────────────────────
 
 func TestWebhook_WithSecret_ValidSignature_Returns204(t *testing.T) {
