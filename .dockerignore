@@ -41,5 +41,5 @@ go.work.sum
 .claude/
 
 # ── Documentation that adds no value to the build context ────────────────────
-docs/
+# docs/ contains generated Go source (docs.go) required at compile time — do not exclude it.
 *.md
