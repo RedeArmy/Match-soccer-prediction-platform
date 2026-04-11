@@ -14,9 +14,9 @@ import (
 // stubScorer is a MatchScorer stub that records the last matchID it received
 // and can be configured to return an error.
 type stubScorer struct {
-	called  int
-	lastID  int
-	err     error
+	called int
+	lastID int
+	err    error
 }
 
 func (s *stubScorer) ScoreMatch(_ context.Context, matchID int) error {
