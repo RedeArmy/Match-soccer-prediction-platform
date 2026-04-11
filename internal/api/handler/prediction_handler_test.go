@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -174,7 +175,8 @@ func TestListByUser_AuthContextMismatch_Returns403(t *testing.T) {
 }
 
 // TestListByUser_AuthContextMatch_Returns200 verifies that the authenticated
-// caller can retrieve their own predictions when user_id matches the token.
+// caller can retrieve their own predictions when user_id matches the token,
+// and that the response body contains those predictions.
 func TestListByUser_AuthContextMatch_Returns200(t *testing.T) {
 	svc := &stubPredSvc{preds: []*domain.Prediction{{ID: 1, UserID: 1}}}
 	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
@@ -182,5 +184,12 @@ func TestListByUser_AuthContextMatch_Returns200(t *testing.T) {
 	newPredRouter(svc, true).ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
+	}
+	var got []handler.PredictionResponse
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 1 || got[0].UserID != 1 {
+		t.Errorf("expected 1 prediction for user 1, got %+v", got)
 	}
 }
