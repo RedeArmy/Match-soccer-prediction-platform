@@ -24,6 +24,7 @@ type Config struct {
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	CORS     CORSConfig     `mapstructure:"cors"`
 	Clerk    ClerkConfig    `mapstructure:"clerk"`
+	Worker   WorkerConfig   `mapstructure:"worker"`
 }
 
 // ServerConfig holds HTTP server tuning parameters.
@@ -118,6 +119,18 @@ type CORSConfig struct {
 type EventBusConfig struct {
 	// Driver must be either "in_memory" or "redis".
 	Driver string `mapstructure:"driver"`
+}
+
+// WorkerConfig holds tuning parameters for the background worker process.
+//
+// The worker runs as a separate binary from the API server and exposes a
+// lightweight health HTTP server on HealthPort for liveness and readiness
+// probes. This port must differ from the API server port (8080) because the
+// two processes may be co-located on the same host during canary deployments.
+type WorkerConfig struct {
+	// HealthPort is the TCP port on which the worker exposes /health and
+	// /health/ready. Set WCQ_WORKER_HEALTHPORT to override the default (8081).
+	HealthPort string `mapstructure:"healthPort"`
 }
 
 // ClerkConfig holds the parameters required to validate JWTs issued by Clerk.

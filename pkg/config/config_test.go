@@ -25,6 +25,14 @@ import (
 const (
 	fmtUnexpectedError = "unexpected error: %v"
 	jwtTestSecret      = "my-secret"
+
+	envServerPort   = "WCQ_SERVER_PORT"
+	envJWTSecret    = "WCQ_JWT_SECRET"
+	envLoggerLevel  = "WCQ_LOGGER_LEVEL"
+	portOverride    = "9090"
+	portServer      = "3000"
+	levelDebug      = "debug"
+	encodingConsole = "console"
 )
 
 // setRequiredEnv configures the minimum set of environment variables for
@@ -33,8 +41,8 @@ const (
 // t.Setenv to override individual keys after calling this helper.
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("WCQ_SERVER_PORT", "8080")
-	t.Setenv("WCQ_JWT_SECRET", "test-secret-value")
+	t.Setenv(envServerPort, "8080")
+	t.Setenv(envJWTSecret, "test-secret-value")
 }
 
 func TestLoad_ValidConfig_ReturnsNoError(t *testing.T) {
@@ -47,8 +55,8 @@ func TestLoad_ValidConfig_ReturnsNoError(t *testing.T) {
 }
 
 func TestLoad_MissingJWTSecret_ReturnsError(t *testing.T) {
-	t.Setenv("WCQ_SERVER_PORT", "8080")
-	t.Setenv("WCQ_JWT_SECRET", "")
+	t.Setenv(envServerPort, "8080")
+	t.Setenv(envJWTSecret, "")
 
 	_, err := config.Load()
 	if err == nil {
@@ -94,9 +102,9 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 
 func TestLoad_EnvVarOverridesDefault(t *testing.T) {
 	setRequiredEnv(t)
-	t.Setenv("WCQ_SERVER_PORT", "9090")
-	t.Setenv("WCQ_LOGGER_LEVEL", "debug")
-	t.Setenv("WCQ_LOGGER_ENCODING", "console")
+	t.Setenv(envServerPort, portOverride)
+	t.Setenv(envLoggerLevel, levelDebug)
+	t.Setenv("WCQ_LOGGER_ENCODING", encodingConsole)
 	t.Setenv("WCQ_DATABASE_MAXOPENCONNS", "50")
 
 	cfg, err := config.Load()
@@ -104,14 +112,14 @@ func TestLoad_EnvVarOverridesDefault(t *testing.T) {
 		t.Fatalf(fmtUnexpectedError, err)
 	}
 
-	if cfg.Server.Port != "9090" {
-		t.Errorf("Server.Port: expected %q, got %q", "9090", cfg.Server.Port)
+	if cfg.Server.Port != portOverride {
+		t.Errorf("Server.Port: expected %q, got %q", portOverride, cfg.Server.Port)
 	}
-	if cfg.Logger.Level != "debug" {
-		t.Errorf("Logger.Level: expected %q, got %q", "debug", cfg.Logger.Level)
+	if cfg.Logger.Level != levelDebug {
+		t.Errorf("Logger.Level: expected %q, got %q", levelDebug, cfg.Logger.Level)
 	}
-	if cfg.Logger.Encoding != "console" {
-		t.Errorf("Logger.Encoding: expected %q, got %q", "console", cfg.Logger.Encoding)
+	if cfg.Logger.Encoding != encodingConsole {
+		t.Errorf("Logger.Encoding: expected %q, got %q", encodingConsole, cfg.Logger.Encoding)
 	}
 	if cfg.Database.MaxOpenConns != 50 {
 		t.Errorf("Database.MaxOpenConns: expected %d, got %d", 50, cfg.Database.MaxOpenConns)
@@ -120,7 +128,7 @@ func TestLoad_EnvVarOverridesDefault(t *testing.T) {
 
 func TestLoad_InvalidLogLevel_ReturnsError(t *testing.T) {
 	setRequiredEnv(t)
-	t.Setenv("WCQ_LOGGER_LEVEL", "verbose")
+	t.Setenv(envLoggerLevel, "verbose")
 
 	_, err := config.Load()
 	if err == nil {
@@ -132,18 +140,72 @@ func TestLoad_InvalidLogLevel_ReturnsError(t *testing.T) {
 }
 
 func TestLoad_JWTSecretAndPortPopulated(t *testing.T) {
-	t.Setenv("WCQ_SERVER_PORT", "3000")
-	t.Setenv("WCQ_JWT_SECRET", jwtTestSecret)
+	t.Setenv(envServerPort, portServer)
+	t.Setenv(envJWTSecret, jwtTestSecret)
 
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
 	}
 
-	if cfg.Server.Port != "3000" {
-		t.Errorf("Server.Port: expected %q, got %q", "3000", cfg.Server.Port)
+	if cfg.Server.Port != portServer {
+		t.Errorf("Server.Port: expected %q, got %q", portServer, cfg.Server.Port)
 	}
 	if cfg.JWT.Secret != jwtTestSecret {
 		t.Errorf("JWT.Secret: expected %q, got %q", jwtTestSecret, cfg.JWT.Secret)
+	}
+}
+
+// ── LoadWorker ────────────────────────────────────────────────────────────────
+
+func TestLoadWorker_ValidConfig_ReturnsNoError(t *testing.T) {
+	// LoadWorker does not require WCQ_SERVER_PORT or WCQ_JWT_SECRET.
+	_, err := config.LoadWorker()
+	if err != nil {
+		t.Fatalf("expected no error for minimal worker config, got: %v", err)
+	}
+}
+
+func TestLoadWorker_DefaultHealthPort(t *testing.T) {
+	cfg, err := config.LoadWorker()
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if cfg.Worker.HealthPort != "8081" {
+		t.Errorf("Worker.HealthPort default: expected %q, got %q", "8081", cfg.Worker.HealthPort)
+	}
+}
+
+func TestLoadWorker_HealthPortOverride(t *testing.T) {
+	t.Setenv("WCQ_WORKER_HEALTHPORT", portOverride)
+
+	cfg, err := config.LoadWorker()
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if cfg.Worker.HealthPort != portOverride {
+		t.Errorf("Worker.HealthPort override: expected %q, got %q", portOverride, cfg.Worker.HealthPort)
+	}
+}
+
+func TestLoadWorker_InvalidLogLevel_ReturnsError(t *testing.T) {
+	t.Setenv(envLoggerLevel, "verbose")
+
+	_, err := config.LoadWorker()
+	if err == nil {
+		t.Fatal("expected error for invalid log level, got nil")
+	}
+	if !strings.Contains(err.Error(), "logger.level") {
+		t.Errorf("expected error to reference logger.level, got: %v", err)
+	}
+}
+
+func TestLoadWorker_DoesNotRequireJWTSecret(t *testing.T) {
+	t.Setenv(envJWTSecret, "")
+
+	// LoadWorker must succeed without a JWT secret — the worker has no auth layer.
+	_, err := config.LoadWorker()
+	if err != nil {
+		t.Fatalf("LoadWorker should not require jwt.secret, got: %v", err)
 	}
 }
