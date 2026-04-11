@@ -465,11 +465,7 @@ func resolveUserHandler(repo *stubUserRepo) http.Handler {
 
 // resolveUserRequest builds a request with or without a Clerk subject in context.
 func resolveUserRequest(subject string) *http.Request {
-	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
-	if subject != "" {
-		req = req.WithContext(middleware.ContextWithUserID(req.Context(), subject))
-	}
-	return req
+	return requireRoleRequest(subject)
 }
 
 func TestResolveUser_NoSubjectInContext_Returns401(t *testing.T) {
