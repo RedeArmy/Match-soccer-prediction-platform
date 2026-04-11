@@ -12,7 +12,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . . # NOSONAR — .dockerignore excludes .env, secrets, and IDE files
+COPY . .
 
 # CGO_ENABLED=0 produces a statically linked binary with no libc dependency,
 # which is required to run in the minimal runtime image below.
