@@ -709,6 +709,48 @@ func TestPredictionRepository_ListByMatch_ReturnsRows(t *testing.T) {
 	}
 }
 
+func TestPredictionRepository_UpdateManyPoints_PersistsPoints(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	p1 := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	p2 := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 0, AwayScore: 0}
+	if err := repo.Create(context.Background(), p1); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	// Need a second user to create a second prediction on the same match.
+	u2 := seedUser(t)
+	p2.UserID = u2.ID
+	if err := repo.Create(context.Background(), p2); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	points := map[int]int{p1.ID: 5, p2.ID: 2}
+	if err := repo.UpdateManyPoints(context.Background(), points); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got1, _ := repo.GetByID(context.Background(), p1.ID)
+	got2, _ := repo.GetByID(context.Background(), p2.ID)
+	if got1.Points == nil || *got1.Points != 5 {
+		t.Errorf("p1 points: got %v, want 5", got1.Points)
+	}
+	if got2.Points == nil || *got2.Points != 2 {
+		t.Errorf("p2 points: got %v, want 2", got2.Points)
+	}
+}
+
+func TestPredictionRepository_UpdateManyPoints_EmptyMap_IsNoop(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	if err := repo.UpdateManyPoints(context.Background(), map[int]int{}); err != nil {
+		t.Errorf(fmtUnexpectedErr, err)
+	}
+}
+
 // ── QuinielaRepository ────────────────────────────────────────────────────────
 
 func TestQuinielaRepository_Create_HydratesID(t *testing.T) {
