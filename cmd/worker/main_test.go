@@ -180,6 +180,22 @@ func TestNewHealthServer_RegistersRoutes(t *testing.T) {
 
 // ── run ───────────────────────────────────────────────────────────────────────
 
+func TestRun_EventBusUnreachable_ReturnsError(t *testing.T) {
+	// driver passes the "redis" check, but the Dial to port 1 is immediately
+	// refused by the OS — covering the setupEventBus error branch inside run().
+	cfg := &config.Config{
+		EventBus: config.EventBusConfig{Driver: driverRedis},
+		Redis:    config.RedisConfig{Addr: "localhost:1"},
+	}
+	err := run(context.Background(), cfg, zap.NewNop())
+	if err == nil {
+		t.Fatal("expected error for unreachable Redis, got nil")
+	}
+	if !strings.Contains(err.Error(), "event bus") {
+		t.Errorf("expected error to mention event bus, got: %v", err)
+	}
+}
+
 func TestRun_WrongEventBusDriver_ReturnsError(t *testing.T) {
 	cfg := &config.Config{
 		EventBus: config.EventBusConfig{Driver: "in_memory"},

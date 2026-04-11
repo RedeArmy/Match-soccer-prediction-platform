@@ -1,0 +1,45 @@
+# ── Secrets and environment files ────────────────────────────────────────────
+# These files must never be baked into a build layer, even an intermediate one.
+# A secret present in any layer of a multi-stage build can be extracted from
+# the builder image unless that image is never pushed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# ── VCS metadata ─────────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── IDE and editor directories ────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── OS artefacts ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Local build outputs ───────────────────────────────────────────────────────
+bin/
+*.exe
+
+# ── Test artefacts ────────────────────────────────────────────────────────────
+*.test
+*.out
+coverage.html
+coverage.out
+
+# ── Go workspace files ────────────────────────────────────────────────────────
+go.work
+go.work.sum
+
+# ── Claude Code local settings ────────────────────────────────────────────────
+.claude/
+
+# ── Documentation that adds no value to the build context ────────────────────
+docs/
+*.md
