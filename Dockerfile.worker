@@ -5,7 +5,7 @@
 # this step is only re-executed when go.mod or go.sum changes — not on every
 # source file change. In a typical CI pipeline this saves 30–60 seconds per
 # build by reusing the cached dependency layer.
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26.2-alpine3.22 AS builder
 
 WORKDIR /app
 
