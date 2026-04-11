@@ -157,7 +157,7 @@ func startWorker(
 	<-ctx.Done()
 	log.Sugar().Info("worker: shutdown signal received, stopping...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
 	if err := healthSrv.Shutdown(shutdownCtx); err != nil {

@@ -54,7 +54,7 @@ func setupDB(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool
 // message when the driver is not "redis".
 func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (events.Bus, func(), error) {
 	if cfg.EventBus.Driver != "redis" {
-		return nil, func() {}, fmt.Errorf(
+		return nil, func() { /* no-op: no connection was established */ }, fmt.Errorf(
 			"worker requires eventBus.driver=redis, got %q; set WCQ_EVENTBUS_DRIVER=redis",
 			cfg.EventBus.Driver,
 		)
@@ -66,7 +66,7 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 		DB:       cfg.Redis.DB,
 	})
 	if err != nil {
-		return nil, func() {}, fmt.Errorf("redis bus: connect: %w", err)
+		return nil, func() { /* no-op: no connection was established */ }, fmt.Errorf("redis bus: connect: %w", err)
 	}
 	log.Sugar().Infof("event bus: using Redis driver (%s)", cfg.Redis.Addr)
 
