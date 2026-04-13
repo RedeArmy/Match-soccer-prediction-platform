@@ -80,11 +80,11 @@ func main() {
 //  5. Block until ctx is cancelled or the server reports a fatal error.
 //  6. Drain in-flight requests via graceful shutdown.
 func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
-	// Infrastructure setup (DB pool, event bus) uses a background context so
-	// that a cancellation of the lifecycle ctx (e.g. a SIGTERM arriving during
-	// a slow cold-start) does not abort half-initialised resources mid-flight.
-	// The lifecycle ctx is reserved for the HTTP server's select loop.
-	setupCtx := context.Background()
+	// Infrastructure setup (DB pool, event bus) must not be interrupted by a
+	// lifecycle cancellation that arrives during a slow cold-start. Using
+	// WithoutCancel derives a child that inherits ctx's values but is never
+	// cancelled, keeping setup isolated from SIGTERM timing.
+	setupCtx := context.WithoutCancel(ctx)
 
 	// The database connection is treated as optional at startup intentionally.
 	// The /health endpoint must remain reachable even when the database is
