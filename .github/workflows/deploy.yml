@@ -172,11 +172,14 @@ jobs:
     name: Deploy to Fly.io
     runs-on: ubuntu-latest
     needs: [docker, docker-worker]
-    # Skip when FLY_API_TOKEN is not configured (e.g. during development,
-    # before the Fly.io account is provisioned). The job shows as skipped
-    # rather than failed so the pipeline stays green. Once the account and
-    # apps are created, add FLY_API_TOKEN under Settings → Secrets → Actions.
-    if: ${{ secrets.FLY_API_TOKEN != '' }}
+    # Skip until Fly.io is provisioned. The `secrets` context is not
+    # available in job-level `if` conditions, so a repository variable is
+    # used as the deployment gate instead.
+    # To activate: Settings → Variables → Actions → New variable:
+    #   Name:  FLY_DEPLOY_ENABLED
+    #   Value: true
+    # Then add FLY_API_TOKEN under Settings → Secrets → Actions.
+    if: vars.FLY_DEPLOY_ENABLED == 'true'
 
     # Targeting the `production` environment enables GitHub's deployment
     # tracking (visible in the repository's Deployments sidebar) and allows
