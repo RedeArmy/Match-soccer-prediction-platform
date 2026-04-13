@@ -1,0 +1,65 @@
+# Fly.io configuration for the API server.
+#
+# Prerequisites — run once before the first deploy:
+#
+#   1. Create the app
+#          fly apps create wcq-api
+#
+#   2. Provision a Postgres cluster (skip if using an external provider)
+#          fly postgres create --name wcq-db --region mia
+#          fly postgres attach wcq-db --app wcq-api
+#          # Fly sets DATABASE_URL automatically; map it via WCQ_DATABASE_DSN below.
+#
+#   3. Set runtime secrets
+#          fly secrets set --app wcq-api \
+#            WCQ_SERVER_PORT=8080 \
+#            WCQ_DATABASE_DSN="<postgres-connection-string>" \
+#            WCQ_REDIS_ADDR="<host>:<port>" \
+#            WCQ_CORS_ALLOWEDORIGINS="https://your-frontend.com" \
+#            WCQ_CLERK_JWKSURL="https://<clerk-domain>/.well-known/jwks.json" \
+#            WCQ_CLERK_WEBHOOKSECRET="whsec_<base64>" \
+#            WCQ_EVENTBUS_DRIVER="redis"
+#
+#   4. Add FLY_API_TOKEN to GitHub repository secrets
+#          fly auth token   # copy output
+#          # → GitHub repo → Settings → Secrets → Actions → New secret: FLY_API_TOKEN
+#
+# Update `app` below to match the name used in step 1 if you chose a
+# different name than wcq-api.
+
+app            = 'wcq-api'
+primary_region = 'mia'
+
+# Images are supplied at deploy time via --image; the [build] section is
+# omitted intentionally so that flyctl does not attempt a local Docker build.
+
+[http_service]
+  internal_port = 8080
+  force_https   = true
+
+  # Stop idle machines and restart them on the next incoming request.
+  # min_machines_running = 1 ensures at least one machine is always warm,
+  # preventing a cold-start latency spike for the first real user.
+  auto_stop_machines   = 'stop'
+  auto_start_machines  = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type       = 'requests'
+    soft_limit = 200
+    hard_limit = 250
+
+  # Fly uses this endpoint for both liveness and readiness probes.
+  # /health/ready performs a database ping; Fly will not route traffic to
+  # a machine until this check returns 200.
+  [[http_service.checks]]
+    interval     = '15s'
+    timeout      = '10s'
+    grace_period = '10s'
+    method       = 'GET'
+    path         = '/health/ready'
+
+[[vm]]
+  memory   = '256mb'
+  cpu_kind = 'shared'
+  cpus     = 1

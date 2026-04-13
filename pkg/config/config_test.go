@@ -24,10 +24,8 @@ import (
 
 const (
 	fmtUnexpectedError = "unexpected error: %v"
-	jwtTestSecret      = "my-secret"
 
 	envServerPort   = "WCQ_SERVER_PORT"
-	envJWTSecret    = "WCQ_JWT_SECRET"
 	envLoggerLevel  = "WCQ_LOGGER_LEVEL"
 	portOverride    = "9090"
 	portServer      = "3000"
@@ -42,7 +40,6 @@ const (
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv(envServerPort, "8080")
-	t.Setenv(envJWTSecret, "test-secret-value")
 }
 
 func TestLoad_ValidConfig_ReturnsNoError(t *testing.T) {
@@ -51,19 +48,6 @@ func TestLoad_ValidConfig_ReturnsNoError(t *testing.T) {
 	_, err := config.Load()
 	if err != nil {
 		t.Fatalf("expected no error for valid config, got: %v", err)
-	}
-}
-
-func TestLoad_MissingJWTSecret_ReturnsError(t *testing.T) {
-	t.Setenv(envServerPort, "8080")
-	t.Setenv(envJWTSecret, "")
-
-	_, err := config.Load()
-	if err == nil {
-		t.Fatal("expected error for empty JWT secret, got nil")
-	}
-	if !strings.Contains(err.Error(), "jwt.secret") {
-		t.Errorf("expected error message to reference jwt.secret, got: %v", err)
 	}
 }
 
@@ -90,7 +74,6 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 		{"Redis.DB", cfg.Redis.DB, 0},
 		{"Logger.Level", cfg.Logger.Level, "info"},
 		{"Logger.Encoding", cfg.Logger.Encoding, "json"},
-		{"JWT.Expiration", cfg.JWT.Expiration, 24 * time.Hour},
 	}
 
 	for _, tc := range cases {
@@ -139,27 +122,10 @@ func TestLoad_InvalidLogLevel_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestLoad_JWTSecretAndPortPopulated(t *testing.T) {
-	t.Setenv(envServerPort, portServer)
-	t.Setenv(envJWTSecret, jwtTestSecret)
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf(fmtUnexpectedError, err)
-	}
-
-	if cfg.Server.Port != portServer {
-		t.Errorf("Server.Port: expected %q, got %q", portServer, cfg.Server.Port)
-	}
-	if cfg.JWT.Secret != jwtTestSecret {
-		t.Errorf("JWT.Secret: expected %q, got %q", jwtTestSecret, cfg.JWT.Secret)
-	}
-}
-
 // ── LoadWorker ────────────────────────────────────────────────────────────────
 
 func TestLoadWorker_ValidConfig_ReturnsNoError(t *testing.T) {
-	// LoadWorker does not require WCQ_SERVER_PORT or WCQ_JWT_SECRET.
+	// LoadWorker does not require WCQ_SERVER_PORT.
 	_, err := config.LoadWorker()
 	if err != nil {
 		t.Fatalf("expected no error for minimal worker config, got: %v", err)
@@ -200,12 +166,38 @@ func TestLoadWorker_InvalidLogLevel_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestLoadWorker_DoesNotRequireJWTSecret(t *testing.T) {
-	t.Setenv(envJWTSecret, "")
+// ── CORS ──────────────────────────────────────────────────────────────────────
 
-	// LoadWorker must succeed without a JWT secret — the worker has no auth layer.
-	_, err := config.LoadWorker()
+func TestLoad_CORSDefault_IsSingleLocalhostOrigin(t *testing.T) {
+	setRequiredEnv(t)
+
+	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("LoadWorker should not require jwt.secret, got: %v", err)
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+
+	want := []string{"http://localhost:3000"}
+	if len(cfg.CORS.AllowedOrigins) != len(want) || cfg.CORS.AllowedOrigins[0] != want[0] {
+		t.Errorf("CORS.AllowedOrigins default: expected %v, got %v", want, cfg.CORS.AllowedOrigins)
+	}
+}
+
+func TestLoad_CORSMultipleOrigins_ParsedFromEnv(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WCQ_CORS_ALLOWEDORIGINS", "https://app.com,https://staging.app.com")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+
+	want := []string{"https://app.com", "https://staging.app.com"}
+	if len(cfg.CORS.AllowedOrigins) != len(want) {
+		t.Fatalf("CORS.AllowedOrigins: expected %d origins, got %d: %v", len(want), len(cfg.CORS.AllowedOrigins), cfg.CORS.AllowedOrigins)
+	}
+	for i, origin := range want {
+		if cfg.CORS.AllowedOrigins[i] != origin {
+			t.Errorf("CORS.AllowedOrigins[%d]: expected %q, got %q", i, origin, cfg.CORS.AllowedOrigins[i])
+		}
 	}
 }

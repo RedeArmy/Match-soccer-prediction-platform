@@ -1,0 +1,44 @@
+# Fly.io configuration for the background worker.
+#
+# Prerequisites — run once before the first deploy:
+#
+#   1. Create the app
+#          fly apps create wcq-worker
+#
+#   2. Set runtime secrets (worker needs DB + Redis; no Clerk, no CORS)
+#          fly secrets set --app wcq-worker \
+#            WCQ_DATABASE_DSN="<postgres-connection-string>" \
+#            WCQ_REDIS_ADDR="<host>:<port>" \
+#            WCQ_EVENTBUS_DRIVER="redis"
+#
+#   The same FLY_API_TOKEN used for wcq-api works here — it is scoped to
+#   the Fly.io organisation, not to a single app.
+#
+# Update `app` below if you chose a different name than wcq-worker.
+
+app            = 'wcq-worker'
+primary_region = 'mia'
+
+# The worker receives events from Redis pub/sub and has no inbound HTTP
+# traffic, so no [http_service] is defined. It must run continuously —
+# auto_stop is not set, so Fly keeps the machine alive indefinitely.
+#
+# The health port (8081) is checked internally via [[services]] to let
+# Fly restart the machine if the worker becomes unresponsive.
+[[services]]
+  internal_port = 8081
+  protocol      = 'tcp'
+
+  # Do not expose the health port publicly — it is for Fly's internal
+  # health monitoring only, not for external callers.
+  [[services.http_checks]]
+    interval     = '15s'
+    timeout      = '10s'
+    grace_period = '15s'
+    method       = 'GET'
+    path         = '/health'
+
+[[vm]]
+  memory   = '256mb'
+  cpu_kind = 'shared'
+  cpus     = 1

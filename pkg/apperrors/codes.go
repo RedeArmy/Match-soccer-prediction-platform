@@ -41,6 +41,11 @@ const (
 	// Maps to HTTP 422 Unprocessable Entity.
 	CodeValidation Code = "VALIDATION"
 
+	// CodeRequestBodyTooLarge indicates that the request body exceeded the
+	// maximum allowed size enforced by the RequestBodyLimit middleware.
+	// Maps to HTTP 413 Request Entity Too Large.
+	CodeRequestBodyTooLarge Code = "REQUEST_BODY_TOO_LARGE"
+
 	// CodeInternal indicates an unexpected server-side failure. The cause is
 	// logged internally but never forwarded to the client, as it may contain
 	// sensitive infrastructure details (database errors, stack traces, etc.).

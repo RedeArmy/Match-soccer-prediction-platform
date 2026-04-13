@@ -21,7 +21,6 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	EventBus EventBusConfig `mapstructure:"eventBus"`
 	Logger   LoggerConfig   `mapstructure:"logger"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
 	CORS     CORSConfig     `mapstructure:"cors"`
 	Clerk    ClerkConfig    `mapstructure:"clerk"`
 	Worker   WorkerConfig   `mapstructure:"worker"`
@@ -80,27 +79,17 @@ type LoggerConfig struct {
 	Encoding string `mapstructure:"encoding"`
 }
 
-// JWTConfig holds the parameters for issuing and validating JSON Web Tokens.
-//
-// Secret must be a cryptographically random string of at least 32 bytes.
-// It must never be committed to version control or embedded in a Docker image.
-// Always inject it at runtime via the WCQ_JWT_SECRET environment variable,
-// sourced from a secrets manager such as AWS Secrets Manager or HashiCorp Vault.
-type JWTConfig struct {
-	Secret     string        `mapstructure:"secret"`
-	Expiration time.Duration `mapstructure:"expiration"`
-}
-
 // CORSConfig controls which origins, methods, and headers are permitted by
 // the CORS middleware.
 //
-// AllowedOrigins is a comma-separated list of origins that may make
-// cross-origin requests to the API. In production this must be set to the
-// exact frontend domain (e.g. "https://myapp.com"). Using a wildcard in
-// production would allow any website to make credentialed requests on behalf
+// AllowedOrigins is the list of origins that may make cross-origin requests
+// to the API. Set WCQ_CORS_ALLOWEDORIGINS to a comma-separated value to
+// supply multiple origins (e.g. "https://app.com,https://staging.app.com").
+// In production this must be set to the exact frontend domain. Using a
+// wildcard would allow any website to make credentialed requests on behalf
 // of a logged-in user, which is effectively a CSRF vulnerability.
 type CORSConfig struct {
-	AllowedOrigins string `mapstructure:"allowedOrigins"`
+	AllowedOrigins []string `mapstructure:"allowedOrigins"`
 }
 
 // EventBusConfig selects which event bus implementation the application uses.
