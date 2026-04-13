@@ -166,7 +166,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// chosen to be longer than the slowest expected handler (a full scoring
 	// recalculation) but shorter than the default Kubernetes termination
 	// grace period (also 30 s by default — adjust both together if changed).
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// ctx is already cancelled at this point (it unblocked the select above),
+	// so WithoutCancel is required to give the timeout a valid parent.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
