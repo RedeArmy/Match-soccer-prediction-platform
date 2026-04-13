@@ -11,11 +11,11 @@ package apperrors
 // should pass a custom message to the constructor rather than overriding
 // these constants.
 const (
-	MsgNotFound     = "the requested resource was not found"
-	MsgUnauthorised = "authentication is required to access this resource"
-	MsgForbidden    = "you do not have permission to perform this action"
-	MsgConflict     = "a resource with the same identifier already exists"
-	MsgValidation   = "the request contains invalid or missing data"
+	MsgNotFound            = "the requested resource was not found"
+	MsgUnauthorised        = "authentication is required to access this resource"
+	MsgForbidden           = "you do not have permission to perform this action"
+	MsgConflict            = "a resource with the same identifier already exists"
+	MsgValidation          = "the request contains invalid or missing data"
 	MsgRequestBodyTooLarge = "request body exceeds the maximum allowed size"
 	MsgInternal            = "an unexpected error occurred; please try again later"
 )
