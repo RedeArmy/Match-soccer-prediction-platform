@@ -16,5 +16,6 @@ const (
 	MsgForbidden    = "you do not have permission to perform this action"
 	MsgConflict     = "a resource with the same identifier already exists"
 	MsgValidation   = "the request contains invalid or missing data"
-	MsgInternal     = "an unexpected error occurred; please try again later"
+	MsgRequestBodyTooLarge = "request body exceeds the maximum allowed size"
+	MsgInternal            = "an unexpected error occurred; please try again later"
 )

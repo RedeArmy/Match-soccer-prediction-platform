@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,4 +159,110 @@ func TestSetupEventBus_RedisDriver_ValidAddr_ReturnsBusAndCleanup(t *testing.T) 
 	}
 	// cleanup must stop goroutines and close the client without panicking
 	cleanup()
+}
+
+// ── run ───────────────────────────────────────────────────────────────────────
+
+// TestRun_ImmediateShutdown_ReturnsNil exercises the full startup → graceful
+// shutdown cycle without any real I/O. A pre-cancelled context causes run() to
+// exit the select immediately after the HTTP listener starts, covering the
+// ctx.Done branch and the "server stopped" log line that marks a clean shutdown.
+func TestRun_ImmediateShutdown_ReturnsNil(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: "0"},
+		EventBus: config.EventBusConfig{Driver: "in_memory"},
+	}
+
+	if err := run(ctx, cfg, zap.NewNop()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+}
+
+// TestRun_InvalidDSN_ReturnsError covers the migration-failure branch: when
+// the database is unreachable, run() must return a wrapped error before
+// touching the event bus or starting the HTTP server.
+func TestRun_InvalidDSN_ReturnsError(t *testing.T) {
+	cfg := &config.Config{
+		Server: config.ServerConfig{Port: "0"},
+		Database: config.DatabaseConfig{
+			DSN:             "postgres://invalid:5432/nodb?sslmode=disable",
+			MaxOpenConns:    2,
+			MaxIdleConns:    1,
+			ConnMaxLifetime: time.Second,
+		},
+		EventBus: config.EventBusConfig{Driver: "in_memory"},
+	}
+
+	err := run(context.Background(), cfg, zap.NewNop())
+	if err == nil {
+		t.Fatal("expected error for invalid DSN, got nil")
+	}
+	if !strings.Contains(err.Error(), "migration") {
+		t.Errorf("expected error to mention migration, got: %v", err)
+	}
+}
+
+// TestRun_EventBusError_ReturnsError covers the event-bus bootstrap failure
+// branch: when the Redis driver is configured but Redis is unreachable, run()
+// must propagate the error before the HTTP server is started.
+func TestRun_EventBusError_ReturnsError(t *testing.T) {
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: "0"},
+		EventBus: config.EventBusConfig{Driver: "redis"},
+		Redis:    config.RedisConfig{Addr: "localhost:1"},
+	}
+
+	err := run(context.Background(), cfg, zap.NewNop())
+	if err == nil {
+		t.Fatal("expected error for unreachable Redis, got nil")
+	}
+	if !strings.Contains(err.Error(), "event bus") {
+		t.Errorf("expected error to mention event bus, got: %v", err)
+	}
+}
+
+// TestRun_WithRedisAddr_ImmediateShutdown covers the cfg.Redis.Addr != ""
+// branch that creates a dedicated Redis health-check client and appends the
+// RedisChecker to the checkers slice.
+func TestRun_WithRedisAddr_ImmediateShutdown(t *testing.T) {
+	mr := miniredis.RunT(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: "0"},
+		EventBus: config.EventBusConfig{Driver: "in_memory"},
+		Redis:    config.RedisConfig{Addr: mr.Addr()},
+	}
+
+	if err := run(ctx, cfg, zap.NewNop()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+}
+
+// TestRun_WithValidDB_ImmediateShutdown covers the db != nil branches: the
+// deferred pool close and the DB health-checker creation. A pre-cancelled
+// context keeps the test fast — no HTTP traffic is required.
+func TestRun_WithValidDB_ImmediateShutdown(t *testing.T) {
+	dsn := testutil.SetupPostgres(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{Port: "0"},
+		Database: config.DatabaseConfig{
+			DSN:             dsn,
+			MaxOpenConns:    5,
+			MaxIdleConns:    2,
+			ConnMaxLifetime: time.Minute,
+		},
+		EventBus: config.EventBusConfig{Driver: "in_memory"},
+	}
+
+	if err := run(ctx, cfg, zap.NewNop()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
 }

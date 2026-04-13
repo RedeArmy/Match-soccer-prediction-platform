@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/api"
 	"github.com/rede/world-cup-quiniela/pkg/config"
@@ -54,7 +55,36 @@ func main() {
 	}
 	defer log.Sync() //nolint:errcheck
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx, cfg, log); err != nil {
+		log.Sugar().Fatalf("server: %v", err)
+	}
+}
+
+// run bootstraps all application dependencies and manages the HTTP server
+// lifecycle. It blocks until ctx is cancelled (i.e. until an OS signal is
+// received) and then performs a graceful shutdown.
+//
+// Extracting lifecycle management from main makes every code path testable
+// without forking a subprocess or intercepting os.Exit: tests can pass a
+// pre-cancelled context to exercise the full startup → shutdown sequence in
+// milliseconds, or an invalid DSN / Redis address to cover error branches.
+//
+// Order of operations:
+//  1. Open the database pool and apply pending migrations.
+//  2. Construct the event bus (in-memory or Redis, based on config).
+//  3. Build health checkers for GET /health/ready.
+//  4. Wire the HTTP server and start it in a background goroutine.
+//  5. Block until ctx is cancelled or the server reports a fatal error.
+//  6. Drain in-flight requests via graceful shutdown.
+func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
+	// Infrastructure setup (DB pool, event bus) uses a background context so
+	// that a cancellation of the lifecycle ctx (e.g. a SIGTERM arriving during
+	// a slow cold-start) does not abort half-initialised resources mid-flight.
+	// The lifecycle ctx is reserved for the HTTP server's select loop.
+	setupCtx := context.Background()
 
 	// The database connection is treated as optional at startup intentionally.
 	// The /health endpoint must remain reachable even when the database is
@@ -62,10 +92,9 @@ func main() {
 	// or cold-start sequences in container orchestration platforms. Handlers
 	// that require a live connection will fail at request time rather than
 	// preventing the entire process from starting.
-	db, err := setupDB(ctx, cfg, log)
+	db, err := setupDB(setupCtx, cfg, log)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "migration failed: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("migration failed: %w", err)
 	}
 	if db != nil {
 		defer db.Close()
@@ -75,10 +104,9 @@ func main() {
 	// The bus is constructed here — at the composition root — so its full
 	// lifecycle (construction → subscriber wiring → graceful shutdown) is
 	// visible in one place without any hidden state inside the Server.
-	bus, closeBus, err := setupEventBus(ctx, cfg, log)
+	bus, closeBus, err := setupEventBus(setupCtx, cfg, log)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "event bus error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("event bus: %w", err)
 	}
 	defer closeBus()
 
@@ -117,20 +145,19 @@ func main() {
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 
+	srvErr := make(chan error, 1)
 	go func() {
 		log.Sugar().Infof("server listening on :%s", cfg.Server.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Sugar().Fatalf("server error: %v", err)
+			srvErr <- err
 		}
 	}()
 
-	// Block until the OS delivers SIGINT (Ctrl+C) or SIGTERM (sent by a
-	// container orchestrator when stopping a pod). The buffered channel of
-	// size 1 ensures the signal is not lost if it fires before we reach
-	// this receive operation.
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	select {
+	case err := <-srvErr:
+		return fmt.Errorf("server: %w", err)
+	case <-ctx.Done():
+	}
 
 	log.Sugar().Info("shutdown signal received, draining connections...")
 
@@ -139,14 +166,13 @@ func main() {
 	// chosen to be longer than the slowest expected handler (a full scoring
 	// recalculation) but shorter than the default Kubernetes termination
 	// grace period (also 30 s by default — adjust both together if changed).
-	// A non-zero exit code signals to the orchestrator that the shutdown
-	// was not clean, triggering alerting or a restart policy.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Sugar().Errorf("graceful shutdown failed: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 	log.Sugar().Info("server stopped")
+	return nil
 }

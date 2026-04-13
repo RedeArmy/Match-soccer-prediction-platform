@@ -73,12 +73,13 @@ type AppError struct {
 //
 //	if errors.Is(err, apperrors.ErrNotFound) { ... }
 var (
-	ErrNotFound     = &AppError{Code: CodeNotFound}
-	ErrUnauthorised = &AppError{Code: CodeUnauthorised}
-	ErrForbidden    = &AppError{Code: CodeForbidden}
-	ErrConflict     = &AppError{Code: CodeConflict}
-	ErrValidation   = &AppError{Code: CodeValidation}
-	ErrInternal     = &AppError{Code: CodeInternal}
+	ErrNotFound            = &AppError{Code: CodeNotFound}
+	ErrUnauthorised        = &AppError{Code: CodeUnauthorised}
+	ErrForbidden           = &AppError{Code: CodeForbidden}
+	ErrConflict            = &AppError{Code: CodeConflict}
+	ErrValidation          = &AppError{Code: CodeValidation}
+	ErrRequestBodyTooLarge = &AppError{Code: CodeRequestBodyTooLarge}
+	ErrInternal            = &AppError{Code: CodeInternal}
 )
 
 // Error implements the error interface. It returns the user-facing message.
@@ -158,6 +159,17 @@ func Validation(message string) *AppError {
 		Code:       CodeValidation,
 		Message:    message,
 		HTTPStatus: http.StatusUnprocessableEntity,
+	}
+}
+
+// RequestBodyTooLarge returns an AppError indicating that the request body
+// exceeded the size limit enforced by the RequestBodyLimit middleware.
+// The response status is 413 Request Entity Too Large.
+func RequestBodyTooLarge() *AppError {
+	return &AppError{
+		Code:       CodeRequestBodyTooLarge,
+		Message:    MsgRequestBodyTooLarge,
+		HTTPStatus: http.StatusRequestEntityTooLarge,
 	}
 }
 

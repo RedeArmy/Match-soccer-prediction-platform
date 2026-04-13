@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -21,10 +22,17 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// decodeError wraps a JSON decode failure in a Validation AppError so that
-// the handler can delegate the HTTP response to WriteError without
-// duplicating status-mapping logic.
+// decodeError maps a JSON decode failure to the appropriate AppError.
+//
+// Three cases:
+//   - err is *http.MaxBytesError: the body exceeded the RequestBodyLimit;
+//     return 413 so the client knows to reduce payload size.
+//   - err is non-nil: JSON was malformed or of the wrong type; return 422.
+//   - err is nil: decode succeeded but required fields are absent; return 422.
 func decodeError(err error) error {
+	if errors.As(err, new(*http.MaxBytesError)) {
+		return apperrors.RequestBodyTooLarge()
+	}
 	msg := "request body is missing required fields"
 	if err != nil {
 		msg = "request body could not be parsed as JSON"
