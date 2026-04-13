@@ -162,7 +162,7 @@ func TestRequestLogger_CapturesNonOKStatus(t *testing.T) {
 // ── CORS ──────────────────────────────────────────────────────────────────────
 
 func TestCORS_AllowsConfiguredOrigin(t *testing.T) {
-	handler := middleware.CORS(originLocalhost)(http.HandlerFunc(okHandler))
+	handler := middleware.CORS([]string{originLocalhost})(http.HandlerFunc(okHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(headerOrigin, originLocalhost)
 	rec := httptest.NewRecorder()
@@ -176,7 +176,7 @@ func TestCORS_AllowsConfiguredOrigin(t *testing.T) {
 }
 
 func TestCORS_RejectsUnknownOrigin(t *testing.T) {
-	handler := middleware.CORS(originLocalhost)(http.HandlerFunc(okHandler))
+	handler := middleware.CORS([]string{originLocalhost})(http.HandlerFunc(okHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set(headerOrigin, "http://evil.example.com")
 	rec := httptest.NewRecorder()
@@ -190,7 +190,7 @@ func TestCORS_RejectsUnknownOrigin(t *testing.T) {
 }
 
 func TestCORS_HandlesPreflight(t *testing.T) {
-	handler := middleware.CORS(originLocalhost)(http.HandlerFunc(okHandler))
+	handler := middleware.CORS([]string{originLocalhost})(http.HandlerFunc(okHandler))
 	req := httptest.NewRequest(http.MethodOptions, pathMatches, nil)
 	req.Header.Set(headerOrigin, originLocalhost)
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
@@ -204,7 +204,7 @@ func TestCORS_HandlesPreflight(t *testing.T) {
 }
 
 func TestCORS_MultipleOriginsAllowed(t *testing.T) {
-	handler := middleware.CORS(originLocalhost + ",https://myapp.com")(http.HandlerFunc(okHandler))
+	handler := middleware.CORS([]string{originLocalhost, "https://myapp.com"})(http.HandlerFunc(okHandler))
 
 	for _, origin := range []string{originLocalhost, "https://myapp.com"} {
 		t.Run(origin, func(t *testing.T) {

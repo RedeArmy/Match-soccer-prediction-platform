@@ -7,7 +7,9 @@
 -- this pattern and is replaced here.
 --
 -- The column swap is done in four steps to stay safe under concurrent load:
---   1. Add the new TEXT column with a CHECK constraint, defaulting to 'pending'.
+--   1. Add the new TEXT column with a named CHECK constraint, defaulting to
+--      'pending'. The constraint is named explicitly so it survives the
+--      column rename with a predictable, referenceable name.
 --   2. Back-fill existing rows by casting the enum value to TEXT.
 --   3. Drop the old ENUM column.
 --   4. Rename the new column back to 'status'.
@@ -15,6 +17,7 @@
 -- the cast in step 2.
 ALTER TABLE group_memberships
     ADD COLUMN status_text TEXT NOT NULL DEFAULT 'pending'
+        CONSTRAINT group_memberships_status_check
         CHECK (status_text IN ('pending', 'active', 'left'));
 
 UPDATE group_memberships SET status_text = status::TEXT;

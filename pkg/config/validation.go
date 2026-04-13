@@ -20,9 +20,9 @@ var knownLogLevels = map[string]struct{}{
 
 // validateWorker enforces the configuration invariants required by the worker
 // binary. It is intentionally less strict than validate: the worker has no
-// HTTP router (no server.port), no JWT validation (no jwt.secret), and no
-// CORS policy. Infrastructure connectivity (database DSN, Redis address) is
-// validated at the point of use inside setupDB and setupEventBus.
+// HTTP router (no server.port) and no CORS policy. Infrastructure
+// connectivity (database DSN, Redis address) is validated at the point of
+// use inside setupDB and setupEventBus.
 func validateWorker(cfg *Config) error {
 	if _, ok := knownLogLevels[cfg.Logger.Level]; !ok {
 		return fmt.Errorf(
@@ -48,9 +48,6 @@ func validateWorker(cfg *Config) error {
 func validate(cfg *Config) error {
 	if cfg.Server.Port == "" {
 		return errors.New("server.port must not be empty (WCQ_SERVER_PORT)")
-	}
-	if cfg.JWT.Secret == "" {
-		return errors.New("jwt.secret is required (WCQ_JWT_SECRET)")
 	}
 	if _, ok := knownLogLevels[cfg.Logger.Level]; !ok {
 		return fmt.Errorf(
