@@ -112,6 +112,7 @@ func (s *Server) Routes() http.Handler {
 			middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
 		}
 		r.Route("/api/v1", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(64 * 1024)) // 64 KB — all API payloads are small JSON objects
 			r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, s.log))
 			r.Route("/matches", func(r chi.Router) {
 				r.HandleFunc("/*", dbUnavailable)
@@ -146,6 +147,7 @@ func (s *Server) Routes() http.Handler {
 
 	// Versioned API surface with Clerk JWT authentication.
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(middleware.RequestBodyLimit(64 * 1024)) // 64 KB — all API payloads are small JSON objects
 		r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, s.log))
 
 		// Admin-only match mutations are guarded by RequireRole. Read endpoints
@@ -190,10 +192,21 @@ func (s *Server) Routes() http.Handler {
 // implementation (InMemory vs Redis) is selected at the composition root in
 // main.go and injected via New(). wireSubscribers only adds subscribers,
 // keeping routing logic in one place and bus lifecycle management in another.
+//
+// With the Redis driver the worker process owns all event processing
+// exclusively. Registering a scoring subscriber here as well would place
+// both the API server and the worker in the same consumer group, causing
+// every MatchFinished event to be scored twice. When driver=redis this
+// method is therefore a no-op: the API server only publishes events; it
+// never consumes them.
 func (s *Server) wireSubscribers(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 ) {
+	if s.cfg.EventBus.Driver == "redis" {
+		return
+	}
+
 	scorer := service.NewScoringService(matchRepo, predRepo, s.log)
 
 	// MatchFinished → ScoringService: calculate points for every prediction

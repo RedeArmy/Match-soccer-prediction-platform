@@ -17,9 +17,9 @@ import (
 // value of the Go type is used instead. Registering empty-string defaults
 // for sensitive keys (DSN, JWT secret) makes this footgun impossible.
 //
-// Sensitive fields such as database.dsn and jwt.secret intentionally
-// default to empty strings. The validation step (validation.go) then
-// enforces that they have been supplied at runtime.
+// Sensitive fields such as database.dsn intentionally default to empty
+// strings. The validation step (validation.go) then enforces that they
+// have been supplied at runtime.
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.port", "8080")
 	v.SetDefault("server.readTimeout", 10*time.Second)
@@ -43,10 +43,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("logger.level", "info")
 	v.SetDefault("logger.encoding", "json")
 
-	v.SetDefault("jwt.secret", "")
-	v.SetDefault("jwt.expiration", 24*time.Hour)
-
-	v.SetDefault("cors.allowedOrigins", "http://localhost:3000")
+	v.SetDefault("cors.allowedOrigins", []string{"http://localhost:3000"})
 
 	v.SetDefault("clerk.jwksUrl", "")
 

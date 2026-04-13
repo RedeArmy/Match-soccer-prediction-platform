@@ -11,7 +11,7 @@ import (
 //
 // It uses the same environment variable convention as Load (WCQ_ prefix, dot
 // notation mapped to underscores) but applies validateWorker instead of
-// validate, skipping API-only requirements such as jwt.secret and server.port.
+// validate, skipping the API-only requirement of server.port.
 func LoadWorker() (*Config, error) {
 	v := viper.New()
 
