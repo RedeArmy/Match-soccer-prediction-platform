@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	checkerDB  = "db"
-	statusOK   = "ok"
-	statusErr  = "error"
+	checkerDB = "db"
+	statusOK  = "ok"
+	statusErr = "error"
 )
 
 // ── stub health checkers ──────────────────────────────────────────────────────
