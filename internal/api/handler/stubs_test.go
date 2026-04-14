@@ -24,6 +24,9 @@ func (r *stubUserRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.U
 func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }
 func (r *stubUserRepo) Delete(_ context.Context, _ int) error          { return r.err }
 func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error) { return nil, r.err }
+func (r *stubUserRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return nil, r.err
+}
 
 const (
 	fmtExpect200     = "expected 200, got %d"
@@ -121,6 +124,9 @@ func (s *stubQuinielaSvc) GetByInviteCode(_ context.Context, _ string) (*domain.
 }
 func (s *stubQuinielaSvc) GetByOwner(_ context.Context, _ int) ([]*domain.Quiniela, error) {
 	return s.quinielas, s.err
+}
+func (s *stubQuinielaSvc) RotateInviteCode(_ context.Context, _, _ int) (*domain.Quiniela, error) {
+	return s.quiniela, s.err
 }
 
 // stubMemberSvc implements service.GroupMembershipService with configurable returns.

@@ -16,6 +16,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
@@ -46,6 +47,10 @@ type UserRepository interface {
 	Update(ctx context.Context, user *domain.User) error
 	Delete(ctx context.Context, id int) error
 	List(ctx context.Context) ([]*domain.User, error)
+	// ListByIDs fetches multiple users by primary key in a single query.
+	// Used by the ranking service to hydrate leaderboard entries without N+1
+	// queries. An empty ids slice returns nil, nil without hitting the database.
+	ListByIDs(ctx context.Context, ids []int) ([]*domain.User, error)
 }
 
 // MatchRepository defines the persistence operations for the Match entity.
@@ -85,6 +90,11 @@ type PredictionRepository interface {
 	// the partial-scoring state where some predictions on a finished match are
 	// scored and others are not. An empty map is a no-op.
 	UpdateManyPoints(ctx context.Context, points map[int]int) error
+	// TotalPointsByQuiniela returns a map of userID → total scored points for
+	// every active, paid member of the given quiniela. It is used exclusively
+	// by the ranking service to compute leaderboard standings in a single query,
+	// avoiding N+1 database round-trips when the group is large.
+	TotalPointsByQuiniela(ctx context.Context, quinielaID int) (map[int]int, error)
 }
 
 // QuinielaRepository defines the persistence operations for the Quiniela
@@ -96,7 +106,16 @@ type PredictionRepository interface {
 type QuinielaRepository interface {
 	Create(ctx context.Context, quiniela *domain.Quiniela) error
 	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
+	// GetByInviteCode returns the quiniela matching code only when the code has
+	// not expired (invite_code_expires_at IS NULL OR > NOW()). Returns nil, nil
+	// for an unknown or expired code — callers should surface a 404 to the client
+	// so that the difference between "wrong code" and "expired code" is not
+	// exposed.
 	GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error)
+	// RotateInviteCode generates a new invite code and optional expiry for the
+	// quiniela in a single atomic UPDATE. The old code is immediately invalidated.
+	// expiresAt may be nil to create a non-expiring code.
+	RotateInviteCode(ctx context.Context, id int, newCode string, expiresAt *time.Time) (*domain.Quiniela, error)
 	Update(ctx context.Context, quiniela *domain.Quiniela) error
 	Delete(ctx context.Context, id int) error
 	ListByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)

@@ -40,6 +40,12 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
 
+// dlqMonitorInterval controls how often the DLQ monitoring goroutine logs
+// the dead-letter queue state. Five minutes is frequent enough to surface a
+// stuck queue within a reasonable SLA without spamming logs during normal
+// operation.
+const dlqMonitorInterval = 5 * time.Minute
+
 func main() {
 	cfg, err := config.LoadWorker()
 	if err != nil {
@@ -119,16 +125,23 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	})
 	defer rc.Close() //nolint:errcheck
 
+	// Register DLQ and stream-pending checkers for every event type the worker
+	// handles. This surfaces both stuck dead-letter entries and worker lag
+	// (growing pending-entry list) in the /health/ready endpoint, making them
+	// visible to monitoring systems without requiring a separate query.
 	checkers := []health.Checker{
 		health.NewDBChecker(db),
 		health.NewRedisChecker(rc),
+		health.NewDLQChecker(rc, string(events.EventMatchFinished)),
+		health.NewStreamPendingChecker(rc, "stream:"+string(events.EventMatchFinished), "quiniela-workers"),
 	}
 
-	return startWorker(ctx, cfg, bus, scorer, checkers, log)
+	return startWorker(ctx, cfg, bus, scorer, rc, checkers, log)
 }
 
-// startWorker wires event subscribers, starts the health HTTP server, and
-// blocks until ctx is cancelled (i.e. until an OS signal is received).
+// startWorker wires event subscribers, starts the health HTTP server, starts
+// the DLQ monitoring goroutine, and blocks until ctx is cancelled (i.e. until
+// an OS signal is received).
 //
 // All parameters are already constructed so this function has no I/O of its
 // own. This makes it the boundary between infrastructure setup (run) and
@@ -139,6 +152,7 @@ func startWorker(
 	cfg *config.Config,
 	bus events.Bus,
 	scorer service.MatchScorer,
+	rc *redis.Client,
 	checkers []health.Checker,
 	log *zap.Logger,
 ) error {
@@ -154,6 +168,12 @@ func startWorker(
 		}
 	}()
 
+	// DLQ monitoring goroutine: logs the size of each dead-letter queue at a
+	// fixed interval. Operators should configure an alert on log lines that
+	// contain "dead-letter queue is non-empty" to be notified within one
+	// dlqMonitorInterval of a scoring failure.
+	go monitorDLQ(ctx, rc, log)
+
 	<-ctx.Done()
 	log.Sugar().Info("worker: shutdown signal received, stopping...")
 
@@ -165,6 +185,55 @@ func startWorker(
 	}
 	log.Sugar().Info("worker stopped")
 	return nil
+}
+
+// monitorDLQ runs until ctx is cancelled, periodically logging the size of
+// every event-type dead-letter queue managed by this worker. A non-zero count
+// indicates events that exhausted all handler retry attempts and require manual
+// operator replay. The log line is structured so log-based alerting systems
+// (Datadog, CloudWatch Logs Insights, Loki) can match on the "dlq_size" field.
+//
+// If rc is nil (e.g. in unit tests where Redis is not available), the goroutine
+// exits immediately — DLQ monitoring is best-effort and must not block startup.
+func monitorDLQ(ctx context.Context, rc *redis.Client, log *zap.Logger) {
+	if rc == nil {
+		return
+	}
+	ticker := time.NewTicker(dlqMonitorInterval)
+	defer ticker.Stop()
+
+	// The event types whose DLQ keys this worker is responsible for.
+	monitoredEvents := []events.EventType{events.EventMatchFinished}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			for _, et := range monitoredEvents {
+				dlqKey := "dlq:" + string(et)
+				n, err := rc.LLen(ctx, dlqKey).Result()
+				if err != nil {
+					log.Warn("worker: DLQ monitor: LLEN failed",
+						zap.String("dlq_key", dlqKey),
+						zap.Error(err),
+					)
+					continue
+				}
+				if n > 0 {
+					log.Error("worker: dead-letter queue is non-empty — manual replay required",
+						zap.String("dlq_key", dlqKey),
+						zap.String("event_type", string(et)),
+						zap.Int64("dlq_size", n),
+					)
+				} else {
+					log.Debug("worker: DLQ monitor: queue is empty",
+						zap.String("dlq_key", dlqKey),
+					)
+				}
+			}
+		}
+	}
 }
 
 // newHealthServer constructs the lightweight HTTP server that exposes liveness

@@ -83,14 +83,14 @@ func (r *PostgresUserRepository) Create(ctx context.Context, u *domain.User) err
 
 func (r *PostgresUserRepository) GetByID(ctx context.Context, id int) (*domain.User, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+userColumns+` FROM users WHERE id=$1 AND deleted_at IS NULL`, id,
+		`SELECT `+userColumns+` FROM users WHERE id=$1`+activeOnly, id,
 	)
 	return scanUser(row)
 }
 
 func (r *PostgresUserRepository) GetByClerkSubject(ctx context.Context, subject string) (*domain.User, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+userColumns+` FROM users WHERE clerk_subject = $1 AND deleted_at IS NULL`, subject,
+		`SELECT `+userColumns+` FROM users WHERE clerk_subject=$1`+activeOnly, subject,
 	)
 	return scanUser(row)
 }
@@ -120,7 +120,7 @@ func (r *PostgresUserRepository) Update(ctx context.Context, u *domain.User) err
 
 func (r *PostgresUserRepository) Delete(ctx context.Context, id int) error {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE users SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id,
+		`UPDATE users SET deleted_at=NOW() WHERE id=$1`+activeOnly, id,
 	)
 	if err != nil {
 		return apperrors.Internal(err)
@@ -132,7 +132,25 @@ func (r *PostgresUserRepository) Delete(ctx context.Context, id int) error {
 }
 
 func (r *PostgresUserRepository) List(ctx context.Context) ([]*domain.User, error) {
-	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users WHERE deleted_at IS NULL ORDER BY id ASC`)
+	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users WHERE `+activeFilter+` ORDER BY id ASC`)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectUsers(rows)
+}
+
+// ListByIDs fetches all active users whose IDs are in the provided slice.
+// The returned order is not guaranteed; callers must sort if needed.
+// An empty ids slice returns an empty list without hitting the database.
+func (r *PostgresUserRepository) ListByIDs(ctx context.Context, ids []int) ([]*domain.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx,
+		`SELECT `+userColumns+` FROM users WHERE id=ANY($1) AND `+activeFilter,
+		ids,
+	)
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}

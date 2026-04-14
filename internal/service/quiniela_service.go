@@ -42,6 +42,12 @@ func generateInviteCode() (string, error) {
 	return string(result), nil
 }
 
+// inviteCodeTTL is the default lifetime for a freshly generated invite code.
+// After this period the code is considered expired and the owner must call
+// RotateInviteCode to generate a new one. Keeping TTL finite prevents
+// indefinite access when a code is shared beyond the intended audience.
+const inviteCodeTTL = 30 * 24 * time.Hour // 30 days
+
 func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela) error {
 	if err := domain.ValidateQuiniela(quiniela); err != nil {
 		return err
@@ -52,6 +58,10 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 		return apperrors.Internal(err)
 	}
 	quiniela.InviteCode = code
+
+	// Set a default expiry so leaked codes do not grant indefinite access.
+	exp := time.Now().UTC().Add(inviteCodeTTL)
+	quiniela.InviteCodeExpiresAt = &exp
 
 	if quiniela.Currency == "" {
 		quiniela.Currency = "MXN"
@@ -73,6 +83,30 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 		JoinedAt:   &now,
 	}
 	return s.memberRepo.Create(ctx, ownerMembership)
+}
+
+// RotateInviteCode generates a new invite code for the quiniela, immediately
+// invalidating the previous one. Only the quiniela owner may rotate the code;
+// callers that are not the owner receive a 403 Forbidden error.
+func (s *quinielaService) RotateInviteCode(ctx context.Context, quinielaID, ownerID int) (*domain.Quiniela, error) {
+	q, err := s.repo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+	if q == nil {
+		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
+	}
+	if q.OwnerID != ownerID {
+		return nil, apperrors.Forbidden("only the group owner can rotate the invite code")
+	}
+
+	newCode, err := generateInviteCode()
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+
+	exp := time.Now().UTC().Add(inviteCodeTTL)
+	return s.repo.RotateInviteCode(ctx, quinielaID, newCode, &exp)
 }
 
 func (s *quinielaService) GetByID(ctx context.Context, id int) (*domain.Quiniela, error) {

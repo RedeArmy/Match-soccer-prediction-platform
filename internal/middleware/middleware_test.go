@@ -40,6 +40,9 @@ func (r *stubUserRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.U
 func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }
 func (r *stubUserRepo) Delete(_ context.Context, _ int) error          { return r.err }
 func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error) { return nil, r.err }
+func (r *stubUserRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return nil, r.err
+}
 
 const (
 	fmtStatus        = "expected status %d, got %d"
@@ -52,6 +55,7 @@ const (
 
 	subjectForRole    = "user_abc"
 	subjectForResolve = "user_clerk_abc"
+	okBody            = "ok"
 )
 
 // okHandler is a trivial handler used as the "next" in middleware chain tests.
@@ -59,7 +63,7 @@ const (
 // not short-circuited by the middleware under test.
 func okHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("ok"))
+	_, _ = w.Write([]byte(okBody))
 }
 
 // requestWithID wraps a request in chi's RequestID middleware context so that
@@ -138,8 +142,8 @@ func TestRequestLogger_PassesRequestToNextHandler(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf(fmtStatus, http.StatusOK, rec.Code)
 	}
-	if rec.Body.String() != "ok" {
-		t.Errorf("expected body %q, got %q", "ok", rec.Body.String())
+	if rec.Body.String() != okBody {
+		t.Errorf("expected body %q, got %q", okBody, rec.Body.String())
 	}
 }
 

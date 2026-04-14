@@ -55,3 +55,7 @@ go.work.sum
 # shared; another developer's permission set could grant or restrict access
 # that does not match their own workflow.
 .claude/
+
+# ── Codex local settings ──────────────────────────────────────────────────────
+# .codex contains machine-specific Codex metadata and must not be committed.
+.codex
