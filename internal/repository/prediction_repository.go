@@ -103,6 +103,45 @@ func (r *PostgresPredictionRepository) ListByMatch(ctx context.Context, matchID 
 	return collectPredictions(rows)
 }
 
+// TotalPointsByQuiniela returns a map of userID → total scored points for
+// every active, paid member of the given quiniela. It uses a single SQL
+// query with a LEFT JOIN between group_memberships and predictions so the
+// ranking service never issues N+1 queries when computing a leaderboard.
+//
+// Predictions with NULL points (match not yet scored) are excluded from the
+// sum. A member with no scored predictions appears in the map with value 0.
+func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context, quinielaID int) (map[int]int, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT gm.user_id, COALESCE(SUM(p.points), 0)
+		   FROM group_memberships gm
+		   LEFT JOIN predictions p
+		          ON p.user_id = gm.user_id
+		         AND p.points IS NOT NULL
+		  WHERE gm.quiniela_id = $1
+		    AND gm.status = 'active'
+		    AND gm.paid = TRUE
+		  GROUP BY gm.user_id`,
+		quinielaID,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	result := make(map[int]int)
+	for rows.Next() {
+		var userID, totalPoints int
+		if err := rows.Scan(&userID, &totalPoints); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		result[userID] = totalPoints
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return result, nil
+}
+
 // UpdateManyPoints atomically updates the points column for every prediction
 // ID in the provided map. All UPDATEs run inside a single transaction; if any
 // statement fails the transaction is rolled back so the match is either fully

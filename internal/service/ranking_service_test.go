@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // stubUserRepo implements repository.UserRepository for service tests.
@@ -24,41 +26,108 @@ func (r *stubUserRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.U
 func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }
 func (r *stubUserRepo) Delete(_ context.Context, _ int) error          { return r.err }
 func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error) { return r.users, r.err }
-
-// ── RankingService tests ──────────────────────────────────────────────────────
-//
-// GetLeaderboard is a stub pending Phase 3 (group-scoped leaderboard).
-// These tests verify the stub contract: it returns nil, nil for any input
-// including non-existent quinielas.
-
-func TestGetLeaderboard_ReturnsNil(t *testing.T) {
-	svc := NewRankingService(
-		&stubQuinielaRepo{},
-		&stubPredRepo{},
-		&stubUserRepo{},
-	)
-
-	ranked, err := svc.GetLeaderboard(context.Background(), 1)
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
-	}
-	if ranked != nil {
-		t.Errorf("expected nil slice (Phase 3 stub), got %v", ranked)
-	}
+func (r *stubUserRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return r.users, r.err
 }
 
-func TestGetLeaderboard_QuinielaNotFound_ReturnsNil(t *testing.T) {
+// stubTotalPointsPredRepo extends stubPredRepo with a configurable
+// TotalPointsByQuiniela response for ranking service tests.
+type stubTotalPointsPredRepo struct {
+	stubPredRepo
+	pointsByUser map[int]int
+	pointsErr    error
+}
+
+func (r *stubTotalPointsPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
+	return r.pointsByUser, r.pointsErr
+}
+
+// ── RankingService tests ──────────────────────────────────────────────────────
+
+func TestGetLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T) {
 	svc := NewRankingService(
 		&stubQuinielaRepo{quiniela: nil},
 		&stubPredRepo{},
 		&stubUserRepo{},
 	)
 
-	got, err := svc.GetLeaderboard(context.Background(), 99)
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+	_, err := svc.GetLeaderboard(context.Background(), 99)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
 	}
-	if got != nil {
-		t.Errorf("expected nil for unknown quiniela (stub), got %v", got)
+}
+
+func TestGetLeaderboard_NoActivePaidMembers_ReturnsNil(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: "Test"}
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{}, // empty: no active+paid members
+	}
+	svc := NewRankingService(
+		&stubQuinielaRepo{quiniela: q},
+		predRepo,
+		&stubUserRepo{},
+	)
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entries != nil {
+		t.Errorf("expected nil for empty leaderboard, got %v", entries)
+	}
+}
+
+func TestGetLeaderboard_SortedByPoints(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: "Test"}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+	userC := &domain.User{ID: 3, Name: "Carlos"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{
+			1: 10,
+			2: 25,
+			3: 25, // tie with Bob
+		},
+	}
+	userRepo := &stubUserRepo{users: []*domain.User{userA, userB, userC}}
+
+	svc := NewRankingService(
+		&stubQuinielaRepo{quiniela: q},
+		predRepo,
+		userRepo,
+	)
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+
+	// Top two should be tied at rank 1 with 25 points.
+	if entries[0].TotalPoints != 25 || entries[0].Rank != 1 {
+		t.Errorf("entry[0]: want rank 1 pts 25, got rank %d pts %d", entries[0].Rank, entries[0].TotalPoints)
+	}
+	if entries[1].TotalPoints != 25 || entries[1].Rank != 1 {
+		t.Errorf("entry[1]: want rank 1 pts 25, got rank %d pts %d", entries[1].Rank, entries[1].TotalPoints)
+	}
+	// Third should be rank 3 (1224 competition ranking).
+	if entries[2].TotalPoints != 10 || entries[2].Rank != 3 {
+		t.Errorf("entry[2]: want rank 3 pts 10, got rank %d pts %d", entries[2].Rank, entries[2].TotalPoints)
+	}
+}
+
+func TestGetLeaderboard_DatabaseError_PropagatesError(t *testing.T) {
+	q := &domain.Quiniela{ID: 1}
+	predRepo := &stubTotalPointsPredRepo{
+		pointsErr: apperrors.Internal(errors.New("db error")),
+	}
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, &stubUserRepo{})
+
+	_, err := svc.GetLeaderboard(context.Background(), 1)
+	if err == nil {
+		t.Error("expected error from TotalPointsByQuiniela, got nil")
 	}
 }

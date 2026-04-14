@@ -110,19 +110,23 @@ func hasSeqScan(node planNode, table string) bool {
 }
 
 // TestIndexUsage_QuinielaInviteCode verifies that GetByInviteCode (migration
-// 000019) uses idx_quinielas_invite_code instead of a sequential scan.
+// 000022) uses idx_quinielas_invite_code_active instead of a sequential scan.
+// Migration 000022 replaced the single-column index from 000019 with a
+// composite index on (invite_code, invite_code_expires_at) to support
+// index-only scans on the expiry check.
 func TestIndexUsage_QuinielaInviteCode(t *testing.T) {
-	const wantIndex = "idx_quinielas_invite_code"
+	const wantIndex = "idx_quinielas_invite_code_active"
 	plan := queryPlan(t,
-		`SELECT id, name, owner_id, invite_code, entry_fee, currency, max_members,
-		        created_at, updated_at, deleted_at
+		`SELECT id, name, owner_id, invite_code, invite_code_expires_at,
+		        entry_fee, currency, max_members, created_at, updated_at, deleted_at
 		   FROM quinielas
 		  WHERE invite_code = $1
-		    AND deleted_at IS NULL`,
+		    AND deleted_at IS NULL
+		    AND (invite_code_expires_at IS NULL OR invite_code_expires_at > NOW())`,
 		"TESTCODE01",
 	)
 	if !containsIndexScan(plan, wantIndex) {
-		t.Errorf("expected plan to use %q but got node type %q — run migrations 000019+",
+		t.Errorf("expected plan to use %q but got node type %q — run migrations 000022+",
 			wantIndex, plan.NodeType)
 	}
 }

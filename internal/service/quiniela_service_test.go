@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -27,6 +28,9 @@ func (r *stubQuinielaRepo) Update(_ context.Context, _ *domain.Quiniela) error {
 func (r *stubQuinielaRepo) Delete(_ context.Context, _ int) error              { return r.err }
 func (r *stubQuinielaRepo) ListByOwner(_ context.Context, _ int) ([]*domain.Quiniela, error) {
 	return r.quinielas, r.err
+}
+func (r *stubQuinielaRepo) RotateInviteCode(_ context.Context, _ int, _ string, _ *time.Time) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
 }
 
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.

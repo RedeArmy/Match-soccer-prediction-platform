@@ -29,6 +29,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -52,7 +53,11 @@ type Server struct {
 	// The implementation is selected at startup via WCQ_EVENTBUS_DRIVER:
 	//   "in_memory" — InMemoryBus, safe for single-replica / local dev.
 	//   "redis"     — RedisBus, required for multi-replica production deployments.
-	bus      events.Bus
+	bus events.Bus
+	// cache is the optional key-value store used to cache list responses and
+	// leaderboard results. When nil (e.g. Redis is not configured), caching is
+	// disabled and every request hits the database directly.
+	cache    cache.Store
 	checkers []health.Checker
 }
 
@@ -62,10 +67,12 @@ type Server struct {
 // or a *messaging.RedisBus connected to the production Redis instance.
 // db may be nil when the database is unreachable at startup time; see the
 // field comment on Server.db for the expected handler behaviour in that case.
+// cacheStore may be nil when Redis is not configured; in that case all cached
+// service decorators are bypassed and every request hits the database directly.
 // checkers is the list of health checkers executed by GET /health/ready; pass
 // nil (or an empty slice) when no dependency checks are needed (e.g. tests).
-func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger, bus events.Bus, checkers []health.Checker) *Server {
-	return &Server{db: db, cfg: cfg, log: log, bus: bus, checkers: checkers}
+func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger, bus events.Bus, cacheStore cache.Store, checkers []health.Checker) *Server {
+	return &Server{db: db, cfg: cfg, log: log, bus: bus, cache: cacheStore, checkers: checkers}
 }
 
 // Routes returns the fully configured http.Handler for the application.
@@ -180,6 +187,10 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/me", groupHandler.ListMyGroups)
 			r.Get("/{id}", groupHandler.GetByID)
 			r.Get("/{id}/members", groupHandler.ListMembers)
+			// Only the group owner may rotate the invite code. Ownership is
+			// enforced inside the service layer (not via RequireRole) because
+			// it is resource-scoped, not role-scoped.
+			r.Post("/{id}/invite-code/rotate", groupHandler.RotateInviteCode)
 		})
 	})
 
@@ -235,25 +246,27 @@ func (s *Server) wireSubscribers(
 	})
 }
 
-// buildHandlers constructs the service layer and returns the route handlers.
-// The provided repositories are reused from the caller's shared instances.
-// s.bus is passed to the services so they can publish domain events.
+// buildHandlers constructs the service layer (with optional cache decorators)
+// and returns the route handlers. The provided repositories are reused from
+// the caller's shared instances. s.bus is passed to services so they can
+// publish domain events. When s.cache is non-nil, list-heavy services are
+// wrapped with read-through / write-invalidation cache decorators.
 func (s *Server) buildHandlers(
 	userRepo repository.UserRepository,
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 	memberRepo repository.GroupMembershipRepository,
 ) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler) {
+	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
+
 	matchSvc := service.NewMatchService(matchRepo, s.bus, s.log)
+	if s.cache != nil {
+		matchSvc = service.NewCachedMatchService(matchSvc, s.cache, s.log)
+	}
+
 	predSvc := service.NewPredictionService(predRepo, matchRepo, s.bus, s.log)
-	quinielaSvc := service.NewQuinielaService(
-		repository.NewPostgresQuinielaRepository(s.db),
-		memberRepo,
-	)
-	memberSvc := service.NewGroupMembershipService(
-		repository.NewPostgresQuinielaRepository(s.db),
-		memberRepo,
-	)
+	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo)
 
 	return handler.NewMatchHandler(matchSvc, s.log),
 		handler.NewPredictionHandler(predSvc, s.log),
