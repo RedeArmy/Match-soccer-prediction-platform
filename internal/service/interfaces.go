@@ -60,8 +60,13 @@ type MatchScorer interface {
 }
 
 // Ranker computes leaderboard standings for a given Quiniela.
+//
+// GetLeaderboard returns entries sorted descending by TotalPoints. Only
+// active, paid members are included. Unscored predictions (nil points) are
+// excluded from the aggregation. If no scored predictions exist yet, members
+// appear with TotalPoints = 0 and are sorted arbitrarily.
 type Ranker interface {
-	GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.User, error)
+	GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.LeaderboardEntry, error)
 }
 
 // QuinielaService defines operations on the Quiniela entity.
@@ -74,6 +79,11 @@ type QuinielaService interface {
 	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
 	GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error)
 	GetByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
+	// RotateInviteCode generates a new cryptographically random invite code for
+	// the given quiniela and immediately invalidates the old one. ownerID is
+	// checked: only the quiniela owner may rotate the code. The updated quiniela
+	// (with the new code and reset expiry) is returned.
+	RotateInviteCode(ctx context.Context, quinielaID, ownerID int) (*domain.Quiniela, error)
 }
 
 // GroupMembershipService manages user membership in Quinielas.

@@ -185,6 +185,42 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// RotateInviteCode handles POST /api/v1/groups/{id}/invite-code/rotate.
+//
+// @Summary      Rotate invite code
+// @Description  Generates a new invite code for the group, immediately invalidating
+//
+//	the previous one. Only the group owner may perform this action.
+//
+// @Tags         groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Group ID"
+// @Success      200  {object}  handler.GroupResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not the group owner"
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/groups/{id}/invite-code/rotate [post]
+func (h *GroupHandler) RotateInviteCode(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	quiniela, err := h.quinielaSvc.RotateInviteCode(r.Context(), id, caller.ID)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, groupToResponse(quiniela))
+}
+
 // ListMyGroups handles GET /api/v1/groups/me.
 //
 // @Summary      List my groups

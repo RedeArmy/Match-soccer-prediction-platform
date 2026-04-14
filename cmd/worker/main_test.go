@@ -17,20 +17,26 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/health"
 )
 
+const (
+	checkerDB  = "db"
+	statusOK   = "ok"
+	statusErr  = "error"
+)
+
 // ── stub health checkers ──────────────────────────────────────────────────────
 
 type okChecker struct{ name string }
 
 func (c *okChecker) Name() string { return c.name }
 func (c *okChecker) Check(_ context.Context) health.Result {
-	return health.Result{Status: "ok", LatencyMS: 1}
+	return health.Result{Status: statusOK, LatencyMS: 1}
 }
 
 type failChecker struct{ name string }
 
 func (c *failChecker) Name() string { return c.name }
 func (c *failChecker) Check(_ context.Context) health.Result {
-	return health.Result{Status: "error", Error: "connection refused"}
+	return health.Result{Status: statusErr, Error: "connection refused"}
 }
 
 // ── handleLiveness ────────────────────────────────────────────────────────────
@@ -54,7 +60,7 @@ func TestHandleLiveness_ResponseBody(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body["status"] != "ok" {
+	if body["status"] != statusOK {
 		t.Errorf("expected status=ok, got %q", body["status"])
 	}
 	if body["service"] != "world-cup-quiniela-worker" {
@@ -75,7 +81,7 @@ func TestHandleLiveness_ContentTypeJSON(t *testing.T) {
 // ── handleReadiness ───────────────────────────────────────────────────────────
 
 func TestHandleReadiness_AllCheckersOK_Returns200(t *testing.T) {
-	checkers := []health.Checker{&okChecker{"db"}, &okChecker{driverRedis}}
+	checkers := []health.Checker{&okChecker{checkerDB}, &okChecker{driverRedis}}
 	h := handleReadiness(checkers, zap.NewNop())
 
 	req := httptest.NewRequest(http.MethodGet, pathHealthReady, nil)
@@ -88,7 +94,7 @@ func TestHandleReadiness_AllCheckersOK_Returns200(t *testing.T) {
 }
 
 func TestHandleReadiness_AllCheckersOK_BodyStatusOK(t *testing.T) {
-	checkers := []health.Checker{&okChecker{"db"}}
+	checkers := []health.Checker{&okChecker{checkerDB}}
 	h := handleReadiness(checkers, zap.NewNop())
 
 	req := httptest.NewRequest(http.MethodGet, pathHealthReady, nil)
@@ -99,16 +105,16 @@ func TestHandleReadiness_AllCheckersOK_BodyStatusOK(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Status != "ok" {
+	if resp.Status != statusOK {
 		t.Errorf("expected status=ok, got %q", resp.Status)
 	}
-	if resp.Checks["db"].Status != "ok" {
-		t.Errorf("expected db check=ok, got %q", resp.Checks["db"].Status)
+	if resp.Checks[checkerDB].Status != statusOK {
+		t.Errorf("expected db check=ok, got %q", resp.Checks[checkerDB].Status)
 	}
 }
 
 func TestHandleReadiness_CheckerFails_Returns503(t *testing.T) {
-	checkers := []health.Checker{&okChecker{"db"}, &failChecker{driverRedis}}
+	checkers := []health.Checker{&okChecker{checkerDB}, &failChecker{driverRedis}}
 	h := handleReadiness(checkers, zap.NewNop())
 
 	req := httptest.NewRequest(http.MethodGet, pathHealthReady, nil)
@@ -132,7 +138,7 @@ func TestHandleReadiness_CheckerFails_BodyStatusError(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Status != "error" {
+	if resp.Status != statusErr {
 		t.Errorf("expected status=error, got %q", resp.Status)
 	}
 }
@@ -159,7 +165,7 @@ func TestNewHealthServer_HasCorrectAddr(t *testing.T) {
 }
 
 func TestNewHealthServer_RegistersRoutes(t *testing.T) {
-	srv := newHealthServer("0", []health.Checker{&okChecker{"db"}}, zap.NewNop())
+	srv := newHealthServer("0", []health.Checker{&okChecker{checkerDB}}, zap.NewNop())
 
 	cases := []struct {
 		path string
@@ -245,7 +251,9 @@ func TestStartWorker_ImmediateShutdown_ReturnsNil(t *testing.T) {
 	bus := messaging.NewInMemoryBus(zap.NewNop())
 	scorer := &stubScorer{}
 
-	if err := startWorker(ctx, cfg, bus, scorer, nil, zap.NewNop()); err != nil {
+	// Pass nil Redis client: monitorDLQ exits immediately when rc is nil,
+	// keeping the test free of Redis dependencies.
+	if err := startWorker(ctx, cfg, bus, scorer, nil, nil, zap.NewNop()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -264,7 +272,7 @@ func TestStartWorker_SubscribesBeforeShutdown(t *testing.T) {
 	bus := messaging.NewInMemoryBus(log)
 	scorer := &stubScorer{}
 
-	if err := startWorker(ctx, cfg, bus, scorer, nil, log); err != nil {
+	if err := startWorker(ctx, cfg, bus, scorer, nil, nil, log); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

@@ -6,15 +6,16 @@ import (
 
 // GroupResponse is the JSON representation of a Quiniela (group).
 type GroupResponse struct {
-	ID         int    `json:"id"`
-	Name       string `json:"name"`
-	OwnerID    int    `json:"owner_id"`
-	InviteCode string `json:"invite_code"`
-	EntryFee   int    `json:"entry_fee"`
-	Currency   string `json:"currency"`
-	MaxMembers *int   `json:"max_members"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	ID                  int     `json:"id"`
+	Name                string  `json:"name"`
+	OwnerID             int     `json:"owner_id"`
+	InviteCode          string  `json:"invite_code"`
+	InviteCodeExpiresAt *string `json:"invite_code_expires_at"` // nil means never expires
+	EntryFee            int     `json:"entry_fee"`
+	Currency            string  `json:"currency"`
+	MaxMembers          *int    `json:"max_members"`
+	CreatedAt           string  `json:"created_at"`
+	UpdatedAt           string  `json:"updated_at"`
 }
 
 // MemberResponse is the JSON representation of a GroupMembership.
@@ -156,7 +157,7 @@ func predToResponse(p *domain.Prediction) PredictionResponse {
 }
 
 func groupToResponse(q *domain.Quiniela) GroupResponse {
-	return GroupResponse{
+	resp := GroupResponse{
 		ID:         q.ID,
 		Name:       q.Name,
 		OwnerID:    q.OwnerID,
@@ -167,6 +168,11 @@ func groupToResponse(q *domain.Quiniela) GroupResponse {
 		CreatedAt:  q.CreatedAt.Format(timeFormat),
 		UpdatedAt:  q.UpdatedAt.Format(timeFormat),
 	}
+	if q.InviteCodeExpiresAt != nil {
+		s := q.InviteCodeExpiresAt.Format(timeFormat)
+		resp.InviteCodeExpiresAt = &s
+	}
+	return resp
 }
 
 func memberToResponse(m *domain.GroupMembership) MemberResponse {

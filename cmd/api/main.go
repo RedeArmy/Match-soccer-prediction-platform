@@ -33,6 +33,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/api"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
@@ -118,10 +119,13 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	if db != nil {
 		checkers = append(checkers, health.NewDBChecker(db))
 	}
+
+	// The cache store is constructed once and shared between the health
+	// checker, the event bus (if redis driver), and the cached service
+	// decorators. A dedicated client is used for caching to avoid contention
+	// with the long-lived XREADGROUP connections of the event bus.
+	var cacheStore cache.Store
 	if cfg.Redis.Addr != "" {
-		// A dedicated client is used for health checks so that ping latency
-		// reflects the health-check connection path rather than a shared pool
-		// that may already be saturated by pub/sub or caching operations.
 		rc := redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Addr,
 			Password: cfg.Redis.Password,
@@ -129,13 +133,14 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		})
 		defer rc.Close() //nolint:errcheck
 		checkers = append(checkers, health.NewRedisChecker(rc))
+		cacheStore = cache.NewRedisStore(rc)
 	}
 
 	// The api.Server owns the routing table and receives all shared
 	// dependencies. Constructing it here — at the composition root —
 	// rather than inside a package-level init function makes every
 	// dependency explicit and eliminates hidden global state.
-	app := api.New(db, cfg, log, bus, checkers)
+	app := api.New(db, cfg, log, bus, cacheStore, checkers)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,

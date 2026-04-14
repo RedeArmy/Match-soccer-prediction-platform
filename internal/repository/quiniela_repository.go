@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -22,11 +23,15 @@ func NewPostgresQuinielaRepository(db *pgxpool.Pool) *PostgresQuinielaRepository
 	return &PostgresQuinielaRepository{db: db}
 }
 
-const quinielaColumns = "id, name, owner_id, invite_code, entry_fee, currency, max_members, created_at, updated_at, deleted_at"
+const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, created_at, updated_at, deleted_at"
 
 func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	q := &domain.Quiniela{}
-	err := row.Scan(&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.EntryFee, &q.Currency, &q.MaxMembers, &q.CreatedAt, &q.UpdatedAt, &q.DeletedAt)
+	err := row.Scan(
+		&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
+		&q.EntryFee, &q.Currency, &q.MaxMembers,
+		&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
+	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -45,9 +50,9 @@ func isUniqueViolation(err error) bool {
 
 func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quiniela) error {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO quinielas (name, owner_id, invite_code, entry_fee, currency, max_members)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+quinielaColumns,
-		q.Name, q.OwnerID, q.InviteCode, q.EntryFee, q.Currency, q.MaxMembers,
+		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+quinielaColumns,
+		q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency, q.MaxMembers,
 	)
 	result, err := scanQuiniela(row)
 	if err != nil {
@@ -62,16 +67,45 @@ func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quini
 
 func (r *PostgresQuinielaRepository) GetByID(ctx context.Context, id int) (*domain.Quiniela, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+quinielaColumns+` FROM quinielas WHERE id=$1 AND deleted_at IS NULL`, id,
+		`SELECT `+quinielaColumns+` FROM quinielas WHERE id=$1`+activeOnly, id,
 	)
 	return scanQuiniela(row)
 }
 
 func (r *PostgresQuinielaRepository) GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error) {
+	// The expiry check is enforced here at the persistence layer — not only in
+	// the service — so that any future caller of this method gets consistent
+	// behaviour without relying on the service to apply the guard. An expired
+	// code returns nil (not found) rather than an error, matching the nil-for-
+	// not-found convention used throughout the repository layer.
 	row := r.db.QueryRow(ctx,
-		`SELECT `+quinielaColumns+` FROM quinielas WHERE invite_code=$1 AND deleted_at IS NULL`, code,
+		`SELECT `+quinielaColumns+` FROM quinielas
+		 WHERE invite_code=$1`+activeOnly+`
+		   AND (invite_code_expires_at IS NULL OR invite_code_expires_at > NOW())`,
+		code,
 	)
 	return scanQuiniela(row)
+}
+
+// RotateInviteCode replaces the current invite code and expiry for the given
+// quiniela in a single UPDATE. It returns the updated Quiniela so callers can
+// surface the new code to the owner without an extra read.
+func (r *PostgresQuinielaRepository) RotateInviteCode(ctx context.Context, id int, newCode string, expiresAt *time.Time) (*domain.Quiniela, error) {
+	row := r.db.QueryRow(ctx,
+		`UPDATE quinielas
+		    SET invite_code=$1, invite_code_expires_at=$2, updated_at=NOW()
+		  WHERE id=$3`+activeOnly+`
+		  RETURNING `+quinielaColumns,
+		newCode, expiresAt, id,
+	)
+	result, err := scanQuiniela(row)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, apperrors.NotFound("quiniela not found")
+	}
+	return result, nil
 }
 
 func (r *PostgresQuinielaRepository) Update(ctx context.Context, q *domain.Quiniela) error {
@@ -95,7 +129,7 @@ func (r *PostgresQuinielaRepository) Update(ctx context.Context, q *domain.Quini
 
 func (r *PostgresQuinielaRepository) Delete(ctx context.Context, id int) error {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE quinielas SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id,
+		`UPDATE quinielas SET deleted_at=NOW() WHERE id=$1`+activeOnly, id,
 	)
 	if err != nil {
 		return apperrors.Internal(err)
@@ -108,7 +142,7 @@ func (r *PostgresQuinielaRepository) Delete(ctx context.Context, id int) error {
 
 func (r *PostgresQuinielaRepository) ListByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT `+quinielaColumns+` FROM quinielas WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC`, ownerID,
+		`SELECT `+quinielaColumns+` FROM quinielas WHERE owner_id=$1`+activeOnly+` ORDER BY created_at DESC`, ownerID,
 	)
 	if err != nil {
 		return nil, apperrors.Internal(err)
@@ -121,7 +155,11 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 	var quinielas []*domain.Quiniela
 	for rows.Next() {
 		q := &domain.Quiniela{}
-		if err := rows.Scan(&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.EntryFee, &q.Currency, &q.MaxMembers, &q.CreatedAt, &q.UpdatedAt, &q.DeletedAt); err != nil {
+		if err := rows.Scan(
+			&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
+			&q.EntryFee, &q.Currency, &q.MaxMembers,
+			&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
+		); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		quinielas = append(quinielas, q)

@@ -64,7 +64,7 @@ const (
 func newTestServer(t *testing.T) *api.Server {
 	t.Helper()
 	// Use InMemoryBus in tests: no external dependencies required.
-	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil)
+	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
 }
 
 // stubChecker is a test-only health.Checker whose Check result is fixed at
@@ -88,7 +88,7 @@ func errChecker(name, msg string) health.Checker {
 
 func newTestServerWithCheckers(t *testing.T, checkers []health.Checker) *api.Server {
 	t.Helper()
-	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), checkers)
+	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, checkers)
 }
 
 func TestHealthEndpoint_ReturnsOK(t *testing.T) {
@@ -192,7 +192,7 @@ func TestRoutes_DBNil_PredictionRoute_Returns503(t *testing.T) {
 // unreachable so the request returns 500, but a 404 would mean the route was
 // never registered.
 func TestRoutes_WithFakeDB_MatchRouteRegistered(t *testing.T) {
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
@@ -215,7 +215,7 @@ func TestWireSubscribers_MalformedPayload_DoesNotPanic(t *testing.T) {
 	defer func() { messaging.RetryBackoff = orig }()
 
 	bus := messaging.NewInMemoryBus(nil)
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil, nil)
 	srv.Routes() // registers wireSubscribers
 
 	env := events.Envelope{
@@ -236,7 +236,7 @@ func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
 	defer func() { messaging.RetryBackoff = orig }()
 
 	bus := messaging.NewInMemoryBus(nil)
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil, nil)
 	srv.Routes()
 
 	env := events.Envelope{
@@ -250,7 +250,7 @@ func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
 }
 
 func TestRoutes_WithFakeDB_PredictionRouteRegistered(t *testing.T) {
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions?user_id=1", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
