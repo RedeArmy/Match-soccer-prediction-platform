@@ -26,6 +26,7 @@ const (
 	groupsMePath     = "/groups/me"
 	groupsJoinPath   = "/groups/join"
 	groupMembersPath = "/groups/1/members"
+	groupRotatePath  = "/groups/1/invite-code/rotate"
 
 	clerkSubject = "user_clerk_abc"
 	errDBDown    = "db down"
@@ -64,6 +65,7 @@ func buildGroupRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
 	r.Get("/groups/me", h.ListMyGroups)
 	r.Get("/groups/{id}", h.GetByID)
 	r.Get("/groups/{id}/members", h.ListMembers)
+	r.Post("/groups/{id}/invite-code/rotate", h.RotateInviteCode)
 	return r
 }
 
@@ -156,6 +158,25 @@ func TestGroupCreate_ResponseBody_ContainsInviteCode(t *testing.T) {
 	}
 	if resp.InviteCode != q.InviteCode {
 		t.Errorf("expected invite_code %q, got %q", q.InviteCode, resp.InviteCode)
+	}
+}
+
+func TestGroupCreate_ResponseBody_ContainsInviteCodeExpiresAt_WhenSet(t *testing.T) {
+	q := fixedQuiniela()
+	exp := time.Now().Add(30 * 24 * time.Hour).UTC()
+	q.InviteCodeExpiresAt = &exp
+
+	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: q}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPost, groupsPath, bytes.NewBufferString(bodyCreateGroup))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	var resp handler.GroupResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.InviteCodeExpiresAt == nil {
+		t.Fatal("expected invite_code_expires_at to be set in response")
 	}
 }
 
@@ -410,5 +431,69 @@ func TestGroupListMembers_Returns500_OnServiceError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+// ── RotateInviteCode ──────────────────────────────────────────────────────────
+
+func TestGroupRotateInviteCode_Returns200(t *testing.T) {
+	q := fixedQuiniela()
+	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: q}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPost, groupRotatePath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, rec.Code)
+	}
+}
+
+func TestGroupRotateInviteCode_Returns401_WhenNoUser(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPost, groupRotatePath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouterNoUser(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, rec.Code)
+	}
+}
+
+func TestGroupRotateInviteCode_Returns403_WhenNotOwner(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{err: apperrors.Forbidden("only the group owner can rotate the invite code")},
+		&stubMemberSvc{},
+	)
+	req := httptest.NewRequest(http.MethodPost, groupRotatePath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", rec.Code)
+	}
+}
+
+func TestGroupRotateInviteCode_Returns404_WhenNotFound(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{err: apperrors.NotFound("quiniela 1 not found")},
+		&stubMemberSvc{},
+	)
+	req := httptest.NewRequest(http.MethodPost, groupRotatePath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestGroupRotateInviteCode_Returns422_InvalidID(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPost, "/groups/abc/invite-code/rotate", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
 	}
 }

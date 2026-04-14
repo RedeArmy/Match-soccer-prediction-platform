@@ -131,3 +131,47 @@ func TestGetLeaderboard_DatabaseError_PropagatesError(t *testing.T) {
 		t.Error("expected error from TotalPointsByQuiniela, got nil")
 	}
 }
+
+func TestGetLeaderboard_DeletedUser_SkippedSilently(t *testing.T) {
+	// pointsByUser has user IDs 1 and 2, but ListByIDs only returns user 2.
+	// User 1's entry must be skipped without error; the leaderboard has 1 entry.
+	q := &domain.Quiniela{ID: 1, Name: "Test"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{
+			1: 10, // user 1 has points but will not be returned by ListByIDs
+			2: 20,
+		},
+	}
+	// Only user 2 is returned — user 1 has been deleted.
+	userRepo := &stubUserRepo{users: []*domain.User{userB}}
+
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo)
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry (deleted user skipped), got %d", len(entries))
+	}
+	if entries[0].User.ID != 2 {
+		t.Errorf("expected entry for user 2, got user %d", entries[0].User.ID)
+	}
+}
+
+func TestGetLeaderboard_ListByIDsError_Propagated(t *testing.T) {
+	q := &domain.Quiniela{ID: 1}
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 10}, // non-empty so we reach ListByIDs
+	}
+	userRepo := &stubUserRepo{err: errors.New("db error")}
+
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo)
+
+	_, err := svc.GetLeaderboard(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error from ListByIDs, got nil")
+	}
+}
