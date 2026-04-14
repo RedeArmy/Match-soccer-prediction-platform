@@ -11,6 +11,8 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
+const cachedUnexpectedErrorFmt = "unexpected error: %v"
+
 // ── stubRanker ────────────────────────────────────────────────────────────────
 
 type stubRanker struct {
@@ -37,7 +39,7 @@ func TestCachedRankingService_GetLeaderboard_CacheHit_ReturnsWithoutCallingInner
 	svc := NewCachedRankingService(ranker, st, zap.NewNop())
 	got, err := svc.GetLeaderboard(context.Background(), 5)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(cachedUnexpectedErrorFmt, err)
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 entry from cache, got %d", len(got))
@@ -57,7 +59,7 @@ func TestCachedRankingService_GetLeaderboard_CacheMiss_CallsInnerAndSetsCache(t 
 	svc := NewCachedRankingService(ranker, st, zap.NewNop())
 	got, err := svc.GetLeaderboard(context.Background(), 7)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(cachedUnexpectedErrorFmt, err)
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 entry from inner, got %d", len(got))
@@ -77,7 +79,7 @@ func TestCachedRankingService_GetLeaderboard_EmptyResult_NotCached(t *testing.T)
 	svc := NewCachedRankingService(ranker, st, zap.NewNop())
 	got, err := svc.GetLeaderboard(context.Background(), 3)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(cachedUnexpectedErrorFmt, err)
 	}
 	if len(got) != 0 {
 		t.Errorf("expected empty result, got %d entries", len(got))
@@ -109,7 +111,7 @@ func TestCachedRankingService_GetLeaderboard_CacheGetError_FallsThroughToInner(t
 	svc := NewCachedRankingService(ranker, st, zap.NewNop())
 	got, err := svc.GetLeaderboard(context.Background(), 9)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(cachedUnexpectedErrorFmt, err)
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 entry from inner after cache error, got %d", len(got))
