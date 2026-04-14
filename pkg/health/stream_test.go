@@ -62,17 +62,22 @@ func TestIsNoGroupError_ShortString_ReturnsFalse(t *testing.T) {
 
 // ── DLQChecker ────────────────────────────────────────────────────────────────
 
+const (
+	testEventType = "match.finished"
+	testDLQ       = "dlq:match.finished"
+)
+
 func TestDLQChecker_Name_ContainsEventType(t *testing.T) {
 	_, rc := newTestRedis(t)
-	c := NewDLQChecker(rc, "match.finished")
-	if c.Name() != "dlq:match.finished" {
-		t.Errorf("expected name 'dlq:match.finished', got %q", c.Name())
+	c := NewDLQChecker(rc, testEventType)
+	if c.Name() != testDLQ {
+		t.Errorf("expected name %q, got %q", testDLQ, c.Name())
 	}
 }
 
 func TestDLQChecker_EmptyDLQ_ReturnsOK(t *testing.T) {
 	_, rc := newTestRedis(t)
-	c := NewDLQChecker(rc, "match.finished")
+	c := NewDLQChecker(rc, testEventType)
 
 	result := c.Check(context.Background())
 	if result.Status != "ok" {
@@ -82,10 +87,10 @@ func TestDLQChecker_EmptyDLQ_ReturnsOK(t *testing.T) {
 
 func TestDLQChecker_NonEmptyDLQ_ReturnsError(t *testing.T) {
 	mr, rc := newTestRedis(t)
-	mr.Lpush("dlq:match.finished", "event1")
-	mr.Lpush("dlq:match.finished", "event2")
+	mr.Lpush(testDLQ, "event1")
+	mr.Lpush(testDLQ, "event2")
 
-	c := NewDLQChecker(rc, "match.finished")
+	c := NewDLQChecker(rc, testEventType)
 	result := c.Check(context.Background())
 	if result.Status != "error" {
 		t.Errorf("expected status 'error' for non-empty DLQ, got %q", result.Status)
@@ -97,7 +102,7 @@ func TestDLQChecker_NonEmptyDLQ_ReturnsError(t *testing.T) {
 
 func TestDLQChecker_RedisError_ReturnsError(t *testing.T) {
 	rc := newDeadRedis(t)
-	c := NewDLQChecker(rc, "match.finished")
+	c := NewDLQChecker(rc, testEventType)
 	result := c.Check(context.Background())
 	if result.Status != "error" {
 		t.Errorf("expected status 'error' on Redis failure, got %q", result.Status)
