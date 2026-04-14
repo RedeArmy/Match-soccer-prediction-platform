@@ -9,6 +9,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const rankingUnexpectedErrorFmt = "unexpected error: %v"
+
 // stubUserRepo implements repository.UserRepository for service tests.
 type stubUserRepo struct {
 	user  *domain.User
@@ -70,7 +72,7 @@ func TestGetLeaderboard_NoActivePaidMembers_ReturnsNil(t *testing.T) {
 
 	entries, err := svc.GetLeaderboard(context.Background(), 1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
 	}
 	if entries != nil {
 		t.Errorf("expected nil for empty leaderboard, got %v", entries)
@@ -100,7 +102,7 @@ func TestGetLeaderboard_SortedByPoints(t *testing.T) {
 
 	entries, err := svc.GetLeaderboard(context.Background(), 1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
 	}
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 entries, got %d", len(entries))
@@ -151,7 +153,7 @@ func TestGetLeaderboard_DeletedUser_SkippedSilently(t *testing.T) {
 
 	entries, err := svc.GetLeaderboard(context.Background(), 1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry (deleted user skipped), got %d", len(entries))
