@@ -1233,3 +1233,206 @@ func TestGroupMembershipRepository_ListByUser_Empty(t *testing.T) {
 		t.Errorf("expected 0 groups, got %d", len(groups))
 	}
 }
+
+// ── UserRepository — ListByIDs ─────────────────────────────────────────────────
+
+func TestUserRepository_ListByIDs_ReturnsMatchingUsers(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	_ = seedUser(t) // u3 not requested
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	got, err := repo.ListByIDs(context.Background(), []int{u1.ID, u2.ID})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 users, got %d", len(got))
+	}
+}
+
+func TestUserRepository_ListByIDs_EmptySlice_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	got, err := repo.ListByIDs(context.Background(), []int{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for empty ids, got %v", got)
+	}
+}
+
+func TestUserRepository_ListByIDs_IgnoresDeletedUsers(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	userRepo := repository.NewPostgresUserRepository(testDB)
+
+	// Soft-delete u2 — it must not appear in ListByIDs results.
+	if err := userRepo.Delete(context.Background(), u2.ID); err != nil {
+		t.Fatalf("delete u2: %v", err)
+	}
+
+	got, err := userRepo.ListByIDs(context.Background(), []int{u1.ID, u2.ID})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected 1 active user, got %d", len(got))
+	}
+	if got[0].ID != u1.ID {
+		t.Errorf("expected user %d, got %d", u1.ID, got[0].ID)
+	}
+}
+
+// ── QuinielaRepository — RotateInviteCode ─────────────────────────────────────
+
+func TestQuinielaRepository_RotateInviteCode_UpdatesCode(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	newCode := "NEWCODE001"
+	exp := time.Now().Add(30 * 24 * time.Hour).UTC()
+	got, err := repo.RotateInviteCode(context.Background(), q.ID, newCode, &exp)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil quiniela after RotateInviteCode")
+	}
+	if got.InviteCode != newCode {
+		t.Errorf("invite code: got %q, want %q", got.InviteCode, newCode)
+	}
+	if got.InviteCodeExpiresAt == nil {
+		t.Fatal("expected InviteCodeExpiresAt to be set")
+	}
+}
+
+func TestQuinielaRepository_RotateInviteCode_NotFound_ReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	exp := time.Now().Add(time.Hour)
+	_, err := repo.RotateInviteCode(context.Background(), 99999, "NEWCODE002", &exp)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+// ── PredictionRepository — TotalPointsByQuiniela ──────────────────────────────
+
+func TestPredictionRepository_TotalPointsByQuiniela_ReturnsSumPerUser(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	q := seedQuiniela(t, u1.ID)
+
+	// Both users are active + paid members.
+	seedMembership(t, q.ID, u1.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, u2.ID, domain.MembershipActive, true)
+
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	// User 1: one prediction with 5 points.
+	p1 := &domain.Prediction{UserID: u1.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	if err := predRepo.Create(context.Background(), p1); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts1 := 5
+	p1.Points = &pts1
+	if err := predRepo.Update(context.Background(), p1); err != nil {
+		t.Fatalf("update prediction u1: %v", err)
+	}
+
+	// User 2: one prediction with 3 points.
+	p2 := &domain.Prediction{UserID: u2.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p2); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts2 := 3
+	p2.Points = &pts2
+	if err := predRepo.Update(context.Background(), p2); err != nil {
+		t.Fatalf("update prediction u2: %v", err)
+	}
+
+	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(totals) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(totals))
+	}
+	if totals[u1.ID] != 5 {
+		t.Errorf("user1 total: got %d, want 5", totals[u1.ID])
+	}
+	if totals[u2.ID] != 3 {
+		t.Errorf("user2 total: got %d, want 3", totals[u2.ID])
+	}
+}
+
+func TestPredictionRepository_TotalPointsByQuiniela_ExcludesUnpaidMembers(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	q := seedQuiniela(t, u1.ID)
+
+	// u1 is paid; u2 is not paid.
+	seedMembership(t, q.ID, u1.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, u2.ID, domain.MembershipActive, false)
+
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p1 := &domain.Prediction{UserID: u1.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p1); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 3
+	p1.Points = &pts
+	if err := predRepo.Update(context.Background(), p1); err != nil {
+		t.Fatalf("update prediction: %v", err)
+	}
+
+	p2 := &domain.Prediction{UserID: u2.ID, MatchID: m.ID, HomeScore: 0, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p2); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts2 := 2
+	p2.Points = &pts2
+	if err := predRepo.Update(context.Background(), p2); err != nil {
+		t.Fatalf("update prediction: %v", err)
+	}
+
+	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	// Only u1 (paid) should appear.
+	if len(totals) != 1 {
+		t.Fatalf("expected 1 entry (paid only), got %d", len(totals))
+	}
+	if _, ok := totals[u2.ID]; ok {
+		t.Error("unpaid user must not appear in leaderboard totals")
+	}
+}
+
+func TestPredictionRepository_TotalPointsByQuiniela_EmptyQuiniela_ReturnsEmptyMap(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(totals) != 0 {
+		t.Errorf("expected empty map for quiniela with no active paid members, got %v", totals)
+	}
+}

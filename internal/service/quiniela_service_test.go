@@ -168,3 +168,72 @@ func TestQuinielaService_GetByInviteCode_NotFound_ReturnsNotFound(t *testing.T) 
 		t.Errorf("expected not-found error, got %v", err)
 	}
 }
+
+// ── RotateInviteCode ──────────────────────────────────────────────────────────
+
+func TestQuinielaService_RotateInviteCode_Success_ReturnsUpdatedQuiniela(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 10, InviteCode: "OLDCODE123"}
+	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
+
+	got, err := svc.RotateInviteCode(context.Background(), 1, 10)
+	if err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil quiniela after RotateInviteCode")
+	}
+}
+
+func TestQuinielaService_RotateInviteCode_NotFound_ReturnsNotFound(t *testing.T) {
+	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: nil}, &stubMemberRepo{})
+
+	_, err := svc.RotateInviteCode(context.Background(), 99, 10)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for missing quiniela, got %v", err)
+	}
+}
+
+func TestQuinielaService_RotateInviteCode_WrongOwner_ReturnsForbidden(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, OwnerID: 10}
+	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
+
+	// ownerID=99 does not match q.OwnerID=10.
+	_, err := svc.RotateInviteCode(context.Background(), 1, 99)
+	if !errors.Is(err, apperrors.ErrForbidden) {
+		t.Errorf("expected ErrForbidden for non-owner caller, got %v", err)
+	}
+}
+
+// rotateErrRepo returns a valid quiniela from GetByID but an error from
+// RotateInviteCode, isolating the repo failure path inside the service.
+type rotateErrRepo struct {
+	quiniela  *domain.Quiniela
+	rotateErr error
+}
+
+func (r *rotateErrRepo) Create(_ context.Context, _ *domain.Quiniela) error { return nil }
+func (r *rotateErrRepo) GetByID(_ context.Context, _ int) (*domain.Quiniela, error) {
+	return r.quiniela, nil
+}
+func (r *rotateErrRepo) GetByInviteCode(_ context.Context, _ string) (*domain.Quiniela, error) {
+	return nil, nil
+}
+func (r *rotateErrRepo) Update(_ context.Context, _ *domain.Quiniela) error { return nil }
+func (r *rotateErrRepo) Delete(_ context.Context, _ int) error              { return nil }
+func (r *rotateErrRepo) ListByOwner(_ context.Context, _ int) ([]*domain.Quiniela, error) {
+	return nil, nil
+}
+func (r *rotateErrRepo) RotateInviteCode(_ context.Context, _ int, _ string, _ *time.Time) (*domain.Quiniela, error) {
+	return nil, r.rotateErr
+}
+
+func TestQuinielaService_RotateInviteCode_RepoError_Propagated(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, OwnerID: 10}
+	repo := &rotateErrRepo{quiniela: q, rotateErr: errors.New("db write failed")}
+	svc := NewQuinielaService(repo, &stubMemberRepo{})
+
+	_, err := svc.RotateInviteCode(context.Background(), 1, 10)
+	if err == nil {
+		t.Fatal("expected error from repo RotateInviteCode, got nil")
+	}
+}

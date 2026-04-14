@@ -28,6 +28,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/api"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
@@ -364,5 +365,33 @@ func TestReadinessEndpoint_ContentType_IsJSON(t *testing.T) {
 	ct := rec.Header().Get("Content-Type")
 	if ct != contentTypeJSON {
 		t.Errorf("expected Content-Type %q, got %q", contentTypeJSON, ct)
+	}
+}
+
+// ── non-nil cache ─────────────────────────────────────────────────────────────
+
+// noopCacheStore is a no-op cache.Store used to exercise the
+// "if s.cache != nil" branch in buildHandlers without a real Redis instance.
+type noopCacheStore struct{}
+
+func (noopCacheStore) Get(_ context.Context, _ string, _ interface{}) error {
+	return cache.ErrCacheMiss
+}
+func (noopCacheStore) Set(_ context.Context, _ string, _ interface{}, _ time.Duration) error {
+	return nil
+}
+func (noopCacheStore) Delete(_ context.Context, _ ...string) error { return nil }
+
+// TestRoutes_WithNonNilCache_MatchRouteRegistered verifies that Routes() builds
+// the full handler tree including cache decorators when a non-nil cache is
+// provided. A 404 would indicate the route was never registered.
+func TestRoutes_WithNonNilCache_MatchRouteRegistered(t *testing.T) {
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), noopCacheStore{}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusNotFound {
+		t.Errorf("expected route to be registered with non-nil cache, got 404")
 	}
 }
