@@ -12,6 +12,13 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
 
+const (
+	testValue       = "hello world"
+	fmtSetErr       = "Set: %v"
+	msgRedisFailErr = "expected error on Redis failure, got nil"
+	keyToDelete     = "to-delete"
+)
+
 // newTestStore starts a miniredis server and returns a RedisStore connected to
 // it together with the underlying miniredis handle for low-level manipulation.
 func newTestStore(t *testing.T) (*miniredis.Miniredis, *cache.RedisStore) {
@@ -44,15 +51,15 @@ func TestRedisStore_Get_MissingKey_ReturnsErrCacheMiss(t *testing.T) {
 func TestRedisStore_Get_ValidKey_DeserializesValue(t *testing.T) {
 	_, st := newTestStore(t)
 	// Seed via Set so the stored format matches exactly.
-	if err := st.Set(context.Background(), "mykey", "hello world", time.Minute); err != nil {
-		t.Fatalf("Set: %v", err)
+	if err := st.Set(context.Background(), "mykey", testValue, time.Minute); err != nil {
+		t.Fatalf(fmtSetErr, err)
 	}
 	var dest string
 	if err := st.Get(context.Background(), "mykey", &dest); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if dest != "hello world" {
-		t.Errorf("expected %q, got %q", "hello world", dest)
+	if dest != testValue {
+		t.Errorf("expected %q, got %q", testValue, dest)
 	}
 }
 
@@ -75,7 +82,7 @@ func TestRedisStore_Get_RedisError_ReturnsWrappedError(t *testing.T) {
 	var dest string
 	err := st.Get(context.Background(), "any-key", &dest)
 	if err == nil {
-		t.Fatal("expected error on Redis failure, got nil")
+		t.Fatal(msgRedisFailErr)
 	}
 	if errors.Is(err, cache.ErrCacheMiss) {
 		t.Error("Redis network error should not be returned as ErrCacheMiss")
@@ -92,7 +99,7 @@ func TestRedisStore_Set_StoresAndRetrievesStruct(t *testing.T) {
 	}
 	in := payload{ID: 7, Name: "Brazil"}
 	if err := st.Set(context.Background(), "payload-key", in, time.Minute); err != nil {
-		t.Fatalf("Set: %v", err)
+		t.Fatalf(fmtSetErr, err)
 	}
 	var out payload
 	if err := st.Get(context.Background(), "payload-key", &out); err != nil {
@@ -120,7 +127,7 @@ func TestRedisStore_Set_RedisError_ReturnsError(t *testing.T) {
 
 	err := st.Set(context.Background(), "key", "val", time.Minute)
 	if err == nil {
-		t.Fatal("expected error on Redis failure, got nil")
+		t.Fatal(msgRedisFailErr)
 	}
 }
 
@@ -128,14 +135,14 @@ func TestRedisStore_Set_RedisError_ReturnsError(t *testing.T) {
 
 func TestRedisStore_Delete_ExistingKey_RemovesIt(t *testing.T) {
 	_, st := newTestStore(t)
-	if err := st.Set(context.Background(), "to-delete", "value", time.Minute); err != nil {
-		t.Fatalf("Set: %v", err)
+	if err := st.Set(context.Background(), keyToDelete, "value", time.Minute); err != nil {
+		t.Fatalf(fmtSetErr, err)
 	}
-	if err := st.Delete(context.Background(), "to-delete"); err != nil {
+	if err := st.Delete(context.Background(), keyToDelete); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	var dest string
-	if err := st.Get(context.Background(), "to-delete", &dest); !errors.Is(err, cache.ErrCacheMiss) {
+	if err := st.Get(context.Background(), keyToDelete, &dest); !errors.Is(err, cache.ErrCacheMiss) {
 		t.Errorf("expected ErrCacheMiss after Delete, got %v", err)
 	}
 }
@@ -178,6 +185,6 @@ func TestRedisStore_Delete_RedisError_ReturnsError(t *testing.T) {
 
 	err := st.Delete(context.Background(), "key")
 	if err == nil {
-		t.Fatal("expected error on Redis failure, got nil")
+		t.Fatal(msgRedisFailErr)
 	}
 }

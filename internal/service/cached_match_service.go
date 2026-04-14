@@ -21,7 +21,8 @@ const matchCacheTTL = 5 * time.Minute
 // Cache keys for match list results. The keys must be invalidated by any
 // operation that mutates match state (create, start, update result).
 const (
-	cacheKeyMatchesAll = "matches:all"
+	cacheKeyMatchesAll        = "matches:all"
+	msgCacheGetFallingThrough = "cache get failed, falling through to db"
 )
 
 func cacheKeyMatchesByPhase(phase domain.MatchPhase) string {
@@ -58,7 +59,7 @@ func (s *cachedMatchService) ListMatches(ctx context.Context) ([]*domain.Match, 
 	if err := s.store.Get(ctx, cacheKeyMatchesAll, &cached); err == nil {
 		return cached, nil
 	} else if !errors.Is(err, cache.ErrCacheMiss) {
-		s.log.Warn("cache get failed, falling through to db", zap.String("key", cacheKeyMatchesAll), zap.Error(err))
+		s.log.Warn(msgCacheGetFallingThrough, zap.String("key", cacheKeyMatchesAll), zap.Error(err))
 	}
 
 	matches, err := s.inner.ListMatches(ctx)
@@ -77,7 +78,7 @@ func (s *cachedMatchService) ListMatchesByPhase(ctx context.Context, phase domai
 	if err := s.store.Get(ctx, key, &cached); err == nil {
 		return cached, nil
 	} else if !errors.Is(err, cache.ErrCacheMiss) {
-		s.log.Warn("cache get failed, falling through to db", zap.String("key", key), zap.Error(err))
+		s.log.Warn(msgCacheGetFallingThrough, zap.String("key", key), zap.Error(err))
 	}
 
 	matches, err := s.inner.ListMatchesByPhase(ctx, phase)
@@ -97,7 +98,7 @@ func (s *cachedMatchService) ListMatchesByStatus(ctx context.Context, status dom
 	if err := s.store.Get(ctx, key, &cached); err == nil {
 		return cached, nil
 	} else if !errors.Is(err, cache.ErrCacheMiss) {
-		s.log.Warn("cache get failed, falling through to db", zap.String("key", key), zap.Error(err))
+		s.log.Warn(msgCacheGetFallingThrough, zap.String("key", key), zap.Error(err))
 	}
 
 	matches, err := s.inner.ListMatchesByStatus(ctx, status)
