@@ -13,6 +13,14 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
 
+const (
+	fmtUnexpectedErr  = "unexpected error: %v"
+	fmtMatchFromCache = "expected 1 match from cache, got %d"
+	fmtInnerNotCalled = "inner should not be called on cache hit, called %d times"
+	fmtMatchFromInner = "expected 1 match from inner, got %d"
+	errDBMsg          = "db error"
+)
+
 // ── stubCacheStore ────────────────────────────────────────────────────────────
 
 // stubCacheStore is an in-memory cache.Store for service-layer unit tests.
@@ -110,13 +118,13 @@ func TestCachedMatchService_ListMatches_CacheHit_ReturnsWithoutCallingInner(t *t
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match from cache, got %d", len(got))
+		t.Errorf(fmtMatchFromCache, len(got))
 	}
 	if inner.called != 0 {
-		t.Errorf("inner should not be called on cache hit, called %d times", inner.called)
+		t.Errorf(fmtInnerNotCalled, inner.called)
 	}
 }
 
@@ -128,10 +136,10 @@ func TestCachedMatchService_ListMatches_CacheMiss_CallsInnerAndPopulatesCache(t 
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match from inner, got %d", len(got))
+		t.Errorf(fmtMatchFromInner, len(got))
 	}
 	if inner.called != 1 {
 		t.Errorf("expected inner to be called once, called %d times", inner.called)
@@ -150,7 +158,7 @@ func TestCachedMatchService_ListMatches_CacheGetError_FallsThroughToInner(t *tes
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 match from inner after cache error, got %d", len(got))
@@ -162,7 +170,7 @@ func TestCachedMatchService_ListMatches_CacheGetError_FallsThroughToInner(t *tes
 
 func TestCachedMatchService_ListMatches_InnerError_Propagated(t *testing.T) {
 	st := newStubCache()
-	inner := &stubInnerMatchSvc{err: errors.New("db error")}
+	inner := &stubInnerMatchSvc{err: errors.New(errDBMsg)}
 
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	_, err := svc.ListMatches(context.Background())
@@ -199,13 +207,13 @@ func TestCachedMatchService_ListMatchesByPhase_CacheHit_ReturnsWithoutCallingInn
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.ListMatchesByPhase(context.Background(), phase)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match from cache, got %d", len(got))
+		t.Errorf(fmtMatchFromCache, len(got))
 	}
 	if inner.called != 0 {
-		t.Errorf("inner should not be called on cache hit, called %d times", inner.called)
+		t.Errorf(fmtInnerNotCalled, inner.called)
 	}
 }
 
@@ -217,10 +225,10 @@ func TestCachedMatchService_ListMatchesByPhase_CacheMiss_CallsInner(t *testing.T
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.ListMatchesByPhase(context.Background(), phase)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match from inner, got %d", len(got))
+		t.Errorf(fmtMatchFromInner, len(got))
 	}
 	if inner.called != 1 {
 		t.Errorf("expected inner called once, called %d times", inner.called)
@@ -229,7 +237,7 @@ func TestCachedMatchService_ListMatchesByPhase_CacheMiss_CallsInner(t *testing.T
 
 func TestCachedMatchService_ListMatchesByPhase_InnerError_Propagated(t *testing.T) {
 	st := newStubCache()
-	inner := &stubInnerMatchSvc{err: errors.New("db error")}
+	inner := &stubInnerMatchSvc{err: errors.New(errDBMsg)}
 
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	_, err := svc.ListMatchesByPhase(context.Background(), domain.PhaseGroupStage)
@@ -250,13 +258,13 @@ func TestCachedMatchService_ListMatchesByStatus_CacheHit_ReturnsWithoutCallingIn
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.ListMatchesByStatus(context.Background(), status)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match from cache, got %d", len(got))
+		t.Errorf(fmtMatchFromCache, len(got))
 	}
 	if inner.called != 0 {
-		t.Errorf("inner should not be called on cache hit, called %d times", inner.called)
+		t.Errorf(fmtInnerNotCalled, inner.called)
 	}
 }
 
@@ -268,10 +276,10 @@ func TestCachedMatchService_ListMatchesByStatus_CacheMiss_CallsInner(t *testing.
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.ListMatchesByStatus(context.Background(), status)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 match from inner, got %d", len(got))
+		t.Errorf(fmtMatchFromInner, len(got))
 	}
 	if inner.called != 1 {
 		t.Errorf("expected inner called once, called %d times", inner.called)
@@ -287,7 +295,7 @@ func TestCachedMatchService_CreateMatch_Success_InvalidatesCache(t *testing.T) {
 
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	if err := svc.CreateMatch(context.Background(), m); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(st.deleted) == 0 {
 		t.Error("expected cache keys to be invalidated after CreateMatch")
@@ -296,7 +304,7 @@ func TestCachedMatchService_CreateMatch_Success_InvalidatesCache(t *testing.T) {
 
 func TestCachedMatchService_CreateMatch_InnerError_Propagated(t *testing.T) {
 	st := newStubCache()
-	inner := &stubInnerMatchSvc{err: errors.New("db error")}
+	inner := &stubInnerMatchSvc{err: errors.New(errDBMsg)}
 
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	err := svc.CreateMatch(context.Background(), &domain.Match{})
@@ -318,7 +326,7 @@ func TestCachedMatchService_UpdateResult_Success_InvalidatesCache(t *testing.T) 
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.UpdateResult(context.Background(), 1, 2, 1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if got == nil {
 		t.Fatal("expected non-nil match from UpdateResult")
@@ -349,7 +357,7 @@ func TestCachedMatchService_StartMatch_Success_InvalidatesCache(t *testing.T) {
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.StartMatch(context.Background(), 1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if got == nil {
 		t.Fatal("expected non-nil match from StartMatch")
@@ -380,7 +388,7 @@ func TestCachedMatchService_GetMatch_DelegatesDirectlyToInner(t *testing.T) {
 	svc := NewCachedMatchService(inner, st, zap.NewNop())
 	got, err := svc.GetMatch(context.Background(), 42)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if got == nil || got.ID != 42 {
 		t.Errorf("expected match ID 42, got %v", got)

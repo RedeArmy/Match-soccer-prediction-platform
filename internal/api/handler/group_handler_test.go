@@ -28,6 +28,9 @@ const (
 	groupMembersPath = "/groups/1/members"
 	groupRotatePath  = "/groups/1/invite-code/rotate"
 
+	fmtExpect404  = "expected 404, got %d"
+	fmtDecodeFail = "decode: %v"
+
 	clerkSubject = "user_clerk_abc"
 	errDBDown    = "db down"
 
@@ -154,7 +157,7 @@ func TestGroupCreate_ResponseBody_ContainsInviteCode(t *testing.T) {
 
 	var resp handler.GroupResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatalf(fmtDecodeFail, err)
 	}
 	if resp.InviteCode != q.InviteCode {
 		t.Errorf("expected invite_code %q, got %q", q.InviteCode, resp.InviteCode)
@@ -173,7 +176,7 @@ func TestGroupCreate_ResponseBody_ContainsInviteCodeExpiresAt_WhenSet(t *testing
 
 	var resp handler.GroupResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatalf(fmtDecodeFail, err)
 	}
 	if resp.InviteCodeExpiresAt == nil {
 		t.Fatal("expected invite_code_expires_at to be set in response")
@@ -217,7 +220,7 @@ func TestGroupGetByID_Returns404_WhenNotFound(t *testing.T) {
 	testGroupRouter(h).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", rec.Code)
+		t.Errorf(fmtExpect404, rec.Code)
 	}
 }
 
@@ -273,7 +276,7 @@ func TestGroupJoin_Returns404_WhenCodeNotFound(t *testing.T) {
 	testGroupRouter(h).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", rec.Code)
+		t.Errorf(fmtExpect404, rec.Code)
 	}
 }
 
@@ -304,7 +307,7 @@ func TestGroupListMembers_ReturnsJSONArray(t *testing.T) {
 
 	var out []handler.MemberResponse
 	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatalf(fmtDecodeFail, err)
 	}
 	if len(out) != 2 {
 		t.Errorf("expected 2 members, got %d", len(out))
@@ -483,7 +486,7 @@ func TestGroupRotateInviteCode_Returns404_WhenNotFound(t *testing.T) {
 	testGroupRouter(h).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", rec.Code)
+		t.Errorf(fmtExpect404, rec.Code)
 	}
 }
 

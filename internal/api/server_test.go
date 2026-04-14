@@ -57,6 +57,7 @@ const (
 	statusOK             = "ok"
 	statusError          = "error"
 	errConnectionRefused = "connection refused"
+	pathMatches          = "/api/v1/matches"
 )
 
 // newTestServer constructs a Server with a nil database pool and a
@@ -166,7 +167,7 @@ func TestUnknownRoute_Returns404(t *testing.T) {
 
 func TestRoutes_DBNil_MatchRoute_Returns503(t *testing.T) {
 	h := newTestServer(t).Routes()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -194,7 +195,7 @@ func TestRoutes_DBNil_PredictionRoute_Returns503(t *testing.T) {
 // never registered.
 func TestRoutes_WithFakeDB_MatchRouteRegistered(t *testing.T) {
 	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 
@@ -387,7 +388,7 @@ func (noopCacheStore) Delete(_ context.Context, _ ...string) error { return nil 
 // provided. A 404 would indicate the route was never registered.
 func TestRoutes_WithNonNilCache_MatchRouteRegistered(t *testing.T) {
 	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), noopCacheStore{}, nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 

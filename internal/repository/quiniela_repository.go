@@ -25,6 +25,8 @@ func NewPostgresQuinielaRepository(db *pgxpool.Pool) *PostgresQuinielaRepository
 
 const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, created_at, updated_at, deleted_at"
 
+const msgQuinielaNotFound = "quiniela not found"
+
 func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	q := &domain.Quiniela{}
 	err := row.Scan(
@@ -103,7 +105,7 @@ func (r *PostgresQuinielaRepository) RotateInviteCode(ctx context.Context, id in
 		return nil, err
 	}
 	if result == nil {
-		return nil, apperrors.NotFound("quiniela not found")
+		return nil, apperrors.NotFound(msgQuinielaNotFound)
 	}
 	return result, nil
 }
@@ -121,7 +123,7 @@ func (r *PostgresQuinielaRepository) Update(ctx context.Context, q *domain.Quini
 		return err
 	}
 	if result == nil {
-		return apperrors.NotFound("quiniela not found")
+		return apperrors.NotFound(msgQuinielaNotFound)
 	}
 	*q = *result
 	return nil
@@ -135,7 +137,7 @@ func (r *PostgresQuinielaRepository) Delete(ctx context.Context, id int) error {
 		return apperrors.Internal(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("quiniela not found")
+		return apperrors.NotFound(msgQuinielaNotFound)
 	}
 	return nil
 }
