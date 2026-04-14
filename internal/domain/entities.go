@@ -183,17 +183,36 @@ type Prediction struct {
 // EntryFee and Currency support future payment-tracking workflows; they
 // default to 0 / "MXN" and are never nil in a hydrated struct.
 // MaxMembers is nil when the group has no size cap.
+//
+// InviteCodeExpiresAt limits the lifetime of the current InviteCode. A nil
+// value means the code never expires. When non-nil and in the past, the code
+// is considered invalid; callers must request a rotation via RotateInviteCode.
+// Setting an expiry prevents indefinite access when an invite link leaks.
 type Quiniela struct {
-	ID         int
-	Name       string
-	OwnerID    int
-	InviteCode string
-	EntryFee   int
-	Currency   string
-	MaxMembers *int
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	DeletedAt  *time.Time // nil for active groups; set when the record is soft-deleted
+	ID                  int
+	Name                string
+	OwnerID             int
+	InviteCode          string
+	InviteCodeExpiresAt *time.Time // nil = never expires
+	EntryFee            int
+	Currency            string
+	MaxMembers          *int
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	DeletedAt           *time.Time // nil for active groups; set when the record is soft-deleted
+}
+
+// LeaderboardEntry pairs a quiniela participant with their aggregated score.
+// It is a read-only projection used exclusively by the ranking service and the
+// leaderboard API response; it is never persisted to the database.
+//
+// Rank is 1-based and assigned after sorting descending by TotalPoints.
+// Two entries with equal TotalPoints receive the same rank (standard
+// competition ranking), and the next rank is skipped accordingly.
+type LeaderboardEntry struct {
+	User        *User
+	TotalPoints int
+	Rank        int
 }
 
 // MembershipStatus tracks the lifecycle of a user's membership in a Quiniela.

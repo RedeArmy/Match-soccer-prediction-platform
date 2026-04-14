@@ -60,6 +60,9 @@ definitions:
         type: integer
       invite_code:
         type: string
+      invite_code_expires_at:
+        description: nil means never expires
+        type: string
       max_members:
         type: integer
       name:
@@ -281,6 +284,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Get a group
+      tags:
+      - groups
+  /api/v1/groups/{id}/invite-code/rotate:
+    post:
+      description: Generates a new invite code for the group, immediately invalidating
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.GroupResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not the group owner
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rotate invite code
       tags:
       - groups
   /api/v1/groups/{id}/members:

@@ -36,7 +36,7 @@ func do(router http.Handler, method, path, body string) *httptest.ResponseRecord
 		bodyReader = strings.NewReader("")
 	}
 	req := httptest.NewRequest(method, path, bodyReader)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerContentType, contentTypeJSON)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	return w

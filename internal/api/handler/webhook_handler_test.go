@@ -19,15 +19,19 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
-// testWebhookSecret is a well-formed whsec_ value used in signature tests.
-// Decoded bytes = "test-secret-key". Not a real credential.
-const testWebhookSecret = "whsec_dGVzdC1zZWNyZXQta2V5" // NOSONAR
+const (
+	// testWebhookSecret is a well-formed whsec_ value used in signature tests.
+	// Decoded bytes = "test-secret-key". Not a real credential.
+	testWebhookSecret = "whsec_dGVzdC1zZWNyZXQta2V5" // NOSONAR
+	// testMsgID is the Svix message-id header value used across all signature tests.
+	testMsgID = "msg_test_01"
+)
 
 // svixRequest builds a request with Svix HMAC-SHA256 headers signed against
 // secret using the provided timestamp.
 func svixRequest(t *testing.T, body, secret string, ts time.Time) *http.Request {
 	t.Helper()
-	msgID := "msg_test_01"
+	msgID := testMsgID
 	tsStr := fmt.Sprintf("%d", ts.Unix())
 
 	secretBase64 := strings.TrimPrefix(secret, "whsec_")
@@ -163,7 +167,7 @@ func TestWebhook_WithSecret_MissingHeaders_Returns400(t *testing.T) {
 func TestWebhook_WithSecret_WrongSignature_Returns400(t *testing.T) {
 	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
 	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
-	req.Header.Set(headerSvixID, "msg_test_01")
+	req.Header.Set(headerSvixID, testMsgID)
 	req.Header.Set(headerSvixTimestamp, fmt.Sprintf("%d", time.Now().Unix()))
 	req.Header.Set(headerSvixSignature, "v1,invalidsignature==")
 	w := httptest.NewRecorder()
@@ -186,7 +190,7 @@ func TestWebhook_WithSecret_OldTimestamp_Returns400(t *testing.T) {
 func TestWebhook_WithSecret_InvalidBase64Secret_Returns400(t *testing.T) {
 	h := handler.NewWebhookHandler(&stubUserRepo{}, "whsec_!!!notbase64!!!", zap.NewNop())
 	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
-	req.Header.Set(headerSvixID, "msg_test_01")
+	req.Header.Set(headerSvixID, testMsgID)
 	req.Header.Set(headerSvixTimestamp, fmt.Sprintf("%d", time.Now().Unix()))
 	req.Header.Set(headerSvixSignature, "v1,anysignature==")
 	w := httptest.NewRecorder()
@@ -199,7 +203,7 @@ func TestWebhook_WithSecret_InvalidBase64Secret_Returns400(t *testing.T) {
 func TestWebhook_WithSecret_InvalidTimestampFormat_Returns400(t *testing.T) {
 	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
 	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
-	req.Header.Set(headerSvixID, "msg_test_01")
+	req.Header.Set(headerSvixID, testMsgID)
 	req.Header.Set(headerSvixTimestamp, "not-a-number")
 	req.Header.Set(headerSvixSignature, "v1,anysignature==")
 	w := httptest.NewRecorder()
@@ -224,7 +228,12 @@ func (r *createErrRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.
 }
 func (r *createErrRepo) Update(_ context.Context, _ *domain.User) error { return nil }
 func (r *createErrRepo) Delete(_ context.Context, _ int) error          { return nil }
-func (r *createErrRepo) List(_ context.Context) ([]*domain.User, error) { return nil, nil }
+func (r *createErrRepo) List(_ context.Context) ([]*domain.User, error) {
+	return nil, nil
+}
+func (r *createErrRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return nil, nil
+}
 
 // updateErrRepo returns an existing user from GetByClerkSubject and errors
 // from Update, isolating the Update error path in upsertUser.
@@ -242,4 +251,9 @@ func (r *updateErrRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.
 }
 func (r *updateErrRepo) Update(_ context.Context, _ *domain.User) error { return r.updateErr }
 func (r *updateErrRepo) Delete(_ context.Context, _ int) error          { return nil }
-func (r *updateErrRepo) List(_ context.Context) ([]*domain.User, error) { return nil, nil }
+func (r *updateErrRepo) List(_ context.Context) ([]*domain.User, error) {
+	return nil, nil
+}
+func (r *updateErrRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return nil, nil
+}

@@ -28,6 +28,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/api"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
@@ -56,6 +57,7 @@ const (
 	statusOK             = "ok"
 	statusError          = "error"
 	errConnectionRefused = "connection refused"
+	pathMatches          = "/api/v1/matches"
 )
 
 // newTestServer constructs a Server with a nil database pool and a
@@ -64,7 +66,7 @@ const (
 func newTestServer(t *testing.T) *api.Server {
 	t.Helper()
 	// Use InMemoryBus in tests: no external dependencies required.
-	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil)
+	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
 }
 
 // stubChecker is a test-only health.Checker whose Check result is fixed at
@@ -88,7 +90,7 @@ func errChecker(name, msg string) health.Checker {
 
 func newTestServerWithCheckers(t *testing.T, checkers []health.Checker) *api.Server {
 	t.Helper()
-	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), checkers)
+	return api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, checkers)
 }
 
 func TestHealthEndpoint_ReturnsOK(t *testing.T) {
@@ -165,7 +167,7 @@ func TestUnknownRoute_Returns404(t *testing.T) {
 
 func TestRoutes_DBNil_MatchRoute_Returns503(t *testing.T) {
 	h := newTestServer(t).Routes()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -192,8 +194,8 @@ func TestRoutes_DBNil_PredictionRoute_Returns503(t *testing.T) {
 // unreachable so the request returns 500, but a 404 would mean the route was
 // never registered.
 func TestRoutes_WithFakeDB_MatchRouteRegistered(t *testing.T) {
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
+	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 
@@ -215,7 +217,7 @@ func TestWireSubscribers_MalformedPayload_DoesNotPanic(t *testing.T) {
 	defer func() { messaging.RetryBackoff = orig }()
 
 	bus := messaging.NewInMemoryBus(nil)
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil, nil)
 	srv.Routes() // registers wireSubscribers
 
 	env := events.Envelope{
@@ -236,7 +238,7 @@ func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
 	defer func() { messaging.RetryBackoff = orig }()
 
 	bus := messaging.NewInMemoryBus(nil)
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil, nil)
 	srv.Routes()
 
 	env := events.Envelope{
@@ -250,7 +252,7 @@ func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
 }
 
 func TestRoutes_WithFakeDB_PredictionRouteRegistered(t *testing.T) {
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil)
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions?user_id=1", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
@@ -364,5 +366,33 @@ func TestReadinessEndpoint_ContentType_IsJSON(t *testing.T) {
 	ct := rec.Header().Get("Content-Type")
 	if ct != contentTypeJSON {
 		t.Errorf("expected Content-Type %q, got %q", contentTypeJSON, ct)
+	}
+}
+
+// ── non-nil cache ─────────────────────────────────────────────────────────────
+
+// noopCacheStore is a no-op cache.Store used to exercise the
+// "if s.cache != nil" branch in buildHandlers without a real Redis instance.
+type noopCacheStore struct{}
+
+func (noopCacheStore) Get(_ context.Context, _ string, _ interface{}) error {
+	return cache.ErrCacheMiss
+}
+func (noopCacheStore) Set(_ context.Context, _ string, _ interface{}, _ time.Duration) error {
+	return nil
+}
+func (noopCacheStore) Delete(_ context.Context, _ ...string) error { return nil }
+
+// TestRoutes_WithNonNilCache_MatchRouteRegistered verifies that Routes() builds
+// the full handler tree including cache decorators when a non-nil cache is
+// provided. A 404 would indicate the route was never registered.
+func TestRoutes_WithNonNilCache_MatchRouteRegistered(t *testing.T) {
+	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), noopCacheStore{}, nil)
+	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusNotFound {
+		t.Errorf("expected route to be registered with non-nil cache, got 404")
 	}
 }
