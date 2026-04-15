@@ -2,10 +2,18 @@
 // quiniela application.
 //
 // The worker consumes domain events from the Redis Streams event bus and
-// reacts to them asynchronously. Its primary responsibility today is scoring:
-// when the API server publishes a MatchFinished event after an admin confirms
-// a result, the worker calculates points for every prediction on that match
-// and persists them to the database.
+// reacts to them asynchronously. It handles two event types:
+//
+//   - EventMatchStarted: emitted when an admin transitions a match to Live.
+//     The handler emits a structured audit log entry confirming that the
+//     prediction window is now closed. Prediction enforcement itself is
+//     synchronous in PredictionService; this handler exists for observability.
+//
+//   - EventMatchFinished: emitted when an admin confirms a match result.
+//     The handler calls ScoringService to calculate and persist points for
+//     every prediction on that match. On transient failure the bus retries
+//     and, if all attempts are exhausted, routes the event to the dead-letter
+//     queue for manual replay.
 //
 // Running scoring in the worker rather than inside the API server prevents
 // background CPU work from competing with HTTP handlers for goroutines and
@@ -28,6 +36,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
@@ -124,24 +133,34 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	})
 	defer rc.Close() //nolint:errcheck
 
-	// Register DLQ and stream-pending checkers for every event type the worker
-	// handles. This surfaces both stuck dead-letter entries and worker lag
-	// (growing pending-entry list) in the /health/ready endpoint, making them
-	// visible to monitoring systems without requiring a separate query.
-	checkers := []health.Checker{
-		health.NewDBChecker(db),
-		health.NewRedisChecker(rc),
-		health.NewDLQChecker(rc, string(events.EventMatchFinished)),
-		health.NewStreamPendingChecker(rc, "stream:"+string(events.EventMatchFinished), "quiniela-workers"),
-	}
-
-	return startWorker(ctx, cfg, bus, scorer, rc, checkers, log)
+	return startWorker(ctx, cfg, bus, scorer, rc, buildHealthCheckers(db, rc), log)
 }
 
 // startWorker wires event subscribers, starts the health HTTP server, starts
 // the DLQ monitoring goroutine, and blocks until ctx is cancelled (i.e. until
 // an OS signal is received).
 //
+// workerConsumerGroup is the Redis Streams consumer group name used by this
+// worker process. Both the event bus and the stream-pending health checker
+// must reference the same name to correctly report consumer lag.
+const workerConsumerGroup = "quiniela-workers"
+
+// buildHealthCheckers constructs the full set of readiness checkers for the
+// worker process. Extracting this into its own function keeps run() readable
+// and makes the checker list independently testable without needing a live
+// database or Redis connection — the constructors are pure and only perform
+// I/O when Check() is called.
+func buildHealthCheckers(db *pgxpool.Pool, rc *redis.Client) []health.Checker {
+	return []health.Checker{
+		health.NewDBChecker(db),
+		health.NewRedisChecker(rc),
+		health.NewDLQChecker(rc, string(events.EventMatchStarted)),
+		health.NewDLQChecker(rc, string(events.EventMatchFinished)),
+		health.NewStreamPendingChecker(rc, "stream:"+string(events.EventMatchStarted), workerConsumerGroup),
+		health.NewStreamPendingChecker(rc, "stream:"+string(events.EventMatchFinished), workerConsumerGroup),
+	}
+}
+
 // All parameters are already constructed so this function has no I/O of its
 // own. This makes it the boundary between infrastructure setup (run) and
 // lifecycle management — and the part that can be exercised in unit tests
@@ -155,6 +174,9 @@ func startWorker(
 	checkers []health.Checker,
 	log *zap.Logger,
 ) error {
+	bus.Subscribe(events.EventMatchStarted, newMatchStartedHandler(log))
+	log.Sugar().Info("worker: subscribed to MatchStarted events")
+
 	bus.Subscribe(events.EventMatchFinished, newMatchFinishedHandler(scorer, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
@@ -202,7 +224,7 @@ func monitorDLQ(ctx context.Context, rc *redis.Client, log *zap.Logger) {
 	defer ticker.Stop()
 
 	// The event types whose DLQ keys this worker is responsible for.
-	monitoredEvents := []events.EventType{events.EventMatchFinished}
+	monitoredEvents := []events.EventType{events.EventMatchStarted, events.EventMatchFinished}
 
 	for {
 		select {

@@ -8,7 +8,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
-	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -17,7 +16,6 @@ import (
 type predictionService struct {
 	predRepo  repository.PredictionRepository
 	matchRepo repository.MatchRepository
-	publisher events.Publisher
 	log       *zap.Logger
 }
 
@@ -25,21 +23,28 @@ type predictionService struct {
 func NewPredictionService(
 	predRepo repository.PredictionRepository,
 	matchRepo repository.MatchRepository,
-	publisher events.Publisher,
 	log *zap.Logger,
 ) PredictionService {
 	return &predictionService{
 		predRepo:  predRepo,
 		matchRepo: matchRepo,
-		publisher: publisher,
 		log:       log,
 	}
 }
 
 // Submit validates and persists a new prediction.
 //
-// It enforces uniqueness (one prediction per user per match) and deadline rules
-// before creating the record. A PredictionMade event is emitted on success.
+// Two independent guards prevent predictions on a closed match:
+//   - Time-based: ValidatePrediction rejects submissions after KickoffAt minus
+//     PredictionDeadlineOffset (5 minutes). This covers the common case where
+//     the match has not been explicitly started yet.
+//   - Status-based: a match in Live or Finished status is rejected regardless
+//     of the scheduled kickoff time, closing the race window that exists when
+//     an admin calls StartMatch before the time-based deadline expires.
+//
+// A uniqueness check (one prediction per user per match) is enforced before
+// the INSERT so that callers receive a Conflict error rather than a database
+// unique-constraint violation.
 func (s *predictionService) Submit(ctx context.Context, prediction *domain.Prediction) error {
 	match, err := s.matchRepo.GetByID(ctx, prediction.MatchID)
 	if err != nil {
@@ -47,6 +52,9 @@ func (s *predictionService) Submit(ctx context.Context, prediction *domain.Predi
 	}
 	if match == nil {
 		return apperrors.NotFound(fmt.Sprintf("match %d not found", prediction.MatchID))
+	}
+	if match.Status != domain.MatchStatusScheduled {
+		return apperrors.Validation("cannot predict on a match that has already started")
 	}
 	if err := domain.ValidatePrediction(prediction, match.KickoffAt, time.Now().UTC()); err != nil {
 		return err
@@ -58,23 +66,7 @@ func (s *predictionService) Submit(ctx context.Context, prediction *domain.Predi
 	if existing != nil {
 		return apperrors.Conflict("a prediction for this match has already been submitted")
 	}
-	if err := s.predRepo.Create(ctx, prediction); err != nil {
-		return err
-	}
-	if err := s.publisher.Publish(ctx, events.Envelope{
-		Type:       events.EventPredictionMade,
-		OccurredAt: time.Now().UTC(),
-		Payload: events.PredictionMade{
-			PredictionID: prediction.ID,
-			UserID:       prediction.UserID,
-			MatchID:      prediction.MatchID,
-			HomeScore:    prediction.HomeScore,
-			AwayScore:    prediction.AwayScore,
-		},
-	}); err != nil {
-		s.log.Error("failed to publish PredictionMade event", zap.Int("prediction_id", prediction.ID), zap.Error(err))
-	}
-	return nil
+	return s.predRepo.Create(ctx, prediction)
 }
 
 // Update modifies the scores on an existing prediction subject to the same
@@ -96,6 +88,9 @@ func (s *predictionService) Update(ctx context.Context, callerUserID, id int, ho
 	}
 	if match == nil {
 		return nil, apperrors.NotFound(fmt.Sprintf("match %d not found", pred.MatchID))
+	}
+	if match.Status != domain.MatchStatusScheduled {
+		return nil, apperrors.Validation("cannot modify a prediction for a match that has already started")
 	}
 	updated := &domain.Prediction{
 		ID:        pred.ID,
