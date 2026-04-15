@@ -48,3 +48,18 @@ const PredictionDeadlineOffset = 5 * time.Minute
 // group always has at least 1. The value must stay consistent with the DEFAULT
 // clause in migration 000023_add_prize_threshold_to_quinielas.up.sql.
 const DefaultPrizeThreshold = 3
+
+// AllMatchPhases is the ordered list of every tournament phase defined in the
+// MatchPhase type. It is the single source of truth for any code that must
+// iterate over all phases — for example, cache invalidation, report generation,
+// or test matrix construction. The slice is ordered by tournament progression;
+// do not reorder it without updating dependent consumers.
+var AllMatchPhases = [...]MatchPhase{
+	PhaseGroupStage,
+	PhaseRoundOf32,
+	PhaseRoundOf16,
+	PhaseQuarterFinal,
+	PhaseSemiFinal,
+	PhaseThirdPlace,
+	PhaseFinal,
+}

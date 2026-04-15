@@ -279,6 +279,9 @@ func (r *failOnUpdateRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[
 func (r *failOnUpdateRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
 	return nil, nil
 }
+func (r *failOnUpdateRepo) ListByUserAndQuiniela(_ context.Context, _, _ int) ([]*domain.Prediction, error) {
+	return nil, nil
+}
 
 // ── TestGoalDiff verifies the absolute-value goal-margin helper.
 func TestGoalDiff(t *testing.T) {

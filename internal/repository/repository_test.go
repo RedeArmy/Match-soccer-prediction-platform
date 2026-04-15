@@ -1631,6 +1631,87 @@ func TestPredictionRepository_TotalPointsByQuinielaAndPhase_CrossPhaseIsolation(
 	}
 }
 
+// TestPredictionRepository_ListByUserAndQuiniela_ActiveMember_ReturnsPredictions
+// verifies that an active member's predictions are returned when queried by
+// user + quiniela.
+func TestPredictionRepository_ListByUserAndQuiniela_ActiveMember_ReturnsPredictions(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	preds, err := predRepo.ListByUserAndQuiniela(context.Background(), u.ID, q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(preds) != 1 {
+		t.Fatalf("expected 1 prediction, got %d", len(preds))
+	}
+	if preds[0].UserID != u.ID {
+		t.Errorf("expected user %d, got %d", u.ID, preds[0].UserID)
+	}
+	if preds[0].HomeScore != 2 || preds[0].AwayScore != 1 {
+		t.Errorf("expected scores 2-1, got %d-%d", preds[0].HomeScore, preds[0].AwayScore)
+	}
+}
+
+// TestPredictionRepository_ListByUserAndQuiniela_NonMember_ReturnsEmpty verifies
+// that a user who has no membership record for the quiniela receives an empty
+// slice (not an error).
+func TestPredictionRepository_ListByUserAndQuiniela_NonMember_ReturnsEmpty(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	// Deliberately do NOT seed a membership for u in q.
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	preds, err := predRepo.ListByUserAndQuiniela(context.Background(), u.ID, q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(preds) != 0 {
+		t.Errorf("expected empty slice for non-member, got %d predictions", len(preds))
+	}
+}
+
+// TestPredictionRepository_ListByUserAndQuiniela_InactiveMember_ReturnsEmpty
+// verifies that the status = 'active' gate is enforced: a member whose
+// membership status is not 'active' must not receive results.
+func TestPredictionRepository_ListByUserAndQuiniela_InactiveMember_ReturnsEmpty(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipLeft, false)
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 0, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	preds, err := predRepo.ListByUserAndQuiniela(context.Background(), u.ID, q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(preds) != 0 {
+		t.Errorf("expected empty slice for inactive member, got %d predictions", len(preds))
+	}
+}
+
 // TestPredictionRepository_UpdateManyPoints_LargeBatch verifies that the
 // UNNEST bulk-update path correctly persists points for a batch larger than
 // the two-row case covered by the basic test. Each prediction in the batch

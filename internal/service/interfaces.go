@@ -47,6 +47,11 @@ type PredictionService interface {
 	Submit(ctx context.Context, prediction *domain.Prediction) error
 	Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int) (*domain.Prediction, error)
 	GetByUser(ctx context.Context, userID int) ([]*domain.Prediction, error)
+	// GetByUserAndQuiniela returns all predictions for userID scoped to the
+	// given quiniela. It delegates the membership gate to the repository layer
+	// so the check and the data fetch are a single round-trip. A user who is
+	// not an active member of quinielaID receives an empty slice.
+	GetByUserAndQuiniela(ctx context.Context, userID, quinielaID int) ([]*domain.Prediction, error)
 	GetByMatch(ctx context.Context, matchID int) ([]*domain.Prediction, error)
 }
 
