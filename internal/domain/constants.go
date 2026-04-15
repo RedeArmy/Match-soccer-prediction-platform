@@ -39,12 +39,6 @@ const (
 // goalkeeper injury) becomes public in the stadium.
 const PredictionDeadlineOffset = 5 * time.Minute
 
-// MaxPredictionsPerUser is the upper bound on the number of match predictions
-// a single user may hold simultaneously. A value of 0 means the quota is not
-// currently enforced. To activate it, set this to a positive integer and add
-// the corresponding check in the prediction service before calling Create.
-const MaxPredictionsPerUser = 0
-
 // DefaultPrizeThreshold is applied by QuinielaService.Create when the caller
 // does not supply a PrizeThreshold. The prize distribution formula is:
 //
