@@ -94,8 +94,15 @@ func (r *PostgresGroupMembershipRepository) MarkPaid(ctx context.Context, quinie
 }
 
 func (r *PostgresGroupMembershipRepository) ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.GroupMembership, error) {
+	// JOIN with users excludes memberships belonging to soft-deleted users so
+	// that the group roster shown to administrators never contains ghost entries.
 	rows, err := r.db.Query(ctx,
-		`SELECT `+membershipColumns+` FROM group_memberships WHERE quiniela_id=$1 ORDER BY created_at ASC`,
+		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.paid,
+		        gm.joined_at, gm.created_at, gm.updated_at
+		 FROM group_memberships gm
+		 JOIN users u ON u.id = gm.user_id AND u.deleted_at IS NULL
+		 WHERE gm.quiniela_id = $1
+		 ORDER BY gm.created_at ASC`,
 		quinielaID,
 	)
 	if err != nil {
@@ -106,8 +113,15 @@ func (r *PostgresGroupMembershipRepository) ListByQuiniela(ctx context.Context, 
 }
 
 func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error) {
+	// JOIN with quinielas excludes memberships in soft-deleted groups so that
+	// GET /api/v1/groups/me never surfaces a group the owner has deleted.
 	rows, err := r.db.Query(ctx,
-		`SELECT `+membershipColumns+` FROM group_memberships WHERE user_id=$1 ORDER BY created_at DESC`,
+		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.paid,
+		        gm.joined_at, gm.created_at, gm.updated_at
+		 FROM group_memberships gm
+		 JOIN quinielas q ON q.id = gm.quiniela_id AND q.deleted_at IS NULL
+		 WHERE gm.user_id = $1
+		 ORDER BY gm.created_at DESC`,
 		userID,
 	)
 	if err != nil {

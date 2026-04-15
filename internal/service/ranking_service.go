@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 
+	"go.uber.org/zap"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -15,6 +17,7 @@ type rankingService struct {
 	quinielaRepo repository.QuinielaRepository
 	predRepo     repository.PredictionRepository
 	userRepo     repository.UserRepository
+	log          *zap.Logger
 }
 
 // NewRankingService constructs a rankingService with the given dependencies.
@@ -22,11 +25,13 @@ func NewRankingService(
 	quinielaRepo repository.QuinielaRepository,
 	predRepo repository.PredictionRepository,
 	userRepo repository.UserRepository,
+	log *zap.Logger,
 ) Ranker {
 	return &rankingService{
 		quinielaRepo: quinielaRepo,
 		predRepo:     predRepo,
 		userRepo:     userRepo,
+		log:          log,
 	}
 }
 
@@ -84,7 +89,12 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 	for userID, pts := range pointsByUser {
 		u, ok := userByID[userID]
 		if !ok {
-			// User was deleted after membership was created; skip silently.
+			// User was deleted after membership was created; skip and log so
+			// operators can detect stale memberships without a data audit.
+			s.log.Warn("leaderboard: skipping member absent from users table — likely soft-deleted",
+				zap.Int("user_id", userID),
+				zap.Int("quiniela_id", quinielaID),
+			)
 			continue
 		}
 		entries = append(entries, &domain.LeaderboardEntry{
