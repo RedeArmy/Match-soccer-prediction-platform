@@ -62,9 +62,10 @@ test-cover:
 lint:
 	golangci-lint run ./...
 
-## clean: Remove compiled binaries
+## clean: Remove compiled binaries and coverage artifacts
 clean:
 	rm -rf $(BINARY_DIR)
+	rm -f *.out
 
 ## docker-up: Start Postgres and Redis containers in the background
 docker-up:

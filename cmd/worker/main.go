@@ -20,7 +20,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -241,7 +240,7 @@ func monitorDLQ(ctx context.Context, rc *redis.Client, log *zap.Logger) {
 func newHealthServer(port string, checkers []health.Checker, log *zap.Logger) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleLiveness)
-	mux.HandleFunc("/health/ready", handleReadiness(checkers, log))
+	mux.HandleFunc("/health/ready", health.ReadinessHandler(checkers))
 
 	return &http.Server{
 		Addr:         ":" + port,
@@ -258,47 +257,4 @@ func handleLiveness(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok","service":"world-cup-quiniela-worker"}`)
-}
-
-// handleReadiness runs all registered health checkers concurrently under a
-// 5-second timeout and returns a JSON report. Returns 200 when every check
-// passes or 503 when any check fails.
-func handleReadiness(checkers []health.Checker, _ *zap.Logger) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
-		resp := health.Response{
-			Status: "ok",
-			Checks: make(map[string]health.Result, len(checkers)),
-		}
-
-		type item struct {
-			name   string
-			result health.Result
-		}
-		ch := make(chan item, len(checkers))
-
-		for _, c := range checkers {
-			c := c
-			go func() { ch <- item{c.Name(), c.Check(ctx)} }()
-		}
-
-		for range checkers {
-			it := <-ch
-			resp.Checks[it.name] = it.result
-			if it.result.Status != "ok" {
-				resp.Status = "error"
-			}
-		}
-
-		data, _ := json.Marshal(resp)
-		w.Header().Set("Content-Type", "application/json")
-		if resp.Status != "ok" {
-			w.WriteHeader(http.StatusServiceUnavailable)
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
-		_, _ = w.Write(data)
-	}
 }
