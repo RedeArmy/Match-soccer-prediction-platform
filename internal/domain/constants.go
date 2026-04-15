@@ -44,3 +44,13 @@ const PredictionDeadlineOffset = 5 * time.Minute
 // currently enforced. To activate it, set this to a positive integer and add
 // the corresponding check in the prediction service before calling Create.
 const MaxPredictionsPerUser = 0
+
+// DefaultPrizeThreshold is applied by QuinielaService.Create when the caller
+// does not supply a PrizeThreshold. The prize distribution formula is:
+//
+//	winnerCount = max(1, floor(memberCount / PrizeThreshold))
+//
+// With a threshold of 3, a 9-member group has 3 prize winners and a 2-member
+// group always has at least 1. The value must stay consistent with the DEFAULT
+// clause in migration 000023_add_prize_threshold_to_quinielas.up.sql.
+const DefaultPrizeThreshold = 3

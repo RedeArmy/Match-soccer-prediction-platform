@@ -143,7 +143,7 @@ func (s *Server) Routes() http.Handler {
 	memberRepo := repository.NewPostgresGroupMembershipRepository(s.db)
 
 	s.wireSubscribers(matchRepo, predRepo)
-	matchHandler, predHandler, groupHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo)
+	matchHandler, predHandler, groupHandler, leaderboardHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -185,6 +185,7 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/me", groupHandler.ListMyGroups)
 			r.Get("/{id}", groupHandler.GetByID)
 			r.Get("/{id}/members", groupHandler.ListMembers)
+			r.Get("/{id}/leaderboard", leaderboardHandler.GetLeaderboard)
 			// Only the group owner may rotate the invite code. Ownership is
 			// enforced inside the service layer (not via RequireRole) because
 			// it is resource-scoped, not role-scoped.
@@ -254,7 +255,7 @@ func (s *Server) buildHandlers(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 	memberRepo repository.GroupMembershipRepository,
-) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler) {
+) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler, *handler.LeaderboardHandler) {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
 
 	matchSvc := service.NewMatchService(matchRepo, s.bus, s.log)
@@ -266,9 +267,15 @@ func (s *Server) buildHandlers(
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo)
 
+	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, s.log)
+	if s.cache != nil {
+		ranker = service.NewCachedRankingService(ranker, s.cache, s.log)
+	}
+
 	return handler.NewMatchHandler(matchSvc, s.log),
 		handler.NewPredictionHandler(predSvc, s.log),
-		handler.NewGroupHandler(quinielaSvc, memberSvc, s.log)
+		handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
+		handler.NewLeaderboardHandler(ranker, s.log)
 }
 
 // handleReadiness is a thin wrapper around health.ReadinessHandler that exists

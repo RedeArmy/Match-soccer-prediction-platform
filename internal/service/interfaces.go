@@ -62,12 +62,14 @@ type MatchScorer interface {
 
 // Ranker computes leaderboard standings for a given Quiniela.
 //
-// GetLeaderboard returns entries sorted descending by TotalPoints. Only
-// active, paid members are included. Unscored predictions (nil points) are
-// excluded from the aggregation. If no scored predictions exist yet, members
-// appear with TotalPoints = 0 and are sorted arbitrarily.
+// GetLeaderboard returns the overall standings sorted descending by TotalPoints.
+// GetPhaseLeaderboard returns standings restricted to a single tournament phase.
+// Only active, paid members are included in both variants. Unscored predictions
+// (nil points) are excluded from the aggregation. PrizeWinner is set to true on
+// entries that rank within the prize positions computed from PrizeThreshold.
 type Ranker interface {
 	GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.LeaderboardEntry, error)
+	GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) ([]*domain.LeaderboardEntry, error)
 }
 
 // QuinielaService defines operations on the Quiniela entity.

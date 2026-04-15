@@ -142,6 +142,51 @@ func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context
 	return result, nil
 }
 
+// TotalPointsByQuinielaAndPhase returns a map of userID → total scored points
+// for every active, paid member of the given quiniela, restricted to matches
+// in the provided phase. The INNER JOIN on matches filters predictions by phase
+// without a full-table scan when the matches.phase column is indexed.
+//
+// A member with no scored predictions in the requested phase appears in the map
+// with value 0, preserving the same semantics as TotalPointsByQuiniela.
+func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context.Context, quinielaID int, phase domain.MatchPhase) (map[int]int, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT gm.user_id, COALESCE(SUM(p.points), 0)
+		   FROM group_memberships gm
+		   LEFT JOIN predictions p
+		          ON p.user_id = gm.user_id
+		         AND p.points IS NOT NULL
+		         AND EXISTS (
+		              SELECT 1
+		                FROM matches m
+		               WHERE m.id = p.match_id
+		                 AND m.phase = $2
+		          )
+		  WHERE gm.quiniela_id = $1
+		    AND gm.status = 'active'
+		    AND gm.paid = TRUE
+		  GROUP BY gm.user_id`,
+		quinielaID, string(phase),
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	result := make(map[int]int)
+	for rows.Next() {
+		var userID, totalPoints int
+		if err := rows.Scan(&userID, &totalPoints); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		result[userID] = totalPoints
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return result, nil
+}
+
 // UpdateManyPoints atomically updates the points column for every prediction
 // ID in the provided map. All UPDATEs run inside a single transaction; if any
 // statement fails the transaction is rolled back so the match is either fully

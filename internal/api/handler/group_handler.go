@@ -30,10 +30,11 @@ func NewGroupHandler(
 
 // createGroupRequest is the JSON body accepted by POST /api/v1/groups.
 type createGroupRequest struct {
-	Name       string `json:"name"`
-	EntryFee   int    `json:"entry_fee"`
-	Currency   string `json:"currency"`
-	MaxMembers *int   `json:"max_members"`
+	Name           string `json:"name"`
+	EntryFee       int    `json:"entry_fee"`
+	Currency       string `json:"currency"`
+	MaxMembers     *int   `json:"max_members"`
+	PrizeThreshold int    `json:"prize_threshold"` // optional; defaults to DefaultPrizeThreshold when 0
 }
 
 // joinGroupRequest is the JSON body accepted by POST /api/v1/groups/join.
@@ -73,11 +74,12 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	quiniela := &domain.Quiniela{
-		Name:       req.Name,
-		OwnerID:    caller.ID,
-		EntryFee:   req.EntryFee,
-		Currency:   req.Currency,
-		MaxMembers: req.MaxMembers,
+		Name:           req.Name,
+		OwnerID:        caller.ID,
+		EntryFee:       req.EntryFee,
+		Currency:       req.Currency,
+		MaxMembers:     req.MaxMembers,
+		PrizeThreshold: req.PrizeThreshold, // 0 → service applies DefaultPrizeThreshold
 	}
 	if err := h.quinielaSvc.Create(r.Context(), quiniela); err != nil {
 		middleware.WriteError(w, r, h.log, err)

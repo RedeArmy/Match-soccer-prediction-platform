@@ -23,7 +23,7 @@ func NewPostgresQuinielaRepository(db *pgxpool.Pool) *PostgresQuinielaRepository
 	return &PostgresQuinielaRepository{db: db}
 }
 
-const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, created_at, updated_at, deleted_at"
+const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold, created_at, updated_at, deleted_at"
 
 const msgQuinielaNotFound = "quiniela not found"
 
@@ -31,7 +31,7 @@ func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	q := &domain.Quiniela{}
 	err := row.Scan(
 		&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
-		&q.EntryFee, &q.Currency, &q.MaxMembers,
+		&q.EntryFee, &q.Currency, &q.MaxMembers, &q.PrizeThreshold,
 		&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -52,9 +52,9 @@ func isUniqueViolation(err error) bool {
 
 func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quiniela) error {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+quinielaColumns,
-		q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency, q.MaxMembers,
+		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+quinielaColumns,
+		q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency, q.MaxMembers, q.PrizeThreshold,
 	)
 	result, err := scanQuiniela(row)
 	if err != nil {
@@ -159,7 +159,7 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 		q := &domain.Quiniela{}
 		if err := rows.Scan(
 			&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
-			&q.EntryFee, &q.Currency, &q.MaxMembers,
+			&q.EntryFee, &q.Currency, &q.MaxMembers, &q.PrizeThreshold,
 			&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 		); err != nil {
 			return nil, apperrors.Internal(err)
