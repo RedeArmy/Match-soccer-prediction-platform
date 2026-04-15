@@ -100,6 +100,11 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/predictions/{id} [patch]
 func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
 	id, err := pathID(r, "id")
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
@@ -110,7 +115,7 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, decodeError(err))
 		return
 	}
-	prediction, err := h.svc.Update(r.Context(), id, req.HomeScore, req.AwayScore)
+	prediction, err := h.svc.Update(r.Context(), caller.ID, id, req.HomeScore, req.AwayScore)
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return

@@ -126,7 +126,7 @@ func TestUpdate_ValidPrediction_ReturnsUpdated(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, matchRepo, &stubPublisher{}, zap.NewNop())
 
-	got, err := svc.Update(context.Background(), 1, 2, 1)
+	got, err := svc.Update(context.Background(), 1, 1, 2, 1)
 	if err != nil {
 		t.Fatalf(fmtExpectNil, err)
 	}
@@ -140,7 +140,7 @@ func TestUpdate_PredictionNotFound_ReturnsNotFound(t *testing.T) {
 	predRepo := &stubPredRepo{byID: nil}
 	svc := NewPredictionService(predRepo, matchRepo, &stubPublisher{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 99, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
+	if _, err := svc.Update(context.Background(), 1, 99, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf(fmtNotFoundErr, err)
 	}
 }
@@ -150,7 +150,7 @@ func TestUpdate_MatchNotFound_ReturnsNotFound(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{match: nil}, &stubPublisher{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
+	if _, err := svc.Update(context.Background(), 1, 1, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf(fmtNotFoundErr, err)
 	}
 }
@@ -164,8 +164,22 @@ func TestUpdate_PastDeadline_ReturnsValidation(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &stubPublisher{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for deadline, got %v", err)
+	}
+}
+
+func TestUpdate_OtherUsersPrediction_ReturnsForbidden(t *testing.T) {
+	match := openMatch()
+	pred := &domain.Prediction{ID: 1, UserID: 2, MatchID: match.ID, HomeScore: 1, AwayScore: 0}
+	predRepo := &stubPredRepo{byID: pred}
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &stubPublisher{}, zap.NewNop())
+
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrForbidden) {
+		t.Errorf("expected forbidden error for ownership mismatch, got %v", err)
+	}
+	if len(predRepo.updated) != 0 {
+		t.Errorf("expected no repository update on forbidden change, got %d updates", len(predRepo.updated))
 	}
 }
 

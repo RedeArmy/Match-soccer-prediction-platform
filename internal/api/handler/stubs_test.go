@@ -84,13 +84,17 @@ func (s *stubMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, erro
 
 // stubPredSvc implements service.PredictionService with configurable returns.
 type stubPredSvc struct {
-	pred  *domain.Prediction
-	preds []*domain.Prediction
-	err   error
+	pred           *domain.Prediction
+	preds          []*domain.Prediction
+	err            error
+	updateCallerID int
+	updateID       int
 }
 
 func (s *stubPredSvc) Submit(_ context.Context, _ *domain.Prediction) error { return s.err }
-func (s *stubPredSvc) Update(_ context.Context, _ int, _, _ int) (*domain.Prediction, error) {
+func (s *stubPredSvc) Update(_ context.Context, callerUserID, id, _, _ int) (*domain.Prediction, error) {
+	s.updateCallerID = callerUserID
+	s.updateID = id
 	return s.pred, s.err
 }
 func (s *stubPredSvc) GetByUser(_ context.Context, _ int) ([]*domain.Prediction, error) {
