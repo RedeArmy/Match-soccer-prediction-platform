@@ -52,12 +52,35 @@ func (r *PostgresGroupMembershipRepository) Create(ctx context.Context, m *domai
 	return nil
 }
 
+func (r *PostgresGroupMembershipRepository) GetByID(ctx context.Context, membershipID int) (*domain.GroupMembership, error) {
+	row := r.db.QueryRow(ctx,
+		`SELECT `+membershipColumns+` FROM group_memberships WHERE id=$1`,
+		membershipID,
+	)
+	return scanMembership(row)
+}
+
 func (r *PostgresGroupMembershipRepository) GetByQuinielaAndUser(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT `+membershipColumns+` FROM group_memberships WHERE quiniela_id=$1 AND user_id=$2`,
 		quinielaID, userID,
 	)
 	return scanMembership(row)
+}
+
+// CountActive returns the number of members with status = 'active' in the
+// given quiniela. It is used exclusively by syncGroupStatus to decide whether
+// the group should transition to active or inactive.
+func (r *PostgresGroupMembershipRepository) CountActive(ctx context.Context, quinielaID int) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM group_memberships WHERE quiniela_id=$1 AND status='active'`,
+		quinielaID,
+	).Scan(&count)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return count, nil
 }
 
 func (r *PostgresGroupMembershipRepository) Update(ctx context.Context, m *domain.GroupMembership) error {

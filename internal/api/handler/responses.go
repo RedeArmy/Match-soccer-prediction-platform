@@ -10,13 +10,17 @@ type GroupResponse struct {
 	Name                string  `json:"name"`
 	OwnerID             int     `json:"owner_id"`
 	InviteCode          string  `json:"invite_code"`
-	InviteCodeExpiresAt *string `json:"invite_code_expires_at"` // nil means never expires
-	EntryFee            int     `json:"entry_fee"`
-	Currency            string  `json:"currency"`
-	MaxMembers          *int    `json:"max_members"`
-	PrizeThreshold      int     `json:"prize_threshold"`
-	CreatedAt           string  `json:"created_at"`
-	UpdatedAt           string  `json:"updated_at"`
+	InviteCodeExpiresAt *string `json:"invite_code_expires_at"` // always nil; invite links never expire
+	// Status is system-managed: "active" when the group has ≥ 3 active members,
+	// "inactive" otherwise. Only active groups are eligible for payment processing
+	// and prize distribution.
+	Status         string `json:"status"`
+	EntryFee       int    `json:"entry_fee"`
+	Currency       string `json:"currency"`
+	MaxMembers     *int   `json:"max_members"`
+	PrizeThreshold int    `json:"prize_threshold"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 // LeaderboardEntryResponse is the JSON representation of a single leaderboard entry.
@@ -179,6 +183,7 @@ func groupToResponse(q *domain.Quiniela) GroupResponse {
 		Name:           q.Name,
 		OwnerID:        q.OwnerID,
 		InviteCode:     q.InviteCode,
+		Status:         string(q.Status),
 		EntryFee:       q.EntryFee,
 		Currency:       q.Currency,
 		MaxMembers:     q.MaxMembers,

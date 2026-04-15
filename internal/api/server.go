@@ -186,6 +186,11 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/{id}", groupHandler.GetByID)
 			r.Get("/{id}/members", groupHandler.ListMembers)
 			r.Get("/{id}/leaderboard", leaderboardHandler.GetLeaderboard)
+			// Any active member may approve a pending join request. The service
+			// layer enforces the membership check — no role-based middleware needed.
+			r.Post("/{id}/members/{membershipID}/approve", groupHandler.ApproveJoin)
+			// Self-removal only: a user removes themselves from the group.
+			r.Delete("/{id}/members/me", groupHandler.Leave)
 			// Only the group owner may rotate the invite code. Ownership is
 			// enforced inside the service layer (not via RequireRole) because
 			// it is resource-scoped, not role-scoped.
@@ -266,7 +271,7 @@ func (s *Server) buildHandlers(
 
 	predSvc := service.NewPredictionService(predRepo, matchRepo, s.log)
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
-	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo)
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, s.log)
 
 	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, s.log)
 	if s.cache != nil {

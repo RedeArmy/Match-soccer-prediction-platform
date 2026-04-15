@@ -42,12 +42,6 @@ func generateInviteCode() (string, error) {
 	return string(result), nil
 }
 
-// inviteCodeTTL is the default lifetime for a freshly generated invite code.
-// After this period the code is considered expired and the owner must call
-// RotateInviteCode to generate a new one. Keeping TTL finite prevents
-// indefinite access when a code is shared beyond the intended audience.
-const inviteCodeTTL = 30 * 24 * time.Hour // 30 days
-
 func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela) error {
 	if quiniela.PrizeThreshold == 0 {
 		quiniela.PrizeThreshold = domain.DefaultPrizeThreshold
@@ -61,10 +55,12 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 		return apperrors.Internal(err)
 	}
 	quiniela.InviteCode = code
+	quiniela.InviteCodeExpiresAt = nil // invite links never expire
 
-	// Set a default expiry so leaked codes do not grant indefinite access.
-	exp := time.Now().UTC().Add(inviteCodeTTL)
-	quiniela.InviteCodeExpiresAt = &exp
+	// A new group starts inactive: the owner alone is below MinMembersForActive.
+	// Status is promoted to active automatically when enough members join and
+	// are approved.
+	quiniela.Status = domain.QuinielaStatusInactive
 
 	if quiniela.Currency == "" {
 		quiniela.Currency = "MXN"
@@ -74,9 +70,9 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 		return err
 	}
 
-	// Owner always becomes an active member immediately. They are marked as
-	// paid automatically when the group is free (entry_fee = 0); for paid
-	// groups the payment system will flip paid = true once confirmed.
+	// Owner always becomes an active member immediately — no approval required.
+	// They are marked as paid for free groups; for paid groups the payment
+	// system will flip paid = true after a confirmed transaction.
 	now := time.Now().UTC()
 	ownerMembership := &domain.GroupMembership{
 		QuinielaID: quiniela.ID,
@@ -108,8 +104,8 @@ func (s *quinielaService) RotateInviteCode(ctx context.Context, quinielaID, owne
 		return nil, apperrors.Internal(err)
 	}
 
-	exp := time.Now().UTC().Add(inviteCodeTTL)
-	return s.repo.RotateInviteCode(ctx, quinielaID, newCode, &exp)
+	// nil expiry: rotated codes also never expire, consistent with creation.
+	return s.repo.RotateInviteCode(ctx, quinielaID, newCode, nil)
 }
 
 func (s *quinielaService) GetByID(ctx context.Context, id int) (*domain.Quiniela, error) {

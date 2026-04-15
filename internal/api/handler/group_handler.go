@@ -223,6 +223,91 @@ func (h *GroupHandler) RotateInviteCode(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, groupToResponse(quiniela))
 }
 
+// ApproveJoin handles POST /api/v1/groups/{id}/members/{membershipID}/approve.
+//
+// @Summary      Approve a join request
+// @Description  Promotes a pending membership to active. Any active member of
+//
+//	the group may approve — there is no admin-only restriction.
+//	After approval the group status is re-evaluated: the group
+//	transitions to "active" when it reaches the minimum active-member
+//	threshold.
+//
+// @Tags         groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id           path      int  true  "Group ID"
+// @Param        membershipID path      int  true  "Membership ID to approve"
+// @Success      200          {object}  handler.MemberResponse
+// @Failure      401          {object}  handler.ErrorResponse
+// @Failure      403          {object}  handler.ErrorResponse  "Caller is not an active member of this group"
+// @Failure      404          {object}  handler.ErrorResponse  "Join request not found"
+// @Failure      409          {object}  handler.ErrorResponse  "Request is no longer pending"
+// @Failure      422          {object}  handler.ErrorResponse
+// @Failure      500          {object}  handler.ErrorResponse
+// @Router       /api/v1/groups/{id}/members/{membershipID}/approve [post]
+func (h *GroupHandler) ApproveJoin(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	quinielaID, err := pathID(r, "id")
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	membershipID, err := pathID(r, "membershipID")
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+
+	membership, err := h.memberSvc.ApproveJoin(r.Context(), quinielaID, membershipID, caller.ID)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memberToResponse(membership))
+}
+
+// Leave handles DELETE /api/v1/groups/{id}/members/me.
+//
+// @Summary      Leave a group
+// @Description  Removes the authenticated user from the group. Only the user
+//
+//	themselves may leave — no admin or owner can remove another
+//	member. After leaving, the group status is re-evaluated and may
+//	become "inactive" if the active member count falls below the
+//	minimum threshold.
+//
+// @Tags         groups
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Group ID"
+// @Success      204
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      422  {object}  handler.ErrorResponse  "Caller is not an active member of this group"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/groups/{id}/members/me [delete]
+func (h *GroupHandler) Leave(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	quinielaID, err := pathID(r, "id")
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+
+	if err := h.memberSvc.Leave(r.Context(), quinielaID, caller.ID); err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListMyGroups handles GET /api/v1/groups/me.
 //
 // @Summary      List my groups
