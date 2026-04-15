@@ -17,14 +17,14 @@ import "time"
 // verifiable without running the full application.
 type Config struct {
 	Environment string         `mapstructure:"environment"`
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	EventBus EventBusConfig `mapstructure:"eventBus"`
-	Logger   LoggerConfig   `mapstructure:"logger"`
-	CORS     CORSConfig     `mapstructure:"cors"`
-	Clerk    ClerkConfig    `mapstructure:"clerk"`
-	Worker   WorkerConfig   `mapstructure:"worker"`
+	Server      ServerConfig   `mapstructure:"server"`
+	Database    DatabaseConfig `mapstructure:"database"`
+	Redis       RedisConfig    `mapstructure:"redis"`
+	EventBus    EventBusConfig `mapstructure:"eventBus"`
+	Logger      LoggerConfig   `mapstructure:"logger"`
+	CORS        CORSConfig     `mapstructure:"cors"`
+	Clerk       ClerkConfig    `mapstructure:"clerk"`
+	Worker      WorkerConfig   `mapstructure:"worker"`
 }
 
 // IsDevelopment reports whether the application is running in a relaxed local
@@ -142,10 +142,10 @@ type WorkerConfig struct {
 // API Keys → Advanced → JWKS URL.
 type ClerkConfig struct {
 	JWKSURL string `mapstructure:"jwksUrl"`
-// WebhookSecret is the signing secret from the Clerk webhook dashboard
-// (format "whsec_<base64>"). It is used to validate the Svix signature on
-// incoming webhook events. If empty, signature validation is skipped and a
-// warning is logged — acceptable for local development only. Startup
-// validation must reject this configuration outside development.
+	// WebhookSecret is the signing secret from the Clerk webhook dashboard
+	// (format "whsec_<base64>"). It is used to validate the Svix signature on
+	// incoming webhook events. If empty, signature validation is skipped and a
+	// warning is logged — acceptable for local development only. Startup
+	// validation must reject this configuration outside development.
 	WebhookSecret string `mapstructure:"webhookSecret"`
 }

@@ -25,7 +25,7 @@ import (
 const (
 	fmtUnexpectedError = "unexpected error: %v"
 
-	envEnvironment = "WCQ_ENVIRONMENT"
+	envEnvironment  = "WCQ_ENVIRONMENT"
 	envServerPort   = "WCQ_SERVER_PORT"
 	envLoggerLevel  = "WCQ_LOGGER_LEVEL"
 	portOverride    = "9090"
