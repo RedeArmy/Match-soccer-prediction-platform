@@ -35,11 +35,12 @@ func NewRankingService(
 	}
 }
 
-// GetLeaderboard returns the ranked standings for the given quiniela.
+// GetLeaderboard returns the overall ranked standings for the given quiniela.
 //
 // Only active, paid members are included. Predictions with nil points (match
 // not yet scored) are excluded from the aggregation. Members with no scored
-// predictions appear with TotalPoints = 0.
+// predictions appear with TotalPoints = 0. PrizeWinner is set to true on
+// entries within the prize positions derived from the quiniela's PrizeThreshold.
 //
 // Ranking algorithm — standard competition ranking (1224…):
 // Two members with equal points receive the same rank. The rank after a tie
@@ -69,7 +70,53 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 		return nil, nil
 	}
 
-	// Step 2: hydrate user objects — single batch query.
+	entries, err := s.buildEntries(ctx, quinielaID, pointsByUser)
+	if err != nil {
+		return nil, err
+	}
+
+	sortAndRank(entries)
+	assignPrizes(entries, q.PrizeThreshold)
+
+	return entries, nil
+}
+
+// GetPhaseLeaderboard returns standings restricted to predictions on matches in
+// the specified tournament phase. The algorithm is identical to GetLeaderboard
+// but delegates point aggregation to TotalPointsByQuinielaAndPhase so only
+// phase-relevant predictions are counted.
+func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) ([]*domain.LeaderboardEntry, error) {
+	q, err := s.quinielaRepo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+	if q == nil {
+		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
+	}
+
+	pointsByUser, err := s.predRepo.TotalPointsByQuinielaAndPhase(ctx, quinielaID, phase)
+	if err != nil {
+		return nil, err
+	}
+	if len(pointsByUser) == 0 {
+		return nil, nil
+	}
+
+	entries, err := s.buildEntries(ctx, quinielaID, pointsByUser)
+	if err != nil {
+		return nil, err
+	}
+
+	sortAndRank(entries)
+	assignPrizes(entries, q.PrizeThreshold)
+
+	return entries, nil
+}
+
+// buildEntries hydrates LeaderboardEntry values from a userID→points map.
+// It fetches all user objects in a single batch query and logs a warning for
+// any user ID that is absent from the users table (soft-deleted users).
+func (s *rankingService) buildEntries(ctx context.Context, quinielaID int, pointsByUser map[int]int) ([]*domain.LeaderboardEntry, error) {
 	userIDs := make([]int, 0, len(pointsByUser))
 	for id := range pointsByUser {
 		userIDs = append(userIDs, id)
@@ -79,7 +126,6 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 		return nil, err
 	}
 
-	// Build index for O(1) lookup when assembling entries.
 	userByID := make(map[int]*domain.User, len(users))
 	for _, u := range users {
 		userByID[u.ID] = u
@@ -89,8 +135,6 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 	for userID, pts := range pointsByUser {
 		u, ok := userByID[userID]
 		if !ok {
-			// User was deleted after membership was created; skip and log so
-			// operators can detect stale memberships without a data audit.
 			s.log.Warn("leaderboard: skipping member absent from users table — likely soft-deleted",
 				zap.Int("user_id", userID),
 				zap.Int("quiniela_id", quinielaID),
@@ -102,20 +146,19 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 			TotalPoints: pts,
 		})
 	}
+	return entries, nil
+}
 
-	// Sort descending by total points; break ties by user ID (stable,
-	// deterministic ordering so the leaderboard does not shuffle between pages).
+// sortAndRank sorts entries descending by TotalPoints (ties broken by user ID
+// for a deterministic ordering) and applies standard competition ranks (1224…).
+func sortAndRank(entries []*domain.LeaderboardEntry) {
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].TotalPoints != entries[j].TotalPoints {
 			return entries[i].TotalPoints > entries[j].TotalPoints
 		}
 		return entries[i].User.ID < entries[j].User.ID
 	})
-
-	// Assign standard competition ranks (1224…).
 	assignRanks(entries)
-
-	return entries, nil
 }
 
 // assignRanks applies standard competition ranking (1224…) to a pre-sorted
@@ -128,5 +171,38 @@ func assignRanks(entries []*domain.LeaderboardEntry) {
 		} else {
 			entries[i].Rank = entries[i-1].Rank
 		}
+	}
+}
+
+// assignPrizes marks entries as PrizeWinner = true based on the quiniela's
+// prize distribution formula:
+//
+//	winnerCount = max(1, floor(len(entries) / prizeThreshold))
+//
+// All entries whose Rank is ≤ winnerCount are prize winners, including tied
+// entries that share a rank at the boundary. This means the actual number of
+// prize winners may exceed winnerCount when a tie falls on the cut-off rank.
+// The entries slice must already be sorted and ranked before this is called.
+//
+// If prizeThreshold is zero or negative (invalid data, should never reach this
+// point after validation), DefaultPrizeThreshold is used as a safe fallback to
+// prevent a division-by-zero panic.
+func assignPrizes(entries []*domain.LeaderboardEntry, prizeThreshold int) {
+	if len(entries) == 0 {
+		return
+	}
+	if prizeThreshold <= 0 {
+		prizeThreshold = domain.DefaultPrizeThreshold
+	}
+	winnerCount := len(entries) / prizeThreshold
+	if winnerCount < 1 {
+		winnerCount = 1
+	}
+	// Determine the rank threshold. Because entries are sorted and multiple
+	// entries can share a rank, we read the rank of the winnerCount-th entry
+	// (0-indexed: winnerCount-1) to include all tied entries at that rank.
+	cutoffRank := entries[winnerCount-1].Rank
+	for _, e := range entries {
+		e.PrizeWinner = e.Rank <= cutoffRank
 	}
 }

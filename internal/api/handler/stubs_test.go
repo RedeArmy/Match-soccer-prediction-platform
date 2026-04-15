@@ -133,6 +133,20 @@ func (s *stubQuinielaSvc) RotateInviteCode(_ context.Context, _, _ int) (*domain
 	return s.quiniela, s.err
 }
 
+// stubRanker implements service.Ranker with configurable returns.
+type stubRanker struct {
+	entries []*domain.LeaderboardEntry
+	err     error
+}
+
+func (s *stubRanker) GetLeaderboard(_ context.Context, _ int) ([]*domain.LeaderboardEntry, error) {
+	return s.entries, s.err
+}
+
+func (s *stubRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) ([]*domain.LeaderboardEntry, error) {
+	return s.entries, s.err
+}
+
 // stubMemberSvc implements service.GroupMembershipService with configurable returns.
 type stubMemberSvc struct {
 	membership  *domain.GroupMembership

@@ -14,8 +14,25 @@ type GroupResponse struct {
 	EntryFee            int     `json:"entry_fee"`
 	Currency            string  `json:"currency"`
 	MaxMembers          *int    `json:"max_members"`
+	PrizeThreshold      int     `json:"prize_threshold"`
 	CreatedAt           string  `json:"created_at"`
 	UpdatedAt           string  `json:"updated_at"`
+}
+
+// LeaderboardEntryResponse is the JSON representation of a single leaderboard entry.
+type LeaderboardEntryResponse struct {
+	Rank        int    `json:"rank"`
+	UserID      int    `json:"user_id"`
+	UserName    string `json:"user_name"`
+	TotalPoints int    `json:"total_points"`
+	PrizeWinner bool   `json:"prize_winner"`
+}
+
+// LeaderboardResponse wraps the ranked entries returned by GET …/leaderboard.
+type LeaderboardResponse struct {
+	QuinielaID int                        `json:"quiniela_id"`
+	Phase      string                     `json:"phase,omitempty"` // empty string omitted for the overall leaderboard
+	Entries    []LeaderboardEntryResponse `json:"entries"`
 }
 
 // MemberResponse is the JSON representation of a GroupMembership.
@@ -158,15 +175,16 @@ func predToResponse(p *domain.Prediction) PredictionResponse {
 
 func groupToResponse(q *domain.Quiniela) GroupResponse {
 	resp := GroupResponse{
-		ID:         q.ID,
-		Name:       q.Name,
-		OwnerID:    q.OwnerID,
-		InviteCode: q.InviteCode,
-		EntryFee:   q.EntryFee,
-		Currency:   q.Currency,
-		MaxMembers: q.MaxMembers,
-		CreatedAt:  q.CreatedAt.Format(timeFormat),
-		UpdatedAt:  q.UpdatedAt.Format(timeFormat),
+		ID:             q.ID,
+		Name:           q.Name,
+		OwnerID:        q.OwnerID,
+		InviteCode:     q.InviteCode,
+		EntryFee:       q.EntryFee,
+		Currency:       q.Currency,
+		MaxMembers:     q.MaxMembers,
+		PrizeThreshold: q.PrizeThreshold,
+		CreatedAt:      q.CreatedAt.Format(timeFormat),
+		UpdatedAt:      q.UpdatedAt.Format(timeFormat),
 	}
 	if q.InviteCodeExpiresAt != nil {
 		s := q.InviteCodeExpiresAt.Format(timeFormat)

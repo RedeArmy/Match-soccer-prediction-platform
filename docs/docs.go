@@ -291,6 +291,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/groups/{id}/leaderboard": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the ranked standings for a group. Pass ?phase=\u003cvalue\u003e",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "groups"
+                ],
+                "summary": "Group leaderboard",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Tournament phase filter",
+                        "name": "phase",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.LeaderboardResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Unknown phase value",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/groups/{id}/members": {
             "get": {
                 "security": [
@@ -960,8 +1024,49 @@ const docTemplate = `{
                 "owner_id": {
                     "type": "integer"
                 },
+                "prize_threshold": {
+                    "type": "integer"
+                },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.LeaderboardEntryResponse": {
+            "type": "object",
+            "properties": {
+                "prize_winner": {
+                    "type": "boolean"
+                },
+                "rank": {
+                    "type": "integer"
+                },
+                "total_points": {
+                    "type": "integer"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "user_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.LeaderboardResponse": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.LeaderboardEntryResponse"
+                    }
+                },
+                "phase": {
+                    "description": "empty string omitted for the overall leaderboard",
+                    "type": "string"
+                },
+                "quiniela_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -1112,6 +1217,10 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "prize_threshold": {
+                    "description": "optional; defaults to DefaultPrizeThreshold when 0",
+                    "type": "integer"
                 }
             }
         },

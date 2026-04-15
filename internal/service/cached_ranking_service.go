@@ -12,6 +12,9 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
 
+// Compile-time check: cachedRankingService must implement Ranker.
+var _ Ranker = (*cachedRankingService)(nil)
+
 // leaderboardCacheTTL is the maximum time a leaderboard result is served from
 // cache before a fresh DB query is issued. The TTL is intentionally short (60s)
 // because leaderboards are expected to update frequently during live matches.
@@ -21,6 +24,10 @@ const leaderboardCacheTTL = 60 * time.Second
 
 func cacheKeyLeaderboard(quinielaID int) string {
 	return fmt.Sprintf("leaderboard:%d", quinielaID)
+}
+
+func cacheKeyPhaseLeaderboard(quinielaID int, phase domain.MatchPhase) string {
+	return fmt.Sprintf("leaderboard:%d:phase:%s", quinielaID, phase)
 }
 
 // cachedRankingService wraps a Ranker with a read-through / write-invalidation
@@ -60,6 +67,32 @@ func (s *cachedRankingService) GetLeaderboard(ctx context.Context, quinielaID in
 	if len(entries) > 0 {
 		if setErr := s.store.Set(ctx, key, entries, leaderboardCacheTTL); setErr != nil {
 			s.log.Warn("leaderboard cache set failed", zap.String("key", key), zap.Error(setErr))
+		}
+	}
+	return entries, nil
+}
+
+// GetPhaseLeaderboard returns the cached phase leaderboard when available, or
+// falls through to the inner Ranker and caches the result. Cache failures are
+// non-fatal: a miss or a Set error falls through to the inner Ranker so a Redis
+// outage never makes the leaderboard unavailable.
+func (s *cachedRankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) ([]*domain.LeaderboardEntry, error) {
+	key := cacheKeyPhaseLeaderboard(quinielaID, phase)
+	var cached []*domain.LeaderboardEntry
+	if err := s.store.Get(ctx, key, &cached); err == nil {
+		return cached, nil
+	} else if !errors.Is(err, cache.ErrCacheMiss) {
+		s.log.Warn("phase leaderboard cache get failed, falling through to db",
+			zap.String("key", key), zap.Error(err))
+	}
+
+	entries, err := s.inner.GetPhaseLeaderboard(ctx, quinielaID, phase)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) > 0 {
+		if setErr := s.store.Set(ctx, key, entries, leaderboardCacheTTL); setErr != nil {
+			s.log.Warn("phase leaderboard cache set failed", zap.String("key", key), zap.Error(setErr))
 		}
 	}
 	return entries, nil

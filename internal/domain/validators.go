@@ -85,13 +85,42 @@ func ValidatePrediction(p *Prediction, kickoffAt, now time.Time) error {
 	return nil
 }
 
-// ValidateQuiniela checks that the essential fields of a Quiniela are present.
+// ValidateQuiniela checks that the essential fields of a Quiniela are present
+// and that PrizeThreshold is positive when provided.
 func ValidateQuiniela(q *Quiniela) error {
 	if q.Name == "" {
 		return apperrors.Validation("quiniela name must not be empty")
 	}
 	if q.OwnerID == 0 {
 		return apperrors.Validation("quiniela must have an owner")
+	}
+	if q.PrizeThreshold < 1 {
+		return apperrors.Validation("prize_threshold must be at least 1")
+	}
+	return nil
+}
+
+// validPhases is the set of recognised MatchPhase values. It is used by
+// ValidateMatchPhase to reject arbitrary strings before they reach the DB.
+var validPhases = map[MatchPhase]struct{}{
+	PhaseGroupStage:   {},
+	PhaseRoundOf32:    {},
+	PhaseRoundOf16:    {},
+	PhaseQuarterFinal: {},
+	PhaseSemiFinal:    {},
+	PhaseThirdPlace:   {},
+	PhaseFinal:        {},
+}
+
+// ValidateMatchPhase returns a validation error when phase is not one of the
+// recognised FIFA World Cup 2026 tournament phases. An empty string is treated
+// as "no phase filter" and is therefore valid (returns nil).
+func ValidateMatchPhase(phase MatchPhase) error {
+	if phase == "" {
+		return nil
+	}
+	if _, ok := validPhases[phase]; !ok {
+		return apperrors.Validation("phase is not a recognised tournament phase")
 	}
 	return nil
 }
