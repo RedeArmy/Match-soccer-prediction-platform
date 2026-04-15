@@ -263,7 +263,7 @@ func (s *Server) buildHandlers(
 		matchSvc = service.NewCachedMatchService(matchSvc, s.cache, s.log)
 	}
 
-	predSvc := service.NewPredictionService(predRepo, matchRepo, s.bus, s.log)
+	predSvc := service.NewPredictionService(predRepo, matchRepo, s.log)
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo)
 

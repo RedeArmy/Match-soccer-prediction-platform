@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -32,6 +33,41 @@ func decodePayload[T any](env events.Envelope) (T, error) {
 		return result, fmt.Errorf("unmarshal payload: %w", err)
 	}
 	return result, nil
+}
+
+// newMatchStartedHandler returns the event handler the worker registers for
+// EventMatchStarted events. Its responsibility is to emit a structured audit
+// log entry so the operations team has a reliable record of when each match
+// transitioned to Live status.
+//
+// Prediction-window enforcement is handled synchronously in PredictionService:
+// Submit and Update both check match.Status and reject requests against a Live
+// or Finished match. The async event is therefore used exclusively for
+// observability, not for enforcement — making the handler safe to implement as
+// a fire-and-forget log with no downstream side-effects and no retriable errors.
+//
+// On a malformed payload the handler logs an error and returns nil.
+// Returning nil prevents the bus from retrying a message that can never
+// succeed, mirroring the pattern used by newMatchFinishedHandler.
+func newMatchStartedHandler(log *zap.Logger) func(context.Context, events.Envelope) error {
+	return func(ctx context.Context, env events.Envelope) error {
+		ms, err := decodePayload[events.MatchStarted](env)
+		if err != nil {
+			log.Error("worker: cannot decode MatchStarted payload",
+				zap.String("event_type", string(env.Type)),
+				zap.Error(err),
+			)
+			return nil
+		}
+
+		log.Info("worker: match started — prediction window closed",
+			zap.Int("match_id", ms.MatchID),
+			zap.String("home_team", ms.HomeTeam),
+			zap.String("away_team", ms.AwayTeam),
+			zap.String("kickoff_at", ms.KickoffAt.UTC().Format(time.RFC3339)),
+		)
+		return nil
+	}
 }
 
 // newMatchFinishedHandler returns the event handler that the worker registers
