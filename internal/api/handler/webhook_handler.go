@@ -32,7 +32,8 @@ type WebhookHandler struct {
 //
 // webhookSecret is the "whsec_<base64>" value from the Clerk webhook dashboard.
 // When empty, signature verification is skipped and a warning is logged —
-// acceptable for local development, never for production.
+// acceptable for local development only. Startup validation must reject this
+// configuration outside development.
 func NewWebhookHandler(userRepo repository.UserRepository, webhookSecret string, log *zap.Logger) *WebhookHandler {
 	if webhookSecret == "" {
 		log.Warn("WebhookHandler: WCQ_CLERK_WEBHOOKSECRET is not set — webhook signature verification is DISABLED; do not use in production")

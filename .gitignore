@@ -59,3 +59,9 @@ go.work.sum
 # ── Codex local settings ──────────────────────────────────────────────────────
 # .codex contains machine-specific Codex metadata and must not be committed.
 .codex
+
+# ── Root build artefacts ──────────────────────────────────────────────────────
+# Historical local builds placed binaries in the repository root. Keep these
+# ignored even though new builds should go to ./bin via the Makefile.
+/api
+/worker

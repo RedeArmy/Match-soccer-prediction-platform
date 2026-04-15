@@ -25,6 +25,7 @@ import (
 const (
 	fmtUnexpectedError = "unexpected error: %v"
 
+	envEnvironment  = "WCQ_ENVIRONMENT"
 	envServerPort   = "WCQ_SERVER_PORT"
 	envLoggerLevel  = "WCQ_LOGGER_LEVEL"
 	portOverride    = "9090"
@@ -109,6 +110,18 @@ func TestLoad_EnvVarOverridesDefault(t *testing.T) {
 	}
 }
 
+func TestLoad_DefaultEnvironmentIsDev(t *testing.T) {
+	setRequiredEnv(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if cfg.Environment != "dev" {
+		t.Errorf("Environment default: expected %q, got %q", "dev", cfg.Environment)
+	}
+}
+
 func TestLoad_InvalidLogLevel_ReturnsError(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv(envLoggerLevel, "verbose")
@@ -119,6 +132,45 @@ func TestLoad_InvalidLogLevel_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "logger.level") {
 		t.Errorf("expected error message to reference logger.level, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithoutJWKSURL_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing JWKS URL in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_CLERK_JWKSURL") {
+		t.Errorf("expected error to reference WCQ_CLERK_JWKSURL, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithoutWebhookSecret_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing webhook secret in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_CLERK_WEBHOOKSECRET") {
+		t.Errorf("expected error to reference WCQ_CLERK_WEBHOOKSECRET, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithClerkSettings_ReturnsNoError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for complete production config, got: %v", err)
 	}
 }
 
