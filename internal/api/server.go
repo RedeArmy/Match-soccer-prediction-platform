@@ -14,10 +14,8 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -273,18 +271,9 @@ func (s *Server) buildHandlers(
 		handler.NewGroupHandler(quinielaSvc, memberSvc, s.log)
 }
 
-// handleReadiness executes all registered health checkers and returns a
-// detailed JSON report. It answers the question "are all dependencies ready?"
-// rather than "is the process alive?" (which is /health's concern).
-//
-// All checkers run concurrently under a 5-second timeout. The response is:
-//   - HTTP 200 with {"status":"ok",   "checks":{…}} when every check passes.
-//   - HTTP 503 with {"status":"error","checks":{…}} when any check fails.
-//
-// This separation follows the Kubernetes liveness / readiness probe model:
-// a failing readiness probe removes the pod from the load balancer's
-// rotation without restarting it, which is the correct response to a
-// transient database or Redis outage.
+// handleReadiness is a thin wrapper around health.ReadinessHandler that exists
+// solely to carry the OpenAPI annotations swaggo needs to document the
+// /health/ready endpoint. All logic lives in health.ReadinessHandler.
 //
 // @Summary      Readiness check
 // @Description  Readiness probe: runs all registered infrastructure checkers
@@ -297,41 +286,7 @@ func (s *Server) buildHandlers(
 // @Failure      503  {object}  health.Response
 // @Router       /health/ready [get]
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	resp := health.Response{
-		Status: "ok",
-		Checks: make(map[string]health.Result, len(s.checkers)),
-	}
-
-	type item struct {
-		name   string
-		result health.Result
-	}
-	ch := make(chan item, len(s.checkers))
-
-	for _, c := range s.checkers {
-		c := c
-		go func() { ch <- item{c.Name(), c.Check(ctx)} }()
-	}
-
-	for range s.checkers {
-		it := <-ch
-		resp.Checks[it.name] = it.result
-		if it.result.Status != "ok" {
-			resp.Status = "error"
-		}
-	}
-
-	data, _ := json.Marshal(resp)
-	w.Header().Set("Content-Type", "application/json")
-	if resp.Status != "ok" {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	} else {
-		w.WriteHeader(http.StatusOK)
-	}
-	_, _ = w.Write(data)
+	health.ReadinessHandler(s.checkers)(w, r)
 }
 
 // handleHealth responds to liveness probes issued by load balancers and

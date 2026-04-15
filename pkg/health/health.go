@@ -11,7 +11,12 @@
 // creating an import cycle.
 package health
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+)
 
 // Checker reports the health of a single infrastructure component.
 // Name returns a stable, lowercase key used as the field name in the JSON
@@ -37,4 +42,51 @@ type Result struct {
 type Response struct {
 	Status string            `json:"status"`
 	Checks map[string]Result `json:"checks"`
+}
+
+// ReadinessHandler returns an http.HandlerFunc that runs all registered
+// checkers concurrently under a 5-second timeout and returns a JSON report.
+// Returns HTTP 200 when every check passes, or 503 when any check fails.
+//
+// This consolidates the readiness probe logic shared by the API server and
+// the background worker — both processes expose an identical /health/ready
+// endpoint and previously duplicated this implementation verbatim.
+func ReadinessHandler(checkers []Checker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		resp := Response{
+			Status: "ok",
+			Checks: make(map[string]Result, len(checkers)),
+		}
+
+		type item struct {
+			name   string
+			result Result
+		}
+		ch := make(chan item, len(checkers))
+
+		for _, c := range checkers {
+			c := c
+			go func() { ch <- item{c.Name(), c.Check(ctx)} }()
+		}
+
+		for range checkers {
+			it := <-ch
+			resp.Checks[it.name] = it.result
+			if it.result.Status != "ok" {
+				resp.Status = "error"
+			}
+		}
+
+		data, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		if resp.Status != "ok" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+		_, _ = w.Write(data)
+	}
 }
