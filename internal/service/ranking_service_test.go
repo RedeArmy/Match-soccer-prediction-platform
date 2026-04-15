@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -51,6 +53,7 @@ func TestGetLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T) {
 		&stubQuinielaRepo{quiniela: nil},
 		&stubPredRepo{},
 		&stubUserRepo{},
+		zap.NewNop(),
 	)
 
 	_, err := svc.GetLeaderboard(context.Background(), 99)
@@ -68,6 +71,7 @@ func TestGetLeaderboard_NoActivePaidMembers_ReturnsNil(t *testing.T) {
 		&stubQuinielaRepo{quiniela: q},
 		predRepo,
 		&stubUserRepo{},
+		zap.NewNop(),
 	)
 
 	entries, err := svc.GetLeaderboard(context.Background(), 1)
@@ -98,6 +102,7 @@ func TestGetLeaderboard_SortedByPoints(t *testing.T) {
 		&stubQuinielaRepo{quiniela: q},
 		predRepo,
 		userRepo,
+		zap.NewNop(),
 	)
 
 	entries, err := svc.GetLeaderboard(context.Background(), 1)
@@ -126,7 +131,7 @@ func TestGetLeaderboard_DatabaseError_PropagatesError(t *testing.T) {
 	predRepo := &stubTotalPointsPredRepo{
 		pointsErr: apperrors.Internal(errors.New("db error")),
 	}
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, &stubUserRepo{})
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, &stubUserRepo{}, zap.NewNop())
 
 	_, err := svc.GetLeaderboard(context.Background(), 1)
 	if err == nil {
@@ -149,7 +154,7 @@ func TestGetLeaderboard_DeletedUser_SkippedSilently(t *testing.T) {
 	// Only user 2 is returned — user 1 has been deleted.
 	userRepo := &stubUserRepo{users: []*domain.User{userB}}
 
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo)
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, zap.NewNop())
 
 	entries, err := svc.GetLeaderboard(context.Background(), 1)
 	if err != nil {
@@ -170,7 +175,7 @@ func TestGetLeaderboard_ListByIDsError_Propagated(t *testing.T) {
 	}
 	userRepo := &stubUserRepo{err: errors.New("db error")}
 
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo)
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, zap.NewNop())
 
 	_, err := svc.GetLeaderboard(context.Background(), 1)
 	if err == nil {

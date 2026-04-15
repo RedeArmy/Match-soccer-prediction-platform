@@ -82,7 +82,7 @@ func TestHandleLiveness_ContentTypeJSON(t *testing.T) {
 
 func TestHandleReadiness_AllCheckersOK_Returns200(t *testing.T) {
 	checkers := []health.Checker{&okChecker{checkerDB}, &okChecker{driverRedis}}
-	h := handleReadiness(checkers, zap.NewNop())
+	h := health.ReadinessHandler(checkers)
 
 	req := httptest.NewRequest(http.MethodGet, pathHealthReady, nil)
 	w := httptest.NewRecorder()
@@ -95,7 +95,7 @@ func TestHandleReadiness_AllCheckersOK_Returns200(t *testing.T) {
 
 func TestHandleReadiness_AllCheckersOK_BodyStatusOK(t *testing.T) {
 	checkers := []health.Checker{&okChecker{checkerDB}}
-	h := handleReadiness(checkers, zap.NewNop())
+	h := health.ReadinessHandler(checkers)
 
 	req := httptest.NewRequest(http.MethodGet, pathHealthReady, nil)
 	w := httptest.NewRecorder()
@@ -115,7 +115,7 @@ func TestHandleReadiness_AllCheckersOK_BodyStatusOK(t *testing.T) {
 
 func TestHandleReadiness_CheckerFails_Returns503(t *testing.T) {
 	checkers := []health.Checker{&okChecker{checkerDB}, &failChecker{driverRedis}}
-	h := handleReadiness(checkers, zap.NewNop())
+	h := health.ReadinessHandler(checkers)
 
 	req := httptest.NewRequest(http.MethodGet, pathHealthReady, nil)
 	w := httptest.NewRecorder()
@@ -128,7 +128,7 @@ func TestHandleReadiness_CheckerFails_Returns503(t *testing.T) {
 
 func TestHandleReadiness_CheckerFails_BodyStatusError(t *testing.T) {
 	checkers := []health.Checker{&failChecker{driverRedis}}
-	h := handleReadiness(checkers, zap.NewNop())
+	h := health.ReadinessHandler(checkers)
 
 	req := httptest.NewRequest(http.MethodGet, pathHealthReady, nil)
 	w := httptest.NewRecorder()
@@ -144,7 +144,7 @@ func TestHandleReadiness_CheckerFails_BodyStatusError(t *testing.T) {
 }
 
 func TestHandleReadiness_NoCheckers_Returns200(t *testing.T) {
-	h := handleReadiness(nil, zap.NewNop())
+	h := health.ReadinessHandler(nil)
 
 	req := httptest.NewRequest(http.MethodGet, pathHealthReady, nil)
 	w := httptest.NewRecorder()
