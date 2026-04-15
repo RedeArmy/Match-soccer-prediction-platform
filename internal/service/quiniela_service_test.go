@@ -11,10 +11,13 @@ import (
 )
 
 // stubQuinielaRepo implements repository.QuinielaRepository with configurable returns.
+// updateStatusErr, if set, is returned exclusively by UpdateStatus so that
+// syncGroupStatus error paths can be tested without affecting earlier calls.
 type stubQuinielaRepo struct {
-	quiniela  *domain.Quiniela
-	quinielas []*domain.Quiniela
-	err       error
+	quiniela        *domain.Quiniela
+	quinielas       []*domain.Quiniela
+	err             error
+	updateStatusErr error
 }
 
 func (r *stubQuinielaRepo) Create(_ context.Context, _ *domain.Quiniela) error { return r.err }
@@ -33,19 +36,22 @@ func (r *stubQuinielaRepo) RotateInviteCode(_ context.Context, _ int, _ string, 
 	return r.quiniela, r.err
 }
 func (r *stubQuinielaRepo) UpdateStatus(_ context.Context, _ int, _ domain.QuinielaStatus) error {
-	return r.err
+	return r.updateStatusErr
 }
 
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.
 // membershipByID is returned by GetByID (used in ApproveJoin to load the pending
 // request). membership is returned by GetByQuinielaAndUser (used to look up the
 // approver and in Leave). activeCount is returned by CountActive.
+// countActiveErr, if set, is returned exclusively by CountActive so that
+// syncGroupStatus error paths can be tested without affecting earlier calls.
 type stubMemberRepo struct {
 	membership     *domain.GroupMembership
 	membershipByID *domain.GroupMembership
 	memberships    []*domain.GroupMembership
 	activeCount    int
 	err            error
+	countActiveErr error
 }
 
 func (r *stubMemberRepo) Create(_ context.Context, _ *domain.GroupMembership) error { return r.err }
@@ -66,7 +72,7 @@ func (r *stubMemberRepo) ListByUser(_ context.Context, _ int) ([]*domain.GroupMe
 	return r.memberships, r.err
 }
 func (r *stubMemberRepo) CountActive(_ context.Context, _ int) (int, error) {
-	return r.activeCount, r.err
+	return r.activeCount, r.countActiveErr
 }
 
 // ── QuinielaService tests ─────────────────────────────────────────────────────

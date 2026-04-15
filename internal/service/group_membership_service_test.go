@@ -356,6 +356,60 @@ func TestGroupMembershipService_ListByUser_ReturnsMemberships(t *testing.T) {
 
 // ── MarkPaid ──────────────────────────────────────────────────────────────────
 
+// ── syncGroupStatus error paths ───────────────────────────────────────────────
+
+// syncGroupStatus errors are logged and swallowed, so the parent operation
+// (ApproveJoin / Leave) must still succeed when CountActive or UpdateStatus fail.
+
+func TestGroupMembershipService_ApproveJoin_SyncCountActiveError_StillSucceeds(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			countActiveErr: errors.New("db error"),
+		},
+	)
+
+	got, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if err != nil {
+		t.Fatalf("expected ApproveJoin to succeed despite sync error, got %v", err)
+	}
+	if got.Status != domain.MembershipActive {
+		t.Errorf("expected active status, got %s", got.Status)
+	}
+}
+
+func TestGroupMembershipService_Leave_SyncUpdateStatusError_StillSucceeds(t *testing.T) {
+	svc := newMemberSvc(
+		&stubQuinielaRepo{updateStatusErr: errors.New("db error")},
+		&stubMemberRepo{membership: activeMembership(1, 42), activeCount: 1},
+	)
+
+	if err := svc.Leave(context.Background(), 1, 42); err != nil {
+		t.Errorf("expected Leave to succeed despite sync error, got %v", err)
+	}
+}
+
+// ── checkCapacity error path ───────────────────────────────────────────────────
+
+func TestGroupMembershipService_Join_ListByQuinielaError_ReturnsError(t *testing.T) {
+	maxMembers := 5
+	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 1, InviteCode: "CODE", MaxMembers: &maxMembers}
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{err: errors.New("db error")},
+	)
+
+	if _, err := svc.Join(context.Background(), "CODE", 42); err == nil {
+		t.Error("expected error when ListByQuiniela fails in checkCapacity, got nil")
+	}
+}
+
+// ── MarkPaid ──────────────────────────────────────────────────────────────────
+
 func TestGroupMembershipService_MarkPaid_ReturnsMembership(t *testing.T) {
 	now := time.Now()
 	m := &domain.GroupMembership{
