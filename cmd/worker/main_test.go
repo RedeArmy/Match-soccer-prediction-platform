@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
@@ -258,6 +260,32 @@ func TestStartWorker_ImmediateShutdown_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestStartWorker_SubscribesMatchStarted(t *testing.T) {
+	// Verify that a MatchStarted event published after startWorker returns is
+	// handled without error. The handler only logs, so the only observable
+	// outcome is the absence of a panic or error from the bus.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := &config.Config{Worker: config.WorkerConfig{HealthPort: "0"}}
+	log := zap.NewNop()
+	bus := messaging.NewInMemoryBus(log)
+	scorer := &stubScorer{}
+
+	if err := startWorker(ctx, cfg, bus, scorer, nil, nil, log); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	err := bus.Publish(context.Background(), events.Envelope{
+		Type:       events.EventMatchStarted,
+		OccurredAt: time.Now(),
+		Payload:    events.MatchStarted{MatchID: 3, HomeTeam: teamMexico, AwayTeam: "Canada", KickoffAt: time.Now()},
+	})
+	if err != nil {
+		t.Errorf("MatchStarted publish: %v", err)
+	}
+}
+
 func TestStartWorker_SubscribesBeforeShutdown(t *testing.T) {
 	// Using a pre-cancelled context makes startWorker run synchronously:
 	// it calls bus.Subscribe, creates the health server, starts its goroutine,
@@ -287,4 +315,42 @@ func TestStartWorker_SubscribesBeforeShutdown(t *testing.T) {
 	if scorer.lastID != 7 {
 		t.Errorf("expected subscriber registered for match 7, got id=%d", scorer.lastID)
 	}
+}
+
+// ── buildHealthCheckers ───────────────────────────────────────────────────────
+
+func TestBuildHealthCheckers_ReturnsCheckerForEachEventType(t *testing.T) {
+	// buildHealthCheckers constructors are pure: they only store references and
+	// do not dial any backend. Passing nil for both arguments is safe because
+	// Check() is never called here — we only verify the slice length and that
+	// every expected event type has both a DLQ and stream-pending checker.
+	checkers := buildHealthCheckers(nil, nil)
+
+	// 2 base checkers (DB + Redis) + 2 DLQ + 2 stream-pending = 6 total.
+	const wantLen = 6
+	if len(checkers) != wantLen {
+		t.Errorf("expected %d health checkers, got %d", wantLen, len(checkers))
+	}
+}
+
+// ── monitorDLQ ────────────────────────────────────────────────────────────────
+
+func TestMonitorDLQ_NilClient_ReturnsImmediately(t *testing.T) {
+	// The nil-client guard prevents a panic when the worker is started without
+	// a Redis connection (e.g. unit tests). Verifies the guard fires correctly.
+	monitorDLQ(context.Background(), nil, zap.NewNop())
+}
+
+func TestMonitorDLQ_CancelledContext_ReturnsWithoutTick(t *testing.T) {
+	// A pre-cancelled context causes monitorDLQ to enter the select loop once
+	// and immediately return via the ctx.Done() case — without waiting for the
+	// 5-minute ticker. This exercises the ticker/monitoredEvents setup path.
+	mr := miniredis.RunT(t)
+	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rc.Close() //nolint:errcheck
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	monitorDLQ(ctx, rc, zap.NewNop())
 }

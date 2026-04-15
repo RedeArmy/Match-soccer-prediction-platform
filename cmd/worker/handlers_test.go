@@ -59,6 +59,36 @@ func envelopeWithStruct(matchID int) events.Envelope {
 	}
 }
 
+// matchStartedEnvelopeWithMap simulates the RedisBus JSON round-trip for a
+// MatchStarted payload: the concrete struct becomes map[string]interface{}.
+func matchStartedEnvelopeWithMap(matchID int) events.Envelope {
+	return events.Envelope{
+		Type:       events.EventMatchStarted,
+		OccurredAt: time.Now(),
+		Payload: map[string]interface{}{
+			"MatchID":   float64(matchID),
+			"HomeTeam":  teamMexico,
+			"AwayTeam":  "Canada",
+			"KickoffAt": time.Now().UTC().Format(time.RFC3339),
+		},
+	}
+}
+
+// matchStartedEnvelopeWithStruct simulates the InMemoryBus path for a
+// MatchStarted payload: the concrete type is preserved without JSON encoding.
+func matchStartedEnvelopeWithStruct(matchID int) events.Envelope {
+	return events.Envelope{
+		Type:       events.EventMatchStarted,
+		OccurredAt: time.Now(),
+		Payload: events.MatchStarted{
+			MatchID:   matchID,
+			HomeTeam:  teamMexico,
+			AwayTeam:  "Canada",
+			KickoffAt: time.Now().UTC(),
+		},
+	}
+}
+
 // ── decodePayload ─────────────────────────────────────────────────────────────
 
 func TestDecodePayload_MapPayload_DecodesCorrectly(t *testing.T) {
@@ -109,6 +139,39 @@ func TestDecodePayload_WrongTypeInMap_ReturnsError(t *testing.T) {
 	_, err := decodePayload[events.MatchFinished](env)
 	if err == nil {
 		t.Error("expected unmarshal error for wrong type, got nil")
+	}
+}
+
+// ── newMatchStartedHandler ────────────────────────────────────────────────────
+
+func TestMatchStartedHandler_MapPayload_ReturnsNil(t *testing.T) {
+	h := newMatchStartedHandler(zap.NewNop())
+
+	if err := h(context.Background(), matchStartedEnvelopeWithMap(10)); err != nil {
+		t.Errorf(fmtUnexpectedErr, err)
+	}
+}
+
+func TestMatchStartedHandler_StructPayload_ReturnsNil(t *testing.T) {
+	h := newMatchStartedHandler(zap.NewNop())
+
+	if err := h(context.Background(), matchStartedEnvelopeWithStruct(11)); err != nil {
+		t.Errorf(fmtUnexpectedErr, err)
+	}
+}
+
+func TestMatchStartedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
+	// A channel cannot be JSON-marshalled. The handler must log and return nil
+	// rather than an error so the bus does not retry a structurally invalid
+	// message — identical policy to newMatchFinishedHandler.
+	h := newMatchStartedHandler(zap.NewNop())
+
+	env := events.Envelope{
+		Type:    events.EventMatchStarted,
+		Payload: make(chan int),
+	}
+	if err := h(context.Background(), env); err != nil {
+		t.Errorf("expected nil for undecodable payload, got %v", err)
 	}
 }
 

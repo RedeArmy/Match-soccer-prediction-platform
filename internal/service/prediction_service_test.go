@@ -67,7 +67,7 @@ func (r *stubPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _
 func newPredSvc(match *domain.Match, existingPred *domain.Prediction) PredictionService {
 	matchRepo := &stubMatchRepo{match: match}
 	predRepo := &stubPredRepo{byUserMatch: existingPred}
-	return NewPredictionService(predRepo, matchRepo, &stubPublisher{}, zap.NewNop())
+	return NewPredictionService(predRepo, matchRepo, zap.NewNop())
 }
 
 func openMatch() *domain.Match {
@@ -110,6 +110,32 @@ func TestSubmit_PastDeadline_ReturnsValidation(t *testing.T) {
 	}
 }
 
+func TestSubmit_LiveMatch_ReturnsValidation(t *testing.T) {
+	match := &domain.Match{ID: 1, HomeTeam: teamBrazil, AwayTeam: teamArgentina,
+		Status:    domain.MatchStatusLive,
+		KickoffAt: time.Now().Add(30 * time.Minute),
+	}
+	svc := newPredSvc(match, nil)
+	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
+
+	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for live match, got %v", err)
+	}
+}
+
+func TestSubmit_FinishedMatch_ReturnsValidation(t *testing.T) {
+	match := &domain.Match{ID: 1, HomeTeam: teamBrazil, AwayTeam: teamArgentina,
+		Status:    domain.MatchStatusFinished,
+		KickoffAt: time.Now().Add(-2 * time.Hour),
+	}
+	svc := newPredSvc(match, nil)
+	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 0, AwayScore: 0}
+
+	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for finished match, got %v", err)
+	}
+}
+
 func TestSubmit_DuplicatePrediction_ReturnsConflict(t *testing.T) {
 	existing := &domain.Prediction{ID: 5, UserID: 1, MatchID: 1}
 	svc := newPredSvc(openMatch(), existing)
@@ -127,7 +153,7 @@ func TestUpdate_ValidPrediction_ReturnsUpdated(t *testing.T) {
 	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: match.ID, HomeScore: 1, AwayScore: 0}
 	matchRepo := &stubMatchRepo{match: match}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, matchRepo, &stubPublisher{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, matchRepo, zap.NewNop())
 
 	got, err := svc.Update(context.Background(), 1, 1, 2, 1)
 	if err != nil {
@@ -141,7 +167,7 @@ func TestUpdate_ValidPrediction_ReturnsUpdated(t *testing.T) {
 func TestUpdate_PredictionNotFound_ReturnsNotFound(t *testing.T) {
 	matchRepo := &stubMatchRepo{match: openMatch()}
 	predRepo := &stubPredRepo{byID: nil}
-	svc := NewPredictionService(predRepo, matchRepo, &stubPublisher{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, matchRepo, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 99, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf(fmtNotFoundErr, err)
@@ -151,7 +177,7 @@ func TestUpdate_PredictionNotFound_ReturnsNotFound(t *testing.T) {
 func TestUpdate_MatchNotFound_ReturnsNotFound(t *testing.T) {
 	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 99}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{match: nil}, &stubPublisher{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: nil}, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 1, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf(fmtNotFoundErr, err)
@@ -165,7 +191,7 @@ func TestUpdate_PastDeadline_ReturnsValidation(t *testing.T) {
 	}
 	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &stubPublisher{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for deadline, got %v", err)
@@ -176,7 +202,7 @@ func TestUpdate_OtherUsersPrediction_ReturnsForbidden(t *testing.T) {
 	match := openMatch()
 	pred := &domain.Prediction{ID: 1, UserID: 2, MatchID: match.ID, HomeScore: 1, AwayScore: 0}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &stubPublisher{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrForbidden) {
 		t.Errorf("expected forbidden error for ownership mismatch, got %v", err)
@@ -186,12 +212,40 @@ func TestUpdate_OtherUsersPrediction_ReturnsForbidden(t *testing.T) {
 	}
 }
 
+func TestUpdate_LiveMatch_ReturnsValidation(t *testing.T) {
+	match := &domain.Match{ID: 1, HomeTeam: teamBrazil, AwayTeam: teamArgentina,
+		Status:    domain.MatchStatusLive,
+		KickoffAt: time.Now().Add(30 * time.Minute),
+	}
+	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
+	predRepo := &stubPredRepo{byID: pred}
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, zap.NewNop())
+
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for live match, got %v", err)
+	}
+}
+
+func TestUpdate_FinishedMatch_ReturnsValidation(t *testing.T) {
+	match := &domain.Match{ID: 1, HomeTeam: teamBrazil, AwayTeam: teamArgentina,
+		Status:    domain.MatchStatusFinished,
+		KickoffAt: time.Now().Add(-2 * time.Hour),
+	}
+	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
+	predRepo := &stubPredRepo{byID: pred}
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, zap.NewNop())
+
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for finished match, got %v", err)
+	}
+}
+
 // ── GetByUser / GetByMatch ────────────────────────────────────────────────────
 
 func TestGetByUser_ReturnsSlice(t *testing.T) {
 	preds := []*domain.Prediction{{ID: 1, UserID: 1, MatchID: 1}}
 	predRepo := &stubPredRepo{list: preds}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{}, &stubPublisher{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
 
 	got, err := svc.GetByUser(context.Background(), 1)
 	if err != nil {
@@ -205,7 +259,7 @@ func TestGetByUser_ReturnsSlice(t *testing.T) {
 func TestGetByMatch_ReturnsSlice(t *testing.T) {
 	preds := []*domain.Prediction{{ID: 2, UserID: 2, MatchID: 5}}
 	predRepo := &stubPredRepo{list: preds}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{}, &stubPublisher{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
 
 	got, err := svc.GetByMatch(context.Background(), 5)
 	if err != nil {
