@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -13,28 +15,52 @@ import (
 // ── GroupMembershipService tests ──────────────────────────────────────────────
 
 func newMemberSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) GroupMembershipService {
-	return NewGroupMembershipService(qr, mr)
+	return NewGroupMembershipService(qr, mr, zap.NewNop())
 }
 
 func quinielaWithCode(id int, code string) *domain.Quiniela {
 	return &domain.Quiniela{ID: id, Name: "Test", OwnerID: 1, InviteCode: code}
 }
 
-func TestGroupMembershipService_Join_NewMember_ReturnsActive(t *testing.T) {
+// activeMembership returns an active membership for use as an approver stub.
+func activeMembership(quinielaID, userID int) *domain.GroupMembership {
+	now := time.Now()
+	return &domain.GroupMembership{
+		ID:         1,
+		QuinielaID: quinielaID,
+		UserID:     userID,
+		Status:     domain.MembershipActive,
+		JoinedAt:   &now,
+	}
+}
+
+// pendingMembership returns a pending membership for use as the join-request stub.
+func pendingMembership(id, quinielaID, userID int) *domain.GroupMembership {
+	return &domain.GroupMembership{
+		ID:         id,
+		QuinielaID: quinielaID,
+		UserID:     userID,
+		Status:     domain.MembershipPending,
+	}
+}
+
+// ── Join ──────────────────────────────────────────────────────────────────────
+
+func TestGroupMembershipService_Join_NewMember_ReturnsPending(t *testing.T) {
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: quinielaWithCode(1, "VALIDCODE")},
-		&stubMemberRepo{membership: nil}, // no existing membership
+		&stubMemberRepo{membership: nil},
 	)
 
 	m, err := svc.Join(context.Background(), "VALIDCODE", 42)
 	if err != nil {
 		t.Fatalf(fmtExpectNil, err)
 	}
-	if m.Status != domain.MembershipActive {
-		t.Errorf("expected active status, got %s", m.Status)
+	if m.Status != domain.MembershipPending {
+		t.Errorf("expected pending status, got %s", m.Status)
 	}
-	if m.JoinedAt == nil {
-		t.Error("expected JoinedAt to be set")
+	if m.JoinedAt != nil {
+		t.Error("JoinedAt must be nil for a pending request (set on approval)")
 	}
 }
 
@@ -51,17 +77,9 @@ func TestGroupMembershipService_Join_CodeNotFound_ReturnsNotFound(t *testing.T) 
 }
 
 func TestGroupMembershipService_Join_AlreadyActive_ReturnsConflict(t *testing.T) {
-	now := time.Now()
-	existing := &domain.GroupMembership{
-		ID:         1,
-		QuinielaID: 1,
-		UserID:     42,
-		Status:     domain.MembershipActive,
-		JoinedAt:   &now,
-	}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: quinielaWithCode(1, "CODE")},
-		&stubMemberRepo{membership: existing},
+		&stubMemberRepo{membership: activeMembership(1, 42)},
 	)
 
 	_, err := svc.Join(context.Background(), "CODE", 42)
@@ -70,7 +88,19 @@ func TestGroupMembershipService_Join_AlreadyActive_ReturnsConflict(t *testing.T)
 	}
 }
 
-func TestGroupMembershipService_Join_PreviouslyLeft_ReturnsActive(t *testing.T) {
+func TestGroupMembershipService_Join_AlreadyPending_ReturnsConflict(t *testing.T) {
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: quinielaWithCode(1, "CODE")},
+		&stubMemberRepo{membership: pendingMembership(1, 1, 42)},
+	)
+
+	_, err := svc.Join(context.Background(), "CODE", 42)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict for duplicate pending request, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_Join_PreviouslyLeft_ReturnsPending(t *testing.T) {
 	existing := &domain.GroupMembership{
 		ID:         1,
 		QuinielaID: 1,
@@ -86,8 +116,8 @@ func TestGroupMembershipService_Join_PreviouslyLeft_ReturnsActive(t *testing.T) 
 	if err != nil {
 		t.Fatalf(fmtExpectNil, err)
 	}
-	if m.Status != domain.MembershipActive {
-		t.Errorf("expected active status, got %s", m.Status)
+	if m.Status != domain.MembershipPending {
+		t.Errorf("expected pending status for re-join, got %s", m.Status)
 	}
 }
 
@@ -108,6 +138,184 @@ func TestGroupMembershipService_Join_MaxMembersReached_ReturnsConflict(t *testin
 		t.Errorf("expected conflict (full group) error, got %v", err)
 	}
 }
+
+func TestGroupMembershipService_Join_FreeGroup_AutoPaid(t *testing.T) {
+	q := quinielaWithCode(1, "FREECODE")
+	q.EntryFee = 0
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{membership: nil},
+	)
+
+	m, err := svc.Join(context.Background(), "FREECODE", 42)
+	if err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if !m.Paid {
+		t.Error("expected Paid = true for free group even while pending")
+	}
+}
+
+func TestGroupMembershipService_Join_PaidGroup_NotAutoPaid(t *testing.T) {
+	q := quinielaWithCode(1, "PAIDCODE")
+	q.EntryFee = 200
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{membership: nil},
+	)
+
+	m, err := svc.Join(context.Background(), "PAIDCODE", 42)
+	if err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if m.Paid {
+		t.Error("expected Paid = false for paid group until payment confirmed")
+	}
+}
+
+// ── ApproveJoin ───────────────────────────────────────────────────────────────
+
+func TestGroupMembershipService_ApproveJoin_Success_ReturnsActive(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			activeCount:    3,
+		},
+	)
+
+	got, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if got.Status != domain.MembershipActive {
+		t.Errorf("expected active status after approval, got %s", got.Status)
+	}
+	if got.JoinedAt == nil {
+		t.Error("expected JoinedAt to be set after approval")
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_ApproverNotMember_ReturnsForbidden(t *testing.T) {
+	// approver has no membership (nil returned by GetByQuinielaAndUser)
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{membership: nil},
+	)
+
+	_, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrForbidden) {
+		t.Errorf("expected forbidden for non-member approver, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_ApproverPending_ReturnsForbidden(t *testing.T) {
+	// approver is pending (not yet active) — must not be able to approve
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{membership: pendingMembership(1, 1, 10)},
+	)
+
+	_, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrForbidden) {
+		t.Errorf("expected forbidden for pending approver, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_MembershipNotFound_ReturnsNotFound(t *testing.T) {
+	// approver is valid but the membership being approved does not exist
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     activeMembership(1, 10),
+			membershipByID: nil, // pending not found
+		},
+	)
+
+	_, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found when pending membership absent, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_WrongQuiniela_ReturnsNotFound(t *testing.T) {
+	approver := activeMembership(1, 10)
+	// pending belongs to a different quiniela
+	pending := pendingMembership(99, 2, 42)
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+		},
+	)
+
+	_, err := svc.ApproveJoin(context.Background(), 1, 99, 10) // path quinielaID = 1
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found for cross-quiniela approval attempt, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_NotPending_ReturnsConflict(t *testing.T) {
+	approver := activeMembership(1, 10)
+	// The membership belongs to quinielaID=1 but is already active (not pending).
+	alreadyActive := activeMembership(1, 42)
+	alreadyActive.ID = 99
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: alreadyActive,
+		},
+	)
+
+	_, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict for non-pending membership, got %v", err)
+	}
+}
+
+// ── Leave ─────────────────────────────────────────────────────────────────────
+
+func TestGroupMembershipService_Leave_ActiveMember_ReturnsNil(t *testing.T) {
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{membership: activeMembership(1, 42), activeCount: 1},
+	)
+
+	if err := svc.Leave(context.Background(), 1, 42); err != nil {
+		t.Errorf("expected nil for valid self-leave, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_Leave_NotMember_ReturnsValidation(t *testing.T) {
+	// GetByQuinielaAndUser returns nil — user has no membership
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{membership: nil},
+	)
+
+	if err := svc.Leave(context.Background(), 1, 42); !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for non-member leave, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_Leave_AlreadyLeft_ReturnsValidation(t *testing.T) {
+	left := &domain.GroupMembership{ID: 1, QuinielaID: 1, UserID: 42, Status: domain.MembershipLeft}
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{membership: left},
+	)
+
+	if err := svc.Leave(context.Background(), 1, 42); !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for already-left member, got %v", err)
+	}
+}
+
+// ── ListByQuiniela / ListByUser ───────────────────────────────────────────────
 
 func TestGroupMembershipService_ListByQuiniela_ReturnsMemberships(t *testing.T) {
 	memberships := []*domain.GroupMembership{
@@ -146,39 +354,61 @@ func TestGroupMembershipService_ListByUser_ReturnsMemberships(t *testing.T) {
 	}
 }
 
-func TestGroupMembershipService_Join_FreeGroup_AutoPaid(t *testing.T) {
-	q := quinielaWithCode(1, "FREECODE")
-	q.EntryFee = 0
+// ── MarkPaid ──────────────────────────────────────────────────────────────────
+
+// ── syncGroupStatus error paths ───────────────────────────────────────────────
+
+// syncGroupStatus errors are logged and swallowed, so the parent operation
+// (ApproveJoin / Leave) must still succeed when CountActive or UpdateStatus fail.
+
+func TestGroupMembershipService_ApproveJoin_SyncCountActiveError_StillSucceeds(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
 	svc := newMemberSvc(
-		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{membership: nil},
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			countActiveErr: errors.New("db error"),
+		},
 	)
 
-	m, err := svc.Join(context.Background(), "FREECODE", 42)
+	got, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
 	if err != nil {
-		t.Fatalf(fmtExpectNil, err)
+		t.Fatalf("expected ApproveJoin to succeed despite sync error, got %v", err)
 	}
-	if !m.Paid {
-		t.Error("expected Paid = true for free group")
+	if got.Status != domain.MembershipActive {
+		t.Errorf("expected active status, got %s", got.Status)
 	}
 }
 
-func TestGroupMembershipService_Join_PaidGroup_NotAutoPaid(t *testing.T) {
-	q := quinielaWithCode(1, "PAIDCODE")
-	q.EntryFee = 200
+func TestGroupMembershipService_Leave_SyncUpdateStatusError_StillSucceeds(t *testing.T) {
 	svc := newMemberSvc(
-		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{membership: nil},
+		&stubQuinielaRepo{updateStatusErr: errors.New("db error")},
+		&stubMemberRepo{membership: activeMembership(1, 42), activeCount: 1},
 	)
 
-	m, err := svc.Join(context.Background(), "PAIDCODE", 42)
-	if err != nil {
-		t.Fatalf(fmtExpectNil, err)
-	}
-	if m.Paid {
-		t.Error("expected Paid = false for paid group until payment confirmed")
+	if err := svc.Leave(context.Background(), 1, 42); err != nil {
+		t.Errorf("expected Leave to succeed despite sync error, got %v", err)
 	}
 }
+
+// ── checkCapacity error path ───────────────────────────────────────────────────
+
+func TestGroupMembershipService_Join_ListByQuinielaError_ReturnsError(t *testing.T) {
+	maxMembers := 5
+	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 1, InviteCode: "CODE", MaxMembers: &maxMembers}
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{err: errors.New("db error")},
+	)
+
+	if _, err := svc.Join(context.Background(), "CODE", 42); err == nil {
+		t.Error("expected error when ListByQuiniela fails in checkCapacity, got nil")
+	}
+}
+
+// ── MarkPaid ──────────────────────────────────────────────────────────────────
 
 func TestGroupMembershipService_MarkPaid_ReturnsMembership(t *testing.T) {
 	now := time.Now()

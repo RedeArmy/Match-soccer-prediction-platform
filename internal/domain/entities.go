@@ -173,6 +173,25 @@ type Prediction struct {
 	UpdatedAt time.Time
 }
 
+// QuinielaStatus is the system-managed lifecycle state of a Quiniela.
+//
+// The transition rules are enforced exclusively by the membership service:
+//   - QuinielaStatusActive   — group has ≥ MinMembersForActive active members;
+//     eligible for payment processing and prize distribution.
+//   - QuinielaStatusInactive — group has < MinMembersForActive active members;
+//     predictions can still be submitted but payments are blocked.
+//
+// No HTTP endpoint exposes a direct status change. The status cannot be set
+// to any value other than these two; the database enforces this with a CHECK
+// constraint.
+type QuinielaStatus string
+
+// Allowed values for QuinielaStatus.
+const (
+	QuinielaStatusActive   QuinielaStatus = "active"
+	QuinielaStatusInactive QuinielaStatus = "inactive"
+)
+
 // Quiniela represents a named prediction group in the tournament.
 //
 // Each Quiniela is created by an owner (OwnerID) who becomes its first active
@@ -184,10 +203,14 @@ type Prediction struct {
 // default to 0 / "MXN" and are never nil in a hydrated struct.
 // MaxMembers is nil when the group has no size cap.
 //
-// InviteCodeExpiresAt limits the lifetime of the current InviteCode. A nil
-// value means the code never expires. When non-nil and in the past, the code
-// is considered invalid; callers must request a rotation via RotateInviteCode.
-// Setting an expiry prevents indefinite access when an invite link leaks.
+// InviteCodeExpiresAt is always nil: invite links never expire by design.
+// RotateInviteCode can be used to invalidate a leaked link by generating a
+// new one; the old code becomes unreachable immediately after rotation.
+//
+// Status is system-managed: the membership service sets it to
+// QuinielaStatusActive when MinMembersForActive active members are present,
+// and reverts to QuinielaStatusInactive when the count falls below that
+// threshold. Only active groups are eligible for payments and prizes.
 //
 // PrizeThreshold drives proportional prize distribution:
 //
@@ -201,7 +224,8 @@ type Quiniela struct {
 	Name                string
 	OwnerID             int
 	InviteCode          string
-	InviteCodeExpiresAt *time.Time // nil = never expires
+	InviteCodeExpiresAt *time.Time     // always nil; invite links never expire
+	Status              QuinielaStatus // system-managed: active iff ≥ MinMembersForActive active members
 	EntryFee            int
 	Currency            string
 	MaxMembers          *int

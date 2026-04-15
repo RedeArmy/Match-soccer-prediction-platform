@@ -11,10 +11,13 @@ import (
 )
 
 // stubQuinielaRepo implements repository.QuinielaRepository with configurable returns.
+// updateStatusErr, if set, is returned exclusively by UpdateStatus so that
+// syncGroupStatus error paths can be tested without affecting earlier calls.
 type stubQuinielaRepo struct {
-	quiniela  *domain.Quiniela
-	quinielas []*domain.Quiniela
-	err       error
+	quiniela        *domain.Quiniela
+	quinielas       []*domain.Quiniela
+	err             error
+	updateStatusErr error
 }
 
 func (r *stubQuinielaRepo) Create(_ context.Context, _ *domain.Quiniela) error { return r.err }
@@ -32,15 +35,29 @@ func (r *stubQuinielaRepo) ListByOwner(_ context.Context, _ int) ([]*domain.Quin
 func (r *stubQuinielaRepo) RotateInviteCode(_ context.Context, _ int, _ string, _ *time.Time) (*domain.Quiniela, error) {
 	return r.quiniela, r.err
 }
+func (r *stubQuinielaRepo) UpdateStatus(_ context.Context, _ int, _ domain.QuinielaStatus) error {
+	return r.updateStatusErr
+}
 
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.
+// membershipByID is returned by GetByID (used in ApproveJoin to load the pending
+// request). membership is returned by GetByQuinielaAndUser (used to look up the
+// approver and in Leave). activeCount is returned by CountActive.
+// countActiveErr, if set, is returned exclusively by CountActive so that
+// syncGroupStatus error paths can be tested without affecting earlier calls.
 type stubMemberRepo struct {
-	membership  *domain.GroupMembership
-	memberships []*domain.GroupMembership
-	err         error
+	membership     *domain.GroupMembership
+	membershipByID *domain.GroupMembership
+	memberships    []*domain.GroupMembership
+	activeCount    int
+	err            error
+	countActiveErr error
 }
 
 func (r *stubMemberRepo) Create(_ context.Context, _ *domain.GroupMembership) error { return r.err }
+func (r *stubMemberRepo) GetByID(_ context.Context, _ int) (*domain.GroupMembership, error) {
+	return r.membershipByID, r.err
+}
 func (r *stubMemberRepo) GetByQuinielaAndUser(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
 	return r.membership, r.err
 }
@@ -53,6 +70,9 @@ func (r *stubMemberRepo) ListByQuiniela(_ context.Context, _ int) ([]*domain.Gro
 }
 func (r *stubMemberRepo) ListByUser(_ context.Context, _ int) ([]*domain.GroupMembership, error) {
 	return r.memberships, r.err
+}
+func (r *stubMemberRepo) CountActive(_ context.Context, _ int) (int, error) {
+	return r.activeCount, r.countActiveErr
 }
 
 // ── QuinielaService tests ─────────────────────────────────────────────────────
@@ -78,6 +98,30 @@ func TestQuinielaService_Create_SetsInviteCode(t *testing.T) {
 	}
 	if len(q.InviteCode) != inviteCodeLength {
 		t.Errorf("expected invite code length %d, got %d", inviteCodeLength, len(q.InviteCode))
+	}
+}
+
+func TestQuinielaService_Create_InviteCodeNeverExpires(t *testing.T) {
+	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
+
+	if err := svc.Create(context.Background(), q); err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if q.InviteCodeExpiresAt != nil {
+		t.Errorf("expected InviteCodeExpiresAt to be nil (no expiry), got %v", q.InviteCodeExpiresAt)
+	}
+}
+
+func TestQuinielaService_Create_InitialStatusIsInactive(t *testing.T) {
+	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
+
+	if err := svc.Create(context.Background(), q); err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if q.Status != domain.QuinielaStatusInactive {
+		t.Errorf("expected initial status %q, got %q", domain.QuinielaStatusInactive, q.Status)
 	}
 }
 
@@ -249,6 +293,9 @@ func (r *rotateErrRepo) ListByOwner(_ context.Context, _ int) ([]*domain.Quiniel
 }
 func (r *rotateErrRepo) RotateInviteCode(_ context.Context, _ int, _ string, _ *time.Time) (*domain.Quiniela, error) {
 	return nil, r.rotateErr
+}
+func (r *rotateErrRepo) UpdateStatus(_ context.Context, _ int, _ domain.QuinielaStatus) error {
+	return nil
 }
 
 func TestQuinielaService_RotateInviteCode_RepoError_Propagated(t *testing.T) {

@@ -1251,6 +1251,79 @@ func TestGroupMembershipRepository_ListByUser_Empty(t *testing.T) {
 	}
 }
 
+func TestGroupMembershipRepository_GetByID_Found(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	created := seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	got, err := repo.GetByID(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected membership, got nil")
+	}
+	if got.ID != created.ID {
+		t.Errorf(fmtIDMismatch, got.ID, created.ID)
+	}
+	if got.Status != domain.MembershipActive {
+		t.Errorf("status: got %q, want active", got.Status)
+	}
+}
+
+func TestGroupMembershipRepository_GetByID_NotFound_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	got, err := repo.GetByID(context.Background(), 99999)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf(fmtExpectNilGot, got)
+	}
+}
+
+func TestGroupMembershipRepository_CountActive_ReturnsCount(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	member := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, member.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	count, err := repo.CountActive(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 active members, got %d", count)
+	}
+}
+
+func TestGroupMembershipRepository_CountActive_IgnoresPendingAndLeft(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	u3 := seedUser(t)
+	q := seedQuiniela(t, u1.ID)
+	seedMembership(t, q.ID, u1.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, u2.ID, domain.MembershipPending, false)
+	seedMembership(t, q.ID, u3.ID, domain.MembershipLeft, false)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	count, err := repo.CountActive(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 active member, got %d", count)
+	}
+}
+
 // ── UserRepository — ListByIDs ─────────────────────────────────────────────────
 
 func TestUserRepository_ListByIDs_ReturnsMatchingUsers(t *testing.T) {
@@ -1337,6 +1410,35 @@ func TestQuinielaRepository_RotateInviteCode_NotFound_ReturnsNotFound(t *testing
 	exp := time.Now().Add(time.Hour)
 	_, err := repo.RotateInviteCode(context.Background(), 99999, "NEWCODE002", &exp)
 	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+// ── QuinielaRepository — UpdateStatus ────────────────────────────────────────
+
+func TestQuinielaRepository_UpdateStatus_SetsStatus(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	if err := repo.UpdateStatus(context.Background(), q.ID, domain.QuinielaStatusActive); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	got, err := repo.GetByID(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.Status != domain.QuinielaStatusActive {
+		t.Errorf("status: got %q, want active", got.Status)
+	}
+}
+
+func TestQuinielaRepository_UpdateStatus_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	if err := repo.UpdateStatus(context.Background(), 99999, domain.QuinielaStatusActive); !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)
 	}
 }
