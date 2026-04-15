@@ -123,23 +123,28 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, predToResponse(prediction))
 }
 
-// ListByUser handles GET /api/v1/predictions?user_id={id}.
+// ListByUser handles GET /api/v1/predictions?user_id={id}[&quiniela_id={id}].
 //
 // @Summary      List predictions by user
 // @Description  Returns all predictions submitted by a specific user. The caller
 //
 //	may only retrieve their own predictions; querying another user's
 //	predictions returns 403. An unauthenticated request returns 401.
+//	When quiniela_id is provided, results are scoped to predictions
+//	belonging to active members of that quiniela. A user who is not an
+//	active member of the quiniela receives an empty array (not a 403),
+//	consistent with the empty-collection-on-no-results contract.
 //
 // @Tags         predictions
 // @Produce      json
 // @Security     BearerAuth
-// @Param        user_id  query     int  true  "Internal user ID"
-// @Success      200      {array}   handler.PredictionResponse
-// @Failure      401      {object}  handler.ErrorResponse  "Missing or invalid auth token"
-// @Failure      403      {object}  handler.ErrorResponse  "Caller requested another user's predictions"
-// @Failure      422      {object}  handler.ErrorResponse  "Missing or invalid user_id"
-// @Failure      500      {object}  handler.ErrorResponse
+// @Param        user_id     query     int  true   "Internal user ID"
+// @Param        quiniela_id query     int  false  "Scope results to this quiniela's active members"
+// @Success      200         {array}   handler.PredictionResponse
+// @Failure      401         {object}  handler.ErrorResponse  "Missing or invalid auth token"
+// @Failure      403         {object}  handler.ErrorResponse  "Caller requested another user's predictions"
+// @Failure      422         {object}  handler.ErrorResponse  "Missing or invalid user_id / quiniela_id"
+// @Failure      500         {object}  handler.ErrorResponse
 // @Router       /api/v1/predictions [get]
 func (h *PredictionHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 	userIDStr := r.URL.Query().Get("user_id")
@@ -161,7 +166,18 @@ func (h *PredictionHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, apperrors.Forbidden("cannot access another user's predictions"))
 		return
 	}
-	predictions, err := h.svc.GetByUser(r.Context(), requestedID)
+
+	var predictions []*domain.Prediction
+	if quinielaIDStr := r.URL.Query().Get("quiniela_id"); quinielaIDStr != "" {
+		quinielaID, qErr := parseIntParam(quinielaIDStr)
+		if qErr != nil {
+			middleware.WriteError(w, r, h.log, apperrors.Validation("quiniela_id must be a positive integer"))
+			return
+		}
+		predictions, err = h.svc.GetByUserAndQuiniela(r.Context(), requestedID, quinielaID)
+	} else {
+		predictions, err = h.svc.GetByUser(r.Context(), requestedID)
+	}
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return

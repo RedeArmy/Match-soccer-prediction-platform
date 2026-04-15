@@ -671,6 +671,12 @@ const docTemplate = `{
                         "name": "user_id",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Scope results to this quiniela's active members",
+                        "name": "quiniela_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -696,7 +702,7 @@ const docTemplate = `{
                         }
                     },
                     "422": {
-                        "description": "Missing or invalid user_id",
+                        "description": "Missing or invalid user_id / quiniela_id",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }

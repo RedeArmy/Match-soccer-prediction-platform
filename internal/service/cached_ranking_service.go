@@ -98,11 +98,26 @@ func (s *cachedRankingService) GetPhaseLeaderboard(ctx context.Context, quiniela
 	return entries, nil
 }
 
-// InvalidateLeaderboard removes the cached leaderboard for the given quiniela.
+// InvalidateLeaderboard evicts all cached leaderboard entries for the given
+// quiniela in a single Delete call. The set of keys is:
+//
+//   - leaderboard:{quinielaID}                          — overall standings
+//   - leaderboard:{quinielaID}:phase:{phase}            — one key per phase
+//
+// All 8 keys (1 overall + 7 phases) are sent in a single Redis DEL command so
+// the eviction is atomic from the cache's perspective. This prevents a race
+// where the overall key is evicted but a phase key still serves stale data to
+// a concurrent request that arrives between two individual Delete calls.
+//
 // Call this after a MatchFinished scoring run completes to ensure the next
-// GetLeaderboard request reflects the new point totals.
+// request for any variant of the leaderboard reflects the new point totals.
 func (s *cachedRankingService) InvalidateLeaderboard(ctx context.Context, quinielaID int) {
-	if err := s.store.Delete(ctx, cacheKeyLeaderboard(quinielaID)); err != nil {
+	keys := make([]string, 0, 1+len(domain.AllMatchPhases))
+	keys = append(keys, cacheKeyLeaderboard(quinielaID))
+	for _, phase := range domain.AllMatchPhases {
+		keys = append(keys, cacheKeyPhaseLeaderboard(quinielaID, phase))
+	}
+	if err := s.store.Delete(ctx, keys...); err != nil {
 		s.log.Warn("leaderboard cache invalidation failed",
 			zap.Int("quiniela_id", quinielaID), zap.Error(err))
 	}

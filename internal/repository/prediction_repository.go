@@ -103,6 +103,31 @@ func (r *PostgresPredictionRepository) ListByMatch(ctx context.Context, matchID 
 	return collectPredictions(rows)
 }
 
+// ListByUserAndQuiniela returns all predictions for userID where the user is
+// an active member of quinielaID. A single EXISTS subquery verifies membership
+// so the call is one database round-trip. If the user is not an active member
+// (or the quiniela does not exist) the result is an empty slice, not an error.
+func (r *PostgresPredictionRepository) ListByUserAndQuiniela(ctx context.Context, userID, quinielaID int) ([]*domain.Prediction, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+predictionColumns+`
+		   FROM predictions
+		  WHERE user_id = $1
+		    AND EXISTS (
+		          SELECT 1 FROM group_memberships gm
+		           WHERE gm.quiniela_id = $2
+		             AND gm.user_id     = $1
+		             AND gm.status      = 'active'
+		        )
+		  ORDER BY created_at ASC`,
+		userID, quinielaID,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectPredictions(rows)
+}
+
 // TotalPointsByQuiniela returns a map of userID → total scored points for
 // every active, paid member of the given quiniela. It uses a single SQL
 // query with a LEFT JOIN between group_memberships and predictions so the
