@@ -23,7 +23,7 @@ func NewPostgresQuinielaRepository(db *pgxpool.Pool) *PostgresQuinielaRepository
 	return &PostgresQuinielaRepository{db: db}
 }
 
-const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold, created_at, updated_at, deleted_at"
+const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold, status, created_at, updated_at, deleted_at"
 
 const msgQuinielaNotFound = "quiniela not found"
 
@@ -31,7 +31,7 @@ func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	q := &domain.Quiniela{}
 	err := row.Scan(
 		&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
-		&q.EntryFee, &q.Currency, &q.MaxMembers, &q.PrizeThreshold,
+		&q.EntryFee, &q.Currency, &q.MaxMembers, &q.PrizeThreshold, &q.Status,
 		&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -153,13 +153,30 @@ func (r *PostgresQuinielaRepository) ListByOwner(ctx context.Context, ownerID in
 	return collectQuinielas(rows)
 }
 
+// UpdateStatus sets the quiniela's active/inactive status atomically. It is
+// called exclusively by the membership service after every membership state
+// transition.
+func (r *PostgresQuinielaRepository) UpdateStatus(ctx context.Context, quinielaID int, status domain.QuinielaStatus) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE quinielas SET status=$1, updated_at=NOW() WHERE id=$2`+activeOnly,
+		status, quinielaID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound(msgQuinielaNotFound)
+	}
+	return nil
+}
+
 func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 	var quinielas []*domain.Quiniela
 	for rows.Next() {
 		q := &domain.Quiniela{}
 		if err := rows.Scan(
 			&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
-			&q.EntryFee, &q.Currency, &q.MaxMembers, &q.PrizeThreshold,
+			&q.EntryFee, &q.Currency, &q.MaxMembers, &q.PrizeThreshold, &q.Status,
 			&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 		); err != nil {
 			return nil, apperrors.Internal(err)

@@ -61,7 +61,7 @@ definitions:
       invite_code:
         type: string
       invite_code_expires_at:
-        description: nil means never expires
+        description: always nil; invite links never expire
         type: string
       max_members:
         type: integer
@@ -71,6 +71,12 @@ definitions:
         type: integer
       prize_threshold:
         type: integer
+      status:
+        description: |-
+          Status is system-managed: "active" when the group has ≥ 3 active members,
+          "inactive" otherwise. Only active groups are eligible for payment processing
+          and prize distribution.
+        type: string
       updated_at:
         type: string
     type: object
@@ -419,6 +425,85 @@ paths:
       security:
       - BearerAuth: []
       summary: List group members
+      tags:
+      - groups
+  /api/v1/groups/{id}/members/{membershipID}/approve:
+    post:
+      description: Promotes a pending membership to active. Any active member of
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Membership ID to approve
+        in: path
+        name: membershipID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.MemberResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an active member of this group
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Join request not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Request is no longer pending
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Approve a join request
+      tags:
+      - groups
+  /api/v1/groups/{id}/members/me:
+    delete:
+      description: Removes the authenticated user from the group. Only the user
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Caller is not an active member of this group
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Leave a group
       tags:
       - groups
   /api/v1/groups/join:

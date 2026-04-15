@@ -122,6 +122,11 @@ type QuinielaRepository interface {
 	// quiniela in a single atomic UPDATE. The old code is immediately invalidated.
 	// expiresAt may be nil to create a non-expiring code.
 	RotateInviteCode(ctx context.Context, id int, newCode string, expiresAt *time.Time) (*domain.Quiniela, error)
+	// UpdateStatus sets the quiniela's active/inactive status in a single atomic
+	// UPDATE. It is called exclusively by the membership service's syncGroupStatus
+	// helper after every membership state transition. Returns NotFound when the
+	// quiniela does not exist or has been soft-deleted.
+	UpdateStatus(ctx context.Context, quinielaID int, status domain.QuinielaStatus) error
 	Update(ctx context.Context, quiniela *domain.Quiniela) error
 	Delete(ctx context.Context, id int) error
 	ListByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
@@ -137,11 +142,18 @@ type QuinielaRepository interface {
 // by the payment system after a transaction is confirmed.
 type GroupMembershipRepository interface {
 	Create(ctx context.Context, m *domain.GroupMembership) error
+	// GetByID returns a membership by its primary key. Returns nil, nil when no
+	// matching row exists. Used by ApproveJoin to load the pending request.
+	GetByID(ctx context.Context, membershipID int) (*domain.GroupMembership, error)
 	GetByQuinielaAndUser(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
 	Update(ctx context.Context, m *domain.GroupMembership) error
 	MarkPaid(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
 	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.GroupMembership, error)
 	ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error)
+	// CountActive returns the number of active members in the given quiniela. It
+	// is called exclusively by syncGroupStatus after every membership transition
+	// to decide whether the quiniela should be set to active or inactive.
+	CountActive(ctx context.Context, quinielaID int) (int, error)
 }
 
 // TiebreakerRepository defines the persistence operations for the Tiebreaker
