@@ -85,21 +85,31 @@ func TestSubmit_Success_Returns201(t *testing.T) {
 
 func TestPredUpdate_Success_Returns200(t *testing.T) {
 	svc := &stubPredSvc{pred: &domain.Prediction{ID: 1, HomeScore: 2, AwayScore: 1}}
-	w := doPred(newPredRouter(svc, false), http.MethodPatch, pathPredictionID1, bodyUpdatePrediction)
+	w := doPred(newPredRouter(svc, true), http.MethodPatch, pathPredictionID1, bodyUpdatePrediction)
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
+	}
+	if svc.updateCallerID != 1 || svc.updateID != 1 {
+		t.Errorf("expected caller/user IDs to be propagated, got caller=%d id=%d", svc.updateCallerID, svc.updateID)
+	}
+}
+
+func TestPredUpdate_NoAuthContext_Returns401(t *testing.T) {
+	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPatch, pathPredictionID1, bodyUpdatePrediction)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, w.Code)
 	}
 }
 
 func TestPredUpdate_InvalidID_Returns422(t *testing.T) {
-	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPatch, "/abc", bodyUpdatePrediction)
+	w := doPred(newPredRouter(&stubPredSvc{}, true), http.MethodPatch, "/abc", bodyUpdatePrediction)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
 func TestPredUpdate_InvalidJSON_Returns422(t *testing.T) {
-	w := doPred(newPredRouter(&stubPredSvc{}, false), http.MethodPatch, pathPredictionID1, `not json`)
+	w := doPred(newPredRouter(&stubPredSvc{}, true), http.MethodPatch, pathPredictionID1, `not json`)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
@@ -107,9 +117,17 @@ func TestPredUpdate_InvalidJSON_Returns422(t *testing.T) {
 
 func TestPredUpdate_ServiceError_Returns404(t *testing.T) {
 	svc := &stubPredSvc{err: apperrors.NotFound("prediction not found")}
-	w := doPred(newPredRouter(svc, false), http.MethodPatch, pathPredictionID1, bodyUpdatePrediction)
+	w := doPred(newPredRouter(svc, true), http.MethodPatch, pathPredictionID1, bodyUpdatePrediction)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestPredUpdate_AnotherUsersPrediction_Returns403(t *testing.T) {
+	svc := &stubPredSvc{err: apperrors.Forbidden("cannot modify another user's prediction")}
+	w := doPred(newPredRouter(svc, true), http.MethodPatch, pathPredictionID1, bodyUpdatePrediction)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", w.Code)
 	}
 }
 

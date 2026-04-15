@@ -24,7 +24,7 @@ build:
 ## run: Run the API server with local development settings
 ##      Requires: `make docker-up` to be running first.
 run:
-	WCQ_JWT_SECRET=devsecret \
+	WCQ_ENVIRONMENT=dev \
 	WCQ_LOGGER_ENCODING=console \
 	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:5432/quiniela?sslmode=disable \
 	go run ./cmd/api
@@ -32,6 +32,7 @@ run:
 ## run-worker: Run the background worker with local development settings
 ##             Requires: `make docker-up` to be running first (Redis required).
 run-worker:
+	WCQ_ENVIRONMENT=dev \
 	WCQ_LOGGER_ENCODING=console \
 	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:5432/quiniela?sslmode=disable \
 	WCQ_EVENTBUS_DRIVER=redis \

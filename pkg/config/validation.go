@@ -49,6 +49,14 @@ func validate(cfg *Config) error {
 	if cfg.Server.Port == "" {
 		return errors.New("server.port must not be empty (WCQ_SERVER_PORT)")
 	}
+	if !cfg.IsDevelopment() {
+		if cfg.Clerk.JWKSURL == "" {
+			return errors.New("clerk.jwksUrl must not be empty outside development (WCQ_CLERK_JWKSURL)")
+		}
+		if cfg.Clerk.WebhookSecret == "" {
+			return errors.New("clerk.webhookSecret must not be empty outside development (WCQ_CLERK_WEBHOOKSECRET)")
+		}
+	}
 	if _, ok := knownLogLevels[cfg.Logger.Level]; !ok {
 		return fmt.Errorf(
 			"logger.level %q is not valid (WCQ_LOGGER_LEVEL); accepted values: debug, info, warn, error, dpanic, panic, fatal",

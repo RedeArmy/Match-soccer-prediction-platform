@@ -15,12 +15,14 @@ import (
 // during Unmarshal, which produces a subtle class of bug: the developer
 // sets an environment variable, the application ignores it, and the zero
 // value of the Go type is used instead. Registering empty-string defaults
-// for sensitive keys (DSN, JWT secret) makes this footgun impossible.
+// for sensitive keys (DSN, Clerk secrets) makes this footgun impossible.
 //
 // Sensitive fields such as database.dsn intentionally default to empty
 // strings. The validation step (validation.go) then enforces that they
 // have been supplied at runtime.
 func setDefaults(v *viper.Viper) {
+	v.SetDefault("environment", "dev")
+
 	v.SetDefault("server.port", "8080")
 	v.SetDefault("server.readTimeout", 10*time.Second)
 	v.SetDefault("server.writeTimeout", 30*time.Second)
@@ -46,6 +48,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("cors.allowedOrigins", []string{"http://localhost:3000"})
 
 	v.SetDefault("clerk.jwksUrl", "")
+	v.SetDefault("clerk.webhookSecret", "")
 
 	// worker.healthPort defaults to 8081 so the worker's health endpoints do
 	// not collide with the API server (8080) when both run on the same host.
