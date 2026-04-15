@@ -136,6 +136,30 @@ func TestQuinielaService_Create_DefaultsCurrencyToMXN(t *testing.T) {
 	}
 }
 
+func TestQuinielaService_Create_DefaultsPrizeThresholdWhenZero(t *testing.T) {
+	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	q := &domain.Quiniela{Name: "Pool", OwnerID: 1} // no PrizeThreshold set
+
+	if err := svc.Create(context.Background(), q); err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if q.PrizeThreshold != domain.DefaultPrizeThreshold {
+		t.Errorf("expected default prize_threshold %d, got %d", domain.DefaultPrizeThreshold, q.PrizeThreshold)
+	}
+}
+
+func TestQuinielaService_Create_ExplicitPrizeThreshold_Preserved(t *testing.T) {
+	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	q := &domain.Quiniela{Name: "Pool", OwnerID: 1, PrizeThreshold: 5}
+
+	if err := svc.Create(context.Background(), q); err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if q.PrizeThreshold != 5 {
+		t.Errorf("explicit prize_threshold should be preserved, got %d", q.PrizeThreshold)
+	}
+}
+
 func TestQuinielaService_Create_RepoConflict_ReturnsConflict(t *testing.T) {
 	svc := NewQuinielaService(
 		&stubQuinielaRepo{err: apperrors.Conflict("a group with this name already exists")},

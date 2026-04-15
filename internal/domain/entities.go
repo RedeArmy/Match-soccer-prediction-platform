@@ -188,6 +188,14 @@ type Prediction struct {
 // value means the code never expires. When non-nil and in the past, the code
 // is considered invalid; callers must request a rotation via RotateInviteCode.
 // Setting an expiry prevents indefinite access when an invite link leaks.
+//
+// PrizeThreshold drives proportional prize distribution:
+//
+//	winnerCount = max(1, floor(memberCount / PrizeThreshold))
+//
+// A threshold of 3 means roughly 1-in-3 active+paid members receive a prize.
+// The service layer defaults this to DefaultPrizeThreshold when the caller
+// omits it. Must be positive; enforced by a CHECK constraint in the database.
 type Quiniela struct {
 	ID                  int
 	Name                string
@@ -197,6 +205,7 @@ type Quiniela struct {
 	EntryFee            int
 	Currency            string
 	MaxMembers          *int
+	PrizeThreshold      int // ≥ 1; winnerCount = max(1, floor(N/PrizeThreshold))
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	DeletedAt           *time.Time // nil for active groups; set when the record is soft-deleted
@@ -209,10 +218,15 @@ type Quiniela struct {
 // Rank is 1-based and assigned after sorting descending by TotalPoints.
 // Two entries with equal TotalPoints receive the same rank (standard
 // competition ranking), and the next rank is skipped accordingly.
+//
+// PrizeWinner is computed by the ranking service using the Quiniela's
+// PrizeThreshold: winnerCount = max(1, floor(memberCount / PrizeThreshold)).
+// It is never stored in the database.
 type LeaderboardEntry struct {
 	User        *User
 	TotalPoints int
 	Rank        int
+	PrizeWinner bool // true when this entry is in prize position; computed, never persisted
 }
 
 // MembershipStatus tracks the lifecycle of a user's membership in a Quiniela.

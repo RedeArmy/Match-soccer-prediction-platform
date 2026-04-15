@@ -49,6 +49,9 @@ func generateInviteCode() (string, error) {
 const inviteCodeTTL = 30 * 24 * time.Hour // 30 days
 
 func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela) error {
+	if quiniela.PrizeThreshold == 0 {
+		quiniela.PrizeThreshold = domain.DefaultPrizeThreshold
+	}
 	if err := domain.ValidateQuiniela(quiniela); err != nil {
 		return err
 	}

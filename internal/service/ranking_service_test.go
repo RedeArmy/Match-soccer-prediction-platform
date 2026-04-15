@@ -34,15 +34,25 @@ func (r *stubUserRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, er
 	return r.users, r.err
 }
 
-// stubTotalPointsPredRepo extends stubPredRepo with a configurable
-// TotalPointsByQuiniela response for ranking service tests.
+// stubTotalPointsPredRepo extends stubPredRepo with configurable
+// TotalPointsByQuiniela and TotalPointsByQuinielaAndPhase responses for
+// ranking service tests.
 type stubTotalPointsPredRepo struct {
 	stubPredRepo
-	pointsByUser map[int]int
-	pointsErr    error
+	pointsByUser      map[int]int
+	pointsErr         error
+	phasePointsByUser map[int]int
+	phasePointsErr    error
 }
 
 func (r *stubTotalPointsPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
+	return r.pointsByUser, r.pointsErr
+}
+
+func (r *stubTotalPointsPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
+	if r.phasePointsByUser != nil || r.phasePointsErr != nil {
+		return r.phasePointsByUser, r.phasePointsErr
+	}
 	return r.pointsByUser, r.pointsErr
 }
 
@@ -63,7 +73,7 @@ func TestGetLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T) {
 }
 
 func TestGetLeaderboard_NoActivePaidMembers_ReturnsNil(t *testing.T) {
-	q := &domain.Quiniela{ID: 1, Name: "Test"}
+	q := &domain.Quiniela{ID: 1, Name: "Test", PrizeThreshold: 3}
 	predRepo := &stubTotalPointsPredRepo{
 		pointsByUser: map[int]int{}, // empty: no active+paid members
 	}
@@ -84,7 +94,7 @@ func TestGetLeaderboard_NoActivePaidMembers_ReturnsNil(t *testing.T) {
 }
 
 func TestGetLeaderboard_SortedByPoints(t *testing.T) {
-	q := &domain.Quiniela{ID: 1, Name: "Test"}
+	q := &domain.Quiniela{ID: 1, Name: "Test", PrizeThreshold: 3}
 	userA := &domain.User{ID: 1, Name: "Alice"}
 	userB := &domain.User{ID: 2, Name: "Bob"}
 	userC := &domain.User{ID: 3, Name: "Carlos"}
@@ -127,7 +137,7 @@ func TestGetLeaderboard_SortedByPoints(t *testing.T) {
 }
 
 func TestGetLeaderboard_DatabaseError_PropagatesError(t *testing.T) {
-	q := &domain.Quiniela{ID: 1}
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	predRepo := &stubTotalPointsPredRepo{
 		pointsErr: apperrors.Internal(errors.New("db error")),
 	}
@@ -142,7 +152,7 @@ func TestGetLeaderboard_DatabaseError_PropagatesError(t *testing.T) {
 func TestGetLeaderboard_DeletedUser_SkippedSilently(t *testing.T) {
 	// pointsByUser has user IDs 1 and 2, but ListByIDs only returns user 2.
 	// User 1's entry must be skipped without error; the leaderboard has 1 entry.
-	q := &domain.Quiniela{ID: 1, Name: "Test"}
+	q := &domain.Quiniela{ID: 1, Name: "Test", PrizeThreshold: 3}
 	userB := &domain.User{ID: 2, Name: "Bob"}
 
 	predRepo := &stubTotalPointsPredRepo{
@@ -169,7 +179,7 @@ func TestGetLeaderboard_DeletedUser_SkippedSilently(t *testing.T) {
 }
 
 func TestGetLeaderboard_ListByIDsError_Propagated(t *testing.T) {
-	q := &domain.Quiniela{ID: 1}
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	predRepo := &stubTotalPointsPredRepo{
 		pointsByUser: map[int]int{1: 10}, // non-empty so we reach ListByIDs
 	}
@@ -182,3 +192,144 @@ func TestGetLeaderboard_ListByIDsError_Propagated(t *testing.T) {
 		t.Fatal("expected error from ListByIDs, got nil")
 	}
 }
+
+// ── assignPrizes ──────────────────────────────────────────────────────────────
+
+func TestAssignPrizes_Threshold3_NineMembers_ThreeWinners(t *testing.T) {
+	// 9 members / threshold 3 = 3 winners
+	entries := make([]*domain.LeaderboardEntry, 9)
+	for i := range entries {
+		entries[i] = &domain.LeaderboardEntry{User: &domain.User{ID: i + 1}, TotalPoints: 10 - i, Rank: i + 1}
+	}
+	assignPrizes(entries, 3)
+
+	for i, e := range entries {
+		want := i < 3
+		if e.PrizeWinner != want {
+			t.Errorf("entry[%d] PrizeWinner=%v, want %v", i, e.PrizeWinner, want)
+		}
+	}
+}
+
+func TestAssignPrizes_TwoMembers_AlwaysOneWinner(t *testing.T) {
+	// 2 members / threshold 3 = 0 → clamped to 1
+	entries := []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1}, TotalPoints: 5, Rank: 1},
+		{User: &domain.User{ID: 2}, TotalPoints: 2, Rank: 2},
+	}
+	assignPrizes(entries, 3)
+
+	if !entries[0].PrizeWinner {
+		t.Error("first place should always be a prize winner")
+	}
+	if entries[1].PrizeWinner {
+		t.Error("second place should not be a prize winner")
+	}
+}
+
+func TestAssignPrizes_TiedAtCutoff_AllTiedEntriesWin(t *testing.T) {
+	// 6 members / threshold 3 = 2 winners; entries[1] and entries[2] are tied at rank 2
+	// so all three (rank 1 + both rank-2 entries) receive PrizeWinner = true.
+	entries := []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1}, TotalPoints: 10, Rank: 1},
+		{User: &domain.User{ID: 2}, TotalPoints: 5, Rank: 2},
+		{User: &domain.User{ID: 3}, TotalPoints: 5, Rank: 2}, // tied with entry[1]
+		{User: &domain.User{ID: 4}, TotalPoints: 3, Rank: 4},
+		{User: &domain.User{ID: 5}, TotalPoints: 2, Rank: 5},
+		{User: &domain.User{ID: 6}, TotalPoints: 1, Rank: 6},
+	}
+	assignPrizes(entries, 3)
+
+	for i := 0; i < 3; i++ {
+		if !entries[i].PrizeWinner {
+			t.Errorf("entry[%d] should be prize winner (tied at cutoff rank)", i)
+		}
+	}
+	for i := 3; i < 6; i++ {
+		if entries[i].PrizeWinner {
+			t.Errorf("entry[%d] should not be a prize winner", i)
+		}
+	}
+}
+
+func TestAssignPrizes_ZeroThreshold_UsesDefault(t *testing.T) {
+	// prizeThreshold=0 must not panic; DefaultPrizeThreshold (3) is used instead.
+	entries := []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1}, TotalPoints: 10, Rank: 1},
+	}
+	// Should not panic.
+	assignPrizes(entries, 0)
+	if !entries[0].PrizeWinner {
+		t.Error("sole member should be a prize winner")
+	}
+}
+
+// ── GetPhaseLeaderboard ───────────────────────────────────────────────────────
+
+func TestGetPhaseLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T) {
+	svc := NewRankingService(
+		&stubQuinielaRepo{quiniela: nil},
+		&stubTotalPointsPredRepo{},
+		&stubUserRepo{},
+		zap.NewNop(),
+	)
+
+	_, err := svc.GetPhaseLeaderboard(context.Background(), 99, domain.PhaseGroupStage)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestGetPhaseLeaderboard_NoEntries_ReturnsNil(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: "Test", PrizeThreshold: 3}
+	predRepo := &stubTotalPointsPredRepo{
+		phasePointsByUser: map[int]int{},
+	}
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, &stubUserRepo{}, zap.NewNop())
+
+	entries, err := svc.GetPhaseLeaderboard(context.Background(), 1, domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if entries != nil {
+		t.Errorf("expected nil for empty phase leaderboard, got %v", entries)
+	}
+}
+
+func TestGetPhaseLeaderboard_SortedByPoints_WithPrizeWinner(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: "Test", PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+	userC := &domain.User{ID: 3, Name: "Carlos"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		phasePointsByUser: map[int]int{1: 10, 2: 25, 3: 5},
+	}
+	userRepo := &stubUserRepo{users: []*domain.User{userA, userB, userC}}
+
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, zap.NewNop())
+
+	entries, err := svc.GetPhaseLeaderboard(context.Background(), 1, domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	// Bob has the most points → rank 1 → prize winner (3 members / threshold 3 = 1 winner).
+	if entries[0].User.ID != 2 || entries[0].Rank != 1 {
+		t.Errorf("entry[0]: expected Bob rank 1, got user %d rank %d", entries[0].User.ID, entries[0].Rank)
+	}
+	if !entries[0].PrizeWinner {
+		t.Error("rank-1 entry should be a prize winner")
+	}
+	if entries[1].PrizeWinner || entries[2].PrizeWinner {
+		t.Error("rank 2+ entries should not be prize winners when threshold=3 and N=3")
+	}
+}
+
+// ── PrizeThreshold default in QuinielaService ─────────────────────────────────
+
+// stubQuinielaRepo is also used from ranking_service_test.go; ensure it satisfies
+// repository.QuinielaRepository including PrizeThreshold hydration in the stub.
+// (No changes needed to the stub itself — it just returns the configured quiniela.)

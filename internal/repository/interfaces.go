@@ -95,6 +95,12 @@ type PredictionRepository interface {
 	// by the ranking service to compute leaderboard standings in a single query,
 	// avoiding N+1 database round-trips when the group is large.
 	TotalPointsByQuiniela(ctx context.Context, quinielaID int) (map[int]int, error)
+	// TotalPointsByQuinielaAndPhase is the phase-scoped variant of
+	// TotalPointsByQuiniela. It restricts the point aggregation to predictions
+	// on matches belonging to phase, enabling per-phase leaderboards (e.g. a
+	// "group stage" standings table). Only active, paid members are included;
+	// predictions with NULL points are excluded from the sum.
+	TotalPointsByQuinielaAndPhase(ctx context.Context, quinielaID int, phase domain.MatchPhase) (map[int]int, error)
 }
 
 // QuinielaRepository defines the persistence operations for the Quiniela

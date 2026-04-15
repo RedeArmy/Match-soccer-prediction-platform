@@ -205,7 +205,7 @@ func TestValidateEmail_WithSpaces_ReturnsValidation(t *testing.T) {
 // ── ValidateQuiniela ──────────────────────────────────────────────────────────
 
 func TestValidateQuiniela_Valid_ReturnsNil(t *testing.T) {
-	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
+	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1, PrizeThreshold: 3}
 	if err := domain.ValidateQuiniela(q); err != nil {
 		t.Errorf(fmtUnexpectedErr, err)
 	}

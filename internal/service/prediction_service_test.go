@@ -58,6 +58,9 @@ func (r *stubPredRepo) UpdateManyPoints(_ context.Context, points map[int]int) e
 func (r *stubPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
 	return nil, r.err
 }
+func (r *stubPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
+	return nil, r.err
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

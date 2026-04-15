@@ -35,6 +35,7 @@ const (
 
 	fmtUnexpectedErr = "unexpected error: %v"
 	fmtCreateErr     = "create: %v"
+	fmtUpdatePredErr = "update prediction: %v"
 	msgNonZeroID     = "expected non-zero ID after create"
 	fmtNotFoundErr   = "expected not-found error, got %v"
 	fmtIDMismatch    = "id: got %d, want %d"
@@ -145,7 +146,7 @@ func seedMatch(t *testing.T) *domain.Match {
 func seedQuiniela(t *testing.T, ownerID int) *domain.Quiniela {
 	t.Helper()
 	repo := repository.NewPostgresQuinielaRepository(testDB)
-	q := &domain.Quiniela{Name: fmt.Sprintf("Oficina %s", nextCode()), OwnerID: ownerID, InviteCode: nextCode(), Currency: defaultCurrency}
+	q := &domain.Quiniela{Name: fmt.Sprintf("Oficina %s", nextCode()), OwnerID: ownerID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
 	if err := repo.Create(context.Background(), q); err != nil {
 		t.Fatalf("seed quiniela: %v", err)
 	}
@@ -758,7 +759,7 @@ func TestQuinielaRepository_Create_HydratesID(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	q := &domain.Quiniela{Name: "Test Pool", OwnerID: u.ID}
+	q := &domain.Quiniela{Name: "Test Pool", OwnerID: u.ID, PrizeThreshold: domain.DefaultPrizeThreshold}
 	if err := repo.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -970,7 +971,7 @@ func TestQuinielaRepository_Create_HydratesInviteCode(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 	code := nextCode()
-	q := &domain.Quiniela{Name: "Pool A", OwnerID: u.ID, InviteCode: code, Currency: defaultCurrency}
+	q := &domain.Quiniela{Name: "Pool A", OwnerID: u.ID, InviteCode: code, Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
 
 	if err := repo.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -985,11 +986,11 @@ func TestQuinielaRepository_Create_DuplicateName_ReturnsConflict(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	q1 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
+	q1 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
 	if err := repo.Create(context.Background(), q1); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	q2 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
+	q2 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
 	err := repo.Create(context.Background(), q2)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict error for duplicate name, got %v", err)
@@ -1396,7 +1397,7 @@ func TestPredictionRepository_TotalPointsByQuiniela_ExcludesUnpaidMembers(t *tes
 	pts := 3
 	p1.Points = &pts
 	if err := predRepo.Update(context.Background(), p1); err != nil {
-		t.Fatalf("update prediction: %v", err)
+		t.Fatalf(fmtUpdatePredErr, err)
 	}
 
 	p2 := &domain.Prediction{UserID: u2.ID, MatchID: m.ID, HomeScore: 0, AwayScore: 0}
@@ -1406,7 +1407,7 @@ func TestPredictionRepository_TotalPointsByQuiniela_ExcludesUnpaidMembers(t *tes
 	pts2 := 2
 	p2.Points = &pts2
 	if err := predRepo.Update(context.Background(), p2); err != nil {
-		t.Fatalf("update prediction: %v", err)
+		t.Fatalf(fmtUpdatePredErr, err)
 	}
 
 	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID)
@@ -1434,5 +1435,125 @@ func TestPredictionRepository_TotalPointsByQuiniela_EmptyQuiniela_ReturnsEmptyMa
 	}
 	if len(totals) != 0 {
 		t.Errorf("expected empty map for quiniela with no active paid members, got %v", totals)
+	}
+}
+
+// ── PredictionRepository — TotalPointsByQuinielaAndPhase ─────────────────────
+
+func TestPredictionRepository_TotalPointsByQuinielaAndPhase_MatchingPhase_ReturnsSumPerUser(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	q := seedQuiniela(t, u1.ID)
+
+	seedMembership(t, q.ID, u1.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, u2.ID, domain.MembershipActive, true)
+
+	// seedMatch uses PhaseGroupStage.
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p1 := &domain.Prediction{UserID: u1.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p1); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts1 := 5
+	p1.Points = &pts1
+	if err := predRepo.Update(context.Background(), p1); err != nil {
+		t.Fatalf("update prediction u1: %v", err)
+	}
+
+	p2 := &domain.Prediction{UserID: u2.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 1}
+	if err := predRepo.Create(context.Background(), p2); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts2 := 2
+	p2.Points = &pts2
+	if err := predRepo.Update(context.Background(), p2); err != nil {
+		t.Fatalf("update prediction u2: %v", err)
+	}
+
+	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(totals) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(totals))
+	}
+	if totals[u1.ID] != 5 {
+		t.Errorf("user1 phase total: got %d, want 5", totals[u1.ID])
+	}
+	if totals[u2.ID] != 2 {
+		t.Errorf("user2 phase total: got %d, want 2", totals[u2.ID])
+	}
+}
+
+func TestPredictionRepository_TotalPointsByQuinielaAndPhase_NonMatchingPhase_ReturnsZeroForAll(t *testing.T) {
+	// Predictions are on a group_stage match; querying the final phase must
+	// return all active+paid members with 0 points (not an empty map).
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+
+	m := seedMatch(t) // phase = group_stage
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 5
+	p.Points = &pts
+	if err := predRepo.Update(context.Background(), p); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	// Query a different phase — the user has no predictions on final matches.
+	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseFinal)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(totals) != 1 {
+		t.Fatalf("expected 1 member with 0 points, got %d entries", len(totals))
+	}
+	if totals[u.ID] != 0 {
+		t.Errorf("expected 0 points for non-matching phase, got %d", totals[u.ID])
+	}
+}
+
+func TestPredictionRepository_TotalPointsByQuinielaAndPhase_ExcludesUnpaidMembers(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	q := seedQuiniela(t, u1.ID)
+
+	seedMembership(t, q.ID, u1.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, u2.ID, domain.MembershipActive, false) // unpaid
+
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	for _, u := range []*domain.User{u1, u2} {
+		p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+		if err := predRepo.Create(context.Background(), p); err != nil {
+			t.Fatalf(fmtCreateErr, err)
+		}
+		pts := 3
+		p.Points = &pts
+		if err := predRepo.Update(context.Background(), p); err != nil {
+			t.Fatalf(fmtUpdatePredErr, err)
+		}
+	}
+
+	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if _, ok := totals[u2.ID]; ok {
+		t.Error("unpaid member must not appear in phase totals")
+	}
+	if totals[u1.ID] != 3 {
+		t.Errorf("paid member total: got %d, want 3", totals[u1.ID])
 	}
 }
