@@ -16,14 +16,26 @@ import "time"
 // accessing a global — makes every component's requirements visible and
 // verifiable without running the full application.
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	EventBus EventBusConfig `mapstructure:"eventBus"`
-	Logger   LoggerConfig   `mapstructure:"logger"`
-	CORS     CORSConfig     `mapstructure:"cors"`
-	Clerk    ClerkConfig    `mapstructure:"clerk"`
-	Worker   WorkerConfig   `mapstructure:"worker"`
+	Environment string         `mapstructure:"environment"`
+	Server      ServerConfig   `mapstructure:"server"`
+	Database    DatabaseConfig `mapstructure:"database"`
+	Redis       RedisConfig    `mapstructure:"redis"`
+	EventBus    EventBusConfig `mapstructure:"eventBus"`
+	Logger      LoggerConfig   `mapstructure:"logger"`
+	CORS        CORSConfig     `mapstructure:"cors"`
+	Clerk       ClerkConfig    `mapstructure:"clerk"`
+	Worker      WorkerConfig   `mapstructure:"worker"`
+}
+
+// IsDevelopment reports whether the application is running in a relaxed local
+// environment where auth/webhook secrets may be omitted intentionally.
+func (c *Config) IsDevelopment() bool {
+	switch c.Environment {
+	case "", "dev", "development", "test":
+		return true
+	default:
+		return false
+	}
 }
 
 // ServerConfig holds HTTP server tuning parameters.
@@ -133,6 +145,7 @@ type ClerkConfig struct {
 	// WebhookSecret is the signing secret from the Clerk webhook dashboard
 	// (format "whsec_<base64>"). It is used to validate the Svix signature on
 	// incoming webhook events. If empty, signature validation is skipped and a
-	// warning is logged — acceptable for local development, never for production.
+	// warning is logged — acceptable for local development only. Startup
+	// validation must reject this configuration outside development.
 	WebhookSecret string `mapstructure:"webhookSecret"`
 }

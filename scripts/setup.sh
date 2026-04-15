@@ -32,7 +32,7 @@ fi
 echo "==> Creating .env from .env.example (skipped if .env already exists)..."
 if [[ ! -f "$ROOT_DIR/.env" ]]; then
     cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
-    echo "    Created .env — set WCQ_JWT_SECRET before running the server."
+    echo "    Created .env — review Clerk settings before running outside development."
 else
     echo "    .env already exists, skipping."
 fi
@@ -51,6 +51,6 @@ echo " ready."
 echo ""
 echo "==> Setup complete."
 echo "    Next steps:"
-echo "      1. Set WCQ_JWT_SECRET in .env"
+echo "      1. Review WCQ_ENVIRONMENT and Clerk settings in .env"
 echo "      2. Run 'make migrate' to apply schema migrations"
 echo "      3. Run 'make run' to start the API server"

@@ -103,9 +103,8 @@ func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, l
 // response is written and the next handler is not called.
 //
 // jwksURL is the Clerk JWKS endpoint (WCQ_CLERK_JWKSURL in config). If it
-// is empty the middleware is bypassed and a warning is logged — this allows
-// the server to start during local development before Clerk is configured,
-// but must never be used in production.
+// is empty the middleware is bypassed and a warning is logged. Startup
+// validation must ensure this only happens in development environments.
 func RequireAuth(jwksURL string, log *zap.Logger) func(http.Handler) http.Handler {
 	if jwksURL == "" {
 		log.Warn("RequireAuth: WCQ_CLERK_JWKSURL is not set — authentication is DISABLED; do not use in production")

@@ -41,10 +41,11 @@ type MatchService interface {
 // Submit enforces the prediction deadline: it delegates to the domain
 // validator which rejects submissions after kick-off. It also rejects
 // duplicate predictions (one per user per match) by checking for an existing
-// record before creating a new one. Update follows the same deadline rules.
+// record before creating a new one. Update follows the same deadline rules and
+// requires the caller to own the prediction being modified.
 type PredictionService interface {
 	Submit(ctx context.Context, prediction *domain.Prediction) error
-	Update(ctx context.Context, id int, homeScore, awayScore int) (*domain.Prediction, error)
+	Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int) (*domain.Prediction, error)
 	GetByUser(ctx context.Context, userID int) ([]*domain.Prediction, error)
 	GetByMatch(ctx context.Context, matchID int) ([]*domain.Prediction, error)
 }
