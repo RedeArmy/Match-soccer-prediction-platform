@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"go.uber.org/zap"
@@ -149,23 +148,36 @@ func TestCachedRankingService_GetLeaderboard_SetError_StillReturnsData(t *testin
 
 // ── InvalidateLeaderboard ─────────────────────────────────────────────────────
 
-func TestCachedRankingService_InvalidateLeaderboard_DeletesKey(t *testing.T) {
+func TestCachedRankingService_InvalidateLeaderboard_DeletesAllEightKeys(t *testing.T) {
+	// Seed all 8 keys so we can verify each one is evicted.
 	st := newStubCache()
-	ranker := &stubRanker{}
-
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
-	svc.InvalidateLeaderboard(context.Background(), 11)
-
-	wantKey := fmt.Sprintf("leaderboard:%d", 11)
-	found := false
-	for _, k := range st.deleted {
-		if k == wantKey {
-			found = true
-			break
-		}
+	quinielaID := 11
+	st.seed(cacheKeyLeaderboard(quinielaID), []*domain.LeaderboardEntry{})
+	for _, phase := range domain.AllMatchPhases {
+		st.seed(cacheKeyPhaseLeaderboard(quinielaID, phase), []*domain.LeaderboardEntry{})
 	}
-	if !found {
-		t.Errorf("expected key %q to be deleted, deleted keys: %v", wantKey, st.deleted)
+
+	svc := NewCachedRankingService(&stubRanker{}, st, zap.NewNop())
+	svc.InvalidateLeaderboard(context.Background(), quinielaID)
+
+	wantCount := 1 + len(domain.AllMatchPhases) // 1 overall + 7 phase keys
+	if len(st.deleted) != wantCount {
+		t.Fatalf("expected %d keys deleted, got %d: %v", wantCount, len(st.deleted), st.deleted)
+	}
+
+	deleted := make(map[string]bool, len(st.deleted))
+	for _, k := range st.deleted {
+		deleted[k] = true
+	}
+
+	if !deleted[cacheKeyLeaderboard(quinielaID)] {
+		t.Errorf("overall key %q was not deleted", cacheKeyLeaderboard(quinielaID))
+	}
+	for _, phase := range domain.AllMatchPhases {
+		k := cacheKeyPhaseLeaderboard(quinielaID, phase)
+		if !deleted[k] {
+			t.Errorf("phase key %q was not deleted", k)
+		}
 	}
 }
 

@@ -100,6 +100,9 @@ func (s *stubPredSvc) Update(_ context.Context, callerUserID, id, _, _ int) (*do
 func (s *stubPredSvc) GetByUser(_ context.Context, _ int) ([]*domain.Prediction, error) {
 	return s.preds, s.err
 }
+func (s *stubPredSvc) GetByUserAndQuiniela(_ context.Context, _, _ int) ([]*domain.Prediction, error) {
+	return s.preds, s.err
+}
 func (s *stubPredSvc) GetByMatch(_ context.Context, _ int) ([]*domain.Prediction, error) {
 	return s.preds, s.err
 }

@@ -211,3 +211,59 @@ func TestListByUser_AuthContextMatch_Returns200(t *testing.T) {
 		t.Errorf("expected 1 prediction for user 1, got %+v", got)
 	}
 }
+
+// ── ListByUser with quiniela_id filter ────────────────────────────────────────
+
+func TestListByUser_WithQuinielaID_Success_Returns200(t *testing.T) {
+	svc := &stubPredSvc{preds: []*domain.Prediction{{ID: 1, UserID: 1, MatchID: 5}}}
+	req := httptest.NewRequest(http.MethodGet, "/?user_id=1&quiniela_id=3", nil)
+	w := httptest.NewRecorder()
+	newPredRouter(svc, true).ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+	var got []handler.PredictionResponse
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected 1 prediction, got %d", len(got))
+	}
+}
+
+func TestListByUser_WithQuinielaID_InvalidParam_Returns422(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/?user_id=1&quiniela_id=abc", nil)
+	w := httptest.NewRecorder()
+	newPredRouter(&stubPredSvc{}, true).ServeHTTP(w, req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestListByUser_WithQuinielaID_NonMember_ReturnsEmpty200(t *testing.T) {
+	// Service returns empty slice — user is not an active member of the quiniela.
+	svc := &stubPredSvc{preds: []*domain.Prediction{}}
+	req := httptest.NewRequest(http.MethodGet, "/?user_id=1&quiniela_id=99", nil)
+	w := httptest.NewRecorder()
+	newPredRouter(svc, true).ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+	var got []handler.PredictionResponse
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty array for non-member, got %d entries", len(got))
+	}
+}
+
+func TestListByUser_WithQuinielaID_ServiceError_Returns500(t *testing.T) {
+	svc := &stubPredSvc{err: apperrors.Internal(nil)}
+	req := httptest.NewRequest(http.MethodGet, "/?user_id=1&quiniela_id=3", nil)
+	w := httptest.NewRecorder()
+	newPredRouter(svc, true).ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}

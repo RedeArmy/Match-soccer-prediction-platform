@@ -46,6 +46,9 @@ func (r *stubPredRepo) ListByUser(_ context.Context, _ int) ([]*domain.Predictio
 func (r *stubPredRepo) ListByMatch(_ context.Context, _ int) ([]*domain.Prediction, error) {
 	return r.list, r.err
 }
+func (r *stubPredRepo) ListByUserAndQuiniela(_ context.Context, _, _ int) ([]*domain.Prediction, error) {
+	return r.list, r.err
+}
 func (r *stubPredRepo) UpdateManyPoints(_ context.Context, points map[int]int) error {
 	for _, p := range r.list {
 		if pts, ok := points[p.ID]; ok {
@@ -267,5 +270,45 @@ func TestGetByMatch_ReturnsSlice(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 prediction, got %d", len(got))
+	}
+}
+
+// ── GetByUserAndQuiniela ──────────────────────────────────────────────────────
+
+func TestGetByUserAndQuiniela_MemberWithPredictions_ReturnsSlice(t *testing.T) {
+	preds := []*domain.Prediction{{ID: 1, UserID: 1, MatchID: 3}}
+	predRepo := &stubPredRepo{list: preds}
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
+
+	got, err := svc.GetByUserAndQuiniela(context.Background(), 1, 7)
+	if err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected 1 prediction, got %d", len(got))
+	}
+}
+
+func TestGetByUserAndQuiniela_NonMember_ReturnsEmptySlice(t *testing.T) {
+	// Repository returns [] when the EXISTS membership check fails.
+	predRepo := &stubPredRepo{list: []*domain.Prediction{}}
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
+
+	got, err := svc.GetByUserAndQuiniela(context.Background(), 1, 99)
+	if err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty slice for non-member, got %d", len(got))
+	}
+}
+
+func TestGetByUserAndQuiniela_RepoError_Propagated(t *testing.T) {
+	predRepo := &stubPredRepo{err: errors.New("db error")}
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
+
+	_, err := svc.GetByUserAndQuiniela(context.Background(), 1, 7)
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
 	}
 }
