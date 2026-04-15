@@ -144,24 +144,29 @@ func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context
 
 // TotalPointsByQuinielaAndPhase returns a map of userID → total scored points
 // for every active, paid member of the given quiniela, restricted to matches
-// in the provided phase. The INNER JOIN on matches filters predictions by phase
-// without a full-table scan when the matches.phase column is indexed.
+// in the provided phase.
 //
 // A member with no scored predictions in the requested phase appears in the map
 // with value 0, preserving the same semantics as TotalPointsByQuiniela.
+//
+// Query design — derived table instead of correlated EXISTS:
+// The phase filter is applied inside a derived table (phase_pred) that joins
+// predictions with matches before the outer LEFT JOIN executes. This lets the
+// planner use a hash join between group_memberships and the pre-filtered
+// prediction set rather than evaluating a correlated subquery once per
+// predictions row. At 500 members × 64 matches the correlated form issues up
+// to 32 000 subquery evaluations per leaderboard request; the derived-table
+// form reduces this to two sequential scans and one hash join.
 func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context.Context, quinielaID int, phase domain.MatchPhase) (map[int]int, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT gm.user_id, COALESCE(SUM(p.points), 0)
+		`SELECT gm.user_id, COALESCE(SUM(phase_pred.points), 0)
 		   FROM group_memberships gm
-		   LEFT JOIN predictions p
-		          ON p.user_id = gm.user_id
-		         AND p.points IS NOT NULL
-		         AND EXISTS (
-		              SELECT 1
-		                FROM matches m
-		               WHERE m.id = p.match_id
-		                 AND m.phase = $2
-		          )
+		   LEFT JOIN (
+		       SELECT p.user_id, p.points
+		         FROM predictions p
+		         JOIN matches m ON m.id = p.match_id AND m.phase = $2
+		        WHERE p.points IS NOT NULL
+		   ) AS phase_pred ON phase_pred.user_id = gm.user_id
 		  WHERE gm.quiniela_id = $1
 		    AND gm.status = 'active'
 		    AND gm.paid = TRUE
@@ -188,28 +193,37 @@ func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context
 }
 
 // UpdateManyPoints atomically updates the points column for every prediction
-// ID in the provided map. All UPDATEs run inside a single transaction; if any
-// statement fails the transaction is rolled back so the match is either fully
-// scored or not scored at all.
+// ID in the provided map. A single UPDATE … FROM UNNEST statement is used so
+// the operation is one round-trip and one lock acquisition regardless of how
+// many predictions are being scored.
+//
+// Atomicity guarantee: a single SQL statement is atomic in PostgreSQL without
+// an explicit transaction. The match is either fully scored or not scored at
+// all; there is no partial state.
+//
+// IDs that do not exist in the predictions table are silently skipped; the
+// caller (scoring service) is responsible for ensuring the map contains only
+// valid prediction IDs.
 func (r *PostgresPredictionRepository) UpdateManyPoints(ctx context.Context, points map[int]int) error {
 	if len(points) == 0 {
 		return nil
 	}
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // rollback error is irrelevant after commit succeeds
 
-	for predID, pts := range points {
-		if _, err := tx.Exec(ctx,
-			`UPDATE predictions SET points=$1, updated_at=NOW() WHERE id=$2`,
-			pts, predID,
-		); err != nil {
-			return apperrors.Internal(err)
-		}
+	ids := make([]int, 0, len(points))
+	pts := make([]int, 0, len(points))
+	for id, p := range points {
+		ids = append(ids, id)
+		pts = append(pts, p)
 	}
-	if err := tx.Commit(ctx); err != nil {
+
+	if _, err := r.db.Exec(ctx,
+		`UPDATE predictions
+		    SET points     = v.points,
+		        updated_at = NOW()
+		   FROM UNNEST($1::int[], $2::int[]) AS v(id, points)
+		  WHERE predictions.id = v.id`,
+		ids, pts,
+	); err != nil {
 		return apperrors.Internal(err)
 	}
 	return nil

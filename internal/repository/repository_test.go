@@ -143,6 +143,22 @@ func seedMatch(t *testing.T) *domain.Match {
 	return m
 }
 
+func seedMatchWithPhase(t *testing.T, phase domain.MatchPhase) *domain.Match {
+	t.Helper()
+	repo := repository.NewPostgresMatchRepository(testDB)
+	m := &domain.Match{
+		HomeTeam:  "Brazil",
+		AwayTeam:  "Argentina",
+		Status:    domain.MatchStatusScheduled,
+		Phase:     phase,
+		KickoffAt: time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
+	}
+	if err := repo.Create(context.Background(), m); err != nil {
+		t.Fatalf("seed match (phase=%s): %v", phase, err)
+	}
+	return m
+}
+
 func seedQuiniela(t *testing.T, ownerID int) *domain.Quiniela {
 	t.Helper()
 	repo := repository.NewPostgresQuinielaRepository(testDB)
@@ -1555,5 +1571,106 @@ func TestPredictionRepository_TotalPointsByQuinielaAndPhase_ExcludesUnpaidMember
 	}
 	if totals[u1.ID] != 3 {
 		t.Errorf("paid member total: got %d, want 3", totals[u1.ID])
+	}
+}
+
+// TestPredictionRepository_TotalPointsByQuinielaAndPhase_CrossPhaseIsolation
+// verifies that points scored on matches from a different phase are not
+// included in the result. This is the correctness property guaranteed by the
+// derived-table approach: only predictions whose match.phase equals the
+// requested phase contribute to the aggregated total.
+func TestPredictionRepository_TotalPointsByQuinielaAndPhase_CrossPhaseIsolation(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+
+	mGroup := seedMatchWithPhase(t, domain.PhaseGroupStage)
+	mFinal := seedMatchWithPhase(t, domain.PhaseFinal)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	// Prediction on the group-stage match: 5 points.
+	pGroup := &domain.Prediction{UserID: u.ID, MatchID: mGroup.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), pGroup); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 5
+	pGroup.Points = &pts
+	if err := predRepo.Update(context.Background(), pGroup); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	// Prediction on the final match: 2 points.
+	pFinal := &domain.Prediction{UserID: u.ID, MatchID: mFinal.ID, HomeScore: 0, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), pFinal); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	finalPts := 2
+	pFinal.Points = &finalPts
+	if err := predRepo.Update(context.Background(), pFinal); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	// Querying group_stage must return only the 5 points; final points must
+	// not bleed across the phase boundary.
+	groupTotals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if groupTotals[u.ID] != 5 {
+		t.Errorf("group_stage total: got %d, want 5 (final points must not bleed across phases)", groupTotals[u.ID])
+	}
+
+	// Querying final must return only the 2 points.
+	finalTotals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseFinal)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if finalTotals[u.ID] != 2 {
+		t.Errorf("final total: got %d, want 2 (group_stage points must not bleed across phases)", finalTotals[u.ID])
+	}
+}
+
+// TestPredictionRepository_UpdateManyPoints_LargeBatch verifies that the
+// UNNEST bulk-update path correctly persists points for a batch larger than
+// the two-row case covered by the basic test. Each prediction in the batch
+// must receive its own distinct point value.
+func TestPredictionRepository_UpdateManyPoints_LargeBatch(t *testing.T) {
+	const batchSize = 10
+	cleanTables(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	// Create batchSize users, each with one prediction on the same match.
+	m := seedMatch(t)
+	preds := make([]*domain.Prediction, batchSize)
+	for i := range batchSize {
+		u := seedUser(t)
+		p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: i, AwayScore: 0}
+		if err := predRepo.Create(context.Background(), p); err != nil {
+			t.Fatalf("create prediction %d: %v", i, err)
+		}
+		preds[i] = p
+	}
+
+	// Build the points map: prediction i receives i+1 points (all distinct).
+	wantPoints := make(map[int]int, batchSize)
+	for i, p := range preds {
+		wantPoints[p.ID] = i + 1
+	}
+
+	if err := predRepo.UpdateManyPoints(context.Background(), wantPoints); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// Verify every prediction received the correct points value.
+	for _, p := range preds {
+		got, err := predRepo.GetByID(context.Background(), p.ID)
+		if err != nil {
+			t.Fatalf("get prediction %d: %v", p.ID, err)
+		}
+		want := wantPoints[p.ID]
+		if got.Points == nil || *got.Points != want {
+			t.Errorf("prediction %d: got points=%v, want %d", p.ID, got.Points, want)
+		}
 	}
 }
