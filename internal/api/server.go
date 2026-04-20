@@ -262,7 +262,6 @@ func (s *Server) buildHandlers(
 	memberRepo repository.GroupMembershipRepository,
 ) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler, *handler.LeaderboardHandler) {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
-	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
 
 	matchSvc := service.NewMatchService(matchRepo, s.bus, s.log)
 	if s.cache != nil {
@@ -273,7 +272,7 @@ func (s *Server) buildHandlers(
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, s.log)
 
-	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, s.log)
+	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, s.log)
 	if s.cache != nil {
 		ranker = service.NewCachedRankingService(ranker, s.cache, s.log)
 	}
