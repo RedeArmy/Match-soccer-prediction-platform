@@ -1885,13 +1885,13 @@ func TestPredictionRepository_PredictionStatsByQuiniela_ReturnsCountsPerUser(t *
 			t.Fatalf(fmtUpdatePredErr, err)
 		}
 	}
-	setPredPoints(u1.ID, m1.ID, domain.PointsExactScore) // 5
-	setPredPoints(u1.ID, m2.ID, domain.PointsCorrectOutcome) // 2
-	setPredPoints(u1.ID, m3.ID, domain.PointsIncorrectResult) // 0
+	setPredPoints(u1.ID, m1.ID, domain.PointsExactScore)      // 5 pts
+	setPredPoints(u1.ID, m2.ID, domain.PointsCorrectOutcome)  // 2 pts
+	setPredPoints(u1.ID, m3.ID, domain.PointsIncorrectResult) // 0 pts
 
 	// u2: 5 pts, 5 pts → correct=2, total=2, exact=2
-	setPredPoints(u2.ID, m1.ID, domain.PointsExactScore) // 5
-	setPredPoints(u2.ID, m2.ID, domain.PointsExactScore) // 5
+	setPredPoints(u2.ID, m1.ID, domain.PointsExactScore) // 5 pts
+	setPredPoints(u2.ID, m2.ID, domain.PointsExactScore) // 5 pts
 
 	stats, err := predRepo.PredictionStatsByQuiniela(context.Background(), q.ID)
 	if err != nil {
