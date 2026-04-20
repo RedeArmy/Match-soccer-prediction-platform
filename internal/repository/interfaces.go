@@ -113,6 +113,20 @@ type PredictionRepository interface {
 	// Used exclusively by the ranking service to resolve leaderboard ties when
 	// two or more members share the same total points.
 	PredictionStatsByQuiniela(ctx context.Context, quinielaID int) (map[int]*domain.UserPredictionStats, error)
+	// GetUserPredictionCounts returns aggregated prediction counts and total
+	// points for a single user across all quinielas. Used by UserStatsService
+	// to build the user's performance profile in a single database round-trip.
+	GetUserPredictionCounts(ctx context.Context, userID int) (*domain.UserPredictionCounts, error)
+	// GetUserPointsByPhase returns a map of tournament phase to total scored
+	// points for a single user. Only phases with at least one scored prediction
+	// appear in the result. Used by UserStatsService to populate the
+	// per-phase breakdown in UserStats.PointsByPhase.
+	GetUserPointsByPhase(ctx context.Context, userID int) (map[domain.MatchPhase]int, error)
+	// ListUserScoredPointsChronological returns the points values of all scored
+	// predictions for a user, ordered ascending by their match's kickoff time.
+	// Unscored predictions (points IS NULL) are excluded. The slice is consumed
+	// by UserStatsService to derive CurrentStreak and LongestStreak.
+	ListUserScoredPointsChronological(ctx context.Context, userID int) ([]int, error)
 }
 
 // QuinielaRepository defines the persistence operations for the Quiniela

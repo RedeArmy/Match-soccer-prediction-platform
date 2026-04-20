@@ -303,6 +303,48 @@ type UserPredictionStats struct {
 	ExactCount   int // predictions awarded exact-score points (PointsExactScore = 5)
 }
 
+// UserPredictionCounts is a repository projection of aggregated prediction
+// metrics for a single user. It is an intermediate value consumed by
+// UserStatsService to build a UserStats response and is never persisted.
+type UserPredictionCounts struct {
+	TotalPredictions   int
+	ScoredPredictions  int        // points IS NOT NULL
+	CorrectPredictions int        // points > 0
+	ExactPredictions   int        // points = PointsExactScore
+	TotalPoints        int        // sum of all scored points
+	LastPredictionAt   *time.Time // nil when the user has never submitted a prediction
+}
+
+// UserStats is the complete performance profile for a quiniela participant.
+// It is computed on demand by UserStatsService from multiple repository
+// projections and is never stored in the database.
+//
+// Rates (AccuracyPct, AvgPointsPerPred) are both 0.0 when ScoredPredictions
+// is zero to avoid division-by-zero at the service layer. Streak values are
+// derived from scored predictions ordered by match kickoff time.
+type UserStats struct {
+	// Volume
+	TotalPredictions   int
+	ScoredPredictions  int
+	CorrectPredictions int
+	ExactPredictions   int
+
+	// Points
+	TotalPoints   int
+	PointsByPhase map[MatchPhase]int // phase → total scored points; empty when no scored predictions
+
+	// Derived rates — rounded to two decimal places
+	AccuracyPct      float64 // CorrectPredictions / ScoredPredictions * 100; 0.0 if ScoredPredictions == 0
+	AvgPointsPerPred float64 // TotalPoints / ScoredPredictions; 0.0 if ScoredPredictions == 0
+
+	// Streaks (computed from scored predictions ordered by match kickoff ASC)
+	CurrentStreak int // consecutive correct predictions ending at the most recent scored match
+	LongestStreak int // longest ever consecutive correct run
+
+	// Temporal
+	LastPredictionAt *time.Time // nil when the user has never submitted a prediction
+}
+
 // Tiebreaker is an auxiliary forecast used to break ranking ties between
 // players who have earned the same number of points from match predictions.
 //

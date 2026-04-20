@@ -192,6 +192,33 @@ definitions:
       name:
         type: string
     type: object
+  internal_api_handler.UserStatsResponse:
+    properties:
+      accuracy_pct:
+        type: number
+      avg_points_per_prediction:
+        type: number
+      correct_predictions:
+        type: integer
+      current_streak:
+        type: integer
+      exact_predictions:
+        type: integer
+      last_prediction_at:
+        type: string
+      longest_streak:
+        type: integer
+      points_by_phase:
+        additionalProperties:
+          type: integer
+        type: object
+      scored_predictions:
+        type: integer
+      total_points:
+        type: integer
+      total_predictions:
+        type: integer
+    type: object
   internal_api_handler.createGroupRequest:
     properties:
       currency:
@@ -859,6 +886,29 @@ paths:
       summary: Update a prediction
       tags:
       - predictions
+  /api/v1/users/me/stats:
+    get:
+      description: 'Returns aggregated prediction stats for the authenticated user:'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.UserStatsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: My prediction statistics
+      tags:
+      - users
   /health:
     get:
       description: Liveness probe for load balancers and container orchestrators.
