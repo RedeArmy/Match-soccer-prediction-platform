@@ -2034,3 +2034,300 @@ func TestPredictionRepository_PredictionStatsByQuiniela_CancelledContext_Returns
 		t.Fatal("expected error for cancelled context, got nil")
 	}
 }
+
+// ── GetUserPredictionCounts ───────────────────────────────────────────────────
+
+func TestPredictionRepository_GetUserPredictionCounts_ReturnsAggregates(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m1 := seedMatch(t)
+	m2 := seedMatch(t)
+	m3 := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	createAndScore := func(matchID, pts int) {
+		p := &domain.Prediction{UserID: u.ID, MatchID: matchID, HomeScore: 1, AwayScore: 0}
+		if err := predRepo.Create(context.Background(), p); err != nil {
+			t.Fatalf(fmtCreateErr, err)
+		}
+		p.Points = &pts
+		if err := predRepo.Update(context.Background(), p); err != nil {
+			t.Fatalf(fmtUpdatePredErr, err)
+		}
+	}
+	// 5 pts (exact), 2 pts (correct), 0 pts (wrong)
+	createAndScore(m1.ID, domain.PointsExactScore)
+	createAndScore(m2.ID, domain.PointsCorrectOutcome)
+	createAndScore(m3.ID, domain.PointsIncorrectResult)
+
+	// unscored prediction — counts total but not scored
+	p4 := &domain.Prediction{UserID: u.ID, MatchID: seedMatch(t).ID, HomeScore: 0, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p4); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	counts, err := predRepo.GetUserPredictionCounts(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if counts.TotalPredictions != 4 {
+		t.Errorf("TotalPredictions: want 4, got %d", counts.TotalPredictions)
+	}
+	if counts.ScoredPredictions != 3 {
+		t.Errorf("ScoredPredictions: want 3, got %d", counts.ScoredPredictions)
+	}
+	if counts.CorrectPredictions != 2 {
+		t.Errorf("CorrectPredictions: want 2, got %d", counts.CorrectPredictions)
+	}
+	if counts.ExactPredictions != 1 {
+		t.Errorf("ExactPredictions: want 1, got %d", counts.ExactPredictions)
+	}
+	// TotalPoints = 5 + 2 + 0 = 7
+	if counts.TotalPoints != 7 {
+		t.Errorf("TotalPoints: want 7, got %d", counts.TotalPoints)
+	}
+	if counts.LastPredictionAt == nil {
+		t.Error("LastPredictionAt: want non-nil")
+	}
+}
+
+func TestPredictionRepository_GetUserPredictionCounts_NoPredictions_ReturnsZeroes(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	counts, err := predRepo.GetUserPredictionCounts(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if counts.TotalPredictions != 0 || counts.ScoredPredictions != 0 ||
+		counts.CorrectPredictions != 0 || counts.ExactPredictions != 0 || counts.TotalPoints != 0 {
+		t.Errorf("want all zeros for user with no predictions, got %+v", counts)
+	}
+	if counts.LastPredictionAt != nil {
+		t.Error("LastPredictionAt: want nil for user with no predictions")
+	}
+}
+
+func TestPredictionRepository_GetUserPredictionCounts_IsolatedPerUser(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p1 := &domain.Prediction{UserID: u1.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p1); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := domain.PointsExactScore
+	p1.Points = &pts
+	if err := predRepo.Update(context.Background(), p1); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	counts, err := predRepo.GetUserPredictionCounts(context.Background(), u2.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if counts.TotalPredictions != 0 {
+		t.Errorf("u2 should have 0 predictions, got %d", counts.TotalPredictions)
+	}
+}
+
+func TestPredictionRepository_GetUserPredictionCounts_CancelledContext_ReturnsError(t *testing.T) {
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := predRepo.GetUserPredictionCounts(ctx, 1)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+// ── GetUserPointsByPhase ──────────────────────────────────────────────────────
+
+func TestPredictionRepository_GetUserPointsByPhase_ReturnsPerPhasePoints(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	mGroup := seedMatchWithPhase(t, domain.PhaseGroupStage)
+	mFinal := seedMatchWithPhase(t, domain.PhaseFinal)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	createAndScore := func(matchID, pts int) {
+		p := &domain.Prediction{UserID: u.ID, MatchID: matchID, HomeScore: 1, AwayScore: 0}
+		if err := predRepo.Create(context.Background(), p); err != nil {
+			t.Fatalf(fmtCreateErr, err)
+		}
+		p.Points = &pts
+		if err := predRepo.Update(context.Background(), p); err != nil {
+			t.Fatalf(fmtUpdatePredErr, err)
+		}
+	}
+	createAndScore(mGroup.ID, domain.PointsExactScore)     // 5 pts in group stage
+	createAndScore(mFinal.ID, domain.PointsCorrectOutcome) // 2 pts in final
+
+	byPhase, err := predRepo.GetUserPointsByPhase(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if byPhase[domain.PhaseGroupStage] != domain.PointsExactScore {
+		t.Errorf("group stage: want %d, got %d", domain.PointsExactScore, byPhase[domain.PhaseGroupStage])
+	}
+	if byPhase[domain.PhaseFinal] != domain.PointsCorrectOutcome {
+		t.Errorf("final: want %d, got %d", domain.PointsCorrectOutcome, byPhase[domain.PhaseFinal])
+	}
+}
+
+func TestPredictionRepository_GetUserPointsByPhase_UnscoredExcluded(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t) // PhaseGroupStage by default
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	// no points set — prediction is unscored
+
+	byPhase, err := predRepo.GetUserPointsByPhase(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(byPhase) != 0 {
+		t.Errorf("want empty map for unscored predictions, got %v", byPhase)
+	}
+}
+
+func TestPredictionRepository_GetUserPointsByPhase_NoPredictions_ReturnsEmptyMap(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	byPhase, err := predRepo.GetUserPointsByPhase(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(byPhase) != 0 {
+		t.Errorf("want empty map, got %v", byPhase)
+	}
+}
+
+func TestPredictionRepository_GetUserPointsByPhase_CancelledContext_ReturnsError(t *testing.T) {
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := predRepo.GetUserPointsByPhase(ctx, 1)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+// ── ListUserScoredPointsChronological ────────────────────────────────────────
+
+func TestPredictionRepository_ListUserScoredPointsChronological_ReturnsAllScoredPoints(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	m1 := seedMatch(t)
+	m2 := seedMatch(t)
+	m3 := seedMatch(t)
+
+	createAndScore := func(matchID, pts int) {
+		p := &domain.Prediction{UserID: u.ID, MatchID: matchID, HomeScore: 1, AwayScore: 0}
+		if err := predRepo.Create(context.Background(), p); err != nil {
+			t.Fatalf(fmtCreateErr, err)
+		}
+		p.Points = &pts
+		if err := predRepo.Update(context.Background(), p); err != nil {
+			t.Fatalf(fmtUpdatePredErr, err)
+		}
+	}
+	createAndScore(m1.ID, domain.PointsExactScore)
+	createAndScore(m2.ID, domain.PointsCorrectOutcome)
+	createAndScore(m3.ID, domain.PointsIncorrectResult)
+
+	pts, err := predRepo.ListUserScoredPointsChronological(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(pts) != 3 {
+		t.Fatalf("want 3 scored points, got %d", len(pts))
+	}
+	// Verify the multiset of returned values is correct without depending on
+	// exact ordering (seedMatch uses time.Now() which may not differ enough
+	// across rapid calls for a stable sort).
+	sum := 0
+	for _, p := range pts {
+		sum += p
+	}
+	wantSum := domain.PointsExactScore + domain.PointsCorrectOutcome + domain.PointsIncorrectResult
+	if sum != wantSum {
+		t.Errorf("total points sum: want %d, got %d", wantSum, sum)
+	}
+}
+
+func TestPredictionRepository_ListUserScoredPointsChronological_ExcludesUnscored(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m1 := seedMatch(t)
+	m2 := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	// m1: scored
+	p1 := &domain.Prediction{UserID: u.ID, MatchID: m1.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p1); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	scored := domain.PointsExactScore
+	p1.Points = &scored
+	if err := predRepo.Update(context.Background(), p1); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	// m2: unscored (no points set)
+	p2 := &domain.Prediction{UserID: u.ID, MatchID: m2.ID, HomeScore: 0, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p2); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	pts, err := predRepo.ListUserScoredPointsChronological(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(pts) != 1 {
+		t.Fatalf("want 1 scored point entry, got %d", len(pts))
+	}
+	if pts[0] != domain.PointsExactScore {
+		t.Errorf("pts[0]: want %d, got %d", domain.PointsExactScore, pts[0])
+	}
+}
+
+func TestPredictionRepository_ListUserScoredPointsChronological_NoPredictions_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	pts, err := predRepo.ListUserScoredPointsChronological(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(pts) != 0 {
+		t.Errorf("want empty slice, got %v", pts)
+	}
+}
+
+func TestPredictionRepository_ListUserScoredPointsChronological_CancelledContext_ReturnsError(t *testing.T) {
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := predRepo.ListUserScoredPointsChronological(ctx, 1)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}

@@ -123,6 +123,16 @@ type GroupMembershipService interface {
 	ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error)
 }
 
+// UserStatsService computes the performance profile for the authenticated user.
+//
+// GetMyStats aggregates prediction counts, points by tournament phase, and
+// streak information for the given userID. It is called exclusively from the
+// authenticated GET /api/v1/users/me/stats endpoint and operates on global
+// predictions — not scoped to any single quiniela.
+type UserStatsService interface {
+	GetMyStats(ctx context.Context, userID int) (*domain.UserStats, error)
+}
+
 // Notifier dispatches notifications in response to domain events.
 //
 // Notify is a fire-and-forget operation: failures are logged but not returned

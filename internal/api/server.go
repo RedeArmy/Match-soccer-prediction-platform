@@ -131,6 +131,10 @@ func (s *Server) Routes() http.Handler {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
+			r.Route("/users", func(r chi.Router) {
+				r.HandleFunc("/*", dbUnavailable)
+				r.HandleFunc("/", dbUnavailable)
+			})
 		})
 		return r
 	}
@@ -143,7 +147,7 @@ func (s *Server) Routes() http.Handler {
 	memberRepo := repository.NewPostgresGroupMembershipRepository(s.db)
 
 	s.wireSubscribers(matchRepo, predRepo)
-	matchHandler, predHandler, groupHandler, leaderboardHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo)
+	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -195,6 +199,11 @@ func (s *Server) Routes() http.Handler {
 			// enforced inside the service layer (not via RequireRole) because
 			// it is resource-scoped, not role-scoped.
 			r.Post("/{id}/invite-code/rotate", groupHandler.RotateInviteCode)
+		})
+
+		r.Route("/users", func(r chi.Router) {
+			r.Use(middleware.ResolveUser(userRepo, s.log))
+			r.Get("/me/stats", userStatsHandler.GetMyStats)
 		})
 	})
 
@@ -260,7 +269,7 @@ func (s *Server) buildHandlers(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 	memberRepo repository.GroupMembershipRepository,
-) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler, *handler.LeaderboardHandler) {
+) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler, *handler.LeaderboardHandler, *handler.UserStatsHandler) {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
 
 	matchSvc := service.NewMatchService(matchRepo, s.bus, s.log)
@@ -277,10 +286,13 @@ func (s *Server) buildHandlers(
 		ranker = service.NewCachedRankingService(ranker, s.cache, s.log)
 	}
 
+	userStatsSvc := service.NewUserStatsService(predRepo)
+
 	return handler.NewMatchHandler(matchSvc, s.log),
 		handler.NewPredictionHandler(predSvc, s.log),
 		handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
-		handler.NewLeaderboardHandler(ranker, s.log)
+		handler.NewLeaderboardHandler(ranker, s.log),
+		handler.NewUserStatsHandler(userStatsSvc, s.log)
 }
 
 // handleReadiness is a thin wrapper around health.ReadinessHandler that exists
