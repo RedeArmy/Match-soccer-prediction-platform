@@ -107,6 +107,12 @@ type PredictionRepository interface {
 	// error, keeping the response consistent whether the quiniela does not exist
 	// or the user has simply made no predictions yet.
 	ListByUserAndQuiniela(ctx context.Context, userID, quinielaID int) ([]*domain.Prediction, error)
+	// PredictionStatsByQuiniela returns per-user prediction statistics for every
+	// active, paid member of the given quiniela. The map is keyed by user ID;
+	// members with no scored predictions appear with all counts at zero.
+	// Used exclusively by the ranking service to resolve leaderboard ties when
+	// two or more members share the same total points.
+	PredictionStatsByQuiniela(ctx context.Context, quinielaID int) (map[int]*domain.UserPredictionStats, error)
 }
 
 // QuinielaRepository defines the persistence operations for the Quiniela

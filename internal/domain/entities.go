@@ -285,6 +285,24 @@ type GroupMembership struct {
 	UpdatedAt  time.Time
 }
 
+// UserPredictionStats holds aggregated prediction metrics for a single member
+// within a quiniela. It is computed by the ranking service to resolve ties when
+// two or more members have identical total points, using the three-rule chain:
+//
+//  1. Most correct predictions (CorrectCount DESC).
+//  2. Fewest predictions submitted (TotalCount ASC).
+//  3. Most exact-score hits (ExactCount DESC).
+//
+// Zero values represent a member who has made no scored predictions yet; they
+// rank below any member with at least one scored prediction on rule 1, and
+// above or equal to others on rules 2 and 3 only when all members share the
+// same zero counts.
+type UserPredictionStats struct {
+	CorrectCount int // scored predictions where points > 0
+	TotalCount   int // total scored predictions (points IS NOT NULL)
+	ExactCount   int // predictions awarded exact-score points (PointsExactScore = 5)
+}
+
 // Tiebreaker is an auxiliary forecast used to break ranking ties between
 // players who have earned the same number of points from match predictions.
 //

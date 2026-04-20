@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"math"
 	"testing"
 
 	"go.uber.org/zap"
@@ -35,30 +34,17 @@ func (r *stubUserRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, er
 	return r.users, r.err
 }
 
-// stubTiebreakerRepo implements repository.TiebreakerRepository for service tests.
-type stubTiebreakerRepo struct {
-	tiebreakers []*domain.Tiebreaker
-	err         error
-}
-
-func (r *stubTiebreakerRepo) Create(_ context.Context, _ *domain.Tiebreaker) error { return r.err }
-func (r *stubTiebreakerRepo) GetByUserAndQuiniela(_ context.Context, _, _ int) (*domain.Tiebreaker, error) {
-	return nil, r.err
-}
-func (r *stubTiebreakerRepo) Update(_ context.Context, _ *domain.Tiebreaker) error { return r.err }
-func (r *stubTiebreakerRepo) ListByQuiniela(_ context.Context, _ int) ([]*domain.Tiebreaker, error) {
-	return r.tiebreakers, r.err
-}
-
 // stubTotalPointsPredRepo extends stubPredRepo with configurable
-// TotalPointsByQuiniela and TotalPointsByQuinielaAndPhase responses for
-// ranking service tests.
+// TotalPointsByQuiniela, TotalPointsByQuinielaAndPhase, and
+// PredictionStatsByQuiniela responses for ranking service tests.
 type stubTotalPointsPredRepo struct {
 	stubPredRepo
 	pointsByUser      map[int]int
 	pointsErr         error
 	phasePointsByUser map[int]int
 	phasePointsErr    error
+	statsByUser       map[int]*domain.UserPredictionStats
+	statsErr          error
 }
 
 func (r *stubTotalPointsPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
@@ -72,14 +58,28 @@ func (r *stubTotalPointsPredRepo) TotalPointsByQuinielaAndPhase(_ context.Contex
 	return r.pointsByUser, r.pointsErr
 }
 
-// ── RankingService tests ──────────────────────────────────────────────────────
+func (r *stubTotalPointsPredRepo) PredictionStatsByQuiniela(_ context.Context, _ int) (map[int]*domain.UserPredictionStats, error) {
+	return r.statsByUser, r.statsErr
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+func newRankingSvc(q *domain.Quiniela, predRepo *stubTotalPointsPredRepo, users []*domain.User) Ranker {
+	return NewRankingService(
+		&stubQuinielaRepo{quiniela: q},
+		predRepo,
+		&stubUserRepo{users: users},
+		zap.NewNop(),
+	)
+}
+
+// ── GetLeaderboard basic cases ────────────────────────────────────────────────
 
 func TestGetLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T) {
 	svc := NewRankingService(
 		&stubQuinielaRepo{quiniela: nil},
 		&stubPredRepo{},
 		&stubUserRepo{},
-		&stubTiebreakerRepo{},
 		zap.NewNop(),
 	)
 
@@ -92,15 +92,9 @@ func TestGetLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T) {
 func TestGetLeaderboard_NoActivePaidMembers_ReturnsNil(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, Name: "Test", PrizeThreshold: 3}
 	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser: map[int]int{}, // empty: no active+paid members
+		pointsByUser: map[int]int{},
 	}
-	svc := NewRankingService(
-		&stubQuinielaRepo{quiniela: q},
-		predRepo,
-		&stubUserRepo{},
-		&stubTiebreakerRepo{},
-		zap.NewNop(),
-	)
+	svc := newRankingSvc(q, predRepo, nil)
 
 	entries, err := svc.GetLeaderboard(context.Background(), 1)
 	if err != nil {
@@ -118,21 +112,9 @@ func TestGetLeaderboard_SortedByPoints(t *testing.T) {
 	userC := &domain.User{ID: 3, Name: "Carlos"}
 
 	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser: map[int]int{
-			1: 10,
-			2: 25,
-			3: 25, // tie with Bob
-		},
+		pointsByUser: map[int]int{1: 10, 2: 25, 3: 25},
 	}
-	userRepo := &stubUserRepo{users: []*domain.User{userA, userB, userC}}
-
-	svc := NewRankingService(
-		&stubQuinielaRepo{quiniela: q},
-		predRepo,
-		userRepo,
-		&stubTiebreakerRepo{},
-		zap.NewNop(),
-	)
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA, userB, userC})
 
 	entries, err := svc.GetLeaderboard(context.Background(), 1)
 	if err != nil {
@@ -142,14 +124,12 @@ func TestGetLeaderboard_SortedByPoints(t *testing.T) {
 		t.Fatalf("expected 3 entries, got %d", len(entries))
 	}
 
-	// Top two should be tied at rank 1 with 25 points.
 	if entries[0].TotalPoints != 25 || entries[0].Rank != 1 {
 		t.Errorf("entry[0]: want rank 1 pts 25, got rank %d pts %d", entries[0].Rank, entries[0].TotalPoints)
 	}
 	if entries[1].TotalPoints != 25 || entries[1].Rank != 1 {
 		t.Errorf("entry[1]: want rank 1 pts 25, got rank %d pts %d", entries[1].Rank, entries[1].TotalPoints)
 	}
-	// Third should be rank 3 (1224 competition ranking).
 	if entries[2].TotalPoints != 10 || entries[2].Rank != 3 {
 		t.Errorf("entry[2]: want rank 3 pts 10, got rank %d pts %d", entries[2].Rank, entries[2].TotalPoints)
 	}
@@ -160,7 +140,7 @@ func TestGetLeaderboard_DatabaseError_PropagatesError(t *testing.T) {
 	predRepo := &stubTotalPointsPredRepo{
 		pointsErr: apperrors.Internal(errors.New("db error")),
 	}
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, &stubUserRepo{}, &stubTiebreakerRepo{}, zap.NewNop())
+	svc := newRankingSvc(q, predRepo, nil)
 
 	_, err := svc.GetLeaderboard(context.Background(), 1)
 	if err == nil {
@@ -169,21 +149,13 @@ func TestGetLeaderboard_DatabaseError_PropagatesError(t *testing.T) {
 }
 
 func TestGetLeaderboard_DeletedUser_SkippedSilently(t *testing.T) {
-	// pointsByUser has user IDs 1 and 2, but ListByIDs only returns user 2.
-	// User 1's entry must be skipped without error; the leaderboard has 1 entry.
 	q := &domain.Quiniela{ID: 1, Name: "Test", PrizeThreshold: 3}
 	userB := &domain.User{ID: 2, Name: "Bob"}
 
 	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser: map[int]int{
-			1: 10, // user 1 has points but will not be returned by ListByIDs
-			2: 20,
-		},
+		pointsByUser: map[int]int{1: 10, 2: 20},
 	}
-	// Only user 2 is returned — user 1 has been deleted.
-	userRepo := &stubUserRepo{users: []*domain.User{userB}}
-
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, &stubTiebreakerRepo{}, zap.NewNop())
+	svc := newRankingSvc(q, predRepo, []*domain.User{userB})
 
 	entries, err := svc.GetLeaderboard(context.Background(), 1)
 	if err != nil {
@@ -200,11 +172,11 @@ func TestGetLeaderboard_DeletedUser_SkippedSilently(t *testing.T) {
 func TestGetLeaderboard_ListByIDsError_Propagated(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser: map[int]int{1: 10}, // non-empty so we reach ListByIDs
+		pointsByUser: map[int]int{1: 10},
 	}
 	userRepo := &stubUserRepo{err: errors.New("db error")}
 
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, &stubTiebreakerRepo{}, zap.NewNop())
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, zap.NewNop())
 
 	_, err := svc.GetLeaderboard(context.Background(), 1)
 	if err == nil {
@@ -212,10 +184,203 @@ func TestGetLeaderboard_ListByIDsError_Propagated(t *testing.T) {
 	}
 }
 
+func TestGetLeaderboard_PredictionStatsError_Propagated(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 10},
+		statsErr:     errors.New("stats db error"),
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA})
+
+	_, err := svc.GetLeaderboard(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error from PredictionStatsByQuiniela, got nil")
+	}
+}
+
+// ── Tiebreaker rule 1: CorrectCount DESC ──────────────────────────────────────
+
+func TestGetLeaderboard_CorrectCountBreaksTie(t *testing.T) {
+	// Alice 8 correct, Bob 5 correct — same total points → Alice ranks higher.
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 20, 2: 20},
+		statsByUser: map[int]*domain.UserPredictionStats{
+			1: {CorrectCount: 8, TotalCount: 10, ExactCount: 2},
+			2: {CorrectCount: 5, TotalCount: 10, ExactCount: 2},
+		},
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA, userB})
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].User.ID != 1 {
+		t.Errorf("expected Alice (more correct) at rank 1, got user %d", entries[0].User.ID)
+	}
+	if entries[0].Rank != 1 || entries[1].Rank != 2 {
+		t.Errorf("expected distinct ranks 1 and 2, got %d and %d", entries[0].Rank, entries[1].Rank)
+	}
+}
+
+// ── Tiebreaker rule 2: TotalCount ASC ────────────────────────────────────────
+
+func TestGetLeaderboard_TotalCountBreaksTie_WhenCorrectCountEqual(t *testing.T) {
+	// Alice 5 total, Bob 7 total — same correct count → Alice ranks higher (fewer is better).
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 20, 2: 20},
+		statsByUser: map[int]*domain.UserPredictionStats{
+			1: {CorrectCount: 4, TotalCount: 5, ExactCount: 1},
+			2: {CorrectCount: 4, TotalCount: 7, ExactCount: 1},
+		},
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA, userB})
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if entries[0].User.ID != 1 {
+		t.Errorf("expected Alice (fewer predictions) at rank 1, got user %d", entries[0].User.ID)
+	}
+	if entries[0].Rank != 1 || entries[1].Rank != 2 {
+		t.Errorf("expected distinct ranks 1 and 2, got %d and %d", entries[0].Rank, entries[1].Rank)
+	}
+}
+
+// ── Tiebreaker rule 3: ExactCount DESC ────────────────────────────────────────
+
+func TestGetLeaderboard_ExactCountBreaksTie_WhenFirstTwoRulesEqual(t *testing.T) {
+	// Alice 3 exact, Bob 1 exact — same correct and total counts → Alice ranks higher.
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 20, 2: 20},
+		statsByUser: map[int]*domain.UserPredictionStats{
+			1: {CorrectCount: 4, TotalCount: 6, ExactCount: 3},
+			2: {CorrectCount: 4, TotalCount: 6, ExactCount: 1},
+		},
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA, userB})
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if entries[0].User.ID != 1 {
+		t.Errorf("expected Alice (more exact hits) at rank 1, got user %d", entries[0].User.ID)
+	}
+	if entries[0].Rank != 1 || entries[1].Rank != 2 {
+		t.Errorf("expected distinct ranks 1 and 2, got %d and %d", entries[0].Rank, entries[1].Rank)
+	}
+}
+
+// ── All three rules equal → shared rank, stable fallback ──────────────────────
+
+func TestGetLeaderboard_AllStatsEqual_SameRank_FallsBackToUserID(t *testing.T) {
+	// All stats identical → both share rank 1; stable fallback sorts by user ID.
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 20, 2: 20},
+		statsByUser: map[int]*domain.UserPredictionStats{
+			1: {CorrectCount: 4, TotalCount: 6, ExactCount: 2},
+			2: {CorrectCount: 4, TotalCount: 6, ExactCount: 2},
+		},
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA, userB})
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if entries[0].Rank != 1 || entries[1].Rank != 1 {
+		t.Errorf("expected both to share rank 1, got %d and %d", entries[0].Rank, entries[1].Rank)
+	}
+	if entries[0].User.ID != 1 {
+		t.Errorf("expected Alice (lower user ID) listed first when all stats equal, got user %d", entries[0].User.ID)
+	}
+}
+
+func TestGetLeaderboard_EmptyStats_SameRank_FallsBackToUserID(t *testing.T) {
+	// Stats map is nil → statsFor returns zero values for all users → same rank.
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 20, 2: 20},
+		statsByUser:  nil,
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA, userB})
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if entries[0].Rank != 1 || entries[1].Rank != 1 {
+		t.Errorf("expected both to share rank 1 with empty stats, got %d and %d", entries[0].Rank, entries[1].Rank)
+	}
+}
+
+// ── Tiebreaker chain: all three rules fire in sequence ────────────────────────
+
+func TestGetLeaderboard_TiebreakerChain_CorrectCountFirst(t *testing.T) {
+	// Three-way tie on points; rule 1 separates Carlos, rules 2&3 still needed for Alice/Bob.
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+	userC := &domain.User{ID: 3, Name: "Carlos"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 20, 2: 20, 3: 20},
+		statsByUser: map[int]*domain.UserPredictionStats{
+			1: {CorrectCount: 4, TotalCount: 5, ExactCount: 3}, // rule2 wins vs Bob
+			2: {CorrectCount: 4, TotalCount: 7, ExactCount: 3}, // rule2 loses vs Alice
+			3: {CorrectCount: 2, TotalCount: 4, ExactCount: 1}, // rule1 loses to all
+		},
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA, userB, userC})
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+
+	// Alice rank 1, Bob rank 2, Carlos rank 3
+	if entries[0].User.ID != 1 || entries[0].Rank != 1 {
+		t.Errorf("entry[0]: expected Alice rank 1, got user %d rank %d", entries[0].User.ID, entries[0].Rank)
+	}
+	if entries[1].User.ID != 2 || entries[1].Rank != 2 {
+		t.Errorf("entry[1]: expected Bob rank 2, got user %d rank %d", entries[1].User.ID, entries[1].Rank)
+	}
+	if entries[2].User.ID != 3 || entries[2].Rank != 3 {
+		t.Errorf("entry[2]: expected Carlos rank 3, got user %d rank %d", entries[2].User.ID, entries[2].Rank)
+	}
+}
+
 // ── assignPrizes ──────────────────────────────────────────────────────────────
 
 func TestAssignPrizes_Threshold3_NineMembers_ThreeWinners(t *testing.T) {
-	// 9 members / threshold 3 = 3 winners
 	entries := make([]*domain.LeaderboardEntry, 9)
 	for i := range entries {
 		entries[i] = &domain.LeaderboardEntry{User: &domain.User{ID: i + 1}, TotalPoints: 10 - i, Rank: i + 1}
@@ -231,7 +396,6 @@ func TestAssignPrizes_Threshold3_NineMembers_ThreeWinners(t *testing.T) {
 }
 
 func TestAssignPrizes_TwoMembers_AlwaysOneWinner(t *testing.T) {
-	// 2 members / threshold 3 = 0 → clamped to 1
 	entries := []*domain.LeaderboardEntry{
 		{User: &domain.User{ID: 1}, TotalPoints: 5, Rank: 1},
 		{User: &domain.User{ID: 2}, TotalPoints: 2, Rank: 2},
@@ -247,12 +411,10 @@ func TestAssignPrizes_TwoMembers_AlwaysOneWinner(t *testing.T) {
 }
 
 func TestAssignPrizes_TiedAtCutoff_AllTiedEntriesWin(t *testing.T) {
-	// 6 members / threshold 3 = 2 winners; entries[1] and entries[2] are tied at rank 2
-	// so all three (rank 1 + both rank-2 entries) receive PrizeWinner = true.
 	entries := []*domain.LeaderboardEntry{
 		{User: &domain.User{ID: 1}, TotalPoints: 10, Rank: 1},
 		{User: &domain.User{ID: 2}, TotalPoints: 5, Rank: 2},
-		{User: &domain.User{ID: 3}, TotalPoints: 5, Rank: 2}, // tied with entry[1]
+		{User: &domain.User{ID: 3}, TotalPoints: 5, Rank: 2},
 		{User: &domain.User{ID: 4}, TotalPoints: 3, Rank: 4},
 		{User: &domain.User{ID: 5}, TotalPoints: 2, Rank: 5},
 		{User: &domain.User{ID: 6}, TotalPoints: 1, Rank: 6},
@@ -272,11 +434,9 @@ func TestAssignPrizes_TiedAtCutoff_AllTiedEntriesWin(t *testing.T) {
 }
 
 func TestAssignPrizes_ZeroThreshold_UsesDefault(t *testing.T) {
-	// prizeThreshold=0 must not panic; DefaultPrizeThreshold (3) is used instead.
 	entries := []*domain.LeaderboardEntry{
 		{User: &domain.User{ID: 1}, TotalPoints: 10, Rank: 1},
 	}
-	// Should not panic.
 	assignPrizes(entries, 0)
 	if !entries[0].PrizeWinner {
 		t.Error("sole member should be a prize winner")
@@ -290,7 +450,6 @@ func TestGetPhaseLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T)
 		&stubQuinielaRepo{quiniela: nil},
 		&stubTotalPointsPredRepo{},
 		&stubUserRepo{},
-		&stubTiebreakerRepo{},
 		zap.NewNop(),
 	)
 
@@ -305,7 +464,7 @@ func TestGetPhaseLeaderboard_NoEntries_ReturnsNil(t *testing.T) {
 	predRepo := &stubTotalPointsPredRepo{
 		phasePointsByUser: map[int]int{},
 	}
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, &stubUserRepo{}, &stubTiebreakerRepo{}, zap.NewNop())
+	svc := newRankingSvc(q, predRepo, nil)
 
 	entries, err := svc.GetPhaseLeaderboard(context.Background(), 1, domain.PhaseGroupStage)
 	if err != nil {
@@ -325,9 +484,7 @@ func TestGetPhaseLeaderboard_SortedByPoints_WithPrizeWinner(t *testing.T) {
 	predRepo := &stubTotalPointsPredRepo{
 		phasePointsByUser: map[int]int{1: 10, 2: 25, 3: 5},
 	}
-	userRepo := &stubUserRepo{users: []*domain.User{userA, userB, userC}}
-
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, &stubTiebreakerRepo{}, zap.NewNop())
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA, userB, userC})
 
 	entries, err := svc.GetPhaseLeaderboard(context.Background(), 1, domain.PhaseGroupStage)
 	if err != nil {
@@ -336,7 +493,6 @@ func TestGetPhaseLeaderboard_SortedByPoints_WithPrizeWinner(t *testing.T) {
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 entries, got %d", len(entries))
 	}
-	// Bob has the most points → rank 1 → prize winner (3 members / threshold 3 = 1 winner).
 	if entries[0].User.ID != 2 || entries[0].Rank != 1 {
 		t.Errorf("entry[0]: expected Bob rank 1, got user %d rank %d", entries[0].User.ID, entries[0].Rank)
 	}
@@ -348,205 +504,12 @@ func TestGetPhaseLeaderboard_SortedByPoints_WithPrizeWinner(t *testing.T) {
 	}
 }
 
-// ── tiebreakerDistance unit tests ────────────────────────────────────────────
-
-func TestTiebreakerDistance_NilTiebreaker_ReturnsMaxInt(t *testing.T) {
-	if got := tiebreakerDistance(nil); got != math.MaxInt {
-		t.Errorf("expected math.MaxInt for nil tiebreaker, got %d", got)
-	}
-}
-
-func TestTiebreakerDistance_NilResult_ReturnsMaxInt(t *testing.T) {
-	tb := &domain.Tiebreaker{Prediction: 40, Result: nil}
-	if got := tiebreakerDistance(tb); got != math.MaxInt {
-		t.Errorf("expected math.MaxInt when result is nil, got %d", got)
-	}
-}
-
-func TestTiebreakerDistance_ExceedsResult_ReturnsMaxInt(t *testing.T) {
-	result := 50
-	tb := &domain.Tiebreaker{Prediction: 55, Result: &result}
-	if got := tiebreakerDistance(tb); got != math.MaxInt {
-		t.Errorf("expected math.MaxInt for exceeded prediction, got %d", got)
-	}
-}
-
-func TestTiebreakerDistance_ExactMatch_ReturnsZero(t *testing.T) {
-	result := 50
-	tb := &domain.Tiebreaker{Prediction: 50, Result: &result}
-	if got := tiebreakerDistance(tb); got != 0 {
-		t.Errorf("expected 0 for exact match, got %d", got)
-	}
-}
-
-func TestTiebreakerDistance_ValidGuess_ReturnsPositiveDistance(t *testing.T) {
-	result := 50
-	tb := &domain.Tiebreaker{Prediction: 47, Result: &result}
-	if got := tiebreakerDistance(tb); got != 3 {
-		t.Errorf("expected distance 3, got %d", got)
-	}
-}
-
-// ── sortAndRank tiebreaker integration ───────────────────────────────────────
-
-func TestGetLeaderboard_TiebreakerResolvesEqualPoints(t *testing.T) {
-	// Bob (distance 2) should rank above Alice (distance 5) despite equal TotalPoints.
-	result := 50
-	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
-	userA := &domain.User{ID: 1, Name: "Alice"}
-	userB := &domain.User{ID: 2, Name: "Bob"}
-
-	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser: map[int]int{1: 20, 2: 20},
-	}
-	tbRepo := &stubTiebreakerRepo{
-		tiebreakers: []*domain.Tiebreaker{
-			{UserID: 1, QuinielaID: 1, Prediction: 45, Result: &result}, // distance 5
-			{UserID: 2, QuinielaID: 1, Prediction: 48, Result: &result}, // distance 2 — closer
-		},
-	}
-	userRepo := &stubUserRepo{users: []*domain.User{userA, userB}}
-
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, tbRepo, zap.NewNop())
-
-	entries, err := svc.GetLeaderboard(context.Background(), 1)
-	if err != nil {
-		t.Fatalf(rankingUnexpectedErrorFmt, err)
-	}
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(entries))
-	}
-	if entries[0].User.ID != 2 {
-		t.Errorf("expected Bob (closer tiebreaker) at rank 1, got user %d", entries[0].User.ID)
-	}
-	// Different tiebreaker distances → different ranks; no shared rank.
-	if entries[0].Rank != 1 || entries[1].Rank != 2 {
-		t.Errorf("expected distinct ranks 1 and 2, got %d and %d", entries[0].Rank, entries[1].Rank)
-	}
-}
-
-func TestGetLeaderboard_TiebreakerExceeded_DisqualifiesEntry(t *testing.T) {
-	// Alice exceeds the result and is disqualified; Bob has a valid guess and ranks higher.
-	result := 50
-	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
-	userA := &domain.User{ID: 1, Name: "Alice"}
-	userB := &domain.User{ID: 2, Name: "Bob"}
-
-	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser: map[int]int{1: 15, 2: 15},
-	}
-	tbRepo := &stubTiebreakerRepo{
-		tiebreakers: []*domain.Tiebreaker{
-			{UserID: 1, QuinielaID: 1, Prediction: 55, Result: &result}, // 55 > 50: disqualified
-			{UserID: 2, QuinielaID: 1, Prediction: 49, Result: &result}, // valid, distance 1
-		},
-	}
-	userRepo := &stubUserRepo{users: []*domain.User{userA, userB}}
-
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, tbRepo, zap.NewNop())
-
-	entries, err := svc.GetLeaderboard(context.Background(), 1)
-	if err != nil {
-		t.Fatalf(rankingUnexpectedErrorFmt, err)
-	}
-	if entries[0].User.ID != 2 {
-		t.Errorf("expected Bob (valid tiebreaker) at rank 1, got user %d", entries[0].User.ID)
-	}
-	if entries[0].Rank != 1 || entries[1].Rank != 2 {
-		t.Errorf("expected distinct ranks 1 and 2, got %d and %d", entries[0].Rank, entries[1].Rank)
-	}
-}
-
-func TestGetLeaderboard_TiebreakerNoResult_SameRankFallsBackToUserID(t *testing.T) {
-	// No tiebreaker result yet (Result == nil): both distances are MaxInt → same rank;
-	// stable ordering falls back to user ID (Alice < Bob).
-	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
-	userA := &domain.User{ID: 1, Name: "Alice"}
-	userB := &domain.User{ID: 2, Name: "Bob"}
-
-	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser: map[int]int{1: 20, 2: 20},
-	}
-	tbRepo := &stubTiebreakerRepo{
-		tiebreakers: []*domain.Tiebreaker{
-			{UserID: 1, QuinielaID: 1, Prediction: 48, Result: nil},
-			{UserID: 2, QuinielaID: 1, Prediction: 45, Result: nil},
-		},
-	}
-	userRepo := &stubUserRepo{users: []*domain.User{userA, userB}}
-
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, tbRepo, zap.NewNop())
-
-	entries, err := svc.GetLeaderboard(context.Background(), 1)
-	if err != nil {
-		t.Fatalf(rankingUnexpectedErrorFmt, err)
-	}
-	// Both entries share rank 1 — tiebreaker result is not confirmed yet.
-	if entries[0].Rank != 1 || entries[1].Rank != 1 {
-		t.Errorf("expected both to share rank 1 (result nil), got %d and %d", entries[0].Rank, entries[1].Rank)
-	}
-	// Stable fallback: Alice (ID 1) is listed before Bob (ID 2).
-	if entries[0].User.ID != 1 {
-		t.Errorf("expected Alice (lower user ID) first when tiebreaker result is nil, got user %d", entries[0].User.ID)
-	}
-}
-
-func TestGetLeaderboard_TiebreakerNoSubmission_ValidGuessBeatsMissing(t *testing.T) {
-	// Bob submitted a tiebreaker; Alice did not. Bob ranks higher despite equal TotalPoints.
-	result := 50
-	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
-	userA := &domain.User{ID: 1, Name: "Alice"}
-	userB := &domain.User{ID: 2, Name: "Bob"}
-
-	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser: map[int]int{1: 20, 2: 20},
-	}
-	tbRepo := &stubTiebreakerRepo{
-		tiebreakers: []*domain.Tiebreaker{
-			// Alice has no entry in the slice — distance will be MaxInt.
-			{UserID: 2, QuinielaID: 1, Prediction: 48, Result: &result}, // distance 2
-		},
-	}
-	userRepo := &stubUserRepo{users: []*domain.User{userA, userB}}
-
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, tbRepo, zap.NewNop())
-
-	entries, err := svc.GetLeaderboard(context.Background(), 1)
-	if err != nil {
-		t.Fatalf(rankingUnexpectedErrorFmt, err)
-	}
-	if entries[0].User.ID != 2 {
-		t.Errorf("expected Bob (submitted tiebreaker) at rank 1, got user %d", entries[0].User.ID)
-	}
-	if entries[0].Rank != 1 || entries[1].Rank != 2 {
-		t.Errorf("expected distinct ranks 1 and 2, got %d and %d", entries[0].Rank, entries[1].Rank)
-	}
-}
-
-func TestGetLeaderboard_TiebreakerRepoError_Propagated(t *testing.T) {
-	// tiebreakerRepo.ListByQuiniela returns an error after buildEntries succeeds;
-	// the error must propagate to the caller.
-	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
-	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser: map[int]int{1: 10},
-	}
-	tbRepo := &stubTiebreakerRepo{err: errors.New("tiebreaker db error")}
-	userRepo := &stubUserRepo{users: []*domain.User{{ID: 1, Name: "Alice"}}}
-
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, tbRepo, zap.NewNop())
-
-	_, err := svc.GetLeaderboard(context.Background(), 1)
-	if err == nil {
-		t.Fatal("expected error from tiebreakerRepo.ListByQuiniela, got nil")
-	}
-}
-
 func TestGetPhaseLeaderboard_DatabaseError_PropagatesError(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	predRepo := &stubTotalPointsPredRepo{
 		phasePointsErr: apperrors.Internal(errors.New("db error")),
 	}
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, &stubUserRepo{}, &stubTiebreakerRepo{}, zap.NewNop())
+	svc := newRankingSvc(q, predRepo, nil)
 
 	_, err := svc.GetPhaseLeaderboard(context.Background(), 1, domain.PhaseGroupStage)
 	if err == nil {
@@ -554,19 +517,110 @@ func TestGetPhaseLeaderboard_DatabaseError_PropagatesError(t *testing.T) {
 	}
 }
 
-func TestGetPhaseLeaderboard_TiebreakerRepoError_Propagated(t *testing.T) {
+func TestGetPhaseLeaderboard_StatsError_Propagated(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
 	predRepo := &stubTotalPointsPredRepo{
 		phasePointsByUser: map[int]int{1: 10},
+		statsErr:          errors.New("stats db error"),
 	}
-	tbRepo := &stubTiebreakerRepo{err: errors.New("tiebreaker db error")}
-	userRepo := &stubUserRepo{users: []*domain.User{{ID: 1, Name: "Alice"}}}
-
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, tbRepo, zap.NewNop())
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA})
 
 	_, err := svc.GetPhaseLeaderboard(context.Background(), 1, domain.PhaseGroupStage)
 	if err == nil {
-		t.Fatal("expected error from tiebreakerRepo.ListByQuiniela, got nil")
+		t.Fatal("expected error from PredictionStatsByQuiniela, got nil")
+	}
+}
+
+// ── statsFor unit tests ───────────────────────────────────────────────────────
+
+func TestStatsFor_NilMap_ReturnsZeroValue(t *testing.T) {
+	s := statsFor(nil, 42)
+	if s.CorrectCount != 0 || s.TotalCount != 0 || s.ExactCount != 0 {
+		t.Errorf("expected zero-value stats for nil map, got %+v", s)
+	}
+}
+
+func TestStatsFor_MissingKey_ReturnsZeroValue(t *testing.T) {
+	m := map[int]*domain.UserPredictionStats{1: {CorrectCount: 3}}
+	s := statsFor(m, 99)
+	if s.CorrectCount != 0 || s.TotalCount != 0 || s.ExactCount != 0 {
+		t.Errorf("expected zero-value stats for missing key, got %+v", s)
+	}
+}
+
+func TestStatsFor_NilEntry_ReturnsZeroValue(t *testing.T) {
+	m := map[int]*domain.UserPredictionStats{1: nil}
+	s := statsFor(m, 1)
+	if s.CorrectCount != 0 || s.TotalCount != 0 || s.ExactCount != 0 {
+		t.Errorf("expected zero-value stats for nil entry, got %+v", s)
+	}
+}
+
+func TestStatsFor_ValidEntry_ReturnsStats(t *testing.T) {
+	want := domain.UserPredictionStats{CorrectCount: 5, TotalCount: 8, ExactCount: 2}
+	m := map[int]*domain.UserPredictionStats{1: &want}
+	got := statsFor(m, 1)
+	if got != want {
+		t.Errorf("expected %+v, got %+v", want, got)
+	}
+}
+
+// ── sameRank unit tests ───────────────────────────────────────────────────────
+
+func TestSameRank_DifferentPoints_ReturnsFalse(t *testing.T) {
+	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 10}
+	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 5}
+	if sameRank(a, b, nil) {
+		t.Error("entries with different TotalPoints must not share a rank")
+	}
+}
+
+func TestSameRank_SamePointsDifferentCorrectCount_ReturnsFalse(t *testing.T) {
+	stats := map[int]*domain.UserPredictionStats{
+		1: {CorrectCount: 5, TotalCount: 8, ExactCount: 2},
+		2: {CorrectCount: 3, TotalCount: 8, ExactCount: 2},
+	}
+	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 20}
+	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 20}
+	if sameRank(a, b, stats) {
+		t.Error("entries with different CorrectCount must not share a rank")
+	}
+}
+
+func TestSameRank_SamePointsDifferentTotalCount_ReturnsFalse(t *testing.T) {
+	stats := map[int]*domain.UserPredictionStats{
+		1: {CorrectCount: 4, TotalCount: 5, ExactCount: 2},
+		2: {CorrectCount: 4, TotalCount: 9, ExactCount: 2},
+	}
+	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 20}
+	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 20}
+	if sameRank(a, b, stats) {
+		t.Error("entries with different TotalCount must not share a rank")
+	}
+}
+
+func TestSameRank_SamePointsDifferentExactCount_ReturnsFalse(t *testing.T) {
+	stats := map[int]*domain.UserPredictionStats{
+		1: {CorrectCount: 4, TotalCount: 6, ExactCount: 3},
+		2: {CorrectCount: 4, TotalCount: 6, ExactCount: 1},
+	}
+	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 20}
+	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 20}
+	if sameRank(a, b, stats) {
+		t.Error("entries with different ExactCount must not share a rank")
+	}
+}
+
+func TestSameRank_AllDimensionsEqual_ReturnsTrue(t *testing.T) {
+	stats := map[int]*domain.UserPredictionStats{
+		1: {CorrectCount: 4, TotalCount: 6, ExactCount: 2},
+		2: {CorrectCount: 4, TotalCount: 6, ExactCount: 2},
+	}
+	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 20}
+	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 20}
+	if !sameRank(a, b, stats) {
+		t.Error("entries identical on all dimensions must share a rank")
 	}
 }
 
@@ -574,4 +628,3 @@ func TestGetPhaseLeaderboard_TiebreakerRepoError_Propagated(t *testing.T) {
 
 // stubQuinielaRepo is also used from ranking_service_test.go; ensure it satisfies
 // repository.QuinielaRepository including PrizeThreshold hydration in the stub.
-// (No changes needed to the stub itself — it just returns the configured quiniela.)

@@ -217,6 +217,54 @@ func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context
 	return result, nil
 }
 
+// PredictionStatsByQuiniela returns per-user prediction statistics for every
+// active, paid member of the given quiniela. A single SQL query counts
+// correct, total, and exact-score predictions per member in one pass.
+//
+// The LEFT JOIN with the IS NOT NULL guard means only scored predictions
+// (matches that have been played and evaluated) contribute to the counts.
+// Members with no scored predictions appear in the result with all counts
+// at zero so the ranking service can still list them in the leaderboard.
+//
+// FILTER aggregates are used rather than CASE expressions because they are
+// clearer, and both compile to the same execution plan on PostgreSQL ≥ 9.4.
+func (r *PostgresPredictionRepository) PredictionStatsByQuiniela(ctx context.Context, quinielaID int) (map[int]*domain.UserPredictionStats, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT
+		     gm.user_id,
+		     COUNT(p.id) FILTER (WHERE p.points > 0)     AS correct_count,
+		     COUNT(p.id)                                  AS total_count,
+		     COUNT(p.id) FILTER (WHERE p.points = $2)    AS exact_count
+		   FROM group_memberships gm
+		   LEFT JOIN predictions p
+		          ON p.user_id = gm.user_id
+		         AND p.points IS NOT NULL
+		  WHERE gm.quiniela_id = $1
+		    AND gm.status = 'active'
+		    AND gm.paid = TRUE
+		  GROUP BY gm.user_id`,
+		quinielaID, domain.PointsExactScore,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	result := make(map[int]*domain.UserPredictionStats)
+	for rows.Next() {
+		var userID int
+		s := &domain.UserPredictionStats{}
+		if err := rows.Scan(&userID, &s.CorrectCount, &s.TotalCount, &s.ExactCount); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		result[userID] = s
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return result, nil
+}
+
 // UpdateManyPoints atomically updates the points column for every prediction
 // ID in the provided map. A single UPDATE … FROM UNNEST statement is used so
 // the operation is one round-trip and one lock acquisition regardless of how
