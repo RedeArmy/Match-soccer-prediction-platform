@@ -285,6 +285,15 @@ func (r *failOnUpdateRepo) ListByUserAndQuiniela(_ context.Context, _, _ int) ([
 func (r *failOnUpdateRepo) PredictionStatsByQuiniela(_ context.Context, _ int) (map[int]*domain.UserPredictionStats, error) {
 	return nil, nil
 }
+func (r *failOnUpdateRepo) GetUserPredictionCounts(_ context.Context, _ int) (*domain.UserPredictionCounts, error) {
+	return nil, nil
+}
+func (r *failOnUpdateRepo) GetUserPointsByPhase(_ context.Context, _ int) (map[domain.MatchPhase]int, error) {
+	return nil, nil
+}
+func (r *failOnUpdateRepo) ListUserScoredPointsChronological(_ context.Context, _ int) ([]int, error) {
+	return nil, nil
+}
 
 // ── TestGoalDiff verifies the absolute-value goal-margin helper.
 func TestGoalDiff(t *testing.T) {

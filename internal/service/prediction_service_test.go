@@ -67,6 +67,15 @@ func (r *stubPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _
 func (r *stubPredRepo) PredictionStatsByQuiniela(_ context.Context, _ int) (map[int]*domain.UserPredictionStats, error) {
 	return nil, r.err
 }
+func (r *stubPredRepo) GetUserPredictionCounts(_ context.Context, _ int) (*domain.UserPredictionCounts, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) GetUserPointsByPhase(_ context.Context, _ int) (map[domain.MatchPhase]int, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) ListUserScoredPointsChronological(_ context.Context, _ int) ([]int, error) {
+	return nil, r.err
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

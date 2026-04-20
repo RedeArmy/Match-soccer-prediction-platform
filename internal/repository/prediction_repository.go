@@ -265,6 +265,105 @@ func (r *PostgresPredictionRepository) PredictionStatsByQuiniela(ctx context.Con
 	return result, nil
 }
 
+// GetUserPredictionCounts returns aggregated prediction metrics for a single
+// user across all quinielas in one database round-trip. A user with no
+// predictions receives a zero-value struct with a nil LastPredictionAt.
+//
+// FILTER aggregates avoid scanning the table multiple times: PostgreSQL
+// evaluates all FILTER conditions in a single pass over the matching rows.
+func (r *PostgresPredictionRepository) GetUserPredictionCounts(ctx context.Context, userID int) (*domain.UserPredictionCounts, error) {
+	row := r.db.QueryRow(ctx,
+		`SELECT
+		     COUNT(*)                                                   AS total_predictions,
+		     COUNT(*) FILTER (WHERE points IS NOT NULL)                 AS scored_predictions,
+		     COUNT(*) FILTER (WHERE points > 0)                        AS correct_predictions,
+		     COUNT(*) FILTER (WHERE points = $2)                       AS exact_predictions,
+		     COALESCE(SUM(points) FILTER (WHERE points IS NOT NULL), 0) AS total_points,
+		     MAX(created_at)                                            AS last_prediction_at
+		   FROM predictions
+		  WHERE user_id = $1`,
+		userID, domain.PointsExactScore,
+	)
+	c := &domain.UserPredictionCounts{}
+	if err := row.Scan(
+		&c.TotalPredictions,
+		&c.ScoredPredictions,
+		&c.CorrectPredictions,
+		&c.ExactPredictions,
+		&c.TotalPoints,
+		&c.LastPredictionAt,
+	); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return c, nil
+}
+
+// GetUserPointsByPhase returns a map of tournament phase to total scored
+// points for a single user. Phases with no scored predictions are omitted.
+// An empty map (not nil) is returned when the user has no scored predictions.
+func (r *PostgresPredictionRepository) GetUserPointsByPhase(ctx context.Context, userID int) (map[domain.MatchPhase]int, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT m.phase, COALESCE(SUM(p.points), 0)
+		   FROM predictions p
+		   JOIN matches m ON m.id = p.match_id
+		  WHERE p.user_id = $1
+		    AND p.points IS NOT NULL
+		  GROUP BY m.phase`,
+		userID,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	result := make(map[domain.MatchPhase]int)
+	for rows.Next() {
+		var phase domain.MatchPhase
+		var pts int
+		if err := rows.Scan(&phase, &pts); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		result[phase] = pts
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return result, nil
+}
+
+// ListUserScoredPointsChronological returns the points values of all scored
+// predictions for a user, ordered ascending by match kickoff time. Unscored
+// predictions (points IS NULL) are excluded. The returned slice is consumed
+// by UserStatsService to compute current and longest prediction streaks.
+func (r *PostgresPredictionRepository) ListUserScoredPointsChronological(ctx context.Context, userID int) ([]int, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT p.points
+		   FROM predictions p
+		   JOIN matches m ON m.id = p.match_id
+		  WHERE p.user_id = $1
+		    AND p.points IS NOT NULL
+		  ORDER BY m.kickoff_at ASC`,
+		userID,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	var points []int
+	for rows.Next() {
+		var p int
+		if err := rows.Scan(&p); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		points = append(points, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return points, nil
+}
+
 // UpdateManyPoints atomically updates the points column for every prediction
 // ID in the provided map. A single UPDATE … FROM UNNEST statement is used so
 // the operation is one round-trip and one lock acquisition regardless of how
