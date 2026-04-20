@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 
 	"go.uber.org/zap"
@@ -15,11 +14,10 @@ import (
 
 // rankingService is the concrete implementation of Ranker.
 type rankingService struct {
-	quinielaRepo   repository.QuinielaRepository
-	predRepo       repository.PredictionRepository
-	userRepo       repository.UserRepository
-	tiebreakerRepo repository.TiebreakerRepository
-	log            *zap.Logger
+	quinielaRepo repository.QuinielaRepository
+	predRepo     repository.PredictionRepository
+	userRepo     repository.UserRepository
+	log          *zap.Logger
 }
 
 // NewRankingService constructs a rankingService with the given dependencies.
@@ -27,15 +25,13 @@ func NewRankingService(
 	quinielaRepo repository.QuinielaRepository,
 	predRepo repository.PredictionRepository,
 	userRepo repository.UserRepository,
-	tiebreakerRepo repository.TiebreakerRepository,
 	log *zap.Logger,
 ) Ranker {
 	return &rankingService{
-		quinielaRepo:   quinielaRepo,
-		predRepo:       predRepo,
-		userRepo:       userRepo,
-		tiebreakerRepo: tiebreakerRepo,
-		log:            log,
+		quinielaRepo: quinielaRepo,
+		predRepo:     predRepo,
+		userRepo:     userRepo,
+		log:          log,
 	}
 }
 
@@ -51,6 +47,14 @@ func NewRankingService(
 // of N members at position P is P+N (not P+1). This is the most common
 // expectation in tournament contexts.
 //
+// Tie-breaking proceeds through a three-rule chain applied in order:
+//  1. Most correct predictions (CorrectCount DESC).
+//  2. Fewest predictions submitted (TotalCount ASC).
+//  3. Most exact-score hits (ExactCount DESC).
+//
+// If all three rules still yield a tie, user ID is used as a last-resort
+// stable sort key so the output order is always reproducible.
+//
 // The implementation is two database round-trips:
 //  1. TotalPointsByQuiniela — one SQL query with a LEFT JOIN; O(members).
 //  2. ListByIDs — one query using ANY($1); O(members).
@@ -65,7 +69,6 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
 	}
 
-	// Step 1: total scored points per active+paid member — single SQL join.
 	pointsByUser, err := s.predRepo.TotalPointsByQuiniela(ctx, quinielaID)
 	if err != nil {
 		return nil, err
@@ -79,12 +82,12 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 		return nil, err
 	}
 
-	tiebreakers, err := s.fetchTiebreakers(ctx, quinielaID)
+	stats, err := s.fetchPredictionStats(ctx, quinielaID)
 	if err != nil {
 		return nil, err
 	}
 
-	sortAndRank(entries, tiebreakers)
+	sortAndRank(entries, stats)
 	assignPrizes(entries, q.PrizeThreshold)
 
 	return entries, nil
@@ -116,12 +119,12 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 		return nil, err
 	}
 
-	tiebreakers, err := s.fetchTiebreakers(ctx, quinielaID)
+	stats, err := s.fetchPredictionStats(ctx, quinielaID)
 	if err != nil {
 		return nil, err
 	}
 
-	sortAndRank(entries, tiebreakers)
+	sortAndRank(entries, stats)
 	assignPrizes(entries, q.PrizeThreshold)
 
 	return entries, nil
@@ -171,89 +174,88 @@ func (s *rankingService) buildEntries(ctx context.Context, quinielaID int, point
 	return entries, nil
 }
 
-// fetchTiebreakers returns a userID-keyed map of tiebreaker submissions for
-// the given quiniela. An empty map is returned (not an error) when no players
-// have submitted a tiebreaker yet, which leaves the tiebreaker dimension
-// inactive in the sort comparator.
-func (s *rankingService) fetchTiebreakers(ctx context.Context, quinielaID int) (map[int]*domain.Tiebreaker, error) {
-	list, err := s.tiebreakerRepo.ListByQuiniela(ctx, quinielaID)
+// fetchPredictionStats returns a userID-keyed map of prediction statistics for
+// the given quiniela. An empty map is returned when the repository returns nil
+// so the ranking logic always operates on a valid (possibly empty) map.
+func (s *rankingService) fetchPredictionStats(ctx context.Context, quinielaID int) (map[int]*domain.UserPredictionStats, error) {
+	m, err := s.predRepo.PredictionStatsByQuiniela(ctx, quinielaID)
 	if err != nil {
 		return nil, err
 	}
-	m := make(map[int]*domain.Tiebreaker, len(list))
-	for _, tb := range list {
-		m[tb.UserID] = tb
+	if m == nil {
+		return make(map[int]*domain.UserPredictionStats), nil
 	}
 	return m, nil
 }
 
-// tiebreakerDistance returns the comparison key for a single tiebreaker entry.
-// Lower values are better: 0 is a perfect match and positive integers represent
-// how far the player fell short.
-//
-// The "Price Is Right" rule is applied: a prediction that strictly exceeds the
-// confirmed result is disqualified and receives the worst possible key. An
-// absent tiebreaker (player did not submit) or one whose result has not yet
-// been confirmed (Result == nil) is given the same worst-case key, so the
-// tiebreaker dimension has no effect on ranking until the administrator confirms
-// the official result.
-func tiebreakerDistance(tb *domain.Tiebreaker) int {
-	if tb == nil || tb.Result == nil || tb.Prediction > *tb.Result {
-		return math.MaxInt
+// statsFor returns the prediction stats for userID, or a zero-value struct when
+// the user has no entry in the map (e.g. no scored predictions yet). Using a
+// zero-value rather than nil avoids nil-pointer guards throughout the comparator.
+func statsFor(stats map[int]*domain.UserPredictionStats, userID int) domain.UserPredictionStats {
+	if s, ok := stats[userID]; ok && s != nil {
+		return *s
 	}
-	return *tb.Result - tb.Prediction
+	return domain.UserPredictionStats{}
 }
 
 // sortAndRank sorts entries descending by TotalPoints and applies standard
 // competition ranks (1224…).
 //
-// Tie-breaking proceeds in two stages:
-//  1. When a confirmed Result is available for the quiniela's tiebreaker, the
-//     player whose Prediction is closest to the Result without exceeding it
-//     ranks higher ("Price Is Right" rule). Predictions that exceed the Result
-//     and players who never submitted a tiebreaker are treated equivalently —
-//     both receive the worst-case distance and are separated only by stage 2.
-//  2. When tiebreakers cannot separate two entries (identical distance, or both
-//     disqualified), user ID is used as a last-resort stable sort key.
+// Tie-breaking proceeds through a three-rule chain:
+//  1. CorrectCount DESC — the member with more correct predictions ranks higher.
+//  2. TotalCount ASC   — among equally-correct members, fewer submissions ranks higher.
+//  3. ExactCount DESC  — among members with the same correct and total counts,
+//     more exact-score hits (PointsExactScore = 5) ranks higher.
 //
-// Stage 2 is not a business rule — it exists solely to guarantee a reproducible
-// output order even when the tiebreaker result has not yet been confirmed. Do
-// not replace it with an unstable comparator such as a hash or pointer address.
-func sortAndRank(entries []*domain.LeaderboardEntry, tiebreakers map[int]*domain.Tiebreaker) {
+// If all three rules still cannot separate two entries, user ID is used as a
+// final stable sort key. This last step is not a business rule — it exists
+// solely to guarantee a reproducible output order across identical datasets.
+// Do not replace it with an unstable comparator such as a hash or pointer address.
+func sortAndRank(entries []*domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats) {
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].TotalPoints != entries[j].TotalPoints {
 			return entries[i].TotalPoints > entries[j].TotalPoints
 		}
-		di := tiebreakerDistance(tiebreakers[entries[i].User.ID])
-		dj := tiebreakerDistance(tiebreakers[entries[j].User.ID])
-		if di != dj {
-			return di < dj
+		si := statsFor(stats, entries[i].User.ID)
+		sj := statsFor(stats, entries[j].User.ID)
+		if si.CorrectCount != sj.CorrectCount {
+			return si.CorrectCount > sj.CorrectCount
+		}
+		if si.TotalCount != sj.TotalCount {
+			return si.TotalCount < sj.TotalCount
+		}
+		if si.ExactCount != sj.ExactCount {
+			return si.ExactCount > sj.ExactCount
 		}
 		return entries[i].User.ID < entries[j].User.ID
 	})
-	assignRanks(entries, tiebreakers)
+	assignRanks(entries, stats)
 }
 
 // sameRank reports whether a and b are indistinguishable on all sort dimensions
-// and therefore share the same competition rank. Both TotalPoints and tiebreaker
-// distance must be equal: once tiebreakers are wired, a closer tiebreaker guess
-// earns a strictly higher rank even when TotalPoints are identical.
-func sameRank(a, b *domain.LeaderboardEntry, tiebreakers map[int]*domain.Tiebreaker) bool {
+// and therefore share the same competition rank. TotalPoints and all three
+// tiebreaker stats must be equal; if any dimension differs, the entries receive
+// distinct ranks even when their point totals are the same.
+func sameRank(a, b *domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats) bool {
 	if a.TotalPoints != b.TotalPoints {
 		return false
 	}
-	return tiebreakerDistance(tiebreakers[a.User.ID]) == tiebreakerDistance(tiebreakers[b.User.ID])
+	sa := statsFor(stats, a.User.ID)
+	sb := statsFor(stats, b.User.ID)
+	return sa.CorrectCount == sb.CorrectCount &&
+		sa.TotalCount == sb.TotalCount &&
+		sa.ExactCount == sb.ExactCount
 }
 
 // assignRanks applies standard competition ranking (1224…) to a pre-sorted
 // slice of leaderboard entries.
 //
 // Two entries share a rank only when they are indistinguishable on all sort
-// dimensions: equal TotalPoints AND equal tiebreaker distance. The next rank
-// is skipped for the size of the tied group.
-func assignRanks(entries []*domain.LeaderboardEntry, tiebreakers map[int]*domain.Tiebreaker) {
+// dimensions: equal TotalPoints AND equal values on all three tiebreaker stats.
+// The next rank is skipped for the size of the tied group.
+func assignRanks(entries []*domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats) {
 	for i := 0; i < len(entries); i++ {
-		if i == 0 || !sameRank(entries[i], entries[i-1], tiebreakers) {
+		if i == 0 || !sameRank(entries[i], entries[i-1], stats) {
 			entries[i].Rank = i + 1
 		} else {
 			entries[i].Rank = entries[i-1].Rank
