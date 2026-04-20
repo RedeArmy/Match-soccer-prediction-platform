@@ -12,12 +12,12 @@ import (
 
 // UserStatsHandler handles HTTP requests for user statistics endpoints.
 type UserStatsHandler struct {
-	svc service.UserStatsService
+	svc service.MyStatsGetter
 	log *zap.Logger
 }
 
 // NewUserStatsHandler constructs a UserStatsHandler.
-func NewUserStatsHandler(svc service.UserStatsService, log *zap.Logger) *UserStatsHandler {
+func NewUserStatsHandler(svc service.MyStatsGetter, log *zap.Logger) *UserStatsHandler {
 	return &UserStatsHandler{svc: svc, log: log}
 }
 

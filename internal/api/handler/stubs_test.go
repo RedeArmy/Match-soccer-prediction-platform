@@ -150,7 +150,7 @@ func (s *stubRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.Matc
 	return s.entries, s.err
 }
 
-// stubUserStatsSvc implements service.UserStatsService with configurable returns.
+// stubUserStatsSvc implements service.MyStatsGetter with configurable returns.
 type stubUserStatsSvc struct {
 	stats *domain.UserStats
 	err   error

@@ -8,13 +8,13 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
-// userStatsService is the concrete implementation of UserStatsService.
+// userStatsService is the concrete implementation of MyStatsGetter.
 type userStatsService struct {
 	predRepo repository.PredictionRepository
 }
 
 // NewUserStatsService constructs a userStatsService.
-func NewUserStatsService(predRepo repository.PredictionRepository) UserStatsService {
+func NewUserStatsService(predRepo repository.PredictionRepository) MyStatsGetter {
 	return &userStatsService{predRepo: predRepo}
 }
 
