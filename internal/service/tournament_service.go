@@ -92,7 +92,6 @@ func (s *tournamentService) ListSlots(ctx context.Context) ([]*domain.Tournament
 // Points and win/draw/loss counts are accumulated only from finished matches
 // that have non-nil scores.
 func buildStandings(matches []*domain.Match) map[string][]*domain.GroupStanding {
-	// standing accumulates per-team stats keyed by group+team.
 	type key struct{ group, team string }
 	acc := make(map[key]*domain.GroupStanding)
 
@@ -109,65 +108,67 @@ func buildStandings(matches []*domain.Match) map[string][]*domain.GroupStanding 
 			continue
 		}
 		g := *m.GroupLabel
-
-		// Register both teams so they appear even before playing.
 		ensure(g, m.HomeTeam)
 		ensure(g, m.AwayTeam)
 
 		if m.Status != domain.MatchStatusFinished || m.HomeScore == nil || m.AwayScore == nil {
 			continue
 		}
-
-		home := ensure(g, m.HomeTeam)
-		away := ensure(g, m.AwayTeam)
-		hs, as := *m.HomeScore, *m.AwayScore
-
-		home.Played++
-		away.Played++
-		home.GF += hs
-		home.GC += as
-		away.GF += as
-		away.GC += hs
-
-		switch {
-		case hs > as:
-			home.Won++
-			home.Points += 3
-			away.Lost++
-		case hs < as:
-			away.Won++
-			away.Points += 3
-			home.Lost++
-		default:
-			home.Drawn++
-			home.Points++
-			away.Drawn++
-			away.Points++
-		}
+		applyMatchResult(ensure(g, m.HomeTeam), ensure(g, m.AwayTeam), *m.HomeScore, *m.AwayScore)
 	}
 
-	// Compute goal difference and group into result map.
 	grouped := make(map[string][]*domain.GroupStanding)
 	for k, st := range acc {
 		st.GD = st.GF - st.GC
 		grouped[k.group] = append(grouped[k.group], st)
 	}
 
-	// Sort each group: Pts DESC, GD DESC, GF DESC, Team ASC.
 	for _, entries := range grouped {
 		sort.Slice(entries, func(i, j int) bool {
-			a, b := entries[i], entries[j]
-			if a.Points != b.Points {
-				return a.Points > b.Points
-			}
-			if a.GD != b.GD {
-				return a.GD > b.GD
-			}
-			if a.GF != b.GF {
-				return a.GF > b.GF
-			}
-			return a.Team < b.Team
+			return lessStanding(entries[i], entries[j])
 		})
 	}
 	return grouped
+}
+
+// applyMatchResult updates the played/scored/won/drawn/lost/points fields for
+// both teams based on the final score of a single finished match.
+func applyMatchResult(home, away *domain.GroupStanding, hs, as int) {
+	home.Played++
+	away.Played++
+	home.GF += hs
+	home.GC += as
+	away.GF += as
+	away.GC += hs
+
+	switch {
+	case hs > as:
+		home.Won++
+		home.Points += 3
+		away.Lost++
+	case hs < as:
+		away.Won++
+		away.Points += 3
+		home.Lost++
+	default:
+		home.Drawn++
+		home.Points++
+		away.Drawn++
+		away.Points++
+	}
+}
+
+// lessStanding returns true when a ranks above b.
+// Order: Pts DESC → GD DESC → GF DESC → Team ASC.
+func lessStanding(a, b *domain.GroupStanding) bool {
+	if a.Points != b.Points {
+		return a.Points > b.Points
+	}
+	if a.GD != b.GD {
+		return a.GD > b.GD
+	}
+	if a.GF != b.GF {
+		return a.GF > b.GF
+	}
+	return a.Team < b.Team
 }
