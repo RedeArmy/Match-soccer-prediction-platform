@@ -884,10 +884,9 @@ func TestQuinielaRepository_ListByOwner_ReturnsRows(t *testing.T) {
 func TestTiebreakerRepository_Create_HydratesID(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
-	q := seedQuiniela(t, u.ID)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	tb := &domain.Tiebreaker{UserID: u.ID, QuinielaID: q.ID, Prediction: 42}
+	tb := &domain.Tiebreaker{UserID: u.ID, Prediction: 42}
 	if err := repo.Create(context.Background(), tb); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -896,17 +895,16 @@ func TestTiebreakerRepository_Create_HydratesID(t *testing.T) {
 	}
 }
 
-func TestTiebreakerRepository_GetByUserAndQuiniela_Found(t *testing.T) {
+func TestTiebreakerRepository_GetByUser_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
-	q := seedQuiniela(t, u.ID)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
-	tb := &domain.Tiebreaker{UserID: u.ID, QuinielaID: q.ID, Prediction: 10}
+	tb := &domain.Tiebreaker{UserID: u.ID, Prediction: 10}
 	if err := repo.Create(context.Background(), tb); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
-	got, err := repo.GetByUserAndQuiniela(context.Background(), u.ID, q.ID)
+	got, err := repo.GetByUser(context.Background(), u.ID)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -918,11 +916,11 @@ func TestTiebreakerRepository_GetByUserAndQuiniela_Found(t *testing.T) {
 	}
 }
 
-func TestTiebreakerRepository_GetByUserAndQuiniela_NotFound_ReturnsNil(t *testing.T) {
+func TestTiebreakerRepository_GetByUser_NotFound_ReturnsNil(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	got, err := repo.GetByUserAndQuiniela(context.Background(), 99999, 99999)
+	got, err := repo.GetByUser(context.Background(), 99999)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -934,20 +932,18 @@ func TestTiebreakerRepository_GetByUserAndQuiniela_NotFound_ReturnsNil(t *testin
 func TestTiebreakerRepository_Update_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
-	q := seedQuiniela(t, u.ID)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
-	tb := &domain.Tiebreaker{UserID: u.ID, QuinielaID: q.ID, Prediction: 7}
+	tb := &domain.Tiebreaker{UserID: u.ID, Prediction: 7}
 	if err := repo.Create(context.Background(), tb); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
-	result := 9
-	tb.Result = &result
+	tb.Prediction = 9
 	if err := repo.Update(context.Background(), tb); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if tb.Result == nil || *tb.Result != 9 {
-		t.Errorf("result not updated: got %v", tb.Result)
+	if tb.Prediction != 9 {
+		t.Errorf("prediction not updated: got %d", tb.Prediction)
 	}
 }
 
@@ -961,17 +957,16 @@ func TestTiebreakerRepository_Update_NotFound_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestTiebreakerRepository_ListByQuiniela_ReturnsRows(t *testing.T) {
+func TestTiebreakerRepository_ListByUserIDs_ReturnsRows(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
-	q := seedQuiniela(t, u.ID)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
-	tb := &domain.Tiebreaker{UserID: u.ID, QuinielaID: q.ID, Prediction: 3}
+	tb := &domain.Tiebreaker{UserID: u.ID, Prediction: 3}
 	if err := repo.Create(context.Background(), tb); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
-	tbs, err := repo.ListByQuiniela(context.Background(), q.ID)
+	tbs, err := repo.ListByUserIDs(context.Background(), []int{u.ID})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}

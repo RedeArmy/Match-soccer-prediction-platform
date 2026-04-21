@@ -185,14 +185,37 @@ type GroupMembershipRepository interface {
 // TiebreakerRepository defines the persistence operations for the Tiebreaker
 // entity.
 //
-// GetByUserAndQuiniela enforces the invariant that each player may submit at
-// most one tiebreaker forecast per quiniela. As with predictions, the service
-// layer checks for an existing entry before creating a new one; the database
-// must enforce a unique index on (user_id, quiniela_id) to eliminate the
-// check-then-act race condition.
+// Tiebreaker predictions are global: each user may submit exactly one estimate
+// for the administrator-defined question, and that estimate applies uniformly
+// to every group the user belongs to. The unique index on user_id eliminates
+// the check-then-act race condition in Submit.
 type TiebreakerRepository interface {
 	Create(ctx context.Context, tb *domain.Tiebreaker) error
-	GetByUserAndQuiniela(ctx context.Context, userID, quinielaID int) (*domain.Tiebreaker, error)
+	// GetByUser returns the caller's global tiebreaker prediction.
+	// Returns nil, nil when the user has not yet submitted.
+	GetByUser(ctx context.Context, userID int) (*domain.Tiebreaker, error)
 	Update(ctx context.Context, tb *domain.Tiebreaker) error
-	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.Tiebreaker, error)
+	// ListByUserIDs returns predictions for the given user IDs in a single
+	// query. Used by the ranking service to load all relevant entries for a
+	// group without N+1 round-trips. An empty slice is returned when no user
+	// in userIDs has submitted. An empty ids slice returns nil, nil.
+	ListByUserIDs(ctx context.Context, userIDs []int) ([]*domain.Tiebreaker, error)
+}
+
+// TiebreakerConfigRepository manages the singleton global tiebreaker
+// configuration set by the system administrator.
+//
+// There is at most one row in the database (id=1). Upsert creates the row
+// on first call and updates question on subsequent calls. SetResult may only
+// be called after a question has been set; it is the service layer's
+// responsibility to enforce this precondition before calling SetResult.
+type TiebreakerConfigRepository interface {
+	// Get returns the current global configuration.
+	// Returns nil, nil when no question has been set yet.
+	Get(ctx context.Context) (*domain.TiebreakerConfig, error)
+	// Upsert sets or replaces the tiebreaker question and returns the updated config.
+	Upsert(ctx context.Context, question string) (*domain.TiebreakerConfig, error)
+	// SetResult records the confirmed numeric outcome. Called once by the
+	// administrator after the tournament concludes.
+	SetResult(ctx context.Context, result int) error
 }

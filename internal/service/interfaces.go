@@ -133,6 +133,46 @@ type MyStatsGetter interface {
 	GetMyStats(ctx context.Context, userID int) (*domain.UserStats, error)
 }
 
+// TiebreakerService manages the global numeric tiebreaker that resolves
+// ranking ties across all groups when all statistical rules (correct count,
+// total count, exact count) still leave two or more members at the same rank.
+//
+// The lifecycle is:
+//  1. System administrator calls SetQuestion to define the global tiebreaker
+//     prompt (e.g. "total goals in the Final"). Until set, no member may
+//     submit a prediction.
+//  2. Members call Submit (or re-Submit to update) with their numeric estimate.
+//     Predictions are global — one per user, applied to every group they
+//     belong to.
+//  3. After the tournament, the administrator calls ConfirmResult with the
+//     actual value. After confirmation, Submit returns Conflict.
+//
+// The admin gate for SetQuestion and ConfirmResult is enforced at the HTTP
+// layer via RequireRole middleware, not inside this service.
+type TiebreakerService interface {
+	// SetQuestion stores or replaces the global tiebreaker prompt.
+	// Returns Validation when question is empty.
+	SetQuestion(ctx context.Context, question string) (*domain.TiebreakerConfig, error)
+
+	// Submit upserts the caller's global numeric prediction.
+	// quinielaID is used only to verify the caller is an active member of that group.
+	// Returns Conflict when the result has already been confirmed.
+	// Returns Validation when no question has been configured yet.
+	// Returns Forbidden when the caller is not an active member of quinielaID.
+	Submit(ctx context.Context, quinielaID, callerID, prediction int) (*domain.Tiebreaker, error)
+
+	// GetMine returns the global tiebreaker question and the caller's own
+	// numeric prediction. Entry is nil when the caller has not submitted yet.
+	// quinielaID is used only to verify active membership.
+	// Returns Forbidden when the caller is not an active member of quinielaID.
+	GetMine(ctx context.Context, quinielaID, callerID int) (*domain.TiebreakerView, error)
+
+	// ConfirmResult records the official numeric result globally, activating
+	// tiebreaker ranking for all groups. After confirmation, Submit returns
+	// Conflict. Returns Validation when no question has been configured yet.
+	ConfirmResult(ctx context.Context, result int) error
+}
+
 // Notifier dispatches notifications in response to domain events.
 //
 // Notify is a fire-and-forget operation: failures are logged but not returned
