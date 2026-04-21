@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	"go.uber.org/zap"
@@ -62,6 +63,35 @@ func (r *stubTotalPointsPredRepo) PredictionStatsByQuiniela(_ context.Context, _
 	return r.statsByUser, r.statsErr
 }
 
+// stubTiebreakerRepo implements repository.TiebreakerRepository for ranking tests.
+type stubTiebreakerRepo struct {
+	tbs []*domain.Tiebreaker
+	err error
+}
+
+func (r *stubTiebreakerRepo) Create(_ context.Context, _ *domain.Tiebreaker) error { return r.err }
+func (r *stubTiebreakerRepo) GetByUser(_ context.Context, _ int) (*domain.Tiebreaker, error) {
+	return nil, r.err
+}
+func (r *stubTiebreakerRepo) Update(_ context.Context, _ *domain.Tiebreaker) error { return r.err }
+func (r *stubTiebreakerRepo) ListByUserIDs(_ context.Context, _ []int) ([]*domain.Tiebreaker, error) {
+	return r.tbs, r.err
+}
+
+// stubTiebreakerCfgRepo implements repository.TiebreakerConfigRepository for ranking tests.
+type stubTiebreakerCfgRepo struct {
+	cfg *domain.TiebreakerConfig
+	err error
+}
+
+func (r *stubTiebreakerCfgRepo) Get(_ context.Context) (*domain.TiebreakerConfig, error) {
+	return r.cfg, r.err
+}
+func (r *stubTiebreakerCfgRepo) Upsert(_ context.Context, _ string) (*domain.TiebreakerConfig, error) {
+	return r.cfg, r.err
+}
+func (r *stubTiebreakerCfgRepo) SetResult(_ context.Context, _ int) error { return r.err }
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func newRankingSvc(q *domain.Quiniela, predRepo *stubTotalPointsPredRepo, users []*domain.User) Ranker {
@@ -69,6 +99,8 @@ func newRankingSvc(q *domain.Quiniela, predRepo *stubTotalPointsPredRepo, users 
 		&stubQuinielaRepo{quiniela: q},
 		predRepo,
 		&stubUserRepo{users: users},
+		&stubTiebreakerRepo{},
+		&stubTiebreakerCfgRepo{},
 		zap.NewNop(),
 	)
 }
@@ -80,6 +112,8 @@ func TestGetLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T) {
 		&stubQuinielaRepo{quiniela: nil},
 		&stubPredRepo{},
 		&stubUserRepo{},
+		&stubTiebreakerRepo{},
+		&stubTiebreakerCfgRepo{},
 		zap.NewNop(),
 	)
 
@@ -176,7 +210,7 @@ func TestGetLeaderboard_ListByIDsError_Propagated(t *testing.T) {
 	}
 	userRepo := &stubUserRepo{err: errors.New("db error")}
 
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, zap.NewNop())
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, &stubTiebreakerRepo{}, &stubTiebreakerCfgRepo{}, zap.NewNop())
 
 	_, err := svc.GetLeaderboard(context.Background(), 1)
 	if err == nil {
@@ -450,6 +484,8 @@ func TestGetPhaseLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T)
 		&stubQuinielaRepo{quiniela: nil},
 		&stubTotalPointsPredRepo{},
 		&stubUserRepo{},
+		&stubTiebreakerRepo{},
+		&stubTiebreakerCfgRepo{},
 		zap.NewNop(),
 	)
 
@@ -571,7 +607,7 @@ func TestStatsFor_ValidEntry_ReturnsStats(t *testing.T) {
 func TestSameRank_DifferentPoints_ReturnsFalse(t *testing.T) {
 	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 10}
 	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 5}
-	if sameRank(a, b, nil) {
+	if sameRank(a, b, nil, nil) {
 		t.Error("entries with different TotalPoints must not share a rank")
 	}
 }
@@ -583,7 +619,7 @@ func TestSameRank_SamePointsDifferentCorrectCount_ReturnsFalse(t *testing.T) {
 	}
 	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 20}
 	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 20}
-	if sameRank(a, b, stats) {
+	if sameRank(a, b, stats, nil) {
 		t.Error("entries with different CorrectCount must not share a rank")
 	}
 }
@@ -595,7 +631,7 @@ func TestSameRank_SamePointsDifferentTotalCount_ReturnsFalse(t *testing.T) {
 	}
 	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 20}
 	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 20}
-	if sameRank(a, b, stats) {
+	if sameRank(a, b, stats, nil) {
 		t.Error("entries with different TotalCount must not share a rank")
 	}
 }
@@ -607,7 +643,7 @@ func TestSameRank_SamePointsDifferentExactCount_ReturnsFalse(t *testing.T) {
 	}
 	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 20}
 	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 20}
-	if sameRank(a, b, stats) {
+	if sameRank(a, b, stats, nil) {
 		t.Error("entries with different ExactCount must not share a rank")
 	}
 }
@@ -619,8 +655,151 @@ func TestSameRank_AllDimensionsEqual_ReturnsTrue(t *testing.T) {
 	}
 	a := &domain.LeaderboardEntry{User: &domain.User{ID: 1}, TotalPoints: 20}
 	b := &domain.LeaderboardEntry{User: &domain.User{ID: 2}, TotalPoints: 20}
-	if !sameRank(a, b, stats) {
+	if !sameRank(a, b, stats, nil) {
 		t.Error("entries identical on all dimensions must share a rank")
+	}
+}
+
+// ── tiebreakerDistance unit tests ────────────────────────────────────────────
+
+func TestTiebreakerDistance_NoEntry_ReturnsMathMaxInt(t *testing.T) {
+	d := tiebreakerDistance(nil, 1)
+	if d != math.MaxInt {
+		t.Errorf("expected math.MaxInt for nil map, got %d", d)
+	}
+}
+
+func TestTiebreakerDistance_UserAbsent_ReturnsMathMaxInt(t *testing.T) {
+	distances := map[int]int{2: 3}
+	d := tiebreakerDistance(distances, 1)
+	if d != math.MaxInt {
+		t.Errorf("expected math.MaxInt when user absent from map, got %d", d)
+	}
+}
+
+func TestTiebreakerDistance_ExactMatch_ReturnsZero(t *testing.T) {
+	distances := map[int]int{1: 0}
+	d := tiebreakerDistance(distances, 1)
+	if d != 0 {
+		t.Errorf("expected 0 for exact match, got %d", d)
+	}
+}
+
+func TestTiebreakerDistance_AbsoluteDifference(t *testing.T) {
+	distances := map[int]int{1: 3}
+	d := tiebreakerDistance(distances, 1)
+	if d != 3 {
+		t.Errorf("expected 3, got %d", d)
+	}
+}
+
+// ── Tiebreaker rule 4: TiebreakerDistance ASC ────────────────────────────────
+
+func TestGetLeaderboard_TiebreakerDistanceBreaksTie_WhenAllStatsEqual(t *testing.T) {
+	// Alice predicts 8, Bob predicts 15; result is 10.
+	// Alice distance=2, Bob distance=5 → Alice ranks higher.
+	result := 10
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 20, 2: 20},
+		statsByUser: map[int]*domain.UserPredictionStats{
+			1: {CorrectCount: 4, TotalCount: 6, ExactCount: 2},
+			2: {CorrectCount: 4, TotalCount: 6, ExactCount: 2},
+		},
+	}
+	tbRepo := &stubTiebreakerRepo{
+		tbs: []*domain.Tiebreaker{
+			{UserID: 1, Prediction: 8},
+			{UserID: 2, Prediction: 15},
+		},
+	}
+	cfgRepo := &stubTiebreakerCfgRepo{cfg: &domain.TiebreakerConfig{Result: &result}}
+	svc := NewRankingService(
+		&stubQuinielaRepo{quiniela: q},
+		predRepo,
+		&stubUserRepo{users: []*domain.User{userA, userB}},
+		tbRepo,
+		cfgRepo,
+		zap.NewNop(),
+	)
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].User.ID != 1 {
+		t.Errorf("expected Alice (closer tiebreaker) at rank 1, got user %d", entries[0].User.ID)
+	}
+	if entries[0].Rank != 1 || entries[1].Rank != 2 {
+		t.Errorf("expected distinct ranks 1 and 2, got %d and %d", entries[0].Rank, entries[1].Rank)
+	}
+}
+
+func TestGetLeaderboard_TiebreakerDistanceEqual_SameRank(t *testing.T) {
+	// Both predict exactly the result → distance=0 for both → shared rank.
+	result := 10
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	userB := &domain.User{ID: 2, Name: "Bob"}
+
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 20, 2: 20},
+		statsByUser: map[int]*domain.UserPredictionStats{
+			1: {CorrectCount: 4, TotalCount: 6, ExactCount: 2},
+			2: {CorrectCount: 4, TotalCount: 6, ExactCount: 2},
+		},
+	}
+	tbRepo := &stubTiebreakerRepo{
+		tbs: []*domain.Tiebreaker{
+			{UserID: 1, Prediction: 10},
+			{UserID: 2, Prediction: 10},
+		},
+	}
+	cfgRepo := &stubTiebreakerCfgRepo{cfg: &domain.TiebreakerConfig{Result: &result}}
+	svc := NewRankingService(
+		&stubQuinielaRepo{quiniela: q},
+		predRepo,
+		&stubUserRepo{users: []*domain.User{userA, userB}},
+		tbRepo,
+		cfgRepo,
+		zap.NewNop(),
+	)
+
+	entries, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if entries[0].Rank != 1 || entries[1].Rank != 1 {
+		t.Errorf("expected both to share rank 1 with equal tiebreaker distance, got %d and %d",
+			entries[0].Rank, entries[1].Rank)
+	}
+}
+
+func TestGetLeaderboard_TiebreakerRepoError_Propagated(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
+	userA := &domain.User{ID: 1, Name: "Alice"}
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 10},
+	}
+	result := 10
+	svc := NewRankingService(
+		&stubQuinielaRepo{quiniela: q},
+		predRepo,
+		&stubUserRepo{users: []*domain.User{userA}},
+		&stubTiebreakerRepo{err: errors.New("db error")},
+		&stubTiebreakerCfgRepo{cfg: &domain.TiebreakerConfig{Result: &result}},
+		zap.NewNop(),
+	)
+
+	_, err := svc.GetLeaderboard(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error from tiebreaker repo, got nil")
 	}
 }
 
