@@ -75,13 +75,17 @@ func WriteError(w http.ResponseWriter, r *http.Request, log *zap.Logger, err err
 	})
 }
 
-// writeJSON serialises v as JSON and writes it to w with the given status code.
-// If serialisation fails it falls back to a plain-text 500 response rather
-// than panicking, since a panic inside an error handler would be unrecoverable.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
+// WriteJSON serialises v as JSON and writes it to w with the given status code.
+// Encode errors are silently discarded: WriteHeader has already been called,
+// so the status code cannot change and appending an error message would corrupt
+// the response body. Callers that need to detect encode failures should
+// pre-validate before calling this function.
+func WriteJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-	}
+	_ = json.NewEncoder(w).Encode(v)
 }
+
+// writeJSON is the package-internal alias so existing call sites within the
+// middleware package do not need to be updated.
+func writeJSON(w http.ResponseWriter, status int, v any) { WriteJSON(w, status, v) }
