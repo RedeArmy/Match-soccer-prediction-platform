@@ -72,6 +72,10 @@ func (h *MatchHandler) ListMatches(w http.ResponseWriter, r *http.Request) {
 		err     error
 	)
 	if phase := domain.MatchPhase(r.URL.Query().Get("phase")); phase != "" {
+		if err := domain.ValidateMatchPhase(phase); err != nil {
+			middleware.WriteError(w, r, h.log, err)
+			return
+		}
 		matches, err = h.svc.ListMatchesByPhase(r.Context(), phase)
 	} else {
 		matches, err = h.svc.ListMatches(r.Context())

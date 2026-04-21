@@ -1438,6 +1438,73 @@ func TestQuinielaRepository_UpdateStatus_NotFound_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestQuinielaRepository_CreateWithMembership_HydratesBothIDs(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	q := &domain.Quiniela{Name: "Atomic Pool", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	now := time.Now().UTC()
+	m := &domain.GroupMembership{UserID: u.ID, Status: domain.MembershipActive, Paid: false, JoinedAt: &now}
+
+	if err := repo.CreateWithMembership(context.Background(), q, m); err != nil {
+		t.Fatalf("CreateWithMembership: %v", err)
+	}
+	if q.ID == 0 {
+		t.Error("expected quiniela ID to be hydrated")
+	}
+	if m.ID == 0 {
+		t.Error("expected membership ID to be hydrated")
+	}
+	if m.QuinielaID != q.ID {
+		t.Errorf("membership.QuinielaID: got %d, want %d", m.QuinielaID, q.ID)
+	}
+}
+
+func TestQuinielaRepository_CreateWithMembership_QuinielaVisibleAfterCommit(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	q := &domain.Quiniela{Name: "Visible Pool", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	now := time.Now().UTC()
+	m := &domain.GroupMembership{UserID: u.ID, Status: domain.MembershipActive, Paid: false, JoinedAt: &now}
+
+	if err := repo.CreateWithMembership(context.Background(), q, m); err != nil {
+		t.Fatalf("CreateWithMembership: %v", err)
+	}
+
+	got, err := repo.GetByID(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf("GetByID after CreateWithMembership: %v", err)
+	}
+	if got == nil || got.Name != q.Name {
+		t.Errorf("expected quiniela %q to be visible after commit, got %v", q.Name, got)
+	}
+}
+
+func TestQuinielaRepository_CreateWithMembership_DuplicateName_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+	code := nextCode()
+
+	q1 := &domain.Quiniela{Name: "Same Name " + code, OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	now := time.Now().UTC()
+	m1 := &domain.GroupMembership{UserID: u.ID, Status: domain.MembershipActive, Paid: false, JoinedAt: &now}
+	if err := repo.CreateWithMembership(context.Background(), q1, m1); err != nil {
+		t.Fatalf("first CreateWithMembership: %v", err)
+	}
+
+	q2 := &domain.Quiniela{Name: q1.Name, OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	now2 := time.Now().UTC()
+	m2 := &domain.GroupMembership{UserID: u.ID, Status: domain.MembershipActive, Paid: false, JoinedAt: &now2}
+	err := repo.CreateWithMembership(context.Background(), q2, m2)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict for duplicate name, got %v", err)
+	}
+}
+
 // ── PredictionRepository — TotalPointsByQuiniela ──────────────────────────────
 
 func TestPredictionRepository_TotalPointsByQuiniela_ReturnsSumPerUser(t *testing.T) {

@@ -17,12 +17,20 @@ import (
 type matchService struct {
 	repo      repository.MatchRepository
 	publisher events.Publisher
-	log       *zap.Logger
+	// scorer is called synchronously when the MatchFinished event cannot be
+	// published (e.g. Redis is unavailable). This guarantees that predictions
+	// are always scored even if the event bus is down at the moment of result
+	// confirmation. The fallback does not apply to MatchStarted: that event
+	// only triggers notifications, which are best-effort by design.
+	scorer MatchScorer
+	log    *zap.Logger
 }
 
 // NewMatchService constructs a matchService with the given dependencies.
-func NewMatchService(repo repository.MatchRepository, publisher events.Publisher, log *zap.Logger) MatchService {
-	return &matchService{repo: repo, publisher: publisher, log: log}
+// scorer is invoked as a synchronous fallback when publishing MatchFinished
+// fails; it must not be nil.
+func NewMatchService(repo repository.MatchRepository, publisher events.Publisher, scorer MatchScorer, log *zap.Logger) MatchService {
+	return &matchService{repo: repo, publisher: publisher, scorer: scorer, log: log}
 }
 
 func (s *matchService) CreateMatch(ctx context.Context, match *domain.Match) error {
@@ -119,7 +127,12 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 			AwayScore: awayScore,
 		},
 	}); err != nil {
-		s.log.Error("failed to publish MatchFinished event", zap.Int("match_id", id), zap.Error(err))
+		s.log.Error("failed to publish MatchFinished event; falling back to synchronous scoring",
+			zap.Int("match_id", id), zap.Error(err))
+		if scoreErr := s.scorer.ScoreMatch(ctx, m.ID); scoreErr != nil {
+			s.log.Error("synchronous fallback scoring failed — predictions for this match may be unscored",
+				zap.Int("match_id", id), zap.Error(scoreErr))
+		}
 	}
 	return m, nil
 }

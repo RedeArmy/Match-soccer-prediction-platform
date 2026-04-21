@@ -13,6 +13,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const errMsgDuplicateGroupName = "a group with this name already exists"
+
 // PostgresQuinielaRepository is the PostgreSQL-backed implementation of QuinielaRepository.
 type PostgresQuinielaRepository struct {
 	db *pgxpool.Pool
@@ -50,6 +52,48 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+// CreateWithMembership inserts the quiniela and the owner's initial membership
+// inside a single pgx transaction. If either insert fails the transaction is
+// rolled back and neither row appears in the database.
+func (r *PostgresQuinielaRepository) CreateWithMembership(ctx context.Context, q *domain.Quiniela, m *domain.GroupMembership) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	qRow := tx.QueryRow(ctx,
+		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+quinielaColumns,
+		q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency, q.MaxMembers, q.PrizeThreshold,
+	)
+	qResult, err := scanQuiniela(qRow)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return apperrors.Conflict(errMsgDuplicateGroupName)
+		}
+		return err
+	}
+	*q = *qResult
+
+	m.QuinielaID = q.ID
+	mRow := tx.QueryRow(ctx,
+		`INSERT INTO group_memberships (quiniela_id, user_id, status, paid, joined_at)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING `+membershipColumns,
+		m.QuinielaID, m.UserID, m.Status, m.Paid, m.JoinedAt,
+	)
+	mResult, err := scanMembership(mRow)
+	if err != nil {
+		return err
+	}
+	*m = *mResult
+
+	if err := tx.Commit(ctx); err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
 func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quiniela) error {
 	row := r.db.QueryRow(ctx,
 		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold)
@@ -59,7 +103,7 @@ func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quini
 	result, err := scanQuiniela(row)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return apperrors.Conflict("a group with this name already exists")
+			return apperrors.Conflict(errMsgDuplicateGroupName)
 		}
 		return err
 	}
@@ -118,7 +162,7 @@ func (r *PostgresQuinielaRepository) Update(ctx context.Context, q *domain.Quini
 	result, err := scanQuiniela(row)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return apperrors.Conflict("a group with this name already exists")
+			return apperrors.Conflict(errMsgDuplicateGroupName)
 		}
 		return err
 	}

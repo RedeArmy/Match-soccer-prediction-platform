@@ -297,13 +297,14 @@ func (s *Server) buildHandlers(
 	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(s.db)
 	tournamentRepo := repository.NewPostgresTournamentRepository(s.db)
 
-	matchSvc := service.NewMatchService(matchRepo, s.bus, s.log)
+	scorer := service.NewScoringService(matchRepo, predRepo, s.log)
+	matchSvc := service.NewMatchService(matchRepo, s.bus, scorer, s.log)
 	if s.cache != nil {
 		matchSvc = service.NewCachedMatchService(matchSvc, s.cache, s.log)
 	}
 
 	predSvc := service.NewPredictionService(predRepo, matchRepo, s.log)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
+	quinielaSvc := service.NewQuinielaService(quinielaRepo)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, s.log)
 
 	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, s.log)
