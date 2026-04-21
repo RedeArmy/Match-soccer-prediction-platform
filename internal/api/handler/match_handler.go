@@ -39,11 +39,14 @@ func NewMatchHandler(svc service.MatchService, log *zap.Logger) *MatchHandler {
 
 // createMatchRequest is the JSON body accepted by POST /api/v1/matches.
 // Valid phase values: group_stage, round_of_32, round_of_16, quarter_final, semi_final, third_place, final.
+// GroupLabel is required for group_stage matches ("A"–"L") and must be omitted
+// for all knockout phases.
 type createMatchRequest struct {
-	HomeTeam  string    `json:"home_team"`
-	AwayTeam  string    `json:"away_team"`
-	Phase     string    `json:"phase"`
-	KickoffAt time.Time `json:"kickoff_at"`
+	HomeTeam   string    `json:"home_team"`
+	AwayTeam   string    `json:"away_team"`
+	Phase      string    `json:"phase"`
+	GroupLabel *string   `json:"group_label"`
+	KickoffAt  time.Time `json:"kickoff_at"`
 }
 
 // updateResultRequest is the JSON body accepted by PATCH /api/v1/matches/{id}.
@@ -130,10 +133,11 @@ func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	match := &domain.Match{
-		HomeTeam:  req.HomeTeam,
-		AwayTeam:  req.AwayTeam,
-		Phase:     domain.MatchPhase(req.Phase),
-		KickoffAt: req.KickoffAt,
+		HomeTeam:   req.HomeTeam,
+		AwayTeam:   req.AwayTeam,
+		Phase:      domain.MatchPhase(req.Phase),
+		GroupLabel: req.GroupLabel,
+		KickoffAt:  req.KickoffAt,
 	}
 	if err := h.svc.CreateMatch(r.Context(), match); err != nil {
 		middleware.WriteError(w, r, h.log, err)

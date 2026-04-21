@@ -23,11 +23,11 @@ func NewPostgresMatchRepository(db *pgxpool.Pool) *PostgresMatchRepository {
 }
 
 // matchColumns is used in RETURNING clauses for INSERT/UPDATE (no table alias).
-const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, stadium_id, kickoff_at, created_at, updated_at"
+const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, group_label, stadium_id, kickoff_at, created_at, updated_at"
 
 // matchReadColumns selects match + full stadium location hierarchy for read
 // queries that LEFT JOIN stadiums, cities, states, and countries.
-const matchReadColumns = "m.id, m.home_team, m.away_team, m.home_score, m.away_score, m.status, m.phase, m.stadium_id, m.kickoff_at, m.created_at, m.updated_at," +
+const matchReadColumns = "m.id, m.home_team, m.away_team, m.home_score, m.away_score, m.status, m.phase, m.group_label, m.stadium_id, m.kickoff_at, m.created_at, m.updated_at," +
 	" s.id, s.name, s.capacity, ci.id, ci.name, st.id, st.name, st.code, co.id, co.name, co.code"
 
 const matchFromStadium = " FROM matches m" +
@@ -42,7 +42,7 @@ func scanMatch(row pgx.Row) (*domain.Match, error) {
 	err := row.Scan(
 		&m.ID, &m.HomeTeam, &m.AwayTeam,
 		&m.HomeScore, &m.AwayScore,
-		&m.Status, &m.Phase, &m.StadiumID, &m.KickoffAt,
+		&m.Status, &m.Phase, &m.GroupLabel, &m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -89,7 +89,7 @@ func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 	err := row.Scan(
 		&m.ID, &m.HomeTeam, &m.AwayTeam,
 		&m.HomeScore, &m.AwayScore,
-		&m.Status, &m.Phase, &m.StadiumID, &m.KickoffAt,
+		&m.Status, &m.Phase, &m.GroupLabel, &m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
 		&sc.sID, &sc.sName, &sc.sCapacity,
 		&sc.ciID, &sc.ciName,
@@ -108,10 +108,10 @@ func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 
 func (r *PostgresMatchRepository) Create(ctx context.Context, m *domain.Match) error {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO matches (home_team, away_team, status, phase, stadium_id, kickoff_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO matches (home_team, away_team, status, phase, group_label, stadium_id, kickoff_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING `+matchColumns,
-		m.HomeTeam, m.AwayTeam, m.Status, m.Phase, m.StadiumID, m.KickoffAt,
+		m.HomeTeam, m.AwayTeam, m.Status, m.Phase, m.GroupLabel, m.StadiumID, m.KickoffAt,
 	)
 	result, err := scanMatch(row)
 	if err != nil {
@@ -132,11 +132,11 @@ func (r *PostgresMatchRepository) Update(ctx context.Context, m *domain.Match) e
 	row := r.db.QueryRow(ctx,
 		`UPDATE matches
 		 SET home_team=$1, away_team=$2, home_score=$3, away_score=$4,
-		     status=$5, phase=$6, stadium_id=$7, kickoff_at=$8, updated_at=NOW()
-		 WHERE id=$9
+		     status=$5, phase=$6, group_label=$7, stadium_id=$8, kickoff_at=$9, updated_at=NOW()
+		 WHERE id=$10
 		 RETURNING `+matchColumns,
 		m.HomeTeam, m.AwayTeam, m.HomeScore, m.AwayScore,
-		m.Status, m.Phase, m.StadiumID, m.KickoffAt, m.ID,
+		m.Status, m.Phase, m.GroupLabel, m.StadiumID, m.KickoffAt, m.ID,
 	)
 	result, err := scanMatch(row)
 	if err != nil {
@@ -190,7 +190,7 @@ func collectMatches(rows pgx.Rows) ([]*domain.Match, error) {
 		if err := rows.Scan(
 			&m.ID, &m.HomeTeam, &m.AwayTeam,
 			&m.HomeScore, &m.AwayScore,
-			&m.Status, &m.Phase, &m.StadiumID, &m.KickoffAt,
+			&m.Status, &m.Phase, &m.GroupLabel, &m.StadiumID, &m.KickoffAt,
 			&m.CreatedAt, &m.UpdatedAt,
 			&sc.sID, &sc.sName, &sc.sCapacity,
 			&sc.ciID, &sc.ciName,

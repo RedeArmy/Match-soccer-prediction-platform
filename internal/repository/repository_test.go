@@ -104,7 +104,7 @@ func mustSetupDB() (*pgxpool.Pool, func()) {
 func cleanTables(t *testing.T) {
 	t.Helper()
 	_, err := testDB.Exec(context.Background(),
-		`TRUNCATE group_memberships, tiebreakers, predictions, quinielas, matches, stadiums, users RESTART IDENTITY CASCADE`)
+		`TRUNCATE tournament_slots, tiebreaker_config, group_memberships, tiebreakers, predictions, quinielas, matches, stadiums, users RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("clean tables: %v", err)
 	}
@@ -2324,5 +2324,224 @@ func TestPredictionRepository_ListUserScoredPointsChronological_CancelledContext
 	_, err := predRepo.ListUserScoredPointsChronological(ctx, 1)
 	if err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+// ── TiebreakerConfigRepository ────────────────────────────────────────────────
+
+func TestTiebreakerConfigRepository_Get_ReturnsNilWhenEmpty(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	cfg, err := repo.Get(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg != nil {
+		t.Errorf("expected nil before any question is set, got %+v", cfg)
+	}
+}
+
+func TestTiebreakerConfigRepository_Upsert_CreatesAndUpdates(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	cfg, err := repo.Upsert(context.Background(), "Total goals in the Final")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg.ID != 1 {
+		t.Errorf("id: want 1, got %d", cfg.ID)
+	}
+	if cfg.Question != "Total goals in the Final" {
+		t.Errorf("question: want 'Total goals in the Final', got %q", cfg.Question)
+	}
+	if cfg.Result != nil {
+		t.Errorf("result: want nil before confirmation, got %v", cfg.Result)
+	}
+
+	// Update existing row.
+	cfg2, err := repo.Upsert(context.Background(), "Total goals in the tournament")
+	if err != nil {
+		t.Fatalf("upsert update: %v", err)
+	}
+	if cfg2.Question != "Total goals in the tournament" {
+		t.Errorf("updated question: want updated text, got %q", cfg2.Question)
+	}
+}
+
+func TestTiebreakerConfigRepository_Get_ReturnsAfterUpsert(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	_, err := repo.Upsert(context.Background(), "Total goals")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	cfg, err := repo.Get(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config after upsert, got nil")
+	}
+	if cfg.Question != "Total goals" {
+		t.Errorf("question: want 'Total goals', got %q", cfg.Question)
+	}
+}
+
+func TestTiebreakerConfigRepository_SetResult_SetsResult(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	if _, err := repo.Upsert(context.Background(), "Total goals"); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	if err := repo.SetResult(context.Background(), 42); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	cfg, err := repo.Get(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg.Result == nil || *cfg.Result != 42 {
+		t.Errorf("result: want 42, got %v", cfg.Result)
+	}
+}
+
+func TestTiebreakerConfigRepository_SetResult_NotFoundWhenNoConfig(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	err := repo.SetResult(context.Background(), 10)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+// ── TournamentRepository ──────────────────────────────────────────────────────
+
+func TestTournamentRepository_CreateSlot_ReturnsSlot(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	slot, err := repo.CreateSlot(context.Background(), "winner_group_a")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if slot.ID == 0 {
+		t.Error(msgNonZeroID)
+	}
+	if slot.Label != "winner_group_a" {
+		t.Errorf("label: want winner_group_a, got %s", slot.Label)
+	}
+	if slot.Team != nil {
+		t.Errorf("team: want nil on creation, got %v", slot.Team)
+	}
+}
+
+func TestTournamentRepository_GetSlot_Found(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	created, err := repo.CreateSlot(context.Background(), "runner_up_group_a")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.GetSlot(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected slot, got nil")
+	}
+	if got.ID != created.ID {
+		t.Errorf(fmtIDMismatch, got.ID, created.ID)
+	}
+}
+
+func TestTournamentRepository_GetSlot_NotFoundReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	got, err := repo.GetSlot(context.Background(), 99999)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf(fmtExpectNilGot, got)
+	}
+}
+
+func TestTournamentRepository_ListSlots_ReturnsList(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	if _, err := repo.CreateSlot(context.Background(), "winner_group_b"); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if _, err := repo.CreateSlot(context.Background(), "runner_up_group_b"); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	slots, err := repo.ListSlots(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(slots) != 2 {
+		t.Errorf("slots: want 2, got %d", len(slots))
+	}
+}
+
+func TestTournamentRepository_ListSlots_EmptyWhenNone(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	slots, err := repo.ListSlots(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(slots) != 0 {
+		t.Errorf("slots: want 0, got %d", len(slots))
+	}
+}
+
+func TestTournamentRepository_ConfirmSlot_SetsTeam(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	created, err := repo.CreateSlot(context.Background(), "winner_group_c")
+	if err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	confirmed, err := repo.ConfirmSlot(context.Background(), created.ID, u.ID, "Mexico")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if confirmed.Team == nil || *confirmed.Team != "Mexico" {
+		t.Errorf("team: want Mexico, got %v", confirmed.Team)
+	}
+	if confirmed.ConfirmedAt == nil {
+		t.Error("confirmed_at: want non-nil after confirmation")
+	}
+	if confirmed.ConfirmedByUserID == nil || *confirmed.ConfirmedByUserID != u.ID {
+		t.Errorf("confirmed_by_user_id: want %d, got %v", u.ID, confirmed.ConfirmedByUserID)
+	}
+}
+
+func TestTournamentRepository_ConfirmSlot_NotFoundWhenMissing(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	_, err := repo.ConfirmSlot(context.Background(), 99999, u.ID, "Mexico")
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
 	}
 }
