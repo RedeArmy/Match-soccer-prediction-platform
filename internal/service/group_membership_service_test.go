@@ -124,13 +124,9 @@ func TestGroupMembershipService_Join_PreviouslyLeft_ReturnsPending(t *testing.T)
 func TestGroupMembershipService_Join_MaxMembersReached_ReturnsConflict(t *testing.T) {
 	maxMembers := 1
 	q := &domain.Quiniela{ID: 1, Name: "Full", OwnerID: 1, InviteCode: "CODE", MaxMembers: &maxMembers}
-	now := time.Now()
-	activeMember := &domain.GroupMembership{
-		ID: 1, QuinielaID: 1, UserID: 99, Status: domain.MembershipActive, JoinedAt: &now,
-	}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{memberships: []*domain.GroupMembership{activeMember}},
+		&stubMemberRepo{activeCount: 1}, // CountActive returns 1, which equals maxMembers
 	)
 
 	_, err := svc.Join(context.Background(), "CODE", 42)

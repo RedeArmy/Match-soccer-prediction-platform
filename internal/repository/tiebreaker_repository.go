@@ -103,3 +103,5 @@ func (r *PostgresTiebreakerRepository) ListByUserIDs(ctx context.Context, userID
 	}
 	return tbs, nil
 }
+
+var _ TiebreakerRepository = (*PostgresTiebreakerRepository)(nil)

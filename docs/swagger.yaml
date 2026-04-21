@@ -1,5 +1,12 @@
 basePath: /
 definitions:
+  github_com_rede_world-cup-quiniela_internal_middleware.ErrorDetail:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
   github_com_rede_world-cup-quiniela_pkg_health.Response:
     properties:
       checks:
@@ -36,17 +43,10 @@ definitions:
       name:
         type: string
     type: object
-  internal_api_handler.ErrorDetail:
-    properties:
-      code:
-        type: string
-      message:
-        type: string
-    type: object
   internal_api_handler.ErrorResponse:
     properties:
       error:
-        $ref: '#/definitions/internal_api_handler.ErrorDetail'
+        $ref: '#/definitions/github_com_rede_world-cup-quiniela_internal_middleware.ErrorDetail'
     type: object
   internal_api_handler.GroupResponse:
     properties:

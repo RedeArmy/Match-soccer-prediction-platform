@@ -10,6 +10,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const errMsgDuplicatePrediction = "a prediction for this match has already been submitted"
+
 // PostgresPredictionRepository is the PostgreSQL-backed implementation of PredictionRepository.
 type PostgresPredictionRepository struct {
 	db *pgxpool.Pool
@@ -43,6 +45,9 @@ func (r *PostgresPredictionRepository) Create(ctx context.Context, p *domain.Pre
 	)
 	result, err := scanPrediction(row)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return apperrors.Conflict(errMsgDuplicatePrediction)
+		}
 		return err
 	}
 	*p = *result
@@ -415,3 +420,5 @@ func collectPredictions(rows pgx.Rows) ([]*domain.Prediction, error) {
 	}
 	return preds, nil
 }
+
+var _ PredictionRepository = (*PostgresPredictionRepository)(nil)

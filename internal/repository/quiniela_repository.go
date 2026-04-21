@@ -232,3 +232,5 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 	}
 	return quinielas, nil
 }
+
+var _ QuinielaRepository = (*PostgresQuinielaRepository)(nil)
