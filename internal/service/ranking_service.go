@@ -15,12 +15,12 @@ import (
 
 // rankingService is the concrete implementation of Ranker.
 type rankingService struct {
-	quinielaRepo       repository.QuinielaRepository
-	predRepo           repository.PredictionRepository
-	userRepo           repository.UserRepository
-	tiebreakerRepo     repository.TiebreakerRepository
-	tiebreakerCfgRepo  repository.TiebreakerConfigRepository
-	log                *zap.Logger
+	quinielaRepo      repository.QuinielaRepository
+	predRepo          repository.PredictionRepository
+	userRepo          repository.UserRepository
+	tiebreakerRepo    repository.TiebreakerRepository
+	tiebreakerCfgRepo repository.TiebreakerConfigRepository
+	log               *zap.Logger
 }
 
 // NewRankingService constructs a rankingService with the given dependencies.
