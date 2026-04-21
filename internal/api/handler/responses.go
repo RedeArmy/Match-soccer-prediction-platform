@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/middleware"
 )
 
 // GroupResponse is the JSON representation of a Quiniela (group).
@@ -188,15 +189,12 @@ type TournamentSlotResponse struct {
 }
 
 // ErrorResponse is the standard error envelope returned on all 4xx/5xx responses.
-type ErrorResponse struct {
-	Error ErrorDetail `json:"error"`
-}
+// Defined once in middleware; aliased here so Swagger annotations can reference
+// handler.ErrorResponse without import cycles.
+type ErrorResponse = middleware.ErrorResponse
 
 // ErrorDetail carries the machine-readable code and human-readable message.
-type ErrorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
+type ErrorDetail = middleware.ErrorDetail
 
 const timeFormat = "2006-01-02T15:04:05Z07:00"
 

@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -20,6 +23,16 @@ type PostgresGroupMembershipRepository struct {
 // NewPostgresGroupMembershipRepository constructs a PostgresGroupMembershipRepository.
 func NewPostgresGroupMembershipRepository(db *pgxpool.Pool) *PostgresGroupMembershipRepository {
 	return &PostgresGroupMembershipRepository{db: db}
+}
+
+// isMaxMembersViolation reports whether err originates from the
+// enforce_max_members trigger, which raises EXCEPTION 'max_members_exceeded'
+// (PostgreSQL error code P0001 = raise_exception).
+func isMaxMembersViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) &&
+		pgErr.Code == "P0001" &&
+		strings.Contains(pgErr.Message, "max_members_exceeded")
 }
 
 const membershipColumns = "id, quiniela_id, user_id, status, paid, joined_at, created_at, updated_at"
@@ -46,6 +59,9 @@ func (r *PostgresGroupMembershipRepository) Create(ctx context.Context, m *domai
 	)
 	result, err := scanMembership(row)
 	if err != nil {
+		if isMaxMembersViolation(err) {
+			return apperrors.Conflict("this group has reached its maximum number of members")
+		}
 		return err
 	}
 	*m = *result
@@ -91,6 +107,9 @@ func (r *PostgresGroupMembershipRepository) Update(ctx context.Context, m *domai
 	)
 	result, err := scanMembership(row)
 	if err != nil {
+		if isMaxMembersViolation(err) {
+			return apperrors.Conflict("this group has reached its maximum number of members")
+		}
 		return err
 	}
 	if result == nil {
@@ -170,3 +189,5 @@ func collectMemberships(rows pgx.Rows) ([]*domain.GroupMembership, error) {
 	}
 	return memberships, nil
 }
+
+var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)

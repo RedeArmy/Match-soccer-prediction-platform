@@ -174,3 +174,5 @@ func collectUsers(rows pgx.Rows) ([]*domain.User, error) {
 	}
 	return users, nil
 }
+
+var _ UserRepository = (*PostgresUserRepository)(nil)

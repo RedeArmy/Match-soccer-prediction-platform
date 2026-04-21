@@ -99,3 +99,5 @@ func (r *PostgresTournamentRepository) ConfirmSlot(ctx context.Context, id, conf
 	}
 	return slot, nil
 }
+
+var _ TournamentRepository = (*PostgresTournamentRepository)(nil)

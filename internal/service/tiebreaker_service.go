@@ -136,3 +136,5 @@ func (s *tiebreakerService) requireActiveMember(ctx context.Context, quinielaID,
 	}
 	return nil
 }
+
+var _ TiebreakerService = (*tiebreakerService)(nil)

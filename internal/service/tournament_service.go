@@ -172,3 +172,5 @@ func lessStanding(a, b *domain.GroupStanding) bool {
 	}
 	return a.Team < b.Team
 }
+
+var _ TournamentService = (*tournamentService)(nil)

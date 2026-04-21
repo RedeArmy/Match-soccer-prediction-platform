@@ -130,3 +130,5 @@ func (s *quinielaService) GetByInviteCode(ctx context.Context, code string) (*do
 func (s *quinielaService) GetByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error) {
 	return s.repo.ListByOwner(ctx, ownerID)
 }
+
+var _ QuinielaService = (*quinielaService)(nil)

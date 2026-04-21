@@ -29,3 +29,5 @@ func (s *notificationService) Notify(_ context.Context, userID int, message stri
 	)
 	return nil
 }
+
+var _ Notifier = (*notificationService)(nil)

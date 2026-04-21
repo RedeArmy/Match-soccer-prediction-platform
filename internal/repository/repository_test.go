@@ -588,6 +588,23 @@ func TestPredictionRepository_Create_HydratesID(t *testing.T) {
 	}
 }
 
+func TestPredictionRepository_Create_Duplicate_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	p1 := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := repo.Create(context.Background(), p1); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	p2 := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	if err := repo.Create(context.Background(), p2); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict for duplicate prediction, got %v", err)
+	}
+}
+
 func TestPredictionRepository_GetByID_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
@@ -1086,6 +1103,79 @@ func TestGroupMembershipRepository_Create_FreeMembership_PaidFalse(t *testing.T)
 	}
 	if m.JoinedAt != nil {
 		t.Error("expected JoinedAt = nil for pending membership")
+	}
+}
+
+func TestGroupMembershipRepository_Create_ExceedsMaxMembers_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	maxMembers := 1
+	quinielaRepo := repository.NewPostgresQuinielaRepository(testDB)
+	q := &domain.Quiniela{
+		Name:           "Capped " + nextCode(),
+		OwnerID:        owner.ID,
+		InviteCode:     nextCode(),
+		Currency:       defaultCurrency,
+		PrizeThreshold: domain.DefaultPrizeThreshold,
+		MaxMembers:     &maxMembers,
+	}
+	if err := quinielaRepo.Create(context.Background(), q); err != nil {
+		t.Fatalf("seed quiniela: %v", err)
+	}
+
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	now := time.Now().UTC()
+
+	// First active membership — must succeed.
+	m1 := &domain.GroupMembership{QuinielaID: q.ID, UserID: owner.ID, Status: domain.MembershipActive, Paid: true, JoinedAt: &now}
+	if err := repo.Create(context.Background(), m1); err != nil {
+		t.Fatalf("first membership: %v", err)
+	}
+
+	// Second active membership — must be rejected by the DB trigger.
+	u2 := seedUser(t)
+	m2 := &domain.GroupMembership{QuinielaID: q.ID, UserID: u2.ID, Status: domain.MembershipActive, Paid: true, JoinedAt: &now}
+	if err := repo.Create(context.Background(), m2); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict when exceeding max_members, got %v", err)
+	}
+}
+
+func TestGroupMembershipRepository_Update_ExceedsMaxMembers_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	maxMembers := 1
+	quinielaRepo := repository.NewPostgresQuinielaRepository(testDB)
+	q := &domain.Quiniela{
+		Name:           "Capped " + nextCode(),
+		OwnerID:        owner.ID,
+		InviteCode:     nextCode(),
+		Currency:       defaultCurrency,
+		PrizeThreshold: domain.DefaultPrizeThreshold,
+		MaxMembers:     &maxMembers,
+	}
+	if err := quinielaRepo.Create(context.Background(), q); err != nil {
+		t.Fatalf("seed quiniela: %v", err)
+	}
+
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	now := time.Now().UTC()
+
+	// Fill the one active slot.
+	m1 := &domain.GroupMembership{QuinielaID: q.ID, UserID: owner.ID, Status: domain.MembershipActive, Paid: true, JoinedAt: &now}
+	if err := repo.Create(context.Background(), m1); err != nil {
+		t.Fatalf("first membership: %v", err)
+	}
+
+	// Create a second member as pending, then try to approve (pending → active).
+	u2 := seedUser(t)
+	m2 := &domain.GroupMembership{QuinielaID: q.ID, UserID: u2.ID, Status: domain.MembershipPending, Paid: false}
+	if err := repo.Create(context.Background(), m2); err != nil {
+		t.Fatalf("pending membership: %v", err)
+	}
+	m2.Status = domain.MembershipActive
+	m2.JoinedAt = &now
+	if err := repo.Update(context.Background(), m2); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict when approving past max_members, got %v", err)
 	}
 }
 

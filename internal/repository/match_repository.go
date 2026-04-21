@@ -207,3 +207,5 @@ func collectMatches(rows pgx.Rows) ([]*domain.Match, error) {
 	}
 	return matches, nil
 }
+
+var _ MatchRepository = (*PostgresMatchRepository)(nil)
