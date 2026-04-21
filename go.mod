@@ -88,6 +88,7 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/svix/svix-webhooks v1.91.1 // indirect
 	github.com/swaggo/files/v2 v2.0.2 // indirect
 	github.com/testcontainers/testcontainers-go v0.41.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect

@@ -120,8 +120,8 @@ func (s *cachedMatchService) CreateMatch(ctx context.Context, match *domain.Matc
 }
 
 // UpdateResult delegates to the inner service and invalidates relevant caches.
-// Both the old status (Finished) and the phase list are invalidated because
-// status transitions from Live → Finished after a result is confirmed.
+// The phase list and all status lists are invalidated because the match has
+// transitioned from Live → Finished; any cached Live or Finished list is stale.
 func (s *cachedMatchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int) (*domain.Match, error) {
 	m, err := s.inner.UpdateResult(ctx, id, homeScore, awayScore)
 	if err != nil {

@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 
+	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -14,13 +14,9 @@ const (
 	msgUserNotFound = "user account not found; please try again shortly"
 )
 
-// writeJSON serialises v to JSON and writes it to w with the given status code.
-// The Content-Type header is set before writing the body.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
+// writeJSON delegates to middleware.WriteJSON, the single canonical implementation
+// shared across the entire API surface.
+func writeJSON(w http.ResponseWriter, status int, v any) { middleware.WriteJSON(w, status, v) }
 
 // decodeError maps a JSON decode failure to the appropriate AppError.
 //

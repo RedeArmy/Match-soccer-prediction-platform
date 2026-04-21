@@ -1,18 +1,12 @@
 package handler
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
 
+	svix "github.com/svix/svix-webhooks/go"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -23,9 +17,10 @@ import (
 
 // WebhookHandler handles incoming Clerk webhook events.
 type WebhookHandler struct {
-	userRepo      repository.UserRepository
-	webhookSecret string
-	log           *zap.Logger
+	userRepo         repository.UserRepository
+	verifier         *svix.Webhook // nil means skip OR reject — see skipVerification
+	skipVerification bool          // true only when WCQ_CLERK_WEBHOOKSECRET is intentionally absent (dev)
+	log              *zap.Logger
 }
 
 // NewWebhookHandler constructs a WebhookHandler.
@@ -34,11 +29,22 @@ type WebhookHandler struct {
 // When empty, signature verification is skipped and a warning is logged —
 // acceptable for local development only. Startup validation must reject this
 // configuration outside development.
+// When the secret is present but malformed, all webhook requests are rejected
+// with 400 to prevent accepting unverified payloads silently.
 func NewWebhookHandler(userRepo repository.UserRepository, webhookSecret string, log *zap.Logger) *WebhookHandler {
+	h := &WebhookHandler{userRepo: userRepo, log: log}
 	if webhookSecret == "" {
 		log.Warn("WebhookHandler: WCQ_CLERK_WEBHOOKSECRET is not set — webhook signature verification is DISABLED; do not use in production")
+		h.skipVerification = true
+		return h
 	}
-	return &WebhookHandler{userRepo: userRepo, webhookSecret: webhookSecret, log: log}
+	wh, err := svix.NewWebhook(webhookSecret)
+	if err != nil {
+		log.Error("WebhookHandler: invalid webhook secret format — all webhook requests will be rejected", zap.Error(err))
+		return h // verifier=nil, skipVerification=false → always rejects
+	}
+	h.verifier = wh
+	return h
 }
 
 // clerkEmailAddress is the email entry inside a Clerk user object.
@@ -84,8 +90,15 @@ func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if h.webhookSecret != "" {
-		if err := h.verifySvixSignature(r, body); err != nil {
+	if !h.skipVerification {
+		if h.verifier == nil {
+			// Secret was provided but is malformed; reject all requests.
+			writeJSON(w, http.StatusBadRequest, ErrorResponse{
+				Error: ErrorDetail{Code: "bad_request", Message: "invalid webhook signature"},
+			})
+			return
+		}
+		if err := h.verifier.Verify(body, r.Header); err != nil {
 			h.log.Warn("webhook signature verification failed", zap.Error(err))
 			writeJSON(w, http.StatusBadRequest, ErrorResponse{
 				Error: ErrorDetail{Code: "bad_request", Message: "invalid webhook signature"},
@@ -183,47 +196,4 @@ func (h *WebhookHandler) upsertUser(r *http.Request, data json.RawMessage) error
 		zap.String("clerk_subject", payload.ID),
 	)
 	return nil
-}
-
-// verifySvixSignature validates the Svix HMAC-SHA256 signature on the request.
-//
-// The signed payload is "{svix-id}.{svix-timestamp}.{body}".
-// The secret is base64-decoded from the "whsec_<base64>" format.
-func (h *WebhookHandler) verifySvixSignature(r *http.Request, body []byte) error {
-	msgID := r.Header.Get("svix-id")
-	msgTimestamp := r.Header.Get("svix-timestamp")
-	msgSignature := r.Header.Get("svix-signature")
-
-	if msgID == "" || msgTimestamp == "" || msgSignature == "" {
-		return errors.New("missing svix headers")
-	}
-
-	ts, err := strconv.ParseInt(msgTimestamp, 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid svix-timestamp: %w", err)
-	}
-	if age := time.Since(time.Unix(ts, 0)).Abs(); age > 5*time.Minute {
-		return fmt.Errorf("webhook timestamp too old: %s", age)
-	}
-
-	secretBase64 := strings.TrimPrefix(h.webhookSecret, "whsec_")
-	secretBytes, err := base64.StdEncoding.DecodeString(secretBase64)
-	if err != nil {
-		return fmt.Errorf("could not decode webhook secret: %w", err)
-	}
-
-	toSign := fmt.Sprintf("%s.%s.%s", msgID, msgTimestamp, string(body))
-	mac := hmac.New(sha256.New, secretBytes)
-	mac.Write([]byte(toSign))
-	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-
-	// The header may contain multiple space-separated "v1,<sig>" entries.
-	for _, sig := range strings.Fields(msgSignature) {
-		if parts := strings.SplitN(sig, ",", 2); len(parts) == 2 && parts[0] == "v1" {
-			if hmac.Equal([]byte(parts[1]), []byte(expected)) {
-				return nil
-			}
-		}
-	}
-	return errors.New("no valid svix signature found")
 }
