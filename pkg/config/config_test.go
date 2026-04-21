@@ -110,6 +110,36 @@ func TestLoad_EnvVarOverridesDefault(t *testing.T) {
 	}
 }
 
+// TestIsDevelopment_EmptyEnvironment tests the method directly on a zero-value
+// Config. Viper resolves its own default ("dev") when WCQ_ENVIRONMENT is absent,
+// so the only way to get Environment=="" at runtime is an explicit blank override.
+// Regardless, the method must treat blank as production to close the misconfigured-
+// container security gap.
+func TestIsDevelopment_EmptyEnvironment_IsNotDevelopment(t *testing.T) {
+	cfg := &config.Config{Environment: ""}
+	if cfg.IsDevelopment() {
+		t.Error("IsDevelopment: empty Environment string must not be treated as development")
+	}
+}
+
+func TestIsDevelopment_ProductionEnvironment_IsNotDevelopment(t *testing.T) {
+	for _, env := range []string{"production", "prod", "staging", "unknown"} {
+		cfg := &config.Config{Environment: env}
+		if cfg.IsDevelopment() {
+			t.Errorf("IsDevelopment(%q): want false, got true", env)
+		}
+	}
+}
+
+func TestIsDevelopment_DevelopmentEnvironments_AreRecognised(t *testing.T) {
+	for _, env := range []string{"dev", "development", "test"} {
+		cfg := &config.Config{Environment: env}
+		if !cfg.IsDevelopment() {
+			t.Errorf("IsDevelopment(%q): want true, got false", env)
+		}
+	}
+}
+
 func TestLoad_DefaultEnvironmentIsDev(t *testing.T) {
 	setRequiredEnv(t)
 

@@ -20,6 +20,9 @@ type stubQuinielaRepo struct {
 	updateStatusErr error
 }
 
+func (r *stubQuinielaRepo) CreateWithMembership(_ context.Context, _ *domain.Quiniela, _ *domain.GroupMembership) error {
+	return r.err
+}
 func (r *stubQuinielaRepo) Create(_ context.Context, _ *domain.Quiniela) error { return r.err }
 func (r *stubQuinielaRepo) GetByID(_ context.Context, _ int) (*domain.Quiniela, error) {
 	return r.quiniela, r.err
@@ -78,7 +81,7 @@ func (r *stubMemberRepo) CountActive(_ context.Context, _ int) (int, error) {
 // ── QuinielaService tests ─────────────────────────────────────────────────────
 
 func TestQuinielaService_Create_ValidQuiniela_ReturnsNil(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
@@ -87,7 +90,7 @@ func TestQuinielaService_Create_ValidQuiniela_ReturnsNil(t *testing.T) {
 }
 
 func TestQuinielaService_Create_SetsInviteCode(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
@@ -102,7 +105,7 @@ func TestQuinielaService_Create_SetsInviteCode(t *testing.T) {
 }
 
 func TestQuinielaService_Create_InviteCodeNeverExpires(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
@@ -114,7 +117,7 @@ func TestQuinielaService_Create_InviteCodeNeverExpires(t *testing.T) {
 }
 
 func TestQuinielaService_Create_InitialStatusIsInactive(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
@@ -126,7 +129,7 @@ func TestQuinielaService_Create_InitialStatusIsInactive(t *testing.T) {
 }
 
 func TestQuinielaService_Create_EmptyName_ReturnsValidation(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 	q := &domain.Quiniela{OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); !errors.Is(err, apperrors.ErrValidation) {
@@ -136,7 +139,7 @@ func TestQuinielaService_Create_EmptyName_ReturnsValidation(t *testing.T) {
 
 func TestQuinielaService_GetByID_Found_ReturnsQuiniela(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, Name: "Test Pool", OwnerID: 2}
-	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q})
 
 	got, err := svc.GetByID(context.Background(), 1)
 	if err != nil {
@@ -148,7 +151,7 @@ func TestQuinielaService_GetByID_Found_ReturnsQuiniela(t *testing.T) {
 }
 
 func TestQuinielaService_GetByID_NotFound_ReturnsNotFound(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: nil}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 
 	if _, err := svc.GetByID(context.Background(), 99); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf("expected not-found error, got %v", err)
@@ -157,7 +160,7 @@ func TestQuinielaService_GetByID_NotFound_ReturnsNotFound(t *testing.T) {
 
 func TestQuinielaService_GetByOwner_ReturnsSlice(t *testing.T) {
 	qs := []*domain.Quiniela{{ID: 1, Name: "Pool A", OwnerID: 1}}
-	svc := NewQuinielaService(&stubQuinielaRepo{quinielas: qs}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{quinielas: qs})
 
 	got, err := svc.GetByOwner(context.Background(), 1)
 	if err != nil {
@@ -169,7 +172,7 @@ func TestQuinielaService_GetByOwner_ReturnsSlice(t *testing.T) {
 }
 
 func TestQuinielaService_Create_DefaultsCurrencyToMXN(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 	q := &domain.Quiniela{Name: "Pool", OwnerID: 1} // no Currency set
 
 	if err := svc.Create(context.Background(), q); err != nil {
@@ -181,7 +184,7 @@ func TestQuinielaService_Create_DefaultsCurrencyToMXN(t *testing.T) {
 }
 
 func TestQuinielaService_Create_DefaultsPrizeThresholdWhenZero(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 	q := &domain.Quiniela{Name: "Pool", OwnerID: 1} // no PrizeThreshold set
 
 	if err := svc.Create(context.Background(), q); err != nil {
@@ -193,7 +196,7 @@ func TestQuinielaService_Create_DefaultsPrizeThresholdWhenZero(t *testing.T) {
 }
 
 func TestQuinielaService_Create_ExplicitPrizeThreshold_Preserved(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 	q := &domain.Quiniela{Name: "Pool", OwnerID: 1, PrizeThreshold: 5}
 
 	if err := svc.Create(context.Background(), q); err != nil {
@@ -207,7 +210,6 @@ func TestQuinielaService_Create_ExplicitPrizeThreshold_Preserved(t *testing.T) {
 func TestQuinielaService_Create_RepoConflict_ReturnsConflict(t *testing.T) {
 	svc := NewQuinielaService(
 		&stubQuinielaRepo{err: apperrors.Conflict("a group with this name already exists")},
-		&stubMemberRepo{},
 	)
 	q := &domain.Quiniela{Name: "Duplicate", OwnerID: 1}
 
@@ -218,7 +220,7 @@ func TestQuinielaService_Create_RepoConflict_ReturnsConflict(t *testing.T) {
 
 func TestQuinielaService_GetByInviteCode_Found(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, Name: "Pool", InviteCode: "ABC123"}
-	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q})
 
 	got, err := svc.GetByInviteCode(context.Background(), "ABC123")
 	if err != nil {
@@ -230,7 +232,7 @@ func TestQuinielaService_GetByInviteCode_Found(t *testing.T) {
 }
 
 func TestQuinielaService_GetByInviteCode_NotFound_ReturnsNotFound(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: nil}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 
 	if _, err := svc.GetByInviteCode(context.Background(), "BADCODE"); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf("expected not-found error, got %v", err)
@@ -241,7 +243,7 @@ func TestQuinielaService_GetByInviteCode_NotFound_ReturnsNotFound(t *testing.T) 
 
 func TestQuinielaService_RotateInviteCode_Success_ReturnsUpdatedQuiniela(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 10, InviteCode: "OLDCODE123"}
-	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q})
 
 	got, err := svc.RotateInviteCode(context.Background(), 1, 10)
 	if err != nil {
@@ -253,7 +255,7 @@ func TestQuinielaService_RotateInviteCode_Success_ReturnsUpdatedQuiniela(t *test
 }
 
 func TestQuinielaService_RotateInviteCode_NotFound_ReturnsNotFound(t *testing.T) {
-	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: nil}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{})
 
 	_, err := svc.RotateInviteCode(context.Background(), 99, 10)
 	if !errors.Is(err, apperrors.ErrNotFound) {
@@ -263,7 +265,7 @@ func TestQuinielaService_RotateInviteCode_NotFound_ReturnsNotFound(t *testing.T)
 
 func TestQuinielaService_RotateInviteCode_WrongOwner_ReturnsForbidden(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, OwnerID: 10}
-	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
+	svc := NewQuinielaService(&stubQuinielaRepo{quiniela: q})
 
 	// ownerID=99 does not match q.OwnerID=10.
 	_, err := svc.RotateInviteCode(context.Background(), 1, 99)
@@ -279,6 +281,9 @@ type rotateErrRepo struct {
 	rotateErr error
 }
 
+func (r *rotateErrRepo) CreateWithMembership(_ context.Context, _ *domain.Quiniela, _ *domain.GroupMembership) error {
+	return nil
+}
 func (r *rotateErrRepo) Create(_ context.Context, _ *domain.Quiniela) error { return nil }
 func (r *rotateErrRepo) GetByID(_ context.Context, _ int) (*domain.Quiniela, error) {
 	return r.quiniela, nil
@@ -301,7 +306,7 @@ func (r *rotateErrRepo) UpdateStatus(_ context.Context, _ int, _ domain.Quiniela
 func TestQuinielaService_RotateInviteCode_RepoError_Propagated(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, OwnerID: 10}
 	repo := &rotateErrRepo{quiniela: q, rotateErr: errors.New("db write failed")}
-	svc := NewQuinielaService(repo, &stubMemberRepo{})
+	svc := NewQuinielaService(repo)
 
 	_, err := svc.RotateInviteCode(context.Background(), 1, 10)
 	if err == nil {

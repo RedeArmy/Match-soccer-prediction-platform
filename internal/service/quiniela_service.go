@@ -19,13 +19,12 @@ const inviteCodeLength = 10
 
 // quinielaService is the concrete implementation of QuinielaService.
 type quinielaService struct {
-	repo       repository.QuinielaRepository
-	memberRepo repository.GroupMembershipRepository
+	repo repository.QuinielaRepository
 }
 
 // NewQuinielaService constructs a quinielaService with the given dependencies.
-func NewQuinielaService(repo repository.QuinielaRepository, memberRepo repository.GroupMembershipRepository) QuinielaService {
-	return &quinielaService{repo: repo, memberRepo: memberRepo}
+func NewQuinielaService(repo repository.QuinielaRepository) QuinielaService {
+	return &quinielaService{repo: repo}
 }
 
 // generateInviteCode returns a cryptographically random invite code of
@@ -66,22 +65,20 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 		quiniela.Currency = "MXN"
 	}
 
-	if err := s.repo.Create(ctx, quiniela); err != nil {
-		return err
-	}
-
 	// Owner always becomes an active member immediately — no approval required.
-	// They are marked as paid for free groups; for paid groups the payment
-	// system will flip paid = true after a confirmed transaction.
+	// Marked as paid for free groups; for paid groups the payment system will
+	// flip paid=true after a confirmed transaction.
+	// Both writes are wrapped in a single transaction via CreateWithMembership:
+	// if the membership insert fails the quiniela row is rolled back, preventing
+	// orphaned groups that have no owner membership.
 	now := time.Now().UTC()
 	ownerMembership := &domain.GroupMembership{
-		QuinielaID: quiniela.ID,
-		UserID:     quiniela.OwnerID,
-		Status:     domain.MembershipActive,
-		Paid:       quiniela.EntryFee == 0,
-		JoinedAt:   &now,
+		UserID:   quiniela.OwnerID,
+		Status:   domain.MembershipActive,
+		Paid:     quiniela.EntryFee == 0,
+		JoinedAt: &now,
 	}
-	return s.memberRepo.Create(ctx, ownerMembership)
+	return s.repo.CreateWithMembership(ctx, quiniela, ownerMembership)
 }
 
 // RotateInviteCode generates a new invite code for the quiniela, immediately

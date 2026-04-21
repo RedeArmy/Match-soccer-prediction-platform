@@ -29,9 +29,13 @@ type Config struct {
 
 // IsDevelopment reports whether the application is running in a relaxed local
 // environment where auth/webhook secrets may be omitted intentionally.
+// An empty Environment is treated as production — an unset WCQ_ENVIRONMENT
+// in a deployed container is a misconfiguration, not implicit development mode.
+// The viper default ("dev") ensures a developer who never sets the variable
+// still gets development mode; only an explicit empty string is rejected.
 func (c *Config) IsDevelopment() bool {
 	switch c.Environment {
-	case "", "dev", "development", "test":
+	case "dev", "development", "test":
 		return true
 	default:
 		return false

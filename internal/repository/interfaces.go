@@ -136,6 +136,11 @@ type PredictionRepository interface {
 // records are managed by GroupMembershipRepository. GetByInviteCode enables
 // the join-by-code flow without exposing the internal ID in share links.
 type QuinielaRepository interface {
+	// CreateWithMembership atomically inserts the quiniela row and the owner's
+	// initial membership in a single database transaction. Both writes succeed
+	// or neither is committed, preventing orphaned quinielas that have no owner
+	// membership. quiniela.ID and membership.ID are populated on success.
+	CreateWithMembership(ctx context.Context, quiniela *domain.Quiniela, membership *domain.GroupMembership) error
 	Create(ctx context.Context, quiniela *domain.Quiniela) error
 	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
 	// GetByInviteCode returns the quiniela matching code only when the code has
