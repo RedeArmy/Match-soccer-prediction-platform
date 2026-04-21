@@ -5,6 +5,8 @@ import (
 	"runtime/debug"
 
 	"go.uber.org/zap"
+
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // Recover returns a middleware that catches any panic that occurs in a
@@ -31,7 +33,12 @@ func Recover(log *zap.Logger) func(http.Handler) http.Handler {
 						zap.Any("panic", rec),
 						zap.ByteString("stack", debug.Stack()),
 					)
-					http.Error(w, "internal server error", http.StatusInternalServerError)
+					writeJSON(w, http.StatusInternalServerError, errorResponse{
+						Error: errorDetail{
+							Code:    string(apperrors.CodeInternal),
+							Message: apperrors.MsgInternal,
+						},
+					})
 				}
 			}()
 

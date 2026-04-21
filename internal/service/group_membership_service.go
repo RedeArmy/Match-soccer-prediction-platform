@@ -80,17 +80,11 @@ func (s *groupMembershipService) checkCapacity(ctx context.Context, quiniela *do
 	if quiniela.MaxMembers == nil {
 		return nil
 	}
-	members, err := s.memberRepo.ListByQuiniela(ctx, quiniela.ID)
+	count, err := s.memberRepo.CountActive(ctx, quiniela.ID)
 	if err != nil {
 		return err
 	}
-	active := 0
-	for _, m := range members {
-		if m.Status == domain.MembershipActive {
-			active++
-		}
-	}
-	if active >= *quiniela.MaxMembers {
+	if count >= *quiniela.MaxMembers {
 		return apperrors.Conflict("this group has reached its maximum number of members")
 	}
 	return nil

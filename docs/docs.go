@@ -1084,6 +1084,17 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_rede_world-cup-quiniela_internal_middleware.ErrorDetail": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_rede_world-cup-quiniela_pkg_health.Response": {
             "type": "object",
             "properties": {
@@ -1140,22 +1151,11 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_handler.ErrorDetail": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_api_handler.ErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
-                    "$ref": "#/definitions/internal_api_handler.ErrorDetail"
+                    "$ref": "#/definitions/github_com_rede_world-cup-quiniela_internal_middleware.ErrorDetail"
                 }
             }
         },

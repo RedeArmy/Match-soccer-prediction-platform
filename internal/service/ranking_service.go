@@ -377,3 +377,5 @@ func assignPrizes(entries []*domain.LeaderboardEntry, prizeThreshold int) {
 		e.PrizeWinner = e.Rank <= cutoffRank
 	}
 }
+
+var _ Ranker = (*rankingService)(nil)

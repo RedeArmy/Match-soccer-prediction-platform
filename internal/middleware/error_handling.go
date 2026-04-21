@@ -10,21 +10,29 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
-// errorResponse is the JSON envelope written for all error responses.
+// ErrorResponse is the JSON envelope written for all error responses.
 //
 // Using a consistent envelope across every error — regardless of which
 // handler produced it — makes the API surface predictable for clients and
 // simplifies frontend error handling. Clients can always expect to find the
 // machine-readable code and the human-readable message at the same path in
 // the response body.
-type errorResponse struct {
-	Error errorDetail `json:"error"`
+//
+// This is the single canonical definition; handler/responses.go re-exports it
+// as type aliases so Swagger annotations continue to reference handler.ErrorResponse.
+type ErrorResponse struct {
+	Error ErrorDetail `json:"error"`
 }
 
-type errorDetail struct {
+// ErrorDetail carries the machine-readable error code and human-readable message.
+type ErrorDetail struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+// unexported aliases keep the internal helper callsites unchanged.
+type errorResponse = ErrorResponse
+type errorDetail = ErrorDetail
 
 // WriteError translates err into a JSON HTTP response.
 //

@@ -121,3 +121,5 @@ func (s *predictionService) GetByUserAndQuiniela(ctx context.Context, userID, qu
 func (s *predictionService) GetByMatch(ctx context.Context, matchID int) ([]*domain.Prediction, error) {
 	return s.predRepo.ListByMatch(ctx, matchID)
 }
+
+var _ PredictionService = (*predictionService)(nil)

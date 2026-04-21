@@ -129,3 +129,5 @@ func goalDiff(home, away int) int {
 	}
 	return d
 }
+
+var _ MatchScorer = (*scoringService)(nil)

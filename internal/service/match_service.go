@@ -136,3 +136,5 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 	}
 	return m, nil
 }
+
+var _ MatchService = (*matchService)(nil)

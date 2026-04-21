@@ -79,3 +79,5 @@ func (r *PostgresTiebreakerConfigRepository) SetResult(ctx context.Context, resu
 	}
 	return nil
 }
+
+var _ TiebreakerConfigRepository = (*PostgresTiebreakerConfigRepository)(nil)

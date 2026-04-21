@@ -176,3 +176,5 @@ func (s *cachedMatchService) setQuiet(ctx context.Context, key string, value int
 		s.log.Warn("cache set failed", zap.String("key", key), zap.Error(err))
 	}
 }
+
+var _ MatchService = (*cachedMatchService)(nil)

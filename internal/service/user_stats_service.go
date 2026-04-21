@@ -106,3 +106,5 @@ func computeStreaks(points []int) (current, longest int) {
 func round2dp(v float64) float64 {
 	return math.Round(v*100) / 100
 }
+
+var _ MyStatsGetter = (*userStatsService)(nil)
