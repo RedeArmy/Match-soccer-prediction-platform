@@ -13,6 +13,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const errMsgDuplicateGroupName = "a group with this name already exists"
+
 // PostgresQuinielaRepository is the PostgreSQL-backed implementation of QuinielaRepository.
 type PostgresQuinielaRepository struct {
 	db *pgxpool.Pool
@@ -68,7 +70,7 @@ func (r *PostgresQuinielaRepository) CreateWithMembership(ctx context.Context, q
 	qResult, err := scanQuiniela(qRow)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return apperrors.Conflict("a group with this name already exists")
+			return apperrors.Conflict(errMsgDuplicateGroupName)
 		}
 		return err
 	}
@@ -101,7 +103,7 @@ func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quini
 	result, err := scanQuiniela(row)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return apperrors.Conflict("a group with this name already exists")
+			return apperrors.Conflict(errMsgDuplicateGroupName)
 		}
 		return err
 	}
@@ -160,7 +162,7 @@ func (r *PostgresQuinielaRepository) Update(ctx context.Context, q *domain.Quini
 	result, err := scanQuiniela(row)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return apperrors.Conflict("a group with this name already exists")
+			return apperrors.Conflict(errMsgDuplicateGroupName)
 		}
 		return err
 	}
