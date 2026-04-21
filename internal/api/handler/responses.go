@@ -112,18 +112,19 @@ type StadiumResponse struct {
 // Domain entities are intentionally free of json tags, so this struct acts
 // as an explicit HTTP contract with snake_case field names.
 type MatchResponse struct {
-	ID        int              `json:"id"`
-	HomeTeam  string           `json:"home_team"`
-	AwayTeam  string           `json:"away_team"`
-	HomeScore *int             `json:"home_score"`
-	AwayScore *int             `json:"away_score"`
-	Status    string           `json:"status"`
-	Phase     string           `json:"phase"`
-	StadiumID *int             `json:"stadium_id"`
-	Stadium   *StadiumResponse `json:"stadium,omitempty"`
-	KickoffAt string           `json:"kickoff_at"`
-	CreatedAt string           `json:"created_at"`
-	UpdatedAt string           `json:"updated_at"`
+	ID         int              `json:"id"`
+	HomeTeam   string           `json:"home_team"`
+	AwayTeam   string           `json:"away_team"`
+	HomeScore  *int             `json:"home_score"`
+	AwayScore  *int             `json:"away_score"`
+	Status     string           `json:"status"`
+	Phase      string           `json:"phase"`
+	GroupLabel *string          `json:"group_label,omitempty"`
+	StadiumID  *int             `json:"stadium_id"`
+	Stadium    *StadiumResponse `json:"stadium,omitempty"`
+	KickoffAt  string           `json:"kickoff_at"`
+	CreatedAt  string           `json:"created_at"`
+	UpdatedAt  string           `json:"updated_at"`
 }
 
 // PredictionResponse is the JSON representation of a Prediction.
@@ -154,6 +155,38 @@ type UserStatsResponse struct {
 	LastPredictionAt   *string        `json:"last_prediction_at,omitempty"`
 }
 
+// GroupStandingResponse is the JSON representation of one team's position in a
+// World Cup group.
+type GroupStandingResponse struct {
+	Group  string `json:"group"`
+	Team   string `json:"team"`
+	Played int    `json:"played"`
+	Won    int    `json:"won"`
+	Drawn  int    `json:"drawn"`
+	Lost   int    `json:"lost"`
+	GF     int    `json:"gf"`
+	GC     int    `json:"gc"`
+	GD     int    `json:"gd"`
+	Points int    `json:"points"`
+}
+
+// TournamentStandingsResponse wraps all-group standings for
+// GET /api/v1/tournament/standings.
+type TournamentStandingsResponse struct {
+	Groups map[string][]GroupStandingResponse `json:"groups"`
+}
+
+// TournamentSlotResponse is the JSON representation of a bracket position slot.
+type TournamentSlotResponse struct {
+	ID                int     `json:"id"`
+	Label             string  `json:"label"`
+	Team              *string `json:"team"`
+	ConfirmedAt       *string `json:"confirmed_at,omitempty"`
+	ConfirmedByUserID *int    `json:"confirmed_by_user_id,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+	UpdatedAt         string  `json:"updated_at"`
+}
+
 // ErrorResponse is the standard error envelope returned on all 4xx/5xx responses.
 type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
@@ -169,17 +202,18 @@ const timeFormat = "2006-01-02T15:04:05Z07:00"
 
 func matchToResponse(m *domain.Match) MatchResponse {
 	resp := MatchResponse{
-		ID:        m.ID,
-		HomeTeam:  m.HomeTeam,
-		AwayTeam:  m.AwayTeam,
-		HomeScore: m.HomeScore,
-		AwayScore: m.AwayScore,
-		Status:    string(m.Status),
-		Phase:     string(m.Phase),
-		StadiumID: m.StadiumID,
-		KickoffAt: m.KickoffAt.Format(timeFormat),
-		CreatedAt: m.CreatedAt.Format(timeFormat),
-		UpdatedAt: m.UpdatedAt.Format(timeFormat),
+		ID:         m.ID,
+		HomeTeam:   m.HomeTeam,
+		AwayTeam:   m.AwayTeam,
+		HomeScore:  m.HomeScore,
+		AwayScore:  m.AwayScore,
+		Status:     string(m.Status),
+		Phase:      string(m.Phase),
+		GroupLabel: m.GroupLabel,
+		StadiumID:  m.StadiumID,
+		KickoffAt:  m.KickoffAt.Format(timeFormat),
+		CreatedAt:  m.CreatedAt.Format(timeFormat),
+		UpdatedAt:  m.UpdatedAt.Format(timeFormat),
 	}
 	if m.Stadium != nil {
 		sr := &StadiumResponse{
@@ -306,6 +340,49 @@ func memberToResponse(m *domain.GroupMembership) MemberResponse {
 	if m.JoinedAt != nil {
 		s := m.JoinedAt.Format(timeFormat)
 		resp.JoinedAt = &s
+	}
+	return resp
+}
+
+func standingToResponse(st *domain.GroupStanding) GroupStandingResponse {
+	return GroupStandingResponse{
+		Group:  st.Group,
+		Team:   st.Team,
+		Played: st.Played,
+		Won:    st.Won,
+		Drawn:  st.Drawn,
+		Lost:   st.Lost,
+		GF:     st.GF,
+		GC:     st.GC,
+		GD:     st.GD,
+		Points: st.Points,
+	}
+}
+
+func allStandingsToResponse(grouped map[string][]*domain.GroupStanding) TournamentStandingsResponse {
+	out := make(map[string][]GroupStandingResponse, len(grouped))
+	for group, entries := range grouped {
+		rows := make([]GroupStandingResponse, len(entries))
+		for i, e := range entries {
+			rows[i] = standingToResponse(e)
+		}
+		out[group] = rows
+	}
+	return TournamentStandingsResponse{Groups: out}
+}
+
+func slotToResponse(s *domain.TournamentSlot) TournamentSlotResponse {
+	resp := TournamentSlotResponse{
+		ID:                s.ID,
+		Label:             s.Label,
+		Team:              s.Team,
+		ConfirmedByUserID: s.ConfirmedByUserID,
+		CreatedAt:         s.CreatedAt.Format(timeFormat),
+		UpdatedAt:         s.UpdatedAt.Format(timeFormat),
+	}
+	if s.ConfirmedAt != nil {
+		t := s.ConfirmedAt.Format(timeFormat)
+		resp.ConfirmedAt = &t
 	}
 	return resp
 }

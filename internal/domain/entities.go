@@ -122,19 +122,63 @@ const (
 // StadiumID is nullable: knockout-stage fixtures may be created before their
 // venue is confirmed. Stadium is hydrated by the repository when loading a
 // match with venue detail; it is nil when only the match metadata is needed.
+//
+// GroupLabel is nil for knockout matches and holds the FIFA group letter
+// ("A"–"L") for group-stage fixtures. It drives real-time standings
+// calculation without a separate teams table.
 type Match struct {
-	ID        int
-	HomeTeam  string
-	AwayTeam  string
-	HomeScore *int
-	AwayScore *int
-	Status    MatchStatus
-	Phase     MatchPhase
-	StadiumID *int
-	Stadium   *Stadium
-	KickoffAt time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID         int
+	HomeTeam   string
+	AwayTeam   string
+	HomeScore  *int
+	AwayScore  *int
+	Status     MatchStatus
+	Phase      MatchPhase
+	GroupLabel *string // nil for knockout; "A"–"L" for group stage
+	StadiumID  *int
+	Stadium    *Stadium
+	KickoffAt  time.Time
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// GroupStanding is a read-only projection of one team's position within a
+// FIFA World Cup group. It is computed in real time from finished group-stage
+// matches and is never persisted to the database.
+//
+// Sorting within a group follows the official FIFA criteria:
+//  1. Points DESC
+//  2. Goal difference DESC
+//  3. Goals scored DESC
+//  4. Team name ASC (stable tie-break; FIFA uses head-to-head and then draw)
+type GroupStanding struct {
+	Group  string
+	Team   string
+	Played int
+	Won    int
+	Drawn  int
+	Lost   int
+	GF     int // goals for
+	GC     int // goals against
+	GD     int // goal difference = GF - GC
+	Points int
+}
+
+// TournamentSlot represents one named bracket position confirmed by the system
+// administrator once FIFA announces team advancement. A slot is created by the
+// admin (e.g. "winner_group_a", "best_3rd_1") and its Team field is populated
+// after the group stage concludes.
+//
+// Team is nil until the administrator calls ConfirmSlot; it becomes non-nil
+// once the advancing team is confirmed.
+type TournamentSlot struct {
+	ID                int
+	Label             string     // human-readable bracket position
+	Team              *string    // nil until confirmed
+	ConfirmedAt       *time.Time // nil until confirmed
+	ConfirmedByUserID *int       // nil until confirmed
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // MatchStatus tracks the lifecycle of a fixture from announcement to result.

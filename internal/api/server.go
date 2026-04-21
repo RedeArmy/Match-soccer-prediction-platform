@@ -147,7 +147,7 @@ func (s *Server) Routes() http.Handler {
 	memberRepo := repository.NewPostgresGroupMembershipRepository(s.db)
 
 	s.wireSubscribers(matchRepo, predRepo)
-	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo)
+	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler, tournamentHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -210,6 +210,17 @@ func (s *Server) Routes() http.Handler {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/question", tiebreakerHandler.SetQuestion)
 			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/result", tiebreakerHandler.ConfirmResult)
+		})
+
+		// Tournament: real-time standings (all authenticated users) and bracket
+		// slot management (admin only).
+		r.Route("/tournament", func(r chi.Router) {
+			r.Use(middleware.ResolveUser(userRepo, s.log))
+			r.Get("/standings", tournamentHandler.GetAllStandings)
+			r.Get("/standings/{group}", tournamentHandler.GetGroupStanding)
+			r.Get("/slots", tournamentHandler.ListSlots)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/slots", tournamentHandler.CreateSlot)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/slots/{id}", tournamentHandler.ConfirmSlot)
 		})
 
 		r.Route("/users", func(r chi.Router) {
@@ -280,10 +291,11 @@ func (s *Server) buildHandlers(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 	memberRepo repository.GroupMembershipRepository,
-) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler, *handler.LeaderboardHandler, *handler.UserStatsHandler, *handler.TiebreakerHandler) {
+) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler, *handler.LeaderboardHandler, *handler.UserStatsHandler, *handler.TiebreakerHandler, *handler.TournamentHandler) {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
 	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(s.db)
+	tournamentRepo := repository.NewPostgresTournamentRepository(s.db)
 
 	matchSvc := service.NewMatchService(matchRepo, s.bus, s.log)
 	if s.cache != nil {
@@ -301,13 +313,15 @@ func (s *Server) buildHandlers(
 
 	userStatsSvc := service.NewUserStatsService(predRepo)
 	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, memberRepo, tiebreakerRepo, s.log)
+	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, s.log)
 
 	return handler.NewMatchHandler(matchSvc, s.log),
 		handler.NewPredictionHandler(predSvc, s.log),
 		handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
 		handler.NewLeaderboardHandler(ranker, s.log),
 		handler.NewUserStatsHandler(userStatsSvc, s.log),
-		handler.NewTiebreakerHandler(tiebreakerSvc, s.log)
+		handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
+		handler.NewTournamentHandler(tournamentSvc, s.log)
 }
 
 // handleReadiness is a thin wrapper around health.ReadinessHandler that exists

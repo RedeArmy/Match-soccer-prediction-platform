@@ -113,6 +113,8 @@ definitions:
         type: string
       created_at:
         type: string
+      group_label:
+        type: string
       home_score:
         type: integer
       home_team:
@@ -236,6 +238,8 @@ definitions:
   internal_api_handler.createMatchRequest:
     properties:
       away_team:
+        type: string
+      group_label:
         type: string
       home_team:
         type: string
