@@ -219,3 +219,17 @@ type TiebreakerConfigRepository interface {
 	// administrator after the tournament concludes.
 	SetResult(ctx context.Context, result int) error
 }
+
+// TournamentRepository manages bracket position slots created and confirmed by
+// the system administrator as teams advance through the tournament.
+type TournamentRepository interface {
+	// CreateSlot inserts a new named bracket slot. label must be unique.
+	CreateSlot(ctx context.Context, label string) (*domain.TournamentSlot, error)
+	// GetSlot returns a slot by ID. Returns nil, nil when not found.
+	GetSlot(ctx context.Context, id int) (*domain.TournamentSlot, error)
+	// ListSlots returns all slots ordered by id.
+	ListSlots(ctx context.Context) ([]*domain.TournamentSlot, error)
+	// ConfirmSlot sets the advancing team for the given slot.
+	// Returns NotFound when the slot does not exist.
+	ConfirmSlot(ctx context.Context, id, confirmedByUserID int, team string) (*domain.TournamentSlot, error)
+}

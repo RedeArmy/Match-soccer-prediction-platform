@@ -1252,6 +1252,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "group_label": {
+                    "type": "string"
+                },
                 "home_score": {
                     "type": "integer"
                 },
@@ -1439,6 +1442,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "away_team": {
+                    "type": "string"
+                },
+                "group_label": {
                     "type": "string"
                 },
                 "home_team": {

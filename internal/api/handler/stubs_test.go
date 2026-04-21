@@ -181,6 +181,31 @@ func (s *stubTiebreakerSvc) ConfirmResult(_ context.Context, _ int) error {
 	return s.err
 }
 
+// stubTournamentSvc implements service.TournamentService with configurable returns.
+type stubTournamentSvc struct {
+	standings map[string][]*domain.GroupStanding
+	entries   []*domain.GroupStanding
+	slot      *domain.TournamentSlot
+	slots     []*domain.TournamentSlot
+	err       error
+}
+
+func (s *stubTournamentSvc) GetAllStandings(_ context.Context) (map[string][]*domain.GroupStanding, error) {
+	return s.standings, s.err
+}
+func (s *stubTournamentSvc) GetGroupStanding(_ context.Context, _ string) ([]*domain.GroupStanding, error) {
+	return s.entries, s.err
+}
+func (s *stubTournamentSvc) CreateSlot(_ context.Context, _ string) (*domain.TournamentSlot, error) {
+	return s.slot, s.err
+}
+func (s *stubTournamentSvc) ConfirmSlot(_ context.Context, _, _ int, _ string) (*domain.TournamentSlot, error) {
+	return s.slot, s.err
+}
+func (s *stubTournamentSvc) ListSlots(_ context.Context) ([]*domain.TournamentSlot, error) {
+	return s.slots, s.err
+}
+
 // stubMemberSvc implements service.GroupMembershipService with configurable returns.
 type stubMemberSvc struct {
 	membership  *domain.GroupMembership
