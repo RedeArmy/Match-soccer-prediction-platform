@@ -160,6 +160,27 @@ func (s *stubUserStatsSvc) GetMyStats(_ context.Context, _ int) (*domain.UserSta
 	return s.stats, s.err
 }
 
+// stubTiebreakerSvc implements service.TiebreakerService with configurable returns.
+type stubTiebreakerSvc struct {
+	config *domain.TiebreakerConfig
+	tb     *domain.Tiebreaker
+	view   *domain.TiebreakerView
+	err    error
+}
+
+func (s *stubTiebreakerSvc) SetQuestion(_ context.Context, _ string) (*domain.TiebreakerConfig, error) {
+	return s.config, s.err
+}
+func (s *stubTiebreakerSvc) Submit(_ context.Context, _, _, _ int) (*domain.Tiebreaker, error) {
+	return s.tb, s.err
+}
+func (s *stubTiebreakerSvc) GetMine(_ context.Context, _, _ int) (*domain.TiebreakerView, error) {
+	return s.view, s.err
+}
+func (s *stubTiebreakerSvc) ConfirmResult(_ context.Context, _ int) error {
+	return s.err
+}
+
 // stubMemberSvc implements service.GroupMembershipService with configurable returns.
 type stubMemberSvc struct {
 	membership  *domain.GroupMembership

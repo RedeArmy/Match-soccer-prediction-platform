@@ -20,11 +20,11 @@ func NewPostgresTiebreakerRepository(db *pgxpool.Pool) *PostgresTiebreakerReposi
 	return &PostgresTiebreakerRepository{db: db}
 }
 
-const tiebreakerColumns = "id, user_id, quiniela_id, prediction, result, created_at, updated_at"
+const tiebreakerColumns = "id, user_id, prediction, created_at, updated_at"
 
 func scanTiebreaker(row pgx.Row) (*domain.Tiebreaker, error) {
 	tb := &domain.Tiebreaker{}
-	err := row.Scan(&tb.ID, &tb.UserID, &tb.QuinielaID, &tb.Prediction, &tb.Result, &tb.CreatedAt, &tb.UpdatedAt)
+	err := row.Scan(&tb.ID, &tb.UserID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -36,9 +36,9 @@ func scanTiebreaker(row pgx.Row) (*domain.Tiebreaker, error) {
 
 func (r *PostgresTiebreakerRepository) Create(ctx context.Context, tb *domain.Tiebreaker) error {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO tiebreakers (user_id, quiniela_id, prediction)
-		 VALUES ($1, $2, $3) RETURNING `+tiebreakerColumns,
-		tb.UserID, tb.QuinielaID, tb.Prediction,
+		`INSERT INTO tiebreakers (user_id, prediction)
+		 VALUES ($1, $2) RETURNING `+tiebreakerColumns,
+		tb.UserID, tb.Prediction,
 	)
 	result, err := scanTiebreaker(row)
 	if err != nil {
@@ -48,19 +48,19 @@ func (r *PostgresTiebreakerRepository) Create(ctx context.Context, tb *domain.Ti
 	return nil
 }
 
-func (r *PostgresTiebreakerRepository) GetByUserAndQuiniela(ctx context.Context, userID, quinielaID int) (*domain.Tiebreaker, error) {
+func (r *PostgresTiebreakerRepository) GetByUser(ctx context.Context, userID int) (*domain.Tiebreaker, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+tiebreakerColumns+` FROM tiebreakers WHERE user_id=$1 AND quiniela_id=$2`,
-		userID, quinielaID,
+		`SELECT `+tiebreakerColumns+` FROM tiebreakers WHERE user_id=$1`,
+		userID,
 	)
 	return scanTiebreaker(row)
 }
 
 func (r *PostgresTiebreakerRepository) Update(ctx context.Context, tb *domain.Tiebreaker) error {
 	row := r.db.QueryRow(ctx,
-		`UPDATE tiebreakers SET prediction=$1, result=$2, updated_at=NOW()
-		 WHERE id=$3 RETURNING `+tiebreakerColumns,
-		tb.Prediction, tb.Result, tb.ID,
+		`UPDATE tiebreakers SET prediction=$1, updated_at=NOW()
+		 WHERE id=$2 RETURNING `+tiebreakerColumns,
+		tb.Prediction, tb.ID,
 	)
 	result, err := scanTiebreaker(row)
 	if err != nil {
@@ -73,22 +73,27 @@ func (r *PostgresTiebreakerRepository) Update(ctx context.Context, tb *domain.Ti
 	return nil
 }
 
-func (r *PostgresTiebreakerRepository) ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.Tiebreaker, error) {
+// ListByUserIDs returns global tiebreaker predictions for the given user IDs.
+// Used by the ranking service to load all relevant entries for a group in a
+// single round-trip. An empty ids slice returns nil, nil without hitting the
+// database.
+func (r *PostgresTiebreakerRepository) ListByUserIDs(ctx context.Context, userIDs []int) ([]*domain.Tiebreaker, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
 	rows, err := r.db.Query(ctx,
-		`SELECT `+tiebreakerColumns+` FROM tiebreakers WHERE quiniela_id=$1 ORDER BY created_at ASC`, quinielaID,
+		`SELECT `+tiebreakerColumns+` FROM tiebreakers WHERE user_id = ANY($1)`,
+		userIDs,
 	)
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
-	return collectTiebreakers(rows)
-}
 
-func collectTiebreakers(rows pgx.Rows) ([]*domain.Tiebreaker, error) {
 	var tbs []*domain.Tiebreaker
 	for rows.Next() {
 		tb := &domain.Tiebreaker{}
-		if err := rows.Scan(&tb.ID, &tb.UserID, &tb.QuinielaID, &tb.Prediction, &tb.Result, &tb.CreatedAt, &tb.UpdatedAt); err != nil {
+		if err := rows.Scan(&tb.ID, &tb.UserID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		tbs = append(tbs, tb)

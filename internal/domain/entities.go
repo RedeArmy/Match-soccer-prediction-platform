@@ -235,6 +235,30 @@ type Quiniela struct {
 	DeletedAt           *time.Time // nil for active groups; set when the record is soft-deleted
 }
 
+// TiebreakerConfig holds the single global tiebreaker question and confirmed
+// result managed by the system administrator. There is exactly one row in the
+// database; the application upserts it on id=1.
+//
+// Question must be non-empty before members may submit predictions.
+// Result is nil until the administrator confirms the actual outcome.
+type TiebreakerConfig struct {
+	ID        int
+	Question  string
+	Result    *int // nil until the administrator confirms the outcome
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TiebreakerView is a read-only projection returned by TiebreakerService.GetMine.
+// It combines the current global question with the caller's own prediction.
+//
+// Question is nil when no global question has been configured yet.
+// Entry is nil when the caller has not yet submitted a prediction.
+type TiebreakerView struct {
+	Question *string     // from TiebreakerConfig; nil if not yet configured
+	Entry    *Tiebreaker // nil when caller has not submitted
+}
+
 // LeaderboardEntry pairs a quiniela participant with their aggregated score.
 // It is a read-only projection used exclusively by the ranking service and the
 // leaderboard API response; it is never persisted to the database.
@@ -345,20 +369,15 @@ type UserStats struct {
 	LastPredictionAt *time.Time // nil when the user has never submitted a prediction
 }
 
-// Tiebreaker is an auxiliary forecast used to break ranking ties between
-// players who have earned the same number of points from match predictions.
-//
-// The tiebreaker question is a numeric estimate defined per Quiniela by its
-// administrator — for example, total goals scored in the tournament, or the
-// exact number of goals in the final. The player whose Prediction is closest
-// to the actual Result without exceeding it ranks higher. Result is nil until
-// the tournament outcome is known and the administrator confirms the value.
+// Tiebreaker is a single user's numeric estimate for the global tiebreaker
+// question. Predictions are global — one per user across all groups — because
+// the question is set once by the system administrator and applies uniformly
+// to every group's leaderboard. The confirmed result lives in TiebreakerConfig,
+// not here.
 type Tiebreaker struct {
 	ID         int
 	UserID     int
-	QuinielaID int
-	Prediction int  // the player's numeric estimate
-	Result     *int // nil until the tiebreaker outcome is officially confirmed
+	Prediction int // the player's numeric estimate
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }

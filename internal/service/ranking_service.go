@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 
 	"go.uber.org/zap"
@@ -14,10 +15,12 @@ import (
 
 // rankingService is the concrete implementation of Ranker.
 type rankingService struct {
-	quinielaRepo repository.QuinielaRepository
-	predRepo     repository.PredictionRepository
-	userRepo     repository.UserRepository
-	log          *zap.Logger
+	quinielaRepo      repository.QuinielaRepository
+	predRepo          repository.PredictionRepository
+	userRepo          repository.UserRepository
+	tiebreakerRepo    repository.TiebreakerRepository
+	tiebreakerCfgRepo repository.TiebreakerConfigRepository
+	log               *zap.Logger
 }
 
 // NewRankingService constructs a rankingService with the given dependencies.
@@ -25,13 +28,17 @@ func NewRankingService(
 	quinielaRepo repository.QuinielaRepository,
 	predRepo repository.PredictionRepository,
 	userRepo repository.UserRepository,
+	tiebreakerRepo repository.TiebreakerRepository,
+	tiebreakerCfgRepo repository.TiebreakerConfigRepository,
 	log *zap.Logger,
 ) Ranker {
 	return &rankingService{
-		quinielaRepo: quinielaRepo,
-		predRepo:     predRepo,
-		userRepo:     userRepo,
-		log:          log,
+		quinielaRepo:      quinielaRepo,
+		predRepo:          predRepo,
+		userRepo:          userRepo,
+		tiebreakerRepo:    tiebreakerRepo,
+		tiebreakerCfgRepo: tiebreakerCfgRepo,
+		log:               log,
 	}
 }
 
@@ -47,17 +54,20 @@ func NewRankingService(
 // of N members at position P is P+N (not P+1). This is the most common
 // expectation in tournament contexts.
 //
-// Tie-breaking proceeds through a three-rule chain applied in order:
+// Tie-breaking proceeds through a four-rule chain applied in order:
 //  1. Most correct predictions (CorrectCount DESC).
 //  2. Fewest predictions submitted (TotalCount ASC).
 //  3. Most exact-score hits (ExactCount DESC).
+//  4. Closest tiebreaker forecast (TiebreakerDistance ASC); math.MaxInt when
+//     the result has not been confirmed yet or the member never submitted.
 //
-// If all three rules still yield a tie, user ID is used as a last-resort
+// If all four rules still yield a tie, user ID is used as a last-resort
 // stable sort key so the output order is always reproducible.
 //
-// The implementation is two database round-trips:
+// The implementation is three database round-trips:
 //  1. TotalPointsByQuiniela — one SQL query with a LEFT JOIN; O(members).
 //  2. ListByIDs — one query using ANY($1); O(members).
+//  3. ListByQuiniela (tiebreakers) — one query; O(members).
 //
 // No N+1 queries regardless of group size.
 func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.LeaderboardEntry, error) {
@@ -87,7 +97,13 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 		return nil, err
 	}
 
-	sortAndRank(entries, stats)
+	userIDs := extractUserIDs(entries)
+	distances, err := s.fetchTiebreakerDistances(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	sortAndRank(entries, stats, distances)
 	assignPrizes(entries, q.PrizeThreshold)
 
 	return entries, nil
@@ -124,7 +140,13 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 		return nil, err
 	}
 
-	sortAndRank(entries, stats)
+	userIDs := extractUserIDs(entries)
+	distances, err := s.fetchTiebreakerDistances(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	sortAndRank(entries, stats, distances)
 	assignPrizes(entries, q.PrizeThreshold)
 
 	return entries, nil
@@ -188,6 +210,57 @@ func (s *rankingService) fetchPredictionStats(ctx context.Context, quinielaID in
 	return m, nil
 }
 
+// extractUserIDs returns the user IDs from a slice of leaderboard entries.
+func extractUserIDs(entries []*domain.LeaderboardEntry) []int {
+	ids := make([]int, 0, len(entries))
+	for _, e := range entries {
+		ids = append(ids, e.User.ID)
+	}
+	return ids
+}
+
+// fetchTiebreakerDistances loads the global tiebreaker config and each user's
+// prediction, then pre-computes the absolute distance for every user ID.
+// Returns a map[userID]distance. When the global result has not been confirmed
+// yet, all distances are math.MaxInt.
+func (s *rankingService) fetchTiebreakerDistances(ctx context.Context, userIDs []int) (map[int]int, error) {
+	cfg, err := s.tiebreakerCfgRepo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	distances := make(map[int]int, len(userIDs))
+	for _, id := range userIDs {
+		distances[id] = math.MaxInt
+	}
+
+	if cfg == nil || cfg.Result == nil {
+		return distances, nil
+	}
+
+	tbs, err := s.tiebreakerRepo.ListByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, tb := range tbs {
+		d := tb.Prediction - *cfg.Result
+		if d < 0 {
+			d = -d
+		}
+		distances[tb.UserID] = d
+	}
+	return distances, nil
+}
+
+// tiebreakerDistance looks up the pre-computed distance for userID.
+// Returns math.MaxInt when userID is absent from the map.
+func tiebreakerDistance(distances map[int]int, userID int) int {
+	if d, ok := distances[userID]; ok {
+		return d
+	}
+	return math.MaxInt
+}
+
 // statsFor returns the prediction stats for userID, or a zero-value struct when
 // the user has no entry in the map (e.g. no scored predictions yet). Using a
 // zero-value rather than nil avoids nil-pointer guards throughout the comparator.
@@ -201,17 +274,20 @@ func statsFor(stats map[int]*domain.UserPredictionStats, userID int) domain.User
 // sortAndRank sorts entries descending by TotalPoints and applies standard
 // competition ranks (1224…).
 //
-// Tie-breaking proceeds through a three-rule chain:
+// Tie-breaking proceeds through a four-rule chain:
 //  1. CorrectCount DESC — the member with more correct predictions ranks higher.
 //  2. TotalCount ASC   — among equally-correct members, fewer submissions ranks higher.
 //  3. ExactCount DESC  — among members with the same correct and total counts,
 //     more exact-score hits (PointsExactScore = 5) ranks higher.
+//  4. TiebreakerDistance ASC — closest numeric forecast to the confirmed result
+//     ranks higher; math.MaxInt when result not yet confirmed or member did not
+//     submit.
 //
-// If all three rules still cannot separate two entries, user ID is used as a
+// If all four rules still cannot separate two entries, user ID is used as a
 // final stable sort key. This last step is not a business rule — it exists
 // solely to guarantee a reproducible output order across identical datasets.
 // Do not replace it with an unstable comparator such as a hash or pointer address.
-func sortAndRank(entries []*domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats) {
+func sortAndRank(entries []*domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats, distances map[int]int) {
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].TotalPoints != entries[j].TotalPoints {
 			return entries[i].TotalPoints > entries[j].TotalPoints
@@ -227,35 +303,41 @@ func sortAndRank(entries []*domain.LeaderboardEntry, stats map[int]*domain.UserP
 		if si.ExactCount != sj.ExactCount {
 			return si.ExactCount > sj.ExactCount
 		}
+		di := tiebreakerDistance(distances, entries[i].User.ID)
+		dj := tiebreakerDistance(distances, entries[j].User.ID)
+		if di != dj {
+			return di < dj
+		}
 		return entries[i].User.ID < entries[j].User.ID
 	})
-	assignRanks(entries, stats)
+	assignRanks(entries, stats, distances)
 }
 
 // sameRank reports whether a and b are indistinguishable on all sort dimensions
-// and therefore share the same competition rank. TotalPoints and all three
-// tiebreaker stats must be equal; if any dimension differs, the entries receive
-// distinct ranks even when their point totals are the same.
-func sameRank(a, b *domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats) bool {
+// and therefore share the same competition rank. TotalPoints, all three
+// prediction stats, and tiebreaker distance must all be equal.
+func sameRank(a, b *domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats, distances map[int]int) bool {
 	if a.TotalPoints != b.TotalPoints {
 		return false
 	}
 	sa := statsFor(stats, a.User.ID)
 	sb := statsFor(stats, b.User.ID)
-	return sa.CorrectCount == sb.CorrectCount &&
-		sa.TotalCount == sb.TotalCount &&
-		sa.ExactCount == sb.ExactCount
+	if sa.CorrectCount != sb.CorrectCount || sa.TotalCount != sb.TotalCount || sa.ExactCount != sb.ExactCount {
+		return false
+	}
+	return tiebreakerDistance(distances, a.User.ID) == tiebreakerDistance(distances, b.User.ID)
 }
 
 // assignRanks applies standard competition ranking (1224…) to a pre-sorted
 // slice of leaderboard entries.
 //
 // Two entries share a rank only when they are indistinguishable on all sort
-// dimensions: equal TotalPoints AND equal values on all three tiebreaker stats.
-// The next rank is skipped for the size of the tied group.
-func assignRanks(entries []*domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats) {
+// dimensions: equal TotalPoints, equal values on all three prediction stats,
+// and equal tiebreaker distance. The next rank is skipped for the size of the
+// tied group.
+func assignRanks(entries []*domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats, distances map[int]int) {
 	for i := 0; i < len(entries); i++ {
-		if i == 0 || !sameRank(entries[i], entries[i-1], stats) {
+		if i == 0 || !sameRank(entries[i], entries[i-1], stats, distances) {
 			entries[i].Rank = i + 1
 		} else {
 			entries[i].Rank = entries[i-1].Rank
