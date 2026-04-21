@@ -53,16 +53,31 @@ func (r *stubMatchRepo) ListByStatus(_ context.Context, _ domain.MatchStatus) ([
 // stubPublisher records published envelopes without delivering them.
 type stubPublisher struct {
 	published []events.Envelope
+	err       error
 }
 
 func (p *stubPublisher) Publish(_ context.Context, env events.Envelope) error {
+	if p.err != nil {
+		return p.err
+	}
 	p.published = append(p.published, env)
 	return nil
 }
 
+// stubScorer records ScoreMatch calls.
+type stubScorer struct {
+	called []int
+	err    error
+}
+
+func (s *stubScorer) ScoreMatch(_ context.Context, matchID int) error {
+	s.called = append(s.called, matchID)
+	return s.err
+}
+
 func newMatchSvc(match *domain.Match) (MatchService, *stubPublisher) {
 	pub := &stubPublisher{}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, zap.NewNop())
 	return svc, pub
 }
 
@@ -114,6 +129,52 @@ func TestUpdateResult_FinishedMatch_ReturnsValidationError(t *testing.T) {
 	_, err := svc.UpdateResult(context.Background(), 1, 3, 0)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for finished match, got %v", err)
+	}
+}
+
+// TestUpdateResult_PublishFails_FallsBackToSynchronousScoring verifies that when
+// the event bus is unavailable, predictions are still scored synchronously so
+// no match is ever left unscored due to a transient Redis outage.
+func TestUpdateResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) {
+	match := &domain.Match{ID: 42, HomeTeam: "Brazil", AwayTeam: "Argentina",
+		Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(-time.Hour)}
+
+	pub := &stubPublisher{err: errors.New("redis unavailable")}
+	scorer := &stubScorer{}
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, zap.NewNop())
+
+	result, err := svc.UpdateResult(context.Background(), 42, 2, 1)
+	if err != nil {
+		t.Fatalf("UpdateResult must succeed even when publish fails: %v", err)
+	}
+	if result.Status != domain.MatchStatusFinished {
+		t.Errorf("status: want finished, got %s", result.Status)
+	}
+	if len(pub.published) != 0 {
+		t.Errorf("publish must not record events when it returns an error")
+	}
+	if len(scorer.called) != 1 || scorer.called[0] != 42 {
+		t.Errorf("fallback scorer must be called with match ID 42, got %v", scorer.called)
+	}
+}
+
+// TestUpdateResult_PublishFails_ScorerAlsoFails_StillReturnsResult verifies that
+// a double failure (bus down + DB error in scorer) returns the confirmed match
+// result to the caller. Both failures are logged; the HTTP response remains 200.
+func TestUpdateResult_PublishFails_ScorerAlsoFails_StillReturnsResult(t *testing.T) {
+	match := &domain.Match{ID: 7, HomeTeam: "France", AwayTeam: "Germany",
+		Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(-time.Hour)}
+
+	pub := &stubPublisher{err: errors.New("redis unavailable")}
+	scorer := &stubScorer{err: errors.New("db timeout")}
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, zap.NewNop())
+
+	result, err := svc.UpdateResult(context.Background(), 7, 1, 0)
+	if err != nil {
+		t.Fatalf("UpdateResult must succeed regardless of scorer failure: %v", err)
+	}
+	if result.Status != domain.MatchStatusFinished {
+		t.Errorf("status: want finished, got %s", result.Status)
 	}
 }
 
@@ -206,7 +267,7 @@ func TestListMatches_ReturnsSlice(t *testing.T) {
 	matches := []*domain.Match{
 		{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Status: domain.MatchStatusScheduled},
 	}
-	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, zap.NewNop())
 
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
@@ -222,7 +283,7 @@ func TestListMatchesByPhase_ReturnsFilteredSlice(t *testing.T) {
 	matches := []*domain.Match{
 		{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Phase: domain.PhaseGroupStage},
 	}
-	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, zap.NewNop())
 
 	got, err := svc.ListMatchesByPhase(context.Background(), domain.PhaseGroupStage)
 	if err != nil {
@@ -238,7 +299,7 @@ func TestListMatchesByStatus_ReturnsFilteredSlice(t *testing.T) {
 	matches := []*domain.Match{
 		{ID: 1, HomeTeam: "France", AwayTeam: "Germany", Status: domain.MatchStatusLive},
 	}
-	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, zap.NewNop())
 
 	got, err := svc.ListMatchesByStatus(context.Background(), domain.MatchStatusLive)
 	if err != nil {

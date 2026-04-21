@@ -43,6 +43,7 @@ func NewWebhookHandler(userRepo repository.UserRepository, webhookSecret string,
 
 // clerkEmailAddress is the email entry inside a Clerk user object.
 type clerkEmailAddress struct {
+	ID           string `json:"id"`
 	EmailAddress string `json:"email_address"`
 }
 
@@ -114,6 +115,22 @@ func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// primaryEmail resolves the primary email address from the Clerk payload.
+// It matches PrimaryEmailAddressID against the ID field of each address entry.
+// Falls back to the first entry when no match is found (e.g. transient Clerk
+// inconsistency) so user creation never fails on a missing primary pointer.
+func primaryEmail(addrs []clerkEmailAddress, primaryID string) string {
+	for _, a := range addrs {
+		if a.ID == primaryID {
+			return a.EmailAddress
+		}
+	}
+	if len(addrs) > 0 {
+		return addrs[0].EmailAddress
+	}
+	return ""
+}
+
 // upsertUser creates or updates an internal User from a Clerk user payload.
 func (h *WebhookHandler) upsertUser(r *http.Request, data json.RawMessage) error {
 	var payload clerkUserPayload
@@ -121,10 +138,7 @@ func (h *WebhookHandler) upsertUser(r *http.Request, data json.RawMessage) error
 		return apperrors.Validation("could not parse user data in webhook payload")
 	}
 
-	email := ""
-	if len(payload.EmailAddresses) > 0 {
-		email = payload.EmailAddresses[0].EmailAddress
-	}
+	email := primaryEmail(payload.EmailAddresses, payload.PrimaryEmailID)
 	if email != "" {
 		if err := domain.ValidateEmail(email); err != nil {
 			return apperrors.Validation("webhook payload contains an invalid email address")
