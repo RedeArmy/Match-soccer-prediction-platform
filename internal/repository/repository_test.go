@@ -104,7 +104,9 @@ func mustSetupDB() (*pgxpool.Pool, func()) {
 func cleanTables(t *testing.T) {
 	t.Helper()
 	_, err := testDB.Exec(context.Background(),
-		`TRUNCATE tournament_slots, tiebreaker_config, group_memberships, tiebreakers, predictions, quinielas, matches, stadiums, users RESTART IDENTITY CASCADE`)
+		`TRUNCATE leaderboard_snapshots, payment_records, audit_log, system_params,
+		         tournament_slots, tiebreaker_config, group_memberships, tiebreakers,
+		         predictions, quinielas, matches, stadiums, users RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("clean tables: %v", err)
 	}
@@ -2797,5 +2799,856 @@ func TestTournamentRepository_ConfirmSlot_NotFoundWhenMissing(t *testing.T) {
 	_, err := repo.ConfirmSlot(context.Background(), 99999, u.ID, "Mexico")
 	if !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+// ── helpers for new repositories ─────────────────────────────────────────────
+
+func seedActiveMembership(t *testing.T, quinielaID, userID int) *domain.GroupMembership {
+	t.Helper()
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	now := time.Now()
+	m := &domain.GroupMembership{
+		QuinielaID: quinielaID,
+		UserID:     userID,
+		Status:     domain.MembershipActive,
+		Role:       domain.MembershipRoleMember,
+		JoinedAt:   &now,
+	}
+	if err := repo.Create(context.Background(), m); err != nil {
+		t.Fatalf("seed membership: %v", err)
+	}
+	return m
+}
+
+func seedPaymentRecord(t *testing.T, quinielaID, userID int) *domain.PaymentRecord {
+	t.Helper()
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+	pr := &domain.PaymentRecord{
+		QuinielaID: quinielaID,
+		UserID:     userID,
+		Amount:     10000,
+		Currency:   defaultCurrency,
+	}
+	if err := repo.Create(context.Background(), pr); err != nil {
+		t.Fatalf("seed payment record: %v", err)
+	}
+	return pr
+}
+
+func seedSystemParam(t *testing.T, key, value, category string) *domain.SystemParam {
+	t.Helper()
+	var p domain.SystemParam
+	err := testDB.QueryRow(context.Background(),
+		`INSERT INTO system_params (key, value, category)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+		 RETURNING key, value, type, category, is_runtime, created_at, updated_at`,
+		key, value, category,
+	).Scan(&p.Key, &p.Value, &p.Type, &p.Category, &p.IsRuntime, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		t.Fatalf("seed system param: %v", err)
+	}
+	return &p
+}
+
+// ── SystemParamRepository ─────────────────────────────────────────────────────
+
+func TestSystemParamRepository_Set_NewKey(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+
+	p, err := repo.Set(context.Background(), "scoring.exact", "5", 0)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if p.Key != "scoring.exact" || p.Value != "5" {
+		t.Errorf("param mismatch: got key=%q value=%q", p.Key, p.Value)
+	}
+}
+
+func TestSystemParamRepository_Set_ExistingKeyUpdatesValue(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+
+	_, _ = repo.Set(context.Background(), "scoring.exact", "5", 0)
+	updated, err := repo.Set(context.Background(), "scoring.exact", "7", 0)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if updated.Value != "7" {
+		t.Errorf("expected value %q, got %q", "7", updated.Value)
+	}
+}
+
+func TestSystemParamRepository_Get_Found(t *testing.T) {
+	cleanTables(t)
+	seedSystemParam(t, "feature.x", "true", "general")
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+
+	p, err := repo.Get(context.Background(), "feature.x")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if p == nil || p.Value != "true" {
+		t.Errorf("expected param with value %q, got %v", "true", p)
+	}
+}
+
+func TestSystemParamRepository_Get_NotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+
+	p, err := repo.Get(context.Background(), "does.not.exist")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if p != nil {
+		t.Errorf(fmtExpectNilGot, p)
+	}
+}
+
+func TestSystemParamRepository_GetAll(t *testing.T) {
+	cleanTables(t)
+	seedSystemParam(t, "a.key", "1", "general")
+	seedSystemParam(t, "b.key", "2", "scoring")
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+
+	all, err := repo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(all) != 2 {
+		t.Errorf("expected 2 params, got %d", len(all))
+	}
+}
+
+func TestSystemParamRepository_GetByCategory(t *testing.T) {
+	cleanTables(t)
+	seedSystemParam(t, "scoring.a", "1", "scoring")
+	seedSystemParam(t, "scoring.b", "2", "scoring")
+	seedSystemParam(t, "payment.x", "3", "payment")
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+
+	results, err := repo.GetByCategory(context.Background(), "scoring")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 scoring params, got %d", len(results))
+	}
+}
+
+func TestSystemParamRepository_BulkSet(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+
+	err := repo.BulkSet(context.Background(), map[string]string{
+		"bulk.a": "alpha",
+		"bulk.b": "beta",
+	}, 0)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	all, _ := repo.GetAll(context.Background())
+	if len(all) != 2 {
+		t.Errorf("expected 2 params after BulkSet, got %d", len(all))
+	}
+}
+
+func TestSystemParamRepository_BulkSet_EmptyIsNoop(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+
+	if err := repo.BulkSet(context.Background(), nil, 0); err != nil {
+		t.Fatalf("empty BulkSet should not error: %v", err)
+	}
+}
+
+// ── AuditLogRepository ────────────────────────────────────────────────────────
+
+func TestAuditLogRepository_Create_PopulatesID(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	actorID := u.ID
+	resType := "user"
+	resID := u.ID
+	entry := &domain.AuditLog{
+		ActorID:      &actorID,
+		Action:       "ban_user",
+		ResourceType: &resType,
+		ResourceID:   &resID,
+		Metadata:     map[string]any{"reason": "spam"},
+	}
+	if err := repo.Create(context.Background(), entry); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if entry.ID == 0 {
+		t.Error(msgNonZeroID)
+	}
+}
+
+func TestAuditLogRepository_Create_NilMetadataAndActor(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	entry := &domain.AuditLog{Action: "system_boot"}
+	if err := repo.Create(context.Background(), entry); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if entry.ID == 0 {
+		t.Error(msgNonZeroID)
+	}
+}
+
+func TestAuditLogRepository_ListByActor(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	actorID := u.ID
+	for range 3 {
+		e := &domain.AuditLog{ActorID: &actorID, Action: "some_action"}
+		_ = repo.Create(context.Background(), e)
+	}
+	// unrelated entry from another actor
+	other := seedUser(t)
+	otherID := other.ID
+	_ = repo.Create(context.Background(), &domain.AuditLog{ActorID: &otherID, Action: "other_action"})
+
+	results, err := repo.ListByActor(context.Background(), u.ID, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 3 {
+		t.Errorf("expected 3 entries for actor %d, got %d", u.ID, len(results))
+	}
+}
+
+func TestAuditLogRepository_ListByEntity(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	resType := "quiniela"
+	resID := 42
+	for range 2 {
+		e := &domain.AuditLog{Action: "update", ResourceType: &resType, ResourceID: &resID}
+		_ = repo.Create(context.Background(), e)
+	}
+	// noise: different resource type
+	otherType := "user"
+	_ = repo.Create(context.Background(), &domain.AuditLog{Action: "ban", ResourceType: &otherType, ResourceID: &resID})
+
+	results, err := repo.ListByEntity(context.Background(), "quiniela", 42, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 quiniela entries, got %d", len(results))
+	}
+}
+
+func TestAuditLogRepository_ListByAction(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	for range 4 {
+		_ = repo.Create(context.Background(), &domain.AuditLog{Action: "payment_validate"})
+	}
+	_ = repo.Create(context.Background(), &domain.AuditLog{Action: "payment_reject"})
+
+	results, err := repo.ListByAction(context.Background(), "payment_validate", repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 4 {
+		t.Errorf("expected 4 validate entries, got %d", len(results))
+	}
+}
+
+func TestAuditLogRepository_List_Pagination(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	for range 5 {
+		_ = repo.Create(context.Background(), &domain.AuditLog{Action: "ping"})
+	}
+
+	page, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Pagination{Limit: 2, Offset: 1})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(page) != 2 {
+		t.Errorf("expected 2 entries with limit=2, got %d", len(page))
+	}
+}
+
+// ── PaymentRecordRepository ───────────────────────────────────────────────────
+
+func TestPaymentRecordRepository_Create_PopulatesID(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+
+	pr := seedPaymentRecord(t, q.ID, u.ID)
+	if pr.ID == 0 {
+		t.Error(msgNonZeroID)
+	}
+	if pr.Status != domain.PaymentStatusPending {
+		t.Errorf("expected pending status, got %q", pr.Status)
+	}
+}
+
+func TestPaymentRecordRepository_GetByID_Found(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	created := seedPaymentRecord(t, q.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	got, err := repo.GetByID(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil || got.ID != created.ID {
+		t.Errorf("expected ID %d, got %v", created.ID, got)
+	}
+}
+
+func TestPaymentRecordRepository_GetByID_NotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	got, err := repo.GetByID(context.Background(), 999999)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf(fmtExpectNilGot, got)
+	}
+}
+
+func TestPaymentRecordRepository_ListByQuiniela(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+
+	// noise: another quiniela
+	u2 := seedUser(t)
+	q2 := seedQuiniela(t, u2.ID)
+	seedPaymentRecord(t, q2.ID, u2.ID)
+
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+	results, err := repo.ListByQuiniela(context.Background(), q.ID, repository.PaymentFilters{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 records for quiniela %d, got %d", q.ID, len(results))
+	}
+}
+
+func TestPaymentRecordRepository_ListByQuiniela_FilterByStatus(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	admin := seedUser(t)
+	pr1 := seedPaymentRecord(t, q.ID, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+	_, _ = repo.Validate(context.Background(), pr1.ID, admin.ID, "ok")
+
+	status := domain.PaymentStatusPending
+	pending, err := repo.ListByQuiniela(context.Background(), q.ID, repository.PaymentFilters{Status: &status})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("expected 1 pending record, got %d", len(pending))
+	}
+}
+
+func TestPaymentRecordRepository_ListByUser(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+	results, err := repo.ListByUser(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 records for user %d, got %d", u.ID, len(results))
+	}
+}
+
+func TestPaymentRecordRepository_ListPending(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	admin := seedUser(t)
+	pr1 := seedPaymentRecord(t, q.ID, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+	_, _ = repo.Validate(context.Background(), pr1.ID, admin.ID, "paid")
+
+	pending, err := repo.ListPending(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("expected 1 pending record, got %d", len(pending))
+	}
+}
+
+func TestPaymentRecordRepository_Validate_TransitionsToConfirmed(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	pr := seedPaymentRecord(t, q.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	result, err := repo.Validate(context.Background(), pr.ID, admin.ID, "verified manually")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if result.Status != domain.PaymentStatusConfirmed {
+		t.Errorf("expected confirmed, got %q", result.Status)
+	}
+	if result.ReviewedBy == nil || *result.ReviewedBy != admin.ID {
+		t.Errorf("expected reviewed_by %d, got %v", admin.ID, result.ReviewedBy)
+	}
+	if result.ConfirmedAt == nil {
+		t.Error("expected confirmed_at to be set")
+	}
+}
+
+func TestPaymentRecordRepository_Reject_TransitionsToRejected(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	pr := seedPaymentRecord(t, q.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	result, err := repo.Reject(context.Background(), pr.ID, admin.ID, "fake receipt")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if result.Status != domain.PaymentStatusRejected {
+		t.Errorf("expected rejected, got %q", result.Status)
+	}
+	if result.Notes != "fake receipt" {
+		t.Errorf("expected notes %q, got %q", "fake receipt", result.Notes)
+	}
+}
+
+func TestPaymentRecordRepository_Validate_NotFound(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	_, err := repo.Validate(context.Background(), 999999, u.ID, "")
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestPaymentRecordRepository_Reject_AlreadyConfirmedIsNotFound(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	pr := seedPaymentRecord(t, q.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	_, _ = repo.Validate(context.Background(), pr.ID, admin.ID, "ok")
+
+	_, err := repo.Reject(context.Background(), pr.ID, admin.ID, "late reject")
+	if !isNotFound(err) {
+		t.Errorf("expected not-found for confirmed payment reject, got %v", err)
+	}
+}
+
+// ── LeaderboardSnapshotRepository ────────────────────────────────────────────
+
+func TestLeaderboardSnapshotRepository_Create_PopulatesID(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresLeaderboardSnapshotRepository(testDB)
+
+	snapshot := &domain.LeaderboardSnapshot{
+		QuinielaID: q.ID,
+		TakenAt:    time.Now().UTC().Truncate(time.Microsecond),
+		Entries: []domain.LeaderboardSnapshotEntry{
+			{UserID: u.ID, Rank: 1, TotalPoints: 15, PrizeWinner: true},
+		},
+	}
+	if err := repo.Create(context.Background(), snapshot); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if snapshot.ID == 0 {
+		t.Error(msgNonZeroID)
+	}
+	if len(snapshot.Entries) != 1 || snapshot.Entries[0].UserID != u.ID {
+		t.Errorf("entries not round-tripped correctly: %+v", snapshot.Entries)
+	}
+}
+
+func TestLeaderboardSnapshotRepository_Create_EmptyEntries(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresLeaderboardSnapshotRepository(testDB)
+
+	snapshot := &domain.LeaderboardSnapshot{
+		QuinielaID: q.ID,
+		TakenAt:    time.Now().UTC(),
+		Entries:    []domain.LeaderboardSnapshotEntry{},
+	}
+	if err := repo.Create(context.Background(), snapshot); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if snapshot.ID == 0 {
+		t.Error(msgNonZeroID)
+	}
+}
+
+func TestLeaderboardSnapshotRepository_GetLatest(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresLeaderboardSnapshotRepository(testDB)
+
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	older := &domain.LeaderboardSnapshot{QuinielaID: q.ID, TakenAt: base.Add(-time.Hour), Entries: nil}
+	newer := &domain.LeaderboardSnapshot{QuinielaID: q.ID, TakenAt: base, Entries: nil}
+	_ = repo.Create(context.Background(), older)
+	_ = repo.Create(context.Background(), newer)
+
+	latest, err := repo.GetLatest(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if latest == nil || latest.ID != newer.ID {
+		t.Errorf("expected latest ID %d, got %v", newer.ID, latest)
+	}
+}
+
+func TestLeaderboardSnapshotRepository_GetLatest_NoneExists(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresLeaderboardSnapshotRepository(testDB)
+
+	snap, err := repo.GetLatest(context.Background(), 999999)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if snap != nil {
+		t.Errorf(fmtExpectNilGot, snap)
+	}
+}
+
+func TestLeaderboardSnapshotRepository_ListByQuiniela_WithLimit(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresLeaderboardSnapshotRepository(testDB)
+
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	for i := range 5 {
+		s := &domain.LeaderboardSnapshot{QuinielaID: q.ID, TakenAt: base.Add(time.Duration(i) * time.Minute)}
+		_ = repo.Create(context.Background(), s)
+	}
+
+	results, err := repo.ListByQuiniela(context.Background(), q.ID, 3)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 3 {
+		t.Errorf("expected 3 snapshots with limit=3, got %d", len(results))
+	}
+}
+
+// ── UserRepository extensions (Ban/Unban/ListBanned) ─────────────────────────
+
+func TestUserRepository_Ban_SetsFields(t *testing.T) {
+	cleanTables(t)
+	user := seedUser(t)
+	admin := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	banned, err := repo.Ban(context.Background(), user.ID, admin.ID, "policy violation")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if banned.BannedAt == nil {
+		t.Error("expected BannedAt to be set")
+	}
+	if banned.BannedBy == nil || *banned.BannedBy != admin.ID {
+		t.Errorf("expected BannedBy %d, got %v", admin.ID, banned.BannedBy)
+	}
+	if banned.BanReason != "policy violation" {
+		t.Errorf("expected BanReason %q, got %q", "policy violation", banned.BanReason)
+	}
+}
+
+func TestUserRepository_Ban_NotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	_, err := repo.Ban(context.Background(), 999999, 1, "reason")
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestUserRepository_Unban_ClearsFields(t *testing.T) {
+	cleanTables(t)
+	user := seedUser(t)
+	admin := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	_, _ = repo.Ban(context.Background(), user.ID, admin.ID, "test")
+	if err := repo.Unban(context.Background(), user.ID); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	got, _ := repo.GetByID(context.Background(), user.ID)
+	if got.BannedAt != nil {
+		t.Errorf("expected BannedAt nil after unban, got %v", got.BannedAt)
+	}
+}
+
+func TestUserRepository_Unban_IsIdempotent(t *testing.T) {
+	cleanTables(t)
+	user := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	// user is not banned — should succeed silently
+	if err := repo.Unban(context.Background(), user.ID); err != nil {
+		t.Fatalf("unban on unbanned user should not error: %v", err)
+	}
+}
+
+func TestUserRepository_ListBanned(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	_ = seedUser(t) // active, not banned
+	admin := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	_, _ = repo.Ban(context.Background(), u1.ID, admin.ID, "r1")
+	_, _ = repo.Ban(context.Background(), u2.ID, admin.ID, "r2")
+
+	banned, err := repo.ListBanned(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(banned) != 2 {
+		t.Errorf("expected 2 banned users, got %d", len(banned))
+	}
+}
+
+// ── GroupMembershipRepository extension (RemoveByAdmin) ──────────────────────
+
+func TestGroupMembershipRepository_RemoveByAdmin_SetsStatusLeft(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	member := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	admin := seedUser(t)
+	m := seedActiveMembership(t, q.ID, member.ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	if err := repo.RemoveByAdmin(context.Background(), m.ID, admin.ID); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	got, _ := repo.GetByID(context.Background(), m.ID)
+	if got.Status != domain.MembershipLeft {
+		t.Errorf("expected status %q, got %q", domain.MembershipLeft, got.Status)
+	}
+}
+
+func TestGroupMembershipRepository_RemoveByAdmin_NotFoundWhenInactive(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	member := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	admin := seedUser(t)
+	m := seedActiveMembership(t, q.ID, member.ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	_ = repo.RemoveByAdmin(context.Background(), m.ID, admin.ID) // first removal
+	err := repo.RemoveByAdmin(context.Background(), m.ID, admin.ID)
+	if !isNotFound(err) {
+		t.Errorf("expected not-found on second remove, got %v", err)
+	}
+}
+
+// ── QuinielaRepository extensions ────────────────────────────────────────────
+
+func TestQuinielaRepository_UpdateGroupSettings(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	maxM := 10
+	updated, err := repo.UpdateGroupSettings(context.Background(), q.ID, &maxM, 5000)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if updated.MaxMembers == nil || *updated.MaxMembers != 10 {
+		t.Errorf("expected MaxMembers 10, got %v", updated.MaxMembers)
+	}
+	if updated.EntryFee != 5000 {
+		t.Errorf("expected EntryFee 5000, got %d", updated.EntryFee)
+	}
+}
+
+func TestQuinielaRepository_UpdateGroupSettings_NilMaxMembersRemovesCap(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	updated, err := repo.UpdateGroupSettings(context.Background(), q.ID, nil, 0)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if updated.MaxMembers != nil {
+		t.Errorf("expected nil MaxMembers, got %v", updated.MaxMembers)
+	}
+}
+
+func TestQuinielaRepository_UpdateGroupSettings_NotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	_, err := repo.UpdateGroupSettings(context.Background(), 999999, nil, 0)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestQuinielaRepository_DeleteByAdmin_SoftDeletes(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	if err := repo.DeleteByAdmin(context.Background(), q.ID, admin.ID); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	got, _ := repo.GetByID(context.Background(), q.ID)
+	if got != nil {
+		t.Errorf("expected nil after DeleteByAdmin, got %+v", got)
+	}
+}
+
+func TestQuinielaRepository_DeleteByAdmin_NotFoundWhenAlreadyDeleted(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	_ = repo.DeleteByAdmin(context.Background(), q.ID, admin.ID)
+	err := repo.DeleteByAdmin(context.Background(), q.ID, admin.ID)
+	if !isNotFound(err) {
+		t.Errorf("expected not-found on second delete, got %v", err)
+	}
+}
+
+func TestUserRepository_Unban_NotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	err := repo.Unban(context.Background(), 999999)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestQuinielaRepository_Update_ConflictOnDuplicateName(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q1 := seedQuiniela(t, u.ID)
+	q2 := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	q2.Name = q1.Name
+	err := repo.Update(context.Background(), q2)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict error, got %v", err)
+	}
+}
+
+func TestAuditLogRepository_Create_WithActorRole(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	actorID := u.ID
+	role := domain.RoleAdmin
+	entry := &domain.AuditLog{
+		ActorID:   &actorID,
+		ActorRole: &role,
+		Action:    "ban_user",
+	}
+	if err := repo.Create(context.Background(), entry); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if entry.ActorRole == nil || *entry.ActorRole != domain.RoleAdmin {
+		t.Errorf("expected ActorRole %q, got %v", domain.RoleAdmin, entry.ActorRole)
+	}
+}
+
+func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	actorID := u.ID
+	role := domain.RoleAdmin
+	resType := "quiniela"
+	resID := 1
+	entry := &domain.AuditLog{
+		ActorID:      &actorID,
+		ActorRole:    &role,
+		Action:       "delete_group",
+		ResourceType: &resType,
+		ResourceID:   &resID,
+		Metadata:     map[string]any{"reason": "inactivity"},
+	}
+	if err := repo.Create(context.Background(), entry); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	results, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(results))
+	}
+	got := results[0]
+	if got.ActorRole == nil || *got.ActorRole != domain.RoleAdmin {
+		t.Errorf("expected ActorRole %q, got %v", domain.RoleAdmin, got.ActorRole)
+	}
+	if got.Metadata["reason"] != "inactivity" {
+		t.Errorf("expected metadata reason 'inactivity', got %v", got.Metadata["reason"])
 	}
 }

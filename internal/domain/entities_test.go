@@ -55,6 +55,7 @@ func TestPaymentStatus_DBValues(t *testing.T) {
 		{domain.PaymentStatusPending, "pending"},
 		{domain.PaymentStatusConfirmed, "confirmed"},
 		{domain.PaymentStatusRefunded, "refunded"},
+		{domain.PaymentStatusRejected, "rejected"},
 	}
 	for _, tc := range cases {
 		if got := string(tc.constant); got != tc.want {

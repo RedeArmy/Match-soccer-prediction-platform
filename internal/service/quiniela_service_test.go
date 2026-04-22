@@ -49,6 +49,10 @@ func (r *stubQuinielaRepo) RotateInviteCode(_ context.Context, _ int, _ string, 
 func (r *stubQuinielaRepo) UpdateStatus(_ context.Context, _ int, _ domain.QuinielaStatus) error {
 	return r.updateStatusErr
 }
+func (r *stubQuinielaRepo) UpdateGroupSettings(_ context.Context, _ int, _ *int, _ int) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
+}
+func (r *stubQuinielaRepo) DeleteByAdmin(_ context.Context, _, _ int) error { return r.err }
 
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.
 // membershipByID is returned by GetByID (used in ApproveJoin to load the pending
@@ -91,6 +95,7 @@ func (r *stubMemberRepo) OldestActiveMember(_ context.Context, _, _ int) (*domai
 func (r *stubMemberRepo) SetRole(_ context.Context, _ int, _ domain.MembershipRole) error {
 	return r.err
 }
+func (r *stubMemberRepo) RemoveByAdmin(_ context.Context, _, _ int) error { return r.err }
 
 // ── QuinielaService tests ─────────────────────────────────────────────────────
 

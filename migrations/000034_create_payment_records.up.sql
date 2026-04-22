@@ -5,8 +5,10 @@ CREATE TABLE payment_records (
     amount       INT         NOT NULL CHECK (amount >= 0),
     currency     TEXT        NOT NULL DEFAULT 'MXN',
     status       TEXT        NOT NULL DEFAULT 'pending'
-                     CHECK (status IN ('pending', 'confirmed', 'refunded')),
+                     CHECK (status IN ('pending', 'confirmed', 'refunded', 'rejected')),
     reference    TEXT,                            -- external provider transaction ID
+    reviewed_by  INT         REFERENCES users (id) ON DELETE SET NULL,
+    notes        TEXT        NOT NULL DEFAULT '',
     confirmed_at TIMESTAMPTZ,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -14,6 +16,6 @@ CREATE TABLE payment_records (
 
 CREATE INDEX idx_payment_records_quiniela_id ON payment_records (quiniela_id);
 CREATE INDEX idx_payment_records_user_id     ON payment_records (user_id);
--- Useful for payment reconciliation jobs that process by status.
+-- Partial index: only pending payments are candidates for reconciliation jobs.
 CREATE INDEX idx_payment_records_status      ON payment_records (status)
     WHERE status = 'pending';
