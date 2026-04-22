@@ -35,7 +35,10 @@ func isMaxMembersViolation(err error) bool {
 		strings.Contains(pgErr.Message, "max_members_exceeded")
 }
 
-const membershipColumns = "id, quiniela_id, user_id, status, role, paid, joined_at, created_at, updated_at"
+const (
+	membershipColumns   = "id, quiniela_id, user_id, status, role, paid, joined_at, created_at, updated_at"
+	errMembershipNotFound = "membership not found"
+)
 
 func scanMembership(row pgx.Row) (*domain.GroupMembership, error) {
 	m := &domain.GroupMembership{}
@@ -117,7 +120,7 @@ func (r *PostgresGroupMembershipRepository) Update(ctx context.Context, m *domai
 		return err
 	}
 	if result == nil {
-		return apperrors.NotFound("membership not found")
+		return apperrors.NotFound(errMembershipNotFound)
 	}
 	*m = *result
 	return nil
@@ -134,7 +137,7 @@ func (r *PostgresGroupMembershipRepository) MarkPaid(ctx context.Context, quinie
 		return nil, err
 	}
 	if result == nil {
-		return nil, apperrors.NotFound("membership not found")
+		return nil, apperrors.NotFound(errMembershipNotFound)
 	}
 	return result, nil
 }
@@ -223,7 +226,7 @@ func (r *PostgresGroupMembershipRepository) SetRole(ctx context.Context, members
 		return apperrors.Internal(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("membership not found")
+		return apperrors.NotFound(errMembershipNotFound)
 	}
 	return nil
 }
