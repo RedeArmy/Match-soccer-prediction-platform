@@ -27,6 +27,11 @@ func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error) { return 
 func (r *stubUserRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
 	return nil, r.err
 }
+func (r *stubUserRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
+	return r.user, r.err
+}
+func (r *stubUserRepo) Unban(_ context.Context, _ int) error                 { return r.err }
+func (r *stubUserRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, r.err }
 
 const (
 	fmtExpect200     = "expected 200, got %d"

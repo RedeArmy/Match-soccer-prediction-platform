@@ -51,6 +51,15 @@ type UserRepository interface {
 	// Used by the ranking service to hydrate leaderboard entries without N+1
 	// queries. An empty ids slice returns nil, nil without hitting the database.
 	ListByIDs(ctx context.Context, ids []int) ([]*domain.User, error)
+	// Ban sets banned_at, banned_by, and ban_reason on the user record.
+	// If the user is already banned the ban details are overwritten.
+	// Returns NotFound for unknown or soft-deleted users.
+	Ban(ctx context.Context, userID, adminID int, reason string) (*domain.User, error)
+	// Unban clears the ban fields. Idempotent: unbanning an active user succeeds
+	// silently. Returns NotFound for unknown or soft-deleted users.
+	Unban(ctx context.Context, userID int) error
+	// ListBanned returns all active users whose banned_at is not NULL.
+	ListBanned(ctx context.Context) ([]*domain.User, error)
 }
 
 // MatchRepository defines the persistence operations for the Match entity.
@@ -161,6 +170,12 @@ type QuinielaRepository interface {
 	Update(ctx context.Context, quiniela *domain.Quiniela) error
 	Delete(ctx context.Context, id int) error
 	ListByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
+	// UpdateGroupSettings changes the max_members cap and entry_fee. A nil
+	// maxMembers removes the cap. Returns the updated quiniela.
+	UpdateGroupSettings(ctx context.Context, quinielaID int, maxMembers *int, entryFee int) (*domain.Quiniela, error)
+	// DeleteByAdmin soft-deletes a quiniela on behalf of an administrator.
+	// The audit trail is the caller's responsibility via AuditLogRepository.
+	DeleteByAdmin(ctx context.Context, quinielaID, adminID int) error
 }
 
 // GroupMembershipRepository defines the persistence operations for the
@@ -194,6 +209,10 @@ type GroupMembershipRepository interface {
 	// path through which MembershipRole changes; the general Update method
 	// deliberately does not touch role to prevent accidental privilege escalation.
 	SetRole(ctx context.Context, membershipID int, role domain.MembershipRole) error
+	// RemoveByAdmin soft-deletes a membership by setting its status to 'left'
+	// on behalf of an administrator. Only active memberships can be removed;
+	// returns NotFound for inactive or non-existent memberships.
+	RemoveByAdmin(ctx context.Context, membershipID, adminID int) error
 }
 
 // TiebreakerRepository defines the persistence operations for the Tiebreaker
@@ -246,4 +265,88 @@ type TournamentRepository interface {
 	// ConfirmSlot sets the advancing team for the given slot.
 	// Returns NotFound when the slot does not exist.
 	ConfirmSlot(ctx context.Context, id, confirmedByUserID int, team string) (*domain.TournamentSlot, error)
+}
+
+// SystemParamRepository manages runtime-configurable key-value settings.
+//
+// Params are upserted — not inserted — so the table acts as a live
+// configuration store. The type, category, and is_runtime columns are set at
+// first creation (typically by a migration seed) and preserved on subsequent
+// value updates via Set and BulkSet.
+type SystemParamRepository interface {
+	// Get returns the param for key. Returns nil, nil when the key is not
+	// configured, so callers can fall back to a coded default without error.
+	Get(ctx context.Context, key string) (*domain.SystemParam, error)
+	// GetAll returns every param ordered by key.
+	GetAll(ctx context.Context) ([]*domain.SystemParam, error)
+	// GetByCategory returns all params whose category equals cat.
+	GetByCategory(ctx context.Context, category string) ([]*domain.SystemParam, error)
+	// Set upserts a single key-value pair, preserving type/category/is_runtime
+	// on conflict. actorID is forwarded by the service layer for audit logging.
+	Set(ctx context.Context, key, value string, actorID int) (*domain.SystemParam, error)
+	// BulkSet upserts every entry in params atomically. A nil or empty map is a
+	// no-op. actorID is forwarded by the service layer for audit logging.
+	BulkSet(ctx context.Context, params map[string]string, actorID int) error
+}
+
+// AuditLogRepository provides append-only access to the audit_log table.
+//
+// No UPDATE or DELETE is ever issued; rows are immutable once written. The
+// listing methods are read-only projections used exclusively by the admin
+// dashboard and compliance reporting flows.
+type AuditLogRepository interface {
+	// Create inserts an immutable audit entry. entry.ID and entry.CreatedAt
+	// are populated on success.
+	Create(ctx context.Context, entry *domain.AuditLog) error
+	// ListByEntity returns entries for a specific resource type and ID.
+	ListByEntity(ctx context.Context, resourceType string, resourceID int, p Pagination) ([]*domain.AuditLog, error)
+	// ListByActor returns all entries attributed to actorID.
+	ListByActor(ctx context.Context, actorID int, p Pagination) ([]*domain.AuditLog, error)
+	// ListByAction returns all entries whose action field matches exactly.
+	ListByAction(ctx context.Context, action string, p Pagination) ([]*domain.AuditLog, error)
+	// List is the general query method; all non-nil filter fields are AND-ed.
+	List(ctx context.Context, f AuditLogFilters, p Pagination) ([]*domain.AuditLog, error)
+}
+
+// PaymentRecordRepository manages entry-fee payment records.
+//
+// Records are created in pending state. Validate and Reject transition them
+// to confirmed or rejected respectively; only pending records can transition.
+// Refunded is a terminal state set outside this repository by the payment
+// provider webhook handler.
+type PaymentRecordRepository interface {
+	// Create inserts a new payment record in pending state. record.ID is
+	// populated on success.
+	Create(ctx context.Context, record *domain.PaymentRecord) error
+	// GetByID returns the record or nil, nil when not found.
+	GetByID(ctx context.Context, id int) (*domain.PaymentRecord, error)
+	// ListByQuiniela returns records for a group, optionally filtered by status.
+	ListByQuiniela(ctx context.Context, quinielaID int, f PaymentFilters) ([]*domain.PaymentRecord, error)
+	// ListByUser returns all records for a user across every quiniela.
+	ListByUser(ctx context.Context, userID int) ([]*domain.PaymentRecord, error)
+	// ListPending returns all records in pending state, oldest first.
+	ListPending(ctx context.Context) ([]*domain.PaymentRecord, error)
+	// Validate transitions a pending payment to confirmed. Returns NotFound
+	// when the record does not exist or is not in pending state.
+	Validate(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error)
+	// Reject transitions a pending payment to rejected. Returns NotFound when
+	// the record does not exist or is not in pending state.
+	Reject(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error)
+}
+
+// LeaderboardSnapshotRepository persists point-in-time leaderboard copies.
+//
+// Snapshots are immutable after creation and are keyed by quiniela_id +
+// taken_at. The most common access pattern is GetLatest, used by the API to
+// serve the last confirmed rankings without re-computing them on every request.
+type LeaderboardSnapshotRepository interface {
+	// Create persists a new snapshot. snapshot.ID and snapshot.CreatedAt are
+	// populated on success.
+	Create(ctx context.Context, snapshot *domain.LeaderboardSnapshot) error
+	// ListByQuiniela returns the most recent limit snapshots. A limit of 0
+	// returns all snapshots for the quiniela.
+	ListByQuiniela(ctx context.Context, quinielaID, limit int) ([]*domain.LeaderboardSnapshot, error)
+	// GetLatest returns the most recently taken snapshot. Returns nil, nil when
+	// no snapshot exists yet.
+	GetLatest(ctx context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error)
 }

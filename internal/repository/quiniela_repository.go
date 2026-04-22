@@ -237,4 +237,45 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 	return quinielas, nil
 }
 
+// UpdateGroupSettings updates the max_members cap and entry_fee for a quiniela.
+// A nil maxMembers removes the cap (sets the column to NULL). Returns the
+// updated quiniela or NotFound when the group does not exist or is soft-deleted.
+func (r *PostgresQuinielaRepository) UpdateGroupSettings(ctx context.Context, quinielaID int, maxMembers *int, entryFee int) (*domain.Quiniela, error) {
+	row := r.db.QueryRow(ctx,
+		`UPDATE quinielas
+		    SET max_members = $1,
+		        entry_fee   = $2,
+		        updated_at  = NOW()
+		  WHERE id = $3`+activeOnly+`
+		  RETURNING `+quinielaColumns,
+		maxMembers, entryFee, quinielaID,
+	)
+	result, err := scanQuiniela(row)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, apperrors.NotFound(msgQuinielaNotFound)
+	}
+	return result, nil
+}
+
+// DeleteByAdmin soft-deletes a quiniela on behalf of an administrator.
+// The adminID identifies the actor for the caller's audit trail — it is not
+// stored in the quinielas table. Returns NotFound when the quiniela does not
+// exist or is already soft-deleted.
+func (r *PostgresQuinielaRepository) DeleteByAdmin(ctx context.Context, quinielaID, _ int) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE quinielas SET deleted_at = NOW() WHERE id = $1`+activeOnly,
+		quinielaID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound(msgQuinielaNotFound)
+	}
+	return nil
+}
+
 var _ QuinielaRepository = (*PostgresQuinielaRepository)(nil)

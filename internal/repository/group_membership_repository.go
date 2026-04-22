@@ -231,4 +231,25 @@ func (r *PostgresGroupMembershipRepository) SetRole(ctx context.Context, members
 	return nil
 }
 
+// RemoveByAdmin soft-deletes a membership on behalf of an administrator by
+// setting its status to 'left'. The adminID identifies the actor for the
+// caller's audit trail — it is not stored on the membership row itself.
+// Returns NotFound when the membership does not exist or is already inactive.
+func (r *PostgresGroupMembershipRepository) RemoveByAdmin(ctx context.Context, membershipID, _ int) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE group_memberships
+		    SET status     = 'left',
+		        updated_at = NOW()
+		  WHERE id = $1 AND status = 'active'`,
+		membershipID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound(errMembershipNotFound)
+	}
+	return nil
+}
+
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)
