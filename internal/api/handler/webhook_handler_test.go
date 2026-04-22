@@ -234,6 +234,11 @@ func (r *createErrRepo) List(_ context.Context) ([]*domain.User, error) {
 func (r *createErrRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
 	return nil, nil
 }
+func (r *createErrRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *createErrRepo) Unban(_ context.Context, _ int) error                 { return nil }
+func (r *createErrRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }
 
 // updateErrRepo returns an existing user from GetByClerkSubject and errors
 // from Update, isolating the Update error path in upsertUser.
@@ -257,3 +262,8 @@ func (r *updateErrRepo) List(_ context.Context) ([]*domain.User, error) {
 func (r *updateErrRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
 	return nil, nil
 }
+func (r *updateErrRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *updateErrRepo) Unban(_ context.Context, _ int) error                 { return nil }
+func (r *updateErrRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }

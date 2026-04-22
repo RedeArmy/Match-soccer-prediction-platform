@@ -514,6 +514,10 @@ const (
 	PaymentStatusPending   PaymentStatus = "pending"
 	PaymentStatusConfirmed PaymentStatus = "confirmed"
 	PaymentStatusRefunded  PaymentStatus = "refunded"
+	// PaymentStatusRejected indicates the payment was reviewed and denied
+	// before any funds were captured. Distinct from refunded, which implies
+	// money was received and subsequently returned.
+	PaymentStatusRejected PaymentStatus = "rejected"
 )
 
 // PaymentRecord tracks a single entry-fee payment for one member of a
@@ -522,7 +526,9 @@ const (
 //
 // Reference is the opaque identifier returned by the external payment
 // provider; it is nil until the payment provider issues a transaction ID.
-// ConfirmedAt is nil while the payment is pending or refunded.
+// ConfirmedAt is nil while the payment is pending or rejected.
+// ReviewedBy and Notes are populated by the admin who called Validate or
+// Reject; both are nil / empty until a review action is taken.
 type PaymentRecord struct {
 	ID          int
 	QuinielaID  int
@@ -531,7 +537,9 @@ type PaymentRecord struct {
 	Currency    string
 	Status      PaymentStatus
 	Reference   *string    // nil until the payment provider assigns a transaction ID
-	ConfirmedAt *time.Time // nil for pending / refunded payments
+	ReviewedBy  *int       // nil until validated or rejected by an admin
+	Notes       string     // empty until an admin adds review notes
+	ConfirmedAt *time.Time // nil for pending / rejected payments
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

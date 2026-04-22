@@ -25,7 +25,7 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 // uses RETURNING stay in sync automatically when columns are added or removed.
 // password_hash was removed in migration 000010: authentication is delegated
 // to Clerk and no credential is stored in the application database.
-const userColumns = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at"
+const userColumns = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason"
 
 // rowScanner is satisfied by both pgx.Row (single-row query) and pgx.Rows
 // (multi-row iteration). Accepting this interface lets scanUserFields serve
@@ -40,7 +40,11 @@ type rowScanner interface {
 func scanUserFields(s rowScanner) (*domain.User, error) {
 	u := &domain.User{}
 	var clerkSubject *string // nullable in DB; empty string in domain when NULL
-	if err := s.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject, &u.CreatedAt, &u.UpdatedAt, &u.DeletedAt); err != nil {
+	if err := s.Scan(
+		&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject,
+		&u.CreatedAt, &u.UpdatedAt, &u.DeletedAt,
+		&u.BannedAt, &u.BannedBy, &u.BanReason,
+	); err != nil {
 		return nil, err
 	}
 	if clerkSubject != nil {
@@ -173,6 +177,65 @@ func collectUsers(rows pgx.Rows) ([]*domain.User, error) {
 		return nil, apperrors.Internal(err)
 	}
 	return users, nil
+}
+
+// Ban sets banned_at, banned_by, and ban_reason for the given user, returning
+// the updated record. If the user is already banned the ban is overwritten
+// with the new details. Returns NotFound for unknown or soft-deleted users.
+func (r *PostgresUserRepository) Ban(ctx context.Context, userID, adminID int, reason string) (*domain.User, error) {
+	row := r.db.QueryRow(ctx,
+		`UPDATE users
+		    SET banned_at  = NOW(),
+		        banned_by  = $2,
+		        ban_reason = $3,
+		        updated_at = NOW()
+		  WHERE id = $1`+activeOnly+`
+		  RETURNING `+userColumns,
+		userID, adminID, reason,
+	)
+	result, err := scanUser(row)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, apperrors.NotFound("user not found")
+	}
+	return result, nil
+}
+
+// Unban clears the ban fields for the given user. It is idempotent: unbanning
+// an already-active user succeeds silently. Returns NotFound for unknown or
+// soft-deleted users.
+func (r *PostgresUserRepository) Unban(ctx context.Context, userID int) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE users
+		    SET banned_at  = NULL,
+		        banned_by  = NULL,
+		        ban_reason = '',
+		        updated_at = NOW()
+		  WHERE id = $1`+activeOnly,
+		userID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound("user not found")
+	}
+	return nil
+}
+
+// ListBanned returns all active users whose banned_at is not NULL, ordered by
+// banned_at descending (most recently banned first).
+func (r *PostgresUserRepository) ListBanned(ctx context.Context) ([]*domain.User, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+userColumns+` FROM users WHERE banned_at IS NOT NULL AND `+activeFilter+` ORDER BY banned_at DESC`,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectUsers(rows)
 }
 
 var _ UserRepository = (*PostgresUserRepository)(nil)
