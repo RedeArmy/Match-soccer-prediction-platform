@@ -132,7 +132,7 @@ func (s *stubQuinielaSvc) GetByInviteCode(_ context.Context, _ string) (*domain.
 func (s *stubQuinielaSvc) GetByOwner(_ context.Context, _ int) ([]*domain.Quiniela, error) {
 	return s.quinielas, s.err
 }
-func (s *stubQuinielaSvc) RotateInviteCode(_ context.Context, _, _ int) (*domain.Quiniela, error) {
+func (s *stubQuinielaSvc) RenameGroup(_ context.Context, _, _ int, _ string) (*domain.Quiniela, error) {
 	return s.quiniela, s.err
 }
 
