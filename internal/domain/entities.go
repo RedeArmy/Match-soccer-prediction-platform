@@ -331,7 +331,27 @@ const (
 	MembershipLeft    MembershipStatus = "left"
 )
 
+// MembershipRole distinguishes the group creator from regular members within a
+// single Quiniela. It is a group-scoped role that is orthogonal to the system-
+// wide UserRole: a CreateOwner is always a RolePlayer at the system level and
+// never inherits any system-admin permissions.
+//
+// The owner role is assigned once at group creation and transferred automatically
+// when the owner leaves or is banned (oldest active member becomes the new owner).
+// System administrators may also transfer ownership manually to resolve conflicts.
+type MembershipRole string
+
+// Allowed values for MembershipRole.
+const (
+	MembershipRoleMember MembershipRole = "member" // regular participant
+	MembershipRoleOwner  MembershipRole = "owner"  // CreateOwner: group creator / current owner
+)
+
 // GroupMembership records one user's participation in one Quiniela.
+//
+// Role distinguishes the group owner (MembershipRoleOwner) from regular members.
+// The owner can rename the group; other actions on the group are reserved for
+// system administrators (RoleAdmin).
 //
 // JoinedAt is nil for pending memberships and is populated when the user
 // transitions to active status. The owner of a Quiniela always receives an
@@ -346,6 +366,7 @@ type GroupMembership struct {
 	ID         int
 	QuinielaID int
 	UserID     int
+	Role       MembershipRole
 	Status     MembershipStatus
 	Paid       bool
 	JoinedAt   *time.Time

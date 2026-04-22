@@ -28,6 +28,11 @@ func NewGroupHandler(
 	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, log: log}
 }
 
+// renameGroupRequest is the JSON body accepted by PATCH /api/v1/groups/{id}.
+type renameGroupRequest struct {
+	Name string `json:"name"`
+}
+
 // createGroupRequest is the JSON body accepted by POST /api/v1/groups.
 type createGroupRequest struct {
 	Name           string `json:"name"`
@@ -187,42 +192,6 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// RotateInviteCode handles POST /api/v1/groups/{id}/invite-code/rotate.
-//
-// @Summary      Rotate invite code
-// @Description  Generates a new invite code for the group, immediately invalidating
-//
-//	the previous one. Only the group owner may perform this action.
-//
-// @Tags         groups
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id   path      int  true  "Group ID"
-// @Success      200  {object}  handler.GroupResponse
-// @Failure      401  {object}  handler.ErrorResponse
-// @Failure      403  {object}  handler.ErrorResponse  "Caller is not the group owner"
-// @Failure      404  {object}  handler.ErrorResponse
-// @Failure      500  {object}  handler.ErrorResponse
-// @Router       /api/v1/groups/{id}/invite-code/rotate [post]
-func (h *GroupHandler) RotateInviteCode(w http.ResponseWriter, r *http.Request) {
-	caller, ok := middleware.UserFromContext(r.Context())
-	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
-		return
-	}
-	id, err := pathID(r, "id")
-	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
-		return
-	}
-	quiniela, err := h.quinielaSvc.RotateInviteCode(r.Context(), id, caller.ID)
-	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, groupToResponse(quiniela))
-}
-
 // ApproveJoin handles POST /api/v1/groups/{id}/members/{membershipID}/approve.
 //
 // @Summary      Approve a join request
@@ -306,6 +275,51 @@ func (h *GroupHandler) Leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// RenameGroup handles PATCH /api/v1/groups/{id}.
+//
+// @Summary      Rename a group
+// @Description  Updates the name of the group. Only the CreateOwner (the member
+//
+//	with MembershipRoleOwner) may rename their own group.
+//
+// @Tags         groups
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                        true  "Group ID"
+// @Param        body  body      handler.renameGroupRequest true  "New group name"
+// @Success      200   {object}  handler.GroupResponse
+// @Failure      401   {object}  handler.ErrorResponse
+// @Failure      403   {object}  handler.ErrorResponse  "Caller is not the group owner"
+// @Failure      404   {object}  handler.ErrorResponse
+// @Failure      409   {object}  handler.ErrorResponse  "Name already taken"
+// @Failure      422   {object}  handler.ErrorResponse
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/groups/{id} [patch]
+func (h *GroupHandler) RenameGroup(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	var req renameGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		middleware.WriteError(w, r, h.log, decodeError(err))
+		return
+	}
+	quiniela, err := h.quinielaSvc.RenameGroup(r.Context(), id, caller.ID, req.Name)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, groupToResponse(quiniela))
 }
 
 // ListMyGroups handles GET /api/v1/groups/me.

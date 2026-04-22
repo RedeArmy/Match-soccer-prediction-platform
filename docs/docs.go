@@ -231,23 +231,24 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/api/v1/groups/{id}/invite-code/rotate": {
-            "post": {
+            },
+            "patch": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Generates a new invite code for the group, immediately invalidating",
+                "description": "Updates the name of the group. Only the CreateOwner (the member",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "groups"
                 ],
-                "summary": "Rotate invite code",
+                "summary": "Rename a group",
                 "parameters": [
                     {
                         "type": "integer",
@@ -255,6 +256,15 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "New group name",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.renameGroupRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -278,6 +288,18 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Name already taken",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -1302,6 +1324,9 @@ const docTemplate = `{
                 "quiniela_id": {
                     "type": "integer"
                 },
+                "role": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -1462,6 +1487,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "invite_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.renameGroupRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
                     "type": "string"
                 }
             }

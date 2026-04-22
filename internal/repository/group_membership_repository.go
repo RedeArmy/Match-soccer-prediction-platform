@@ -35,12 +35,12 @@ func isMaxMembersViolation(err error) bool {
 		strings.Contains(pgErr.Message, "max_members_exceeded")
 }
 
-const membershipColumns = "id, quiniela_id, user_id, status, paid, joined_at, created_at, updated_at"
+const membershipColumns = "id, quiniela_id, user_id, status, role, paid, joined_at, created_at, updated_at"
 
 func scanMembership(row pgx.Row) (*domain.GroupMembership, error) {
 	m := &domain.GroupMembership{}
 	var joinedAt *time.Time
-	err := row.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt)
+	err := row.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -52,10 +52,14 @@ func scanMembership(row pgx.Row) (*domain.GroupMembership, error) {
 }
 
 func (r *PostgresGroupMembershipRepository) Create(ctx context.Context, m *domain.GroupMembership) error {
+	role := m.Role
+	if role == "" {
+		role = domain.MembershipRoleMember
+	}
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO group_memberships (quiniela_id, user_id, status, paid, joined_at)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING `+membershipColumns,
-		m.QuinielaID, m.UserID, m.Status, m.Paid, m.JoinedAt,
+		`INSERT INTO group_memberships (quiniela_id, user_id, status, role, paid, joined_at)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+membershipColumns,
+		m.QuinielaID, m.UserID, m.Status, role, m.Paid, m.JoinedAt,
 	)
 	result, err := scanMembership(row)
 	if err != nil {
@@ -139,7 +143,7 @@ func (r *PostgresGroupMembershipRepository) ListByQuiniela(ctx context.Context, 
 	// JOIN with users excludes memberships belonging to soft-deleted users so
 	// that the group roster shown to administrators never contains ghost entries.
 	rows, err := r.db.Query(ctx,
-		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.paid,
+		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.role, gm.paid,
 		        gm.joined_at, gm.created_at, gm.updated_at
 		 FROM group_memberships gm
 		 JOIN users u ON u.id = gm.user_id AND u.deleted_at IS NULL
@@ -158,7 +162,7 @@ func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, user
 	// JOIN with quinielas excludes memberships in soft-deleted groups so that
 	// GET /api/v1/groups/me never surfaces a group the owner has deleted.
 	rows, err := r.db.Query(ctx,
-		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.paid,
+		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.role, gm.paid,
 		        gm.joined_at, gm.created_at, gm.updated_at
 		 FROM group_memberships gm
 		 JOIN quinielas q ON q.id = gm.quiniela_id AND q.deleted_at IS NULL
@@ -178,7 +182,7 @@ func collectMemberships(rows pgx.Rows) ([]*domain.GroupMembership, error) {
 	for rows.Next() {
 		m := &domain.GroupMembership{}
 		var joinedAt *time.Time
-		if err := rows.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		m.JoinedAt = joinedAt
@@ -188,6 +192,40 @@ func collectMemberships(rows pgx.Rows) ([]*domain.GroupMembership, error) {
 		return nil, apperrors.Internal(err)
 	}
 	return memberships, nil
+}
+
+// OldestActiveMember returns the active membership with the earliest JoinedAt
+// in quinielaID, excluding excludeUserID. Returns nil, nil when no eligible
+// successor exists (empty group after the owner leaves).
+func (r *PostgresGroupMembershipRepository) OldestActiveMember(ctx context.Context, quinielaID, excludeUserID int) (*domain.GroupMembership, error) {
+	row := r.db.QueryRow(ctx,
+		`SELECT `+membershipColumns+`
+		   FROM group_memberships
+		  WHERE quiniela_id = $1
+		    AND status      = 'active'
+		    AND user_id    != $2
+		  ORDER BY joined_at ASC
+		  LIMIT 1`,
+		quinielaID, excludeUserID,
+	)
+	return scanMembership(row)
+}
+
+// SetRole updates the role column for the given membership. It is the only
+// sanctioned path for privilege changes; the general Update method does not
+// touch role to prevent accidental escalation.
+func (r *PostgresGroupMembershipRepository) SetRole(ctx context.Context, membershipID int, role domain.MembershipRole) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE group_memberships SET role=$1, updated_at=NOW() WHERE id=$2`,
+		role, membershipID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound("membership not found")
+	}
+	return nil
 }
 
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)
