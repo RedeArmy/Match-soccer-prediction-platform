@@ -77,10 +77,14 @@ func (r *PostgresQuinielaRepository) CreateWithMembership(ctx context.Context, q
 	*q = *qResult
 
 	m.QuinielaID = q.ID
+	mRole := m.Role
+	if mRole == "" {
+		mRole = domain.MembershipRoleMember
+	}
 	mRow := tx.QueryRow(ctx,
-		`INSERT INTO group_memberships (quiniela_id, user_id, status, paid, joined_at)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING `+membershipColumns,
-		m.QuinielaID, m.UserID, m.Status, m.Paid, m.JoinedAt,
+		`INSERT INTO group_memberships (quiniela_id, user_id, status, role, paid, joined_at)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+membershipColumns,
+		m.QuinielaID, m.UserID, m.Status, mRole, m.Paid, m.JoinedAt,
 	)
 	mResult, err := scanMembership(mRow)
 	if err != nil {

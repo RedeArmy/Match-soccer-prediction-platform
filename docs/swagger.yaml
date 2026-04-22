@@ -146,6 +146,8 @@ definitions:
         type: boolean
       quiniela_id:
         type: integer
+      role:
+        type: string
       status:
         type: string
       updated_at:
@@ -253,6 +255,11 @@ definitions:
       invite_code:
         type: string
     type: object
+  internal_api_handler.renameGroupRequest:
+    properties:
+      name:
+        type: string
+    type: object
   internal_api_handler.submitPredictionRequest:
     properties:
       away_score:
@@ -353,15 +360,22 @@ paths:
       summary: Get a group
       tags:
       - groups
-  /api/v1/groups/{id}/invite-code/rotate:
-    post:
-      description: Generates a new invite code for the group, immediately invalidating
+    patch:
+      consumes:
+      - application/json
+      description: Updates the name of the group. Only the CreateOwner (the member
       parameters:
       - description: Group ID
         in: path
         name: id
         required: true
         type: integer
+      - description: New group name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.renameGroupRequest'
       produces:
       - application/json
       responses:
@@ -381,13 +395,21 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Name already taken
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Rotate invite code
+      summary: Rename a group
       tags:
       - groups
   /api/v1/groups/{id}/leaderboard:

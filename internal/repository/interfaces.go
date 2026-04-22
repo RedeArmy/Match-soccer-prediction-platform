@@ -185,6 +185,15 @@ type GroupMembershipRepository interface {
 	// is called exclusively by syncGroupStatus after every membership transition
 	// to decide whether the quiniela should be set to active or inactive.
 	CountActive(ctx context.Context, quinielaID int) (int, error)
+	// OldestActiveMember returns the active membership with the earliest JoinedAt
+	// in quinielaID, excluding excludeUserID. Returns nil, nil when no eligible
+	// member exists. Used by the ownership-transfer logic to find the automatic
+	// successor when the current owner leaves or is banned.
+	OldestActiveMember(ctx context.Context, quinielaID, excludeUserID int) (*domain.GroupMembership, error)
+	// SetRole updates the role field for a single membership. It is the only
+	// path through which MembershipRole changes; the general Update method
+	// deliberately does not touch role to prevent accidental privilege escalation.
+	SetRole(ctx context.Context, membershipID int, role domain.MembershipRole) error
 }
 
 // TiebreakerRepository defines the persistence operations for the Tiebreaker

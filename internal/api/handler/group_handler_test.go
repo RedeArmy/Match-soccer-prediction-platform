@@ -26,7 +26,7 @@ const (
 	groupsMePath     = "/groups/me"
 	groupsJoinPath   = "/groups/join"
 	groupMembersPath = "/groups/1/members"
-	groupRotatePath  = "/groups/1/invite-code/rotate"
+	groupRenamePath  = "/groups/1"
 	groupApprovePath = "/groups/1/members/99/approve"
 	groupLeavePath   = "/groups/1/members/me"
 
@@ -69,10 +69,10 @@ func buildGroupRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
 	r.Post("/groups/join", h.Join)
 	r.Get("/groups/me", h.ListMyGroups)
 	r.Get("/groups/{id}", h.GetByID)
+	r.Patch("/groups/{id}", h.RenameGroup)
 	r.Get("/groups/{id}/members", h.ListMembers)
 	r.Post("/groups/{id}/members/{membershipID}/approve", h.ApproveJoin)
 	r.Delete("/groups/{id}/members/me", h.Leave)
-	r.Post("/groups/{id}/invite-code/rotate", h.RotateInviteCode)
 	return r
 }
 
@@ -454,12 +454,15 @@ func TestGroupListMembers_Returns500_OnServiceError(t *testing.T) {
 	}
 }
 
-// ── RotateInviteCode ──────────────────────────────────────────────────────────
+// ── RenameGroup ───────────────────────────────────────────────────────────────
 
-func TestGroupRotateInviteCode_Returns200(t *testing.T) {
+func TestGroupRenameGroup_Returns200(t *testing.T) {
 	q := fixedQuiniela()
+	q.Name = "Renamed Group"
 	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: q}, &stubMemberSvc{})
-	req := httptest.NewRequest(http.MethodPost, groupRotatePath, nil)
+	body := bytes.NewBufferString(`{"name":"Renamed Group"}`)
+	req := httptest.NewRequest(http.MethodPatch, groupRenamePath, body)
+	req.Header.Set(headerContentType, contentTypeJSON)
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
 
@@ -468,9 +471,11 @@ func TestGroupRotateInviteCode_Returns200(t *testing.T) {
 	}
 }
 
-func TestGroupRotateInviteCode_Returns401_WhenNoUser(t *testing.T) {
+func TestGroupRenameGroup_Returns401_WhenNoUser(t *testing.T) {
 	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
-	req := httptest.NewRequest(http.MethodPost, groupRotatePath, nil)
+	body := bytes.NewBufferString(`{"name":"New Name"}`)
+	req := httptest.NewRequest(http.MethodPatch, groupRenamePath, body)
+	req.Header.Set(headerContentType, contentTypeJSON)
 	rec := httptest.NewRecorder()
 	testGroupRouterNoUser(h).ServeHTTP(rec, req)
 
@@ -479,12 +484,14 @@ func TestGroupRotateInviteCode_Returns401_WhenNoUser(t *testing.T) {
 	}
 }
 
-func TestGroupRotateInviteCode_Returns403_WhenNotOwner(t *testing.T) {
+func TestGroupRenameGroup_Returns403_WhenNotOwner(t *testing.T) {
 	h := newGroupHandler(t,
-		&stubQuinielaSvc{err: apperrors.Forbidden("only the group owner can rotate the invite code")},
+		&stubQuinielaSvc{err: apperrors.Forbidden("only the group owner can rename the group")},
 		&stubMemberSvc{},
 	)
-	req := httptest.NewRequest(http.MethodPost, groupRotatePath, nil)
+	body := bytes.NewBufferString(`{"name":"New Name"}`)
+	req := httptest.NewRequest(http.MethodPatch, groupRenamePath, body)
+	req.Header.Set(headerContentType, contentTypeJSON)
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
 
@@ -493,12 +500,14 @@ func TestGroupRotateInviteCode_Returns403_WhenNotOwner(t *testing.T) {
 	}
 }
 
-func TestGroupRotateInviteCode_Returns404_WhenNotFound(t *testing.T) {
+func TestGroupRenameGroup_Returns404_WhenNotFound(t *testing.T) {
 	h := newGroupHandler(t,
 		&stubQuinielaSvc{err: apperrors.NotFound("quiniela 1 not found")},
 		&stubMemberSvc{},
 	)
-	req := httptest.NewRequest(http.MethodPost, groupRotatePath, nil)
+	body := bytes.NewBufferString(`{"name":"New Name"}`)
+	req := httptest.NewRequest(http.MethodPatch, groupRenamePath, body)
+	req.Header.Set(headerContentType, contentTypeJSON)
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
 
@@ -507,9 +516,39 @@ func TestGroupRotateInviteCode_Returns404_WhenNotFound(t *testing.T) {
 	}
 }
 
-func TestGroupRotateInviteCode_Returns422_InvalidID(t *testing.T) {
+func TestGroupRenameGroup_Returns422_InvalidID(t *testing.T) {
 	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
-	req := httptest.NewRequest(http.MethodPost, "/groups/abc/invite-code/rotate", nil)
+	body := bytes.NewBufferString(`{"name":"New Name"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/groups/abc", body)
+	req.Header.Set(headerContentType, contentTypeJSON)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestGroupRenameGroup_Returns409_WhenNameTaken(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{err: apperrors.Conflict("a group with this name already exists")},
+		&stubMemberSvc{},
+	)
+	body := bytes.NewBufferString(`{"name":"Taken Name"}`)
+	req := httptest.NewRequest(http.MethodPatch, groupRenamePath, body)
+	req.Header.Set(headerContentType, contentTypeJSON)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d", rec.Code)
+	}
+}
+
+func TestGroupRenameGroup_Returns422_OnMalformedJSON(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPatch, groupRenamePath, bytes.NewBufferString(`{bad json`))
+	req.Header.Set(headerContentType, contentTypeJSON)
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
 

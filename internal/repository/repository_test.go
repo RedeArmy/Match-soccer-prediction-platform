@@ -1409,6 +1409,103 @@ func TestGroupMembershipRepository_CountActive_IgnoresPendingAndLeft(t *testing.
 	}
 }
 
+// ── GroupMembershipRepository — OldestActiveMember ────────────────────────────
+
+func TestGroupMembershipRepository_OldestActiveMember_ReturnsMemberWithEarliestJoinedAt(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	m1 := seedMembership(t, q.ID, u1.ID, domain.MembershipActive, true)
+	time.Sleep(2 * time.Millisecond)
+	_ = seedMembership(t, q.ID, u2.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	got, err := repo.OldestActiveMember(context.Background(), q.ID, owner.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected a membership, got nil")
+	}
+	if got.ID != m1.ID {
+		t.Errorf("expected oldest member ID %d, got %d", m1.ID, got.ID)
+	}
+}
+
+func TestGroupMembershipRepository_OldestActiveMember_ExcludesSpecifiedUser(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	_ = seedMembership(t, q.ID, u1.ID, domain.MembershipActive, true)
+	time.Sleep(2 * time.Millisecond)
+	m2 := seedMembership(t, q.ID, u2.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	got, err := repo.OldestActiveMember(context.Background(), q.ID, u1.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected a membership, got nil")
+	}
+	if got.ID != m2.ID {
+		t.Errorf("expected member ID %d (excluded u1), got %d", m2.ID, got.ID)
+	}
+}
+
+func TestGroupMembershipRepository_OldestActiveMember_NoSuccessor_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	got, err := repo.OldestActiveMember(context.Background(), q.ID, owner.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf("expected nil when no successor, got membership ID %d", got.ID)
+	}
+}
+
+// ── GroupMembershipRepository — SetRole ────────────────────────────────────────
+
+func TestGroupMembershipRepository_SetRole_UpdatesRole(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	m := seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	if err := repo.SetRole(context.Background(), m.ID, domain.MembershipRoleOwner); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	updated, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if updated.Role != domain.MembershipRoleOwner {
+		t.Errorf("expected role %q, got %q", domain.MembershipRoleOwner, updated.Role)
+	}
+}
+
+func TestGroupMembershipRepository_SetRole_NotFound_ReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	err := repo.SetRole(context.Background(), 999999, domain.MembershipRoleOwner)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for missing membership, got %v", err)
+	}
+}
+
 // ── UserRepository — ListByIDs ─────────────────────────────────────────────────
 
 func TestUserRepository_ListByIDs_ReturnsMatchingUsers(t *testing.T) {

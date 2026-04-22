@@ -188,6 +188,10 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/join", groupHandler.Join)
 			r.Get("/me", groupHandler.ListMyGroups)
 			r.Get("/{id}", groupHandler.GetByID)
+			// Only the CreateOwner (MembershipRoleOwner) may rename the group.
+			// Ownership is enforced inside the service layer — not via RequireRole
+			// because it is resource-scoped, not system-role-scoped.
+			r.Patch("/{id}", groupHandler.RenameGroup)
 			r.Get("/{id}/members", groupHandler.ListMembers)
 			r.Get("/{id}/leaderboard", leaderboardHandler.GetLeaderboard)
 			// Any active member may approve a pending join request. The service
@@ -195,10 +199,6 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/{id}/members/{membershipID}/approve", groupHandler.ApproveJoin)
 			// Self-removal only: a user removes themselves from the group.
 			r.Delete("/{id}/members/me", groupHandler.Leave)
-			// Only the group owner may rotate the invite code. Ownership is
-			// enforced inside the service layer (not via RequireRole) because
-			// it is resource-scoped, not role-scoped.
-			r.Post("/{id}/invite-code/rotate", groupHandler.RotateInviteCode)
 			// Tiebreaker member routes: active members submit and view their prediction.
 			r.Post("/{id}/tiebreaker", tiebreakerHandler.Submit)
 			r.Get("/{id}/tiebreaker", tiebreakerHandler.GetMine)
@@ -304,7 +304,7 @@ func (s *Server) buildHandlers(
 	}
 
 	predSvc := service.NewPredictionService(predRepo, matchRepo, s.log)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo)
+	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, s.log)
 
 	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, s.log)

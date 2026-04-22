@@ -80,18 +80,20 @@ type Ranker interface {
 // QuinielaService defines operations on the Quiniela entity.
 //
 // Create generates a unique invite code and records the owner as the first
-// active member. GetByInviteCode enables the join flow: the caller obtains
-// the quiniela from a short code before creating the membership.
+// active member (MembershipRoleOwner). GetByInviteCode enables the join flow:
+// the caller obtains the quiniela from a short code before creating the membership.
+//
+// The invite code is permanent — it is generated once at creation and never
+// rotated. Groups are identified by a stable code for the tournament's duration.
 type QuinielaService interface {
 	Create(ctx context.Context, quiniela *domain.Quiniela) error
 	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
 	GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error)
 	GetByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
-	// RotateInviteCode generates a new cryptographically random invite code for
-	// the given quiniela and immediately invalidates the old one. ownerID is
-	// checked: only the quiniela owner may rotate the code. The updated quiniela
-	// (with the new code and reset expiry) is returned.
-	RotateInviteCode(ctx context.Context, quinielaID, ownerID int) (*domain.Quiniela, error)
+	// RenameGroup changes the name of the given group. Only the CreateOwner
+	// (MembershipRoleOwner) of the group may call this; any other caller receives
+	// Forbidden. Returns the updated Quiniela on success.
+	RenameGroup(ctx context.Context, quinielaID, callerUserID int, name string) (*domain.Quiniela, error)
 }
 
 // GroupMembershipService manages user membership in Quinielas.

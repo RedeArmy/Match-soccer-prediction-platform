@@ -71,6 +71,7 @@ type MemberResponse struct {
 	ID         int     `json:"id"`
 	QuinielaID int     `json:"quiniela_id"`
 	UserID     int     `json:"user_id"`
+	Role       string  `json:"role"`
 	Status     string  `json:"status"`
 	Paid       bool    `json:"paid"`
 	JoinedAt   *string `json:"joined_at"`
@@ -330,6 +331,7 @@ func memberToResponse(m *domain.GroupMembership) MemberResponse {
 		ID:         m.ID,
 		QuinielaID: m.QuinielaID,
 		UserID:     m.UserID,
+		Role:       string(m.Role),
 		Status:     string(m.Status),
 		Paid:       m.Paid,
 		CreatedAt:  m.CreatedAt.Format(timeFormat),
