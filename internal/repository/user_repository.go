@@ -25,7 +25,10 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 // uses RETURNING stay in sync automatically when columns are added or removed.
 // password_hash was removed in migration 000010: authentication is delegated
 // to Clerk and no credential is stored in the application database.
-const userColumns = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason"
+const (
+	userColumns      = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason"
+	msgUserNotFound  = "user not found"
+)
 
 // rowScanner is satisfied by both pgx.Row (single-row query) and pgx.Rows
 // (multi-row iteration). Accepting this interface lets scanUserFields serve
@@ -116,7 +119,7 @@ func (r *PostgresUserRepository) Update(ctx context.Context, u *domain.User) err
 		return err
 	}
 	if result == nil {
-		return apperrors.NotFound("user not found")
+		return apperrors.NotFound(msgUserNotFound)
 	}
 	*u = *result
 	return nil
@@ -130,7 +133,7 @@ func (r *PostgresUserRepository) Delete(ctx context.Context, id int) error {
 		return apperrors.Internal(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("user not found")
+		return apperrors.NotFound(msgUserNotFound)
 	}
 	return nil
 }
@@ -198,7 +201,7 @@ func (r *PostgresUserRepository) Ban(ctx context.Context, userID, adminID int, r
 		return nil, err
 	}
 	if result == nil {
-		return nil, apperrors.NotFound("user not found")
+		return nil, apperrors.NotFound(msgUserNotFound)
 	}
 	return result, nil
 }
@@ -220,7 +223,7 @@ func (r *PostgresUserRepository) Unban(ctx context.Context, userID int) error {
 		return apperrors.Internal(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("user not found")
+		return apperrors.NotFound(msgUserNotFound)
 	}
 	return nil
 }
