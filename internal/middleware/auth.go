@@ -15,6 +15,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jwt"
@@ -114,6 +115,17 @@ func RequireAuth(jwksURL string, log *zap.Logger) func(http.Handler) http.Handle
 	cache := jwk.NewCache(context.Background())
 	if err := cache.Register(jwksURL); err != nil {
 		log.Error("RequireAuth: failed to register JWKS URL", zap.String("url", jwksURL), zap.Error(err))
+	}
+
+	// Eagerly warm the JWKS cache at startup so the first request is never
+	// delayed by a cold fetch. A 5-second timeout avoids blocking startup
+	// indefinitely if Clerk is temporarily unreachable; the cache will
+	// retry automatically on the first request.
+	warmCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := cache.Refresh(warmCtx, jwksURL); err != nil {
+		log.Warn("RequireAuth: JWKS prefetch failed; will retry on first request",
+			zap.String("url", jwksURL), zap.Error(err))
 	}
 
 	return func(next http.Handler) http.Handler {
