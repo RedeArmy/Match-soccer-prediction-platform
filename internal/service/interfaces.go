@@ -15,6 +15,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
@@ -207,4 +208,115 @@ type TournamentService interface {
 // block or fail the primary operation that triggered the event.
 type Notifier interface {
 	Notify(ctx context.Context, userID int, message string) error
+}
+
+// SystemParamService provides typed, cached access to runtime-configurable
+// key-value settings stored in the system_params table.
+//
+// All Get* helpers return a typed value and fall back to their defaultVal
+// argument when the key is absent or the stored string cannot be parsed.
+// This means callers never receive an error from a missing param — the domain
+// constant is always the fallback, so the system degrades gracefully.
+//
+// Set invalidates the in-memory cache entry for the affected key immediately,
+// guaranteeing that the next read within the same process sees the new value.
+type SystemParamService interface {
+	Get(ctx context.Context, key string) (*domain.SystemParam, error)
+	GetAll(ctx context.Context) ([]*domain.SystemParam, error)
+	GetByCategory(ctx context.Context, cat string) ([]*domain.SystemParam, error)
+	Set(ctx context.Context, key, value string, actorID int) (*domain.SystemParam, error)
+	// GetString returns the raw string value, falling back to defaultVal.
+	GetString(ctx context.Context, key, defaultVal string) string
+	// GetInt parses the value as a base-10 integer, falling back to defaultVal.
+	GetInt(ctx context.Context, key string, defaultVal int) int
+	// GetDuration parses the value as a time.Duration string (e.g. "5m"),
+	// falling back to defaultVal.
+	GetDuration(ctx context.Context, key string, defaultVal time.Duration) time.Duration
+	// GetBool parses the value as a boolean, falling back to defaultVal.
+	GetBool(ctx context.Context, key string, defaultVal bool) bool
+}
+
+// AuditLogger records significant administrative and system actions to an
+// immutable audit trail.
+//
+// Log is fire-and-forget: it never returns an error. Failures are logged at
+// WARN level and silently discarded so that a transient database issue cannot
+// roll back or fail an already-committed business operation.
+//
+// actorID is nil for system-generated events (e.g. scheduled jobs).
+// resourceType and resourceID identify the affected entity; both are nil for
+// system-level actions. metadata carries any extra context that does not fit
+// into the structured columns.
+type AuditLogger interface {
+	Log(
+		ctx context.Context,
+		actorID *int,
+		actorRole *domain.UserRole,
+		action string,
+		resourceType *string,
+		resourceID *int,
+		metadata map[string]any,
+	)
+}
+
+// PaymentService manages entry-fee payment records for quiniela groups.
+//
+// CreateRecord creates a pending record that must later be confirmed by an
+// admin via ValidateDeposit. RejectDeposit marks a pending payment as denied
+// without capturing funds. Only an admin may call Validate or Reject; the
+// caller's identity is enforced at the HTTP layer via RequireRole.
+type PaymentService interface {
+	CreateRecord(ctx context.Context, quinielaID, userID, amount int, currency, reference string) (*domain.PaymentRecord, error)
+	ValidateDeposit(ctx context.Context, paymentID, adminID int, notes string) (*domain.PaymentRecord, error)
+	RejectDeposit(ctx context.Context, paymentID, adminID int, notes string) (*domain.PaymentRecord, error)
+	ListPending(ctx context.Context) ([]*domain.PaymentRecord, error)
+	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.PaymentRecord, error)
+}
+
+// AdminGroupService exposes administrative operations on Quiniela groups that
+// are not available to regular members.
+//
+// All methods require an adminID that is stored in the audit trail. The admin
+// role gate is enforced at the HTTP layer via RequireRole — this service does
+// not re-check it internally.
+type AdminGroupService interface {
+	// DeleteGroup soft-deletes the quiniela. Returns NotFound when it does not
+	// exist or is already deleted.
+	DeleteGroup(ctx context.Context, quinielaID, adminID int) error
+	// RemoveMember sets the membership status to 'left'. Returns NotFound for
+	// inactive or non-existent memberships.
+	RemoveMember(ctx context.Context, membershipID, adminID int) error
+	// UpdateGroupSettings changes max_members cap and entry_fee atomically.
+	// A nil maxMembers removes the cap. Returns the updated Quiniela.
+	UpdateGroupSettings(ctx context.Context, quinielaID int, maxMembers *int, entryFee, adminID int) (*domain.Quiniela, error)
+	// TransferOwnership assigns MembershipRoleCreateOwner to newOwnerUserID and
+	// demotes the current owner to MembershipRoleMember. Returns NotFound when
+	// quinielaID does not exist or newOwnerUserID is not an active member.
+	TransferOwnership(ctx context.Context, quinielaID, newOwnerUserID, adminID int) error
+}
+
+// AdminUserService exposes administrative operations on User accounts.
+//
+// BanUser and BulkBan automatically transfer group ownership when the banned
+// user holds MembershipRoleCreateOwner in any quiniela — see
+// GroupMembershipService for the transfer algorithm. The admin role gate is
+// enforced at the HTTP layer; this service does not re-check it.
+type AdminUserService interface {
+	BanUser(ctx context.Context, targetUserID, adminID int, reason string) (*domain.User, error)
+	UnbanUser(ctx context.Context, targetUserID, adminID int) (*domain.User, error)
+	ListUsers(ctx context.Context) ([]*domain.User, error)
+	// BulkBan bans every user in userIDs with the same reason. It processes
+	// bans sequentially; a failure on one user is logged and skipped so the
+	// remaining users are still banned. Returns the first error encountered,
+	// or nil when all succeeded.
+	BulkBan(ctx context.Context, userIDs []int, adminID int, reason string) error
+}
+
+// LeaderboardSnapshotService persists point-in-time leaderboard copies for a
+// quiniela. It is called by the scoring worker immediately after ScoreMatch
+// completes so the latest rankings are available without re-computing them.
+type LeaderboardSnapshotService interface {
+	// Snapshot computes the current leaderboard via Ranker and persists it.
+	// matchID is stored in the snapshot metadata for traceability.
+	Snapshot(ctx context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error)
 }

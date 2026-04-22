@@ -113,7 +113,7 @@ func TestValidateMatchResult_NegativeAwayScore_ReturnsValidation(t *testing.T) {
 func TestValidatePrediction_WellBeforeDeadline_ReturnsNil(t *testing.T) {
 	kickoff := time.Now().Add(10 * time.Minute) // 10 min away — comfortably open
 	p := &domain.Prediction{HomeScore: 1, AwayScore: 0}
-	if err := domain.ValidatePrediction(p, kickoff, time.Now()); err != nil {
+	if err := domain.ValidatePrediction(p, kickoff, time.Now(), domain.PredictionDeadlineOffset); err != nil {
 		t.Errorf("expected nil for prediction 10 min before kickoff, got %v", err)
 	}
 }
@@ -125,7 +125,7 @@ func TestValidatePrediction_WellBeforeDeadline_ReturnsNil(t *testing.T) {
 func TestValidatePrediction_WithinDeadlineWindow_ReturnsValidation(t *testing.T) {
 	kickoff := time.Now().Add(3 * time.Minute) // 3 min away — inside the 5-min lock
 	p := &domain.Prediction{HomeScore: 1, AwayScore: 0}
-	if err := domain.ValidatePrediction(p, kickoff, time.Now()); !isValidation(err) {
+	if err := domain.ValidatePrediction(p, kickoff, time.Now(), domain.PredictionDeadlineOffset); !isValidation(err) {
 		t.Errorf("expected validation error for prediction within 5-min lock window, got %v", err)
 	}
 }
@@ -135,7 +135,7 @@ func TestValidatePrediction_WithinDeadlineWindow_ReturnsValidation(t *testing.T)
 func TestValidatePrediction_AfterKickoff_ReturnsValidation(t *testing.T) {
 	kickoff := time.Now().Add(-1 * time.Minute) // match already started
 	p := &domain.Prediction{HomeScore: 2, AwayScore: 1}
-	if err := domain.ValidatePrediction(p, kickoff, time.Now()); !isValidation(err) {
+	if err := domain.ValidatePrediction(p, kickoff, time.Now(), domain.PredictionDeadlineOffset); !isValidation(err) {
 		t.Errorf("expected validation error for prediction after kickoff, got %v", err)
 	}
 }
@@ -144,7 +144,7 @@ func TestValidatePrediction_AfterKickoff_ReturnsValidation(t *testing.T) {
 func TestValidatePrediction_NegativeHomeScore_ReturnsValidation(t *testing.T) {
 	kickoff := time.Now().Add(time.Hour)
 	p := &domain.Prediction{HomeScore: -1, AwayScore: 0}
-	if err := domain.ValidatePrediction(p, kickoff, time.Now()); !isValidation(err) {
+	if err := domain.ValidatePrediction(p, kickoff, time.Now(), domain.PredictionDeadlineOffset); !isValidation(err) {
 		t.Errorf("expected validation error for negative home score, got %v", err)
 	}
 }
@@ -152,7 +152,7 @@ func TestValidatePrediction_NegativeHomeScore_ReturnsValidation(t *testing.T) {
 func TestValidatePrediction_NegativeAwayScore_ReturnsValidation(t *testing.T) {
 	kickoff := time.Now().Add(time.Hour)
 	p := &domain.Prediction{HomeScore: 0, AwayScore: -1}
-	if err := domain.ValidatePrediction(p, kickoff, time.Now()); !isValidation(err) {
+	if err := domain.ValidatePrediction(p, kickoff, time.Now(), domain.PredictionDeadlineOffset); !isValidation(err) {
 		t.Errorf("expected validation error for negative away score, got %v", err)
 	}
 }

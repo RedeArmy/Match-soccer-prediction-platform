@@ -15,6 +15,7 @@ import (
 type groupMembershipService struct {
 	quinielaRepo repository.QuinielaRepository
 	memberRepo   repository.GroupMembershipRepository
+	params       SystemParamService
 	log          *zap.Logger
 }
 
@@ -22,11 +23,13 @@ type groupMembershipService struct {
 func NewGroupMembershipService(
 	quinielaRepo repository.QuinielaRepository,
 	memberRepo repository.GroupMembershipRepository,
+	params SystemParamService,
 	log *zap.Logger,
 ) GroupMembershipService {
 	return &groupMembershipService{
 		quinielaRepo: quinielaRepo,
 		memberRepo:   memberRepo,
+		params:       params,
 		log:          log,
 	}
 }
@@ -148,8 +151,10 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 }
 
 // Leave sets the caller's own membership to left. Only the member themselves
-// may call this — no admin or owner can remove another user. After leaving,
-// group status is synchronised via syncGroupStatus.
+// may call this — no admin or owner can remove another user. If the leaving
+// user holds MembershipRoleCreateOwner, ownership is automatically transferred
+// to the oldest remaining active member before the status is updated.
+// After leaving, group status is synchronised via syncGroupStatus.
 func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUserID int) error {
 	m, err := s.memberRepo.GetByQuinielaAndUser(ctx, quinielaID, callerUserID)
 	if err != nil {
@@ -157,6 +162,15 @@ func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUs
 	}
 	if m == nil || m.Status != domain.MembershipActive {
 		return apperrors.Validation("you are not an active member of this group")
+	}
+
+	if m.Role == domain.MembershipRoleCreateOwner {
+		if terr := s.transferOwnership(ctx, quinielaID, callerUserID); terr != nil {
+			s.log.Warn("membership: ownership transfer on leave failed",
+				zap.Int("quiniela_id", quinielaID),
+				zap.Int("leaving_user", callerUserID),
+				zap.Error(terr))
+		}
 	}
 
 	m.Status = domain.MembershipLeft
@@ -167,6 +181,20 @@ func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUs
 
 	s.syncGroupStatus(ctx, quinielaID)
 	return nil
+}
+
+// transferOwnership assigns MembershipRoleCreateOwner to the oldest active
+// member of quinielaID, excluding excludeUserID. A no-op when no eligible
+// successor exists.
+func (s *groupMembershipService) transferOwnership(ctx context.Context, quinielaID, excludeUserID int) error {
+	successor, err := s.memberRepo.OldestActiveMember(ctx, quinielaID, excludeUserID)
+	if err != nil {
+		return err
+	}
+	if successor == nil {
+		return nil
+	}
+	return s.memberRepo.SetRole(ctx, successor.ID, domain.MembershipRoleCreateOwner)
 }
 
 // syncGroupStatus recomputes whether the quiniela should be active or inactive
@@ -181,8 +209,9 @@ func (s *groupMembershipService) syncGroupStatus(ctx context.Context, quinielaID
 		return
 	}
 
+	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
 	status := domain.QuinielaStatusInactive
-	if count >= domain.MinMembersForActive {
+	if count >= minMembers {
 		status = domain.QuinielaStatusActive
 	}
 

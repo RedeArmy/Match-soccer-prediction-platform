@@ -42,6 +42,10 @@ func ResolveUser(userRepo repository.UserRepository, log *zap.Logger) func(http.
 				WriteError(w, r, log, apperrors.Unauthorised(msgUserNotSynced))
 				return
 			}
+			if user.BannedAt != nil {
+				WriteError(w, r, log, apperrors.Forbidden("your account has been suspended"))
+				return
+			}
 			ctx := context.WithValue(r.Context(), contextKeyUser, user)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

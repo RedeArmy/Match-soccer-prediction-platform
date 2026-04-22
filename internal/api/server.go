@@ -145,9 +145,12 @@ func (s *Server) Routes() http.Handler {
 	matchRepo := repository.NewPostgresMatchRepository(s.db)
 	predRepo := repository.NewPostgresPredictionRepository(s.db)
 	memberRepo := repository.NewPostgresGroupMembershipRepository(s.db)
+	systemParamRepo := repository.NewPostgresSystemParamRepository(s.db)
 
-	s.wireSubscribers(matchRepo, predRepo)
-	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler, tournamentHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo)
+	paramSvc := service.NewSystemParamService(systemParamRepo, s.log)
+
+	s.wireSubscribers(matchRepo, predRepo, paramSvc)
+	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler, tournamentHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, paramSvc)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -248,12 +251,13 @@ func (s *Server) Routes() http.Handler {
 func (s *Server) wireSubscribers(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
+	params service.SystemParamService,
 ) {
 	if s.cfg.EventBus.Driver == "redis" {
 		return
 	}
 
-	scorer := service.NewScoringService(matchRepo, predRepo, s.log)
+	scorer := service.NewScoringService(matchRepo, predRepo, params, s.log)
 
 	// MatchFinished → ScoringService: calculate points for every prediction
 	// on the finished match. The handler runs inside a fresh background context
@@ -291,30 +295,41 @@ func (s *Server) buildHandlers(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 	memberRepo repository.GroupMembershipRepository,
+	params service.SystemParamService,
 ) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler, *handler.LeaderboardHandler, *handler.UserStatsHandler, *handler.TiebreakerHandler, *handler.TournamentHandler) {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
 	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(s.db)
 	tournamentRepo := repository.NewPostgresTournamentRepository(s.db)
+	auditLogRepo := repository.NewPostgresAuditLogRepository(s.db)
+	paymentRepo := repository.NewPostgresPaymentRecordRepository(s.db)
+	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(s.db)
 
-	scorer := service.NewScoringService(matchRepo, predRepo, s.log)
-	matchSvc := service.NewMatchService(matchRepo, s.bus, scorer, s.log)
+	auditSvc := service.NewAuditService(auditLogRepo, s.log)
+
+	scorer := service.NewScoringService(matchRepo, predRepo, params, s.log)
+	matchSvc := service.NewMatchService(matchRepo, s.bus, scorer, auditSvc, s.log)
 	if s.cache != nil {
 		matchSvc = service.NewCachedMatchService(matchSvc, s.cache, s.log)
 	}
 
-	predSvc := service.NewPredictionService(predRepo, matchRepo, s.log)
+	predSvc := service.NewPredictionService(predRepo, matchRepo, params, s.log)
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
-	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, s.log)
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, params, s.log)
 
-	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, s.log)
+	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, params, s.log)
 	if s.cache != nil {
 		ranker = service.NewCachedRankingService(ranker, s.cache, s.log)
 	}
 
 	userStatsSvc := service.NewUserStatsService(predRepo)
-	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, memberRepo, tiebreakerRepo, s.log)
-	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, s.log)
+	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, memberRepo, tiebreakerRepo, auditSvc, s.log)
+	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, auditSvc, s.log)
+
+	_ = service.NewPaymentService(paymentRepo, auditSvc, s.log)
+	_ = service.NewAdminGroupService(quinielaRepo, memberRepo, auditSvc, s.log)
+	_ = service.NewAdminUserService(userRepo, memberRepo, auditSvc, s.log)
+	_ = service.NewLeaderboardSnapshotService(ranker, snapRepo)
 
 	return handler.NewMatchHandler(matchSvc, s.log),
 		handler.NewPredictionHandler(predSvc, s.log),

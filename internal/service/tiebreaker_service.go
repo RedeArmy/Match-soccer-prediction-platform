@@ -15,6 +15,7 @@ type tiebreakerService struct {
 	configRepo     repository.TiebreakerConfigRepository
 	memberRepo     repository.GroupMembershipRepository
 	tiebreakerRepo repository.TiebreakerRepository
+	audit          AuditLogger
 	log            *zap.Logger
 }
 
@@ -23,12 +24,14 @@ func NewTiebreakerService(
 	configRepo repository.TiebreakerConfigRepository,
 	memberRepo repository.GroupMembershipRepository,
 	tiebreakerRepo repository.TiebreakerRepository,
+	audit AuditLogger,
 	log *zap.Logger,
 ) TiebreakerService {
 	return &tiebreakerService{
 		configRepo:     configRepo,
 		memberRepo:     memberRepo,
 		tiebreakerRepo: tiebreakerRepo,
+		audit:          audit,
 		log:            log,
 	}
 }
@@ -39,7 +42,16 @@ func (s *tiebreakerService) SetQuestion(ctx context.Context, question string) (*
 	if question == "" {
 		return nil, apperrors.Validation("tiebreaker question cannot be empty")
 	}
-	return s.configRepo.Upsert(ctx, question)
+	cfg, err := s.configRepo.Upsert(ctx, question)
+	if err != nil {
+		return nil, err
+	}
+
+	resType := "tiebreaker_config"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionTiebreakerQuestion, &resType, nil, map[string]any{
+		"question": question,
+	})
+	return cfg, nil
 }
 
 // Submit upserts the caller's global numeric prediction.
@@ -121,7 +133,15 @@ func (s *tiebreakerService) ConfirmResult(ctx context.Context, result int) error
 	if cfg == nil {
 		return apperrors.Validation("tiebreaker question has not been configured — cannot confirm result")
 	}
-	return s.configRepo.SetResult(ctx, result)
+	if err := s.configRepo.SetResult(ctx, result); err != nil {
+		return err
+	}
+
+	resType := "tiebreaker_config"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionTiebreakerResult, &resType, nil, map[string]any{
+		"result": result,
+	})
+	return nil
 }
 
 // requireActiveMember returns Forbidden when userID is not an active member of

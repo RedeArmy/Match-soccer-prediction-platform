@@ -65,6 +65,7 @@ func newTiebreakerSvc(cfg *domain.TiebreakerConfig, m *domain.GroupMembership, t
 		&stubTiebreakerConfigRepo{cfg: cfg},
 		&stubMemberRepo{membership: m},
 		tbRepo,
+		&noopAuditLogger{},
 		zap.NewNop(),
 	)
 }
@@ -89,6 +90,7 @@ func TestTiebreakerService_SetQuestion_StoresQuestion(t *testing.T) {
 		&stubTiebreakerConfigRepo{},
 		&stubMemberRepo{},
 		&stubTiebreakerRepoSvc{},
+		&noopAuditLogger{},
 		zap.NewNop(),
 	)
 
@@ -250,6 +252,7 @@ func TestTiebreakerService_ConfirmResult_RepoError_Propagates(t *testing.T) {
 		&stubTiebreakerConfigRepo{cfg: cfg, setResErr: errors.New("db error")},
 		&stubMemberRepo{},
 		&stubTiebreakerRepoSvc{},
+		&noopAuditLogger{},
 		zap.NewNop(),
 	)
 
