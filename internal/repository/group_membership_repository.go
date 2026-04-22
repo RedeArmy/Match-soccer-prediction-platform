@@ -36,7 +36,7 @@ func isMaxMembersViolation(err error) bool {
 }
 
 const (
-	membershipColumns   = "id, quiniela_id, user_id, status, role, paid, joined_at, created_at, updated_at"
+	membershipColumns     = "id, quiniela_id, user_id, status, role, paid, joined_at, created_at, updated_at"
 	errMembershipNotFound = "membership not found"
 )
 
