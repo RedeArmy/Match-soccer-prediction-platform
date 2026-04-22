@@ -545,6 +545,18 @@ func TestGroupRenameGroup_Returns409_WhenNameTaken(t *testing.T) {
 	}
 }
 
+func TestGroupRenameGroup_Returns422_OnMalformedJSON(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPatch, groupRenamePath, bytes.NewBufferString(`{bad json`))
+	req.Header.Set(headerContentType, contentTypeJSON)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
 // ── GroupResponse contains Status ─────────────────────────────────────────────
 
 func TestGroupCreate_ResponseBody_ContainsStatus(t *testing.T) {

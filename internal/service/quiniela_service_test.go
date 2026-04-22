@@ -338,3 +338,15 @@ func TestQuinielaService_RenameGroup_NameConflict_ReturnsConflict(t *testing.T) 
 		t.Errorf("expected ErrConflict for duplicate name, got %v", err)
 	}
 }
+
+func TestQuinielaService_RenameGroup_MemberRepoError_ReturnsError(t *testing.T) {
+	dbErr := errors.New("db down")
+	svc := newQuinielaSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{err: dbErr},
+	)
+
+	if _, err := svc.RenameGroup(context.Background(), 1, 10, "New Name"); err == nil {
+		t.Error("expected an error from memberRepo, got nil")
+	}
+}
