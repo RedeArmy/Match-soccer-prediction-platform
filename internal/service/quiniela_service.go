@@ -68,14 +68,14 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 		quiniela.Currency = "MXN"
 	}
 
-	// The owner is the CreateOwner (MembershipRoleOwner) and becomes an active
+	// The owner is the CreateOwner (MembershipRoleCreateOwner) and becomes an active
 	// member immediately — no approval required. Marked as paid for free groups;
 	// for paid groups the payment system will flip paid=true after confirmation.
 	// Both writes are wrapped in a single transaction via CreateWithMembership.
 	now := time.Now().UTC()
 	ownerMembership := &domain.GroupMembership{
 		UserID:   quiniela.OwnerID,
-		Role:     domain.MembershipRoleOwner,
+		Role:     domain.MembershipRoleCreateOwner,
 		Status:   domain.MembershipActive,
 		Paid:     quiniela.EntryFee == 0,
 		JoinedAt: &now,
@@ -84,13 +84,13 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 }
 
 // RenameGroup changes the name of the group. The caller must hold
-// MembershipRoleOwner in the group; any other caller receives Forbidden.
+// MembershipRoleCreateOwner in the group; any other caller receives Forbidden.
 func (s *quinielaService) RenameGroup(ctx context.Context, quinielaID, callerUserID int, name string) (*domain.Quiniela, error) {
 	m, err := s.memberRepo.GetByQuinielaAndUser(ctx, quinielaID, callerUserID)
 	if err != nil {
 		return nil, err
 	}
-	if m == nil || m.Role != domain.MembershipRoleOwner {
+	if m == nil || m.Role != domain.MembershipRoleCreateOwner {
 		return nil, apperrors.Forbidden("only the group owner can rename the group")
 	}
 

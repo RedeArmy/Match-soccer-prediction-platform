@@ -188,7 +188,7 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/join", groupHandler.Join)
 			r.Get("/me", groupHandler.ListMyGroups)
 			r.Get("/{id}", groupHandler.GetByID)
-			// Only the CreateOwner (MembershipRoleOwner) may rename the group.
+			// Only the CreateOwner (MembershipRoleCreateOwner) may rename the group.
 			// Ownership is enforced inside the service layer — not via RequireRole
 			// because it is resource-scoped, not system-role-scoped.
 			r.Patch("/{id}", groupHandler.RenameGroup)
