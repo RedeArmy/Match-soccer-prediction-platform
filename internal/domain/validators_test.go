@@ -224,3 +224,32 @@ func TestValidateQuiniela_ZeroOwner_ReturnsValidation(t *testing.T) {
 		t.Errorf("expected validation error for zero owner, got %v", err)
 	}
 }
+
+func TestValidateQuiniela_ZeroPrizeThreshold_ReturnsValidation(t *testing.T) {
+	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1, PrizeThreshold: 0}
+	if err := domain.ValidateQuiniela(q); !isValidation(err) {
+		t.Errorf("expected validation error for PrizeThreshold=0, got %v", err)
+	}
+}
+
+// ── ValidateMatchPhase ────────────────────────────────────────────────────────
+
+func TestValidateMatchPhase_EmptyString_ReturnsNil(t *testing.T) {
+	if err := domain.ValidateMatchPhase(""); err != nil {
+		t.Errorf(fmtUnexpectedErr, err)
+	}
+}
+
+func TestValidateMatchPhase_AllKnownPhases_ReturnNil(t *testing.T) {
+	for _, phase := range domain.AllMatchPhases {
+		if err := domain.ValidateMatchPhase(phase); err != nil {
+			t.Errorf("ValidateMatchPhase(%q): expected nil, got %v", phase, err)
+		}
+	}
+}
+
+func TestValidateMatchPhase_UnknownPhase_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateMatchPhase("semifinals"); !isValidation(err) {
+		t.Errorf("expected validation error for unrecognised phase, got %v", err)
+	}
+}

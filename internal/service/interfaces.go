@@ -80,7 +80,7 @@ type Ranker interface {
 // QuinielaService defines operations on the Quiniela entity.
 //
 // Create generates a unique invite code and records the owner as the first
-// active member (MembershipRoleOwner). GetByInviteCode enables the join flow:
+// active member (MembershipRoleCreateOwner). GetByInviteCode enables the join flow:
 // the caller obtains the quiniela from a short code before creating the membership.
 //
 // The invite code is permanent — it is generated once at creation and never
@@ -91,7 +91,7 @@ type QuinielaService interface {
 	GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error)
 	GetByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
 	// RenameGroup changes the name of the given group. Only the CreateOwner
-	// (MembershipRoleOwner) of the group may call this; any other caller receives
+	// (MembershipRoleCreateOwner) of the group may call this; any other caller receives
 	// Forbidden. Returns the updated Quiniela on success.
 	RenameGroup(ctx context.Context, quinielaID, callerUserID int, name string) (*domain.Quiniela, error)
 }
