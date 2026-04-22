@@ -1483,7 +1483,7 @@ func TestGroupMembershipRepository_SetRole_UpdatesRole(t *testing.T) {
 	m := seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	if err := repo.SetRole(context.Background(), m.ID, domain.MembershipRoleOwner); err != nil {
+	if err := repo.SetRole(context.Background(), m.ID, domain.MembershipRoleCreateOwner); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 
@@ -1491,8 +1491,8 @@ func TestGroupMembershipRepository_SetRole_UpdatesRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if updated.Role != domain.MembershipRoleOwner {
-		t.Errorf("expected role %q, got %q", domain.MembershipRoleOwner, updated.Role)
+	if updated.Role != domain.MembershipRoleCreateOwner {
+		t.Errorf("expected role %q, got %q", domain.MembershipRoleCreateOwner, updated.Role)
 	}
 }
 
@@ -1500,7 +1500,7 @@ func TestGroupMembershipRepository_SetRole_NotFound_ReturnsNotFound(t *testing.T
 	cleanTables(t)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	err := repo.SetRole(context.Background(), 999999, domain.MembershipRoleOwner)
+	err := repo.SetRole(context.Background(), 999999, domain.MembershipRoleCreateOwner)
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf("expected ErrNotFound for missing membership, got %v", err)
 	}

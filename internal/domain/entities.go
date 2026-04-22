@@ -23,12 +23,20 @@ import "time"
 // credential is stored here. ClerkSubject is the opaque identifier Clerk
 // assigns to each user (format "user_2abc…") and is the stable link between
 // a Clerk identity and the internal User record.
+//
+// BannedAt/BannedBy/BanReason track administrative bans. A non-nil BannedAt
+// means the user is currently banned and must be blocked from all write
+// operations. BannedBy is the ID of the admin who issued the ban; BanReason
+// is a human-readable explanation stored for audit purposes.
 type User struct {
 	ID           int
 	Name         string
 	Email        string
 	Role         UserRole
 	ClerkSubject string // opaque Clerk user ID, e.g. "user_2abc…"; empty for legacy rows
+	BannedAt     *time.Time
+	BannedBy     *int
+	BanReason    string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	DeletedAt    *time.Time // nil for active users; set when the record is soft-deleted
@@ -343,13 +351,13 @@ type MembershipRole string
 
 // Allowed values for MembershipRole.
 const (
-	MembershipRoleMember MembershipRole = "member" // regular participant
-	MembershipRoleOwner  MembershipRole = "owner"  // CreateOwner: group creator / current owner
+	MembershipRoleMember      MembershipRole = "member" // regular participant
+	MembershipRoleCreateOwner MembershipRole = "owner"  // group creator / current owner
 )
 
 // GroupMembership records one user's participation in one Quiniela.
 //
-// Role distinguishes the group owner (MembershipRoleOwner) from regular members.
+// Role distinguishes the group owner (MembershipRoleCreateOwner) from regular members.
 // The owner can rename the group; other actions on the group are reserved for
 // system administrators (RoleAdmin).
 //
@@ -445,4 +453,110 @@ type Tiebreaker struct {
 	Prediction int // the player's numeric estimate
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+}
+
+// SystemParamType constrains the Value interpretation for a SystemParam row.
+// The infrastructure layer is responsible for parsing the raw text Value into
+// the appropriate Go type before handing it to the service layer.
+type SystemParamType string
+
+// Allowed values for SystemParamType.
+const (
+	SystemParamTypeString   SystemParamType = "string"
+	SystemParamTypeInt      SystemParamType = "int"
+	SystemParamTypeBool     SystemParamType = "bool"
+	SystemParamTypeDuration SystemParamType = "duration"
+)
+
+// SystemParam is a key-value configuration entry managed at runtime by
+// administrators without requiring a deployment. IsRuntime = true means the
+// service layer re-reads the value on each request (or on cache miss); false
+// means the value is treated as boot-time configuration and a restart is
+// needed to pick up changes.
+//
+// Category groups related params (e.g. "scoring", "payment", "leaderboard")
+// to simplify admin UI rendering and bulk-fetch patterns.
+type SystemParam struct {
+	Key       string
+	Value     string
+	Type      SystemParamType
+	Category  string
+	IsRuntime bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// AuditLog is an immutable record of a significant administrative or system
+// action. Rows are append-only — no UPDATE or DELETE is ever issued against
+// this table. ActorID is nil when the action was triggered by the system
+// itself (e.g. a scheduled job). ResourceType / ResourceID identify the
+// entity that was affected; both are nil for system-level actions.
+//
+// Metadata holds action-specific context serialised as a free-form key-value
+// map; the infrastructure layer marshals it to/from JSONB. No business logic
+// should depend on the content of Metadata — it is for human review only.
+type AuditLog struct {
+	ID           int
+	ActorID      *int
+	ActorRole    *UserRole
+	Action       string
+	ResourceType *string
+	ResourceID   *int
+	Metadata     map[string]any
+	CreatedAt    time.Time
+}
+
+// PaymentStatus tracks the lifecycle of a payment transaction.
+type PaymentStatus string
+
+// Allowed values for PaymentStatus.
+const (
+	PaymentStatusPending   PaymentStatus = "pending"
+	PaymentStatusConfirmed PaymentStatus = "confirmed"
+	PaymentStatusRefunded  PaymentStatus = "refunded"
+)
+
+// PaymentRecord tracks a single entry-fee payment for one member of a
+// Quiniela. Amount is stored in the minor unit of Currency (e.g. centavos
+// for MXN) to avoid floating-point representation issues.
+//
+// Reference is the opaque identifier returned by the external payment
+// provider; it is nil until the payment provider issues a transaction ID.
+// ConfirmedAt is nil while the payment is pending or refunded.
+type PaymentRecord struct {
+	ID          int
+	QuinielaID  int
+	UserID      int
+	Amount      int // in minor units (e.g. centavos)
+	Currency    string
+	Status      PaymentStatus
+	Reference   *string    // nil until the payment provider assigns a transaction ID
+	ConfirmedAt *time.Time // nil for pending / refunded payments
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// LeaderboardSnapshotEntry is one participant's frozen ranking within a
+// LeaderboardSnapshot. It mirrors the runtime LeaderboardEntry but is
+// serialised to JSONB in the database, so it carries only scalar fields.
+type LeaderboardSnapshotEntry struct {
+	UserID      int
+	Rank        int
+	TotalPoints int
+	PrizeWinner bool
+}
+
+// LeaderboardSnapshot is a point-in-time copy of a Quiniela's leaderboard
+// taken by the ranking service (e.g. at phase boundaries or payment cutoffs).
+// Entries are stored as JSONB; the infrastructure layer handles marshaling.
+//
+// Snapshots are immutable after creation. TakenAt records the logical time
+// the snapshot represents, which may differ slightly from CreatedAt when
+// backfill jobs are used.
+type LeaderboardSnapshot struct {
+	ID         int
+	QuinielaID int
+	TakenAt    time.Time
+	Entries    []LeaderboardSnapshotEntry
+	CreatedAt  time.Time
 }

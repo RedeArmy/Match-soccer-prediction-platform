@@ -282,7 +282,7 @@ func (h *GroupHandler) Leave(w http.ResponseWriter, r *http.Request) {
 // @Summary      Rename a group
 // @Description  Updates the name of the group. Only the CreateOwner (the member
 //
-//	with MembershipRoleOwner) may rename their own group.
+//	with MembershipRoleCreateOwner) may rename their own group.
 //
 // @Tags         groups
 // @Accept       json

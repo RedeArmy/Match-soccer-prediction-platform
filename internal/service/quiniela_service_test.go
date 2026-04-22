@@ -262,7 +262,7 @@ func TestQuinielaService_GetByInviteCode_NotFound_ReturnsNotFound(t *testing.T) 
 
 func TestQuinielaService_RenameGroup_Success(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, Name: "Old Name", OwnerID: 10}
-	ownerMembership := &domain.GroupMembership{Role: domain.MembershipRoleOwner, Status: domain.MembershipActive}
+	ownerMembership := &domain.GroupMembership{Role: domain.MembershipRoleCreateOwner, Status: domain.MembershipActive}
 	svc := newQuinielaSvc(
 		&stubQuinielaRepo{quiniela: q},
 		&stubMemberRepo{membership: ownerMembership},
@@ -301,7 +301,7 @@ func TestQuinielaService_RenameGroup_NoMembership_ReturnsForbidden(t *testing.T)
 }
 
 func TestQuinielaService_RenameGroup_EmptyName_ReturnsValidation(t *testing.T) {
-	ownerMembership := &domain.GroupMembership{Role: domain.MembershipRoleOwner, Status: domain.MembershipActive}
+	ownerMembership := &domain.GroupMembership{Role: domain.MembershipRoleCreateOwner, Status: domain.MembershipActive}
 	svc := newQuinielaSvc(
 		&stubQuinielaRepo{quiniela: &domain.Quiniela{ID: 1}},
 		&stubMemberRepo{membership: ownerMembership},
@@ -313,7 +313,7 @@ func TestQuinielaService_RenameGroup_EmptyName_ReturnsValidation(t *testing.T) {
 }
 
 func TestQuinielaService_RenameGroup_QuinielaNotFound_ReturnsNotFound(t *testing.T) {
-	ownerMembership := &domain.GroupMembership{Role: domain.MembershipRoleOwner, Status: domain.MembershipActive}
+	ownerMembership := &domain.GroupMembership{Role: domain.MembershipRoleCreateOwner, Status: domain.MembershipActive}
 	svc := newQuinielaSvc(
 		&stubQuinielaRepo{quiniela: nil},
 		&stubMemberRepo{membership: ownerMembership},
@@ -325,7 +325,7 @@ func TestQuinielaService_RenameGroup_QuinielaNotFound_ReturnsNotFound(t *testing
 }
 
 func TestQuinielaService_RenameGroup_NameConflict_ReturnsConflict(t *testing.T) {
-	ownerMembership := &domain.GroupMembership{Role: domain.MembershipRoleOwner, Status: domain.MembershipActive}
+	ownerMembership := &domain.GroupMembership{Role: domain.MembershipRoleCreateOwner, Status: domain.MembershipActive}
 	svc := newQuinielaSvc(
 		&stubQuinielaRepo{
 			quiniela:  &domain.Quiniela{ID: 1, Name: "Old Name"},
