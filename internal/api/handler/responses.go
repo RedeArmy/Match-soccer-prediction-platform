@@ -386,3 +386,217 @@ func slotToResponse(s *domain.TournamentSlot) TournamentSlotResponse {
 	}
 	return resp
 }
+
+// ── Admin response types ──────────────────────────────────────────────────────
+
+// Paged wraps a paginated list with page metadata.
+type Paged[T any] struct {
+	Data []T      `json:"data"`
+	Page PageMeta `json:"page"`
+}
+
+// PageMeta describes the current page of a paginated response.
+type PageMeta struct {
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+}
+
+// AdminUserResponse is the admin view of a user account.
+type AdminUserResponse struct {
+	ID        int     `json:"id"`
+	Name      string  `json:"name"`
+	Email     string  `json:"email"`
+	Role      string  `json:"role"`
+	BannedAt  *string `json:"banned_at,omitempty"`
+	BannedBy  *int    `json:"banned_by,omitempty"`
+	BanReason string  `json:"ban_reason,omitempty"`
+	CreatedAt string  `json:"created_at"`
+	UpdatedAt string  `json:"updated_at"`
+}
+
+// AdminUserProfileResponse is the full admin view of a user.
+type AdminUserProfileResponse struct {
+	User        AdminUserResponse `json:"user"`
+	Memberships []MemberResponse  `json:"memberships"`
+	Payments    []PaymentResponse `json:"payments"`
+}
+
+// PaymentResponse is the JSON representation of a PaymentRecord.
+type PaymentResponse struct {
+	ID          int     `json:"id"`
+	QuinielaID  int     `json:"quiniela_id"`
+	UserID      int     `json:"user_id"`
+	Amount      int     `json:"amount"`
+	Currency    string  `json:"currency"`
+	Status      string  `json:"status"`
+	Reference   *string `json:"reference,omitempty"`
+	ReviewedBy  *int    `json:"reviewed_by,omitempty"`
+	Notes       string  `json:"notes,omitempty"`
+	ConfirmedAt *string `json:"confirmed_at,omitempty"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
+}
+
+// GlobalLeaderboardEntryResponse is one row of the admin global leaderboard.
+type GlobalLeaderboardEntryResponse struct {
+	Rank        int    `json:"rank"`
+	UserID      int    `json:"user_id"`
+	UserName    string `json:"user_name"`
+	TotalPoints int    `json:"total_points"`
+}
+
+// SnapshotResponse is the JSON representation of a LeaderboardSnapshot.
+type SnapshotResponse struct {
+	ID         int                     `json:"id"`
+	QuinielaID int                     `json:"quiniela_id"`
+	TakenAt    string                  `json:"taken_at"`
+	Entries    []SnapshotEntryResponse `json:"entries"`
+	CreatedAt  string                  `json:"created_at"`
+}
+
+// SnapshotEntryResponse is one row within a LeaderboardSnapshot.
+type SnapshotEntryResponse struct {
+	UserID      int  `json:"user_id"`
+	Rank        int  `json:"rank"`
+	TotalPoints int  `json:"total_points"`
+	PrizeWinner bool `json:"prize_winner"`
+}
+
+// AuditLogResponse is the JSON representation of an AuditLog entry.
+type AuditLogResponse struct {
+	ID           int            `json:"id"`
+	ActorID      *int           `json:"actor_id,omitempty"`
+	ActorRole    *string        `json:"actor_role,omitempty"`
+	Action       string         `json:"action"`
+	ResourceType *string        `json:"resource_type,omitempty"`
+	ResourceID   *int           `json:"resource_id,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	CreatedAt    string         `json:"created_at"`
+}
+
+// SystemParamResponse is the JSON representation of a SystemParam.
+type SystemParamResponse struct {
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	Type      string `json:"type"`
+	Category  string `json:"category"`
+	IsRuntime bool   `json:"is_runtime"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// TiebreakerSubmissionResponse is the admin view of a tiebreaker prediction.
+type TiebreakerSubmissionResponse struct {
+	ID         int    `json:"id"`
+	UserID     int    `json:"user_id"`
+	UserName   string `json:"user_name"`
+	Prediction int    `json:"prediction"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+// ConflictResponse is the JSON representation of a detected operational conflict.
+type ConflictResponse struct {
+	Type       string         `json:"type"`
+	EntityID   int            `json:"entity_id"`
+	EntityType string         `json:"entity_type"`
+	Details    map[string]any `json:"details,omitempty"`
+	DetectedAt string         `json:"detected_at"`
+}
+
+// ── Admin converter functions ─────────────────────────────────────────────────
+
+func adminUserToResponse(u *domain.User) AdminUserResponse {
+	resp := AdminUserResponse{
+		ID:        u.ID,
+		Name:      u.Name,
+		Email:     u.Email,
+		Role:      string(u.Role),
+		BanReason: u.BanReason,
+		CreatedAt: u.CreatedAt.Format(timeFormat),
+		UpdatedAt: u.UpdatedAt.Format(timeFormat),
+	}
+	if u.BannedAt != nil {
+		s := u.BannedAt.Format(timeFormat)
+		resp.BannedAt = &s
+		resp.BannedBy = u.BannedBy
+	}
+	return resp
+}
+
+func paymentToResponse(p *domain.PaymentRecord) PaymentResponse {
+	resp := PaymentResponse{
+		ID:         p.ID,
+		QuinielaID: p.QuinielaID,
+		UserID:     p.UserID,
+		Amount:     p.Amount,
+		Currency:   p.Currency,
+		Status:     string(p.Status),
+		Reference:  p.Reference,
+		ReviewedBy: p.ReviewedBy,
+		Notes:      p.Notes,
+		CreatedAt:  p.CreatedAt.Format(timeFormat),
+		UpdatedAt:  p.UpdatedAt.Format(timeFormat),
+	}
+	if p.ConfirmedAt != nil {
+		s := p.ConfirmedAt.Format(timeFormat)
+		resp.ConfirmedAt = &s
+	}
+	return resp
+}
+
+func snapshotToResponse(s *domain.LeaderboardSnapshot) SnapshotResponse {
+	entries := make([]SnapshotEntryResponse, len(s.Entries))
+	for i, e := range s.Entries {
+		entries[i] = SnapshotEntryResponse{
+			UserID:      e.UserID,
+			Rank:        e.Rank,
+			TotalPoints: e.TotalPoints,
+			PrizeWinner: e.PrizeWinner,
+		}
+	}
+	return SnapshotResponse{
+		ID:         s.ID,
+		QuinielaID: s.QuinielaID,
+		TakenAt:    s.TakenAt.Format(timeFormat),
+		Entries:    entries,
+		CreatedAt:  s.CreatedAt.Format(timeFormat),
+	}
+}
+
+func auditLogToResponse(a *domain.AuditLog) AuditLogResponse {
+	resp := AuditLogResponse{
+		ID:           a.ID,
+		ActorID:      a.ActorID,
+		ResourceType: a.ResourceType,
+		ResourceID:   a.ResourceID,
+		Action:       a.Action,
+		Metadata:     a.Metadata,
+		CreatedAt:    a.CreatedAt.Format(timeFormat),
+	}
+	if a.ActorRole != nil {
+		s := string(*a.ActorRole)
+		resp.ActorRole = &s
+	}
+	return resp
+}
+
+func systemParamToResponse(p *domain.SystemParam) SystemParamResponse {
+	return SystemParamResponse{
+		Key:       p.Key,
+		Value:     p.Value,
+		Type:      string(p.Type),
+		Category:  p.Category,
+		IsRuntime: p.IsRuntime,
+		UpdatedAt: p.UpdatedAt.Format(timeFormat),
+	}
+}
+
+func conflictToResponse(c domain.Conflict) ConflictResponse {
+	return ConflictResponse{
+		Type:       string(c.Type),
+		EntityID:   c.EntityID,
+		EntityType: c.EntityType,
+		Details:    c.Details,
+		DetectedAt: c.DetectedAt.Format(timeFormat),
+	}
+}
