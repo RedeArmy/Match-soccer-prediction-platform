@@ -8,8 +8,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
-// leaderboardSnapshotService is the concrete implementation of
-// LeaderboardSnapshotService.
+// leaderboardSnapshotService is the concrete implementation of Snapshotter.
 type leaderboardSnapshotService struct {
 	ranker   Ranker
 	snapRepo repository.LeaderboardSnapshotRepository
@@ -19,7 +18,7 @@ type leaderboardSnapshotService struct {
 func NewLeaderboardSnapshotService(
 	ranker Ranker,
 	snapRepo repository.LeaderboardSnapshotRepository,
-) LeaderboardSnapshotService {
+) Snapshotter {
 	return &leaderboardSnapshotService{ranker: ranker, snapRepo: snapRepo}
 }
 
@@ -59,4 +58,4 @@ func (s *leaderboardSnapshotService) Snapshot(ctx context.Context, quinielaID in
 	return snap, nil
 }
 
-var _ LeaderboardSnapshotService = (*leaderboardSnapshotService)(nil)
+var _ Snapshotter = (*leaderboardSnapshotService)(nil)

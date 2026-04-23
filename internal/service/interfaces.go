@@ -312,10 +312,10 @@ type AdminUserService interface {
 	BulkBan(ctx context.Context, userIDs []int, adminID int, reason string) error
 }
 
-// LeaderboardSnapshotService persists point-in-time leaderboard copies for a
+// Snapshotter persists point-in-time leaderboard copies for a
 // quiniela. It is called by the scoring worker immediately after ScoreMatch
 // completes so the latest rankings are available without re-computing them.
-type LeaderboardSnapshotService interface {
+type Snapshotter interface {
 	// Snapshot computes the current leaderboard via Ranker and persists it.
 	// matchID is stored in the snapshot metadata for traceability.
 	Snapshot(ctx context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error)
