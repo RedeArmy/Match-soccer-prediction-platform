@@ -141,7 +141,12 @@ func TestCalculatePoints(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pred := &domain.Prediction{HomeScore: tc.predHome, AwayScore: tc.predAway}
-			got := calculatePoints(pred, tc.realHome, tc.realAway)
+			cfg := scoringConfig{
+				exactScore:     domain.PointsExactScore,
+				correctOutcome: domain.PointsCorrectOutcome,
+				goalDifference: domain.PointsGoalDifference,
+			}
+			got := calculatePoints(pred, tc.realHome, tc.realAway, cfg)
 			if got != tc.wantPts {
 				t.Errorf(fmtPoints,
 					tc.predHome, tc.predAway,
@@ -167,7 +172,7 @@ func TestScoreMatch_FinishedMatch_CalculatesAndPersistsPoints(t *testing.T) {
 		{ID: 3, HomeScore: 0, AwayScore: 1}, // wrong outcome → 0
 	}
 	predRepo := &stubPredRepo{list: preds}
-	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, zap.NewNop())
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, &noopSystemParamService{}, zap.NewNop())
 
 	if err := svc.ScoreMatch(context.Background(), 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -178,7 +183,7 @@ func TestScoreMatch_FinishedMatch_CalculatesAndPersistsPoints(t *testing.T) {
 }
 
 func TestScoreMatch_MatchNotFound_ReturnsNotFound(t *testing.T) {
-	svc := NewScoringService(&stubMatchRepo{match: nil}, &stubPredRepo{}, zap.NewNop())
+	svc := NewScoringService(&stubMatchRepo{match: nil}, &stubPredRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	if err := svc.ScoreMatch(context.Background(), 99); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf("expected not-found error, got %v", err)
@@ -187,7 +192,7 @@ func TestScoreMatch_MatchNotFound_ReturnsNotFound(t *testing.T) {
 
 func TestScoreMatch_MatchNotFinished_ReturnsValidation(t *testing.T) {
 	match := &domain.Match{ID: 1, Status: domain.MatchStatusLive}
-	svc := NewScoringService(&stubMatchRepo{match: match}, &stubPredRepo{}, zap.NewNop())
+	svc := NewScoringService(&stubMatchRepo{match: match}, &stubPredRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for non-finished match, got %v", err)
@@ -196,7 +201,7 @@ func TestScoreMatch_MatchNotFinished_ReturnsValidation(t *testing.T) {
 
 func TestScoreMatch_NilScores_ReturnsValidation(t *testing.T) {
 	match := &domain.Match{ID: 1, Status: domain.MatchStatusFinished} // HomeScore/AwayScore are nil
-	svc := NewScoringService(&stubMatchRepo{match: match}, &stubPredRepo{}, zap.NewNop())
+	svc := NewScoringService(&stubMatchRepo{match: match}, &stubPredRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for nil scores, got %v", err)
@@ -205,7 +210,7 @@ func TestScoreMatch_NilScores_ReturnsValidation(t *testing.T) {
 
 func TestScoreMatch_MatchRepoError_PropagatesError(t *testing.T) {
 	repoErr := errors.New("db timeout")
-	svc := NewScoringService(&stubMatchRepo{err: repoErr}, &stubPredRepo{}, zap.NewNop())
+	svc := NewScoringService(&stubMatchRepo{err: repoErr}, &stubPredRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, repoErr) {
 		t.Errorf("expected repo error to propagate, got %v", err)
@@ -216,7 +221,7 @@ func TestScoreMatch_NoPredictions_ReturnsNil(t *testing.T) {
 	home, away := 1, 0
 	match := &domain.Match{ID: 1, Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away}
 	predRepo := &stubPredRepo{list: nil} // empty — no predictions for this match
-	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, zap.NewNop())
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, &noopSystemParamService{}, zap.NewNop())
 
 	if err := svc.ScoreMatch(context.Background(), 1); err != nil {
 		t.Errorf("expected nil when no predictions exist, got %v", err)
@@ -228,7 +233,7 @@ func TestScoreMatch_PredListError_PropagatesError(t *testing.T) {
 	match := &domain.Match{ID: 1, Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away}
 	repoErr := errors.New("query failed")
 	predRepo := &stubPredRepo{err: repoErr}
-	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, zap.NewNop())
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, &noopSystemParamService{}, zap.NewNop())
 
 	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, repoErr) {
 		t.Errorf("expected pred repo error to propagate, got %v", err)
@@ -243,7 +248,7 @@ func TestScoreMatch_UpdateManyPointsError_PropagatesError(t *testing.T) {
 		list:      []*domain.Prediction{{ID: 1, HomeScore: 1, AwayScore: 1}},
 		updateErr: updateErr,
 	}
-	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, zap.NewNop())
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, &noopSystemParamService{}, zap.NewNop())
 
 	if err := svc.ScoreMatch(context.Background(), 1); !errors.Is(err, updateErr) {
 		t.Errorf("expected update error to propagate, got %v", err)

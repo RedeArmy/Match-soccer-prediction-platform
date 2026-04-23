@@ -15,6 +15,7 @@ import (
 type scoringService struct {
 	matchRepo repository.MatchRepository
 	predRepo  repository.PredictionRepository
+	params    SystemParamService
 	log       *zap.Logger
 }
 
@@ -22,9 +23,27 @@ type scoringService struct {
 func NewScoringService(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
+	params SystemParamService,
 	log *zap.Logger,
 ) MatchScorer {
-	return &scoringService{matchRepo: matchRepo, predRepo: predRepo, log: log}
+	return &scoringService{matchRepo: matchRepo, predRepo: predRepo, params: params, log: log}
+}
+
+// scoringConfig holds the point values read from SystemParamService (or their
+// domain constant defaults). Reading once per ScoreMatch call avoids N cache
+// lookups inside the per-prediction loop.
+type scoringConfig struct {
+	exactScore     int
+	correctOutcome int
+	goalDifference int
+}
+
+func (s *scoringService) loadScoringConfig(ctx context.Context) scoringConfig {
+	return scoringConfig{
+		exactScore:     s.params.GetInt(ctx, domain.ParamKeyScoringExactScore, domain.PointsExactScore),
+		correctOutcome: s.params.GetInt(ctx, domain.ParamKeyScoringCorrectOutcome, domain.PointsCorrectOutcome),
+		goalDifference: s.params.GetInt(ctx, domain.ParamKeyScoringGoalDiff, domain.PointsGoalDifference),
+	}
 }
 
 // ScoreMatch calculates and persists points for every prediction on the given
@@ -58,32 +77,25 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 		return nil
 	}
 
-	// Calculate all points before touching the database so that a bug in
-	// calculatePoints cannot leave the batch half-committed.
+	cfg := s.loadScoringConfig(ctx)
 	points := make(map[int]int, len(predictions))
 	for _, pred := range predictions {
-		points[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore)
+		points[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore, cfg)
 	}
 	return s.predRepo.UpdateManyPoints(ctx, points)
 }
 
-// calculatePoints applies the scoring rules defined in domain/constants.go.
+// calculatePoints applies the scoring rules from scoringConfig.
 //
 // Decision table (evaluated top-to-bottom, first match wins):
 //
-//	Exact scoreline                          → PointsExactScore (5)
-//	Correct outcome (non-draw) + same margin → PointsCorrectOutcome + PointsGoalDifference (3)
-//	Correct outcome only                     → PointsCorrectOutcome (2)
-//	Wrong outcome / no prediction            → PointsIncorrectResult (0)
-//
-// The goal-difference bonus is intentionally excluded for draws. Every draw
-// has a margin of 0, so the check is trivially true for any correct-draw
-// prediction; awarding the bonus would give draws a structural advantage over
-// wins/losses where a matching margin requires real predictive accuracy.
-func calculatePoints(pred *domain.Prediction, actualHome, actualAway int) int {
-	// Tier 1 — exact scoreline.
+//	Exact scoreline                          → cfg.exactScore (default 5)
+//	Correct outcome (non-draw) + same margin → cfg.correctOutcome + cfg.goalDifference (default 3)
+//	Correct outcome only                     → cfg.correctOutcome (default 2)
+//	Wrong outcome / no prediction            → 0
+func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, cfg scoringConfig) int {
 	if pred.HomeScore == actualHome && pred.AwayScore == actualAway {
-		return domain.PointsExactScore
+		return cfg.exactScore
 	}
 
 	predOutcome := outcome(pred.HomeScore, pred.AwayScore)
@@ -93,11 +105,9 @@ func calculatePoints(pred *domain.Prediction, actualHome, actualAway int) int {
 		return domain.PointsIncorrectResult
 	}
 
-	// Tier 2 — correct outcome. Add the goal-difference bonus for non-draw
-	// results where the predicted margin matches the actual margin.
-	points := domain.PointsCorrectOutcome
+	points := cfg.correctOutcome
 	if actualOutcome != outcomeDraw && goalDiff(pred.HomeScore, pred.AwayScore) == goalDiff(actualHome, actualAway) {
-		points += domain.PointsGoalDifference
+		points += cfg.goalDifference
 	}
 	return points
 }

@@ -16,6 +16,7 @@ import (
 type predictionService struct {
 	predRepo  repository.PredictionRepository
 	matchRepo repository.MatchRepository
+	params    SystemParamService
 	log       *zap.Logger
 }
 
@@ -23,21 +24,29 @@ type predictionService struct {
 func NewPredictionService(
 	predRepo repository.PredictionRepository,
 	matchRepo repository.MatchRepository,
+	params SystemParamService,
 	log *zap.Logger,
 ) PredictionService {
 	return &predictionService{
 		predRepo:  predRepo,
 		matchRepo: matchRepo,
+		params:    params,
 		log:       log,
 	}
+}
+
+// deadlineOffset reads the prediction deadline from system params (in minutes),
+// falling back to the domain constant when the key is absent or unparseable.
+func (s *predictionService) deadlineOffset(ctx context.Context) time.Duration {
+	mins := s.params.GetInt(ctx, domain.ParamKeyPredictionDeadlineMin, int(domain.PredictionDeadlineOffset/time.Minute))
+	return time.Duration(mins) * time.Minute
 }
 
 // Submit validates and persists a new prediction.
 //
 // Two independent guards prevent predictions on a closed match:
-//   - Time-based: ValidatePrediction rejects submissions after KickoffAt minus
-//     PredictionDeadlineOffset (5 minutes). This covers the common case where
-//     the match has not been explicitly started yet.
+//   - Time-based: predictions are rejected after KickoffAt minus the
+//     configurable deadline offset (default 5 minutes from system params).
 //   - Status-based: a match in Live or Finished status is rejected regardless
 //     of the scheduled kickoff time, closing the race window that exists when
 //     an admin calls StartMatch before the time-based deadline expires.
@@ -56,7 +65,7 @@ func (s *predictionService) Submit(ctx context.Context, prediction *domain.Predi
 	if match.Status != domain.MatchStatusScheduled {
 		return apperrors.Validation("cannot predict on a match that has already started")
 	}
-	if err := domain.ValidatePrediction(prediction, match.KickoffAt, time.Now().UTC()); err != nil {
+	if err := domain.ValidatePrediction(prediction, match.KickoffAt, time.Now().UTC(), s.deadlineOffset(ctx)); err != nil {
 		return err
 	}
 	existing, err := s.predRepo.GetByUserAndMatch(ctx, prediction.UserID, prediction.MatchID)
@@ -99,7 +108,7 @@ func (s *predictionService) Update(ctx context.Context, callerUserID, id int, ho
 		HomeScore: homeScore,
 		AwayScore: awayScore,
 	}
-	if err := domain.ValidatePrediction(updated, match.KickoffAt, time.Now().UTC()); err != nil {
+	if err := domain.ValidatePrediction(updated, match.KickoffAt, time.Now().UTC(), s.deadlineOffset(ctx)); err != nil {
 		return nil, err
 	}
 	pred.HomeScore = homeScore

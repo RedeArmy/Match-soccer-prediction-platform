@@ -35,7 +35,7 @@ func (r *stubUserRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, er
 	return r.users, r.err
 }
 func (r *stubUserRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
-	return nil, r.err
+	return r.user, r.err
 }
 func (r *stubUserRepo) Unban(_ context.Context, _ int) error                 { return r.err }
 func (r *stubUserRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, r.err }
@@ -106,6 +106,7 @@ func newRankingSvc(q *domain.Quiniela, predRepo *stubTotalPointsPredRepo, users 
 		&stubUserRepo{users: users},
 		&stubTiebreakerRepo{},
 		&stubTiebreakerCfgRepo{},
+		&noopSystemParamService{},
 		zap.NewNop(),
 	)
 }
@@ -119,6 +120,7 @@ func TestGetLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T) {
 		&stubUserRepo{},
 		&stubTiebreakerRepo{},
 		&stubTiebreakerCfgRepo{},
+		&noopSystemParamService{},
 		zap.NewNop(),
 	)
 
@@ -215,7 +217,7 @@ func TestGetLeaderboard_ListByIDsError_Propagated(t *testing.T) {
 	}
 	userRepo := &stubUserRepo{err: errors.New("db error")}
 
-	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, &stubTiebreakerRepo{}, &stubTiebreakerCfgRepo{}, zap.NewNop())
+	svc := NewRankingService(&stubQuinielaRepo{quiniela: q}, predRepo, userRepo, &stubTiebreakerRepo{}, &stubTiebreakerCfgRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	_, err := svc.GetLeaderboard(context.Background(), 1)
 	if err == nil {
@@ -491,6 +493,7 @@ func TestGetPhaseLeaderboard_QuinielaNotFound_ReturnsNotFoundError(t *testing.T)
 		&stubUserRepo{},
 		&stubTiebreakerRepo{},
 		&stubTiebreakerCfgRepo{},
+		&noopSystemParamService{},
 		zap.NewNop(),
 	)
 
@@ -728,6 +731,7 @@ func TestGetLeaderboard_TiebreakerDistanceBreaksTie_WhenAllStatsEqual(t *testing
 		&stubUserRepo{users: []*domain.User{userA, userB}},
 		tbRepo,
 		cfgRepo,
+		&noopSystemParamService{},
 		zap.NewNop(),
 	)
 
@@ -773,6 +777,7 @@ func TestGetLeaderboard_TiebreakerDistanceEqual_SameRank(t *testing.T) {
 		&stubUserRepo{users: []*domain.User{userA, userB}},
 		tbRepo,
 		cfgRepo,
+		&noopSystemParamService{},
 		zap.NewNop(),
 	)
 
@@ -799,6 +804,7 @@ func TestGetLeaderboard_TiebreakerRepoError_Propagated(t *testing.T) {
 		&stubUserRepo{users: []*domain.User{userA}},
 		&stubTiebreakerRepo{err: errors.New("db error")},
 		&stubTiebreakerCfgRepo{cfg: &domain.TiebreakerConfig{Result: &result}},
+		&noopSystemParamService{},
 		zap.NewNop(),
 	)
 

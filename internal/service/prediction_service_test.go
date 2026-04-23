@@ -82,7 +82,7 @@ func (r *stubPredRepo) ListUserScoredPointsChronological(_ context.Context, _ in
 func newPredSvc(match *domain.Match, existingPred *domain.Prediction) PredictionService {
 	matchRepo := &stubMatchRepo{match: match}
 	predRepo := &stubPredRepo{byUserMatch: existingPred}
-	return NewPredictionService(predRepo, matchRepo, zap.NewNop())
+	return NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, zap.NewNop())
 }
 
 func openMatch() *domain.Match {
@@ -168,7 +168,7 @@ func TestUpdate_ValidPrediction_ReturnsUpdated(t *testing.T) {
 	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: match.ID, HomeScore: 1, AwayScore: 0}
 	matchRepo := &stubMatchRepo{match: match}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, matchRepo, zap.NewNop())
+	svc := NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, zap.NewNop())
 
 	got, err := svc.Update(context.Background(), 1, 1, 2, 1)
 	if err != nil {
@@ -182,7 +182,7 @@ func TestUpdate_ValidPrediction_ReturnsUpdated(t *testing.T) {
 func TestUpdate_PredictionNotFound_ReturnsNotFound(t *testing.T) {
 	matchRepo := &stubMatchRepo{match: openMatch()}
 	predRepo := &stubPredRepo{byID: nil}
-	svc := NewPredictionService(predRepo, matchRepo, zap.NewNop())
+	svc := NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 99, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf(fmtNotFoundErr, err)
@@ -192,7 +192,7 @@ func TestUpdate_PredictionNotFound_ReturnsNotFound(t *testing.T) {
 func TestUpdate_MatchNotFound_ReturnsNotFound(t *testing.T) {
 	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 99}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{match: nil}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: nil}, &noopSystemParamService{}, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 1, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf(fmtNotFoundErr, err)
@@ -206,7 +206,7 @@ func TestUpdate_PastDeadline_ReturnsValidation(t *testing.T) {
 	}
 	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for deadline, got %v", err)
@@ -217,7 +217,7 @@ func TestUpdate_OtherUsersPrediction_ReturnsForbidden(t *testing.T) {
 	match := openMatch()
 	pred := &domain.Prediction{ID: 1, UserID: 2, MatchID: match.ID, HomeScore: 1, AwayScore: 0}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrForbidden) {
 		t.Errorf("expected forbidden error for ownership mismatch, got %v", err)
@@ -234,7 +234,7 @@ func TestUpdate_LiveMatch_ReturnsValidation(t *testing.T) {
 	}
 	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for live match, got %v", err)
@@ -248,7 +248,7 @@ func TestUpdate_FinishedMatch_ReturnsValidation(t *testing.T) {
 	}
 	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
 	predRepo := &stubPredRepo{byID: pred}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, zap.NewNop())
 
 	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for finished match, got %v", err)
@@ -260,7 +260,7 @@ func TestUpdate_FinishedMatch_ReturnsValidation(t *testing.T) {
 func TestGetByUser_ReturnsSlice(t *testing.T) {
 	preds := []*domain.Prediction{{ID: 1, UserID: 1, MatchID: 1}}
 	predRepo := &stubPredRepo{list: preds}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	got, err := svc.GetByUser(context.Background(), 1)
 	if err != nil {
@@ -274,7 +274,7 @@ func TestGetByUser_ReturnsSlice(t *testing.T) {
 func TestGetByMatch_ReturnsSlice(t *testing.T) {
 	preds := []*domain.Prediction{{ID: 2, UserID: 2, MatchID: 5}}
 	predRepo := &stubPredRepo{list: preds}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	got, err := svc.GetByMatch(context.Background(), 5)
 	if err != nil {
@@ -290,7 +290,7 @@ func TestGetByMatch_ReturnsSlice(t *testing.T) {
 func TestGetByUserAndQuiniela_MemberWithPredictions_ReturnsSlice(t *testing.T) {
 	preds := []*domain.Prediction{{ID: 1, UserID: 1, MatchID: 3}}
 	predRepo := &stubPredRepo{list: preds}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	got, err := svc.GetByUserAndQuiniela(context.Background(), 1, 7)
 	if err != nil {
@@ -304,7 +304,7 @@ func TestGetByUserAndQuiniela_MemberWithPredictions_ReturnsSlice(t *testing.T) {
 func TestGetByUserAndQuiniela_NonMember_ReturnsEmptySlice(t *testing.T) {
 	// Repository returns [] when the EXISTS membership check fails.
 	predRepo := &stubPredRepo{list: []*domain.Prediction{}}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	got, err := svc.GetByUserAndQuiniela(context.Background(), 1, 99)
 	if err != nil {
@@ -317,7 +317,7 @@ func TestGetByUserAndQuiniela_NonMember_ReturnsEmptySlice(t *testing.T) {
 
 func TestGetByUserAndQuiniela_RepoError_Propagated(t *testing.T) {
 	predRepo := &stubPredRepo{err: errors.New("db error")}
-	svc := NewPredictionService(predRepo, &stubMatchRepo{}, zap.NewNop())
+	svc := NewPredictionService(predRepo, &stubMatchRepo{}, &noopSystemParamService{}, zap.NewNop())
 
 	_, err := svc.GetByUserAndQuiniela(context.Background(), 1, 7)
 	if err == nil {

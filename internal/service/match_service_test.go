@@ -75,9 +75,37 @@ func (s *stubScorer) ScoreMatch(_ context.Context, matchID int) error {
 	return s.err
 }
 
+// noopAuditLogger satisfies AuditLogger without doing anything.
+type noopAuditLogger struct{}
+
+func (*noopAuditLogger) Log(_ context.Context, _ *int, _ *domain.UserRole, _ string, _ *string, _ *int, _ map[string]any) {
+}
+
+// noopSystemParamService satisfies SystemParamService with domain-constant defaults.
+type noopSystemParamService struct{}
+
+func (*noopSystemParamService) Get(_ context.Context, _ string) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (*noopSystemParamService) GetAll(_ context.Context) ([]*domain.SystemParam, error) {
+	return nil, nil
+}
+func (*noopSystemParamService) GetByCategory(_ context.Context, _ string) ([]*domain.SystemParam, error) {
+	return nil, nil
+}
+func (*noopSystemParamService) Set(_ context.Context, _, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (*noopSystemParamService) GetString(_ context.Context, _ string, d string) string { return d }
+func (*noopSystemParamService) GetInt(_ context.Context, _ string, d int) int          { return d }
+func (*noopSystemParamService) GetDuration(_ context.Context, _ string, d time.Duration) time.Duration {
+	return d
+}
+func (*noopSystemParamService) GetBool(_ context.Context, _ string, d bool) bool { return d }
+
 func newMatchSvc(match *domain.Match) (MatchService, *stubPublisher) {
 	pub := &stubPublisher{}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
 	return svc, pub
 }
 
@@ -141,7 +169,7 @@ func TestUpdateResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) {
 
 	pub := &stubPublisher{err: errors.New("redis unavailable")}
 	scorer := &stubScorer{}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
 
 	result, err := svc.UpdateResult(context.Background(), 42, 2, 1)
 	if err != nil {
@@ -167,7 +195,7 @@ func TestUpdateResult_PublishFails_ScorerAlsoFails_StillReturnsResult(t *testing
 
 	pub := &stubPublisher{err: errors.New("redis unavailable")}
 	scorer := &stubScorer{err: errors.New("db timeout")}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
 
 	result, err := svc.UpdateResult(context.Background(), 7, 1, 0)
 	if err != nil {
@@ -267,7 +295,7 @@ func TestListMatches_ReturnsSlice(t *testing.T) {
 	matches := []*domain.Match{
 		{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Status: domain.MatchStatusScheduled},
 	}
-	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
@@ -283,7 +311,7 @@ func TestListMatchesByPhase_ReturnsFilteredSlice(t *testing.T) {
 	matches := []*domain.Match{
 		{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Phase: domain.PhaseGroupStage},
 	}
-	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	got, err := svc.ListMatchesByPhase(context.Background(), domain.PhaseGroupStage)
 	if err != nil {
@@ -299,7 +327,7 @@ func TestListMatchesByStatus_ReturnsFilteredSlice(t *testing.T) {
 	matches := []*domain.Match{
 		{ID: 1, HomeTeam: "France", AwayTeam: "Germany", Status: domain.MatchStatusLive},
 	}
-	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	got, err := svc.ListMatchesByStatus(context.Background(), domain.MatchStatusLive)
 	if err != nil {

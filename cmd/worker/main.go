@@ -121,7 +121,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 
 	matchRepo := repository.NewPostgresMatchRepository(db)
 	predRepo := repository.NewPostgresPredictionRepository(db)
-	scorer := service.NewScoringService(matchRepo, predRepo, log)
+	systemParamRepo := repository.NewPostgresSystemParamRepository(db)
+	params := service.NewSystemParamService(systemParamRepo, log)
+	scorer := service.NewScoringService(matchRepo, predRepo, params, log)
 
 	// A dedicated Redis client for health checks avoids sharing connections
 	// with the event bus, whose long-lived XREADGROUP calls would otherwise
