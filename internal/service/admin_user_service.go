@@ -11,24 +11,27 @@ import (
 
 // adminUserService is the concrete implementation of AdminUserService.
 type adminUserService struct {
-	userRepo   repository.UserRepository
-	memberRepo repository.GroupMembershipRepository
-	audit      AuditLogger
-	log        *zap.Logger
+	userRepo    repository.UserRepository
+	memberRepo  repository.GroupMembershipRepository
+	paymentRepo repository.PaymentRecordRepository
+	audit       AuditLogger
+	log         *zap.Logger
 }
 
 // NewAdminUserService constructs an adminUserService.
 func NewAdminUserService(
 	userRepo repository.UserRepository,
 	memberRepo repository.GroupMembershipRepository,
+	paymentRepo repository.PaymentRecordRepository,
 	audit AuditLogger,
 	log *zap.Logger,
 ) AdminUserService {
 	return &adminUserService{
-		userRepo:   userRepo,
-		memberRepo: memberRepo,
-		audit:      audit,
-		log:        log,
+		userRepo:    userRepo,
+		memberRepo:  memberRepo,
+		paymentRepo: paymentRepo,
+		audit:       audit,
+		log:         log,
 	}
 }
 
@@ -123,6 +126,35 @@ func (s *adminUserService) doTransfer(ctx context.Context, quinielaID, excludeUs
 		return nil // no eligible member; group stays without a CreateOwner
 	}
 	return s.memberRepo.SetRole(ctx, successor.ID, domain.MembershipRoleCreateOwner)
+}
+
+// ListFiltered returns users matching the given filters with pagination.
+func (s *adminUserService) ListFiltered(ctx context.Context, f repository.UserFilters, p repository.Pagination) ([]*domain.User, error) {
+	return s.userRepo.ListFiltered(ctx, f, p)
+}
+
+// GetProfile returns the full admin view: user row, memberships, and payment records.
+func (s *adminUserService) GetProfile(ctx context.Context, userID int) (*AdminUserProfile, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	memberships, err := s.memberRepo.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	payments, err := s.paymentRepo.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AdminUserProfile{
+		User:        user,
+		Memberships: memberships,
+		Payments:    payments,
+	}, nil
 }
 
 var _ AdminUserService = (*adminUserService)(nil)

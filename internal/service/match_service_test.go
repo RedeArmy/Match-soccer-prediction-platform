@@ -18,6 +18,10 @@ const (
 	fmtExpectNilErr = "expected nil error, got %v"
 	fmtExpect1Match = "expected 1 match, got %d"
 	fmtNotFoundErr  = "expected not-found error, got %v"
+	matchBrazil     = "Brazil"
+	matchArgentina  = "Argentina"
+	matchGermany    = "Germany"
+	matchFrance     = "France"
 )
 
 // ── stubs ─────────────────────────────────────────────────────────────────────
@@ -102,6 +106,9 @@ func (*noopSystemParamService) GetDuration(_ context.Context, _ string, d time.D
 	return d
 }
 func (*noopSystemParamService) GetBool(_ context.Context, _ string, d bool) bool { return d }
+func (*noopSystemParamService) BulkSet(_ context.Context, _ map[string]string, _ int) error {
+	return nil
+}
 
 func newMatchSvc(match *domain.Match) (MatchService, *stubPublisher) {
 	pub := &stubPublisher{}
@@ -114,7 +121,7 @@ func newMatchSvc(match *domain.Match) (MatchService, *stubPublisher) {
 // TestUpdateResult_LiveMatch_ConfirmsResultAndEmitsEvent is the happy path:
 // a live match can receive a final score and emits MatchFinished.
 func TestUpdateResult_LiveMatch_ConfirmsResultAndEmitsEvent(t *testing.T) {
-	match := &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina",
+	match := &domain.Match{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
 		Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(-time.Hour)}
 	svc, pub := newMatchSvc(match)
 
@@ -134,7 +141,7 @@ func TestUpdateResult_LiveMatch_ConfirmsResultAndEmitsEvent(t *testing.T) {
 // cannot be set before the match is started. The admin must call StartMatch first,
 // which closes the prediction window.
 func TestUpdateResult_ScheduledMatch_ReturnsValidationError(t *testing.T) {
-	match := &domain.Match{ID: 1, HomeTeam: "France", AwayTeam: "Germany",
+	match := &domain.Match{ID: 1, HomeTeam: matchFrance, AwayTeam: matchGermany,
 		Status: domain.MatchStatusScheduled, KickoffAt: time.Now().Add(time.Hour)}
 	svc, _ := newMatchSvc(match)
 
@@ -164,7 +171,7 @@ func TestUpdateResult_FinishedMatch_ReturnsValidationError(t *testing.T) {
 // the event bus is unavailable, predictions are still scored synchronously so
 // no match is ever left unscored due to a transient Redis outage.
 func TestUpdateResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) {
-	match := &domain.Match{ID: 42, HomeTeam: "Brazil", AwayTeam: "Argentina",
+	match := &domain.Match{ID: 42, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
 		Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(-time.Hour)}
 
 	pub := &stubPublisher{err: errors.New("redis unavailable")}
@@ -190,7 +197,7 @@ func TestUpdateResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) {
 // a double failure (bus down + DB error in scorer) returns the confirmed match
 // result to the caller. Both failures are logged; the HTTP response remains 200.
 func TestUpdateResult_PublishFails_ScorerAlsoFails_StillReturnsResult(t *testing.T) {
-	match := &domain.Match{ID: 7, HomeTeam: "France", AwayTeam: "Germany",
+	match := &domain.Match{ID: 7, HomeTeam: matchFrance, AwayTeam: matchGermany,
 		Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(-time.Hour)}
 
 	pub := &stubPublisher{err: errors.New("redis unavailable")}
@@ -209,7 +216,7 @@ func TestUpdateResult_PublishFails_ScorerAlsoFails_StillReturnsResult(t *testing
 // ── StartMatch — status guard ─────────────────────────────────────────────────
 
 func TestStartMatch_ScheduledMatch_TransitionsToLiveAndEmitsEvent(t *testing.T) {
-	match := &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina",
+	match := &domain.Match{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
 		Status: domain.MatchStatusScheduled, KickoffAt: time.Now()}
 	svc, pub := newMatchSvc(match)
 
@@ -226,7 +233,7 @@ func TestStartMatch_ScheduledMatch_TransitionsToLiveAndEmitsEvent(t *testing.T) 
 }
 
 func TestStartMatch_LiveMatch_ReturnsValidationError(t *testing.T) {
-	match := &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina",
+	match := &domain.Match{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
 		Status: domain.MatchStatusLive}
 	svc, _ := newMatchSvc(match)
 
@@ -237,7 +244,7 @@ func TestStartMatch_LiveMatch_ReturnsValidationError(t *testing.T) {
 }
 
 func TestStartMatch_FinishedMatch_ReturnsValidationError(t *testing.T) {
-	match := &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina",
+	match := &domain.Match{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
 		Status: domain.MatchStatusFinished}
 	svc, _ := newMatchSvc(match)
 
@@ -251,7 +258,7 @@ func TestStartMatch_FinishedMatch_ReturnsValidationError(t *testing.T) {
 
 func TestCreateMatch_ValidMatch_ReturnsNil(t *testing.T) {
 	svc, _ := newMatchSvc(nil)
-	m := &domain.Match{HomeTeam: "Brazil", AwayTeam: "Argentina", KickoffAt: time.Now().Add(24 * time.Hour)}
+	m := &domain.Match{HomeTeam: matchBrazil, AwayTeam: matchArgentina, KickoffAt: time.Now().Add(24 * time.Hour)}
 	if err := svc.CreateMatch(context.Background(), m); err != nil {
 		t.Errorf("expected nil, got %v", err)
 	}
@@ -259,7 +266,7 @@ func TestCreateMatch_ValidMatch_ReturnsNil(t *testing.T) {
 
 func TestCreateMatch_InvalidMatch_ReturnsValidation(t *testing.T) {
 	svc, _ := newMatchSvc(nil)
-	m := &domain.Match{HomeTeam: "", AwayTeam: "Argentina", KickoffAt: time.Now().Add(time.Hour)}
+	m := &domain.Match{HomeTeam: "", AwayTeam: matchArgentina, KickoffAt: time.Now().Add(time.Hour)}
 	if err := svc.CreateMatch(context.Background(), m); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for empty home team, got %v", err)
 	}
@@ -268,7 +275,7 @@ func TestCreateMatch_InvalidMatch_ReturnsValidation(t *testing.T) {
 // ── GetMatch ──────────────────────────────────────────────────────────────────
 
 func TestGetMatch_Found_ReturnsMatch(t *testing.T) {
-	match := &domain.Match{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Status: domain.MatchStatusScheduled}
+	match := &domain.Match{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina, Status: domain.MatchStatusScheduled}
 	svc, _ := newMatchSvc(match)
 
 	got, err := svc.GetMatch(context.Background(), 1)
@@ -293,7 +300,7 @@ func TestGetMatch_NotFound_ReturnsNotFound(t *testing.T) {
 func TestListMatches_ReturnsSlice(t *testing.T) {
 	pub := &stubPublisher{}
 	matches := []*domain.Match{
-		{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Status: domain.MatchStatusScheduled},
+		{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina, Status: domain.MatchStatusScheduled},
 	}
 	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
 
@@ -309,7 +316,7 @@ func TestListMatches_ReturnsSlice(t *testing.T) {
 func TestListMatchesByPhase_ReturnsFilteredSlice(t *testing.T) {
 	pub := &stubPublisher{}
 	matches := []*domain.Match{
-		{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina", Phase: domain.PhaseGroupStage},
+		{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina, Phase: domain.PhaseGroupStage},
 	}
 	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
 
@@ -325,7 +332,7 @@ func TestListMatchesByPhase_ReturnsFilteredSlice(t *testing.T) {
 func TestListMatchesByStatus_ReturnsFilteredSlice(t *testing.T) {
 	pub := &stubPublisher{}
 	matches := []*domain.Match{
-		{ID: 1, HomeTeam: "France", AwayTeam: "Germany", Status: domain.MatchStatusLive},
+		{ID: 1, HomeTeam: matchFrance, AwayTeam: matchGermany, Status: domain.MatchStatusLive},
 	}
 	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
 

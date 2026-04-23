@@ -36,6 +36,11 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/health"
 )
 
+const (
+	routePredictions = "/predictions"
+	routeUsers       = "/users"
+)
+
 // Server holds the shared dependencies made available to all HTTP handlers.
 // It is constructed once at application startup and is safe for concurrent
 // use by multiple goroutines once initialised.
@@ -57,7 +62,14 @@ type Server struct {
 	// disabled and every request hits the database directly.
 	cache    cache.Store
 	checkers []health.Checker
+	// dlqSvc is nil when EventBus.Driver != "redis". Admin DLQ endpoints
+	// delegate to service.NoopDLQService when this field is nil.
+	dlqSvc service.DLQService
 }
+
+// SetDLQService wires an optional DLQService for the admin /dlq endpoints.
+// Call this after New() when the Redis event bus driver is active.
+func (s *Server) SetDLQService(dlq service.DLQService) { s.dlqSvc = dlq }
 
 // New constructs a Server with the provided dependencies.
 //
@@ -123,7 +135,7 @@ func (s *Server) Routes() http.Handler {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
-			r.Route("/predictions", func(r chi.Router) {
+			r.Route(routePredictions, func(r chi.Router) {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
@@ -131,7 +143,7 @@ func (s *Server) Routes() http.Handler {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
-			r.Route("/users", func(r chi.Router) {
+			r.Route(routeUsers, func(r chi.Router) {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
@@ -150,7 +162,7 @@ func (s *Server) Routes() http.Handler {
 	paramSvc := service.NewSystemParamService(systemParamRepo, s.log)
 
 	s.wireSubscribers(matchRepo, predRepo, paramSvc)
-	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler, tournamentHandler := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, paramSvc)
+	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler, tournamentHandler, adminUserH, adminGroupH, adminPaymentH, adminLeaderboardH, adminDLQH, adminAuditH, adminParamH, adminTiebreakerH, adminConflictH := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, paramSvc)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -178,7 +190,7 @@ func (s *Server) Routes() http.Handler {
 		// ListMembers do not use the caller's identity but the cost of a single
 		// indexed lookup (clerk_subject) is negligible compared to the handler
 		// work that follows.
-		r.Route("/predictions", func(r chi.Router) {
+		r.Route(routePredictions, func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.Post("/", predHandler.Submit)
 			r.Get("/", predHandler.ListByUser)
@@ -226,9 +238,64 @@ func (s *Server) Routes() http.Handler {
 			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/slots/{id}", tournamentHandler.ConfirmSlot)
 		})
 
-		r.Route("/users", func(r chi.Router) {
+		r.Route(routeUsers, func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.Get("/me/stats", userStatsHandler.GetMyStats)
+		})
+
+		// Admin panel — all routes require RoleAdmin. ResolveUser is applied so
+		// handlers can read the caller's domain.User (for audit trail adminID).
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin))
+			r.Use(middleware.ResolveUser(userRepo, s.log))
+
+			// Users
+			r.Get(routeUsers, adminUserH.ListUsers)
+			r.Get("/users/{id}", adminUserH.GetUserProfile)
+			r.Post("/users/{id}/ban", adminUserH.BanUser)
+			r.Delete("/users/{id}/ban", adminUserH.UnbanUser)
+			r.Post("/users/bulk-ban", adminUserH.BulkBan)
+
+			// Groups
+			r.Delete("/groups/{id}", adminGroupH.DeleteGroup)
+			r.Delete("/groups/{id}/members/{membershipID}", adminGroupH.RemoveMember)
+			r.Patch("/groups/{id}/settings", adminGroupH.UpdateGroupSettings)
+			r.Post("/groups/{id}/transfer-ownership", adminGroupH.TransferOwnership)
+			r.Get("/groups/{id}/payments", adminPaymentH.ListByGroup)
+			r.Get("/groups/{id}/leaderboard/history", adminLeaderboardH.SnapshotHistory)
+
+			// Payments
+			r.Get("/payments/pending", adminPaymentH.ListPending)
+			r.Get("/payments", adminPaymentH.List)
+			r.Post("/payments/{id}/validate", adminPaymentH.ValidateDeposit)
+			r.Post("/payments/{id}/reject", adminPaymentH.RejectDeposit)
+
+			// Leaderboard & Predictions
+			r.Get("/leaderboard", adminLeaderboardH.GlobalLeaderboard)
+			r.Get(routePredictions, adminLeaderboardH.ListPredictions)
+			r.Get("/predictions/match/{matchID}", adminLeaderboardH.ListPredictionsByMatch)
+
+			// DLQ
+			r.Get("/dlq", adminDLQH.Stats)
+			r.Post("/dlq/replay", adminDLQH.Replay)
+			r.Delete("/dlq", adminDLQH.Purge)
+
+			// Audit log
+			r.Get("/audit-log", adminAuditH.List)
+			r.Get("/audit-log/entity/{type}/{id}", adminAuditH.ListByEntity)
+
+			// System parameters
+			r.Get("/system-params", adminParamH.ListAll)
+			r.Get("/system-params/{key}", adminParamH.Get)
+			r.Patch("/system-params/{key}", adminParamH.Set)
+			r.Post("/system-params/bulk", adminParamH.BulkSet)
+
+			// Tiebreakers
+			r.Get("/tiebreaker/submissions", adminTiebreakerH.ListSubmissions)
+
+			// Conflicts
+			r.Get("/conflicts", adminConflictH.ListConflicts)
+			r.Post("/conflicts/{type}/{id}/resolve", adminConflictH.ResolveConflict)
 		})
 	})
 
@@ -296,7 +363,24 @@ func (s *Server) buildHandlers(
 	predRepo repository.PredictionRepository,
 	memberRepo repository.GroupMembershipRepository,
 	params service.SystemParamService,
-) (*handler.MatchHandler, *handler.PredictionHandler, *handler.GroupHandler, *handler.LeaderboardHandler, *handler.UserStatsHandler, *handler.TiebreakerHandler, *handler.TournamentHandler) {
+) (
+	*handler.MatchHandler,
+	*handler.PredictionHandler,
+	*handler.GroupHandler,
+	*handler.LeaderboardHandler,
+	*handler.UserStatsHandler,
+	*handler.TiebreakerHandler,
+	*handler.TournamentHandler,
+	*handler.AdminUserHandler,
+	*handler.AdminGroupHandler,
+	*handler.AdminPaymentHandler,
+	*handler.AdminLeaderboardHandler,
+	*handler.AdminDLQHandler,
+	*handler.AdminAuditHandler,
+	*handler.AdminSystemParamHandler,
+	*handler.AdminTiebreakerHandler,
+	*handler.AdminConflictHandler,
+) {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
 	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(s.db)
@@ -326,10 +410,17 @@ func (s *Server) buildHandlers(
 	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, memberRepo, tiebreakerRepo, auditSvc, s.log)
 	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, auditSvc, s.log)
 
-	_ = service.NewPaymentService(paymentRepo, auditSvc, s.log)
-	_ = service.NewAdminGroupService(quinielaRepo, memberRepo, auditSvc, s.log)
-	_ = service.NewAdminUserService(userRepo, memberRepo, auditSvc, s.log)
+	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
+	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, memberRepo, auditSvc, s.log)
+	adminUserSvc := service.NewAdminUserService(userRepo, memberRepo, paymentRepo, auditSvc, s.log)
+	adminReadSvc := service.NewAdminReadService(predRepo, userRepo, tiebreakerRepo, snapRepo, s.log)
+	conflictSvc := service.NewConflictService(quinielaRepo, memberRepo, paymentRepo, auditSvc, s.log)
 	_ = service.NewLeaderboardSnapshotService(ranker, snapRepo)
+
+	dlqSvc := s.dlqSvc
+	if dlqSvc == nil {
+		dlqSvc = service.NoopDLQService{}
+	}
 
 	return handler.NewMatchHandler(matchSvc, s.log),
 		handler.NewPredictionHandler(predSvc, s.log),
@@ -337,7 +428,16 @@ func (s *Server) buildHandlers(
 		handler.NewLeaderboardHandler(ranker, s.log),
 		handler.NewUserStatsHandler(userStatsSvc, s.log),
 		handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
-		handler.NewTournamentHandler(tournamentSvc, s.log)
+		handler.NewTournamentHandler(tournamentSvc, s.log),
+		handler.NewAdminUserHandler(adminUserSvc, s.log),
+		handler.NewAdminGroupHandler(adminGroupSvc, s.log),
+		handler.NewAdminPaymentHandler(paymentSvc, s.log),
+		handler.NewAdminLeaderboardHandler(adminReadSvc, s.log),
+		handler.NewAdminDLQHandler(dlqSvc, s.log),
+		handler.NewAdminAuditHandler(auditSvc, s.log),
+		handler.NewAdminSystemParamHandler(params, s.log),
+		handler.NewAdminTiebreakerHandler(adminReadSvc, s.log),
+		handler.NewAdminConflictHandler(conflictSvc, s.log)
 }
 
 // handleReadiness is a thin wrapper around health.ReadinessHandler that exists

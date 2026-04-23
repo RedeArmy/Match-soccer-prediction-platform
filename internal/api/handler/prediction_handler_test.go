@@ -16,6 +16,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const predictionDecodeErrFmt = "decode response: %v"
+
 // newPredRouter wires PredictionHandler into a chi router.
 // When withAuth is true, a middleware is prepended that injects the resolved
 // domain.User{ID:1} into the request context (simulating ResolveUser middleware).
@@ -205,7 +207,7 @@ func TestListByUser_AuthContextMatch_Returns200(t *testing.T) {
 	}
 	var got []handler.PredictionResponse
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
+		t.Fatalf(predictionDecodeErrFmt, err)
 	}
 	if len(got) != 1 || got[0].UserID != 1 {
 		t.Errorf("expected 1 prediction for user 1, got %+v", got)
@@ -224,7 +226,7 @@ func TestListByUser_WithQuinielaID_Success_Returns200(t *testing.T) {
 	}
 	var got []handler.PredictionResponse
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
+		t.Fatalf(predictionDecodeErrFmt, err)
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 prediction, got %d", len(got))
@@ -251,7 +253,7 @@ func TestListByUser_WithQuinielaID_NonMember_ReturnsEmpty200(t *testing.T) {
 	}
 	var got []handler.PredictionResponse
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
+		t.Fatalf(predictionDecodeErrFmt, err)
 	}
 	if len(got) != 0 {
 		t.Errorf("expected empty array for non-member, got %d entries", len(got))

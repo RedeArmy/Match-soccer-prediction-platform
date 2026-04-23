@@ -19,9 +19,13 @@ import (
 )
 
 const (
-	pathTiebreakerBase     = "/groups/1/tiebreaker"
-	pathTiebreakerQuestion = "/tiebreaker/question"
-	pathTiebreakerResult   = "/tiebreaker/result"
+	pathTiebreakerBase            = "/groups/1/tiebreaker"
+	pathTiebreakerQuestion        = "/tiebreaker/question"
+	pathTiebreakerResult          = "/tiebreaker/result"
+	tiebreakerHandlerDBError      = "db error"
+	tiebreakerHandlerQuestion     = "Total goals"
+	tiebreakerHandler4xxFmt       = "expected 4xx, got %d"
+	tiebreakerHandlerBodyQuestion = "{\"question\":\"" + tiebreakerHandlerQuestion + "\"}"
 )
 
 // testTiebreakerRouter mounts admin routes at /tiebreaker and member routes
@@ -56,7 +60,7 @@ func TestTiebreakerHandler_SetQuestion_401_WhenNoUser(t *testing.T) {
 	h := tiebreakerHandler(&stubTiebreakerSvc{config: &domain.TiebreakerConfig{}}, t)
 	router := testTiebreakerRouter(h, nil)
 
-	body := strings.NewReader(`{"question":"Total goals in the Final"}`)
+	body := strings.NewReader(tiebreakerHandlerBodyQuestion)
 	req := httptest.NewRequest(http.MethodPatch, pathTiebreakerQuestion, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -67,10 +71,10 @@ func TestTiebreakerHandler_SetQuestion_401_WhenNoUser(t *testing.T) {
 }
 
 func TestTiebreakerHandler_SetQuestion_500_WhenServiceFails(t *testing.T) {
-	h := tiebreakerHandler(&stubTiebreakerSvc{err: errors.New("db error")}, t)
+	h := tiebreakerHandler(&stubTiebreakerSvc{err: errors.New(tiebreakerHandlerDBError)}, t)
 	router := testTiebreakerRouter(h, &domain.User{ID: 7})
 
-	body := strings.NewReader(`{"question":"Total goals in the Final"}`)
+	body := strings.NewReader(tiebreakerHandlerBodyQuestion)
 	req := httptest.NewRequest(http.MethodPatch, pathTiebreakerQuestion, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -84,7 +88,7 @@ func TestTiebreakerHandler_SetQuestion_403_WhenForbidden(t *testing.T) {
 	h := tiebreakerHandler(&stubTiebreakerSvc{err: apperrors.Forbidden("not admin")}, t)
 	router := testTiebreakerRouter(h, &domain.User{ID: 99})
 
-	body := strings.NewReader(`{"question":"Total goals in the Final"}`)
+	body := strings.NewReader(tiebreakerHandlerBodyQuestion)
 	req := httptest.NewRequest(http.MethodPatch, pathTiebreakerQuestion, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -95,7 +99,7 @@ func TestTiebreakerHandler_SetQuestion_403_WhenForbidden(t *testing.T) {
 }
 
 func TestTiebreakerHandler_SetQuestion_200_ReturnsConfig(t *testing.T) {
-	question := "Total goals in the Final"
+	question := tiebreakerHandlerQuestion
 	cfg := &domain.TiebreakerConfig{
 		ID:        1,
 		Question:  question,
@@ -105,7 +109,7 @@ func TestTiebreakerHandler_SetQuestion_200_ReturnsConfig(t *testing.T) {
 	h := tiebreakerHandler(&stubTiebreakerSvc{config: cfg}, t)
 	router := testTiebreakerRouter(h, &domain.User{ID: 7})
 
-	body := strings.NewReader(`{"question":"Total goals in the Final"}`)
+	body := strings.NewReader(tiebreakerHandlerBodyQuestion)
 	req := httptest.NewRequest(http.MethodPatch, pathTiebreakerQuestion, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -143,7 +147,7 @@ func TestTiebreakerHandler_Submit_401_WhenNoUser(t *testing.T) {
 }
 
 func TestTiebreakerHandler_Submit_500_WhenServiceFails(t *testing.T) {
-	h := tiebreakerHandler(&stubTiebreakerSvc{err: errors.New("db error")}, t)
+	h := tiebreakerHandler(&stubTiebreakerSvc{err: errors.New(tiebreakerHandlerDBError)}, t)
 	router := testTiebreakerRouter(h, &domain.User{ID: 42})
 
 	body := strings.NewReader(`{"prediction":5}`)
@@ -202,7 +206,7 @@ func TestTiebreakerHandler_GetMine_401_WhenNoUser(t *testing.T) {
 }
 
 func TestTiebreakerHandler_GetMine_500_WhenServiceFails(t *testing.T) {
-	h := tiebreakerHandler(&stubTiebreakerSvc{err: errors.New("db error")}, t)
+	h := tiebreakerHandler(&stubTiebreakerSvc{err: errors.New(tiebreakerHandlerDBError)}, t)
 	router := testTiebreakerRouter(h, &domain.User{ID: 42})
 
 	req := httptest.NewRequest(http.MethodGet, pathTiebreakerBase, nil)
@@ -215,7 +219,7 @@ func TestTiebreakerHandler_GetMine_500_WhenServiceFails(t *testing.T) {
 }
 
 func TestTiebreakerHandler_GetMine_200_ReturnsView(t *testing.T) {
-	question := "Total goals in the Final"
+	question := tiebreakerHandlerQuestion
 	tb := &domain.Tiebreaker{
 		ID:         3,
 		UserID:     42,
@@ -248,7 +252,7 @@ func TestTiebreakerHandler_GetMine_200_ReturnsView(t *testing.T) {
 }
 
 func TestTiebreakerHandler_GetMine_200_EntryNilWhenNotSubmitted(t *testing.T) {
-	question := "Total goals in the Final"
+	question := tiebreakerHandlerQuestion
 	view := &domain.TiebreakerView{Question: &question, Entry: nil}
 	h := tiebreakerHandler(&stubTiebreakerSvc{view: view}, t)
 	router := testTiebreakerRouter(h, &domain.User{ID: 42})
@@ -315,7 +319,7 @@ func TestTiebreakerHandler_ConfirmResult_204_WhenSucceeds(t *testing.T) {
 }
 
 func TestTiebreakerHandler_ConfirmResult_500_WhenServiceFails(t *testing.T) {
-	h := tiebreakerHandler(&stubTiebreakerSvc{err: errors.New("db error")}, t)
+	h := tiebreakerHandler(&stubTiebreakerSvc{err: errors.New(tiebreakerHandlerDBError)}, t)
 	router := testTiebreakerRouter(h, &domain.User{ID: 7})
 
 	body := strings.NewReader(`{"result":10}`)
@@ -339,7 +343,7 @@ func TestTiebreakerHandler_SetQuestion_400_WhenBadBody(t *testing.T) {
 	router.ServeHTTP(rr, req)
 
 	if rr.Code < 400 {
-		t.Errorf("expected 4xx for bad body, got %d", rr.Code)
+		t.Errorf(tiebreakerHandler4xxFmt, rr.Code)
 	}
 }
 
@@ -352,7 +356,7 @@ func TestTiebreakerHandler_Submit_400_WhenBadBody(t *testing.T) {
 	router.ServeHTTP(rr, req)
 
 	if rr.Code < 400 {
-		t.Errorf("expected 4xx for bad body, got %d", rr.Code)
+		t.Errorf(tiebreakerHandler4xxFmt, rr.Code)
 	}
 }
 
@@ -365,7 +369,7 @@ func TestTiebreakerHandler_ConfirmResult_400_WhenBadBody(t *testing.T) {
 	router.ServeHTTP(rr, req)
 
 	if rr.Code < 400 {
-		t.Errorf("expected 4xx for bad body, got %d", rr.Code)
+		t.Errorf(tiebreakerHandler4xxFmt, rr.Code)
 	}
 }
 

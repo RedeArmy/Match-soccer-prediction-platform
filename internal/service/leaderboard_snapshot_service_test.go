@@ -10,8 +10,9 @@ import (
 
 // stubSnapshotRepo implements repository.LeaderboardSnapshotRepository.
 type stubSnapshotRepo struct {
-	snapshot *domain.LeaderboardSnapshot
-	err      error
+	snapshot  *domain.LeaderboardSnapshot
+	snapshots []*domain.LeaderboardSnapshot
+	err       error
 }
 
 func (r *stubSnapshotRepo) Create(_ context.Context, snap *domain.LeaderboardSnapshot) error {
@@ -22,7 +23,7 @@ func (r *stubSnapshotRepo) Create(_ context.Context, snap *domain.LeaderboardSna
 	return nil
 }
 func (r *stubSnapshotRepo) ListByQuiniela(_ context.Context, _ int, _ int) ([]*domain.LeaderboardSnapshot, error) {
-	return nil, r.err
+	return r.snapshots, r.err
 }
 func (r *stubSnapshotRepo) GetLatest(_ context.Context, _ int) (*domain.LeaderboardSnapshot, error) {
 	return r.snapshot, r.err

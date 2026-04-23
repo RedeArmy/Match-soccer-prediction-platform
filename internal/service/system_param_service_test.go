@@ -12,6 +12,11 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
+const (
+	svcUnexpectedErr = "unexpected error: %v"
+	svcDefaultParam  = "default"
+)
+
 // stubSystemParamRepo implements repository.SystemParamRepository for unit tests.
 type stubSystemParamRepo struct {
 	param  *domain.SystemParam
@@ -55,7 +60,7 @@ func TestSystemParamService_Get_CacheMiss_FetchesFromRepo(t *testing.T) {
 
 	got, err := svc.Get(context.Background(), "k")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(svcUnexpectedErr, err)
 	}
 	if got == nil || got.Value != "v" {
 		t.Errorf("expected param with value 'v', got %v", got)
@@ -74,7 +79,7 @@ func TestSystemParamService_Get_CacheHit_DoesNotCallRepo(t *testing.T) {
 
 	got, err := svc.Get(context.Background(), "k")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(svcUnexpectedErr, err)
 	}
 	if got == nil || got.Value != "cached" {
 		t.Errorf("expected cached value, got %v", got)
@@ -95,7 +100,7 @@ func TestSystemParamService_Get_KeyAbsent_ReturnsNil(t *testing.T) {
 
 	got, err := svc.Get(context.Background(), "missing")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(svcUnexpectedErr, err)
 	}
 	if got != nil {
 		t.Errorf("expected nil for absent key, got %v", got)
@@ -117,7 +122,7 @@ func TestSystemParamService_Set_EvictsCache(t *testing.T) {
 
 	_, err := svc.Set(context.Background(), "k", "new", 1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(svcUnexpectedErr, err)
 	}
 
 	got, _ := svc.Get(context.Background(), "k")
@@ -161,7 +166,7 @@ func TestSystemParamService_GetByCategory_DelegatesToRepo(t *testing.T) {
 
 func TestSystemParamService_GetString_KeyPresent_ReturnsValue(t *testing.T) {
 	svc := newParamSvc(&stubSystemParamRepo{param: param("k", "hello")})
-	got := svc.GetString(context.Background(), "k", "default")
+	got := svc.GetString(context.Background(), "k", svcDefaultParam)
 	if got != "hello" {
 		t.Errorf("expected 'hello', got %q", got)
 	}
@@ -169,8 +174,8 @@ func TestSystemParamService_GetString_KeyPresent_ReturnsValue(t *testing.T) {
 
 func TestSystemParamService_GetString_KeyAbsent_ReturnsDefault(t *testing.T) {
 	svc := newParamSvc(&stubSystemParamRepo{param: nil})
-	got := svc.GetString(context.Background(), "k", "default")
-	if got != "default" {
+	got := svc.GetString(context.Background(), "k", svcDefaultParam)
+	if got != svcDefaultParam {
 		t.Errorf("expected 'default', got %q", got)
 	}
 }

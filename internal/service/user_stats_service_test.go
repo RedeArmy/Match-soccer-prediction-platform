@@ -9,6 +9,13 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
+const (
+	statsUnexpectedErrFmt = "unexpected error: %v"
+	statsCurLngFmt        = "expected current/longest, got %d/%d"
+	statsLongestFmt       = "expected longest streak, got %d"
+	statsExpectErrMsg     = "expected error, got nil"
+)
+
 // ── stubUserStatsPredRepo ─────────────────────────────────────────────────────
 
 // stubUserStatsPredRepo embeds stubPredRepo and overrides the three methods
@@ -68,7 +75,7 @@ func TestGetMyStats_HappyPath_ReturnsPopulatedStats(t *testing.T) {
 
 	stats, err := svc.GetMyStats(context.Background(), 1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(statsUnexpectedErrFmt, err)
 	}
 
 	if stats.TotalPredictions != 10 {
@@ -119,7 +126,7 @@ func TestGetMyStats_NoScoredPredictions_RatesAreZero(t *testing.T) {
 
 	stats, err := svc.GetMyStats(context.Background(), 1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(statsUnexpectedErrFmt, err)
 	}
 	if stats.AccuracyPct != 0 {
 		t.Errorf("AccuracyPct: want 0, got %f", stats.AccuracyPct)
@@ -142,7 +149,7 @@ func TestGetMyStats_CountsRepoError_PropagatesError(t *testing.T) {
 
 	_, err := svc.GetMyStats(context.Background(), 1)
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(statsExpectErrMsg)
 	}
 }
 
@@ -156,7 +163,7 @@ func TestGetMyStats_ByPhaseRepoError_PropagatesError(t *testing.T) {
 
 	_, err := svc.GetMyStats(context.Background(), 1)
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(statsExpectErrMsg)
 	}
 }
 
@@ -171,7 +178,7 @@ func TestGetMyStats_ChronoRepoError_PropagatesError(t *testing.T) {
 
 	_, err := svc.GetMyStats(context.Background(), 1)
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(statsExpectErrMsg)
 	}
 }
 
@@ -190,7 +197,7 @@ func TestGetMyStats_AccuracyRounding(t *testing.T) {
 
 	stats, err := svc.GetMyStats(context.Background(), 1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(statsUnexpectedErrFmt, err)
 	}
 	if stats.AccuracyPct != 33.33 {
 		t.Errorf("AccuracyPct: want 33.33, got %f", stats.AccuracyPct)
@@ -202,7 +209,7 @@ func TestGetMyStats_AccuracyRounding(t *testing.T) {
 func TestComputeStreaks_EmptySlice_BothZero(t *testing.T) {
 	cur, lng := computeStreaks(nil)
 	if cur != 0 || lng != 0 {
-		t.Errorf("want 0,0; got %d,%d", cur, lng)
+		t.Errorf(statsCurLngFmt, cur, lng)
 	}
 }
 
@@ -212,14 +219,14 @@ func TestComputeStreaks_AllCorrect(t *testing.T) {
 		t.Errorf("current: want 5, got %d", cur)
 	}
 	if lng != 5 {
-		t.Errorf("longest: want 5, got %d", lng)
+		t.Errorf(statsLongestFmt, lng)
 	}
 }
 
 func TestComputeStreaks_AllZero_BothZero(t *testing.T) {
 	cur, lng := computeStreaks([]int{0, 0, 0})
 	if cur != 0 || lng != 0 {
-		t.Errorf("want 0,0; got %d,%d", cur, lng)
+		t.Errorf(statsCurLngFmt, cur, lng)
 	}
 }
 
@@ -230,7 +237,7 @@ func TestComputeStreaks_CurrentBrokenByFinalZero(t *testing.T) {
 		t.Errorf("current: want 0, got %d", cur)
 	}
 	if lng != 5 {
-		t.Errorf("longest: want 5, got %d", lng)
+		t.Errorf(statsLongestFmt, lng)
 	}
 }
 
@@ -252,7 +259,7 @@ func TestComputeStreaks_LongestEarlierThanCurrent(t *testing.T) {
 		t.Errorf("current: want 2, got %d", cur)
 	}
 	if lng != 5 {
-		t.Errorf("longest: want 5, got %d", lng)
+		t.Errorf(statsLongestFmt, lng)
 	}
 }
 
@@ -266,7 +273,7 @@ func TestComputeStreaks_SingleCorrect(t *testing.T) {
 func TestComputeStreaks_SingleZero(t *testing.T) {
 	cur, lng := computeStreaks([]int{0})
 	if cur != 0 || lng != 0 {
-		t.Errorf("want 0,0; got %d,%d", cur, lng)
+		t.Errorf(statsCurLngFmt, cur, lng)
 	}
 }
 

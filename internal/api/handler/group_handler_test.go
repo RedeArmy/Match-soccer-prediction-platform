@@ -41,6 +41,8 @@ const (
 
 	bodyCreateGroup = `{"name":"` + groupName + `"}`
 	bodyJoinGroup   = `{"invite_code":"` + inviteCode + `"}`
+
+	groupHandler409Fmt = "expected 409, got %d"
 )
 
 // testGroupRouter wires GroupHandler on a chi router that injects a resolved
@@ -145,7 +147,7 @@ func TestGroupCreate_Returns409_OnDuplicateName(t *testing.T) {
 	testGroupRouter(h).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusConflict {
-		t.Errorf("expected 409, got %d", rec.Code)
+		t.Errorf(groupHandler409Fmt, rec.Code)
 	}
 }
 
@@ -278,7 +280,7 @@ func TestGroupJoin_Returns409_WhenAlreadyMember(t *testing.T) {
 	testGroupRouter(h).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusConflict {
-		t.Errorf("expected 409, got %d", rec.Code)
+		t.Errorf(groupHandler409Fmt, rec.Code)
 	}
 }
 
@@ -541,7 +543,7 @@ func TestGroupRenameGroup_Returns409_WhenNameTaken(t *testing.T) {
 	testGroupRouter(h).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusConflict {
-		t.Errorf("expected 409, got %d", rec.Code)
+		t.Errorf(groupHandler409Fmt, rec.Code)
 	}
 }
 
@@ -660,7 +662,7 @@ func TestGroupApproveJoin_Returns409_WhenNotPending(t *testing.T) {
 	testGroupRouter(h).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusConflict {
-		t.Errorf("expected 409, got %d", rec.Code)
+		t.Errorf(groupHandler409Fmt, rec.Code)
 	}
 }
 

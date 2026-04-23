@@ -12,6 +12,16 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const (
+	tournamentUnexpectedErr = "unexpected error: %v"
+	tournamentValidationFmt = "expected validation error, got %v"
+	tournamentMexico        = "Mexico"
+	tournamentWinnerGroupA  = "winner_group_a"
+	tournamentFrance        = "France"
+	tournamentSpain         = "Spain"
+	tournamentItaly         = "Italy"
+)
+
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type stubMatchRepoTournament struct {
@@ -56,7 +66,7 @@ func (r *stubTournamentRepo) ConfirmSlot(_ context.Context, _, _ int, team strin
 	if r.err != nil {
 		return nil, r.err
 	}
-	s := &domain.TournamentSlot{ID: 1, Label: "winner_group_a", Team: &team}
+	s := &domain.TournamentSlot{ID: 1, Label: tournamentWinnerGroupA, Team: &team}
 	return s, nil
 }
 
@@ -104,7 +114,7 @@ func TestTournamentService_GetAllStandings_EmptyWhenNoMatches(t *testing.T) {
 
 	standings, err := svc.GetAllStandings(context.Background())
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tournamentUnexpectedErr, err)
 	}
 	if len(standings) != 0 {
 		t.Errorf("expected empty map, got %d groups", len(standings))
@@ -114,21 +124,21 @@ func TestTournamentService_GetAllStandings_EmptyWhenNoMatches(t *testing.T) {
 func TestTournamentService_GetAllStandings_AccumulatesPoints(t *testing.T) {
 	// Mexico beats USA 2-1; Canada draws USA 1-1 (not yet played).
 	matches := []*domain.Match{
-		finishedMatch("A", "Mexico", "USA", 2, 1),
+		finishedMatch("A", tournamentMexico, "USA", 2, 1),
 		scheduledMatch("A", "Canada", "USA"),
 	}
 	svc := newTournamentSvc(matches, &stubTournamentRepo{})
 
 	standings, err := svc.GetAllStandings(context.Background())
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tournamentUnexpectedErr, err)
 	}
 	entries := standings["A"]
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 teams in group A, got %d", len(entries))
 	}
 	// Mexico should be first: 3 pts, +1 GD.
-	if entries[0].Team != "Mexico" {
+	if entries[0].Team != tournamentMexico {
 		t.Errorf("expected Mexico first, got %s", entries[0].Team)
 	}
 	if entries[0].Points != 3 {
@@ -145,7 +155,7 @@ func TestTournamentService_GetAllStandings_DrawDistributesPoints(t *testing.T) {
 
 	standings, err := svc.GetAllStandings(context.Background())
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tournamentUnexpectedErr, err)
 	}
 	for _, e := range standings["B"] {
 		if e.Points != 1 {
@@ -159,7 +169,7 @@ func TestTournamentService_GetAllStandings_DrawDistributesPoints(t *testing.T) {
 
 func TestTournamentService_GetAllStandings_SkipsMatchesWithoutGroupLabel(t *testing.T) {
 	ko := &domain.Match{
-		HomeTeam:  "France",
+		HomeTeam:  tournamentFrance,
 		AwayTeam:  "Germany",
 		HomeScore: intPtr(1),
 		AwayScore: intPtr(0),
@@ -170,7 +180,7 @@ func TestTournamentService_GetAllStandings_SkipsMatchesWithoutGroupLabel(t *test
 
 	standings, err := svc.GetAllStandings(context.Background())
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tournamentUnexpectedErr, err)
 	}
 	if len(standings) != 0 {
 		t.Errorf("expected no groups for knockout-only matches, got %d", len(standings))
@@ -194,14 +204,14 @@ func TestTournamentService_GetAllStandings_RepoError_Propagates(t *testing.T) {
 
 func TestTournamentService_GetGroupStanding_ReturnsSpecificGroup(t *testing.T) {
 	matches := []*domain.Match{
-		finishedMatch("A", "Mexico", "USA", 1, 0),
+		finishedMatch("A", tournamentMexico, "USA", 1, 0),
 		finishedMatch("B", "Brazil", "Germany", 2, 0),
 	}
 	svc := newTournamentSvc(matches, &stubTournamentRepo{})
 
 	entries, err := svc.GetGroupStanding(context.Background(), "B")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tournamentUnexpectedErr, err)
 	}
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 teams, got %d", len(entries))
@@ -215,7 +225,7 @@ func TestTournamentService_GetGroupStanding_EmptyGroup_ReturnsValidation(t *test
 	svc := newTournamentSvc(nil, &stubTournamentRepo{})
 	_, err := svc.GetGroupStanding(context.Background(), "")
 	if !errors.Is(err, apperrors.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
+		t.Errorf(tournamentValidationFmt, err)
 	}
 }
 
@@ -232,11 +242,11 @@ func TestTournamentService_GetGroupStanding_UnknownGroup_ReturnsNotFound(t *test
 func TestTournamentService_CreateSlot_ReturnsSlot(t *testing.T) {
 	svc := newTournamentSvc(nil, &stubTournamentRepo{})
 
-	slot, err := svc.CreateSlot(context.Background(), "winner_group_a")
+	slot, err := svc.CreateSlot(context.Background(), tournamentWinnerGroupA)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tournamentUnexpectedErr, err)
 	}
-	if slot.Label != "winner_group_a" {
+	if slot.Label != tournamentWinnerGroupA {
 		t.Errorf("label: want winner_group_a, got %s", slot.Label)
 	}
 }
@@ -245,7 +255,7 @@ func TestTournamentService_CreateSlot_EmptyLabel_ReturnsValidation(t *testing.T)
 	svc := newTournamentSvc(nil, &stubTournamentRepo{})
 	_, err := svc.CreateSlot(context.Background(), "")
 	if !errors.Is(err, apperrors.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
+		t.Errorf(tournamentValidationFmt, err)
 	}
 }
 
@@ -254,11 +264,11 @@ func TestTournamentService_CreateSlot_EmptyLabel_ReturnsValidation(t *testing.T)
 func TestTournamentService_ConfirmSlot_SetsTeam(t *testing.T) {
 	svc := newTournamentSvc(nil, &stubTournamentRepo{})
 
-	slot, err := svc.ConfirmSlot(context.Background(), 1, 7, "Mexico")
+	slot, err := svc.ConfirmSlot(context.Background(), 1, 7, tournamentMexico)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tournamentUnexpectedErr, err)
 	}
-	if slot.Team == nil || *slot.Team != "Mexico" {
+	if slot.Team == nil || *slot.Team != tournamentMexico {
 		t.Errorf("team: want Mexico, got %v", slot.Team)
 	}
 }
@@ -267,13 +277,13 @@ func TestTournamentService_ConfirmSlot_EmptyTeam_ReturnsValidation(t *testing.T)
 	svc := newTournamentSvc(nil, &stubTournamentRepo{})
 	_, err := svc.ConfirmSlot(context.Background(), 1, 7, "")
 	if !errors.Is(err, apperrors.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
+		t.Errorf(tournamentValidationFmt, err)
 	}
 }
 
 func TestTournamentService_ConfirmSlot_RepoError_Propagates(t *testing.T) {
 	svc := newTournamentSvc(nil, &stubTournamentRepo{err: apperrors.NotFound("slot not found")})
-	_, err := svc.ConfirmSlot(context.Background(), 99, 7, "Mexico")
+	_, err := svc.ConfirmSlot(context.Background(), 99, 7, tournamentMexico)
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
@@ -282,16 +292,16 @@ func TestTournamentService_ConfirmSlot_RepoError_Propagates(t *testing.T) {
 // ── ListSlots ─────────────────────────────────────────────────────────────────
 
 func TestTournamentService_ListSlots_ReturnsList(t *testing.T) {
-	team := "Mexico"
+	team := tournamentMexico
 	slots := []*domain.TournamentSlot{
-		{ID: 1, Label: "winner_group_a", Team: &team},
+		{ID: 1, Label: tournamentWinnerGroupA, Team: &team},
 		{ID: 2, Label: "runner_up_group_a"},
 	}
 	svc := newTournamentSvc(nil, &stubTournamentRepo{slots: slots})
 
 	got, err := svc.ListSlots(context.Background())
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tournamentUnexpectedErr, err)
 	}
 	if len(got) != 2 {
 		t.Errorf("expected 2 slots, got %d", len(got))
@@ -303,16 +313,16 @@ func TestTournamentService_ListSlots_ReturnsList(t *testing.T) {
 func TestBuildStandings_SortOrder_PointsThenGDThenGF(t *testing.T) {
 	// Group C: France 6pts (+3 GD), Spain 3pts (+1 GD), Italy 0pts
 	matches := []*domain.Match{
-		finishedMatch("C", "France", "Italy", 2, 0),
-		finishedMatch("C", "France", "Spain", 1, 0),
-		finishedMatch("C", "Spain", "Italy", 1, 0),
+		finishedMatch("C", tournamentFrance, tournamentItaly, 2, 0),
+		finishedMatch("C", tournamentFrance, tournamentSpain, 1, 0),
+		finishedMatch("C", tournamentSpain, tournamentItaly, 1, 0),
 	}
 	result := buildStandings(matches)
 	entries := result["C"]
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 teams, got %d", len(entries))
 	}
-	if entries[0].Team != "France" || entries[1].Team != "Spain" || entries[2].Team != "Italy" {
+	if entries[0].Team != tournamentFrance || entries[1].Team != tournamentSpain || entries[2].Team != tournamentItaly {
 		t.Errorf("order: want France/Spain/Italy, got %s/%s/%s",
 			entries[0].Team, entries[1].Team, entries[2].Team)
 	}
