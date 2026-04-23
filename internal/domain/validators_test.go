@@ -13,6 +13,7 @@ const (
 	fmtUnexpectedErr = "expected nil, got %v"
 	teamBrazil       = "Brazil"
 	teamArgentina    = "Argentina"
+	testGroupName    = "Oficina 2026"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -205,7 +206,7 @@ func TestValidateEmail_WithSpaces_ReturnsValidation(t *testing.T) {
 // ── ValidateQuiniela ──────────────────────────────────────────────────────────
 
 func TestValidateQuiniela_Valid_ReturnsNil(t *testing.T) {
-	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1, PrizeThreshold: 3}
+	q := &domain.Quiniela{Name: testGroupName, OwnerID: 1, PrizeThreshold: 3}
 	if err := domain.ValidateQuiniela(q); err != nil {
 		t.Errorf(fmtUnexpectedErr, err)
 	}
@@ -219,14 +220,14 @@ func TestValidateQuiniela_EmptyName_ReturnsValidation(t *testing.T) {
 }
 
 func TestValidateQuiniela_ZeroOwner_ReturnsValidation(t *testing.T) {
-	q := &domain.Quiniela{Name: "Oficina 2026"}
+	q := &domain.Quiniela{Name: testGroupName}
 	if err := domain.ValidateQuiniela(q); !isValidation(err) {
 		t.Errorf("expected validation error for zero owner, got %v", err)
 	}
 }
 
 func TestValidateQuiniela_ZeroPrizeThreshold_ReturnsValidation(t *testing.T) {
-	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1, PrizeThreshold: 0}
+	q := &domain.Quiniela{Name: testGroupName, OwnerID: 1, PrizeThreshold: 0}
 	if err := domain.ValidateQuiniela(q); !isValidation(err) {
 		t.Errorf("expected validation error for PrizeThreshold=0, got %v", err)
 	}

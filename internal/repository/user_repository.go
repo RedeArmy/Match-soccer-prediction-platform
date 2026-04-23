@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -239,6 +240,56 @@ func (r *PostgresUserRepository) ListBanned(ctx context.Context) ([]*domain.User
 	}
 	defer rows.Close()
 	return collectUsers(rows)
+}
+
+// ListFiltered returns users matching the given filters with pagination.
+// Filters are applied with AND semantics; nil fields are ignored.
+func (r *PostgresUserRepository) ListFiltered(ctx context.Context, f UserFilters, p Pagination) ([]*domain.User, error) {
+	q := `SELECT ` + userColumns + ` FROM users WHERE deleted_at IS NULL`
+	args := []any{}
+	n := 1
+
+	if f.Banned != nil {
+		if *f.Banned {
+			q += ` AND banned_at IS NOT NULL`
+		} else {
+			q += ` AND banned_at IS NULL`
+		}
+	}
+	if f.Role != nil {
+		q += ` AND role = $` + itoa(n)
+		args = append(args, string(*f.Role))
+		n++
+	}
+	if f.Search != nil && *f.Search != "" {
+		q += ` AND (name ILIKE $` + itoa(n) + ` OR email ILIKE $` + itoa(n) + `)`
+		args = append(args, "%"+*f.Search+"%")
+		n++
+	}
+
+	q += ` ORDER BY created_at DESC`
+	if p.Limit > 0 {
+		q += ` LIMIT $` + itoa(n)
+		args = append(args, p.Limit)
+		n++
+	}
+	if p.Offset > 0 {
+		q += ` OFFSET $` + itoa(n)
+		args = append(args, p.Offset)
+	}
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectUsers(rows)
+}
+
+// itoa converts an int to its decimal string representation.
+// Used to build $N placeholders without importing fmt.
+func itoa(n int) string {
+	return strconv.Itoa(n)
 }
 
 var _ UserRepository = (*PostgresUserRepository)(nil)

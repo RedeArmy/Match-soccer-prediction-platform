@@ -10,6 +10,12 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const (
+	quinielaTestName = "Test Quiniela"
+	quinielaNewName  = "Renamed Quiniela"
+	quinielaPool     = "Pool Quiniela"
+)
+
 // stubQuinielaRepo implements repository.QuinielaRepository with configurable returns.
 // updateErr, if set, is returned exclusively by Update so that RenameGroup
 // conflict paths can be tested independently of GetByID.
@@ -53,6 +59,9 @@ func (r *stubQuinielaRepo) UpdateGroupSettings(_ context.Context, _ int, _ *int,
 	return r.quiniela, r.err
 }
 func (r *stubQuinielaRepo) DeleteByAdmin(_ context.Context, _, _ int) error { return r.err }
+func (r *stubQuinielaRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.Quiniela, error) {
+	return r.quinielas, r.err
+}
 
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.
 // membershipByID is returned by GetByID (used in ApproveJoin to load the pending
@@ -96,6 +105,12 @@ func (r *stubMemberRepo) SetRole(_ context.Context, _ int, _ domain.MembershipRo
 	return r.err
 }
 func (r *stubMemberRepo) RemoveByAdmin(_ context.Context, _, _ int) error { return r.err }
+func (r *stubMemberRepo) ListGroupIDsWithoutOwner(_ context.Context) ([]int, error) {
+	return nil, r.err
+}
+func (r *stubMemberRepo) ListStalePending(_ context.Context, _ time.Time) ([]*domain.GroupMembership, error) {
+	return r.memberships, r.err
+}
 
 // ── QuinielaService tests ─────────────────────────────────────────────────────
 
@@ -105,7 +120,7 @@ func newQuinielaSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) QuinielaService {
 
 func TestQuinielaService_Create_ValidQuiniela_ReturnsNil(t *testing.T) {
 	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
-	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
+	q := &domain.Quiniela{Name: quinielaTestName, OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
 		t.Errorf(fmtExpectNil, err)
@@ -114,7 +129,7 @@ func TestQuinielaService_Create_ValidQuiniela_ReturnsNil(t *testing.T) {
 
 func TestQuinielaService_Create_SetsInviteCode(t *testing.T) {
 	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
-	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
+	q := &domain.Quiniela{Name: quinielaTestName, OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtExpectNil, err)
@@ -129,7 +144,7 @@ func TestQuinielaService_Create_SetsInviteCode(t *testing.T) {
 
 func TestQuinielaService_Create_InviteCodeNeverExpires(t *testing.T) {
 	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
-	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
+	q := &domain.Quiniela{Name: quinielaTestName, OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtExpectNil, err)
@@ -141,7 +156,7 @@ func TestQuinielaService_Create_InviteCodeNeverExpires(t *testing.T) {
 
 func TestQuinielaService_Create_InitialStatusIsInactive(t *testing.T) {
 	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
-	q := &domain.Quiniela{Name: "Oficina 2026", OwnerID: 1}
+	q := &domain.Quiniela{Name: quinielaTestName, OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtExpectNil, err)
@@ -196,7 +211,7 @@ func TestQuinielaService_GetByOwner_ReturnsSlice(t *testing.T) {
 
 func TestQuinielaService_Create_DefaultsCurrencyToMXN(t *testing.T) {
 	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
-	q := &domain.Quiniela{Name: "Pool", OwnerID: 1}
+	q := &domain.Quiniela{Name: quinielaPool, OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtExpectNil, err)
@@ -208,7 +223,7 @@ func TestQuinielaService_Create_DefaultsCurrencyToMXN(t *testing.T) {
 
 func TestQuinielaService_Create_DefaultsPrizeThresholdWhenZero(t *testing.T) {
 	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
-	q := &domain.Quiniela{Name: "Pool", OwnerID: 1}
+	q := &domain.Quiniela{Name: quinielaPool, OwnerID: 1}
 
 	if err := svc.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtExpectNil, err)
@@ -220,7 +235,7 @@ func TestQuinielaService_Create_DefaultsPrizeThresholdWhenZero(t *testing.T) {
 
 func TestQuinielaService_Create_ExplicitPrizeThreshold_Preserved(t *testing.T) {
 	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
-	q := &domain.Quiniela{Name: "Pool", OwnerID: 1, PrizeThreshold: 5}
+	q := &domain.Quiniela{Name: quinielaPool, OwnerID: 1, PrizeThreshold: 5}
 
 	if err := svc.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtExpectNil, err)
@@ -243,7 +258,7 @@ func TestQuinielaService_Create_RepoConflict_ReturnsConflict(t *testing.T) {
 }
 
 func TestQuinielaService_GetByInviteCode_Found(t *testing.T) {
-	q := &domain.Quiniela{ID: 1, Name: "Pool", InviteCode: "ABC123"}
+	q := &domain.Quiniela{ID: 1, Name: quinielaPool, InviteCode: "ABC123"}
 	svc := newQuinielaSvc(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
 
 	got, err := svc.GetByInviteCode(context.Background(), "ABC123")
@@ -273,12 +288,12 @@ func TestQuinielaService_RenameGroup_Success(t *testing.T) {
 		&stubMemberRepo{membership: ownerMembership},
 	)
 
-	got, err := svc.RenameGroup(context.Background(), 1, 10, "New Name")
+	got, err := svc.RenameGroup(context.Background(), 1, 10, quinielaNewName)
 	if err != nil {
 		t.Fatalf(fmtExpectNil, err)
 	}
-	if got.Name != "New Name" {
-		t.Errorf("expected name %q, got %q", "New Name", got.Name)
+	if got.Name != quinielaNewName {
+		t.Errorf("expected name %q, got %q", quinielaNewName, got.Name)
 	}
 }
 
@@ -289,7 +304,7 @@ func TestQuinielaService_RenameGroup_NotOwner_ReturnsForbidden(t *testing.T) {
 		&stubMemberRepo{membership: memberMembership},
 	)
 
-	if _, err := svc.RenameGroup(context.Background(), 1, 99, "New Name"); !errors.Is(err, apperrors.ErrForbidden) {
+	if _, err := svc.RenameGroup(context.Background(), 1, 99, quinielaNewName); !errors.Is(err, apperrors.ErrForbidden) {
 		t.Errorf("expected ErrForbidden for non-owner caller, got %v", err)
 	}
 }
@@ -300,7 +315,7 @@ func TestQuinielaService_RenameGroup_NoMembership_ReturnsForbidden(t *testing.T)
 		&stubMemberRepo{membership: nil},
 	)
 
-	if _, err := svc.RenameGroup(context.Background(), 1, 99, "New Name"); !errors.Is(err, apperrors.ErrForbidden) {
+	if _, err := svc.RenameGroup(context.Background(), 1, 99, quinielaNewName); !errors.Is(err, apperrors.ErrForbidden) {
 		t.Errorf("expected ErrForbidden for missing membership, got %v", err)
 	}
 }
@@ -324,7 +339,7 @@ func TestQuinielaService_RenameGroup_QuinielaNotFound_ReturnsNotFound(t *testing
 		&stubMemberRepo{membership: ownerMembership},
 	)
 
-	if _, err := svc.RenameGroup(context.Background(), 99, 10, "New Name"); !errors.Is(err, apperrors.ErrNotFound) {
+	if _, err := svc.RenameGroup(context.Background(), 99, 10, quinielaNewName); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf("expected ErrNotFound for missing quiniela, got %v", err)
 	}
 }
@@ -351,7 +366,7 @@ func TestQuinielaService_RenameGroup_MemberRepoError_ReturnsError(t *testing.T) 
 		&stubMemberRepo{err: dbErr},
 	)
 
-	if _, err := svc.RenameGroup(context.Background(), 1, 10, "New Name"); err == nil {
+	if _, err := svc.RenameGroup(context.Background(), 1, 10, quinielaNewName); err == nil {
 		t.Error("expected an error from memberRepo, got nil")
 	}
 }

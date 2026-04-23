@@ -21,5 +21,21 @@ type AuditLogFilters struct {
 
 // PaymentFilters narrows a payment_records query.
 type PaymentFilters struct {
-	Status *domain.PaymentStatus
+	Status     *domain.PaymentStatus
+	QuinielaID *int
+	UserID     *int
+}
+
+// UserFilters narrows a users query for admin listing.
+type UserFilters struct {
+	Banned *bool // nil = all, true = banned only, false = active only
+	Role   *domain.UserRole
+	Search *string // substring match on name or email
+}
+
+// PredictionAdminFilters narrows a predictions query for admin listing.
+type PredictionAdminFilters struct {
+	UserID     *int
+	MatchID    *int
+	QuinielaID *int
 }

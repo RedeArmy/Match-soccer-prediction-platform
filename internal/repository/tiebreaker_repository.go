@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,6 +33,21 @@ func scanTiebreaker(row pgx.Row) (*domain.Tiebreaker, error) {
 		return nil, apperrors.Internal(err)
 	}
 	return tb, nil
+}
+
+func collectTiebreakers(rows pgx.Rows) ([]*domain.Tiebreaker, error) {
+	var tbs []*domain.Tiebreaker
+	for rows.Next() {
+		tb := &domain.Tiebreaker{}
+		if err := rows.Scan(&tb.ID, &tb.UserID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		tbs = append(tbs, tb)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return tbs, nil
 }
 
 func (r *PostgresTiebreakerRepository) Create(ctx context.Context, tb *domain.Tiebreaker) error {
@@ -90,18 +106,32 @@ func (r *PostgresTiebreakerRepository) ListByUserIDs(ctx context.Context, userID
 	}
 	defer rows.Close()
 
-	var tbs []*domain.Tiebreaker
-	for rows.Next() {
-		tb := &domain.Tiebreaker{}
-		if err := rows.Scan(&tb.ID, &tb.UserID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt); err != nil {
-			return nil, apperrors.Internal(err)
-		}
-		tbs = append(tbs, tb)
+	return collectTiebreakers(rows)
+}
+
+// ListAll returns all tiebreaker submissions with pagination.
+func (r *PostgresTiebreakerRepository) ListAll(ctx context.Context, p Pagination) ([]*domain.Tiebreaker, error) {
+	q := `SELECT ` + tiebreakerColumns + ` FROM tiebreakers ORDER BY created_at DESC`
+	args := []any{}
+	n := 1
+
+	if p.Limit > 0 {
+		q += ` LIMIT $` + strconv.Itoa(n)
+		args = append(args, p.Limit)
+		n++
 	}
-	if err := rows.Err(); err != nil {
+	if p.Offset > 0 {
+		q += ` OFFSET $` + strconv.Itoa(n)
+		args = append(args, p.Offset)
+	}
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	return tbs, nil
+	defer rows.Close()
+
+	return collectTiebreakers(rows)
 }
 
 var _ TiebreakerRepository = (*PostgresTiebreakerRepository)(nil)

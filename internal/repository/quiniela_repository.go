@@ -278,4 +278,21 @@ func (r *PostgresQuinielaRepository) DeleteByAdmin(ctx context.Context, quiniela
 	return nil
 }
 
+// ListByIDs returns quinielas for the given IDs in a single query.
+// An empty ids slice returns nil, nil without querying the database.
+func (r *PostgresQuinielaRepository) ListByIDs(ctx context.Context, ids []int) ([]*domain.Quiniela, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx,
+		`SELECT `+quinielaColumns+` FROM quinielas WHERE id = ANY($1) AND deleted_at IS NULL`,
+		ids,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectQuinielas(rows)
+}
+
 var _ QuinielaRepository = (*PostgresQuinielaRepository)(nil)

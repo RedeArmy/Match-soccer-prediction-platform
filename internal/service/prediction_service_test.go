@@ -9,10 +9,12 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 const (
+	pred1PredFmt  = "expected 1 prediction, got %d"
 	teamBrazil    = "Brazil"
 	teamArgentina = "Argentina"
 )
@@ -74,6 +76,12 @@ func (r *stubPredRepo) GetUserPointsByPhase(_ context.Context, _ int) (map[domai
 	return nil, r.err
 }
 func (r *stubPredRepo) ListUserScoredPointsChronological(_ context.Context, _ int) ([]int, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) ListAdmin(_ context.Context, _ repository.PredictionAdminFilters, _ repository.Pagination) ([]*domain.Prediction, error) {
+	return r.list, r.err
+}
+func (r *stubPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*domain.GlobalLeaderboardEntry, error) {
 	return nil, r.err
 }
 
@@ -267,7 +275,7 @@ func TestGetByUser_ReturnsSlice(t *testing.T) {
 		t.Fatalf(fmtExpectNil, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 prediction, got %d", len(got))
+		t.Errorf(pred1PredFmt, len(got))
 	}
 }
 
@@ -281,7 +289,7 @@ func TestGetByMatch_ReturnsSlice(t *testing.T) {
 		t.Fatalf(fmtExpectNil, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 prediction, got %d", len(got))
+		t.Errorf(pred1PredFmt, len(got))
 	}
 }
 
@@ -297,7 +305,7 @@ func TestGetByUserAndQuiniela_MemberWithPredictions_ReturnsSlice(t *testing.T) {
 		t.Fatalf(fmtExpectNil, err)
 	}
 	if len(got) != 1 {
-		t.Errorf("expected 1 prediction, got %d", len(got))
+		t.Errorf(pred1PredFmt, len(got))
 	}
 }
 
