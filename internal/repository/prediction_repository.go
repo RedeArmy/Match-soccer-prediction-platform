@@ -158,19 +158,7 @@ func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
-
-	result := make(map[int]int)
-	for rows.Next() {
-		var userID, totalPoints int
-		if err := rows.Scan(&userID, &totalPoints); err != nil {
-			return nil, apperrors.Internal(err)
-		}
-		result[userID] = totalPoints
-	}
-	if err := rows.Err(); err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return result, nil
+	return collectUserPointTotals(rows)
 }
 
 // TotalPointsByQuinielaAndPhase returns a map of userID → total scored points
@@ -208,7 +196,10 @@ func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
+	return collectUserPointTotals(rows)
+}
 
+func collectUserPointTotals(rows pgx.Rows) (map[int]int, error) {
 	result := make(map[int]int)
 	for rows.Next() {
 		var userID, totalPoints int

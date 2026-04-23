@@ -35,6 +35,21 @@ func scanTiebreaker(row pgx.Row) (*domain.Tiebreaker, error) {
 	return tb, nil
 }
 
+func collectTiebreakers(rows pgx.Rows) ([]*domain.Tiebreaker, error) {
+	var tbs []*domain.Tiebreaker
+	for rows.Next() {
+		tb := &domain.Tiebreaker{}
+		if err := rows.Scan(&tb.ID, &tb.UserID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		tbs = append(tbs, tb)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return tbs, nil
+}
+
 func (r *PostgresTiebreakerRepository) Create(ctx context.Context, tb *domain.Tiebreaker) error {
 	row := r.db.QueryRow(ctx,
 		`INSERT INTO tiebreakers (user_id, prediction)
@@ -91,18 +106,7 @@ func (r *PostgresTiebreakerRepository) ListByUserIDs(ctx context.Context, userID
 	}
 	defer rows.Close()
 
-	var tbs []*domain.Tiebreaker
-	for rows.Next() {
-		tb := &domain.Tiebreaker{}
-		if err := rows.Scan(&tb.ID, &tb.UserID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt); err != nil {
-			return nil, apperrors.Internal(err)
-		}
-		tbs = append(tbs, tb)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return tbs, nil
+	return collectTiebreakers(rows)
 }
 
 // ListAll returns all tiebreaker submissions with pagination.
@@ -127,18 +131,7 @@ func (r *PostgresTiebreakerRepository) ListAll(ctx context.Context, p Pagination
 	}
 	defer rows.Close()
 
-	var tbs []*domain.Tiebreaker
-	for rows.Next() {
-		tb := &domain.Tiebreaker{}
-		if err := rows.Scan(&tb.ID, &tb.UserID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt); err != nil {
-			return nil, apperrors.Internal(err)
-		}
-		tbs = append(tbs, tb)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return tbs, nil
+	return collectTiebreakers(rows)
 }
 
 var _ TiebreakerRepository = (*PostgresTiebreakerRepository)(nil)

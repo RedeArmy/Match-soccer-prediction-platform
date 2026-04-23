@@ -137,40 +137,31 @@ func (r *PostgresPaymentRecordRepository) ListPending(ctx context.Context) ([]*d
 // approved it and any approval notes. Returns NotFound when the payment does
 // not exist or is not in pending state.
 func (r *PostgresPaymentRecordRepository) Validate(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error) {
-	row := r.db.QueryRow(ctx,
-		`UPDATE payment_records
-		    SET status       = 'confirmed',
-		        confirmed_at = NOW(),
-		        reviewed_by  = $2,
-		        notes        = $3,
-		        updated_at   = NOW()
-		  WHERE id = $1 AND status = 'pending'
-		  RETURNING `+paymentColumns,
-		id, adminID, notes,
-	)
-	result, err := scanPaymentRecord(row)
-	if err != nil {
-		return nil, err
-	}
-	if result == nil {
-		return nil, apperrors.NotFound(msgPaymentNotFound)
-	}
-	return result, nil
+	return r.reviewPending(ctx, id, adminID, notes, "confirmed", true)
 }
 
 // Reject transitions a pending payment to rejected, recording the reviewing
 // admin and reason. Returns NotFound when the payment does not exist or is
 // not in pending state.
 func (r *PostgresPaymentRecordRepository) Reject(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error) {
+	return r.reviewPending(ctx, id, adminID, notes, "rejected", false)
+}
+
+func (r *PostgresPaymentRecordRepository) reviewPending(ctx context.Context, id, adminID int, notes, newStatus string, setConfirmedAt bool) (*domain.PaymentRecord, error) {
+	setConfirmed := ""
+	if setConfirmedAt {
+		setConfirmed = ", confirmed_at = NOW()"
+	}
+
 	row := r.db.QueryRow(ctx,
 		`UPDATE payment_records
-		    SET status      = 'rejected',
+		    SET status      = $4`+setConfirmed+`,
 		        reviewed_by = $2,
 		        notes       = $3,
 		        updated_at  = NOW()
 		  WHERE id = $1 AND status = 'pending'
 		  RETURNING `+paymentColumns,
-		id, adminID, notes,
+		id, adminID, notes, newStatus,
 	)
 	result, err := scanPaymentRecord(row)
 	if err != nil {
