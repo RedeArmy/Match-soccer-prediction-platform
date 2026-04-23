@@ -15,6 +15,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const msgInvalidUserID = "invalid user id"
+
 // AdminUserHandler handles admin endpoints for user management.
 type AdminUserHandler struct {
 	svc service.AdminUserService
@@ -63,7 +65,7 @@ func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUserHandler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid user id"))
+		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
 		return
 	}
 
@@ -97,7 +99,7 @@ type banRequest struct {
 func (h *AdminUserHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid user id"))
+		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
 		return
 	}
 
@@ -125,7 +127,7 @@ func (h *AdminUserHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUserHandler) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid user id"))
+		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
 		return
 	}
 

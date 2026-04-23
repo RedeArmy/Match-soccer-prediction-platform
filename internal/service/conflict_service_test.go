@@ -42,14 +42,11 @@ func (r *stubMemberRepoConflict) ListGroupIDsWithoutOwner(_ context.Context) ([]
 func TestConflictService_ListConflicts_ReturnsAllCategories(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Hour)
 
-	// ownerless groups
 	groupIDs := []int{1, 2}
 	quinielas := []*domain.Quiniela{
 		{ID: 1, Name: "Liga 1"},
 		{ID: 2, Name: "Liga 2"},
 	}
-
-	// stale payment
 	payment := &domain.PaymentRecord{
 		ID:         10,
 		QuinielaID: 1,
@@ -57,8 +54,6 @@ func TestConflictService_ListConflicts_ReturnsAllCategories(t *testing.T) {
 		Amount:     500,
 		CreatedAt:  now.Add(-72 * time.Hour),
 	}
-
-	// stale membership
 	membership := &domain.GroupMembership{
 		ID:         20,
 		QuinielaID: 2,
@@ -83,44 +78,66 @@ func TestConflictService_ListConflicts_ReturnsAllCategories(t *testing.T) {
 		t.Fatalf("expected 4 conflicts (2 groups + 1 payment + 1 membership), got %d", len(conflicts))
 	}
 
-	var (
-		foundNoOwner     bool
-		foundStalePay    bool
-		foundStaleMember bool
-	)
+	byType := indexConflictsByType(conflicts)
+	assertGroupOwnerConflicts(t, byType[domain.ConflictGroupNoOwner])
+	assertStalePaymentConflicts(t, byType[domain.ConflictPaymentStale], payment)
+	assertStaleMembershipConflicts(t, byType[domain.ConflictMembershipStale], membership)
+}
+
+func indexConflictsByType(conflicts []domain.Conflict) map[domain.ConflictType][]domain.Conflict {
+	m := make(map[domain.ConflictType][]domain.Conflict)
 	for _, c := range conflicts {
-		switch c.Type {
-		case domain.ConflictGroupNoOwner:
-			foundNoOwner = true
-			if c.EntityType != "quiniela" {
-				t.Errorf("ConflictGroupNoOwner EntityType: want quiniela, got %q", c.EntityType)
-			}
-			if c.Details == nil {
-				t.Error("ConflictGroupNoOwner Details: want non-nil")
-			}
-		case domain.ConflictPaymentStale:
-			foundStalePay = true
-			if c.EntityID != payment.ID {
-				t.Errorf("ConflictPaymentStale EntityID: want %d, got %d", payment.ID, c.EntityID)
-			}
-			if c.EntityType != "payment_record" {
-				t.Errorf("ConflictPaymentStale EntityType: want payment_record, got %q", c.EntityType)
-			}
-			if got, ok := c.Details["age_days"].(int); ok && got <= 0 {
-				t.Errorf("ConflictPaymentStale age_days: want >0, got %d", got)
-			}
-		case domain.ConflictMembershipStale:
-			foundStaleMember = true
-			if c.EntityID != membership.ID {
-				t.Errorf("ConflictMembershipStale EntityID: want %d, got %d", membership.ID, c.EntityID)
-			}
-			if c.EntityType != "group_membership" {
-				t.Errorf("ConflictMembershipStale EntityType: want group_membership, got %q", c.EntityType)
-			}
+		m[c.Type] = append(m[c.Type], c)
+	}
+	return m
+}
+
+func assertGroupOwnerConflicts(t *testing.T, cs []domain.Conflict) {
+	t.Helper()
+	if len(cs) == 0 {
+		t.Error("ConflictGroupNoOwner: expected at least one conflict")
+		return
+	}
+	for _, c := range cs {
+		if c.EntityType != "quiniela" {
+			t.Errorf("ConflictGroupNoOwner EntityType: want quiniela, got %q", c.EntityType)
+		}
+		if c.Details == nil {
+			t.Error("ConflictGroupNoOwner Details: want non-nil")
 		}
 	}
-	if !foundNoOwner || !foundStalePay || !foundStaleMember {
-		t.Errorf("expected all conflict categories; got noOwner=%v stalePay=%v staleMember=%v", foundNoOwner, foundStalePay, foundStaleMember)
+}
+
+func assertStalePaymentConflicts(t *testing.T, cs []domain.Conflict, payment *domain.PaymentRecord) {
+	t.Helper()
+	if len(cs) == 0 {
+		t.Error("ConflictPaymentStale: expected at least one conflict")
+		return
+	}
+	c := cs[0]
+	if c.EntityID != payment.ID {
+		t.Errorf("ConflictPaymentStale EntityID: want %d, got %d", payment.ID, c.EntityID)
+	}
+	if c.EntityType != "payment_record" {
+		t.Errorf("ConflictPaymentStale EntityType: want payment_record, got %q", c.EntityType)
+	}
+	if got, ok := c.Details["age_days"].(int); ok && got <= 0 {
+		t.Errorf("ConflictPaymentStale age_days: want >0, got %d", got)
+	}
+}
+
+func assertStaleMembershipConflicts(t *testing.T, cs []domain.Conflict, membership *domain.GroupMembership) {
+	t.Helper()
+	if len(cs) == 0 {
+		t.Error("ConflictMembershipStale: expected at least one conflict")
+		return
+	}
+	c := cs[0]
+	if c.EntityID != membership.ID {
+		t.Errorf("ConflictMembershipStale EntityID: want %d, got %d", membership.ID, c.EntityID)
+	}
+	if c.EntityType != "group_membership" {
+		t.Errorf("ConflictMembershipStale EntityType: want group_membership, got %q", c.EntityType)
 	}
 }
 

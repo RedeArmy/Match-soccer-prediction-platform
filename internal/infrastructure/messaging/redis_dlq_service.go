@@ -42,40 +42,42 @@ func (s *RedisDLQService) Stats(ctx context.Context) ([]service.DLQStat, error) 
 			s.log.Warn("dlq: llen failed", zap.String("key", key), zap.Error(err))
 			continue
 		}
-
-		stat := service.DLQStat{
-			EventType: string(et),
-			Count:     count,
-		}
-
+		stat := service.DLQStat{EventType: string(et), Count: count}
 		if count > 0 {
-			// Peek oldest entry (head of list) for age and sample
-			raw, err := s.client.LRange(ctx, key, 0, int64(dlqSampleSize-1)).Result()
-			if err == nil && len(raw) > 0 {
-				var oldest dlqEntry
-				if jsonErr := json.Unmarshal([]byte(raw[0]), &oldest); jsonErr == nil {
-					t := oldest.DeadLetteredAt
-					stat.OldestAt = &t
-				}
-
-				sample := make([]service.DLQEntry, 0, len(raw))
-				for _, r := range raw {
-					var e dlqEntry
-					if jsonErr := json.Unmarshal([]byte(r), &e); jsonErr != nil {
-						continue
-					}
-					sample = append(sample, service.DLQEntry{
-						DeadLetteredAt: e.DeadLetteredAt,
-						HandlerErr:     e.Error,
-						Payload:        map[string]any{"event_type": e.EventType, "attempts": e.Attempts},
-					})
-				}
-				stat.Sample = sample
-			}
+			stat.OldestAt, stat.Sample = s.peekSample(ctx, key)
 		}
 		stats = append(stats, stat)
 	}
 	return stats, nil
+}
+
+// peekSample reads up to dlqSampleSize entries from the head of key and returns
+// the timestamp of the oldest entry together with the decoded sample slice.
+func (s *RedisDLQService) peekSample(ctx context.Context, key string) (*time.Time, []service.DLQEntry) {
+	raw, err := s.client.LRange(ctx, key, 0, int64(dlqSampleSize-1)).Result()
+	if err != nil || len(raw) == 0 {
+		return nil, nil
+	}
+
+	var oldestAt *time.Time
+	var oldest dlqEntry
+	if json.Unmarshal([]byte(raw[0]), &oldest) == nil {
+		oldestAt = &oldest.DeadLetteredAt
+	}
+
+	sample := make([]service.DLQEntry, 0, len(raw))
+	for _, r := range raw {
+		var e dlqEntry
+		if json.Unmarshal([]byte(r), &e) != nil {
+			continue
+		}
+		sample = append(sample, service.DLQEntry{
+			DeadLetteredAt: e.DeadLetteredAt,
+			HandlerErr:     e.Error,
+			Payload:        map[string]any{"event_type": e.EventType, "attempts": e.Attempts},
+		})
+	}
+	return oldestAt, sample
 }
 
 // Replay pops up to limit entries from each DLQ key and re-publishes them
@@ -86,42 +88,50 @@ func (s *RedisDLQService) Replay(ctx context.Context, limit int) (int, error) {
 	}
 	replayed := 0
 	for _, et := range s.eventTypes {
-		key := dlqKey(et)
-		for i := 0; i < limit; i++ {
-			raw, err := s.client.LPop(ctx, key).Result()
-			if err == redis.Nil {
-				break
-			}
-			if err != nil {
-				s.log.Warn("dlq replay: lpop failed", zap.String("key", key), zap.Error(err))
-				break
-			}
-
-			var entry dlqEntry
-			if err := json.Unmarshal([]byte(raw), &entry); err != nil {
-				s.log.Warn("dlq replay: unmarshal failed", zap.Error(err))
-				continue
-			}
-
-			payload, err := json.Marshal(entry.Envelope)
-			if err != nil {
-				s.log.Warn("dlq replay: marshal envelope failed", zap.Error(err))
-				continue
-			}
-
-			if err := s.client.XAdd(ctx, &redis.XAddArgs{
-				Stream: streamKey(et),
-				MaxLen: streamMaxLen,
-				Approx: true,
-				Values: map[string]any{"payload": string(payload)},
-			}).Err(); err != nil {
-				s.log.Warn("dlq replay: xadd failed", zap.String("stream", streamKey(et)), zap.Error(err))
-				continue
-			}
-			replayed++
-		}
+		replayed += s.replayFromKey(ctx, et, limit)
 	}
 	return replayed, nil
+}
+
+// replayFromKey pops up to limit entries from the DLQ key for et and
+// re-publishes each onto its original stream. Returns the count replayed.
+func (s *RedisDLQService) replayFromKey(ctx context.Context, et events.EventType, limit int) int {
+	key := dlqKey(et)
+	replayed := 0
+	for i := 0; i < limit; i++ {
+		raw, err := s.client.LPop(ctx, key).Result()
+		if err == redis.Nil {
+			break
+		}
+		if err != nil {
+			s.log.Warn("dlq replay: lpop failed", zap.String("key", key), zap.Error(err))
+			break
+		}
+
+		var entry dlqEntry
+		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
+			s.log.Warn("dlq replay: unmarshal failed", zap.Error(err))
+			continue
+		}
+
+		payload, err := json.Marshal(entry.Envelope)
+		if err != nil {
+			s.log.Warn("dlq replay: marshal envelope failed", zap.Error(err))
+			continue
+		}
+
+		if err := s.client.XAdd(ctx, &redis.XAddArgs{
+			Stream: streamKey(et),
+			MaxLen: streamMaxLen,
+			Approx: true,
+			Values: map[string]any{"payload": string(payload)},
+		}).Err(); err != nil {
+			s.log.Warn("dlq replay: xadd failed", zap.String("stream", streamKey(et)), zap.Error(err))
+			continue
+		}
+		replayed++
+	}
+	return replayed
 }
 
 // Purge deletes all entries from all DLQ keys and returns the total removed.

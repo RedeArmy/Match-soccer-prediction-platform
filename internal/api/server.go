@@ -36,6 +36,11 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/health"
 )
 
+const (
+	routePredictions = "/predictions"
+	routeUsers       = "/users"
+)
+
 // Server holds the shared dependencies made available to all HTTP handlers.
 // It is constructed once at application startup and is safe for concurrent
 // use by multiple goroutines once initialised.
@@ -130,7 +135,7 @@ func (s *Server) Routes() http.Handler {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
-			r.Route("/predictions", func(r chi.Router) {
+			r.Route(routePredictions, func(r chi.Router) {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
@@ -138,7 +143,7 @@ func (s *Server) Routes() http.Handler {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
-			r.Route("/users", func(r chi.Router) {
+			r.Route(routeUsers, func(r chi.Router) {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
 			})
@@ -185,7 +190,7 @@ func (s *Server) Routes() http.Handler {
 		// ListMembers do not use the caller's identity but the cost of a single
 		// indexed lookup (clerk_subject) is negligible compared to the handler
 		// work that follows.
-		r.Route("/predictions", func(r chi.Router) {
+		r.Route(routePredictions, func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.Post("/", predHandler.Submit)
 			r.Get("/", predHandler.ListByUser)
@@ -233,7 +238,7 @@ func (s *Server) Routes() http.Handler {
 			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/slots/{id}", tournamentHandler.ConfirmSlot)
 		})
 
-		r.Route("/users", func(r chi.Router) {
+		r.Route(routeUsers, func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.Get("/me/stats", userStatsHandler.GetMyStats)
 		})
@@ -245,7 +250,7 @@ func (s *Server) Routes() http.Handler {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
 
 			// Users
-			r.Get("/users", adminUserH.ListUsers)
+			r.Get(routeUsers, adminUserH.ListUsers)
 			r.Get("/users/{id}", adminUserH.GetUserProfile)
 			r.Post("/users/{id}/ban", adminUserH.BanUser)
 			r.Delete("/users/{id}/ban", adminUserH.UnbanUser)
@@ -267,7 +272,7 @@ func (s *Server) Routes() http.Handler {
 
 			// Leaderboard & Predictions
 			r.Get("/leaderboard", adminLeaderboardH.GlobalLeaderboard)
-			r.Get("/predictions", adminLeaderboardH.ListPredictions)
+			r.Get(routePredictions, adminLeaderboardH.ListPredictions)
 			r.Get("/predictions/match/{matchID}", adminLeaderboardH.ListPredictionsByMatch)
 
 			// DLQ

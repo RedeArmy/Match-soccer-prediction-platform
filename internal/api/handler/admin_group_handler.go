@@ -13,6 +13,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const msgInvalidGroupID = "invalid group id"
+
 // AdminGroupHandler handles admin endpoints for group management.
 type AdminGroupHandler struct {
 	svc service.AdminGroupService
@@ -28,7 +30,7 @@ func NewAdminGroupHandler(svc service.AdminGroupService, log *zap.Logger) *Admin
 func (h *AdminGroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid group id"))
+		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
 		return
 	}
 
@@ -75,7 +77,7 @@ type updateGroupSettingsRequest struct {
 func (h *AdminGroupHandler) UpdateGroupSettings(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid group id"))
+		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
 		return
 	}
 
@@ -111,7 +113,7 @@ type transferOwnershipRequest struct {
 func (h *AdminGroupHandler) TransferOwnership(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid group id"))
+		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
 		return
 	}
 
