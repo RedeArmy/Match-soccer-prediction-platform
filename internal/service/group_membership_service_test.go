@@ -12,6 +12,11 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const (
+	membershipCode    = "CODE"
+	membershipDBError = "db error"
+)
+
 // ── GroupMembershipService tests ──────────────────────────────────────────────
 
 func newMemberSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) GroupMembershipService {
@@ -78,11 +83,11 @@ func TestGroupMembershipService_Join_CodeNotFound_ReturnsNotFound(t *testing.T) 
 
 func TestGroupMembershipService_Join_AlreadyActive_ReturnsConflict(t *testing.T) {
 	svc := newMemberSvc(
-		&stubQuinielaRepo{quiniela: quinielaWithCode(1, "CODE")},
+		&stubQuinielaRepo{quiniela: quinielaWithCode(1, membershipCode)},
 		&stubMemberRepo{membership: activeMembership(1, 42)},
 	)
 
-	_, err := svc.Join(context.Background(), "CODE", 42)
+	_, err := svc.Join(context.Background(), membershipCode, 42)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict error, got %v", err)
 	}
@@ -90,11 +95,11 @@ func TestGroupMembershipService_Join_AlreadyActive_ReturnsConflict(t *testing.T)
 
 func TestGroupMembershipService_Join_AlreadyPending_ReturnsConflict(t *testing.T) {
 	svc := newMemberSvc(
-		&stubQuinielaRepo{quiniela: quinielaWithCode(1, "CODE")},
+		&stubQuinielaRepo{quiniela: quinielaWithCode(1, membershipCode)},
 		&stubMemberRepo{membership: pendingMembership(1, 1, 42)},
 	)
 
-	_, err := svc.Join(context.Background(), "CODE", 42)
+	_, err := svc.Join(context.Background(), membershipCode, 42)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict for duplicate pending request, got %v", err)
 	}
@@ -108,11 +113,11 @@ func TestGroupMembershipService_Join_PreviouslyLeft_ReturnsPending(t *testing.T)
 		Status:     domain.MembershipLeft,
 	}
 	svc := newMemberSvc(
-		&stubQuinielaRepo{quiniela: quinielaWithCode(1, "CODE")},
+		&stubQuinielaRepo{quiniela: quinielaWithCode(1, membershipCode)},
 		&stubMemberRepo{membership: existing},
 	)
 
-	m, err := svc.Join(context.Background(), "CODE", 42)
+	m, err := svc.Join(context.Background(), membershipCode, 42)
 	if err != nil {
 		t.Fatalf(fmtExpectNil, err)
 	}
@@ -123,13 +128,13 @@ func TestGroupMembershipService_Join_PreviouslyLeft_ReturnsPending(t *testing.T)
 
 func TestGroupMembershipService_Join_MaxMembersReached_ReturnsConflict(t *testing.T) {
 	maxMembers := 1
-	q := &domain.Quiniela{ID: 1, Name: "Full", OwnerID: 1, InviteCode: "CODE", MaxMembers: &maxMembers}
+	q := &domain.Quiniela{ID: 1, Name: "Full", OwnerID: 1, InviteCode: membershipCode, MaxMembers: &maxMembers}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: q},
 		&stubMemberRepo{activeCount: 1}, // CountActive returns 1, which equals maxMembers
 	)
 
-	_, err := svc.Join(context.Background(), "CODE", 42)
+	_, err := svc.Join(context.Background(), membershipCode, 42)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict (full group) error, got %v", err)
 	}
@@ -365,7 +370,7 @@ func TestGroupMembershipService_ApproveJoin_SyncCountActiveError_StillSucceeds(t
 		&stubMemberRepo{
 			membership:     approver,
 			membershipByID: pending,
-			countActiveErr: errors.New("db error"),
+			countActiveErr: errors.New(membershipDBError),
 		},
 	)
 
@@ -380,7 +385,7 @@ func TestGroupMembershipService_ApproveJoin_SyncCountActiveError_StillSucceeds(t
 
 func TestGroupMembershipService_Leave_SyncUpdateStatusError_StillSucceeds(t *testing.T) {
 	svc := newMemberSvc(
-		&stubQuinielaRepo{updateStatusErr: errors.New("db error")},
+		&stubQuinielaRepo{updateStatusErr: errors.New(membershipDBError)},
 		&stubMemberRepo{membership: activeMembership(1, 42), activeCount: 1},
 	)
 
@@ -443,7 +448,7 @@ func TestGroupMembershipService_Leave_CreateOwner_TransferError_StillLeaves(t *t
 	}
 	mr := &leaveOwnerMemberRepo{
 		ownerMembership: ownerMembership,
-		transferErr:     errors.New("db error"),
+		transferErr:     errors.New(membershipDBError),
 	}
 	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, zap.NewNop())
 
@@ -487,13 +492,13 @@ func (r *leaveOwnerMemberRepo) CountActive(_ context.Context, _ int) (int, error
 
 func TestGroupMembershipService_Join_ListByQuinielaError_ReturnsError(t *testing.T) {
 	maxMembers := 5
-	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 1, InviteCode: "CODE", MaxMembers: &maxMembers}
+	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 1, InviteCode: membershipCode, MaxMembers: &maxMembers}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{err: errors.New("db error")},
+		&stubMemberRepo{err: errors.New(membershipDBError)},
 	)
 
-	if _, err := svc.Join(context.Background(), "CODE", 42); err == nil {
+	if _, err := svc.Join(context.Background(), membershipCode, 42); err == nil {
 		t.Error("expected error when ListByQuiniela fails in checkCapacity, got nil")
 	}
 }
@@ -521,7 +526,7 @@ func TestGroupMembershipService_MarkPaid_ReturnsMembership(t *testing.T) {
 }
 
 func TestGroupMembershipService_MarkPaid_RepoError_Propagates(t *testing.T) {
-	svc := newMemberSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New("db error")})
+	svc := newMemberSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New(membershipDBError)})
 
 	_, err := svc.MarkPaid(context.Background(), 1, 42)
 	if err == nil {
@@ -530,7 +535,7 @@ func TestGroupMembershipService_MarkPaid_RepoError_Propagates(t *testing.T) {
 }
 
 func TestGroupMembershipService_ListByQuiniela_RepoError_Propagates(t *testing.T) {
-	svc := newMemberSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New("db error")})
+	svc := newMemberSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New(membershipDBError)})
 
 	_, err := svc.ListByQuiniela(context.Background(), 1)
 	if err == nil {

@@ -10,8 +10,15 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
+const (
+	adminUserUnexpectedErr = "unexpected error: %v"
+	adminUserNotFoundErr   = "not found"
+	adminUserDBError       = "db error"
+	adminUserBanReason     = "cheating"
+)
+
 func newAdminUserSvc(ur *stubUserRepo, mr *stubMemberRepo) AdminUserService {
-	return NewAdminUserService(ur, mr, &noopAuditLogger{}, zap.NewNop())
+	return NewAdminUserService(ur, mr, &stubPaymentRepo{}, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── BanUser ───────────────────────────────────────────────────────────────────
@@ -20,14 +27,14 @@ func TestAdminUserService_BanUser_HappyPath_ReturnsBannedUser(t *testing.T) {
 	banned := &domain.User{ID: 5}
 	svc := newAdminUserSvc(&stubUserRepo{user: banned}, &stubMemberRepo{memberships: nil})
 
-	got, err := svc.BanUser(context.Background(), 5, 99, "cheating")
+	got, err := svc.BanUser(context.Background(), 5, 99, adminUserBanReason)
 	if err != nil || got == nil {
 		t.Fatalf("expected user, got %v err=%v", got, err)
 	}
 }
 
 func TestAdminUserService_BanUser_RepoError_Propagates(t *testing.T) {
-	svc := newAdminUserSvc(&stubUserRepo{err: errors.New("not found")}, &stubMemberRepo{})
+	svc := newAdminUserSvc(&stubUserRepo{err: errors.New(adminUserNotFoundErr)}, &stubMemberRepo{})
 
 	_, err := svc.BanUser(context.Background(), 5, 99, "")
 	if err == nil {
@@ -51,11 +58,11 @@ func TestAdminUserService_BanUser_TransfersOwnedGroups(t *testing.T) {
 		memberships: []*domain.GroupMembership{ownerMembership},
 		oldest:      successor,
 	}
-	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &stubPaymentRepo{}, &noopAuditLogger{}, zap.NewNop())
 
-	_, err := svc.BanUser(context.Background(), 5, 99, "cheating")
+	_, err := svc.BanUser(context.Background(), 5, 99, adminUserBanReason)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(adminUserUnexpectedErr, err)
 	}
 	if mr.setRoleCalled != successor.ID {
 		t.Errorf("expected SetRole on membership %d, got %d", successor.ID, mr.setRoleCalled)
@@ -70,11 +77,11 @@ func TestAdminUserService_BanUser_NoOwnedGroups_TransferIsNoop(t *testing.T) {
 		Role:   domain.MembershipRoleMember,
 	}
 	mr := &transferTestMemberRepo{memberships: []*domain.GroupMembership{regularMembership}}
-	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &stubPaymentRepo{}, &noopAuditLogger{}, zap.NewNop())
 
 	_, err := svc.BanUser(context.Background(), 5, 99, "")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(adminUserUnexpectedErr, err)
 	}
 	if mr.setRoleCalled != 0 {
 		t.Errorf("expected no SetRole call, but got membership ID %d", mr.setRoleCalled)
@@ -91,11 +98,11 @@ func TestAdminUserService_BanUser_NoSuccessor_TransferIsNoop(t *testing.T) {
 		memberships: []*domain.GroupMembership{ownerMembership},
 		oldest:      nil, // no successor
 	}
-	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &stubPaymentRepo{}, &noopAuditLogger{}, zap.NewNop())
 
 	_, err := svc.BanUser(context.Background(), 5, 99, "")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(adminUserUnexpectedErr, err)
 	}
 	if mr.setRoleCalled != 0 {
 		t.Errorf("expected no SetRole call when no successor, got %d", mr.setRoleCalled)
@@ -115,7 +122,7 @@ func TestAdminUserService_UnbanUser_HappyPath_ReturnsUser(t *testing.T) {
 }
 
 func TestAdminUserService_UnbanUser_RepoError_Propagates(t *testing.T) {
-	svc := newAdminUserSvc(&stubUserRepo{err: errors.New("not found")}, &stubMemberRepo{})
+	svc := newAdminUserSvc(&stubUserRepo{err: errors.New(adminUserNotFoundErr)}, &stubMemberRepo{})
 
 	_, err := svc.UnbanUser(context.Background(), 5, 99)
 	if err == nil {
@@ -136,7 +143,7 @@ func TestAdminUserService_ListUsers_ReturnsAllUsers(t *testing.T) {
 }
 
 func TestAdminUserService_UnbanUser_GetByIDError_Propagates(t *testing.T) {
-	svc := NewAdminUserService(&unbanGetByIDErrRepo{}, &stubMemberRepo{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminUserService(&unbanGetByIDErrRepo{}, &stubMemberRepo{}, &stubPaymentRepo{}, &noopAuditLogger{}, zap.NewNop())
 
 	_, err := svc.UnbanUser(context.Background(), 5, 99)
 	if err == nil {
@@ -147,7 +154,7 @@ func TestAdminUserService_UnbanUser_GetByIDError_Propagates(t *testing.T) {
 func TestAdminUserService_BanUser_TransferOwnershipListUserError_BanStillSucceeds(t *testing.T) {
 	// ListByUser returns an error; transferOwnedGroups error is swallowed by BanUser.
 	mr := &listByUserErrMemberRepo{}
-	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &stubPaymentRepo{}, &noopAuditLogger{}, zap.NewNop())
 
 	_, err := svc.BanUser(context.Background(), 5, 99, "")
 	if err != nil {
@@ -165,7 +172,7 @@ func TestAdminUserService_BanUser_DoTransferSetRoleError_BanStillSucceeds(t *tes
 		memberships: []*domain.GroupMembership{ownerMembership},
 		oldest:      successor,
 	}
-	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminUserService(&stubUserRepo{user: &domain.User{ID: 5}}, mr, &stubPaymentRepo{}, &noopAuditLogger{}, zap.NewNop())
 
 	_, err := svc.BanUser(context.Background(), 5, 99, "")
 	if err != nil {
@@ -180,7 +187,7 @@ type unbanGetByIDErrRepo struct {
 
 func (r *unbanGetByIDErrRepo) Unban(_ context.Context, _ int) error { return nil }
 func (r *unbanGetByIDErrRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
-	return nil, errors.New("db error")
+	return nil, errors.New(adminUserDBError)
 }
 
 // listByUserErrMemberRepo fails on ListByUser so transferOwnedGroups returns an error.
@@ -189,7 +196,7 @@ type listByUserErrMemberRepo struct {
 }
 
 func (r *listByUserErrMemberRepo) ListByUser(_ context.Context, _ int) ([]*domain.GroupMembership, error) {
-	return nil, errors.New("db error")
+	return nil, errors.New(adminUserDBError)
 }
 
 // setRoleErrMemberRepo returns an error from SetRole to test the doTransfer error path.
@@ -206,7 +213,7 @@ func (r *setRoleErrMemberRepo) OldestActiveMember(_ context.Context, _, _ int) (
 	return r.oldest, nil
 }
 func (r *setRoleErrMemberRepo) SetRole(_ context.Context, _ int, _ domain.MembershipRole) error {
-	return errors.New("db error")
+	return errors.New(adminUserDBError)
 }
 
 // ── BulkBan ───────────────────────────────────────────────────────────────────
@@ -215,14 +222,14 @@ func TestAdminUserService_BulkBan_AllSucceed_ReturnsNil(t *testing.T) {
 	u := &domain.User{ID: 1}
 	svc := newAdminUserSvc(&stubUserRepo{user: u}, &stubMemberRepo{})
 
-	err := svc.BulkBan(context.Background(), []int{1, 2, 3}, 99, "cheating")
+	err := svc.BulkBan(context.Background(), []int{1, 2, 3}, 99, adminUserBanReason)
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
 }
 
 func TestAdminUserService_BulkBan_PartialFailure_ReturnsFirstError(t *testing.T) {
-	svc := newAdminUserSvc(&stubUserRepo{err: errors.New("not found")}, &stubMemberRepo{})
+	svc := newAdminUserSvc(&stubUserRepo{err: errors.New(adminUserNotFoundErr)}, &stubMemberRepo{})
 
 	err := svc.BulkBan(context.Background(), []int{1, 2}, 99, "")
 	if err == nil {
