@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	leaderboardAlice     = "Alice"
 	leaderboardPath      = "/groups/1/leaderboard"
 	leaderboardPhasePath = "/groups/1/leaderboard?phase=group_stage"
 )
@@ -55,7 +56,7 @@ func TestGetLeaderboard_EmptyGroup_Returns200WithEmptyArray(t *testing.T) {
 func TestGetLeaderboard_WithEntries_Returns200WithRankedList(t *testing.T) {
 	entries := []*domain.LeaderboardEntry{
 		{User: &domain.User{ID: 2, Name: "Bob"}, TotalPoints: 25, Rank: 1, PrizeWinner: true},
-		{User: &domain.User{ID: 1, Name: "Alice"}, TotalPoints: 10, Rank: 2, PrizeWinner: false},
+		{User: &domain.User{ID: 1, Name: leaderboardAlice}, TotalPoints: 10, Rank: 2, PrizeWinner: false},
 	}
 	ranker := &stubRanker{entries: entries}
 	req := httptest.NewRequest(http.MethodGet, leaderboardPath, nil)
@@ -75,14 +76,14 @@ func TestGetLeaderboard_WithEntries_Returns200WithRankedList(t *testing.T) {
 	if resp.Entries[0].UserName != "Bob" || !resp.Entries[0].PrizeWinner {
 		t.Errorf("entry[0]: want Bob/prize_winner=true, got %s/%v", resp.Entries[0].UserName, resp.Entries[0].PrizeWinner)
 	}
-	if resp.Entries[1].UserName != "Alice" || resp.Entries[1].PrizeWinner {
+	if resp.Entries[1].UserName != leaderboardAlice || resp.Entries[1].PrizeWinner {
 		t.Errorf("entry[1]: want Alice/prize_winner=false, got %s/%v", resp.Entries[1].UserName, resp.Entries[1].PrizeWinner)
 	}
 }
 
 func TestGetLeaderboard_WithPhaseParam_Returns200(t *testing.T) {
 	entries := []*domain.LeaderboardEntry{
-		{User: &domain.User{ID: 1, Name: "Alice"}, TotalPoints: 5, Rank: 1, PrizeWinner: true},
+		{User: &domain.User{ID: 1, Name: leaderboardAlice}, TotalPoints: 5, Rank: 1, PrizeWinner: true},
 	}
 	ranker := &stubRanker{entries: entries}
 	req := httptest.NewRequest(http.MethodGet, leaderboardPhasePath, nil)

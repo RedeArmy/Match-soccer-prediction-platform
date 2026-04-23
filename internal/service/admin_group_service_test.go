@@ -11,6 +11,11 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const (
+	adminGroupNilErrFmt    = "expected nil error, got %v"
+	adminGroupExpectErrMsg = "expected error, got nil"
+)
+
 func newAdminGroupSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) AdminGroupService {
 	return NewAdminGroupService(qr, mr, &noopAuditLogger{}, zap.NewNop())
 }
@@ -21,7 +26,7 @@ func TestAdminGroupService_DeleteGroup_HappyPath_ReturnsNil(t *testing.T) {
 	svc := newAdminGroupSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
 
 	if err := svc.DeleteGroup(context.Background(), 1, 99); err != nil {
-		t.Errorf("expected nil error, got %v", err)
+		t.Errorf(adminGroupNilErrFmt, err)
 	}
 }
 
@@ -29,7 +34,7 @@ func TestAdminGroupService_DeleteGroup_RepoError_Propagates(t *testing.T) {
 	svc := newAdminGroupSvc(&stubQuinielaRepo{err: errors.New("not found")}, &stubMemberRepo{})
 
 	if err := svc.DeleteGroup(context.Background(), 1, 99); err == nil {
-		t.Error("expected error, got nil")
+		t.Error(adminGroupExpectErrMsg)
 	}
 }
 
@@ -39,7 +44,7 @@ func TestAdminGroupService_RemoveMember_HappyPath_ReturnsNil(t *testing.T) {
 	svc := newAdminGroupSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
 
 	if err := svc.RemoveMember(context.Background(), 10, 99); err != nil {
-		t.Errorf("expected nil error, got %v", err)
+		t.Errorf(adminGroupNilErrFmt, err)
 	}
 }
 
@@ -47,7 +52,7 @@ func TestAdminGroupService_RemoveMember_RepoError_Propagates(t *testing.T) {
 	svc := newAdminGroupSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New("inactive")})
 
 	if err := svc.RemoveMember(context.Background(), 10, 99); err == nil {
-		t.Error("expected error, got nil")
+		t.Error(adminGroupExpectErrMsg)
 	}
 }
 
@@ -79,7 +84,7 @@ func TestAdminGroupService_UpdateGroupSettings_RepoError_Propagates(t *testing.T
 
 	_, err := svc.UpdateGroupSettings(context.Background(), 1, nil, 0, 99)
 	if err == nil {
-		t.Error("expected error, got nil")
+		t.Error(adminGroupExpectErrMsg)
 	}
 }
 
@@ -96,7 +101,7 @@ func TestAdminGroupService_TransferOwnership_HappyPath_DemotesAndPromotes(t *tes
 	svc := newAdminGroupSvc(&stubQuinielaRepo{}, mr)
 
 	if err := svc.TransferOwnership(context.Background(), 1, 2, 99); err != nil {
-		t.Errorf("expected nil error, got %v", err)
+		t.Errorf(adminGroupNilErrFmt, err)
 	}
 }
 

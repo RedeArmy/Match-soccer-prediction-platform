@@ -165,4 +165,15 @@ func (s *systemParamService) evict(key string) {
 	s.mu.Unlock()
 }
 
+// BulkSet updates multiple parameters atomically and evicts their cache entries.
+func (s *systemParamService) BulkSet(ctx context.Context, params map[string]string, actorID int) error {
+	if err := s.repo.BulkSet(ctx, params, actorID); err != nil {
+		return err
+	}
+	for key := range params {
+		s.evict(key)
+	}
+	return nil
+}
+
 var _ SystemParamService = (*systemParamService)(nil)

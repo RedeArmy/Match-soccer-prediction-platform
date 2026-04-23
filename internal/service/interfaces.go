@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
 // MatchService defines operations on the Match entity.
@@ -234,6 +235,10 @@ type SystemParamService interface {
 	GetDuration(ctx context.Context, key string, defaultVal time.Duration) time.Duration
 	// GetBool parses the value as a boolean, falling back to defaultVal.
 	GetBool(ctx context.Context, key string, defaultVal bool) bool
+	// BulkSet updates multiple parameters in a single repository call.
+	// Each key-value pair is upserted atomically. actorID is recorded as
+	// the editor for the audit trail.
+	BulkSet(ctx context.Context, params map[string]string, actorID int) error
 }
 
 // AuditLogger records significant administrative and system actions to an
@@ -271,6 +276,8 @@ type PaymentService interface {
 	RejectDeposit(ctx context.Context, paymentID, adminID int, notes string) (*domain.PaymentRecord, error)
 	ListPending(ctx context.Context) ([]*domain.PaymentRecord, error)
 	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.PaymentRecord, error)
+	// List returns all payment records matching the given filters with pagination.
+	List(ctx context.Context, f repository.PaymentFilters, p repository.Pagination) ([]*domain.PaymentRecord, error)
 }
 
 // AdminGroupService exposes administrative operations on Quiniela groups that
@@ -310,13 +317,102 @@ type AdminUserService interface {
 	// remaining users are still banned. Returns the first error encountered,
 	// or nil when all succeeded.
 	BulkBan(ctx context.Context, userIDs []int, adminID int, reason string) error
+	// ListFiltered returns users matching the given filters with pagination.
+	// Supersedes ListUsers for the admin panel where filters and paging are needed.
+	ListFiltered(ctx context.Context, f repository.UserFilters, p repository.Pagination) ([]*domain.User, error)
+	// GetProfile returns the full admin view of a user: base profile, active
+	// group memberships, and payment records.
+	GetProfile(ctx context.Context, userID int) (*AdminUserProfile, error)
+}
+
+// AdminUserProfile aggregates the data needed by the admin user-detail endpoint:
+// the user row, all group memberships, and all payment records.
+type AdminUserProfile struct {
+	User        *domain.User
+	Memberships []*domain.GroupMembership
+	Payments    []*domain.PaymentRecord
 }
 
 // Snapshotter persists point-in-time leaderboard copies for a
 // quiniela. It is called by the scoring worker immediately after ScoreMatch
 // completes so the latest rankings are available without re-computing them.
 type Snapshotter interface {
-	// Snapshot computes the current leaderboard via Ranker and persists it.
-	// matchID is stored in the snapshot metadata for traceability.
 	Snapshot(ctx context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error)
+}
+
+// AuditReader exposes read-only access to the audit log for admin endpoints.
+// It is implemented by the same concrete type as AuditLogger but is kept
+// separate to apply the Interface Segregation Principle: callers that only
+// write audits receive AuditLogger; those that need reads receive AuditReader.
+type AuditReader interface {
+	ListAuditLogs(ctx context.Context, f repository.AuditLogFilters, p repository.Pagination) ([]*domain.AuditLog, error)
+	ListAuditLogsByEntity(ctx context.Context, resourceType string, resourceID int, p repository.Pagination) ([]*domain.AuditLog, error)
+}
+
+// DLQStat summarises the dead-letter queue for one event type.
+type DLQStat struct {
+	EventType string     `json:"event_type"`
+	Count     int64      `json:"count"`
+	OldestAt  *time.Time `json:"oldest_at,omitempty"`
+	Sample    []DLQEntry `json:"sample"`
+}
+
+// DLQEntry is the payload of a single dead-lettered event, as returned by
+// DLQService.Stats for inspection.
+type DLQEntry struct {
+	DeadLetteredAt time.Time      `json:"dead_lettered_at"`
+	HandlerErr     string         `json:"handler_err"`
+	Payload        map[string]any `json:"payload"`
+}
+
+// DLQService exposes management operations on the dead-letter queue.
+// Implementations are driver-specific (Redis vs in-memory); pass a no-op
+// implementation when the DLQ feature is not supported.
+type DLQService interface {
+	// Stats returns the count, oldest entry age, and a sample of messages
+	// for each known event type.
+	Stats(ctx context.Context) ([]DLQStat, error)
+	// Replay re-enqueues up to limit entries from all DLQ keys back onto
+	// their original streams. Returns the total number replayed.
+	Replay(ctx context.Context, limit int) (int, error)
+	// Purge deletes all entries from all DLQ keys.
+	// Returns the total number of entries removed.
+	Purge(ctx context.Context) (int64, error)
+}
+
+// TiebreakerSubmissionView pairs a tiebreaker prediction with its author's
+// display name. Used by the admin tiebreaker submissions endpoint to avoid
+// N+1 user lookups in the handler layer.
+type TiebreakerSubmissionView struct {
+	Submission *domain.Tiebreaker
+	UserName   string
+}
+
+// AdminReadService handles cross-domain read queries used by admin panel
+// endpoints that cannot be satisfied by a single existing service.
+type AdminReadService interface {
+	// GlobalLeaderboard returns the top limit users ranked by total scored
+	// points across all quinielas.
+	GlobalLeaderboard(ctx context.Context, limit int) ([]*domain.GlobalLeaderboardEntry, error)
+	// ListPredictions returns predictions matching the given admin filters
+	// with pagination.
+	ListPredictions(ctx context.Context, f repository.PredictionAdminFilters, p repository.Pagination) ([]*domain.Prediction, error)
+	// ListTiebreakerSubmissions returns all tiebreaker predictions with user
+	// names resolved, paginated.
+	ListTiebreakerSubmissions(ctx context.Context, p repository.Pagination) ([]TiebreakerSubmissionView, error)
+	// ListSnapshotHistory returns the most recent limit snapshots for a quiniela.
+	ListSnapshotHistory(ctx context.Context, quinielaID, limit int) ([]*domain.LeaderboardSnapshot, error)
+}
+
+// ConflictService detects and resolves operational inconsistencies that require
+// administrative attention. Conflicts are computed on demand; they are not
+// persisted. Resolution records an audit log entry and is intended to
+// acknowledge the conflict — the underlying issue must be fixed separately.
+type ConflictService interface {
+	// ListConflicts returns all currently detected conflicts across all
+	// conflict categories.
+	ListConflicts(ctx context.Context) ([]domain.Conflict, error)
+	// ResolveConflict records an admin acknowledgement of the given conflict.
+	// conflictType must be one of the domain.ConflictType constants.
+	ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, note string) error
 }

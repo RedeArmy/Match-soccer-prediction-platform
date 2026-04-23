@@ -18,6 +18,16 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const (
+	tournamentHandlerDBError        = "db error"
+	tournamentHandlerMexico         = "Mexico"
+	tournamentHandlerWinnerGroupA   = "winner_group_a"
+	tournamentHandlerPathSlots      = "/tournament/slots"
+	tournamentHandlerPathStandings  = "/tournament/standings"
+	tournamentHandlerPathSlot1      = "/tournament/slots/1"
+	tournamentHandlerBodyTeamMexico = "{\"team\":\"" + tournamentHandlerMexico + "\"}"
+)
+
 // testTournamentRouter mounts all tournament routes mirroring the production layout.
 func testTournamentRouter(h *handler.TournamentHandler, user *domain.User) http.Handler {
 	r := chi.NewRouter()
@@ -28,10 +38,10 @@ func testTournamentRouter(h *handler.TournamentHandler, user *domain.User) http.
 			})
 		})
 	}
-	r.Get("/tournament/standings", h.GetAllStandings)
+	r.Get(tournamentHandlerPathStandings, h.GetAllStandings)
 	r.Get("/tournament/standings/{group}", h.GetGroupStanding)
-	r.Get("/tournament/slots", h.ListSlots)
-	r.Post("/tournament/slots", h.CreateSlot)
+	r.Get(tournamentHandlerPathSlots, h.ListSlots)
+	r.Post(tournamentHandlerPathSlots, h.CreateSlot)
 	r.Patch("/tournament/slots/{id}", h.ConfirmSlot)
 	return r
 }
@@ -43,7 +53,7 @@ func tournamentHandler(svc *stubTournamentSvc, t *testing.T) *handler.Tournament
 func sampleSlot() *domain.TournamentSlot {
 	return &domain.TournamentSlot{
 		ID:        1,
-		Label:     "winner_group_a",
+		Label:     tournamentHandlerWinnerGroupA,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -52,7 +62,7 @@ func sampleSlot() *domain.TournamentSlot {
 func sampleStandings() map[string][]*domain.GroupStanding {
 	return map[string][]*domain.GroupStanding{
 		"A": {
-			{Group: "A", Team: "Mexico", Points: 6, Won: 2, GF: 4, GC: 1, GD: 3},
+			{Group: "A", Team: tournamentHandlerMexico, Points: 6, Won: 2, GF: 4, GC: 1, GD: 3},
 			{Group: "A", Team: "USA", Points: 3, Won: 1, GF: 2, GC: 2, GD: 0},
 		},
 	}
@@ -65,7 +75,7 @@ func TestTournamentHandler_GetAllStandings_200_ReturnsGroups(t *testing.T) {
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 1})
 
-	req := httptest.NewRequest(http.MethodGet, "/tournament/standings", nil)
+	req := httptest.NewRequest(http.MethodGet, tournamentHandlerPathStandings, nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -82,7 +92,7 @@ func TestTournamentHandler_GetAllStandings_200_ReturnsGroups(t *testing.T) {
 	if len(resp.Groups["A"]) != 2 {
 		t.Errorf("group A entries: want 2, got %d", len(resp.Groups["A"]))
 	}
-	if resp.Groups["A"][0].Team != "Mexico" {
+	if resp.Groups["A"][0].Team != tournamentHandlerMexico {
 		t.Errorf("first team: want Mexico, got %s", resp.Groups["A"][0].Team)
 	}
 }
@@ -92,7 +102,7 @@ func TestTournamentHandler_GetAllStandings_200_EmptyWhenNoMatches(t *testing.T) 
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 1})
 
-	req := httptest.NewRequest(http.MethodGet, "/tournament/standings", nil)
+	req := httptest.NewRequest(http.MethodGet, tournamentHandlerPathStandings, nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -102,11 +112,11 @@ func TestTournamentHandler_GetAllStandings_200_EmptyWhenNoMatches(t *testing.T) 
 }
 
 func TestTournamentHandler_GetAllStandings_500_WhenServiceFails(t *testing.T) {
-	svc := &stubTournamentSvc{err: errors.New("db error")}
+	svc := &stubTournamentSvc{err: errors.New(tournamentHandlerDBError)}
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 1})
 
-	req := httptest.NewRequest(http.MethodGet, "/tournament/standings", nil)
+	req := httptest.NewRequest(http.MethodGet, tournamentHandlerPathStandings, nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -160,7 +170,7 @@ func TestTournamentHandler_GetGroupStanding_404_WhenUnknownGroup(t *testing.T) {
 }
 
 func TestTournamentHandler_GetGroupStanding_500_WhenServiceFails(t *testing.T) {
-	svc := &stubTournamentSvc{err: errors.New("db error")}
+	svc := &stubTournamentSvc{err: errors.New(tournamentHandlerDBError)}
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 1})
 
@@ -176,16 +186,16 @@ func TestTournamentHandler_GetGroupStanding_500_WhenServiceFails(t *testing.T) {
 // ── ListSlots ─────────────────────────────────────────────────────────────────
 
 func TestTournamentHandler_ListSlots_200_ReturnsList(t *testing.T) {
-	team := "Mexico"
+	team := tournamentHandlerMexico
 	slots := []*domain.TournamentSlot{
-		{ID: 1, Label: "winner_group_a", Team: &team, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: 1, Label: tournamentHandlerWinnerGroupA, Team: &team, CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		{ID: 2, Label: "runner_up_group_a", CreatedAt: time.Now(), UpdatedAt: time.Now()},
 	}
 	svc := &stubTournamentSvc{slots: slots}
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 1})
 
-	req := httptest.NewRequest(http.MethodGet, "/tournament/slots", nil)
+	req := httptest.NewRequest(http.MethodGet, tournamentHandlerPathSlots, nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -199,7 +209,7 @@ func TestTournamentHandler_ListSlots_200_ReturnsList(t *testing.T) {
 	if len(resp) != 2 {
 		t.Errorf("slots: want 2, got %d", len(resp))
 	}
-	if resp[0].Team == nil || *resp[0].Team != "Mexico" {
+	if resp[0].Team == nil || *resp[0].Team != tournamentHandlerMexico {
 		t.Errorf("first slot team: want Mexico, got %v", resp[0].Team)
 	}
 }
@@ -209,7 +219,7 @@ func TestTournamentHandler_ListSlots_200_EmptyList(t *testing.T) {
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 1})
 
-	req := httptest.NewRequest(http.MethodGet, "/tournament/slots", nil)
+	req := httptest.NewRequest(http.MethodGet, tournamentHandlerPathSlots, nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -219,11 +229,11 @@ func TestTournamentHandler_ListSlots_200_EmptyList(t *testing.T) {
 }
 
 func TestTournamentHandler_ListSlots_500_WhenServiceFails(t *testing.T) {
-	svc := &stubTournamentSvc{err: errors.New("db error")}
+	svc := &stubTournamentSvc{err: errors.New(tournamentHandlerDBError)}
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 1})
 
-	req := httptest.NewRequest(http.MethodGet, "/tournament/slots", nil)
+	req := httptest.NewRequest(http.MethodGet, tournamentHandlerPathSlots, nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -240,7 +250,7 @@ func TestTournamentHandler_CreateSlot_201_ReturnsSlot(t *testing.T) {
 	router := testTournamentRouter(h, &domain.User{ID: 7})
 
 	body := strings.NewReader(`{"label":"winner_group_a"}`)
-	req := httptest.NewRequest(http.MethodPost, "/tournament/slots", body)
+	req := httptest.NewRequest(http.MethodPost, tournamentHandlerPathSlots, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -251,7 +261,7 @@ func TestTournamentHandler_CreateSlot_201_ReturnsSlot(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf(fmtDecodeFail, err)
 	}
-	if resp.Label != "winner_group_a" {
+	if resp.Label != tournamentHandlerWinnerGroupA {
 		t.Errorf("label: want winner_group_a, got %s", resp.Label)
 	}
 }
@@ -262,7 +272,7 @@ func TestTournamentHandler_CreateSlot_401_WhenNoUser(t *testing.T) {
 	router := testTournamentRouter(h, nil)
 
 	body := strings.NewReader(`{"label":"winner_group_a"}`)
-	req := httptest.NewRequest(http.MethodPost, "/tournament/slots", body)
+	req := httptest.NewRequest(http.MethodPost, tournamentHandlerPathSlots, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -276,7 +286,7 @@ func TestTournamentHandler_CreateSlot_422_WhenBadBody(t *testing.T) {
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 7})
 
-	req := httptest.NewRequest(http.MethodPost, "/tournament/slots", strings.NewReader(`{bad json}`))
+	req := httptest.NewRequest(http.MethodPost, tournamentHandlerPathSlots, strings.NewReader(`{bad json}`))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -291,7 +301,7 @@ func TestTournamentHandler_CreateSlot_422_WhenValidationFails(t *testing.T) {
 	router := testTournamentRouter(h, &domain.User{ID: 7})
 
 	body := strings.NewReader(`{"label":""}`)
-	req := httptest.NewRequest(http.MethodPost, "/tournament/slots", body)
+	req := httptest.NewRequest(http.MethodPost, tournamentHandlerPathSlots, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -301,12 +311,12 @@ func TestTournamentHandler_CreateSlot_422_WhenValidationFails(t *testing.T) {
 }
 
 func TestTournamentHandler_CreateSlot_500_WhenServiceFails(t *testing.T) {
-	svc := &stubTournamentSvc{err: errors.New("db error")}
+	svc := &stubTournamentSvc{err: errors.New(tournamentHandlerDBError)}
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 7})
 
 	body := strings.NewReader(`{"label":"winner_group_a"}`)
-	req := httptest.NewRequest(http.MethodPost, "/tournament/slots", body)
+	req := httptest.NewRequest(http.MethodPost, tournamentHandlerPathSlots, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -318,15 +328,15 @@ func TestTournamentHandler_CreateSlot_500_WhenServiceFails(t *testing.T) {
 // ── ConfirmSlot ───────────────────────────────────────────────────────────────
 
 func TestTournamentHandler_ConfirmSlot_200_ReturnsSlot(t *testing.T) {
-	team := "Mexico"
+	team := tournamentHandlerMexico
 	slot := sampleSlot()
 	slot.Team = &team
 	svc := &stubTournamentSvc{slot: slot}
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 7})
 
-	body := strings.NewReader(`{"team":"Mexico"}`)
-	req := httptest.NewRequest(http.MethodPatch, "/tournament/slots/1", body)
+	body := strings.NewReader(tournamentHandlerBodyTeamMexico)
+	req := httptest.NewRequest(http.MethodPatch, tournamentHandlerPathSlot1, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -337,7 +347,7 @@ func TestTournamentHandler_ConfirmSlot_200_ReturnsSlot(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf(fmtDecodeFail, err)
 	}
-	if resp.Team == nil || *resp.Team != "Mexico" {
+	if resp.Team == nil || *resp.Team != tournamentHandlerMexico {
 		t.Errorf("team: want Mexico, got %v", resp.Team)
 	}
 }
@@ -347,8 +357,8 @@ func TestTournamentHandler_ConfirmSlot_401_WhenNoUser(t *testing.T) {
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, nil)
 
-	body := strings.NewReader(`{"team":"Mexico"}`)
-	req := httptest.NewRequest(http.MethodPatch, "/tournament/slots/1", body)
+	body := strings.NewReader(tournamentHandlerBodyTeamMexico)
+	req := httptest.NewRequest(http.MethodPatch, tournamentHandlerPathSlot1, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -362,7 +372,7 @@ func TestTournamentHandler_ConfirmSlot_422_WhenInvalidID(t *testing.T) {
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 7})
 
-	body := strings.NewReader(`{"team":"Mexico"}`)
+	body := strings.NewReader(tournamentHandlerBodyTeamMexico)
 	req := httptest.NewRequest(http.MethodPatch, "/tournament/slots/abc", body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -377,7 +387,7 @@ func TestTournamentHandler_ConfirmSlot_422_WhenBadBody(t *testing.T) {
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 7})
 
-	req := httptest.NewRequest(http.MethodPatch, "/tournament/slots/1", strings.NewReader(`{bad json}`))
+	req := httptest.NewRequest(http.MethodPatch, tournamentHandlerPathSlot1, strings.NewReader(`{bad json}`))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -391,7 +401,7 @@ func TestTournamentHandler_ConfirmSlot_404_WhenNotFound(t *testing.T) {
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 7})
 
-	body := strings.NewReader(`{"team":"Mexico"}`)
+	body := strings.NewReader(tournamentHandlerBodyTeamMexico)
 	req := httptest.NewRequest(http.MethodPatch, "/tournament/slots/99", body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -402,12 +412,12 @@ func TestTournamentHandler_ConfirmSlot_404_WhenNotFound(t *testing.T) {
 }
 
 func TestTournamentHandler_ConfirmSlot_500_WhenServiceFails(t *testing.T) {
-	svc := &stubTournamentSvc{err: errors.New("db error")}
+	svc := &stubTournamentSvc{err: errors.New(tournamentHandlerDBError)}
 	h := tournamentHandler(svc, t)
 	router := testTournamentRouter(h, &domain.User{ID: 7})
 
-	body := strings.NewReader(`{"team":"Mexico"}`)
-	req := httptest.NewRequest(http.MethodPatch, "/tournament/slots/1", body)
+	body := strings.NewReader(tournamentHandlerBodyTeamMexico)
+	req := httptest.NewRequest(http.MethodPatch, tournamentHandlerPathSlot1, body)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -43,4 +44,42 @@ func parseIntParam(s string) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// parsePagination reads ?limit and ?page from the request and returns a
+// Pagination value. Defaults: limit=50, page=1. Max limit is capped at 200.
+func parsePagination(r *http.Request) repository.Pagination {
+	const defaultLimit = 50
+	const maxLimit = 200
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = defaultLimit
+	} else if limit > maxLimit {
+		limit = maxLimit
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+
+	return repository.Pagination{
+		Limit:  limit,
+		Offset: (page - 1) * limit,
+	}
+}
+
+// parseOptionalInt reads a named query parameter as an *int. Returns nil when
+// the parameter is absent or not a valid positive integer.
+func parseOptionalInt(r *http.Request, name string) *int {
+	s := r.URL.Query().Get(name)
+	if s == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return nil
+	}
+	return &n
 }

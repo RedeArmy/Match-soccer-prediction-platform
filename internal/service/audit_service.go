@@ -17,7 +17,9 @@ type auditService struct {
 }
 
 // NewAuditService constructs an auditService backed by the given repository.
-func NewAuditService(repo repository.AuditLogRepository, log *zap.Logger) AuditLogger {
+// The return type is *auditService so callers can use it as both AuditLogger
+// and AuditReader without a second constructor.
+func NewAuditService(repo repository.AuditLogRepository, log *zap.Logger) *auditService {
 	return &auditService{repo: repo, log: log}
 }
 
@@ -60,4 +62,15 @@ func (s *auditService) Log(
 	}()
 }
 
+// ListAuditLogs returns audit log entries matching the given filters.
+func (s *auditService) ListAuditLogs(ctx context.Context, f repository.AuditLogFilters, p repository.Pagination) ([]*domain.AuditLog, error) {
+	return s.repo.List(ctx, f, p)
+}
+
+// ListAuditLogsByEntity returns audit log entries for a specific resource.
+func (s *auditService) ListAuditLogsByEntity(ctx context.Context, resourceType string, resourceID int, p repository.Pagination) ([]*domain.AuditLog, error) {
+	return s.repo.ListByEntity(ctx, resourceType, resourceID, p)
+}
+
 var _ AuditLogger = (*auditService)(nil)
+var _ AuditReader = (*auditService)(nil)

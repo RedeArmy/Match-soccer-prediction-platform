@@ -82,4 +82,8 @@ func (s *paymentService) ListByQuiniela(ctx context.Context, quinielaID int) ([]
 	return s.paymentRepo.ListByQuiniela(ctx, quinielaID, repository.PaymentFilters{})
 }
 
+func (s *paymentService) List(ctx context.Context, f repository.PaymentFilters, p repository.Pagination) ([]*domain.PaymentRecord, error) {
+	return s.paymentRepo.List(ctx, f, p)
+}
+
 var _ PaymentService = (*paymentService)(nil)
