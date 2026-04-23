@@ -21,6 +21,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -48,6 +49,9 @@ func (r *stubUserRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User,
 }
 func (r *stubUserRepo) Unban(_ context.Context, _ int) error                 { return r.err }
 func (r *stubUserRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, r.err }
+func (r *stubUserRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
+	return nil, r.err
+}
 
 const (
 	fmtStatus        = "expected status %d, got %d"
