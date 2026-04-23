@@ -15,8 +15,9 @@ import (
 
 // matchService is the concrete implementation of MatchService.
 type matchService struct {
-	repo      repository.MatchRepository
-	publisher events.Publisher
+	repo  repository.MatchRepository
+	pub   events.Publisher
+	audit AuditLogger
 	// scorer is called synchronously when the MatchFinished event cannot be
 	// published (e.g. Redis is unavailable). This guarantees that predictions
 	// are always scored even if the event bus is down at the moment of result
@@ -29,8 +30,14 @@ type matchService struct {
 // NewMatchService constructs a matchService with the given dependencies.
 // scorer is invoked as a synchronous fallback when publishing MatchFinished
 // fails; it must not be nil.
-func NewMatchService(repo repository.MatchRepository, publisher events.Publisher, scorer MatchScorer, log *zap.Logger) MatchService {
-	return &matchService{repo: repo, publisher: publisher, scorer: scorer, log: log}
+func NewMatchService(
+	repo repository.MatchRepository,
+	pub events.Publisher,
+	scorer MatchScorer,
+	audit AuditLogger,
+	log *zap.Logger,
+) MatchService {
+	return &matchService{repo: repo, pub: pub, scorer: scorer, audit: audit, log: log}
 }
 
 func (s *matchService) CreateMatch(ctx context.Context, match *domain.Match) error {
@@ -38,7 +45,16 @@ func (s *matchService) CreateMatch(ctx context.Context, match *domain.Match) err
 		return err
 	}
 	match.Status = domain.MatchStatusScheduled
-	return s.repo.Create(ctx, match)
+	if err := s.repo.Create(ctx, match); err != nil {
+		return err
+	}
+
+	resType := "match"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionMatchCreated, &resType, &match.ID, map[string]any{
+		"home_team": match.HomeTeam,
+		"away_team": match.AwayTeam,
+	})
+	return nil
 }
 
 func (s *matchService) GetMatch(ctx context.Context, id int) (*domain.Match, error) {
@@ -77,7 +93,11 @@ func (s *matchService) StartMatch(ctx context.Context, id int) (*domain.Match, e
 	if err := s.repo.Update(ctx, m); err != nil {
 		return nil, err
 	}
-	if err := s.publisher.Publish(ctx, events.Envelope{
+
+	resType := "match"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionMatchStarted, &resType, &id, nil)
+
+	if err := s.pub.Publish(ctx, events.Envelope{
 		Type:       events.EventMatchStarted,
 		OccurredAt: time.Now().UTC(),
 		Payload: events.MatchStarted{
@@ -116,7 +136,14 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 	if err := s.repo.Update(ctx, m); err != nil {
 		return nil, err
 	}
-	if err := s.publisher.Publish(ctx, events.Envelope{
+
+	resType := "match"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionMatchResultSet, &resType, &id, map[string]any{
+		"home_score": homeScore,
+		"away_score": awayScore,
+	})
+
+	if err := s.pub.Publish(ctx, events.Envelope{
 		Type:       events.EventMatchFinished,
 		OccurredAt: time.Now().UTC(),
 		Payload: events.MatchFinished{

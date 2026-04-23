@@ -92,6 +92,7 @@ func newTournamentSvc(matches []*domain.Match, tbRepo *stubTournamentRepo) Tourn
 	return NewTournamentService(
 		&stubMatchRepoTournament{matches: matches},
 		tbRepo,
+		&noopAuditLogger{},
 		zap.NewNop(),
 	)
 }
@@ -180,6 +181,7 @@ func TestTournamentService_GetAllStandings_RepoError_Propagates(t *testing.T) {
 	svc := NewTournamentService(
 		&stubMatchRepoTournament{err: errors.New("db error")},
 		&stubTournamentRepo{},
+		&noopAuditLogger{},
 		zap.NewNop(),
 	)
 	_, err := svc.GetAllStandings(context.Background())

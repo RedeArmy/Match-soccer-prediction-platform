@@ -15,7 +15,7 @@ import (
 // ── GroupMembershipService tests ──────────────────────────────────────────────
 
 func newMemberSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) GroupMembershipService {
-	return NewGroupMembershipService(qr, mr, zap.NewNop())
+	return NewGroupMembershipService(qr, mr, &noopSystemParamService{}, zap.NewNop())
 }
 
 func quinielaWithCode(id int, code string) *domain.Quiniela {
@@ -389,6 +389,100 @@ func TestGroupMembershipService_Leave_SyncUpdateStatusError_StillSucceeds(t *tes
 	}
 }
 
+// ── Leave — ownership transfer ────────────────────────────────────────────────
+
+func TestGroupMembershipService_Leave_CreateOwner_TransfersOwnership(t *testing.T) {
+	// Leaving user is the CreateOwner; there is an eligible successor.
+	ownerMembership := &domain.GroupMembership{
+		ID:         1,
+		QuinielaID: 1,
+		UserID:     10,
+		Status:     domain.MembershipActive,
+		Role:       domain.MembershipRoleCreateOwner,
+	}
+	successor := &domain.GroupMembership{
+		ID:         2,
+		QuinielaID: 1,
+		UserID:     20,
+		Status:     domain.MembershipActive,
+		Role:       domain.MembershipRoleMember,
+	}
+	mr := &leaveOwnerMemberRepo{
+		ownerMembership: ownerMembership,
+		successor:       successor,
+	}
+	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, zap.NewNop())
+
+	if err := svc.Leave(context.Background(), 1, 10); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if mr.setRoleMembershipID != successor.ID {
+		t.Errorf("expected SetRole on successor membership %d, got %d", successor.ID, mr.setRoleMembershipID)
+	}
+}
+
+func TestGroupMembershipService_Leave_CreateOwner_NoSuccessor_StillLeaves(t *testing.T) {
+	ownerMembership := &domain.GroupMembership{
+		ID: 1, QuinielaID: 1, UserID: 10,
+		Status: domain.MembershipActive,
+		Role:   domain.MembershipRoleCreateOwner,
+	}
+	mr := &leaveOwnerMemberRepo{ownerMembership: ownerMembership, successor: nil}
+	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, zap.NewNop())
+
+	if err := svc.Leave(context.Background(), 1, 10); err != nil {
+		t.Fatalf("expected Leave to succeed even without a successor, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_Leave_CreateOwner_TransferError_StillLeaves(t *testing.T) {
+	ownerMembership := &domain.GroupMembership{
+		ID: 1, QuinielaID: 1, UserID: 10,
+		Status: domain.MembershipActive,
+		Role:   domain.MembershipRoleCreateOwner,
+	}
+	mr := &leaveOwnerMemberRepo{
+		ownerMembership: ownerMembership,
+		transferErr:     errors.New("db error"),
+	}
+	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, zap.NewNop())
+
+	// Transfer failure must be logged-and-swallowed; Leave itself must succeed.
+	if err := svc.Leave(context.Background(), 1, 10); err != nil {
+		t.Fatalf("expected Leave to succeed despite transfer error, got %v", err)
+	}
+}
+
+// leaveOwnerMemberRepo lets GetByQuinielaAndUser return the owner membership
+// and OldestActiveMember return a configurable successor.
+type leaveOwnerMemberRepo struct {
+	stubMemberRepo
+	ownerMembership     *domain.GroupMembership
+	successor           *domain.GroupMembership
+	transferErr         error
+	setRoleMembershipID int
+}
+
+func (r *leaveOwnerMemberRepo) GetByQuinielaAndUser(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
+	return r.ownerMembership, nil
+}
+func (r *leaveOwnerMemberRepo) OldestActiveMember(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
+	if r.transferErr != nil {
+		return nil, r.transferErr
+	}
+	return r.successor, nil
+}
+func (r *leaveOwnerMemberRepo) SetRole(_ context.Context, membershipID int, _ domain.MembershipRole) error {
+	r.setRoleMembershipID = membershipID
+	return nil
+}
+func (r *leaveOwnerMemberRepo) Update(_ context.Context, _ *domain.GroupMembership) error {
+	return nil
+}
+func (r *leaveOwnerMemberRepo) CountActive(_ context.Context, _ int) (int, error) {
+	return 0, nil
+}
+
 // ── checkCapacity error path ───────────────────────────────────────────────────
 
 func TestGroupMembershipService_Join_ListByQuinielaError_ReturnsError(t *testing.T) {
@@ -423,5 +517,23 @@ func TestGroupMembershipService_MarkPaid_ReturnsMembership(t *testing.T) {
 	}
 	if !got.Paid {
 		t.Error("expected Paid = true after MarkPaid")
+	}
+}
+
+func TestGroupMembershipService_MarkPaid_RepoError_Propagates(t *testing.T) {
+	svc := newMemberSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New("db error")})
+
+	_, err := svc.MarkPaid(context.Background(), 1, 42)
+	if err == nil {
+		t.Error("expected error from MarkPaid, got nil")
+	}
+}
+
+func TestGroupMembershipService_ListByQuiniela_RepoError_Propagates(t *testing.T) {
+	svc := newMemberSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New("db error")})
+
+	_, err := svc.ListByQuiniela(context.Background(), 1)
+	if err == nil {
+		t.Error("expected error from ListByQuiniela, got nil")
 	}
 }

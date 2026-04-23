@@ -59,6 +59,43 @@ const DefaultPrizeThreshold = 3
 // changing it here is sufficient to adjust the threshold system-wide.
 const MinMembersForActive = 3
 
+// System parameter keys used by the service layer to fetch runtime-configurable
+// values from SystemParamRepository. Each constant names the row that must
+// exist in system_params (seeded by migrations). Services fall back to the
+// corresponding domain constant when the key is absent or the value is
+// unparseable, so the system degrades gracefully rather than refusing requests.
+const (
+	ParamKeyScoringExactScore     = "scoring.exact_score"
+	ParamKeyScoringCorrectOutcome = "scoring.correct_outcome"
+	ParamKeyScoringGoalDiff       = "scoring.goal_difference"
+	// ParamKeyPredictionDeadlineMin is the prediction deadline offset in minutes.
+	// A value of 5 closes predictions 5 minutes before kick-off.
+	ParamKeyPredictionDeadlineMin = "prediction.deadline_minutes"
+	ParamKeyGroupMinMembers       = "group.min_members_for_active"
+	ParamKeyGroupDefaultPrize     = "group.default_prize_threshold"
+)
+
+// Audit action strings written to the audit_log table. Using constants rather
+// than inline strings prevents typos from creating silent mismatches between
+// the writer and any downstream query that filters by action.
+const (
+	AuditActionMatchCreated         = "match.created"
+	AuditActionMatchStarted         = "match.started"
+	AuditActionMatchResultSet       = "match.result_set"
+	AuditActionTiebreakerQuestion   = "tiebreaker.question_set"
+	AuditActionTiebreakerResult     = "tiebreaker.result_confirmed"
+	AuditActionSlotConfirmed        = "tournament.slot_confirmed"
+	AuditActionGroupDeleted         = "admin_group.deleted"
+	AuditActionMemberRemoved        = "admin_group.member_removed"
+	AuditActionGroupSettingsUpdated = "admin_group.settings_updated"
+	AuditActionOwnershipTransferred = "admin_group.ownership_transferred"
+	AuditActionUserBanned           = "admin_user.banned"
+	AuditActionUserUnbanned         = "admin_user.unbanned"
+	AuditActionPaymentCreated       = "payment.created"
+	AuditActionPaymentValidated     = "payment.validated"
+	AuditActionPaymentRejected      = "payment.rejected"
+)
+
 // AllMatchPhases is the ordered list of every tournament phase defined in the
 // MatchPhase type. It is the single source of truth for any code that must
 // iterate over all phases — for example, cache invalidation, report generation,

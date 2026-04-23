@@ -20,6 +20,7 @@ type rankingService struct {
 	userRepo          repository.UserRepository
 	tiebreakerRepo    repository.TiebreakerRepository
 	tiebreakerCfgRepo repository.TiebreakerConfigRepository
+	params            SystemParamService
 	log               *zap.Logger
 }
 
@@ -30,6 +31,7 @@ func NewRankingService(
 	userRepo repository.UserRepository,
 	tiebreakerRepo repository.TiebreakerRepository,
 	tiebreakerCfgRepo repository.TiebreakerConfigRepository,
+	params SystemParamService,
 	log *zap.Logger,
 ) Ranker {
 	return &rankingService{
@@ -38,6 +40,7 @@ func NewRankingService(
 		userRepo:          userRepo,
 		tiebreakerRepo:    tiebreakerRepo,
 		tiebreakerCfgRepo: tiebreakerCfgRepo,
+		params:            params,
 		log:               log,
 	}
 }
@@ -104,7 +107,7 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 	}
 
 	sortAndRank(entries, stats, distances)
-	assignPrizes(entries, q.PrizeThreshold)
+	assignPrizes(entries, s.prizeThreshold(ctx, q.PrizeThreshold))
 
 	return entries, nil
 }
@@ -147,9 +150,18 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 	}
 
 	sortAndRank(entries, stats, distances)
-	assignPrizes(entries, q.PrizeThreshold)
+	assignPrizes(entries, s.prizeThreshold(ctx, q.PrizeThreshold))
 
 	return entries, nil
+}
+
+// prizeThreshold returns the effective prize threshold: the quiniela-specific
+// value when positive, otherwise the system param (or domain constant default).
+func (s *rankingService) prizeThreshold(ctx context.Context, quinielaThreshold int) int {
+	if quinielaThreshold > 0 {
+		return quinielaThreshold
+	}
+	return s.params.GetInt(ctx, domain.ParamKeyGroupDefaultPrize, domain.DefaultPrizeThreshold)
 }
 
 // buildEntries hydrates LeaderboardEntry values from a userID→points map.

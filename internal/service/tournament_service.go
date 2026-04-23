@@ -15,6 +15,7 @@ import (
 type tournamentService struct {
 	matchRepo      repository.MatchRepository
 	tournamentRepo repository.TournamentRepository
+	audit          AuditLogger
 	log            *zap.Logger
 }
 
@@ -22,11 +23,13 @@ type tournamentService struct {
 func NewTournamentService(
 	matchRepo repository.MatchRepository,
 	tournamentRepo repository.TournamentRepository,
+	audit AuditLogger,
 	log *zap.Logger,
 ) TournamentService {
 	return &tournamentService{
 		matchRepo:      matchRepo,
 		tournamentRepo: tournamentRepo,
+		audit:          audit,
 		log:            log,
 	}
 }
@@ -72,13 +75,24 @@ func (s *tournamentService) CreateSlot(ctx context.Context, label string) (*doma
 	return s.tournamentRepo.CreateSlot(ctx, label)
 }
 
-// ConfirmSlot records the advancing team for a bracket slot.
+// ConfirmSlot records the advancing team for a bracket slot and emits an
+// audit entry.
 // Returns Validation when team is empty; NotFound when the slot does not exist.
 func (s *tournamentService) ConfirmSlot(ctx context.Context, slotID, adminID int, team string) (*domain.TournamentSlot, error) {
 	if team == "" {
 		return nil, apperrors.Validation("team name is required")
 	}
-	return s.tournamentRepo.ConfirmSlot(ctx, slotID, adminID, team)
+	slot, err := s.tournamentRepo.ConfirmSlot(ctx, slotID, adminID, team)
+	if err != nil {
+		return nil, err
+	}
+
+	resType := "tournament_slot"
+	role := domain.RoleAdmin
+	s.audit.Log(ctx, &adminID, &role, domain.AuditActionSlotConfirmed, &resType, &slotID, map[string]any{
+		"team": team,
+	})
+	return slot, nil
 }
 
 // ListSlots returns all bracket position slots.
