@@ -568,3 +568,43 @@ type LeaderboardSnapshot struct {
 	Entries    []LeaderboardSnapshotEntry
 	CreatedAt  time.Time
 }
+
+// GlobalLeaderboardEntry is a read-only projection used by the admin global
+// leaderboard endpoint. It aggregates total prediction points across all
+// quinielas for a single user, ranked descending.
+type GlobalLeaderboardEntry struct {
+	UserID      int
+	UserName    string
+	TotalPoints int
+	Rank        int
+}
+
+// ConflictType classifies the kind of operational conflict detected by the
+// system for administrative review.
+type ConflictType string
+
+const (
+	// ConflictGroupNoOwner indicates an active quiniela with no active
+	// CreateOwner membership — ownership may have been lost after a ban.
+	ConflictGroupNoOwner ConflictType = "group_without_owner"
+	// ConflictPaymentStale indicates a payment record stuck in "pending"
+	// beyond the configured staleness threshold.
+	ConflictPaymentStale ConflictType = "payment_stale"
+	// ConflictMembershipStale indicates a group join request stuck in
+	// "pending" beyond the configured staleness threshold.
+	ConflictMembershipStale ConflictType = "membership_stale"
+)
+
+// ConflictStaleDays is the number of days after which a pending payment or
+// membership join request is considered stale and surfaces as a conflict.
+const ConflictStaleDays = 7
+
+// Conflict is a computed, non-persisted operational issue detected by the
+// ConflictService that requires administrative attention.
+type Conflict struct {
+	Type       ConflictType
+	EntityID   int
+	EntityType string
+	Details    map[string]any
+	DetectedAt time.Time
+}

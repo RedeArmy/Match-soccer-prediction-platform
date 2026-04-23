@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -179,6 +180,60 @@ func (r *PostgresPaymentRecordRepository) Reject(ctx context.Context, id, adminI
 		return nil, apperrors.NotFound(msgPaymentNotFound)
 	}
 	return result, nil
+}
+
+// List returns payment records matching the given filters with pagination.
+func (r *PostgresPaymentRecordRepository) List(ctx context.Context, f PaymentFilters, p Pagination) ([]*domain.PaymentRecord, error) {
+	q := `SELECT ` + paymentColumns + ` FROM payment_records WHERE 1=1`
+	args := []any{}
+	n := 1
+
+	if f.Status != nil {
+		q += fmt.Sprintf(` AND status = $%d`, n)
+		args = append(args, string(*f.Status))
+		n++
+	}
+	if f.QuinielaID != nil {
+		q += fmt.Sprintf(` AND quiniela_id = $%d`, n)
+		args = append(args, *f.QuinielaID)
+		n++
+	}
+	if f.UserID != nil {
+		q += fmt.Sprintf(` AND user_id = $%d`, n)
+		args = append(args, *f.UserID)
+		n++
+	}
+
+	q += ` ORDER BY created_at DESC`
+	if p.Limit > 0 {
+		q += fmt.Sprintf(` LIMIT $%d`, n)
+		args = append(args, p.Limit)
+		n++
+	}
+	if p.Offset > 0 {
+		q += fmt.Sprintf(` OFFSET $%d`, n)
+		args = append(args, p.Offset)
+	}
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectPaymentRecords(rows)
+}
+
+// ListStale returns pending payment records older than olderThan.
+func (r *PostgresPaymentRecordRepository) ListStale(ctx context.Context, olderThan time.Time) ([]*domain.PaymentRecord, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+paymentColumns+` FROM payment_records WHERE status = 'pending' AND created_at < $1 ORDER BY created_at ASC`,
+		olderThan,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectPaymentRecords(rows)
 }
 
 var _ PaymentRecordRepository = (*PostgresPaymentRecordRepository)(nil)

@@ -42,6 +42,19 @@ const (
 	fmtExpectNilGot  = "expected nil, got %+v"
 
 	defaultCurrency = "MXN"
+
+	repoBrazil           = "Brazil"
+	repoArgentina        = "Argentina"
+	repoMexico           = "Mexico"
+	repoTotalGoals       = "Total goals"
+	repoScoringExact     = "scoring.exact"
+	repoScoringCategory  = "scoring"
+	repoFakeReceipt      = "fake receipt"
+	repoPolicyViolation  = "policy violation"
+	repoResourceQuiniela = "quiniela"
+	repoMsgCancelledCtx  = "expected error for cancelled context, got nil"
+	repoMsgExpect1Pred   = "expected 1 prediction, got %d"
+	repoMsgStatusActive  = "status: got %q, want active"
 )
 
 // testDB is shared across all tests in this package. It is initialised once in
@@ -133,8 +146,8 @@ func seedMatch(t *testing.T) *domain.Match {
 	t.Helper()
 	repo := repository.NewPostgresMatchRepository(testDB)
 	m := &domain.Match{
-		HomeTeam:  "Brazil",
-		AwayTeam:  "Argentina",
+		HomeTeam:  repoBrazil,
+		AwayTeam:  repoArgentina,
 		Status:    domain.MatchStatusScheduled,
 		Phase:     domain.PhaseGroupStage,
 		KickoffAt: time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
@@ -149,8 +162,8 @@ func seedMatchWithPhase(t *testing.T, phase domain.MatchPhase) *domain.Match {
 	t.Helper()
 	repo := repository.NewPostgresMatchRepository(testDB)
 	m := &domain.Match{
-		HomeTeam:  "Brazil",
-		AwayTeam:  "Argentina",
+		HomeTeam:  repoBrazil,
+		AwayTeam:  repoArgentina,
 		Status:    domain.MatchStatusScheduled,
 		Phase:     phase,
 		KickoffAt: time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
@@ -501,8 +514,8 @@ func seedMatchWithStadium(t *testing.T) *domain.Match {
 
 	repo := repository.NewPostgresMatchRepository(testDB)
 	m := &domain.Match{
-		HomeTeam:  "Brazil",
-		AwayTeam:  "Argentina",
+		HomeTeam:  repoBrazil,
+		AwayTeam:  repoArgentina,
 		Status:    domain.MatchStatusScheduled,
 		Phase:     domain.PhaseGroupStage,
 		StadiumID: &stadiumID,
@@ -722,7 +735,7 @@ func TestPredictionRepository_ListByUser_ReturnsRows(t *testing.T) {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(preds) != 1 {
-		t.Errorf("expected 1 prediction, got %d", len(preds))
+		t.Errorf(repoMsgExpect1Pred, len(preds))
 	}
 }
 
@@ -741,7 +754,7 @@ func TestPredictionRepository_ListByMatch_ReturnsRows(t *testing.T) {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(preds) != 1 {
-		t.Errorf("expected 1 prediction, got %d", len(preds))
+		t.Errorf(repoMsgExpect1Pred, len(preds))
 	}
 }
 
@@ -1199,7 +1212,7 @@ func TestGroupMembershipRepository_GetByQuinielaAndUser_Found(t *testing.T) {
 		t.Errorf(fmtIDMismatch, got.ID, created.ID)
 	}
 	if got.Status != domain.MembershipActive {
-		t.Errorf("status: got %q, want active", got.Status)
+		t.Errorf(repoMsgStatusActive, got.Status)
 	}
 }
 
@@ -1356,7 +1369,7 @@ func TestGroupMembershipRepository_GetByID_Found(t *testing.T) {
 		t.Errorf(fmtIDMismatch, got.ID, created.ID)
 	}
 	if got.Status != domain.MembershipActive {
-		t.Errorf("status: got %q, want active", got.Status)
+		t.Errorf(repoMsgStatusActive, got.Status)
 	}
 }
 
@@ -1614,7 +1627,7 @@ func TestQuinielaRepository_UpdateStatus_SetsStatus(t *testing.T) {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if got.Status != domain.QuinielaStatusActive {
-		t.Errorf("status: got %q, want active", got.Status)
+		t.Errorf(repoMsgStatusActive, got.Status)
 	}
 }
 
@@ -2005,7 +2018,7 @@ func TestPredictionRepository_ListByUserAndQuiniela_ActiveMember_ReturnsPredicti
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(preds) != 1 {
-		t.Fatalf("expected 1 prediction, got %d", len(preds))
+		t.Fatalf(repoMsgExpect1Pred, len(preds))
 	}
 	if preds[0].UserID != u.ID {
 		t.Errorf("expected user %d, got %d", u.ID, preds[0].UserID)
@@ -2282,7 +2295,7 @@ func TestPredictionRepository_PredictionStatsByQuiniela_CancelledContext_Returns
 
 	_, err := predRepo.PredictionStatsByQuiniela(ctx, 1)
 	if err == nil {
-		t.Fatal("expected error for cancelled context, got nil")
+		t.Fatal(repoMsgCancelledCtx)
 	}
 }
 
@@ -2393,7 +2406,7 @@ func TestPredictionRepository_GetUserPredictionCounts_CancelledContext_ReturnsEr
 
 	_, err := predRepo.GetUserPredictionCounts(ctx, 1)
 	if err == nil {
-		t.Fatal("expected error for cancelled context, got nil")
+		t.Fatal(repoMsgCancelledCtx)
 	}
 }
 
@@ -2473,7 +2486,7 @@ func TestPredictionRepository_GetUserPointsByPhase_CancelledContext_ReturnsError
 
 	_, err := predRepo.GetUserPointsByPhase(ctx, 1)
 	if err == nil {
-		t.Fatal("expected error for cancelled context, got nil")
+		t.Fatal(repoMsgCancelledCtx)
 	}
 }
 
@@ -2579,7 +2592,7 @@ func TestPredictionRepository_ListUserScoredPointsChronological_CancelledContext
 
 	_, err := predRepo.ListUserScoredPointsChronological(ctx, 1)
 	if err == nil {
-		t.Fatal("expected error for cancelled context, got nil")
+		t.Fatal(repoMsgCancelledCtx)
 	}
 }
 
@@ -2630,7 +2643,7 @@ func TestTiebreakerConfigRepository_Get_ReturnsAfterUpsert(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
 
-	_, err := repo.Upsert(context.Background(), "Total goals")
+	_, err := repo.Upsert(context.Background(), repoTotalGoals)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -2642,7 +2655,7 @@ func TestTiebreakerConfigRepository_Get_ReturnsAfterUpsert(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("expected config after upsert, got nil")
 	}
-	if cfg.Question != "Total goals" {
+	if cfg.Question != repoTotalGoals {
 		t.Errorf("question: want 'Total goals', got %q", cfg.Question)
 	}
 }
@@ -2651,7 +2664,7 @@ func TestTiebreakerConfigRepository_SetResult_SetsResult(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
 
-	if _, err := repo.Upsert(context.Background(), "Total goals"); err != nil {
+	if _, err := repo.Upsert(context.Background(), repoTotalGoals); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 
@@ -2776,11 +2789,11 @@ func TestTournamentRepository_ConfirmSlot_SetsTeam(t *testing.T) {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
-	confirmed, err := repo.ConfirmSlot(context.Background(), created.ID, u.ID, "Mexico")
+	confirmed, err := repo.ConfirmSlot(context.Background(), created.ID, u.ID, repoMexico)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if confirmed.Team == nil || *confirmed.Team != "Mexico" {
+	if confirmed.Team == nil || *confirmed.Team != repoMexico {
 		t.Errorf("team: want Mexico, got %v", confirmed.Team)
 	}
 	if confirmed.ConfirmedAt == nil {
@@ -2796,7 +2809,7 @@ func TestTournamentRepository_ConfirmSlot_NotFoundWhenMissing(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresTournamentRepository(testDB)
 
-	_, err := repo.ConfirmSlot(context.Background(), 99999, u.ID, "Mexico")
+	_, err := repo.ConfirmSlot(context.Background(), 99999, u.ID, repoMexico)
 	if !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)
 	}
@@ -2858,11 +2871,11 @@ func TestSystemParamRepository_Set_NewKey(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresSystemParamRepository(testDB)
 
-	p, err := repo.Set(context.Background(), "scoring.exact", "5", 0)
+	p, err := repo.Set(context.Background(), repoScoringExact, "5", 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if p.Key != "scoring.exact" || p.Value != "5" {
+	if p.Key != repoScoringExact || p.Value != "5" {
 		t.Errorf("param mismatch: got key=%q value=%q", p.Key, p.Value)
 	}
 }
@@ -2871,8 +2884,8 @@ func TestSystemParamRepository_Set_ExistingKeyUpdatesValue(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresSystemParamRepository(testDB)
 
-	_, _ = repo.Set(context.Background(), "scoring.exact", "5", 0)
-	updated, err := repo.Set(context.Background(), "scoring.exact", "7", 0)
+	_, _ = repo.Set(context.Background(), repoScoringExact, "5", 0)
+	updated, err := repo.Set(context.Background(), repoScoringExact, "7", 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -2911,7 +2924,7 @@ func TestSystemParamRepository_Get_NotFound(t *testing.T) {
 func TestSystemParamRepository_GetAll(t *testing.T) {
 	cleanTables(t)
 	seedSystemParam(t, "a.key", "1", "general")
-	seedSystemParam(t, "b.key", "2", "scoring")
+	seedSystemParam(t, "b.key", "2", repoScoringCategory)
 	repo := repository.NewPostgresSystemParamRepository(testDB)
 
 	all, err := repo.GetAll(context.Background())
@@ -2925,12 +2938,12 @@ func TestSystemParamRepository_GetAll(t *testing.T) {
 
 func TestSystemParamRepository_GetByCategory(t *testing.T) {
 	cleanTables(t)
-	seedSystemParam(t, "scoring.a", "1", "scoring")
-	seedSystemParam(t, "scoring.b", "2", "scoring")
+	seedSystemParam(t, "scoring.a", "1", repoScoringCategory)
+	seedSystemParam(t, "scoring.b", "2", repoScoringCategory)
 	seedSystemParam(t, "payment.x", "3", "payment")
 	repo := repository.NewPostgresSystemParamRepository(testDB)
 
-	results, err := repo.GetByCategory(context.Background(), "scoring")
+	results, err := repo.GetByCategory(context.Background(), repoScoringCategory)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -3031,7 +3044,7 @@ func TestAuditLogRepository_ListByEntity(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresAuditLogRepository(testDB)
 
-	resType := "quiniela"
+	resType := repoResourceQuiniela
 	resID := 42
 	for range 2 {
 		e := &domain.AuditLog{Action: "update", ResourceType: &resType, ResourceID: &resID}
@@ -3041,7 +3054,7 @@ func TestAuditLogRepository_ListByEntity(t *testing.T) {
 	otherType := "user"
 	_ = repo.Create(context.Background(), &domain.AuditLog{Action: "ban", ResourceType: &otherType, ResourceID: &resID})
 
-	results, err := repo.ListByEntity(context.Background(), "quiniela", 42, repository.Pagination{})
+	results, err := repo.ListByEntity(context.Background(), repoResourceQuiniela, 42, repository.Pagination{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -3241,15 +3254,15 @@ func TestPaymentRecordRepository_Reject_TransitionsToRejected(t *testing.T) {
 	pr := seedPaymentRecord(t, q.ID, u.ID)
 	repo := repository.NewPostgresPaymentRecordRepository(testDB)
 
-	result, err := repo.Reject(context.Background(), pr.ID, admin.ID, "fake receipt")
+	result, err := repo.Reject(context.Background(), pr.ID, admin.ID, repoFakeReceipt)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if result.Status != domain.PaymentStatusRejected {
 		t.Errorf("expected rejected, got %q", result.Status)
 	}
-	if result.Notes != "fake receipt" {
-		t.Errorf("expected notes %q, got %q", "fake receipt", result.Notes)
+	if result.Notes != repoFakeReceipt {
+		t.Errorf("expected notes %q, got %q", repoFakeReceipt, result.Notes)
 	}
 }
 
@@ -3388,7 +3401,7 @@ func TestUserRepository_Ban_SetsFields(t *testing.T) {
 	admin := seedUser(t)
 	repo := repository.NewPostgresUserRepository(testDB)
 
-	banned, err := repo.Ban(context.Background(), user.ID, admin.ID, "policy violation")
+	banned, err := repo.Ban(context.Background(), user.ID, admin.ID, repoPolicyViolation)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -3398,8 +3411,8 @@ func TestUserRepository_Ban_SetsFields(t *testing.T) {
 	if banned.BannedBy == nil || *banned.BannedBy != admin.ID {
 		t.Errorf("expected BannedBy %d, got %v", admin.ID, banned.BannedBy)
 	}
-	if banned.BanReason != "policy violation" {
-		t.Errorf("expected BanReason %q, got %q", "policy violation", banned.BanReason)
+	if banned.BanReason != repoPolicyViolation {
+		t.Errorf("expected BanReason %q, got %q", repoPolicyViolation, banned.BanReason)
 	}
 }
 
@@ -3623,7 +3636,7 @@ func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
 
 	actorID := u.ID
 	role := domain.RoleAdmin
-	resType := "quiniela"
+	resType := repoResourceQuiniela
 	resID := 1
 	entry := &domain.AuditLog{
 		ActorID:      &actorID,
@@ -3650,5 +3663,467 @@ func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
 	}
 	if got.Metadata["reason"] != "inactivity" {
 		t.Errorf("expected metadata reason 'inactivity', got %v", got.Metadata["reason"])
+	}
+}
+
+// ── GroupMembershipRepository admin extensions ────────────────────────────────
+
+func TestGroupMembershipRepository_ListGroupIDsWithoutOwner_IncludesOrphan(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID) // no membership inserted
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	ids, err := repo.ListGroupIDsWithoutOwner(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	found := false
+	for _, id := range ids {
+		if id == q.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected quiniela %d to appear in orphan list, got %v", q.ID, ids)
+	}
+}
+
+func TestGroupMembershipRepository_ListGroupIDsWithoutOwner_ExcludesWithOwner(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	now := time.Now().UTC()
+	m := &domain.GroupMembership{
+		QuinielaID: q.ID,
+		UserID:     owner.ID,
+		Status:     domain.MembershipActive,
+		Role:       domain.MembershipRoleCreateOwner,
+		JoinedAt:   &now,
+	}
+	if err := repo.Create(context.Background(), m); err != nil {
+		t.Fatalf("seed owner membership: %v", err)
+	}
+
+	ids, err := repo.ListGroupIDsWithoutOwner(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	for _, id := range ids {
+		if id == q.ID {
+			t.Errorf("quiniela %d with active owner should not appear in orphan list", q.ID)
+		}
+	}
+}
+
+func TestGroupMembershipRepository_ListStalePending_ReturnsPending(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	member := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedMembership(t, q.ID, member.ID, domain.MembershipPending, false)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	stale, err := repo.ListStalePending(context.Background(), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(stale) != 1 {
+		t.Errorf("expected 1 stale pending, got %d", len(stale))
+	}
+}
+
+func TestGroupMembershipRepository_ListStalePending_ExcludesActive(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	member := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedActiveMembership(t, q.ID, member.ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	stale, err := repo.ListStalePending(context.Background(), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(stale) != 0 {
+		t.Errorf("expected 0 stale (active member filtered out), got %d", len(stale))
+	}
+}
+
+// ── PaymentRecordRepository admin extensions ──────────────────────────────────
+
+func TestPaymentRecordRepository_List_NoFilter_ReturnsAll(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	results, err := repo.List(context.Background(), repository.PaymentFilters{}, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 records, got %d", len(results))
+	}
+}
+
+func TestPaymentRecordRepository_List_FilterByQuinielaID(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q1 := seedQuiniela(t, u.ID)
+	q2 := seedQuiniela(t, u.ID)
+	seedPaymentRecord(t, q1.ID, u.ID)
+	seedPaymentRecord(t, q2.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	results, err := repo.List(context.Background(), repository.PaymentFilters{QuinielaID: &q1.ID}, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 record for quiniela %d, got %d", q1.ID, len(results))
+	}
+}
+
+func TestPaymentRecordRepository_List_Pagination(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	results, err := repo.List(context.Background(), repository.PaymentFilters{}, repository.Pagination{Limit: 2, Offset: 1})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 records with limit=2 offset=1, got %d", len(results))
+	}
+}
+
+func TestPaymentRecordRepository_ListStale_ReturnsPending(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	stale, err := repo.ListStale(context.Background(), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(stale) != 1 {
+		t.Errorf("expected 1 stale payment, got %d", len(stale))
+	}
+}
+
+func TestPaymentRecordRepository_ListStale_ExcludesConfirmed(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	pr := seedPaymentRecord(t, q.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+	_, _ = repo.Validate(context.Background(), pr.ID, admin.ID, "ok")
+
+	stale, err := repo.ListStale(context.Background(), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(stale) != 0 {
+		t.Errorf("expected 0 stale (confirmed excluded), got %d", len(stale))
+	}
+}
+
+// ── PredictionRepository admin extensions ─────────────────────────────────────
+
+func TestPredictionRepository_ListAdmin_NoFilter_ReturnsAll(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := repo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	results, err := repo.ListAdmin(context.Background(), repository.PredictionAdminFilters{}, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 {
+		t.Errorf(repoMsgExpect1Pred, len(results))
+	}
+}
+
+func TestPredictionRepository_ListAdmin_FilterByUserID(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u1.ID, MatchID: m.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u2.ID, MatchID: m.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	results, err := repo.ListAdmin(context.Background(), repository.PredictionAdminFilters{UserID: &u1.ID}, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 || results[0].UserID != u1.ID {
+		t.Errorf("expected 1 prediction for user %d, got %d", u1.ID, len(results))
+	}
+}
+
+func TestPredictionRepository_ListAdmin_PaginationLimit(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m1 := seedMatch(t)
+	m2 := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u.ID, MatchID: m1.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u.ID, MatchID: m2.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	results, err := repo.ListAdmin(context.Background(), repository.PredictionAdminFilters{}, repository.Pagination{Limit: 1})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 prediction with limit=1, got %d", len(results))
+	}
+}
+
+func TestPredictionRepository_GlobalLeaderboard_RanksUsers(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p1 := &domain.Prediction{UserID: u1.ID, MatchID: m.ID, HomeScore: 1}
+	if err := predRepo.Create(context.Background(), p1); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := predRepo.UpdateManyPoints(context.Background(), map[int]int{p1.ID: 10}); err != nil {
+		t.Fatalf("update points: %v", err)
+	}
+
+	p2 := &domain.Prediction{UserID: u2.ID, MatchID: m.ID}
+	if err := predRepo.Create(context.Background(), p2); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	entries, err := predRepo.GlobalLeaderboard(context.Background(), 10)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one entry")
+	}
+	if entries[0].UserID != u1.ID {
+		t.Errorf("expected u1 first (most points), got userID=%d", entries[0].UserID)
+	}
+}
+
+func TestPredictionRepository_GlobalLeaderboard_LimitRespected(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	m1 := seedMatch(t)
+	m2 := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u1.ID, MatchID: m1.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u2.ID, MatchID: m2.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	entries, err := repo.GlobalLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("expected 1 entry with limit=1, got %d", len(entries))
+	}
+}
+
+// ── QuinielaRepository admin extensions ──────────────────────────────────────
+
+func TestQuinielaRepository_ListByIDs_ReturnsMatching(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q1 := seedQuiniela(t, u.ID)
+	q2 := seedQuiniela(t, u.ID)
+	_ = seedQuiniela(t, u.ID) // not requested
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	results, err := repo.ListByIDs(context.Background(), []int{q1.ID, q2.ID})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 quinielas, got %d", len(results))
+	}
+}
+
+func TestQuinielaRepository_ListByIDs_EmptyInput_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	results, err := repo.ListByIDs(context.Background(), []int{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if results != nil {
+		t.Errorf("expected nil for empty ids, got %v", results)
+	}
+}
+
+// ── TiebreakerRepository admin extensions ────────────────────────────────────
+
+func TestTiebreakerRepository_ListAll_ReturnsList(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	repo := repository.NewPostgresTiebreakerRepository(testDB)
+
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, Prediction: 3}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, Prediction: 5}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	results, err := repo.ListAll(context.Background(), repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 tiebreakers, got %d", len(results))
+	}
+}
+
+func TestTiebreakerRepository_ListAll_PaginationLimit(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	repo := repository.NewPostgresTiebreakerRepository(testDB)
+
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, Prediction: 3}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, Prediction: 5}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	results, err := repo.ListAll(context.Background(), repository.Pagination{Limit: 1})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 tiebreaker with limit=1, got %d", len(results))
+	}
+}
+
+// ── UserRepository admin extensions ──────────────────────────────────────────
+
+func TestUserRepository_ListFiltered_NoFilter_ReturnsAll(t *testing.T) {
+	cleanTables(t)
+	seedUser(t)
+	seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 users, got %d", len(results))
+	}
+}
+
+func TestUserRepository_ListFiltered_FilterByBanned(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	_ = seedUser(t) // active
+	admin := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+	_, _ = repo.Ban(context.Background(), u1.ID, admin.ID, "test")
+
+	banned := true
+	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Banned: &banned}, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 || results[0].ID != u1.ID {
+		t.Errorf("expected 1 banned user, got %d", len(results))
+	}
+}
+
+func TestUserRepository_ListFiltered_FilterByRole(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+	admin := &domain.User{Name: "Admin", Email: "admin@example.com", Role: domain.RoleAdmin}
+	if err := repo.Create(context.Background(), admin); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	seedUser(t) // role = player
+
+	role := domain.RoleAdmin
+	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Role: &role}, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 || results[0].Role != domain.RoleAdmin {
+		t.Errorf("expected 1 admin user, got %d", len(results))
+	}
+}
+
+func TestUserRepository_ListFiltered_FilterBySearch(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+	if err := repo.Create(context.Background(), &domain.User{Name: "alice", Email: "alice@example.com", Role: domain.RolePlayer}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.User{Name: "bob", Email: "bob@example.com", Role: domain.RolePlayer}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	search := "alic"
+	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Search: &search}, repository.Pagination{})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 || results[0].Name != "alice" {
+		t.Errorf("expected 1 user matching 'alic', got %d", len(results))
+	}
+}
+
+func TestUserRepository_ListFiltered_PaginationOffset(t *testing.T) {
+	cleanTables(t)
+	seedUser(t)
+	seedUser(t)
+	seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.Pagination{Limit: 2, Offset: 1})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 users with limit=2 offset=1, got %d", len(results))
 	}
 }
