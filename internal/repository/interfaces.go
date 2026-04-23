@@ -60,6 +60,8 @@ type UserRepository interface {
 	Unban(ctx context.Context, userID int) error
 	// ListBanned returns all active users whose banned_at is not NULL.
 	ListBanned(ctx context.Context) ([]*domain.User, error)
+	// ListFiltered returns users matching the given filters with pagination.
+	ListFiltered(ctx context.Context, f UserFilters, p Pagination) ([]*domain.User, error)
 }
 
 // MatchRepository defines the persistence operations for the Match entity.
@@ -136,6 +138,12 @@ type PredictionRepository interface {
 	// Unscored predictions (points IS NULL) are excluded. The slice is consumed
 	// by UserStatsService to derive CurrentStreak and LongestStreak.
 	ListUserScoredPointsChronological(ctx context.Context, userID int) ([]int, error)
+	// ListAdmin returns predictions matching the given admin filters with
+	// pagination. Used exclusively by the admin panel; not exposed to players.
+	ListAdmin(ctx context.Context, f PredictionAdminFilters, p Pagination) ([]*domain.Prediction, error)
+	// GlobalLeaderboard returns the top `limit` users ranked by total scored
+	// points across all quinielas. Used by the admin global leaderboard endpoint.
+	GlobalLeaderboard(ctx context.Context, limit int) ([]*domain.GlobalLeaderboardEntry, error)
 }
 
 // QuinielaRepository defines the persistence operations for the Quiniela
@@ -176,6 +184,10 @@ type QuinielaRepository interface {
 	// DeleteByAdmin soft-deletes a quiniela on behalf of an administrator.
 	// The audit trail is the caller's responsibility via AuditLogRepository.
 	DeleteByAdmin(ctx context.Context, quinielaID, adminID int) error
+	// ListByIDs returns quinielas matching the given IDs in a single query.
+	// Used by ConflictService to hydrate group details for conflict entries.
+	// An empty ids slice returns nil, nil without hitting the database.
+	ListByIDs(ctx context.Context, ids []int) ([]*domain.Quiniela, error)
 }
 
 // GroupMembershipRepository defines the persistence operations for the
@@ -213,6 +225,12 @@ type GroupMembershipRepository interface {
 	// on behalf of an administrator. Only active memberships can be removed;
 	// returns NotFound for inactive or non-existent memberships.
 	RemoveByAdmin(ctx context.Context, membershipID, adminID int) error
+	// ListGroupIDsWithoutOwner returns quiniela IDs of active quinielas that
+	// have no active MembershipRoleCreateOwner member. Used by ConflictService.
+	ListGroupIDsWithoutOwner(ctx context.Context) ([]int, error)
+	// ListStalePending returns pending memberships older than olderThan.
+	// Used by ConflictService to surface unresolved join requests.
+	ListStalePending(ctx context.Context, olderThan time.Time) ([]*domain.GroupMembership, error)
 }
 
 // TiebreakerRepository defines the persistence operations for the Tiebreaker
@@ -233,6 +251,9 @@ type TiebreakerRepository interface {
 	// group without N+1 round-trips. An empty slice is returned when no user
 	// in userIDs has submitted. An empty ids slice returns nil, nil.
 	ListByUserIDs(ctx context.Context, userIDs []int) ([]*domain.Tiebreaker, error)
+	// ListAll returns all tiebreaker submissions with pagination.
+	// Used by the admin panel to inspect all player predictions at once.
+	ListAll(ctx context.Context, p Pagination) ([]*domain.Tiebreaker, error)
 }
 
 // TiebreakerConfigRepository manages the singleton global tiebreaker
@@ -332,6 +353,12 @@ type PaymentRecordRepository interface {
 	// Reject transitions a pending payment to rejected. Returns NotFound when
 	// the record does not exist or is not in pending state.
 	Reject(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error)
+	// List returns payment records matching the given filters with pagination.
+	// Used by the admin panel for the full payments list.
+	List(ctx context.Context, f PaymentFilters, p Pagination) ([]*domain.PaymentRecord, error)
+	// ListStale returns pending records older than olderThan.
+	// Used by ConflictService to surface unreviewed payments.
+	ListStale(ctx context.Context, olderThan time.Time) ([]*domain.PaymentRecord, error)
 }
 
 // LeaderboardSnapshotRepository persists point-in-time leaderboard copies.

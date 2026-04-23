@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,6 +62,15 @@ func collectPaymentRecords(rows pgx.Rows) ([]*domain.PaymentRecord, error) {
 	return records, nil
 }
 
+func (r *PostgresPaymentRecordRepository) queryPaymentRecords(ctx context.Context, q string, args ...any) ([]*domain.PaymentRecord, error) {
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectPaymentRecords(rows)
+}
+
 // Create inserts a new payment record in pending state. record.ID is
 // populated on success.
 func (r *PostgresPaymentRecordRepository) Create(ctx context.Context, record *domain.PaymentRecord) error {
@@ -97,55 +107,55 @@ func (r *PostgresPaymentRecordRepository) ListByQuiniela(ctx context.Context, qu
 		q += fmt.Sprintf(" AND status = $%d", len(args))
 	}
 	q += " ORDER BY created_at DESC"
-	rows, err := r.db.Query(ctx, q, args...)
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	defer rows.Close()
-	return collectPaymentRecords(rows)
+	return r.queryPaymentRecords(ctx, q, args...)
 }
 
 // ListByUser returns all payment records for a user across all quinielas,
 // ordered by created_at descending.
 func (r *PostgresPaymentRecordRepository) ListByUser(ctx context.Context, userID int) ([]*domain.PaymentRecord, error) {
-	rows, err := r.db.Query(ctx,
+	return r.queryPaymentRecords(ctx,
 		`SELECT `+paymentColumns+` FROM payment_records WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
 	)
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	defer rows.Close()
-	return collectPaymentRecords(rows)
 }
 
 // ListPending returns all payment records in pending state, ordered oldest
 // first to process by arrival order.
 func (r *PostgresPaymentRecordRepository) ListPending(ctx context.Context) ([]*domain.PaymentRecord, error) {
-	rows, err := r.db.Query(ctx,
+	return r.queryPaymentRecords(ctx,
 		`SELECT `+paymentColumns+` FROM payment_records WHERE status = 'pending' ORDER BY created_at ASC`,
 	)
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	defer rows.Close()
-	return collectPaymentRecords(rows)
 }
 
 // Validate transitions a pending payment to confirmed, recording which admin
 // approved it and any approval notes. Returns NotFound when the payment does
 // not exist or is not in pending state.
 func (r *PostgresPaymentRecordRepository) Validate(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error) {
+	return r.reviewPending(ctx, id, adminID, notes, "confirmed", true)
+}
+
+// Reject transitions a pending payment to rejected, recording the reviewing
+// admin and reason. Returns NotFound when the payment does not exist or is
+// not in pending state.
+func (r *PostgresPaymentRecordRepository) Reject(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error) {
+	return r.reviewPending(ctx, id, adminID, notes, "rejected", false)
+}
+
+func (r *PostgresPaymentRecordRepository) reviewPending(ctx context.Context, id, adminID int, notes, newStatus string, setConfirmedAt bool) (*domain.PaymentRecord, error) {
+	setConfirmed := ""
+	if setConfirmedAt {
+		setConfirmed = ", confirmed_at = NOW()"
+	}
+
 	row := r.db.QueryRow(ctx,
 		`UPDATE payment_records
-		    SET status       = 'confirmed',
-		        confirmed_at = NOW(),
-		        reviewed_by  = $2,
-		        notes        = $3,
-		        updated_at   = NOW()
+		    SET status      = $4`+setConfirmed+`,
+		        reviewed_by = $2,
+		        notes       = $3,
+		        updated_at  = NOW()
 		  WHERE id = $1 AND status = 'pending'
 		  RETURNING `+paymentColumns,
-		id, adminID, notes,
+		id, adminID, notes, newStatus,
 	)
 	result, err := scanPaymentRecord(row)
 	if err != nil {
@@ -157,28 +167,39 @@ func (r *PostgresPaymentRecordRepository) Validate(ctx context.Context, id, admi
 	return result, nil
 }
 
-// Reject transitions a pending payment to rejected, recording the reviewing
-// admin and reason. Returns NotFound when the payment does not exist or is
-// not in pending state.
-func (r *PostgresPaymentRecordRepository) Reject(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error) {
-	row := r.db.QueryRow(ctx,
-		`UPDATE payment_records
-		    SET status      = 'rejected',
-		        reviewed_by = $2,
-		        notes       = $3,
-		        updated_at  = NOW()
-		  WHERE id = $1 AND status = 'pending'
-		  RETURNING `+paymentColumns,
-		id, adminID, notes,
+// List returns payment records matching the given filters with pagination.
+func (r *PostgresPaymentRecordRepository) List(ctx context.Context, f PaymentFilters, p Pagination) ([]*domain.PaymentRecord, error) {
+	q := `SELECT ` + paymentColumns + ` FROM payment_records WHERE 1=1`
+	args := []any{}
+	n := 1
+
+	if f.Status != nil {
+		q += fmt.Sprintf(` AND status = $%d`, n)
+		args = append(args, string(*f.Status))
+		n++
+	}
+	if f.QuinielaID != nil {
+		q += fmt.Sprintf(` AND quiniela_id = $%d`, n)
+		args = append(args, *f.QuinielaID)
+		n++
+	}
+	if f.UserID != nil {
+		q += fmt.Sprintf(` AND user_id = $%d`, n)
+		args = append(args, *f.UserID)
+		n++
+	}
+
+	q += ` ORDER BY created_at DESC`
+	q, args, _ = applyPagination(q, args, n, p)
+	return r.queryPaymentRecords(ctx, q, args...)
+}
+
+// ListStale returns pending payment records older than olderThan.
+func (r *PostgresPaymentRecordRepository) ListStale(ctx context.Context, olderThan time.Time) ([]*domain.PaymentRecord, error) {
+	return r.queryPaymentRecords(ctx,
+		`SELECT `+paymentColumns+` FROM payment_records WHERE status = 'pending' AND created_at < $1 ORDER BY created_at ASC`,
+		olderThan,
 	)
-	result, err := scanPaymentRecord(row)
-	if err != nil {
-		return nil, err
-	}
-	if result == nil {
-		return nil, apperrors.NotFound(msgPaymentNotFound)
-	}
-	return result, nil
 }
 
 var _ PaymentRecordRepository = (*PostgresPaymentRecordRepository)(nil)

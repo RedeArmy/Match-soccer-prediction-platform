@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -157,19 +158,7 @@ func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
-
-	result := make(map[int]int)
-	for rows.Next() {
-		var userID, totalPoints int
-		if err := rows.Scan(&userID, &totalPoints); err != nil {
-			return nil, apperrors.Internal(err)
-		}
-		result[userID] = totalPoints
-	}
-	if err := rows.Err(); err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return result, nil
+	return collectUserPointTotals(rows)
 }
 
 // TotalPointsByQuinielaAndPhase returns a map of userID → total scored points
@@ -207,7 +196,10 @@ func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
+	return collectUserPointTotals(rows)
+}
 
+func collectUserPointTotals(rows pgx.Rows) (map[int]int, error) {
 	result := make(map[int]int)
 	for rows.Next() {
 		var userID, totalPoints int
@@ -419,6 +411,71 @@ func collectPredictions(rows pgx.Rows) ([]*domain.Prediction, error) {
 		return nil, apperrors.Internal(err)
 	}
 	return preds, nil
+}
+
+// ListAdmin returns predictions matching the given admin filters with pagination.
+func (r *PostgresPredictionRepository) ListAdmin(ctx context.Context, f PredictionAdminFilters, p Pagination) ([]*domain.Prediction, error) {
+	q := `SELECT id, user_id, match_id, home_score, away_score, points, created_at, updated_at FROM predictions WHERE 1=1`
+	args := []any{}
+	n := 1
+
+	if f.UserID != nil {
+		q += fmt.Sprintf(` AND user_id = $%d`, n)
+		args = append(args, *f.UserID)
+		n++
+	}
+	if f.MatchID != nil {
+		q += fmt.Sprintf(` AND match_id = $%d`, n)
+		args = append(args, *f.MatchID)
+		n++
+	}
+	if f.QuinielaID != nil {
+		q += fmt.Sprintf(` AND user_id IN (SELECT user_id FROM group_memberships WHERE quiniela_id = $%d AND status = 'active')`, n)
+		args = append(args, *f.QuinielaID)
+		n++
+	}
+
+	q += ` ORDER BY created_at DESC`
+	q, args, _ = applyPagination(q, args, n, p)
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectPredictions(rows)
+}
+
+// GlobalLeaderboard returns the top limit users ranked by total scored points
+// across all quinielas.
+func (r *PostgresPredictionRepository) GlobalLeaderboard(ctx context.Context, limit int) ([]*domain.GlobalLeaderboardEntry, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT u.id, u.name, COALESCE(SUM(p.points), 0) AS total_points
+		FROM users u
+		LEFT JOIN predictions p ON p.user_id = u.id AND p.points IS NOT NULL
+		WHERE u.deleted_at IS NULL AND u.banned_at IS NULL
+		GROUP BY u.id, u.name
+		ORDER BY total_points DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	var entries []*domain.GlobalLeaderboardEntry
+	rank := 1
+	for rows.Next() {
+		e := &domain.GlobalLeaderboardEntry{Rank: rank}
+		if err := rows.Scan(&e.UserID, &e.UserName, &e.TotalPoints); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		entries = append(entries, e)
+		rank++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return entries, nil
 }
 
 var _ PredictionRepository = (*PostgresPredictionRepository)(nil)

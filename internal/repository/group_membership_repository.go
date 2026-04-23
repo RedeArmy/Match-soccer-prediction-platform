@@ -252,4 +252,45 @@ func (r *PostgresGroupMembershipRepository) RemoveByAdmin(ctx context.Context, m
 	return nil
 }
 
+// ListGroupIDsWithoutOwner returns quiniela IDs that have no active CreateOwner member.
+func (r *PostgresGroupMembershipRepository) ListGroupIDsWithoutOwner(ctx context.Context) ([]int, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT q.id
+		FROM quinielas q
+		WHERE q.deleted_at IS NULL
+		  AND NOT EXISTS (
+		        SELECT 1 FROM group_memberships gm
+		        WHERE gm.quiniela_id = q.id
+		          AND gm.role = 'owner'
+		          AND gm.status = 'active'
+		  )`)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ListStalePending returns pending memberships older than olderThan.
+func (r *PostgresGroupMembershipRepository) ListStalePending(ctx context.Context, olderThan time.Time) ([]*domain.GroupMembership, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+membershipColumns+` FROM group_memberships WHERE status = 'pending' AND created_at < $1 ORDER BY created_at ASC`,
+		olderThan,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectMemberships(rows)
+}
+
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)

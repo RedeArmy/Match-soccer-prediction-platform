@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -297,6 +298,12 @@ func (r *failOnUpdateRepo) GetUserPointsByPhase(_ context.Context, _ int) (map[d
 	return nil, nil
 }
 func (r *failOnUpdateRepo) ListUserScoredPointsChronological(_ context.Context, _ int) ([]int, error) {
+	return nil, nil
+}
+func (r *failOnUpdateRepo) ListAdmin(_ context.Context, _ repository.PredictionAdminFilters, _ repository.Pagination) ([]*domain.Prediction, error) {
+	return nil, nil
+}
+func (r *failOnUpdateRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*domain.GlobalLeaderboardEntry, error) {
 	return nil, nil
 }
 

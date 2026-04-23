@@ -8,7 +8,14 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+)
+
+const (
+	tiebreakerQuestion      = "Total goals"
+	tiebreakerUnexpectedErr = "unexpected error: %v"
+	tiebreakerValidationFmt = "expected validation error, got %v"
 )
 
 // stubTiebreakerConfigRepo implements repository.TiebreakerConfigRepository.
@@ -57,6 +64,9 @@ func (r *stubTiebreakerRepoSvc) Update(_ context.Context, _ *domain.Tiebreaker) 
 func (r *stubTiebreakerRepoSvc) ListByUserIDs(_ context.Context, _ []int) ([]*domain.Tiebreaker, error) {
 	return nil, r.err
 }
+func (r *stubTiebreakerRepoSvc) ListAll(_ context.Context, _ repository.Pagination) ([]*domain.Tiebreaker, error) {
+	return nil, r.err
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -94,11 +104,11 @@ func TestTiebreakerService_SetQuestion_StoresQuestion(t *testing.T) {
 		zap.NewNop(),
 	)
 
-	got, err := svc.SetQuestion(context.Background(), "Total goals in the Final")
+	got, err := svc.SetQuestion(context.Background(), tiebreakerQuestion)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tiebreakerUnexpectedErr, err)
 	}
-	if got == nil || got.Question != "Total goals in the Final" {
+	if got == nil || got.Question != tiebreakerQuestion {
 		t.Errorf("expected question to be set, got %v", got)
 	}
 }
@@ -108,19 +118,19 @@ func TestTiebreakerService_SetQuestion_EmptyQuestion_ReturnsValidation(t *testin
 
 	_, err := svc.SetQuestion(context.Background(), "")
 	if !errors.Is(err, apperrors.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
+		t.Errorf(tiebreakerValidationFmt, err)
 	}
 }
 
 // ── Submit ────────────────────────────────────────────────────────────────────
 
 func TestTiebreakerService_Submit_NewEntry_CreatesAndReturns(t *testing.T) {
-	cfg := configWithQuestion("Total goals in the Final")
+	cfg := configWithQuestion(tiebreakerQuestion)
 	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{existing: nil})
 
 	tb, err := svc.Submit(context.Background(), 1, 42, 5)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tiebreakerUnexpectedErr, err)
 	}
 	if tb.Prediction != 5 {
 		t.Errorf("expected prediction 5, got %d", tb.Prediction)
@@ -128,13 +138,13 @@ func TestTiebreakerService_Submit_NewEntry_CreatesAndReturns(t *testing.T) {
 }
 
 func TestTiebreakerService_Submit_ExistingEntry_UpdatesAndReturns(t *testing.T) {
-	cfg := configWithQuestion("Total goals in the Final")
+	cfg := configWithQuestion(tiebreakerQuestion)
 	existing := &domain.Tiebreaker{ID: 3, UserID: 42, Prediction: 3}
 	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{existing: existing})
 
 	tb, err := svc.Submit(context.Background(), 1, 42, 7)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tiebreakerUnexpectedErr, err)
 	}
 	if tb.Prediction != 7 {
 		t.Errorf("expected updated prediction 7, got %d", tb.Prediction)
@@ -158,12 +168,12 @@ func TestTiebreakerService_Submit_NoQuestion_ReturnsValidation(t *testing.T) {
 
 	_, err := svc.Submit(context.Background(), 1, 42, 5)
 	if !errors.Is(err, apperrors.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
+		t.Errorf(tiebreakerValidationFmt, err)
 	}
 }
 
 func TestTiebreakerService_Submit_NotActiveMember_ReturnsForbidden(t *testing.T) {
-	cfg := configWithQuestion("Total goals in the Final")
+	cfg := configWithQuestion(tiebreakerQuestion)
 	svc := newTiebreakerSvc(cfg, nil, &stubTiebreakerRepoSvc{})
 
 	_, err := svc.Submit(context.Background(), 1, 99, 5)
@@ -175,13 +185,13 @@ func TestTiebreakerService_Submit_NotActiveMember_ReturnsForbidden(t *testing.T)
 // ── GetMine ───────────────────────────────────────────────────────────────────
 
 func TestTiebreakerService_GetMine_ActiveMember_ReturnsView(t *testing.T) {
-	cfg := configWithQuestion("Total goals in the Final")
+	cfg := configWithQuestion(tiebreakerQuestion)
 	tb := &domain.Tiebreaker{ID: 3, UserID: 42, Prediction: 5}
 	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{existing: tb})
 
 	view, err := svc.GetMine(context.Background(), 1, 42)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tiebreakerUnexpectedErr, err)
 	}
 	if view.Question == nil {
 		t.Fatal("expected non-nil question")
@@ -192,12 +202,12 @@ func TestTiebreakerService_GetMine_ActiveMember_ReturnsView(t *testing.T) {
 }
 
 func TestTiebreakerService_GetMine_NoEntry_EntryIsNil(t *testing.T) {
-	cfg := configWithQuestion("Total goals in the Final")
+	cfg := configWithQuestion(tiebreakerQuestion)
 	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{existing: nil})
 
 	view, err := svc.GetMine(context.Background(), 1, 42)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tiebreakerUnexpectedErr, err)
 	}
 	if view.Entry != nil {
 		t.Errorf("expected nil entry when not submitted, got %v", view.Entry)
@@ -205,7 +215,7 @@ func TestTiebreakerService_GetMine_NoEntry_EntryIsNil(t *testing.T) {
 }
 
 func TestTiebreakerService_GetMine_NotActiveMember_ReturnsForbidden(t *testing.T) {
-	cfg := configWithQuestion("Total goals in the Final")
+	cfg := configWithQuestion(tiebreakerQuestion)
 	svc := newTiebreakerSvc(cfg, nil, &stubTiebreakerRepoSvc{})
 
 	_, err := svc.GetMine(context.Background(), 1, 99)
@@ -219,7 +229,7 @@ func TestTiebreakerService_GetMine_NoQuestionConfigured_QuestionIsNil(t *testing
 
 	view, err := svc.GetMine(context.Background(), 1, 42)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tiebreakerUnexpectedErr, err)
 	}
 	if view.Question != nil {
 		t.Errorf("expected nil question when not configured, got %v", view.Question)
@@ -229,11 +239,11 @@ func TestTiebreakerService_GetMine_NoQuestionConfigured_QuestionIsNil(t *testing
 // ── ConfirmResult ─────────────────────────────────────────────────────────────
 
 func TestTiebreakerService_ConfirmResult_Succeeds(t *testing.T) {
-	cfg := configWithQuestion("Total goals in the Final")
+	cfg := configWithQuestion(tiebreakerQuestion)
 	svc := newTiebreakerSvc(cfg, nil, &stubTiebreakerRepoSvc{})
 
 	if err := svc.ConfirmResult(context.Background(), 10); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(tiebreakerUnexpectedErr, err)
 	}
 }
 
@@ -242,12 +252,12 @@ func TestTiebreakerService_ConfirmResult_NoQuestion_ReturnsValidation(t *testing
 
 	err := svc.ConfirmResult(context.Background(), 10)
 	if !errors.Is(err, apperrors.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
+		t.Errorf(tiebreakerValidationFmt, err)
 	}
 }
 
 func TestTiebreakerService_ConfirmResult_RepoError_Propagates(t *testing.T) {
-	cfg := configWithQuestion("Total goals in the Final")
+	cfg := configWithQuestion(tiebreakerQuestion)
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{cfg: cfg, setResErr: errors.New("db error")},
 		&stubMemberRepo{},

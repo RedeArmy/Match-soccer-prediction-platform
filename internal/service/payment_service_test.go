@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
+
+const paymentExpectErrMsg = "expected error, got nil"
 
 // stubPaymentRepo implements repository.PaymentRecordRepository for unit tests.
 type stubPaymentRepo struct {
@@ -43,6 +46,12 @@ func (r *stubPaymentRepo) Validate(_ context.Context, _, _ int, _ string) (*doma
 func (r *stubPaymentRepo) Reject(_ context.Context, _, _ int, _ string) (*domain.PaymentRecord, error) {
 	return r.record, r.err
 }
+func (r *stubPaymentRepo) List(_ context.Context, _ repository.PaymentFilters, _ repository.Pagination) ([]*domain.PaymentRecord, error) {
+	return r.records, r.err
+}
+func (r *stubPaymentRepo) ListStale(_ context.Context, _ time.Time) ([]*domain.PaymentRecord, error) {
+	return r.records, r.err
+}
 
 func newPaymentSvc(repo *stubPaymentRepo) PaymentService {
 	return NewPaymentService(repo, &noopAuditLogger{}, zap.NewNop())
@@ -67,7 +76,7 @@ func TestPaymentService_CreateRecord_RepoError_Propagates(t *testing.T) {
 
 	_, err := svc.CreateRecord(context.Background(), 1, 2, 500, "USD", "ref")
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(paymentExpectErrMsg)
 	}
 }
 
@@ -88,7 +97,7 @@ func TestPaymentService_ValidateDeposit_RepoError_Propagates(t *testing.T) {
 
 	_, err := svc.ValidateDeposit(context.Background(), 5, 99, "")
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(paymentExpectErrMsg)
 	}
 }
 
@@ -109,7 +118,7 @@ func TestPaymentService_RejectDeposit_RepoError_Propagates(t *testing.T) {
 
 	_, err := svc.RejectDeposit(context.Background(), 7, 99, "")
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(paymentExpectErrMsg)
 	}
 }
 

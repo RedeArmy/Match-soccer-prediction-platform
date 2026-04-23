@@ -17,6 +17,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
 const (
@@ -239,6 +240,9 @@ func (r *createErrRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User
 }
 func (r *createErrRepo) Unban(_ context.Context, _ int) error                 { return nil }
 func (r *createErrRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }
+func (r *createErrRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
+	return nil, nil
+}
 
 // updateErrRepo returns an existing user from GetByClerkSubject and errors
 // from Update, isolating the Update error path in upsertUser.
@@ -267,3 +271,6 @@ func (r *updateErrRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User
 }
 func (r *updateErrRepo) Unban(_ context.Context, _ int) error                 { return nil }
 func (r *updateErrRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }
+func (r *updateErrRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
+	return nil, nil
+}
