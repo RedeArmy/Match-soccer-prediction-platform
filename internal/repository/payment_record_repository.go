@@ -62,6 +62,15 @@ func collectPaymentRecords(rows pgx.Rows) ([]*domain.PaymentRecord, error) {
 	return records, nil
 }
 
+func (r *PostgresPaymentRecordRepository) queryPaymentRecords(ctx context.Context, q string, args ...any) ([]*domain.PaymentRecord, error) {
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectPaymentRecords(rows)
+}
+
 // Create inserts a new payment record in pending state. record.ID is
 // populated on success.
 func (r *PostgresPaymentRecordRepository) Create(ctx context.Context, record *domain.PaymentRecord) error {
@@ -98,39 +107,24 @@ func (r *PostgresPaymentRecordRepository) ListByQuiniela(ctx context.Context, qu
 		q += fmt.Sprintf(" AND status = $%d", len(args))
 	}
 	q += " ORDER BY created_at DESC"
-	rows, err := r.db.Query(ctx, q, args...)
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	defer rows.Close()
-	return collectPaymentRecords(rows)
+	return r.queryPaymentRecords(ctx, q, args...)
 }
 
 // ListByUser returns all payment records for a user across all quinielas,
 // ordered by created_at descending.
 func (r *PostgresPaymentRecordRepository) ListByUser(ctx context.Context, userID int) ([]*domain.PaymentRecord, error) {
-	rows, err := r.db.Query(ctx,
+	return r.queryPaymentRecords(ctx,
 		`SELECT `+paymentColumns+` FROM payment_records WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
 	)
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	defer rows.Close()
-	return collectPaymentRecords(rows)
 }
 
 // ListPending returns all payment records in pending state, ordered oldest
 // first to process by arrival order.
 func (r *PostgresPaymentRecordRepository) ListPending(ctx context.Context) ([]*domain.PaymentRecord, error) {
-	rows, err := r.db.Query(ctx,
+	return r.queryPaymentRecords(ctx,
 		`SELECT `+paymentColumns+` FROM payment_records WHERE status = 'pending' ORDER BY created_at ASC`,
 	)
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	defer rows.Close()
-	return collectPaymentRecords(rows)
 }
 
 // Validate transitions a pending payment to confirmed, recording which admin
@@ -196,35 +190,16 @@ func (r *PostgresPaymentRecordRepository) List(ctx context.Context, f PaymentFil
 	}
 
 	q += ` ORDER BY created_at DESC`
-	if p.Limit > 0 {
-		q += fmt.Sprintf(` LIMIT $%d`, n)
-		args = append(args, p.Limit)
-		n++
-	}
-	if p.Offset > 0 {
-		q += fmt.Sprintf(` OFFSET $%d`, n)
-		args = append(args, p.Offset)
-	}
-
-	rows, err := r.db.Query(ctx, q, args...)
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	defer rows.Close()
-	return collectPaymentRecords(rows)
+	q, args, _ = applyPagination(q, args, n, p)
+	return r.queryPaymentRecords(ctx, q, args...)
 }
 
 // ListStale returns pending payment records older than olderThan.
 func (r *PostgresPaymentRecordRepository) ListStale(ctx context.Context, olderThan time.Time) ([]*domain.PaymentRecord, error) {
-	rows, err := r.db.Query(ctx,
+	return r.queryPaymentRecords(ctx,
 		`SELECT `+paymentColumns+` FROM payment_records WHERE status = 'pending' AND created_at < $1 ORDER BY created_at ASC`,
 		olderThan,
 	)
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	defer rows.Close()
-	return collectPaymentRecords(rows)
 }
 
 var _ PaymentRecordRepository = (*PostgresPaymentRecordRepository)(nil)

@@ -436,15 +436,7 @@ func (r *PostgresPredictionRepository) ListAdmin(ctx context.Context, f Predicti
 	}
 
 	q += ` ORDER BY created_at DESC`
-	if p.Limit > 0 {
-		q += fmt.Sprintf(` LIMIT $%d`, n)
-		args = append(args, p.Limit)
-		n++
-	}
-	if p.Offset > 0 {
-		q += fmt.Sprintf(` OFFSET $%d`, n)
-		args = append(args, p.Offset)
-	}
+	q, args, _ = applyPagination(q, args, n, p)
 
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
