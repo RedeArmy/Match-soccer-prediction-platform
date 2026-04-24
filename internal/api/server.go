@@ -399,7 +399,8 @@ func (s *Server) buildHandlers(
 
 	predSvc := service.NewPredictionService(predRepo, matchRepo, params, s.log)
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
-	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, params, s.log)
+	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, params, auditSvc, paymentSvc, s.log)
 
 	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, params, s.log)
 	if s.cache != nil {
@@ -409,13 +410,10 @@ func (s *Server) buildHandlers(
 	userStatsSvc := service.NewUserStatsService(predRepo)
 	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, memberRepo, tiebreakerRepo, auditSvc, s.log)
 	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, auditSvc, s.log)
-
-	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
 	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, memberRepo, auditSvc, s.log)
 	adminUserSvc := service.NewAdminUserService(userRepo, memberRepo, paymentRepo, auditSvc, s.log)
 	adminReadSvc := service.NewAdminReadService(predRepo, userRepo, tiebreakerRepo, snapRepo, s.log)
 	conflictSvc := service.NewConflictService(quinielaRepo, memberRepo, paymentRepo, auditSvc, s.log)
-	_ = service.NewLeaderboardSnapshotService(ranker, snapRepo)
 
 	dlqSvc := s.dlqSvc
 	if dlqSvc == nil {
