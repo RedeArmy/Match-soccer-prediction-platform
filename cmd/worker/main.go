@@ -125,6 +125,14 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	params := service.NewSystemParamService(systemParamRepo, log)
 	scorer := service.NewScoringService(matchRepo, predRepo, params, log)
 
+	quinielaRepo := repository.NewPostgresQuinielaRepository(db)
+	userRepo := repository.NewPostgresUserRepository(db)
+	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(db)
+	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(db)
+	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(db)
+	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, params, log)
+	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
+
 	// A dedicated Redis client for health checks avoids sharing connections
 	// with the event bus, whose long-lived XREADGROUP calls would otherwise
 	// inflate the apparent latency of a ping.
@@ -135,7 +143,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	})
 	defer rc.Close() //nolint:errcheck
 
-	return startWorker(ctx, cfg, bus, scorer, rc, buildHealthCheckers(db, rc), log)
+	return startWorker(ctx, cfg, bus, scorer, snapshotter, predRepo, rc, buildHealthCheckers(db, rc), log)
 }
 
 // startWorker wires event subscribers, starts the health HTTP server, starts
@@ -172,6 +180,8 @@ func startWorker(
 	cfg *config.Config,
 	bus events.Bus,
 	scorer service.MatchScorer,
+	snapshotter service.Snapshotter,
+	predRepo repository.PredictionRepository,
 	rc *redis.Client,
 	checkers []health.Checker,
 	log *zap.Logger,
@@ -179,7 +189,7 @@ func startWorker(
 	bus.Subscribe(events.EventMatchStarted, newMatchStartedHandler(log))
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
-	bus.Subscribe(events.EventMatchFinished, newMatchFinishedHandler(scorer, log))
+	bus.Subscribe(events.EventMatchFinished, newMatchFinishedHandler(scorer, snapshotter, predRepo, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
 	healthSrv := newHealthServer(cfg.Worker.HealthPort, checkers, log)

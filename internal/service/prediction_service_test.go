@@ -84,6 +84,9 @@ func (r *stubPredRepo) ListAdmin(_ context.Context, _ repository.PredictionAdmin
 func (r *stubPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*domain.GlobalLeaderboardEntry, error) {
 	return nil, r.err
 }
+func (r *stubPredRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, error) {
+	return nil, r.err
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

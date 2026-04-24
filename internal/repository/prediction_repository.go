@@ -109,6 +109,37 @@ func (r *PostgresPredictionRepository) ListByMatch(ctx context.Context, matchID 
 	return collectPredictions(rows)
 }
 
+// ListQuinielaIDsByMatch returns the distinct quiniela IDs for all active,
+// paid members who have a prediction for matchID. One round-trip; the JOIN
+// on group_memberships filters out inactive / unpaid members so that quinielas
+// with no eligible participants are excluded from the snapshot run.
+func (r *PostgresPredictionRepository) ListQuinielaIDsByMatch(ctx context.Context, matchID int) ([]int, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT DISTINCT gm.quiniela_id
+		   FROM predictions p
+		   JOIN group_memberships gm
+		     ON gm.user_id = p.user_id
+		    AND gm.status  = 'active'
+		    AND gm.paid    = true
+		  WHERE p.match_id = $1`,
+		matchID,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // ListByUserAndQuiniela returns all predictions for userID where the user is
 // an active member of quinielaID. A single EXISTS subquery verifies membership
 // so the call is one database round-trip. If the user is not an active member

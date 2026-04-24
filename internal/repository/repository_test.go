@@ -4127,3 +4127,79 @@ func TestUserRepository_ListFiltered_PaginationOffset(t *testing.T) {
 		t.Errorf("expected 2 users with limit=2 offset=1, got %d", len(results))
 	}
 }
+
+// ── PredictionRepository.ListQuinielaIDsByMatch ───────────────────────────────
+
+func TestPredictionRepository_ListQuinielaIDsByMatch_ReturnsAffectedQuinielas(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	q1 := seedQuiniela(t, u1.ID)
+	q2 := seedQuiniela(t, u2.ID)
+
+	// Both users are active + paid in their respective quinielas.
+	seedMembership(t, q1.ID, u1.ID, domain.MembershipActive, true)
+	seedMembership(t, q2.ID, u2.ID, domain.MembershipActive, true)
+
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	// Each user predicts on the same match.
+	if err := predRepo.Create(context.Background(), &domain.Prediction{UserID: u1.ID, MatchID: m.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := predRepo.Create(context.Background(), &domain.Prediction{UserID: u2.ID, MatchID: m.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	ids, err := predRepo.ListQuinielaIDsByMatch(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(ids) != 2 {
+		t.Errorf("expected 2 quiniela IDs, got %d: %v", len(ids), ids)
+	}
+}
+
+func TestPredictionRepository_ListQuinielaIDsByMatch_ExcludesUnpaidMembers(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	q := seedQuiniela(t, u1.ID)
+
+	seedMembership(t, q.ID, u1.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, u2.ID, domain.MembershipActive, false) // unpaid
+
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	if err := predRepo.Create(context.Background(), &domain.Prediction{UserID: u1.ID, MatchID: m.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := predRepo.Create(context.Background(), &domain.Prediction{UserID: u2.ID, MatchID: m.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	ids, err := predRepo.ListQuinielaIDsByMatch(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	// Only u1 (paid) counts; still one distinct quiniela_id.
+	if len(ids) != 1 {
+		t.Errorf("expected 1 quiniela ID (paid member only), got %d: %v", len(ids), ids)
+	}
+}
+
+func TestPredictionRepository_ListQuinielaIDsByMatch_NoPredictions_ReturnsEmpty(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	ids, err := predRepo.ListQuinielaIDsByMatch(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("expected empty slice, got %v", ids)
+	}
+}

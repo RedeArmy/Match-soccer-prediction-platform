@@ -306,6 +306,9 @@ func (r *failOnUpdateRepo) ListAdmin(_ context.Context, _ repository.PredictionA
 func (r *failOnUpdateRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*domain.GlobalLeaderboardEntry, error) {
 	return nil, nil
 }
+func (r *failOnUpdateRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, error) {
+	return nil, nil
+}
 
 // ── TestGoalDiff verifies the absolute-value goal-margin helper.
 func TestGoalDiff(t *testing.T) {
