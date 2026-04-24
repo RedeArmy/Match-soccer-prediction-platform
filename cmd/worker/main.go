@@ -125,6 +125,14 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	params := service.NewSystemParamService(systemParamRepo, log)
 	scorer := service.NewScoringService(matchRepo, predRepo, params, log)
 
+	quinielaRepo := repository.NewPostgresQuinielaRepository(db)
+	userRepo := repository.NewPostgresUserRepository(db)
+	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(db)
+	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(db)
+	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(db)
+	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, params, log)
+	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
+
 	// A dedicated Redis client for health checks avoids sharing connections
 	// with the event bus, whose long-lived XREADGROUP calls would otherwise
 	// inflate the apparent latency of a ping.
@@ -135,7 +143,15 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	})
 	defer rc.Close() //nolint:errcheck
 
-	return startWorker(ctx, cfg, bus, scorer, rc, buildHealthCheckers(db, rc), log)
+	return startWorker(ctx, workerDeps{
+		cfg:         cfg,
+		bus:         bus,
+		scorer:      scorer,
+		snapshotter: snapshotter,
+		predRepo:    predRepo,
+		rc:          rc,
+		checkers:    buildHealthCheckers(db, rc),
+	}, log)
 }
 
 // startWorker wires event subscribers, starts the health HTTP server, starts
@@ -163,29 +179,34 @@ func buildHealthCheckers(db *pgxpool.Pool, rc *redis.Client) []health.Checker {
 	}
 }
 
+// workerDeps bundles the injected dependencies for startWorker, keeping its
+// parameter list within the 7-param lint limit while remaining easy to
+// extend without changing the function signature.
+type workerDeps struct {
+	cfg         *config.Config
+	bus         events.Bus
+	scorer      service.MatchScorer
+	snapshotter service.Snapshotter
+	predRepo    repository.PredictionRepository
+	rc          *redis.Client
+	checkers    []health.Checker
+}
+
 // All parameters are already constructed so this function has no I/O of its
 // own. This makes it the boundary between infrastructure setup (run) and
 // lifecycle management — and the part that can be exercised in unit tests
 // by injecting an InMemoryBus, a stub scorer, and a pre-cancelled context.
-func startWorker(
-	ctx context.Context,
-	cfg *config.Config,
-	bus events.Bus,
-	scorer service.MatchScorer,
-	rc *redis.Client,
-	checkers []health.Checker,
-	log *zap.Logger,
-) error {
-	bus.Subscribe(events.EventMatchStarted, newMatchStartedHandler(log))
+func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
+	deps.bus.Subscribe(events.EventMatchStarted, newMatchStartedHandler(log))
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
-	bus.Subscribe(events.EventMatchFinished, newMatchFinishedHandler(scorer, log))
+	deps.bus.Subscribe(events.EventMatchFinished, newMatchFinishedHandler(deps.scorer, deps.snapshotter, deps.predRepo, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
-	healthSrv := newHealthServer(cfg.Worker.HealthPort, checkers, log)
+	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, log)
 
 	go func() {
-		log.Sugar().Infof("worker health server listening on :%s", cfg.Worker.HealthPort)
+		log.Sugar().Infof("worker health server listening on :%s", deps.cfg.Worker.HealthPort)
 		if err := healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Sugar().Fatalf("health server error: %v", err)
 		}
@@ -195,7 +216,7 @@ func startWorker(
 	// fixed interval. Operators should configure an alert on log lines that
 	// contain "dead-letter queue is non-empty" to be notified within one
 	// dlqMonitorInterval of a scoring failure.
-	go monitorDLQ(ctx, rc, log)
+	go monitorDLQ(ctx, deps.rc, log)
 
 	<-ctx.Done()
 	log.Sugar().Info("worker: shutdown signal received, stopping...")
