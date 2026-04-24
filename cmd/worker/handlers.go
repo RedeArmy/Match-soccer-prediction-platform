@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
@@ -73,7 +74,17 @@ func newMatchStartedHandler(log *zap.Logger) func(context.Context, events.Envelo
 // newMatchFinishedHandler returns the event handler that the worker registers
 // on the bus for EventMatchFinished events. It is extracted as a constructor
 // so it can be unit-tested in isolation without starting the full worker.
-func newMatchFinishedHandler(scorer service.MatchScorer, log *zap.Logger) func(context.Context, events.Envelope) error {
+//
+// After scoring succeeds, the handler triggers a leaderboard snapshot for
+// every quiniela that has active, paid members with predictions on the finished
+// match. Snapshot failures are logged and swallowed: scoring already committed
+// and the snapshot can be regenerated on the next scoring event or manually.
+func newMatchFinishedHandler(
+	scorer service.MatchScorer,
+	snapshotter service.Snapshotter,
+	predRepo repository.PredictionRepository,
+	log *zap.Logger,
+) func(context.Context, events.Envelope) error {
 	return func(ctx context.Context, env events.Envelope) error {
 		mf, err := decodePayload[events.MatchFinished](env)
 		if err != nil {
@@ -99,6 +110,44 @@ func newMatchFinishedHandler(scorer service.MatchScorer, log *zap.Logger) func(c
 
 		log.Sugar().Infof("worker: scored match %d (%s %d–%d %s)",
 			mf.MatchID, mf.HomeTeam, mf.HomeScore, mf.AwayScore, mf.AwayTeam)
+
+		snapshotAffectedQuinielas(ctx, mf.MatchID, snapshotter, predRepo, log)
 		return nil
+	}
+}
+
+// snapshotAffectedQuinielas queries which quinielas had active paid members
+// with predictions on matchID, then persists a fresh leaderboard snapshot for
+// each. Errors are logged and swallowed: scoring has already committed and the
+// snapshot is a best-effort observability aid that can be regenerated later.
+func snapshotAffectedQuinielas(
+	ctx context.Context,
+	matchID int,
+	snapshotter service.Snapshotter,
+	predRepo repository.PredictionRepository,
+	log *zap.Logger,
+) {
+	if predRepo == nil || snapshotter == nil {
+		return
+	}
+	quinielaIDs, err := predRepo.ListQuinielaIDsByMatch(ctx, matchID)
+	if err != nil {
+		log.Warn("worker: could not fetch quiniela IDs for snapshot after scoring",
+			zap.Int("match_id", matchID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	for _, qid := range quinielaIDs {
+		if _, err := snapshotter.Snapshot(ctx, qid); err != nil {
+			log.Warn("worker: leaderboard snapshot failed",
+				zap.Int("match_id", matchID),
+				zap.Int("quiniela_id", qid),
+				zap.Error(err),
+			)
+		} else {
+			log.Sugar().Infof("worker: leaderboard snapshot saved for quiniela %d (match %d)", qid, matchID)
+		}
 	}
 }

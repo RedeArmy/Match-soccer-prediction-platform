@@ -112,6 +112,12 @@ type PredictionRepository interface {
 	// "group stage" standings table). Only active, paid members are included;
 	// predictions with NULL points are excluded from the sum.
 	TotalPointsByQuinielaAndPhase(ctx context.Context, quinielaID int, phase domain.MatchPhase) (map[int]int, error)
+	// ListQuinielaIDsByMatch returns the distinct IDs of every quiniela that has
+	// at least one active, paid member who submitted a prediction for matchID.
+	// Called by the scoring worker after ScoreMatch to determine which quinielas
+	// need a fresh leaderboard snapshot. Returns an empty slice (not an error)
+	// when no active members have predictions for the match.
+	ListQuinielaIDsByMatch(ctx context.Context, matchID int) ([]int, error)
 	// ListByUserAndQuiniela returns all predictions for userID where the user is
 	// an active member of the given quiniela. The EXISTS gate ensures that callers
 	// who are not active members of quinielaID receive an empty slice, not an
