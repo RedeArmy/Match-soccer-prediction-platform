@@ -29,6 +29,25 @@ func NewAdminUserHandler(svc service.AdminUserService, log *zap.Logger) *AdminUs
 }
 
 // ListUsers handles GET /admin/users — paginated user list with optional filters.
+//
+// @Summary      List users
+// @Description  Returns a paginated list of all user accounts. Supports optional
+//
+//	filtering by ban status, role, and name/email search. Requires admin role.
+//
+// @Tags         admin-users
+// @Produce      json
+// @Security     BearerAuth
+// @Param        banned  query     bool    false  "Filter by ban status (true = banned only, false = active only)"
+// @Param        role    query     string  false  "Filter by role (admin, player)"
+// @Param        search  query     string  false  "Search by name or email (partial match)"
+// @Param        limit   query     int     false  "Max records per page (default 50, max 200)"
+// @Param        page    query     int     false  "Page number (default 1)"
+// @Success      200     {object}  handler.Paged[handler.AdminUserResponse]
+// @Failure      401     {object}  handler.ErrorResponse
+// @Failure      403     {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      500     {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/users [get]
 func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	p := parsePagination(r)
 
@@ -62,6 +81,23 @@ func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetUserProfile handles GET /admin/users/{id} — full user profile.
+//
+// @Summary      Get user profile
+// @Description  Returns the full admin view of a user account: base profile, group
+//
+//	memberships, and payment records. Requires admin role.
+//
+// @Tags         admin-users
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  handler.AdminUserProfileResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      404  {object}  handler.ErrorResponse  "User not found"
+// @Failure      422  {object}  handler.ErrorResponse  "Invalid user ID"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/users/{id} [get]
 func (h *AdminUserHandler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
@@ -96,6 +132,27 @@ type banRequest struct {
 }
 
 // BanUser handles POST /admin/users/{id}/ban.
+//
+// @Summary      Ban a user
+// @Description  Suspends a user account. Banned users are blocked from all write
+//
+//	operations. If the user owns any groups, ownership is automatically
+//	transferred to the oldest active member. Requires admin role.
+//
+// @Tags         admin-users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                       true  "User ID"
+// @Param        body  body      handler.banRequest        true  "Ban reason (required)"
+// @Success      200   {object}  handler.AdminUserResponse
+// @Failure      400   {object}  handler.ErrorResponse  "reason is required"
+// @Failure      401   {object}  handler.ErrorResponse
+// @Failure      403   {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      404   {object}  handler.ErrorResponse  "User not found"
+// @Failure      422   {object}  handler.ErrorResponse  "Invalid user ID"
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/users/{id}/ban [post]
 func (h *AdminUserHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
@@ -124,6 +181,23 @@ func (h *AdminUserHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // UnbanUser handles DELETE /admin/users/{id}/ban.
+//
+// @Summary      Unban a user
+// @Description  Lifts a suspension from a user account, restoring full access.
+//
+//	Requires admin role.
+//
+// @Tags         admin-users
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  handler.AdminUserResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      404  {object}  handler.ErrorResponse  "User not found"
+// @Failure      422  {object}  handler.ErrorResponse  "Invalid user ID"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/users/{id}/ban [delete]
 func (h *AdminUserHandler) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
@@ -151,6 +225,23 @@ type bulkBanRequest struct {
 }
 
 // BulkBan handles POST /admin/users/bulk-ban.
+//
+// @Summary      Bulk-ban users
+// @Description  Bans multiple user accounts in a single request. Each ban is
+//
+//	processed sequentially; a failure on one user is logged and
+//	skipped so the remaining users are still banned. Requires admin role.
+//
+// @Tags         admin-users
+// @Accept       json
+// @Security     BearerAuth
+// @Param        body  body  handler.bulkBanRequest  true  "List of user IDs and ban reason"
+// @Success      204
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422  {object}  handler.ErrorResponse  "user_ids or reason missing"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/users/bulk-ban [post]
 func (h *AdminUserHandler) BulkBan(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {

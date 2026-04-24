@@ -7,6 +7,29 @@ definitions:
       message:
         type: string
     type: object
+  github_com_rede_world-cup-quiniela_internal_service.DLQEntry:
+    properties:
+      dead_lettered_at:
+        type: string
+      handler_err:
+        type: string
+      payload:
+        additionalProperties: {}
+        type: object
+    type: object
+  github_com_rede_world-cup-quiniela_internal_service.DLQStat:
+    properties:
+      count:
+        type: integer
+      event_type:
+        type: string
+      oldest_at:
+        type: string
+      sample:
+        items:
+          $ref: '#/definitions/github_com_rede_world-cup-quiniela_internal_service.DLQEntry'
+        type: array
+    type: object
   github_com_rede_world-cup-quiniela_pkg_health.Response:
     properties:
       checks:
@@ -25,6 +48,60 @@ definitions:
       status:
         type: string
     type: object
+  internal_api_handler.AdminUserProfileResponse:
+    properties:
+      memberships:
+        items:
+          $ref: '#/definitions/internal_api_handler.MemberResponse'
+        type: array
+      payments:
+        items:
+          $ref: '#/definitions/internal_api_handler.PaymentResponse'
+        type: array
+      user:
+        $ref: '#/definitions/internal_api_handler.AdminUserResponse'
+    type: object
+  internal_api_handler.AdminUserResponse:
+    properties:
+      ban_reason:
+        type: string
+      banned_at:
+        type: string
+      banned_by:
+        type: integer
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      role:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api_handler.AuditLogResponse:
+    properties:
+      action:
+        type: string
+      actor_id:
+        type: integer
+      actor_role:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      metadata:
+        additionalProperties: {}
+        type: object
+      resource_id:
+        type: integer
+      resource_type:
+        type: string
+    type: object
   internal_api_handler.CityResponse:
     properties:
       id:
@@ -33,6 +110,20 @@ definitions:
         type: string
       state:
         $ref: '#/definitions/internal_api_handler.StateResponse'
+    type: object
+  internal_api_handler.ConflictResponse:
+    properties:
+      details:
+        additionalProperties: {}
+        type: object
+      detected_at:
+        type: string
+      entity_id:
+        type: integer
+      entity_type:
+        type: string
+      type:
+        type: string
     type: object
   internal_api_handler.CountryResponse:
     properties:
@@ -47,6 +138,17 @@ definitions:
     properties:
       error:
         $ref: '#/definitions/github_com_rede_world-cup-quiniela_internal_middleware.ErrorDetail'
+    type: object
+  internal_api_handler.GlobalLeaderboardEntryResponse:
+    properties:
+      rank:
+        type: integer
+      total_points:
+        type: integer
+      user_id:
+        type: integer
+      user_name:
+        type: string
     type: object
   internal_api_handler.GroupResponse:
     properties:
@@ -67,7 +169,7 @@ definitions:
         type: integer
       name:
         type: string
-      owner_id:
+      owner_user_id:
         type: integer
       prize_threshold:
         type: integer
@@ -155,6 +257,85 @@ definitions:
       user_id:
         type: integer
     type: object
+  internal_api_handler.PageMeta:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+    type: object
+  internal_api_handler.Paged-internal_api_handler_AdminUserResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api_handler.AdminUserResponse'
+        type: array
+      page:
+        $ref: '#/definitions/internal_api_handler.PageMeta'
+    type: object
+  internal_api_handler.Paged-internal_api_handler_AuditLogResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api_handler.AuditLogResponse'
+        type: array
+      page:
+        $ref: '#/definitions/internal_api_handler.PageMeta'
+    type: object
+  internal_api_handler.Paged-internal_api_handler_PaymentResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api_handler.PaymentResponse'
+        type: array
+      page:
+        $ref: '#/definitions/internal_api_handler.PageMeta'
+    type: object
+  internal_api_handler.Paged-internal_api_handler_PredictionResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api_handler.PredictionResponse'
+        type: array
+      page:
+        $ref: '#/definitions/internal_api_handler.PageMeta'
+    type: object
+  internal_api_handler.Paged-internal_api_handler_TiebreakerSubmissionResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api_handler.TiebreakerSubmissionResponse'
+        type: array
+      page:
+        $ref: '#/definitions/internal_api_handler.PageMeta'
+    type: object
+  internal_api_handler.PaymentResponse:
+    properties:
+      amount:
+        type: integer
+      confirmed_at:
+        type: string
+      created_at:
+        type: string
+      currency:
+        type: string
+      id:
+        type: integer
+      notes:
+        type: string
+      quiniela_id:
+        type: integer
+      reference:
+        type: string
+      reviewed_by:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
   internal_api_handler.PredictionResponse:
     properties:
       away_score:
@@ -173,6 +354,32 @@ definitions:
         type: string
       user_id:
         type: integer
+    type: object
+  internal_api_handler.SnapshotEntryResponse:
+    properties:
+      prize_winner:
+        type: boolean
+      rank:
+        type: integer
+      total_points:
+        type: integer
+      user_id:
+        type: integer
+    type: object
+  internal_api_handler.SnapshotResponse:
+    properties:
+      created_at:
+        type: string
+      entries:
+        items:
+          $ref: '#/definitions/internal_api_handler.SnapshotEntryResponse'
+        type: array
+      id:
+        type: integer
+      quiniela_id:
+        type: integer
+      taken_at:
+        type: string
     type: object
   internal_api_handler.StadiumResponse:
     properties:
@@ -194,6 +401,36 @@ definitions:
       id:
         type: integer
       name:
+        type: string
+    type: object
+  internal_api_handler.SystemParamResponse:
+    properties:
+      category:
+        type: string
+      is_runtime:
+        type: boolean
+      key:
+        type: string
+      type:
+        type: string
+      updated_at:
+        type: string
+      value:
+        type: string
+    type: object
+  internal_api_handler.TiebreakerSubmissionResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      prediction:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+      user_name:
         type: string
     type: object
   internal_api_handler.UserStatsResponse:
@@ -222,6 +459,27 @@ definitions:
         type: integer
       total_predictions:
         type: integer
+    type: object
+  internal_api_handler.banRequest:
+    properties:
+      reason:
+        type: string
+    type: object
+  internal_api_handler.bulkBanRequest:
+    properties:
+      reason:
+        type: string
+      user_ids:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_api_handler.bulkSetParamRequest:
+    properties:
+      params:
+        additionalProperties:
+          type: string
+        type: object
     type: object
   internal_api_handler.createGroupRequest:
     properties:
@@ -260,6 +518,26 @@ definitions:
       name:
         type: string
     type: object
+  internal_api_handler.replayRequest:
+    properties:
+      limit:
+        type: integer
+    type: object
+  internal_api_handler.resolveConflictRequest:
+    properties:
+      note:
+        type: string
+    type: object
+  internal_api_handler.reviewPaymentRequest:
+    properties:
+      notes:
+        type: string
+    type: object
+  internal_api_handler.setParamRequest:
+    properties:
+      value:
+        type: string
+    type: object
   internal_api_handler.submitPredictionRequest:
     properties:
       away_score:
@@ -267,6 +545,18 @@ definitions:
       home_score:
         type: integer
       match_id:
+        type: integer
+    type: object
+  internal_api_handler.transferOwnershipRequest:
+    properties:
+      new_owner_user_id:
+        type: integer
+    type: object
+  internal_api_handler.updateGroupSettingsRequest:
+    properties:
+      entry_fee:
+        type: integer
+      max_members:
         type: integer
     type: object
   internal_api_handler.updatePredictionRequest:
@@ -291,6 +581,1247 @@ info:
   title: World Cup Quiniela API
   version: "1.0"
 paths:
+  /api/v1/admin/audit-log:
+    get:
+      description: Returns a paginated list of audit log entries. Supports filtering
+      parameters:
+      - description: Filter by actor (admin) user ID
+        in: query
+        name: actor_id
+        type: integer
+      - description: Filter by action string (e.g. admin_user.banned)
+        in: query
+        name: action
+        type: string
+      - description: Filter by resource type (e.g. membership, payment_record)
+        in: query
+        name: resource_type
+        type: string
+      - description: Filter by resource ID
+        in: query
+        name: resource_id
+        type: integer
+      - description: Max records per page (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_AuditLogResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List audit log entries
+      tags:
+      - admin-audit-log
+  /api/v1/admin/audit-log/entity/{type}/{id}:
+    get:
+      description: Returns paginated audit log entries scoped to a single resource
+      parameters:
+      - description: Resource type (e.g. membership, payment_record, user)
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Resource ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Max records per page (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_AuditLogResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid resource ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List audit log by entity
+      tags:
+      - admin-audit-log
+  /api/v1/admin/conflicts:
+    get:
+      description: Returns all currently detected operational inconsistencies that
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.ConflictResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List operational conflicts
+      tags:
+      - admin-conflicts
+  /api/v1/admin/conflicts/{type}/{id}/resolve:
+    post:
+      consumes:
+      - application/json
+      description: Records an admin acknowledgement of the given conflict. This does
+      parameters:
+      - description: Conflict type (e.g. group_no_owner, orphaned_payment)
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Entity ID affected by the conflict
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Optional resolution note
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api_handler.resolveConflictRequest'
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Conflict type or entity not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid entity ID or conflict type
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Resolve a conflict
+      tags:
+      - admin-conflicts
+  /api/v1/admin/dlq:
+    delete:
+      description: Permanently deletes all entries from all DLQ keys. Use with
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              removed:
+                type: integer
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Purge dead-letter queue
+      tags:
+      - admin-dlq
+    get:
+      description: Returns the count, oldest entry age, and a sample of messages for
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_rede_world-cup-quiniela_internal_service.DLQStat'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Dead-letter queue stats
+      tags:
+      - admin-dlq
+  /api/v1/admin/dlq/replay:
+    post:
+      consumes:
+      - application/json
+      description: Re-enqueues up to limit entries from all DLQ keys back onto their
+      parameters:
+      - description: Optional replay limit (default 10)
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api_handler.replayRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              replayed:
+                type: integer
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replay dead-letter queue
+      tags:
+      - admin-dlq
+  /api/v1/admin/groups/{id}:
+    delete:
+      description: Soft-deletes the quiniela group. All memberships and predictions
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Group not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid group ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a group
+      tags:
+      - admin-groups
+  /api/v1/admin/groups/{id}/leaderboard/history:
+    get:
+      description: Returns the most recent point-in-time leaderboard snapshots for
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Max snapshots to return (default 20, max 100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.SnapshotResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid group ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Group leaderboard snapshot history
+      tags:
+      - admin-groups
+  /api/v1/admin/groups/{id}/members/{membershipID}:
+    delete:
+      description: Sets the given membership to the 'left' status, effectively
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Membership ID to remove
+        in: path
+        name: membershipID
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Membership not found or already inactive
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid membership ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove a member
+      tags:
+      - admin-groups
+  /api/v1/admin/groups/{id}/payments:
+    get:
+      description: Returns all payment records for the given group, regardless of
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.PaymentResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid group ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List payments for a group
+      tags:
+      - admin-groups
+  /api/v1/admin/groups/{id}/settings:
+    patch:
+      consumes:
+      - application/json
+      description: Changes the max_members cap and entry_fee of a group atomically.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Settings to update (entry_fee required)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.updateGroupSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.GroupResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Group not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: entry_fee is required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update group settings
+      tags:
+      - admin-groups
+  /api/v1/admin/groups/{id}/transfer-ownership:
+    post:
+      consumes:
+      - application/json
+      description: Assigns MembershipRoleCreateOwner to new_owner_user_id and demotes
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: New owner user ID
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.transferOwnershipRequest'
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Group or new owner not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: new_owner_user_id is required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Transfer group ownership
+      tags:
+      - admin-groups
+  /api/v1/admin/leaderboard:
+    get:
+      description: Returns the top N users ranked by total scored points across all
+      parameters:
+      - description: Max entries to return (default 100, max 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.GlobalLeaderboardEntryResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Global leaderboard
+      tags:
+      - admin-leaderboard
+  /api/v1/admin/payments:
+    get:
+      description: Returns a paginated list of all payment records. Supports optional
+      parameters:
+      - description: Filter by status (pending, confirmed, rejected, refunded)
+        in: query
+        name: status
+        type: string
+      - description: Filter by group ID
+        in: query
+        name: quiniela_id
+        type: integer
+      - description: Filter by user ID
+        in: query
+        name: user_id
+        type: integer
+      - description: Max records per page (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_PaymentResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all payments
+      tags:
+      - admin-payments
+  /api/v1/admin/payments/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      description: Marks a pending payment deposit as rejected. The rejection reason
+      parameters:
+      - description: Payment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Rejection notes (required)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.reviewPaymentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.PaymentResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Payment not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: notes are required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reject a payment
+      tags:
+      - admin-payments
+  /api/v1/admin/payments/{id}/validate:
+    post:
+      consumes:
+      - application/json
+      description: Confirms a pending payment deposit. Marks the payment as confirmed
+      parameters:
+      - description: Payment ID
+        in: path
+        name: id
+        type: integer
+      - description: Optional review notes
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api_handler.reviewPaymentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.PaymentResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Payment not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid payment ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Validate a payment
+      tags:
+      - admin-payments
+  /api/v1/admin/payments/pending:
+    get:
+      description: Returns all payment records with status=pending that are awaiting
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.PaymentResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List pending payments
+      tags:
+      - admin-payments
+  /api/v1/admin/predictions:
+    get:
+      description: Returns a paginated list of predictions across all users and groups.
+      parameters:
+      - description: Filter by user ID
+        in: query
+        name: user_id
+        type: integer
+      - description: Filter by match ID
+        in: query
+        name: match_id
+        type: integer
+      - description: Filter by group ID
+        in: query
+        name: quiniela_id
+        type: integer
+      - description: Max records per page (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_PredictionResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all predictions
+      tags:
+      - admin-leaderboard
+  /api/v1/admin/predictions/match/{matchID}:
+    get:
+      description: Returns all predictions for a specific match across all users and
+      parameters:
+      - description: Match ID
+        in: path
+        name: matchID
+        required: true
+        type: integer
+      - description: Max records per page (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.PredictionResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid match ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List predictions by match
+      tags:
+      - admin-leaderboard
+  /api/v1/admin/system-params:
+    get:
+      description: Returns all runtime-configurable system parameters. Parameters
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.SystemParamResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List system parameters
+      tags:
+      - admin-system-params
+  /api/v1/admin/system-params/{key}:
+    get:
+      description: Returns a single runtime-configurable system parameter by its key.
+      parameters:
+      - description: Parameter key (e.g. scoring.exact_score)
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.SystemParamResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Parameter not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Key is required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a system parameter
+      tags:
+      - admin-system-params
+    patch:
+      consumes:
+      - application/json
+      description: Sets a new value for the given runtime-configurable parameter.
+      parameters:
+      - description: Parameter key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: New value
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.setParamRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.SystemParamResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Parameter not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Value fails type validation
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a system parameter
+      tags:
+      - admin-system-params
+  /api/v1/admin/system-params/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Updates multiple system parameters in a single atomic operation.
+      parameters:
+      - description: Map of key → value pairs
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.bulkSetParamRequest'
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: params map is empty
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk-update system parameters
+      tags:
+      - admin-system-params
+  /api/v1/admin/tiebreaker/submissions:
+    get:
+      description: Returns all tiebreaker numeric predictions from every user, with
+      parameters:
+      - description: Max records per page (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_TiebreakerSubmissionResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List tiebreaker submissions
+      tags:
+      - admin-tiebreaker
+  /api/v1/admin/users:
+    get:
+      description: Returns a paginated list of all user accounts. Supports optional
+      parameters:
+      - description: Filter by ban status (true = banned only, false = active only)
+        in: query
+        name: banned
+        type: boolean
+      - description: Filter by role (admin, player)
+        in: query
+        name: role
+        type: string
+      - description: Search by name or email (partial match)
+        in: query
+        name: search
+        type: string
+      - description: Max records per page (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_AdminUserResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List users
+      tags:
+      - admin-users
+  /api/v1/admin/users/{id}:
+    get:
+      description: 'Returns the full admin view of a user account: base profile, group'
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.AdminUserProfileResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid user ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user profile
+      tags:
+      - admin-users
+  /api/v1/admin/users/{id}/ban:
+    delete:
+      description: Lifts a suspension from a user account, restoring full access.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.AdminUserResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid user ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Unban a user
+      tags:
+      - admin-users
+    post:
+      consumes:
+      - application/json
+      description: Suspends a user account. Banned users are blocked from all write
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Ban reason (required)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.banRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.AdminUserResponse'
+        "400":
+          description: reason is required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid user ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Ban a user
+      tags:
+      - admin-users
+  /api/v1/admin/users/bulk-ban:
+    post:
+      consumes:
+      - application/json
+      description: Bans multiple user accounts in a single request. Each ban is
+      parameters:
+      - description: List of user IDs and ban reason
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.bulkBanRequest'
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: user_ids or reason missing
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk-ban users
+      tags:
+      - admin-users
   /api/v1/groups:
     post:
       consumes:

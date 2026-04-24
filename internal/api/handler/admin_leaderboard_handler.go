@@ -25,6 +25,21 @@ func NewAdminLeaderboardHandler(svc service.AdminReadService, log *zap.Logger) *
 }
 
 // GlobalLeaderboard handles GET /admin/leaderboard — top N users by total points across all groups.
+//
+// @Summary      Global leaderboard
+// @Description  Returns the top N users ranked by total scored points across all
+//
+//	quiniela groups. Default limit is 100; maximum is 500. Requires admin role.
+//
+// @Tags         admin-leaderboard
+// @Produce      json
+// @Security     BearerAuth
+// @Param        limit  query     int  false  "Max entries to return (default 100, max 500)"
+// @Success      200    {array}   handler.GlobalLeaderboardEntryResponse
+// @Failure      401    {object}  handler.ErrorResponse
+// @Failure      403    {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      500    {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/leaderboard [get]
 func (h *AdminLeaderboardHandler) GlobalLeaderboard(w http.ResponseWriter, r *http.Request) {
 	limit := 100
 	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= 500 {
@@ -50,6 +65,25 @@ func (h *AdminLeaderboardHandler) GlobalLeaderboard(w http.ResponseWriter, r *ht
 }
 
 // SnapshotHistory handles GET /admin/groups/{id}/leaderboard/history.
+//
+// @Summary      Group leaderboard snapshot history
+// @Description  Returns the most recent point-in-time leaderboard snapshots for
+//
+//	the given group. Snapshots are taken automatically by the scoring
+//	worker after each match is scored. Default limit is 20; maximum is
+//	100. Requires admin role.
+//
+// @Tags         admin-groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id     path      int  true   "Group ID"
+// @Param        limit  query     int  false  "Max snapshots to return (default 20, max 100)"
+// @Success      200    {array}   handler.SnapshotResponse
+// @Failure      401    {object}  handler.ErrorResponse
+// @Failure      403    {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422    {object}  handler.ErrorResponse  "Invalid group ID"
+// @Failure      500    {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/groups/{id}/leaderboard/history [get]
 func (h *AdminLeaderboardHandler) SnapshotHistory(w http.ResponseWriter, r *http.Request) {
 	groupID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || groupID <= 0 {
@@ -76,6 +110,25 @@ func (h *AdminLeaderboardHandler) SnapshotHistory(w http.ResponseWriter, r *http
 }
 
 // ListPredictions handles GET /admin/predictions — all predictions with optional filters.
+//
+// @Summary      List all predictions
+// @Description  Returns a paginated list of predictions across all users and groups.
+//
+//	Supports filtering by user, match, and group. Requires admin role.
+//
+// @Tags         admin-leaderboard
+// @Produce      json
+// @Security     BearerAuth
+// @Param        user_id     query     int  false  "Filter by user ID"
+// @Param        match_id    query     int  false  "Filter by match ID"
+// @Param        quiniela_id query     int  false  "Filter by group ID"
+// @Param        limit       query     int  false  "Max records per page (default 50, max 200)"
+// @Param        page        query     int  false  "Page number (default 1)"
+// @Success      200         {object}  handler.Paged[handler.PredictionResponse]
+// @Failure      401         {object}  handler.ErrorResponse
+// @Failure      403         {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      500         {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/predictions [get]
 func (h *AdminLeaderboardHandler) ListPredictions(w http.ResponseWriter, r *http.Request) {
 	p := parsePagination(r)
 
@@ -102,6 +155,25 @@ func (h *AdminLeaderboardHandler) ListPredictions(w http.ResponseWriter, r *http
 }
 
 // ListPredictionsByMatch handles GET /admin/predictions/match/{matchID}.
+//
+// @Summary      List predictions by match
+// @Description  Returns all predictions for a specific match across all users and
+//
+//	groups, paginated. Useful for reviewing scoring after a match
+//	result is set. Requires admin role.
+//
+// @Tags         admin-leaderboard
+// @Produce      json
+// @Security     BearerAuth
+// @Param        matchID  path      int  true   "Match ID"
+// @Param        limit    query     int  false  "Max records per page (default 50, max 200)"
+// @Param        page     query     int  false  "Page number (default 1)"
+// @Success      200      {array}   handler.PredictionResponse
+// @Failure      401      {object}  handler.ErrorResponse
+// @Failure      403      {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422      {object}  handler.ErrorResponse  "Invalid match ID"
+// @Failure      500      {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/predictions/match/{matchID} [get]
 func (h *AdminLeaderboardHandler) ListPredictionsByMatch(w http.ResponseWriter, r *http.Request) {
 	matchID, err := strconv.Atoi(chi.URLParam(r, "matchID"))
 	if err != nil || matchID <= 0 {

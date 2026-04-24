@@ -21,6 +21,23 @@ func NewAdminTiebreakerHandler(svc service.AdminReadService, log *zap.Logger) *A
 }
 
 // ListSubmissions handles GET /admin/tiebreaker/submissions — all tiebreaker predictions.
+//
+// @Summary      List tiebreaker submissions
+// @Description  Returns all tiebreaker numeric predictions from every user, with
+//
+//	the submitter's display name resolved. Used to review submissions
+//	before confirming the official result. Requires admin role.
+//
+// @Tags         admin-tiebreaker
+// @Produce      json
+// @Security     BearerAuth
+// @Param        limit  query     int  false  "Max records per page (default 50, max 200)"
+// @Param        page   query     int  false  "Page number (default 1)"
+// @Success      200    {object}  handler.Paged[handler.TiebreakerSubmissionResponse]
+// @Failure      401    {object}  handler.ErrorResponse
+// @Failure      403    {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      500    {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/tiebreaker/submissions [get]
 func (h *AdminTiebreakerHandler) ListSubmissions(w http.ResponseWriter, r *http.Request) {
 	p := parsePagination(r)
 

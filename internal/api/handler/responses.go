@@ -9,7 +9,7 @@ import (
 type GroupResponse struct {
 	ID                  int     `json:"id"`
 	Name                string  `json:"name"`
-	OwnerID             int     `json:"owner_id"`
+	OwnerID             int     `json:"owner_user_id"`
 	InviteCode          string  `json:"invite_code"`
 	InviteCodeExpiresAt *string `json:"invite_code_expires_at"` // always nil; invite links never expire
 	// Status is system-managed: "active" when the group has ≥ 3 active members,

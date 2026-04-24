@@ -81,6 +81,10 @@ func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, l
 			WriteError(w, r, log, apperrors.Unauthorised("user account not found; please try again shortly"))
 			return
 		}
+		if user.BannedAt != nil {
+			WriteError(w, r, log, apperrors.Forbidden("your account has been suspended"))
+			return
+		}
 		for _, role := range roles {
 			if user.Role == role {
 				next.ServeHTTP(w, r)
