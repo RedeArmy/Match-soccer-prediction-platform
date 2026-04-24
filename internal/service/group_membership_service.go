@@ -135,7 +135,9 @@ func (s *groupMembershipService) requestRejoin(ctx context.Context, m *domain.Gr
 	default: // MembershipLeft
 		m.Status = domain.MembershipPending
 		m.Paid = autoPaid
-		m.JoinedAt = nil // reset; will be set when approved
+		m.JoinedAt = nil  // reset; will be set when approved
+		m.RemovedAt = nil // clear audit fields from the previous exit
+		m.RemovedBy = nil
 		if err := s.memberRepo.Update(ctx, m); err != nil {
 			return nil, err
 		}
@@ -209,8 +211,11 @@ func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUs
 		}
 	}
 
+	now := time.Now().UTC()
 	m.Status = domain.MembershipLeft
 	m.JoinedAt = nil
+	m.RemovedAt = &now
+	m.RemovedBy = nil // nil distinguishes self-exit from admin-forced removal
 	if err := s.memberRepo.Update(ctx, m); err != nil {
 		return err
 	}

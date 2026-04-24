@@ -53,8 +53,8 @@ type UserRole string
 
 // Allowed values for UserRole.
 const (
-	RoleAdmin  UserRole = "admin"
-	RolePlayer UserRole = "player"
+	RoleAdmin UserRole = "admin"
+	RoleUser  UserRole = "user"
 )
 
 // Country represents one of the three FIFA World Cup 2026 host nations.
@@ -341,7 +341,7 @@ const (
 
 // MembershipRole distinguishes the group creator from regular members within a
 // single Quiniela. It is a group-scoped role that is orthogonal to the system-
-// wide UserRole: a CreateOwner is always a RolePlayer at the system level and
+// wide UserRole: a CreateOwner is always a RoleUser at the system level and
 // never inherits any system-admin permissions.
 //
 // The owner role is assigned once at group creation and transferred automatically
@@ -370,6 +370,10 @@ const (
 // system confirms a successful transaction. Members with Paid = false may
 // submit predictions, but their scores are excluded from all rankings until
 // payment is confirmed.
+//
+// RemovedAt and RemovedBy record the audit trail for soft-deleted memberships
+// (status = 'left'). RemovedBy is nil when the member left voluntarily; it
+// holds the admin's user ID when an administrator forced the removal.
 type GroupMembership struct {
 	ID         int
 	QuinielaID int
@@ -380,6 +384,8 @@ type GroupMembership struct {
 	JoinedAt   *time.Time
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	RemovedAt  *time.Time // nil unless status = 'left'
+	RemovedBy  *int       // nil = voluntary exit; non-nil = admin-forced removal
 }
 
 // UserPredictionStats holds aggregated prediction metrics for a single member

@@ -1612,7 +1612,7 @@ paths:
         in: query
         name: banned
         type: boolean
-      - description: Filter by role (admin, player)
+      - description: Filter by role (admin, user)
         in: query
         name: role
         type: string
