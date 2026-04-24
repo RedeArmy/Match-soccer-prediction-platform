@@ -1640,7 +1640,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by role (admin, player)",
+                        "description": "Filter by role (admin, user)",
                         "name": "role",
                         "in": "query"
                     },

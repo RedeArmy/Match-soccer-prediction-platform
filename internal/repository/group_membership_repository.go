@@ -36,14 +36,14 @@ func isMaxMembersViolation(err error) bool {
 }
 
 const (
-	membershipColumns     = "id, quiniela_id, user_id, status, role, paid, joined_at, created_at, updated_at"
+	membershipColumns     = "id, quiniela_id, user_id, status, role, paid, joined_at, created_at, updated_at, removed_at, removed_by"
 	errMembershipNotFound = "membership not found"
 )
 
 func scanMembership(row pgx.Row) (*domain.GroupMembership, error) {
 	m := &domain.GroupMembership{}
 	var joinedAt *time.Time
-	err := row.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt)
+	err := row.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt, &m.RemovedAt, &m.RemovedBy)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -108,9 +108,10 @@ func (r *PostgresGroupMembershipRepository) CountActive(ctx context.Context, qui
 
 func (r *PostgresGroupMembershipRepository) Update(ctx context.Context, m *domain.GroupMembership) error {
 	row := r.db.QueryRow(ctx,
-		`UPDATE group_memberships SET status=$1, paid=$2, joined_at=$3, updated_at=NOW()
-		 WHERE id=$4 RETURNING `+membershipColumns,
-		m.Status, m.Paid, m.JoinedAt, m.ID,
+		`UPDATE group_memberships
+		    SET status=$1, paid=$2, joined_at=$3, removed_at=$4, removed_by=$5, updated_at=NOW()
+		  WHERE id=$6 RETURNING `+membershipColumns,
+		m.Status, m.Paid, m.JoinedAt, m.RemovedAt, m.RemovedBy, m.ID,
 	)
 	result, err := scanMembership(row)
 	if err != nil {
@@ -147,7 +148,7 @@ func (r *PostgresGroupMembershipRepository) ListByQuiniela(ctx context.Context, 
 	// that the group roster shown to administrators never contains ghost entries.
 	rows, err := r.db.Query(ctx,
 		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.role, gm.paid,
-		        gm.joined_at, gm.created_at, gm.updated_at
+		        gm.joined_at, gm.created_at, gm.updated_at, gm.removed_at, gm.removed_by
 		 FROM group_memberships gm
 		 JOIN users u ON u.id = gm.user_id AND u.deleted_at IS NULL
 		 WHERE gm.quiniela_id = $1
@@ -166,7 +167,7 @@ func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, user
 	// GET /api/v1/groups/me never surfaces a group the owner has deleted.
 	rows, err := r.db.Query(ctx,
 		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.role, gm.paid,
-		        gm.joined_at, gm.created_at, gm.updated_at
+		        gm.joined_at, gm.created_at, gm.updated_at, gm.removed_at, gm.removed_by
 		 FROM group_memberships gm
 		 JOIN quinielas q ON q.id = gm.quiniela_id AND q.deleted_at IS NULL
 		 WHERE gm.user_id = $1
@@ -185,7 +186,7 @@ func collectMemberships(rows pgx.Rows) ([]*domain.GroupMembership, error) {
 	for rows.Next() {
 		m := &domain.GroupMembership{}
 		var joinedAt *time.Time
-		if err := rows.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt, &m.RemovedAt, &m.RemovedBy); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		m.JoinedAt = joinedAt
@@ -232,16 +233,18 @@ func (r *PostgresGroupMembershipRepository) SetRole(ctx context.Context, members
 }
 
 // RemoveByAdmin soft-deletes a membership on behalf of an administrator by
-// setting its status to 'left'. The adminID identifies the actor for the
-// caller's audit trail — it is not stored on the membership row itself.
-// Returns NotFound when the membership does not exist or is already inactive.
-func (r *PostgresGroupMembershipRepository) RemoveByAdmin(ctx context.Context, membershipID, _ int) error {
+// setting status to 'left' and recording the actor and timestamp in the
+// audit columns. Returns NotFound when the membership does not exist or is
+// already inactive.
+func (r *PostgresGroupMembershipRepository) RemoveByAdmin(ctx context.Context, membershipID, adminID int) error {
 	tag, err := r.db.Exec(ctx,
 		`UPDATE group_memberships
 		    SET status     = 'left',
+		        removed_at = NOW(),
+		        removed_by = $2,
 		        updated_at = NOW()
 		  WHERE id = $1 AND status = 'active'`,
-		membershipID,
+		membershipID, adminID,
 	)
 	if err != nil {
 		return apperrors.Internal(err)
