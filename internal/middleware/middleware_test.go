@@ -451,7 +451,7 @@ func TestRequireRole_UserNotFound_Returns401(t *testing.T) {
 }
 
 func TestRequireRole_WrongRole_Returns403(t *testing.T) {
-	repo := &stubUserRepo{user: &domain.User{ID: 1, Role: domain.RolePlayer}}
+	repo := &stubUserRepo{user: &domain.User{ID: 1, Role: domain.RoleUser}}
 	h := requireRoleHandler(repo, domain.RoleAdmin)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, requireRoleRequest(subjectForRole))

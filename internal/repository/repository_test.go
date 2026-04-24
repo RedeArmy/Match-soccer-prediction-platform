@@ -135,7 +135,7 @@ func seedUser(t *testing.T) *domain.User {
 	t.Helper()
 	repo := repository.NewPostgresUserRepository(testDB)
 	code := nextCode()
-	u := &domain.User{Name: "User " + code, Email: code + "@example.com", Role: domain.RolePlayer}
+	u := &domain.User{Name: "User " + code, Email: code + "@example.com", Role: domain.RoleUser}
 	if err := repo.Create(context.Background(), u); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -206,7 +206,7 @@ func seedMembership(t *testing.T, quinielaID, userID int, status domain.Membersh
 func TestUserRepository_Create_HydratesID(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresUserRepository(testDB)
-	u := &domain.User{Name: "Bob", Email: "bob@example.com", Role: domain.RolePlayer}
+	u := &domain.User{Name: "Bob", Email: "bob@example.com", Role: domain.RoleUser}
 
 	if err := repo.Create(context.Background(), u); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -302,7 +302,7 @@ func TestUserRepository_Update_Found(t *testing.T) {
 func TestUserRepository_Update_NotFound_ReturnsError(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresUserRepository(testDB)
-	ghost := &domain.User{ID: 99999, Name: "Ghost", Email: "g@g.com", Role: domain.RolePlayer}
+	ghost := &domain.User{ID: 99999, Name: "Ghost", Email: "g@g.com", Role: domain.RoleUser}
 
 	if err := repo.Update(context.Background(), ghost); !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)
@@ -4095,10 +4095,10 @@ func TestUserRepository_ListFiltered_FilterByRole(t *testing.T) {
 func TestUserRepository_ListFiltered_FilterBySearch(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresUserRepository(testDB)
-	if err := repo.Create(context.Background(), &domain.User{Name: "alice", Email: "alice@example.com", Role: domain.RolePlayer}); err != nil {
+	if err := repo.Create(context.Background(), &domain.User{Name: "alice", Email: "alice@example.com", Role: domain.RoleUser}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
-	if err := repo.Create(context.Background(), &domain.User{Name: "bob", Email: "bob@example.com", Role: domain.RolePlayer}); err != nil {
+	if err := repo.Create(context.Background(), &domain.User{Name: "bob", Email: "bob@example.com", Role: domain.RoleUser}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 

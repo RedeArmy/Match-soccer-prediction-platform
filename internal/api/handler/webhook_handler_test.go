@@ -74,7 +74,7 @@ func TestWebhook_NoSecret_UserCreated_Returns204(t *testing.T) {
 
 func TestWebhook_NoSecret_UserUpdated_Returns204(t *testing.T) {
 	// GetByClerkSubject → existing user → Update path
-	existing := &domain.User{ID: 1, Name: "Alice", Role: domain.RolePlayer}
+	existing := &domain.User{ID: 1, Name: "Alice", Role: domain.RoleUser}
 	h := handler.NewWebhookHandler(&stubUserRepo{user: existing}, "", zap.NewNop())
 	if w := doWebhook(h, userUpdatedBody); w.Code != http.StatusNoContent {
 		t.Errorf(fmtExpect204, w.Code)
@@ -119,7 +119,7 @@ func TestWebhook_NoSecret_CreateError_Returns500(t *testing.T) {
 }
 
 func TestWebhook_NoSecret_UpdateError_Returns500(t *testing.T) {
-	existing := &domain.User{ID: 1, Name: "Alice", Role: domain.RolePlayer}
+	existing := &domain.User{ID: 1, Name: "Alice", Role: domain.RoleUser}
 	h := handler.NewWebhookHandler(&updateErrRepo{user: existing, updateErr: errors.New("update failed")}, "", zap.NewNop())
 	if w := doWebhook(h, userUpdatedBody); w.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, w.Code)

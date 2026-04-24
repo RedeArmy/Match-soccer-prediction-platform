@@ -43,8 +43,8 @@ func seedUsers(ctx context.Context, db *pgxpool.Pool) error {
 	_, err := db.Exec(ctx, `
 		INSERT INTO users (name, email, role) VALUES
 			('Admin User',  'admin@quiniela.local',  'admin'),
-			('Player One',  'player1@quiniela.local', 'player'),
-			('Player Two',  'player2@quiniela.local', 'player')
+			('Player One',  'player1@quiniela.local', 'user'),
+			('Player Two',  'player2@quiniela.local', 'user')
 		ON CONFLICT (email) DO NOTHING
 	`)
 	return err

@@ -39,7 +39,7 @@ func NewAdminUserHandler(svc service.AdminUserService, log *zap.Logger) *AdminUs
 // @Produce      json
 // @Security     BearerAuth
 // @Param        banned  query     bool    false  "Filter by ban status (true = banned only, false = active only)"
-// @Param        role    query     string  false  "Filter by role (admin, player)"
+// @Param        role    query     string  false  "Filter by role (admin, user)"
 // @Param        search  query     string  false  "Search by name or email (partial match)"
 // @Param        limit   query     int     false  "Max records per page (default 50, max 200)"
 // @Param        page    query     int     false  "Page number (default 1)"

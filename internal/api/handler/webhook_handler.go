@@ -186,7 +186,7 @@ func (h *WebhookHandler) upsertUser(r *http.Request, data json.RawMessage) error
 		Name:         name,
 		Email:        email,
 		ClerkSubject: payload.ID,
-		Role:         domain.RolePlayer,
+		Role:         domain.RoleUser,
 	}
 	if err := h.userRepo.Create(r.Context(), user); err != nil {
 		return err
