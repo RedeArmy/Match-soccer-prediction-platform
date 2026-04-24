@@ -255,7 +255,7 @@ func TestStartWorker_ImmediateShutdown_ReturnsNil(t *testing.T) {
 
 	// Pass nil Redis client: monitorDLQ exits immediately when rc is nil,
 	// keeping the test free of Redis dependencies.
-	if err := startWorker(ctx, cfg, bus, scorer, nil, nil, nil, nil, zap.NewNop()); err != nil {
+	if err := startWorker(ctx, workerDeps{cfg: cfg, bus: bus, scorer: scorer}, zap.NewNop()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -272,7 +272,7 @@ func TestStartWorker_SubscribesMatchStarted(t *testing.T) {
 	bus := messaging.NewInMemoryBus(log)
 	scorer := &stubScorer{}
 
-	if err := startWorker(ctx, cfg, bus, scorer, nil, nil, nil, nil, log); err != nil {
+	if err := startWorker(ctx, workerDeps{cfg: cfg, bus: bus, scorer: scorer}, log); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 
@@ -300,7 +300,7 @@ func TestStartWorker_SubscribesBeforeShutdown(t *testing.T) {
 	bus := messaging.NewInMemoryBus(log)
 	scorer := &stubScorer{}
 
-	if err := startWorker(ctx, cfg, bus, scorer, nil, nil, nil, nil, log); err != nil {
+	if err := startWorker(ctx, workerDeps{cfg: cfg, bus: bus, scorer: scorer}, log); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
