@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
@@ -466,6 +467,17 @@ func TestRequireRole_CorrectRole_CallsNext(t *testing.T) {
 	h.ServeHTTP(rec, requireRoleRequest(subjectForRole))
 	if rec.Code != http.StatusOK {
 		t.Errorf(fmtStatus, http.StatusOK, rec.Code)
+	}
+}
+
+func TestRequireRole_BannedUser_Returns403(t *testing.T) {
+	bannedAt := time.Now()
+	repo := &stubUserRepo{user: &domain.User{ID: 1, Role: domain.RoleAdmin, BannedAt: &bannedAt}}
+	h := requireRoleHandler(repo, domain.RoleAdmin)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, requireRoleRequest(subjectForRole))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf(fmtStatus, http.StatusForbidden, rec.Code)
 	}
 }
 

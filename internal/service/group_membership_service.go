@@ -16,6 +16,8 @@ type groupMembershipService struct {
 	quinielaRepo repository.QuinielaRepository
 	memberRepo   repository.GroupMembershipRepository
 	params       SystemParamService
+	audit        AuditLogger
+	paymentSvc   PaymentService
 	log          *zap.Logger
 }
 
@@ -24,12 +26,16 @@ func NewGroupMembershipService(
 	quinielaRepo repository.QuinielaRepository,
 	memberRepo repository.GroupMembershipRepository,
 	params SystemParamService,
+	audit AuditLogger,
+	paymentSvc PaymentService,
 	log *zap.Logger,
 ) GroupMembershipService {
 	return &groupMembershipService{
 		quinielaRepo: quinielaRepo,
 		memberRepo:   memberRepo,
 		params:       params,
+		audit:        audit,
+		paymentSvc:   paymentSvc,
 		log:          log,
 	}
 }
@@ -61,7 +67,14 @@ func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, us
 	autoPaid := quiniela.EntryFee == 0
 
 	if existing != nil {
-		return s.requestRejoin(ctx, existing, autoPaid)
+		m, err := s.requestRejoin(ctx, existing, autoPaid)
+		if err != nil {
+			return nil, err
+		}
+		if quiniela.EntryFee > 0 {
+			s.createPendingPayment(ctx, quiniela, userID)
+		}
+		return m, nil
 	}
 
 	m := &domain.GroupMembership{
@@ -74,7 +87,24 @@ func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, us
 	if err := s.memberRepo.Create(ctx, m); err != nil {
 		return nil, err
 	}
+	if quiniela.EntryFee > 0 {
+		s.createPendingPayment(ctx, quiniela, userID)
+	}
 	return m, nil
+}
+
+// createPendingPayment creates a payment_record with status=pending for the
+// joining user. Errors are logged and swallowed: the membership is already
+// persisted and a missing payment record is a recoverable admin concern, not
+// a reason to roll back the join request.
+func (s *groupMembershipService) createPendingPayment(ctx context.Context, quiniela *domain.Quiniela, userID int) {
+	if _, err := s.paymentSvc.CreateRecord(ctx, quiniela.ID, userID, quiniela.EntryFee, quiniela.Currency, ""); err != nil {
+		s.log.Warn("membership: failed to create pending payment record on join",
+			zap.Int("quiniela_id", quiniela.ID),
+			zap.Int("user_id", userID),
+			zap.Error(err),
+		)
+	}
 }
 
 // checkCapacity returns a Conflict error when the quiniela has a max_members
@@ -145,6 +175,12 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 	if err := s.memberRepo.Update(ctx, pending); err != nil {
 		return nil, err
 	}
+
+	resType := "membership"
+	s.audit.Log(ctx, &approverUserID, nil, domain.AuditActionJoinApproved, &resType, &pending.ID, map[string]any{
+		"quiniela_id":  quinielaID,
+		"approved_uid": pending.UserID,
+	})
 
 	s.syncGroupStatus(ctx, quinielaID)
 	return pending, nil

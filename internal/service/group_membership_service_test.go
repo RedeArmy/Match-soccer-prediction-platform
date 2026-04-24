@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -19,8 +21,54 @@ const (
 
 // ── GroupMembershipService tests ──────────────────────────────────────────────
 
+// errPaymentService always returns an error from CreateRecord.
+// Used to verify that createPendingPayment swallows errors and does not
+// propagate them to the caller.
+type errPaymentService struct {
+	noopPaymentService
+}
+
+func (errPaymentService) CreateRecord(_ context.Context, _, _, _ int, _, _ string) (*domain.PaymentRecord, error) {
+	return nil, fmt.Errorf("payment store unavailable")
+}
+
+// recordingPaymentService records calls to CreateRecord for assertion in tests.
+type recordingPaymentService struct {
+	noopPaymentService
+	created []*domain.PaymentRecord
+}
+
+func (s *recordingPaymentService) CreateRecord(_ context.Context, quinielaID, userID, amount int, currency, _ string) (*domain.PaymentRecord, error) {
+	r := &domain.PaymentRecord{QuinielaID: quinielaID, UserID: userID, Amount: amount, Currency: currency}
+	s.created = append(s.created, r)
+	return r, nil
+}
+
+// noopPaymentService is a no-op implementation of PaymentService for tests
+// that do not care about payment side-effects.
+type noopPaymentService struct{}
+
+func (noopPaymentService) CreateRecord(_ context.Context, _, _, _ int, _, _ string) (*domain.PaymentRecord, error) {
+	return &domain.PaymentRecord{}, nil
+}
+func (noopPaymentService) ValidateDeposit(_ context.Context, _, _ int, _ string) (*domain.PaymentRecord, error) {
+	return nil, nil
+}
+func (noopPaymentService) RejectDeposit(_ context.Context, _, _ int, _ string) (*domain.PaymentRecord, error) {
+	return nil, nil
+}
+func (noopPaymentService) ListPending(_ context.Context) ([]*domain.PaymentRecord, error) {
+	return nil, nil
+}
+func (noopPaymentService) ListByQuiniela(_ context.Context, _ int) ([]*domain.PaymentRecord, error) {
+	return nil, nil
+}
+func (noopPaymentService) List(_ context.Context, _ repository.PaymentFilters, _ repository.Pagination) ([]*domain.PaymentRecord, error) {
+	return nil, nil
+}
+
 func newMemberSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) GroupMembershipService {
-	return NewGroupMembershipService(qr, mr, &noopSystemParamService{}, zap.NewNop())
+	return NewGroupMembershipService(qr, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, zap.NewNop())
 }
 
 func quinielaWithCode(id int, code string) *domain.Quiniela {
@@ -171,6 +219,113 @@ func TestGroupMembershipService_Join_PaidGroup_NotAutoPaid(t *testing.T) {
 	}
 	if m.Paid {
 		t.Error("expected Paid = false for paid group until payment confirmed")
+	}
+}
+
+func TestGroupMembershipService_Join_PaidGroup_CreatesPendingPaymentRecord(t *testing.T) {
+	q := quinielaWithCode(1, "PAIDCODE")
+	q.EntryFee = 200
+	q.Currency = "GTQ"
+
+	recorder := &recordingPaymentService{}
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{membership: nil},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		recorder,
+		zap.NewNop(),
+	)
+
+	if _, err := svc.Join(context.Background(), "PAIDCODE", 42); err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if len(recorder.created) != 1 {
+		t.Fatalf("expected 1 payment record created, got %d", len(recorder.created))
+	}
+	rec := recorder.created[0]
+	if rec.Amount != 200 || rec.Currency != "GTQ" || rec.QuinielaID != 1 || rec.UserID != 42 {
+		t.Errorf("payment record mismatch: %+v", rec)
+	}
+}
+
+func TestGroupMembershipService_Join_PaidGroup_PaymentError_JoinStillSucceeds(t *testing.T) {
+	q := quinielaWithCode(1, "PAIDCODE")
+	q.EntryFee = 100
+
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{membership: nil},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		errPaymentService{},
+		zap.NewNop(),
+	)
+
+	m, err := svc.Join(context.Background(), "PAIDCODE", 7)
+	if err != nil {
+		t.Fatalf("expected join to succeed despite payment error, got: %v", err)
+	}
+	if m == nil {
+		t.Fatal("expected membership, got nil")
+	}
+}
+
+// failOnUpdateMemberRepo wraps stubMemberRepo but overrides Update so that
+// GetByQuinielaAndUser can succeed (returning the existing membership) while
+// Update returns an error. This lets tests exercise the requestRejoin error
+// path in Join without failing the prior lookup.
+type failOnUpdateMemberRepo struct {
+	stubMemberRepo
+	updateErr error
+}
+
+func (r *failOnUpdateMemberRepo) Update(_ context.Context, _ *domain.GroupMembership) error {
+	return r.updateErr
+}
+
+func TestGroupMembershipService_Join_PaidGroup_Rejoin_CreatesPendingPayment(t *testing.T) {
+	q := quinielaWithCode(1, "PAIDCODE")
+	q.EntryFee = 150
+	q.Currency = "GTQ"
+
+	existing := &domain.GroupMembership{ID: 5, QuinielaID: 1, UserID: 42, Status: domain.MembershipLeft}
+	recorder := &recordingPaymentService{}
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{membership: existing},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		recorder,
+		zap.NewNop(),
+	)
+
+	if _, err := svc.Join(context.Background(), "PAIDCODE", 42); err != nil {
+		t.Fatalf("expected rejoin to succeed, got: %v", err)
+	}
+	if len(recorder.created) != 1 {
+		t.Fatalf("expected 1 pending payment on rejoin, got %d", len(recorder.created))
+	}
+}
+
+func TestGroupMembershipService_Join_RejoinUpdateError_ReturnsError(t *testing.T) {
+	q := quinielaWithCode(1, "CODE")
+	existing := &domain.GroupMembership{ID: 5, QuinielaID: 1, UserID: 42, Status: domain.MembershipLeft}
+	mr := &failOnUpdateMemberRepo{
+		stubMemberRepo: stubMemberRepo{membership: existing},
+		updateErr:      errors.New("db write failed"),
+	}
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		mr,
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		zap.NewNop(),
+	)
+
+	if _, err := svc.Join(context.Background(), "CODE", 42); err == nil {
+		t.Fatal("expected error from rejoin Update failure, got nil")
 	}
 }
 
@@ -416,7 +571,7 @@ func TestGroupMembershipService_Leave_CreateOwner_TransfersOwnership(t *testing.
 		ownerMembership: ownerMembership,
 		successor:       successor,
 	}
-	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, zap.NewNop())
+	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, zap.NewNop())
 
 	if err := svc.Leave(context.Background(), 1, 10); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -433,7 +588,7 @@ func TestGroupMembershipService_Leave_CreateOwner_NoSuccessor_StillLeaves(t *tes
 		Role:   domain.MembershipRoleCreateOwner,
 	}
 	mr := &leaveOwnerMemberRepo{ownerMembership: ownerMembership, successor: nil}
-	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, zap.NewNop())
+	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, zap.NewNop())
 
 	if err := svc.Leave(context.Background(), 1, 10); err != nil {
 		t.Fatalf("expected Leave to succeed even without a successor, got %v", err)
@@ -450,7 +605,7 @@ func TestGroupMembershipService_Leave_CreateOwner_TransferError_StillLeaves(t *t
 		ownerMembership: ownerMembership,
 		transferErr:     errors.New(membershipDBError),
 	}
-	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, zap.NewNop())
+	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, zap.NewNop())
 
 	// Transfer failure must be logged-and-swallowed; Leave itself must succeed.
 	if err := svc.Leave(context.Background(), 1, 10); err != nil {

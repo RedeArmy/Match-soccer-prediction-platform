@@ -9,6 +9,1947 @@
     "host": "localhost:8080",
     "basePath": "/",
     "paths": {
+        "/api/v1/admin/audit-log": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of audit log entries. Supports filtering",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-audit-log"
+                ],
+                "summary": "List audit log entries",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Filter by actor (admin) user ID",
+                        "name": "actor_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by action string (e.g. admin_user.banned)",
+                        "name": "action",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource type (e.g. membership, payment_record)",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by resource ID",
+                        "name": "resource_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max records per page (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_AuditLogResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/audit-log/entity/{type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns paginated audit log entries scoped to a single resource",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-audit-log"
+                ],
+                "summary": "List audit log by entity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Resource type (e.g. membership, payment_record, user)",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Resource ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max records per page (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_AuditLogResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid resource ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/conflicts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all currently detected operational inconsistencies that",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-conflicts"
+                ],
+                "summary": "List operational conflicts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.ConflictResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/conflicts/{type}/{id}/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Records an admin acknowledgement of the given conflict. This does",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-conflicts"
+                ],
+                "summary": "Resolve a conflict",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Conflict type (e.g. group_no_owner, orphaned_payment)",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Entity ID affected by the conflict",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional resolution note",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.resolveConflictRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Conflict type or entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid entity ID or conflict type",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/dlq": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the count, oldest entry age, and a sample of messages for",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-dlq"
+                ],
+                "summary": "Dead-letter queue stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_rede_world-cup-quiniela_internal_service.DLQStat"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Permanently deletes all entries from all DLQ keys. Use with",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-dlq"
+                ],
+                "summary": "Purge dead-letter queue",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "removed": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/dlq/replay": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Re-enqueues up to limit entries from all DLQ keys back onto their",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-dlq"
+                ],
+                "summary": "Replay dead-letter queue",
+                "parameters": [
+                    {
+                        "description": "Optional replay limit (default 10)",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.replayRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "replayed": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/groups/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Soft-deletes the quiniela group. All memberships and predictions",
+                "tags": [
+                    "admin-groups"
+                ],
+                "summary": "Delete a group",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Group not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid group ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/groups/{id}/leaderboard/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the most recent point-in-time leaderboard snapshots for",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-groups"
+                ],
+                "summary": "Group leaderboard snapshot history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max snapshots to return (default 20, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.SnapshotResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid group ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/groups/{id}/members/{membershipID}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets the given membership to the 'left' status, effectively",
+                "tags": [
+                    "admin-groups"
+                ],
+                "summary": "Remove a member",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Membership ID to remove",
+                        "name": "membershipID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Membership not found or already inactive",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid membership ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/groups/{id}/payments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all payment records for the given group, regardless of",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-groups"
+                ],
+                "summary": "List payments for a group",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.PaymentResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid group ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/groups/{id}/settings": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Changes the max_members cap and entry_fee of a group atomically.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-groups"
+                ],
+                "summary": "Update group settings",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Settings to update (entry_fee required)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.updateGroupSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.GroupResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Group not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "entry_fee is required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/groups/{id}/transfer-ownership": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Assigns MembershipRoleCreateOwner to new_owner_user_id and demotes",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-groups"
+                ],
+                "summary": "Transfer group ownership",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New owner user ID",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.transferOwnershipRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Group or new owner not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "new_owner_user_id is required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/leaderboard": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the top N users ranked by total scored points across all",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-leaderboard"
+                ],
+                "summary": "Global leaderboard",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Max entries to return (default 100, max 500)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.GlobalLeaderboardEntryResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/payments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of all payment records. Supports optional",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-payments"
+                ],
+                "summary": "List all payments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status (pending, confirmed, rejected, refunded)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by group ID",
+                        "name": "quiniela_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by user ID",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max records per page (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_PaymentResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/payments/pending": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all payment records with status=pending that are awaiting",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-payments"
+                ],
+                "summary": "List pending payments",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.PaymentResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/payments/{id}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks a pending payment deposit as rejected. The rejection reason",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-payments"
+                ],
+                "summary": "Reject a payment",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Payment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Rejection notes (required)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.reviewPaymentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.PaymentResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Payment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "notes are required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/payments/{id}/validate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Confirms a pending payment deposit. Marks the payment as confirmed",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-payments"
+                ],
+                "summary": "Validate a payment",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Payment ID",
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "description": "Optional review notes",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.reviewPaymentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.PaymentResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Payment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid payment ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/predictions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of predictions across all users and groups.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-leaderboard"
+                ],
+                "summary": "List all predictions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Filter by user ID",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by match ID",
+                        "name": "match_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by group ID",
+                        "name": "quiniela_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max records per page (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_PredictionResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/predictions/match/{matchID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all predictions for a specific match across all users and",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-leaderboard"
+                ],
+                "summary": "List predictions by match",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Match ID",
+                        "name": "matchID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max records per page (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.PredictionResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid match ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/system-params": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all runtime-configurable system parameters. Parameters",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-system-params"
+                ],
+                "summary": "List system parameters",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.SystemParamResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/system-params/bulk": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates multiple system parameters in a single atomic operation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-system-params"
+                ],
+                "summary": "Bulk-update system parameters",
+                "parameters": [
+                    {
+                        "description": "Map of key → value pairs",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.bulkSetParamRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "params map is empty",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/system-params/{key}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a single runtime-configurable system parameter by its key.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-system-params"
+                ],
+                "summary": "Get a system parameter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Parameter key (e.g. scoring.exact_score)",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.SystemParamResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Parameter not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Key is required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets a new value for the given runtime-configurable parameter.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-system-params"
+                ],
+                "summary": "Update a system parameter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Parameter key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New value",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.setParamRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.SystemParamResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Parameter not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Value fails type validation",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/tiebreaker/submissions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all tiebreaker numeric predictions from every user, with",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-tiebreaker"
+                ],
+                "summary": "List tiebreaker submissions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Max records per page (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_TiebreakerSubmissionResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of all user accounts. Supports optional",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-users"
+                ],
+                "summary": "List users",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Filter by ban status (true = banned only, false = active only)",
+                        "name": "banned",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by role (admin, player)",
+                        "name": "role",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by name or email (partial match)",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max records per page (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_AdminUserResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users/bulk-ban": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Bans multiple user accounts in a single request. Each ban is",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-users"
+                ],
+                "summary": "Bulk-ban users",
+                "parameters": [
+                    {
+                        "description": "List of user IDs and ban reason",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.bulkBanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "user_ids or reason missing",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the full admin view of a user account: base profile, group",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-users"
+                ],
+                "summary": "Get user profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.AdminUserProfileResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid user ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users/{id}/ban": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Suspends a user account. Banned users are blocked from all write",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-users"
+                ],
+                "summary": "Ban a user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Ban reason (required)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.banRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.AdminUserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "reason is required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid user ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lifts a suspension from a user account, restoring full access.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-users"
+                ],
+                "summary": "Unban a user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.AdminUserResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid user ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/groups": {
             "post": {
                 "security": [
@@ -1111,6 +3052,41 @@
                 }
             }
         },
+        "github_com_rede_world-cup-quiniela_internal_service.DLQEntry": {
+            "type": "object",
+            "properties": {
+                "dead_lettered_at": {
+                    "type": "string"
+                },
+                "handler_err": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "github_com_rede_world-cup-quiniela_internal_service.DLQStat": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "oldest_at": {
+                    "type": "string"
+                },
+                "sample": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_rede_world-cup-quiniela_internal_service.DLQEntry"
+                    }
+                }
+            }
+        },
         "github_com_rede_world-cup-quiniela_pkg_health.Response": {
             "type": "object",
             "properties": {
@@ -1139,6 +3115,88 @@
                 }
             }
         },
+        "internal_api_handler.AdminUserProfileResponse": {
+            "type": "object",
+            "properties": {
+                "memberships": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.MemberResponse"
+                    }
+                },
+                "payments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.PaymentResponse"
+                    }
+                },
+                "user": {
+                    "$ref": "#/definitions/internal_api_handler.AdminUserResponse"
+                }
+            }
+        },
+        "internal_api_handler.AdminUserResponse": {
+            "type": "object",
+            "properties": {
+                "ban_reason": {
+                    "type": "string"
+                },
+                "banned_at": {
+                    "type": "string"
+                },
+                "banned_by": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.AuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actor_id": {
+                    "type": "integer"
+                },
+                "actor_role": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "resource_id": {
+                    "type": "integer"
+                },
+                "resource_type": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.CityResponse": {
             "type": "object",
             "properties": {
@@ -1150,6 +3208,27 @@
                 },
                 "state": {
                     "$ref": "#/definitions/internal_api_handler.StateResponse"
+                }
+            }
+        },
+        "internal_api_handler.ConflictResponse": {
+            "type": "object",
+            "properties": {
+                "details": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "detected_at": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "integer"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         },
@@ -1172,6 +3251,23 @@
             "properties": {
                 "error": {
                     "$ref": "#/definitions/github_com_rede_world-cup-quiniela_internal_middleware.ErrorDetail"
+                }
+            }
+        },
+        "internal_api_handler.GlobalLeaderboardEntryResponse": {
+            "type": "object",
+            "properties": {
+                "rank": {
+                    "type": "integer"
+                },
+                "total_points": {
+                    "type": "integer"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "user_name": {
+                    "type": "string"
                 }
             }
         },
@@ -1203,7 +3299,7 @@
                 "name": {
                     "type": "string"
                 },
-                "owner_id": {
+                "owner_user_id": {
                     "type": "integer"
                 },
                 "prize_threshold": {
@@ -1332,6 +3428,128 @@
                 }
             }
         },
+        "internal_api_handler.PageMeta": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.Paged-internal_api_handler_AdminUserResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.AdminUserResponse"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/internal_api_handler.PageMeta"
+                }
+            }
+        },
+        "internal_api_handler.Paged-internal_api_handler_AuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.AuditLogResponse"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/internal_api_handler.PageMeta"
+                }
+            }
+        },
+        "internal_api_handler.Paged-internal_api_handler_PaymentResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.PaymentResponse"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/internal_api_handler.PageMeta"
+                }
+            }
+        },
+        "internal_api_handler.Paged-internal_api_handler_PredictionResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.PredictionResponse"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/internal_api_handler.PageMeta"
+                }
+            }
+        },
+        "internal_api_handler.Paged-internal_api_handler_TiebreakerSubmissionResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.TiebreakerSubmissionResponse"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/internal_api_handler.PageMeta"
+                }
+            }
+        },
+        "internal_api_handler.PaymentResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "confirmed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "quiniela_id": {
+                    "type": "integer"
+                },
+                "reference": {
+                    "type": "string"
+                },
+                "reviewed_by": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.PredictionResponse": {
             "type": "object",
             "properties": {
@@ -1358,6 +3576,46 @@
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.SnapshotEntryResponse": {
+            "type": "object",
+            "properties": {
+                "prize_winner": {
+                    "type": "boolean"
+                },
+                "rank": {
+                    "type": "integer"
+                },
+                "total_points": {
+                    "type": "integer"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.SnapshotResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.SnapshotEntryResponse"
+                    }
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "quiniela_id": {
+                    "type": "integer"
+                },
+                "taken_at": {
+                    "type": "string"
                 }
             }
         },
@@ -1391,6 +3649,52 @@
                     "type": "integer"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.SystemParamResponse": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "is_runtime": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.TiebreakerSubmissionResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "prediction": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "user_name": {
                     "type": "string"
                 }
             }
@@ -1433,6 +3737,39 @@
                 },
                 "total_predictions": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.banRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.bulkBanRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "user_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "internal_api_handler.bulkSetParamRequest": {
+            "type": "object",
+            "properties": {
+                "params": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -1493,6 +3830,38 @@
                 }
             }
         },
+        "internal_api_handler.replayRequest": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.resolveConflictRequest": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.reviewPaymentRequest": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.setParamRequest": {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.submitPredictionRequest": {
             "type": "object",
             "properties": {
@@ -1503,6 +3872,25 @@
                     "type": "integer"
                 },
                 "match_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.transferOwnershipRequest": {
+            "type": "object",
+            "properties": {
+                "new_owner_user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.updateGroupSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "entry_fee": {
+                    "type": "integer"
+                },
+                "max_members": {
                     "type": "integer"
                 }
             }

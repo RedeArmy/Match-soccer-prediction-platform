@@ -94,6 +94,7 @@ const (
 	AuditActionPaymentCreated       = "payment.created"
 	AuditActionPaymentValidated     = "payment.validated"
 	AuditActionPaymentRejected      = "payment.rejected"
+	AuditActionJoinApproved         = "group.join_approved"
 )
 
 // AllMatchPhases is the ordered list of every tournament phase defined in the
