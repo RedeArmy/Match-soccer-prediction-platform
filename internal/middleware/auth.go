@@ -110,7 +110,15 @@ func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, l
 // jwksURL is the Clerk JWKS endpoint (WCQ_CLERK_JWKSURL in config). If it
 // is empty the middleware is bypassed and a warning is logged. Startup
 // validation must ensure this only happens in development environments.
-func RequireAuth(jwksURL string, log *zap.Logger) func(http.Handler) http.Handler {
+// DefaultJWKSWarmupTimeout is the fallback JWKS warm-up timeout when
+// auth.validation_timeout_seconds is absent from system_params or the DB
+// is not yet available (e.g. the db-unavailable route fallback path).
+const DefaultJWKSWarmupTimeout = 5 * time.Second
+
+// RequireAuth builds a Clerk JWT authentication middleware.
+// warmupTimeout caps the JWKS prefetch at startup; pass defaultJWKSWarmupTimeout
+// (5s) when no system_param override is available.
+func RequireAuth(jwksURL string, warmupTimeout time.Duration, log *zap.Logger) func(http.Handler) http.Handler {
 	if jwksURL == "" {
 		log.Warn("RequireAuth: WCQ_CLERK_JWKSURL is not set — authentication is DISABLED; do not use in production")
 		return func(next http.Handler) http.Handler { return next }
@@ -122,10 +130,9 @@ func RequireAuth(jwksURL string, log *zap.Logger) func(http.Handler) http.Handle
 	}
 
 	// Eagerly warm the JWKS cache at startup so the first request is never
-	// delayed by a cold fetch. A 5-second timeout avoids blocking startup
-	// indefinitely if Clerk is temporarily unreachable; the cache will
-	// retry automatically on the first request.
-	warmCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// delayed by a cold fetch. warmupTimeout avoids blocking startup indefinitely
+	// if Clerk is temporarily unreachable; the cache retries on the first request.
+	warmCtx, cancel := context.WithTimeout(context.Background(), warmupTimeout)
 	defer cancel()
 	if _, err := cache.Refresh(warmCtx, jwksURL); err != nil {
 		log.Warn("RequireAuth: JWKS prefetch failed; will retry on first request",

@@ -15,6 +15,7 @@ import (
 type tournamentService struct {
 	matchRepo      repository.MatchRepository
 	tournamentRepo repository.TournamentRepository
+	params         SystemParamService
 	audit          AuditLogger
 	log            *zap.Logger
 }
@@ -23,12 +24,14 @@ type tournamentService struct {
 func NewTournamentService(
 	matchRepo repository.MatchRepository,
 	tournamentRepo repository.TournamentRepository,
+	params SystemParamService,
 	audit AuditLogger,
 	log *zap.Logger,
 ) TournamentService {
 	return &tournamentService{
 		matchRepo:      matchRepo,
 		tournamentRepo: tournamentRepo,
+		params:         params,
 		audit:          audit,
 		log:            log,
 	}
@@ -43,7 +46,8 @@ func (s *tournamentService) GetAllStandings(ctx context.Context) (map[string][]*
 	if err != nil {
 		return nil, err
 	}
-	return buildStandings(matches), nil
+	winPoints := s.params.GetInt(ctx, domain.ParamKeyTournamentWinPoints, domain.StandingsWinPoints)
+	return buildStandings(matches, winPoints), nil
 }
 
 // GetGroupStanding returns real-time standings for a single group.
@@ -57,7 +61,8 @@ func (s *tournamentService) GetGroupStanding(ctx context.Context, group string) 
 	if err != nil {
 		return nil, err
 	}
-	all := buildStandings(matches)
+	winPoints := s.params.GetInt(ctx, domain.ParamKeyTournamentWinPoints, domain.StandingsWinPoints)
+	all := buildStandings(matches, winPoints)
 	entries, ok := all[group]
 	if !ok {
 		return nil, apperrors.NotFound("group " + group + " not found")
@@ -105,7 +110,7 @@ func (s *tournamentService) ListSlots(ctx context.Context) ([]*domain.Tournament
 // that teams with 0 finished matches still appear with zero stats.
 // Points and win/draw/loss counts are accumulated only from finished matches
 // that have non-nil scores.
-func buildStandings(matches []*domain.Match) map[string][]*domain.GroupStanding {
+func buildStandings(matches []*domain.Match, winPoints int) map[string][]*domain.GroupStanding {
 	type key struct{ group, team string }
 	acc := make(map[key]*domain.GroupStanding)
 
@@ -128,7 +133,7 @@ func buildStandings(matches []*domain.Match) map[string][]*domain.GroupStanding 
 		if m.Status != domain.MatchStatusFinished || m.HomeScore == nil || m.AwayScore == nil {
 			continue
 		}
-		applyMatchResult(ensure(g, m.HomeTeam), ensure(g, m.AwayTeam), *m.HomeScore, *m.AwayScore)
+		applyMatchResult(ensure(g, m.HomeTeam), ensure(g, m.AwayTeam), *m.HomeScore, *m.AwayScore, winPoints)
 	}
 
 	grouped := make(map[string][]*domain.GroupStanding)
@@ -147,7 +152,7 @@ func buildStandings(matches []*domain.Match) map[string][]*domain.GroupStanding 
 
 // applyMatchResult updates the played/scored/won/drawn/lost/points fields for
 // both teams based on the final score of a single finished match.
-func applyMatchResult(home, away *domain.GroupStanding, hs, as int) {
+func applyMatchResult(home, away *domain.GroupStanding, hs, as, winPoints int) {
 	home.Played++
 	away.Played++
 	home.GF += hs
@@ -158,11 +163,11 @@ func applyMatchResult(home, away *domain.GroupStanding, hs, as int) {
 	switch {
 	case hs > as:
 		home.Won++
-		home.Points += 3
+		home.Points += winPoints
 		away.Lost++
 	case hs < as:
 		away.Won++
-		away.Points += 3
+		away.Points += winPoints
 		home.Lost++
 	default:
 		home.Drawn++

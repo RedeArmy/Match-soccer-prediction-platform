@@ -49,6 +49,11 @@ const PredictionDeadlineOffset = 5 * time.Minute
 // clause in migration 000023_add_prize_threshold_to_quinielas.up.sql.
 const DefaultPrizeThreshold = 3
 
+// StandingsWinPoints is the number of standing points awarded to the winner of
+// a group-stage match, per the FIFA 3-point rule. Used by TournamentService as
+// the fallback when the tournament.win_points system param is absent.
+const StandingsWinPoints = 3
+
 // MinMembersForActive is the minimum number of active members a quiniela must
 // have for the system to set its status to QuinielaStatusActive. Groups below
 // this threshold are QuinielaStatusInactive: predictions can still be submitted
@@ -73,6 +78,44 @@ const (
 	ParamKeyPredictionDeadlineMin = "prediction.deadline_minutes"
 	ParamKeyGroupMinMembers       = "group.min_members_for_active"
 	ParamKeyGroupDefaultPrize     = "group.default_prize_threshold"
+	// ParamKeyGroupInviteCodeLength is the number of characters in a generated
+	// invite code. Defaults to inviteCodeLength (10) in QuinielaService.
+	ParamKeyGroupInviteCodeLength = "group.invite_code_length"
+	// ParamKeyConflictStaleDays is the age in days after which a pending payment
+	// or membership is flagged as a conflict. Defaults to ConflictStaleDays (7).
+	ParamKeyConflictStaleDays = "conflict.stale_days"
+	// ParamKeyPaginationDefaultLimit and ParamKeyPaginationMaxLimit control the
+	// default and maximum page sizes returned by paginated admin endpoints.
+	ParamKeyPaginationDefaultLimit = "pagination.default_limit"
+	ParamKeyPaginationMaxLimit     = "pagination.max_limit"
+
+	// ParamKeyTournamentWinPoints is the standing points awarded for a group-stage
+	// win. Defaults to StandingsWinPoints (3). Read dynamically by TournamentService.
+	ParamKeyTournamentWinPoints = "tournament.win_points"
+
+	// Infrastructure params — read once at process startup; changes require restart.
+	// The is_runtime column in system_params is set to FALSE for all of these.
+
+	// ParamKeyCacheMatchTTL is the match-list cache TTL in seconds.
+	ParamKeyCacheMatchTTL = "cache.match_ttl_seconds"
+	// ParamKeyCacheLeaderboardTTL is the leaderboard cache TTL in seconds.
+	ParamKeyCacheLeaderboardTTL = "cache.leaderboard_ttl_seconds"
+	// ParamKeyAuditWriteTimeout is the maximum time in seconds the audit log
+	// goroutine waits to persist an entry before giving up.
+	ParamKeyAuditWriteTimeout = "audit.write_timeout_seconds"
+	// ParamKeyDLQSampleSize is the maximum number of DLQ entries returned in
+	// the Stats sample field.
+	ParamKeyDLQSampleSize = "dlq.sample_size"
+	// ParamKeyDLQReplayDefaultLimit is the default number of entries replayed
+	// when the caller does not supply an explicit limit.
+	ParamKeyDLQReplayDefaultLimit = "dlq.replay_default_limit"
+	// ParamKeyMessagingMaxRetries is the total handler attempts before an event
+	// is dead-lettered.
+	ParamKeyMessagingMaxRetries = "messaging.max_retries"
+	// ParamKeyMessagingStreamMaxLen caps Redis Stream length (MAXLEN ~).
+	ParamKeyMessagingStreamMaxLen = "messaging.stream_max_len"
+	// ParamKeyAuthValidationTimeout is the JWKS warm-up timeout in seconds.
+	ParamKeyAuthValidationTimeout = "auth.validation_timeout_seconds"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather

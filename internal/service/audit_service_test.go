@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -44,7 +45,7 @@ func (r *stubAuditLogRepo) List(_ context.Context, _ repository.AuditLogFilters,
 
 func TestAuditService_Log_PersistsEntry(t *testing.T) {
 	repo := &stubAuditLogRepo{}
-	svc := NewAuditService(repo, zap.NewNop())
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
 
 	resType := "match"
 	id := 1
@@ -65,7 +66,7 @@ func TestAuditService_Log_PersistsEntry(t *testing.T) {
 
 func TestAuditService_Log_RepoError_DoesNotPanic(t *testing.T) {
 	repo := &stubAuditLogRepo{err: errors.New("db down")}
-	svc := NewAuditService(repo, zap.NewNop())
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
 
 	svc.Log(context.Background(), nil, nil, "some.action", nil, nil, nil)
 	// Give the goroutine time to run. A panic would fail the test immediately.

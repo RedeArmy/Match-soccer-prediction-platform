@@ -40,7 +40,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/config"
@@ -123,6 +125,11 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	predRepo := repository.NewPostgresPredictionRepository(db)
 	systemParamRepo := repository.NewPostgresSystemParamRepository(db)
 	params := service.NewSystemParamService(systemParamRepo, log)
+	messaging.Configure(
+		params.GetInt(ctx, domain.ParamKeyMessagingMaxRetries, 3),
+		int64(params.GetInt(ctx, domain.ParamKeyMessagingStreamMaxLen, 600_000)),
+		nil,
+	)
 	scorer := service.NewScoringService(matchRepo, predRepo, params, log)
 
 	quinielaRepo := repository.NewPostgresQuinielaRepository(db)

@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -15,13 +16,14 @@ import (
 
 // AdminLeaderboardHandler handles admin endpoints for leaderboard and prediction data.
 type AdminLeaderboardHandler struct {
-	svc service.AdminReadService
-	log *zap.Logger
+	svc    service.AdminReadService
+	params service.SystemParamService
+	log    *zap.Logger
 }
 
 // NewAdminLeaderboardHandler constructs an AdminLeaderboardHandler.
-func NewAdminLeaderboardHandler(svc service.AdminReadService, log *zap.Logger) *AdminLeaderboardHandler {
-	return &AdminLeaderboardHandler{svc: svc, log: log}
+func NewAdminLeaderboardHandler(svc service.AdminReadService, params service.SystemParamService, log *zap.Logger) *AdminLeaderboardHandler {
+	return &AdminLeaderboardHandler{svc: svc, params: params, log: log}
 }
 
 // GlobalLeaderboard handles GET /admin/leaderboard — top N users by total points across all groups.
@@ -29,20 +31,24 @@ func NewAdminLeaderboardHandler(svc service.AdminReadService, log *zap.Logger) *
 // @Summary      Global leaderboard
 // @Description  Returns the top N users ranked by total scored points across all
 //
-//	quiniela groups. Default limit is 100; maximum is 500. Requires admin role.
+//	quiniela groups. Default and maximum limits are read from system_params
+//	(pagination.default_limit / pagination.max_limit). Requires admin role.
 //
 // @Tags         admin-leaderboard
 // @Produce      json
 // @Security     BearerAuth
-// @Param        limit  query     int  false  "Max entries to return (default 100, max 500)"
+// @Param        limit  query     int  false  "Max entries to return (default/max from system_params)"
 // @Success      200    {array}   handler.GlobalLeaderboardEntryResponse
 // @Failure      401    {object}  handler.ErrorResponse
 // @Failure      403    {object}  handler.ErrorResponse  "Caller is not an admin"
 // @Failure      500    {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/leaderboard [get]
 func (h *AdminLeaderboardHandler) GlobalLeaderboard(w http.ResponseWriter, r *http.Request) {
-	limit := 100
-	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= 500 {
+	ctx := r.Context()
+	defaultLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationDefaultLimit, 50)
+	maxLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationMaxLimit, 200)
+	limit := defaultLimit
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= maxLimit {
 		limit = l
 	}
 
@@ -70,14 +76,15 @@ func (h *AdminLeaderboardHandler) GlobalLeaderboard(w http.ResponseWriter, r *ht
 // @Description  Returns the most recent point-in-time leaderboard snapshots for
 //
 //	the given group. Snapshots are taken automatically by the scoring
-//	worker after each match is scored. Default limit is 20; maximum is
-//	100. Requires admin role.
+//	worker after each match is scored. Default and maximum limits are read
+//	from system_params (pagination.default_limit / pagination.max_limit).
+//	Requires admin role.
 //
 // @Tags         admin-groups
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id     path      int  true   "Group ID"
-// @Param        limit  query     int  false  "Max snapshots to return (default 20, max 100)"
+// @Param        limit  query     int  false  "Max snapshots to return (default/max from system_params)"
 // @Success      200    {array}   handler.SnapshotResponse
 // @Failure      401    {object}  handler.ErrorResponse
 // @Failure      403    {object}  handler.ErrorResponse  "Caller is not an admin"
@@ -91,8 +98,11 @@ func (h *AdminLeaderboardHandler) SnapshotHistory(w http.ResponseWriter, r *http
 		return
 	}
 
-	limit := 20
-	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= 100 {
+	ctx := r.Context()
+	defaultLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationDefaultLimit, 50)
+	maxLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationMaxLimit, 200)
+	limit := defaultLimit
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= maxLimit {
 		limit = l
 	}
 

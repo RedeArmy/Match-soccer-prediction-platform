@@ -531,7 +531,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Max snapshots to return (default 20, max 100)",
+                        "description": "Max snapshots to return (default/max from system_params)",
                         "name": "limit",
                         "in": "query"
                     }
@@ -863,7 +863,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Max entries to return (default 100, max 500)",
+                        "description": "Max entries to return (default/max from system_params)",
                         "name": "limit",
                         "in": "query"
                     }
