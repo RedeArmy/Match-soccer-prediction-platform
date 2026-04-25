@@ -10,10 +10,6 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
-// defaultAuditWriteTimeout is the fallback write timeout when
-// audit.write_timeout_seconds is absent from system_params.
-const defaultAuditWriteTimeout = 5 * time.Second
-
 // auditService is the concrete implementation of AuditLogger.
 type auditService struct {
 	repo         repository.AuditLogRepository

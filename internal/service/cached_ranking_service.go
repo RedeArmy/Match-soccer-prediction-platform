@@ -15,12 +15,6 @@ import (
 // Compile-time check: cachedRankingService must implement Ranker.
 var _ Ranker = (*cachedRankingService)(nil)
 
-// defaultLeaderboardCacheTTL is the fallback TTL when cache.leaderboard_ttl_seconds
-// is absent from system_params. Intentionally short (60s) because leaderboards
-// update frequently during live matches; explicit invalidation is the primary
-// mechanism and TTL is the safety net.
-const defaultLeaderboardCacheTTL = 60 * time.Second
-
 func cacheKeyLeaderboard(quinielaID int) string {
 	return fmt.Sprintf("leaderboard:%d", quinielaID)
 }

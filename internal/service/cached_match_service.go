@@ -11,12 +11,6 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
 
-// defaultMatchCacheTTL is the fallback TTL when cache.match_ttl_seconds is
-// absent from system_params. Five minutes is a conservative upper bound:
-// scoring events drive explicit invalidation, so the TTL is only a safety
-// net for cases where invalidation is skipped (e.g. in-memory driver).
-const defaultMatchCacheTTL = 5 * time.Minute
-
 // Cache keys for match list results. The keys must be invalidated by any
 // operation that mutates match state (create, start, update result).
 const (
