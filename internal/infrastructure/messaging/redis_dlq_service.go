@@ -12,24 +12,40 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
-// dlqSampleSize is the maximum number of entries returned in the sample field
-// of DLQStat. Kept small to bound response size when queues are large.
-const dlqSampleSize = 5
+const (
+	defaultDLQSampleSize         = 5
+	defaultDLQReplayDefaultLimit = 10
+)
 
 // RedisDLQService implements service.DLQService against the Redis lists used by
 // RedisBus. It is a separate type from RedisBus so that it can be injected into
 // the HTTP server without granting full bus access to the admin layer.
 type RedisDLQService struct {
-	client     *redis.Client
-	eventTypes []events.EventType
-	log        *zap.Logger
+	client             *redis.Client
+	eventTypes         []events.EventType
+	sampleSize         int
+	replayDefaultLimit int
+	log                *zap.Logger
 }
 
 // NewRedisDLQService constructs a RedisDLQService for the given event types.
-// eventTypes must match the full set of EventType constants used by RedisBus so
-// that all DLQ keys are covered by Stats and Purge.
-func NewRedisDLQService(client *redis.Client, eventTypes []events.EventType, log *zap.Logger) *RedisDLQService {
-	return &RedisDLQService{client: client, eventTypes: eventTypes, log: log}
+// sampleSize is the max entries returned in DLQStat.Sample (dlq.sample_size).
+// replayDefaultLimit is the fallback replay count when the caller passes 0 (dlq.replay_default_limit).
+// eventTypes must match the full set of EventType constants used by RedisBus.
+func NewRedisDLQService(client *redis.Client, eventTypes []events.EventType, sampleSize, replayDefaultLimit int, log *zap.Logger) *RedisDLQService {
+	if sampleSize <= 0 {
+		sampleSize = defaultDLQSampleSize
+	}
+	if replayDefaultLimit <= 0 {
+		replayDefaultLimit = defaultDLQReplayDefaultLimit
+	}
+	return &RedisDLQService{
+		client:             client,
+		eventTypes:         eventTypes,
+		sampleSize:         sampleSize,
+		replayDefaultLimit: replayDefaultLimit,
+		log:                log,
+	}
 }
 
 // Stats returns the depth and a sample for each known DLQ key.
@@ -54,7 +70,7 @@ func (s *RedisDLQService) Stats(ctx context.Context) ([]service.DLQStat, error) 
 // peekSample reads up to dlqSampleSize entries from the head of key and returns
 // the timestamp of the oldest entry together with the decoded sample slice.
 func (s *RedisDLQService) peekSample(ctx context.Context, key string) (*time.Time, []service.DLQEntry) {
-	raw, err := s.client.LRange(ctx, key, 0, int64(dlqSampleSize-1)).Result()
+	raw, err := s.client.LRange(ctx, key, 0, int64(s.sampleSize-1)).Result()
 	if err != nil || len(raw) == 0 {
 		return nil, nil
 	}
@@ -84,7 +100,7 @@ func (s *RedisDLQService) peekSample(ctx context.Context, key string) (*time.Tim
 // onto their original Redis Streams. Returns the total number replayed.
 func (s *RedisDLQService) Replay(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
-		limit = 10
+		limit = s.replayDefaultLimit
 	}
 	replayed := 0
 	for _, et := range s.eventTypes {

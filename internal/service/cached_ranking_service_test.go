@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -43,7 +44,7 @@ func TestCachedRankingService_GetLeaderboard_CacheHit_ReturnsWithoutCallingInner
 	}
 	st.seed(cacheKeyLeaderboard(5), entries)
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	got, err := svc.GetLeaderboard(context.Background(), 5)
 	if err != nil {
 		t.Fatalf(cachedUnexpectedErrorFmt, err)
@@ -63,7 +64,7 @@ func TestCachedRankingService_GetLeaderboard_CacheMiss_CallsInnerAndSetsCache(t 
 	}
 	ranker := &stubRanker{entries: entries}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	got, err := svc.GetLeaderboard(context.Background(), 7)
 	if err != nil {
 		t.Fatalf(cachedUnexpectedErrorFmt, err)
@@ -83,7 +84,7 @@ func TestCachedRankingService_GetLeaderboard_EmptyResult_NotCached(t *testing.T)
 	st := newStubCache()
 	ranker := &stubRanker{entries: []*domain.LeaderboardEntry{}}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	got, err := svc.GetLeaderboard(context.Background(), 3)
 	if err != nil {
 		t.Fatalf(cachedUnexpectedErrorFmt, err)
@@ -100,7 +101,7 @@ func TestCachedRankingService_GetLeaderboard_InnerError_Propagated(t *testing.T)
 	st := newStubCache()
 	ranker := &stubRanker{err: errors.New("db error")}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	_, err := svc.GetLeaderboard(context.Background(), 1)
 	if err == nil {
 		t.Fatal("expected error from inner Ranker, got nil")
@@ -115,7 +116,7 @@ func TestCachedRankingService_GetLeaderboard_CacheGetError_FallsThroughToInner(t
 	}
 	ranker := &stubRanker{entries: entries}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	got, err := svc.GetLeaderboard(context.Background(), 9)
 	if err != nil {
 		t.Fatalf(cachedUnexpectedErrorFmt, err)
@@ -136,7 +137,7 @@ func TestCachedRankingService_GetLeaderboard_SetError_StillReturnsData(t *testin
 	}
 	ranker := &stubRanker{entries: entries}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	got, err := svc.GetLeaderboard(context.Background(), 2)
 	if err != nil {
 		t.Fatalf("set error must not propagate, got: %v", err)
@@ -157,7 +158,7 @@ func TestCachedRankingService_InvalidateLeaderboard_DeletesAllEightKeys(t *testi
 		st.seed(cacheKeyPhaseLeaderboard(quinielaID, phase), []*domain.LeaderboardEntry{})
 	}
 
-	svc := NewCachedRankingService(&stubRanker{}, st, zap.NewNop())
+	svc := NewCachedRankingService(&stubRanker{}, st, 60*time.Second, zap.NewNop())
 	svc.InvalidateLeaderboard(context.Background(), quinielaID)
 
 	wantCount := 1 + len(domain.AllMatchPhases) // 1 overall + 7 phase keys
@@ -186,7 +187,7 @@ func TestCachedRankingService_InvalidateLeaderboard_DeleteError_NonFatal(t *test
 	st.delErr = errors.New("redis error")
 	ranker := &stubRanker{}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	// Must not panic or return an error — the method has no return value.
 	svc.InvalidateLeaderboard(context.Background(), 4)
 }
@@ -202,7 +203,7 @@ func TestCachedRankingService_GetPhaseLeaderboard_CacheHit_ReturnsWithoutCalling
 	phase := domain.PhaseGroupStage
 	st.seed(cacheKeyPhaseLeaderboard(5, phase), entries)
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	got, err := svc.GetPhaseLeaderboard(context.Background(), 5, phase)
 	if err != nil {
 		t.Fatalf(cachedUnexpectedErrorFmt, err)
@@ -222,7 +223,7 @@ func TestCachedRankingService_GetPhaseLeaderboard_CacheMiss_CallsInnerAndSetsCac
 	}
 	ranker := &stubRanker{entries: entries}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	got, err := svc.GetPhaseLeaderboard(context.Background(), 7, domain.PhaseFinal)
 	if err != nil {
 		t.Fatalf(cachedUnexpectedErrorFmt, err)
@@ -242,7 +243,7 @@ func TestCachedRankingService_GetPhaseLeaderboard_EmptyResult_NotCached(t *testi
 	st := newStubCache()
 	ranker := &stubRanker{entries: []*domain.LeaderboardEntry{}}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	_, err := svc.GetPhaseLeaderboard(context.Background(), 3, domain.PhaseRoundOf16)
 	if err != nil {
 		t.Fatalf(cachedUnexpectedErrorFmt, err)
@@ -256,7 +257,7 @@ func TestCachedRankingService_GetPhaseLeaderboard_InnerError_Propagated(t *testi
 	st := newStubCache()
 	ranker := &stubRanker{err: errors.New("db error")}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	_, err := svc.GetPhaseLeaderboard(context.Background(), 1, domain.PhaseGroupStage)
 	if err == nil {
 		t.Fatal("expected error from inner Ranker, got nil")
@@ -271,7 +272,7 @@ func TestCachedRankingService_GetPhaseLeaderboard_CacheGetError_FallsThroughToIn
 	}
 	ranker := &stubRanker{entries: entries}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	got, err := svc.GetPhaseLeaderboard(context.Background(), 9, domain.PhaseSemiFinal)
 	if err != nil {
 		t.Fatalf(cachedUnexpectedErrorFmt, err)
@@ -304,7 +305,7 @@ func TestCachedRankingService_GetPhaseLeaderboard_SetError_StillReturnsData(t *t
 	}
 	ranker := &stubRanker{entries: entries}
 
-	svc := NewCachedRankingService(ranker, st, zap.NewNop())
+	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
 	got, err := svc.GetPhaseLeaderboard(context.Background(), 2, domain.PhaseQuarterFinal)
 	if err != nil {
 		t.Fatalf("set error must not propagate, got: %v", err)

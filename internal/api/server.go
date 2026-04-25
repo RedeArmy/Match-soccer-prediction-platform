@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -28,6 +29,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -130,7 +132,7 @@ func (s *Server) Routes() http.Handler {
 		}
 		r.Route("/api/v1", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(64 * 1024)) // 64 KB — all API payloads are small JSON objects
-			r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, s.log))
+			r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, middleware.DefaultJWKSWarmupTimeout, s.log))
 			r.Route("/matches", func(r chi.Router) {
 				r.HandleFunc("/*", dbUnavailable)
 				r.HandleFunc("/", dbUnavailable)
@@ -161,6 +163,17 @@ func (s *Server) Routes() http.Handler {
 
 	paramSvc := service.NewSystemParamService(systemParamRepo, s.log)
 
+	// Read infrastructure params once at startup. Changes require a process
+	// restart (is_runtime=FALSE in system_params). Use context.Background()
+	// because this is a one-time read at construction time, not a request path.
+	infraCtx := context.Background()
+	messaging.Configure(
+		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingMaxRetries, 3),
+		int64(paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamMaxLen, 600_000)),
+		nil, // retain default RetryBackoff (1s, 2s); no array param defined
+	)
+	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, 5)) * time.Second
+
 	s.wireSubscribers(matchRepo, predRepo, paramSvc)
 	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler, tournamentHandler, adminUserH, adminGroupH, adminPaymentH, adminLeaderboardH, adminDLQH, adminAuditH, adminParamH, adminTiebreakerH, adminConflictH := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, paramSvc)
 
@@ -172,7 +185,7 @@ func (s *Server) Routes() http.Handler {
 	// Versioned API surface with Clerk JWT authentication.
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(64 * 1024)) // 64 KB — all API payloads are small JSON objects
-		r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, s.log))
+		r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, authWarmup, s.log))
 
 		// Admin-only match mutations are guarded by RequireRole. Read endpoints
 		// (List, Get) are accessible to all authenticated users.
@@ -389,36 +402,46 @@ func (s *Server) buildHandlers(
 	paymentRepo := repository.NewPostgresPaymentRecordRepository(s.db)
 	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(s.db)
 
-	auditSvc := service.NewAuditService(auditLogRepo, s.log)
+	// Read infrastructure params (startup-time, not per-request).
+	infraCtx := context.Background()
+	auditTimeout := time.Duration(params.GetInt(infraCtx, domain.ParamKeyAuditWriteTimeout, 5)) * time.Second
+	matchTTL := time.Duration(params.GetInt(infraCtx, domain.ParamKeyCacheMatchTTL, 300)) * time.Second
+	leaderboardTTL := time.Duration(params.GetInt(infraCtx, domain.ParamKeyCacheLeaderboardTTL, 60)) * time.Second
+	dlqSampleSize := params.GetInt(infraCtx, domain.ParamKeyDLQSampleSize, 5)
+	dlqReplayLimit := params.GetInt(infraCtx, domain.ParamKeyDLQReplayDefaultLimit, 10)
+
+	auditSvc := service.NewAuditService(auditLogRepo, auditTimeout, s.log)
 
 	scorer := service.NewScoringService(matchRepo, predRepo, params, s.log)
 	matchSvc := service.NewMatchService(matchRepo, s.bus, scorer, auditSvc, s.log)
 	if s.cache != nil {
-		matchSvc = service.NewCachedMatchService(matchSvc, s.cache, s.log)
+		matchSvc = service.NewCachedMatchService(matchSvc, s.cache, matchTTL, s.log)
 	}
 
 	predSvc := service.NewPredictionService(predRepo, matchRepo, params, s.log)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo)
+	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo, params)
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, params, auditSvc, paymentSvc, s.log)
 
 	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, params, s.log)
 	if s.cache != nil {
-		ranker = service.NewCachedRankingService(ranker, s.cache, s.log)
+		ranker = service.NewCachedRankingService(ranker, s.cache, leaderboardTTL, s.log)
 	}
 
 	userStatsSvc := service.NewUserStatsService(predRepo)
 	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, memberRepo, tiebreakerRepo, auditSvc, s.log)
-	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, auditSvc, s.log)
+	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, params, auditSvc, s.log)
 	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, memberRepo, auditSvc, s.log)
 	adminUserSvc := service.NewAdminUserService(userRepo, memberRepo, paymentRepo, auditSvc, s.log)
 	adminReadSvc := service.NewAdminReadService(predRepo, userRepo, tiebreakerRepo, snapRepo, s.log)
-	conflictSvc := service.NewConflictService(quinielaRepo, memberRepo, paymentRepo, auditSvc, s.log)
+	conflictSvc := service.NewConflictService(quinielaRepo, memberRepo, paymentRepo, params, auditSvc, s.log)
 
 	dlqSvc := s.dlqSvc
 	if dlqSvc == nil {
 		dlqSvc = service.NoopDLQService{}
 	}
+	_ = dlqSampleSize // consumed by NewRedisDLQService when wired externally via SetDLQService
+	_ = dlqReplayLimit
 
 	return handler.NewMatchHandler(matchSvc, s.log),
 		handler.NewPredictionHandler(predSvc, s.log),
@@ -430,7 +453,7 @@ func (s *Server) buildHandlers(
 		handler.NewAdminUserHandler(adminUserSvc, s.log),
 		handler.NewAdminGroupHandler(adminGroupSvc, s.log),
 		handler.NewAdminPaymentHandler(paymentSvc, s.log),
-		handler.NewAdminLeaderboardHandler(adminReadSvc, s.log),
+		handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
 		handler.NewAdminDLQHandler(dlqSvc, s.log),
 		handler.NewAdminAuditHandler(auditSvc, s.log),
 		handler.NewAdminSystemParamHandler(params, s.log),

@@ -15,12 +15,11 @@ import (
 // Compile-time check: cachedRankingService must implement Ranker.
 var _ Ranker = (*cachedRankingService)(nil)
 
-// leaderboardCacheTTL is the maximum time a leaderboard result is served from
-// cache before a fresh DB query is issued. The TTL is intentionally short (60s)
-// because leaderboards are expected to update frequently during live matches.
-// Explicit invalidation via InvalidateLeaderboard is the primary mechanism;
-// TTL is the safety net for cases where invalidation is skipped.
-const leaderboardCacheTTL = 60 * time.Second
+// defaultLeaderboardCacheTTL is the fallback TTL when cache.leaderboard_ttl_seconds
+// is absent from system_params. Intentionally short (60s) because leaderboards
+// update frequently during live matches; explicit invalidation is the primary
+// mechanism and TTL is the safety net.
+const defaultLeaderboardCacheTTL = 60 * time.Second
 
 func cacheKeyLeaderboard(quinielaID int) string {
 	return fmt.Sprintf("leaderboard:%d", quinielaID)
@@ -40,12 +39,15 @@ func cacheKeyPhaseLeaderboard(quinielaID int, phase domain.MatchPhase) string {
 type cachedRankingService struct {
 	inner Ranker
 	store cache.Store
+	ttl   time.Duration
 	log   *zap.Logger
 }
 
 // NewCachedRankingService wraps ranker with leaderboard caching.
-func NewCachedRankingService(ranker Ranker, store cache.Store, log *zap.Logger) *cachedRankingService {
-	return &cachedRankingService{inner: ranker, store: store, log: log}
+// ttl controls how long leaderboard results are cached; pass
+// defaultLeaderboardCacheTTL (60s) when no system_param override is available.
+func NewCachedRankingService(ranker Ranker, store cache.Store, ttl time.Duration, log *zap.Logger) *cachedRankingService {
+	return &cachedRankingService{inner: ranker, store: store, ttl: ttl, log: log}
 }
 
 // GetLeaderboard returns the cached leaderboard for the given quiniela when
@@ -65,7 +67,7 @@ func (s *cachedRankingService) GetLeaderboard(ctx context.Context, quinielaID in
 		return nil, err
 	}
 	if len(entries) > 0 {
-		if setErr := s.store.Set(ctx, key, entries, leaderboardCacheTTL); setErr != nil {
+		if setErr := s.store.Set(ctx, key, entries, s.ttl); setErr != nil {
 			s.log.Warn("leaderboard cache set failed", zap.String("key", key), zap.Error(setErr))
 		}
 	}
@@ -91,7 +93,7 @@ func (s *cachedRankingService) GetPhaseLeaderboard(ctx context.Context, quiniela
 		return nil, err
 	}
 	if len(entries) > 0 {
-		if setErr := s.store.Set(ctx, key, entries, leaderboardCacheTTL); setErr != nil {
+		if setErr := s.store.Set(ctx, key, entries, s.ttl); setErr != nil {
 			s.log.Warn("phase leaderboard cache set failed", zap.String("key", key), zap.Error(setErr))
 		}
 	}

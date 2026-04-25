@@ -11,12 +11,11 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
 
-// matchCacheTTL is the TTL applied to cached match list results. Match data
-// is reference-like for most of the tournament (kickoff times, teams, venues
-// are fixed), but status and scores change. Five minutes is a conservative
-// upper bound: scoring events drive explicit invalidation, so the TTL is only
-// a safety net for cases where invalidation is skipped (e.g. in-memory driver).
-const matchCacheTTL = 5 * time.Minute
+// defaultMatchCacheTTL is the fallback TTL when cache.match_ttl_seconds is
+// absent from system_params. Five minutes is a conservative upper bound:
+// scoring events drive explicit invalidation, so the TTL is only a safety
+// net for cases where invalidation is skipped (e.g. in-memory driver).
+const defaultMatchCacheTTL = 5 * time.Minute
 
 // Cache keys for match list results. The keys must be invalidated by any
 // operation that mutates match state (create, start, update result).
@@ -44,13 +43,15 @@ func cacheKeyMatchesByStatus(status domain.MatchStatus) string {
 type cachedMatchService struct {
 	inner MatchService
 	store cache.Store
+	ttl   time.Duration
 	log   *zap.Logger
 }
 
 // NewCachedMatchService wraps svc with cache-backed list operations.
-// store must not be nil; pass cache.NewRedisStore(client) in production.
-func NewCachedMatchService(svc MatchService, store cache.Store, log *zap.Logger) MatchService {
-	return &cachedMatchService{inner: svc, store: store, log: log}
+// ttl controls how long list results are cached; pass defaultMatchCacheTTL
+// (5m) when no system_param override is available. store must not be nil.
+func NewCachedMatchService(svc MatchService, store cache.Store, ttl time.Duration, log *zap.Logger) MatchService {
+	return &cachedMatchService{inner: svc, store: store, ttl: ttl, log: log}
 }
 
 // ListMatches returns all matches, using the cache when available.
@@ -66,7 +67,7 @@ func (s *cachedMatchService) ListMatches(ctx context.Context) ([]*domain.Match, 
 	if err != nil {
 		return nil, err
 	}
-	s.setQuiet(ctx, cacheKeyMatchesAll, matches, matchCacheTTL)
+	s.setQuiet(ctx, cacheKeyMatchesAll, matches, s.ttl)
 	return matches, nil
 }
 
@@ -85,7 +86,7 @@ func (s *cachedMatchService) ListMatchesByPhase(ctx context.Context, phase domai
 	if err != nil {
 		return nil, err
 	}
-	s.setQuiet(ctx, key, matches, matchCacheTTL)
+	s.setQuiet(ctx, key, matches, s.ttl)
 	return matches, nil
 }
 
@@ -105,7 +106,7 @@ func (s *cachedMatchService) ListMatchesByStatus(ctx context.Context, status dom
 	if err != nil {
 		return nil, err
 	}
-	s.setQuiet(ctx, key, matches, matchCacheTTL)
+	s.setQuiet(ctx, key, matches, s.ttl)
 	return matches, nil
 }
 

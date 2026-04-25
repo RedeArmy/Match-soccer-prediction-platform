@@ -22,7 +22,7 @@ func newTestRedisClient(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
 
 func TestRedisDLQService_Stats_ReturnsCountsAndSample(t *testing.T) {
 	_, client := newTestRedisClient(t)
-	svc := NewRedisDLQService(client, []events.EventType{events.EventPredictionMade}, zap.NewNop())
+	svc := NewRedisDLQService(client, []events.EventType{events.EventPredictionMade}, 5, 10, zap.NewNop())
 
 	now := time.Now().UTC().Truncate(time.Second)
 	entry := dlqEntry{
@@ -67,7 +67,7 @@ func TestRedisDLQService_Stats_ReturnsCountsAndSample(t *testing.T) {
 
 func TestRedisDLQService_Replay_MovesEntriesToStream(t *testing.T) {
 	_, client := newTestRedisClient(t)
-	svc := NewRedisDLQService(client, []events.EventType{events.EventMatchFinished}, zap.NewNop())
+	svc := NewRedisDLQService(client, []events.EventType{events.EventMatchFinished}, 5, 10, zap.NewNop())
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for i := 0; i < 2; i++ {
@@ -108,10 +108,29 @@ func TestRedisDLQService_Replay_MovesEntriesToStream(t *testing.T) {
 	}
 }
 
+func TestNewRedisDLQService_DefaultsWhenZeroOrNegative(t *testing.T) {
+	_, client := newTestRedisClient(t)
+	svc := NewRedisDLQService(client, nil, 0, 0, zap.NewNop())
+	if svc.sampleSize != defaultDLQSampleSize {
+		t.Errorf("sampleSize: want %d, got %d", defaultDLQSampleSize, svc.sampleSize)
+	}
+	if svc.replayDefaultLimit != defaultDLQReplayDefaultLimit {
+		t.Errorf("replayDefaultLimit: want %d, got %d", defaultDLQReplayDefaultLimit, svc.replayDefaultLimit)
+	}
+
+	svc2 := NewRedisDLQService(client, nil, -1, -1, zap.NewNop())
+	if svc2.sampleSize != defaultDLQSampleSize {
+		t.Errorf("sampleSize (negative): want %d, got %d", defaultDLQSampleSize, svc2.sampleSize)
+	}
+	if svc2.replayDefaultLimit != defaultDLQReplayDefaultLimit {
+		t.Errorf("replayDefaultLimit (negative): want %d, got %d", defaultDLQReplayDefaultLimit, svc2.replayDefaultLimit)
+	}
+}
+
 func TestRedisDLQService_Purge_DeletesKeysAndReturnsTotal(t *testing.T) {
 	_, client := newTestRedisClient(t)
 	types := []events.EventType{events.EventMatchStarted, events.EventPredictionMade}
-	svc := NewRedisDLQService(client, types, zap.NewNop())
+	svc := NewRedisDLQService(client, types, 5, 10, zap.NewNop())
 
 	_ = client.RPush(context.Background(), dlqKey(events.EventMatchStarted), "a", "b").Err()
 	_ = client.RPush(context.Background(), dlqKey(events.EventPredictionMade), "c").Err()

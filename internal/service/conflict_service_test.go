@@ -68,7 +68,7 @@ func TestConflictService_ListConflicts_ReturnsAllCategories(t *testing.T) {
 	}
 	pr := &stubPaymentRepo{records: []*domain.PaymentRecord{payment}}
 
-	svc := NewConflictService(qr, mr, pr, &noopAuditLogger{}, zap.NewNop())
+	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
 	conflicts, err := svc.ListConflicts(context.Background())
 	if err != nil {
@@ -145,7 +145,7 @@ func TestConflictService_ListConflicts_NoConflicts_ReturnsEmptySlice(t *testing.
 	qr := &stubQuinielaRepo{quinielas: nil}
 	mr := &stubMemberRepoConflict{stubMemberRepo: &stubMemberRepo{memberships: nil}, groupIDs: nil}
 	pr := &stubPaymentRepo{records: nil}
-	svc := NewConflictService(qr, mr, pr, &noopAuditLogger{}, zap.NewNop())
+	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
 	conflicts, err := svc.ListConflicts(context.Background())
 	if err != nil {
@@ -158,7 +158,7 @@ func TestConflictService_ListConflicts_NoConflicts_ReturnsEmptySlice(t *testing.
 
 func TestConflictService_ResolveConflict_LogsAuditEntry(t *testing.T) {
 	audit := &spyAuditLogger{}
-	svc := NewConflictService(&stubQuinielaRepo{}, &stubMemberRepo{}, &stubPaymentRepo{}, audit, zap.NewNop())
+	svc := NewConflictService(&stubQuinielaRepo{}, &stubMemberRepo{}, &stubPaymentRepo{}, &noopSystemParamService{}, audit, zap.NewNop())
 
 	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictGroupNoOwner), 7, 99, "ack"); err != nil {
 		t.Fatalf("unexpected error: %v", err)

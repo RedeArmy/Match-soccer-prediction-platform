@@ -115,7 +115,7 @@ func TestCachedMatchService_ListMatches_CacheHit_ReturnsWithoutCallingInner(t *t
 	matches := []*domain.Match{{ID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina"}}
 	st.seed(cacheKeyMatchesAll, matches)
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -133,7 +133,7 @@ func TestCachedMatchService_ListMatches_CacheMiss_CallsInnerAndPopulatesCache(t 
 	matches := []*domain.Match{{ID: 2, HomeTeam: "France", AwayTeam: "Germany"}}
 	inner := &stubInnerMatchSvc{matches: matches}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -155,7 +155,7 @@ func TestCachedMatchService_ListMatches_CacheGetError_FallsThroughToInner(t *tes
 	matches := []*domain.Match{{ID: 3}}
 	inner := &stubInnerMatchSvc{matches: matches}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -172,7 +172,7 @@ func TestCachedMatchService_ListMatches_InnerError_Propagated(t *testing.T) {
 	st := newStubCache()
 	inner := &stubInnerMatchSvc{err: errors.New(errDBMsg)}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	_, err := svc.ListMatches(context.Background())
 	if err == nil {
 		t.Fatal("expected error from inner, got nil")
@@ -185,7 +185,7 @@ func TestCachedMatchService_ListMatches_SetError_StillReturnsData(t *testing.T) 
 	matches := []*domain.Match{{ID: 4}}
 	inner := &stubInnerMatchSvc{matches: matches}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
 		t.Fatalf("set error must not propagate, got: %v", err)
@@ -204,7 +204,7 @@ func TestCachedMatchService_ListMatchesByPhase_CacheHit_ReturnsWithoutCallingInn
 	matches := []*domain.Match{{ID: 5, Phase: phase}}
 	st.seed(cacheKeyMatchesByPhase(phase), matches)
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.ListMatchesByPhase(context.Background(), phase)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -222,7 +222,7 @@ func TestCachedMatchService_ListMatchesByPhase_CacheMiss_CallsInner(t *testing.T
 	phase := domain.PhaseGroupStage
 	inner := &stubInnerMatchSvc{matches: []*domain.Match{{ID: 6, Phase: phase}}}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.ListMatchesByPhase(context.Background(), phase)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -239,7 +239,7 @@ func TestCachedMatchService_ListMatchesByPhase_InnerError_Propagated(t *testing.
 	st := newStubCache()
 	inner := &stubInnerMatchSvc{err: errors.New(errDBMsg)}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	_, err := svc.ListMatchesByPhase(context.Background(), domain.PhaseGroupStage)
 	if err == nil {
 		t.Fatal("expected error from inner, got nil")
@@ -255,7 +255,7 @@ func TestCachedMatchService_ListMatchesByStatus_CacheHit_ReturnsWithoutCallingIn
 	matches := []*domain.Match{{ID: 7, Status: status}}
 	st.seed(cacheKeyMatchesByStatus(status), matches)
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.ListMatchesByStatus(context.Background(), status)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -273,7 +273,7 @@ func TestCachedMatchService_ListMatchesByStatus_CacheMiss_CallsInner(t *testing.
 	status := domain.MatchStatusLive
 	inner := &stubInnerMatchSvc{matches: []*domain.Match{{ID: 8, Status: status}}}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.ListMatchesByStatus(context.Background(), status)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -293,7 +293,7 @@ func TestCachedMatchService_CreateMatch_Success_InvalidatesCache(t *testing.T) {
 	m := &domain.Match{ID: 9, Phase: domain.PhaseGroupStage, Status: domain.MatchStatusScheduled}
 	inner := &stubInnerMatchSvc{match: m}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	if err := svc.CreateMatch(context.Background(), m); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -306,7 +306,7 @@ func TestCachedMatchService_CreateMatch_InnerError_Propagated(t *testing.T) {
 	st := newStubCache()
 	inner := &stubInnerMatchSvc{err: errors.New(errDBMsg)}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	err := svc.CreateMatch(context.Background(), &domain.Match{})
 	if err == nil {
 		t.Fatal("expected error from inner CreateMatch, got nil")
@@ -323,7 +323,7 @@ func TestCachedMatchService_UpdateResult_Success_InvalidatesCache(t *testing.T) 
 	m := &domain.Match{ID: 1, Phase: domain.PhaseGroupStage, Status: domain.MatchStatusFinished}
 	inner := &stubInnerMatchSvc{match: m}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.UpdateResult(context.Background(), 1, 2, 1)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -340,7 +340,7 @@ func TestCachedMatchService_UpdateResult_InnerError_Propagated(t *testing.T) {
 	st := newStubCache()
 	inner := &stubInnerMatchSvc{err: errors.New("match not live")}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	_, err := svc.UpdateResult(context.Background(), 1, 2, 1)
 	if err == nil {
 		t.Fatal("expected error from inner UpdateResult, got nil")
@@ -354,7 +354,7 @@ func TestCachedMatchService_StartMatch_Success_InvalidatesCache(t *testing.T) {
 	m := &domain.Match{ID: 1, Phase: domain.PhaseGroupStage, Status: domain.MatchStatusLive}
 	inner := &stubInnerMatchSvc{match: m}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.StartMatch(context.Background(), 1)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -371,7 +371,7 @@ func TestCachedMatchService_StartMatch_InnerError_Propagated(t *testing.T) {
 	st := newStubCache()
 	inner := &stubInnerMatchSvc{err: errors.New("already live")}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	_, err := svc.StartMatch(context.Background(), 1)
 	if err == nil {
 		t.Fatal("expected error from inner StartMatch, got nil")
@@ -385,7 +385,7 @@ func TestCachedMatchService_GetMatch_DelegatesDirectlyToInner(t *testing.T) {
 	m := &domain.Match{ID: 42, HomeTeam: "Spain", AwayTeam: "England"}
 	inner := &stubInnerMatchSvc{match: m}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	got, err := svc.GetMatch(context.Background(), 42)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -406,7 +406,7 @@ func TestCachedMatchService_InvalidateMatchLists_DeleteError_NonFatal(t *testing
 	m := &domain.Match{ID: 1, Phase: domain.PhaseGroupStage, Status: domain.MatchStatusFinished}
 	inner := &stubInnerMatchSvc{match: m}
 
-	svc := NewCachedMatchService(inner, st, zap.NewNop())
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	// UpdateResult triggers invalidateMatchLists; the delete error must not propagate.
 	_, err := svc.UpdateResult(context.Background(), 1, 2, 1)
 	if err != nil {

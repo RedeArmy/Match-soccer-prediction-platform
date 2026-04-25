@@ -115,7 +115,7 @@ func (r *stubMemberRepo) ListStalePending(_ context.Context, _ time.Time) ([]*do
 // ── QuinielaService tests ─────────────────────────────────────────────────────
 
 func newQuinielaSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) QuinielaService {
-	return NewQuinielaService(qr, mr)
+	return NewQuinielaService(qr, mr, &noopSystemParamService{})
 }
 
 func TestQuinielaService_Create_ValidQuiniela_ReturnsNil(t *testing.T) {

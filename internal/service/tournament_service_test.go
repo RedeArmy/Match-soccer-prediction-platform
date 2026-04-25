@@ -102,6 +102,7 @@ func newTournamentSvc(matches []*domain.Match, tbRepo *stubTournamentRepo) Tourn
 	return NewTournamentService(
 		&stubMatchRepoTournament{matches: matches},
 		tbRepo,
+		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),
 	)
@@ -191,6 +192,7 @@ func TestTournamentService_GetAllStandings_RepoError_Propagates(t *testing.T) {
 	svc := NewTournamentService(
 		&stubMatchRepoTournament{err: errors.New("db error")},
 		&stubTournamentRepo{},
+		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),
 	)
@@ -317,7 +319,7 @@ func TestBuildStandings_SortOrder_PointsThenGDThenGF(t *testing.T) {
 		finishedMatch("C", tournamentFrance, tournamentSpain, 1, 0),
 		finishedMatch("C", tournamentSpain, tournamentItaly, 1, 0),
 	}
-	result := buildStandings(matches)
+	result := buildStandings(matches, domain.StandingsWinPoints)
 	entries := result["C"]
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 teams, got %d", len(entries))
@@ -330,7 +332,7 @@ func TestBuildStandings_SortOrder_PointsThenGDThenGF(t *testing.T) {
 
 func TestBuildStandings_GoalDifferenceCalculated(t *testing.T) {
 	matches := []*domain.Match{finishedMatch("D", "Portugal", "Morocco", 3, 1)}
-	result := buildStandings(matches)
+	result := buildStandings(matches, domain.StandingsWinPoints)
 
 	for _, e := range result["D"] {
 		if e.Team == "Portugal" && e.GD != 2 {

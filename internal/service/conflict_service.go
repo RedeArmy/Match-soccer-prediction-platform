@@ -15,6 +15,7 @@ type conflictService struct {
 	quinielaRepo repository.QuinielaRepository
 	memberRepo   repository.GroupMembershipRepository
 	paymentRepo  repository.PaymentRecordRepository
+	params       SystemParamService
 	audit        AuditLogger
 	log          *zap.Logger
 }
@@ -24,6 +25,7 @@ func NewConflictService(
 	quinielaRepo repository.QuinielaRepository,
 	memberRepo repository.GroupMembershipRepository,
 	paymentRepo repository.PaymentRecordRepository,
+	params SystemParamService,
 	audit AuditLogger,
 	log *zap.Logger,
 ) ConflictService {
@@ -31,6 +33,7 @@ func NewConflictService(
 		quinielaRepo: quinielaRepo,
 		memberRepo:   memberRepo,
 		paymentRepo:  paymentRepo,
+		params:       params,
 		audit:        audit,
 		log:          log,
 	}
@@ -39,7 +42,8 @@ func NewConflictService(
 // ListConflicts returns all detected operational conflicts across all categories.
 func (s *conflictService) ListConflicts(ctx context.Context) ([]domain.Conflict, error) {
 	now := time.Now().UTC()
-	staleThreshold := now.Add(-time.Duration(domain.ConflictStaleDays) * 24 * time.Hour)
+	staleDays := s.params.GetInt(ctx, domain.ParamKeyConflictStaleDays, domain.ConflictStaleDays)
+	staleThreshold := now.Add(-time.Duration(staleDays) * 24 * time.Hour)
 
 	var conflicts []domain.Conflict
 	conflicts = s.appendGroupOwnerConflicts(ctx, now, conflicts)

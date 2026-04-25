@@ -308,7 +308,7 @@ func TestRequireAuth_EmptyJWKSURL_BypassesAuth(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := middleware.RequireAuth("", log)(next)
+	handler := middleware.RequireAuth("", middleware.DefaultJWKSWarmupTimeout, log)(next)
 	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	rec := httptest.NewRecorder()
 
@@ -321,7 +321,7 @@ func TestRequireAuth_EmptyJWKSURL_BypassesAuth(t *testing.T) {
 
 func TestRequireAuth_MissingAuthHeader_Returns401(t *testing.T) {
 	log := zap.NewNop()
-	handler := middleware.RequireAuth("https://example.clerk.accounts.dev/.well-known/jwks.json", log)(
+	handler := middleware.RequireAuth("https://example.clerk.accounts.dev/.well-known/jwks.json", middleware.DefaultJWKSWarmupTimeout, log)(
 		http.HandlerFunc(okHandler),
 	)
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
@@ -336,7 +336,7 @@ func TestRequireAuth_MissingAuthHeader_Returns401(t *testing.T) {
 
 func TestRequireAuth_NonBearerHeader_Returns401(t *testing.T) {
 	log := zap.NewNop()
-	handler := middleware.RequireAuth("https://example.clerk.accounts.dev/.well-known/jwks.json", log)(
+	handler := middleware.RequireAuth("https://example.clerk.accounts.dev/.well-known/jwks.json", middleware.DefaultJWKSWarmupTimeout, log)(
 		http.HandlerFunc(okHandler),
 	)
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
@@ -359,7 +359,7 @@ func TestRequireAuth_JWKSFetchError_Returns500(t *testing.T) {
 	defer srv.Close()
 
 	log := zap.NewNop()
-	handler := middleware.RequireAuth(srv.URL, log)(http.HandlerFunc(okHandler))
+	handler := middleware.RequireAuth(srv.URL, middleware.DefaultJWKSWarmupTimeout, log)(http.HandlerFunc(okHandler))
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
 	req.Header.Set(headerAuth, "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyXzEifQ.sig")
 	rec := httptest.NewRecorder()
@@ -383,7 +383,7 @@ func TestRequireAuth_InvalidToken_Returns401(t *testing.T) {
 	defer srv.Close()
 
 	log := zap.NewNop()
-	handler := middleware.RequireAuth(srv.URL, log)(http.HandlerFunc(okHandler))
+	handler := middleware.RequireAuth(srv.URL, middleware.DefaultJWKSWarmupTimeout, log)(http.HandlerFunc(okHandler))
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
 	req.Header.Set(headerAuth, "Bearer not.a.jwt")
 	rec := httptest.NewRecorder()

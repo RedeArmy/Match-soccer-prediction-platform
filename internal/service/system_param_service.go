@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 const defaultCacheTTL = 5 * time.Minute
@@ -70,14 +72,51 @@ func (s *systemParamService) GetByCategory(ctx context.Context, cat string) ([]*
 }
 
 // Set upserts a param and evicts the cache entry so the next read fetches
-// the fresh value. actorID is forwarded to the repository for audit purposes.
+// the fresh value. When the key already exists its declared type is fetched
+// first and the new value is validated against it — an unparseable value
+// is rejected with ErrValidation before any write reaches the repository.
 func (s *systemParamService) Set(ctx context.Context, key, value string, actorID int) (*domain.SystemParam, error) {
+	if err := s.validateValueForKey(ctx, key, value); err != nil {
+		return nil, err
+	}
 	p, err := s.repo.Set(ctx, key, value, actorID)
 	if err != nil {
 		return nil, err
 	}
 	s.evict(key)
 	return p, nil
+}
+
+// validateValueForKey fetches the declared type of key and checks that value
+// can be parsed to that type. It is a no-op when the key does not yet exist
+// (new params have no type constraint at write time).
+func (s *systemParamService) validateValueForKey(ctx context.Context, key, value string) error {
+	existing, err := s.Get(ctx, key)
+	if err != nil || existing == nil {
+		return err // missing key → no type to validate against
+	}
+	return validateParamValue(value, existing.Type)
+}
+
+// validateParamValue returns ErrValidation when value cannot be parsed to typ.
+func validateParamValue(value string, typ domain.SystemParamType) error {
+	switch typ {
+	case domain.SystemParamTypeInt:
+		if _, err := strconv.Atoi(value); err != nil {
+			return apperrors.Validation(fmt.Sprintf("value %q cannot be parsed as int", value))
+		}
+	case domain.SystemParamTypeBool:
+		if _, err := strconv.ParseBool(value); err != nil {
+			return apperrors.Validation(fmt.Sprintf("value %q cannot be parsed as bool (accepted: true, false, 1, 0)", value))
+		}
+	case domain.SystemParamTypeDuration:
+		if _, err := time.ParseDuration(value); err != nil {
+			return apperrors.Validation(fmt.Sprintf("value %q cannot be parsed as duration (e.g. 5m, 30s, 1h)", value))
+		}
+	case domain.SystemParamTypeString:
+		// any string is valid
+	}
+	return nil
 }
 
 // GetString returns the param's string value, falling back to defaultVal when
@@ -165,8 +204,15 @@ func (s *systemParamService) evict(key string) {
 	s.mu.Unlock()
 }
 
-// BulkSet updates multiple parameters atomically and evicts their cache entries.
+// BulkSet validates all values against their declared types, then updates
+// all parameters atomically and evicts their cache entries. Validation runs
+// before any write so a single invalid value aborts the entire batch.
 func (s *systemParamService) BulkSet(ctx context.Context, params map[string]string, actorID int) error {
+	for key, value := range params {
+		if err := s.validateValueForKey(ctx, key, value); err != nil {
+			return fmt.Errorf("param %q: %w", key, err)
+		}
+	}
 	if err := s.repo.BulkSet(ctx, params, actorID); err != nil {
 		return err
 	}
