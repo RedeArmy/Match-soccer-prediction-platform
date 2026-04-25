@@ -30,7 +30,8 @@ const streamReadBlock = 5 * time.Second
 // streamMaxLen caps the length of each event stream. Older acknowledged
 // entries are trimmed approximately (MAXLEN ~) to keep memory bounded.
 // At ~1 event per second this retains roughly 7 days of history.
-const streamMaxLen = 600_000
+// Overridable at startup via Configure (reads messaging.stream_max_len from system_params).
+var streamMaxLen int64 = 600_000
 
 // dlqKey returns the Redis list key used as the dead-letter queue for the
 // given event type. Failed events are appended with RPUSH so that the oldest

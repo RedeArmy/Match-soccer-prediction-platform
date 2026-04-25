@@ -903,7 +903,7 @@ paths:
         name: id
         required: true
         type: integer
-      - description: Max snapshots to return (default 20, max 100)
+      - description: Max snapshots to return (default/max from system_params)
         in: query
         name: limit
         type: integer
@@ -1116,7 +1116,7 @@ paths:
     get:
       description: Returns the top N users ranked by total scored points across all
       parameters:
-      - description: Max entries to return (default 100, max 500)
+      - description: Max entries to return (default/max from system_params)
         in: query
         name: limit
         type: integer

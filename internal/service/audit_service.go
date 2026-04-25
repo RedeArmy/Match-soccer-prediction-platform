@@ -12,15 +12,18 @@ import (
 
 // auditService is the concrete implementation of AuditLogger.
 type auditService struct {
-	repo repository.AuditLogRepository
-	log  *zap.Logger
+	repo         repository.AuditLogRepository
+	writeTimeout time.Duration
+	log          *zap.Logger
 }
 
 // NewAuditService constructs an auditService backed by the given repository.
+// writeTimeout caps the time each fire-and-forget goroutine waits to persist
+// an entry; pass defaultAuditWriteTimeout (5s) when no override is available.
 // The return type is *auditService so callers can use it as both AuditLogger
 // and AuditReader without a second constructor.
-func NewAuditService(repo repository.AuditLogRepository, log *zap.Logger) *auditService {
-	return &auditService{repo: repo, log: log}
+func NewAuditService(repo repository.AuditLogRepository, writeTimeout time.Duration, log *zap.Logger) *auditService {
+	return &auditService{repo: repo, writeTimeout: writeTimeout, log: log}
 }
 
 // Log persists an audit entry in a detached goroutine (fire-and-forget).
@@ -51,7 +54,7 @@ func (s *auditService) Log(
 		Metadata:     metadata,
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), s.writeTimeout)
 		defer cancel()
 		if err := s.repo.Create(ctx, entry); err != nil {
 			s.log.Warn("audit log: failed to persist entry",

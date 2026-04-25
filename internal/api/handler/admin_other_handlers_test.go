@@ -293,7 +293,7 @@ func TestAdminListPaymentsByGroup_InvalidID_Returns422(t *testing.T) {
 
 func newAdminLeaderboardRouter(svc *stubAdminReadSvc) http.Handler {
 	r := chi.NewRouter()
-	h := handler.NewAdminLeaderboardHandler(svc, zap.NewNop())
+	h := handler.NewAdminLeaderboardHandler(svc, &stubAdminParamSvc{}, zap.NewNop())
 	r.Get(adminOtherPathLeaderboard, h.GlobalLeaderboard)
 	r.Get("/groups/{id}/leaderboard/history", h.SnapshotHistory)
 	r.Get("/predictions", h.ListPredictions)

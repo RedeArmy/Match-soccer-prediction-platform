@@ -22,22 +22,24 @@ const inviteCodeLength = 10
 type quinielaService struct {
 	repo       repository.QuinielaRepository
 	memberRepo repository.GroupMembershipRepository
+	params     SystemParamService
 }
 
 // NewQuinielaService constructs a quinielaService with the given dependencies.
 // memberRepo is required to verify group ownership in RenameGroup.
-func NewQuinielaService(repo repository.QuinielaRepository, memberRepo repository.GroupMembershipRepository) QuinielaService {
-	return &quinielaService{repo: repo, memberRepo: memberRepo}
+// params is used to read group.invite_code_length at runtime.
+func NewQuinielaService(repo repository.QuinielaRepository, memberRepo repository.GroupMembershipRepository, params SystemParamService) QuinielaService {
+	return &quinielaService{repo: repo, memberRepo: memberRepo, params: params}
 }
 
-// generateInviteCode returns a cryptographically random invite code of
-// inviteCodeLength characters drawn from inviteCodeAlphabet.
-func generateInviteCode() (string, error) {
-	b := make([]byte, inviteCodeLength)
+// generateInviteCode returns a cryptographically random invite code of length
+// characters drawn from inviteCodeAlphabet.
+func generateInviteCode(length int) (string, error) {
+	b := make([]byte, length)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generate invite code: %w", err)
 	}
-	result := make([]byte, inviteCodeLength)
+	result := make([]byte, length)
 	for i, v := range b {
 		result[i] = inviteCodeAlphabet[int(v)%len(inviteCodeAlphabet)]
 	}
@@ -52,7 +54,8 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 		return err
 	}
 
-	code, err := generateInviteCode()
+	length := s.params.GetInt(ctx, domain.ParamKeyGroupInviteCodeLength, inviteCodeLength)
+	code, err := generateInviteCode(length)
 	if err != nil {
 		return apperrors.Internal(err)
 	}

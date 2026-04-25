@@ -262,3 +262,91 @@ func TestSystemParamService_GetBool_KeyAbsent_ReturnsDefault(t *testing.T) {
 		t.Error("expected true (default)")
 	}
 }
+
+// ── validateParamValue ────────────────────────────────────────────────────────
+
+func TestValidateParamValue_InvalidInt_ReturnsError(t *testing.T) {
+	if err := validateParamValue("not-an-int", domain.SystemParamTypeInt); err == nil {
+		t.Error("expected error for invalid int value")
+	}
+}
+
+func TestValidateParamValue_ValidInt_ReturnsNil(t *testing.T) {
+	if err := validateParamValue("42", domain.SystemParamTypeInt); err != nil {
+		t.Errorf("unexpected error for valid int: %v", err)
+	}
+}
+
+func TestValidateParamValue_InvalidBool_ReturnsError(t *testing.T) {
+	if err := validateParamValue("maybe", domain.SystemParamTypeBool); err == nil {
+		t.Error("expected error for invalid bool value")
+	}
+}
+
+func TestValidateParamValue_ValidBool_ReturnsNil(t *testing.T) {
+	if err := validateParamValue("true", domain.SystemParamTypeBool); err != nil {
+		t.Errorf("unexpected error for valid bool: %v", err)
+	}
+}
+
+func TestValidateParamValue_InvalidDuration_ReturnsError(t *testing.T) {
+	if err := validateParamValue("nope", domain.SystemParamTypeDuration); err == nil {
+		t.Error("expected error for invalid duration value")
+	}
+}
+
+func TestValidateParamValue_ValidDuration_ReturnsNil(t *testing.T) {
+	if err := validateParamValue("5m", domain.SystemParamTypeDuration); err != nil {
+		t.Errorf("unexpected error for valid duration: %v", err)
+	}
+}
+
+func TestValidateParamValue_StringType_AlwaysValid(t *testing.T) {
+	if err := validateParamValue("anything goes", domain.SystemParamTypeString); err != nil {
+		t.Errorf("unexpected error for string type: %v", err)
+	}
+}
+
+// ── BulkSet ───────────────────────────────────────────────────────────────────
+
+func typedParam(key, value string, typ domain.SystemParamType) *domain.SystemParam {
+	return &domain.SystemParam{Key: key, Value: value, Type: typ}
+}
+
+func TestSystemParamService_BulkSet_Success_EvictsCache(t *testing.T) {
+	p := typedParam("x", "1", domain.SystemParamTypeInt)
+	repo := &stubSystemParamRepo{param: p}
+	svc := newParamSvc(repo)
+
+	// Populate cache so we can verify eviction.
+	_, _ = svc.Get(context.Background(), "x")
+
+	repo.param = typedParam("x", "99", domain.SystemParamTypeInt)
+	if err := svc.BulkSet(context.Background(), map[string]string{"x": "99"}, 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, _ := svc.Get(context.Background(), "x")
+	if got == nil || got.Value != "99" {
+		t.Errorf("expected evicted cache to return '99', got %v", got)
+	}
+}
+
+func TestSystemParamService_BulkSet_InvalidValue_ReturnsValidationError(t *testing.T) {
+	repo := &stubSystemParamRepo{param: typedParam("n", "5", domain.SystemParamTypeInt)}
+	svc := newParamSvc(repo)
+
+	err := svc.BulkSet(context.Background(), map[string]string{"n": "not-a-number"}, 1)
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+}
+
+func TestSystemParamService_BulkSet_RepoError_Propagates(t *testing.T) {
+	repo := &stubSystemParamRepo{param: nil, err: errors.New("db down")}
+	svc := newParamSvc(repo)
+
+	err := svc.BulkSet(context.Background(), map[string]string{"k": "v"}, 1)
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+}
