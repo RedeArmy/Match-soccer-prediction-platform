@@ -102,6 +102,24 @@ definitions:
       resource_type:
         type: string
     type: object
+  internal_api_handler.BulkBanErrorResponse:
+    properties:
+      message:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  internal_api_handler.BulkBanResultResponse:
+    properties:
+      banned:
+        items:
+          type: integer
+        type: array
+      failed:
+        items:
+          $ref: '#/definitions/internal_api_handler.BulkBanErrorResponse'
+        type: array
+    type: object
   internal_api_handler.CityResponse:
     properties:
       id:
@@ -113,6 +131,8 @@ definitions:
     type: object
   internal_api_handler.ConflictResponse:
     properties:
+      age_days:
+        type: integer
       details:
         additionalProperties: {}
         type: object
@@ -122,6 +142,24 @@ definitions:
         type: integer
       entity_type:
         type: string
+      type:
+        type: string
+    type: object
+  internal_api_handler.ConflictSummaryResponse:
+    properties:
+      by_type:
+        items:
+          $ref: '#/definitions/internal_api_handler.ConflictTypeSummaryResponse'
+        type: array
+      total_unresolved:
+        type: integer
+    type: object
+  internal_api_handler.ConflictTypeSummaryResponse:
+    properties:
+      avg_age_days:
+        type: number
+      count:
+        type: integer
       type:
         type: string
     type: object
@@ -1414,6 +1452,33 @@ paths:
       summary: List predictions by match
       tags:
       - admin-leaderboard
+  /api/v1/admin/stats/conflicts/summary:
+    get:
+      description: Returns an aggregated view of all currently detected conflicts
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.ConflictSummaryResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Conflict summary
+      tags:
+      - admin-conflicts
   /api/v1/admin/system-params:
     get:
       description: Returns all runtime-configurable system parameters. Parameters
@@ -1798,9 +1863,17 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/internal_api_handler.bulkBanRequest'
+      produces:
+      - application/json
       responses:
-        "204":
-          description: No Content
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.BulkBanResultResponse'
+        "207":
+          description: Partial success — some bans failed
+          schema:
+            $ref: '#/definitions/internal_api_handler.BulkBanResultResponse'
         "401":
           description: Unauthorized
           schema:

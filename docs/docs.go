@@ -1318,6 +1318,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/stats/conflicts/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns an aggregated view of all currently detected conflicts",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-conflicts"
+                ],
+                "summary": "Conflict summary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ConflictSummaryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/system-params": {
             "get": {
                 "security": [
@@ -1702,6 +1745,9 @@ const docTemplate = `{
                 "consumes": [
                     "application/json"
                 ],
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "admin-users"
                 ],
@@ -1718,8 +1764,17 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "204": {
-                        "description": "No Content"
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.BulkBanResultResponse"
+                        }
+                    },
+                    "207": {
+                        "description": "Partial success — some bans failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.BulkBanResultResponse"
+                        }
                     },
                     "401": {
                         "description": "Unauthorized",
@@ -3203,6 +3258,34 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.BulkBanErrorResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.BulkBanResultResponse": {
+            "type": "object",
+            "properties": {
+                "banned": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "failed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.BulkBanErrorResponse"
+                    }
+                }
+            }
+        },
         "internal_api_handler.CityResponse": {
             "type": "object",
             "properties": {
@@ -3220,6 +3303,9 @@ const docTemplate = `{
         "internal_api_handler.ConflictResponse": {
             "type": "object",
             "properties": {
+                "age_days": {
+                    "type": "integer"
+                },
                 "details": {
                     "type": "object",
                     "additionalProperties": {}
@@ -3232,6 +3318,34 @@ const docTemplate = `{
                 },
                 "entity_type": {
                     "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.ConflictSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "by_type": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.ConflictTypeSummaryResponse"
+                    }
+                },
+                "total_unresolved": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.ConflictTypeSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "avg_age_days": {
+                    "type": "number"
+                },
+                "count": {
+                    "type": "integer"
                 },
                 "type": {
                     "type": "string"

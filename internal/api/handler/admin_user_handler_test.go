@@ -57,6 +57,15 @@ func TestAdminListUsers_WithFilters_Returns200(t *testing.T) {
 	}
 }
 
+func TestAdminListUsers_LimitExceedsMax_CappedAndReturns200(t *testing.T) {
+	svc := &stubAdminUserSvc{users: []*domain.User{}}
+	req := newAdminRequest(http.MethodGet, "/users?limit=9999", "")
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
 // ── GetUserProfile ────────────────────────────────────────────────────────────
 
 func TestAdminGetUserProfile_Success_Returns200(t *testing.T) {
@@ -183,15 +192,51 @@ func TestAdminUnbanUser_InvalidID_Returns400(t *testing.T) {
 
 // ── BulkBan ───────────────────────────────────────────────────────────────────
 
-func TestAdminBulkBan_Success_Returns204(t *testing.T) {
-	svc := &stubAdminUserSvc{}
+func TestAdminBulkBan_AllSuccess_Returns200(t *testing.T) {
+	svc := &stubAdminUserSvc{
+		bulkResult: service.BulkBanResult{Banned: []int{1, 2}, Failed: []service.BulkBanError{}},
+	}
 	req := withCaller(
 		newAdminRequestJSON(http.MethodPost, adminUserPathBulkBan, `{"user_ids":[1,2],"reason":"bots"}`),
 		adminCaller,
 	)
 	w := doReq(newAdminUserRouter(svc), req)
-	if w.Code != http.StatusNoContent {
-		t.Errorf(fmtExpect204, w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminBulkBan_PartialFailure_Returns207(t *testing.T) {
+	svc := &stubAdminUserSvc{
+		bulkResult: service.BulkBanResult{
+			Banned: []int{1},
+			Failed: []service.BulkBanError{{UserID: 2, Message: "not found"}},
+		},
+	}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminUserPathBulkBan, `{"user_ids":[1,2],"reason":"bots"}`),
+		adminCaller,
+	)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusMultiStatus {
+		t.Errorf("expected 207, got %d", w.Code)
+	}
+}
+
+func TestAdminBulkBan_AllFailed_Returns207(t *testing.T) {
+	svc := &stubAdminUserSvc{
+		bulkResult: service.BulkBanResult{
+			Banned: []int{},
+			Failed: []service.BulkBanError{{UserID: 1, Message: "not found"}},
+		},
+	}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminUserPathBulkBan, `{"user_ids":[1],"reason":"bots"}`),
+		adminCaller,
+	)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusMultiStatus {
+		t.Errorf("expected 207, got %d", w.Code)
 	}
 }
 
@@ -216,7 +261,7 @@ func TestAdminBulkBan_EmptyBody_Returns422(t *testing.T) {
 }
 
 func TestAdminBulkBan_ServiceError_Returns500(t *testing.T) {
-	svc := &stubAdminUserSvc{err: errors.New("partial failure")}
+	svc := &stubAdminUserSvc{err: errors.New("db failure")}
 	req := withCaller(
 		newAdminRequestJSON(http.MethodPost, adminUserPathBulkBan, `{"user_ids":[1],"reason":"bots"}`),
 		adminCaller,

@@ -24,6 +24,44 @@ func NewAdminConflictHandler(svc service.ConflictService, log *zap.Logger) *Admi
 	return &AdminConflictHandler{svc: svc, log: log}
 }
 
+// ConflictSummary handles GET /admin/stats/conflicts/summary.
+//
+// @Summary      Conflict summary
+// @Description  Returns an aggregated view of all currently detected conflicts
+//
+//	grouped by type, with total count and average age per type.
+//	Designed for dashboard alert widgets that need a lightweight
+//	signal without the full conflict detail list. Requires admin role.
+//
+// @Tags         admin-conflicts
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  handler.ConflictSummaryResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/stats/conflicts/summary [get]
+func (h *AdminConflictHandler) ConflictSummary(w http.ResponseWriter, r *http.Request) {
+	summary, err := h.svc.ConflictSummary(r.Context())
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+
+	byType := make([]ConflictTypeSummaryResponse, len(summary.ByType))
+	for i, s := range summary.ByType {
+		byType[i] = ConflictTypeSummaryResponse{
+			Type:       string(s.Type),
+			Count:      s.Count,
+			AvgAgeDays: s.AvgAgeDays,
+		}
+	}
+	writeJSON(w, http.StatusOK, ConflictSummaryResponse{
+		TotalUnresolved: summary.TotalUnresolved,
+		ByType:          byType,
+	})
+}
+
 // ListConflicts handles GET /admin/conflicts — all currently detected conflicts.
 //
 // @Summary      List operational conflicts

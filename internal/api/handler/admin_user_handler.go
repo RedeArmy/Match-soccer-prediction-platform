@@ -229,18 +229,22 @@ type bulkBanRequest struct {
 // @Summary      Bulk-ban users
 // @Description  Bans multiple user accounts in a single request. Each ban is
 //
-//	processed sequentially; a failure on one user is logged and
-//	skipped so the remaining users are still banned. Requires admin role.
+//	processed sequentially so that a failure on one user does not
+//	block the remaining bans. Returns 200 when all bans succeed;
+//	returns 207 Multi-Status when at least one ban fails, with
+//	per-user detail in the response body. Requires admin role.
 //
 // @Tags         admin-users
 // @Accept       json
+// @Produce      json
 // @Security     BearerAuth
-// @Param        body  body  handler.bulkBanRequest  true  "List of user IDs and ban reason"
-// @Success      204
-// @Failure      401  {object}  handler.ErrorResponse
-// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
-// @Failure      422  {object}  handler.ErrorResponse  "user_ids or reason missing"
-// @Failure      500  {object}  handler.ErrorResponse
+// @Param        body  body      handler.bulkBanRequest          true  "List of user IDs and ban reason"
+// @Success      200   {object}  handler.BulkBanResultResponse
+// @Success      207   {object}  handler.BulkBanResultResponse   "Partial success — some bans failed"
+// @Failure      401   {object}  handler.ErrorResponse
+// @Failure      403   {object}  handler.ErrorResponse           "Caller is not an admin"
+// @Failure      422   {object}  handler.ErrorResponse           "user_ids or reason missing"
+// @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/users/bulk-ban [post]
 func (h *AdminUserHandler) BulkBan(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
@@ -259,9 +263,21 @@ func (h *AdminUserHandler) BulkBan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.BulkBan(r.Context(), req.UserIDs, caller.ID, req.Reason); err != nil {
+	result, err := h.svc.BulkBan(r.Context(), req.UserIDs, caller.ID, req.Reason)
+	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+
+	failed := make([]BulkBanErrorResponse, len(result.Failed))
+	for i, f := range result.Failed {
+		failed[i] = BulkBanErrorResponse{UserID: f.UserID, Message: f.Message}
+	}
+	body := BulkBanResultResponse{Banned: result.Banned, Failed: failed}
+
+	status := http.StatusOK
+	if len(result.Failed) > 0 {
+		status = http.StatusMultiStatus
+	}
+	writeJSON(w, status, body)
 }

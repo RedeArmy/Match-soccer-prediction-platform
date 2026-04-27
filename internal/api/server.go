@@ -309,6 +309,9 @@ func (s *Server) Routes() http.Handler {
 			// Conflicts
 			r.Get("/conflicts", adminConflictH.ListConflicts)
 			r.Post("/conflicts/{type}/{id}/resolve", adminConflictH.ResolveConflict)
+
+			// Stats / observability
+			r.Get("/stats/conflicts/summary", adminConflictH.ConflictSummary)
 		})
 	})
 
