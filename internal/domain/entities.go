@@ -613,4 +613,8 @@ type Conflict struct {
 	EntityType string
 	Details    map[string]any
 	DetectedAt time.Time
+	// AgeDays is the number of days the underlying entity has been in a
+	// conflicting state. Nil for conflict types where age is not meaningful
+	// (e.g. group_without_owner, where the ownership-loss timestamp is unknown).
+	AgeDays *int
 }

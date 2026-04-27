@@ -218,22 +218,34 @@ func (r *setRoleErrMemberRepo) SetRole(_ context.Context, _ int, _ domain.Member
 
 // ── BulkBan ───────────────────────────────────────────────────────────────────
 
-func TestAdminUserService_BulkBan_AllSucceed_ReturnsNil(t *testing.T) {
+func TestAdminUserService_BulkBan_AllSucceed_NoneInFailed(t *testing.T) {
 	u := &domain.User{ID: 1}
 	svc := newAdminUserSvc(&stubUserRepo{user: u}, &stubMemberRepo{})
 
-	err := svc.BulkBan(context.Background(), []int{1, 2, 3}, 99, adminUserBanReason)
+	result, err := svc.BulkBan(context.Background(), []int{1, 2, 3}, 99, adminUserBanReason)
 	if err != nil {
-		t.Errorf("expected nil error, got %v", err)
+		t.Fatalf("expected nil outer error, got %v", err)
+	}
+	if len(result.Failed) != 0 {
+		t.Errorf("expected no failures, got %d", len(result.Failed))
+	}
+	if len(result.Banned) != 3 {
+		t.Errorf("expected 3 banned, got %d", len(result.Banned))
 	}
 }
 
-func TestAdminUserService_BulkBan_PartialFailure_ReturnsFirstError(t *testing.T) {
+func TestAdminUserService_BulkBan_AllFail_ReturnsFailedList(t *testing.T) {
 	svc := newAdminUserSvc(&stubUserRepo{err: errors.New(adminUserNotFoundErr)}, &stubMemberRepo{})
 
-	err := svc.BulkBan(context.Background(), []int{1, 2}, 99, "")
-	if err == nil {
-		t.Error("expected error for all-fail bulk ban, got nil")
+	result, err := svc.BulkBan(context.Background(), []int{1, 2}, 99, "")
+	if err != nil {
+		t.Fatalf("expected nil outer error, got %v", err)
+	}
+	if len(result.Failed) != 2 {
+		t.Errorf("expected 2 failures, got %d", len(result.Failed))
+	}
+	if len(result.Banned) != 0 {
+		t.Errorf("expected 0 banned, got %d", len(result.Banned))
 	}
 }
 

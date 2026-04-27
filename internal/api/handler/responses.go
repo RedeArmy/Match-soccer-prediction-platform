@@ -501,6 +501,33 @@ type ConflictResponse struct {
 	EntityType string         `json:"entity_type"`
 	Details    map[string]any `json:"details,omitempty"`
 	DetectedAt string         `json:"detected_at"`
+	AgeDays    *int           `json:"age_days,omitempty"`
+}
+
+// ConflictTypeSummaryResponse is one row in ConflictSummaryResponse.
+type ConflictTypeSummaryResponse struct {
+	Type       string   `json:"type"`
+	Count      int      `json:"count"`
+	AvgAgeDays *float64 `json:"avg_age_days,omitempty"`
+}
+
+// ConflictSummaryResponse is the response body for GET /admin/stats/conflicts/summary.
+type ConflictSummaryResponse struct {
+	TotalUnresolved int                           `json:"total_unresolved"`
+	ByType          []ConflictTypeSummaryResponse `json:"by_type"`
+}
+
+// BulkBanErrorResponse is the per-user failure detail within BulkBanResultResponse.
+type BulkBanErrorResponse struct {
+	UserID  int    `json:"user_id"`
+	Message string `json:"message"`
+}
+
+// BulkBanResultResponse is the response body for POST /admin/users/bulk-ban.
+// HTTP 200 when all bans succeeded; HTTP 207 when some bans failed (partial success).
+type BulkBanResultResponse struct {
+	Banned []int                  `json:"banned"`
+	Failed []BulkBanErrorResponse `json:"failed"`
 }
 
 // ── Admin converter functions ─────────────────────────────────────────────────
@@ -598,5 +625,6 @@ func conflictToResponse(c domain.Conflict) ConflictResponse {
 		EntityType: c.EntityType,
 		Details:    c.Details,
 		DetectedAt: c.DetectedAt.Format(timeFormat),
+		AgeDays:    c.AgeDays,
 	}
 }

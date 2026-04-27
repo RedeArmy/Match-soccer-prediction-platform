@@ -51,10 +51,11 @@ func doReq(router http.Handler, req *http.Request) *httptest.ResponseRecorder {
 // ── AdminUserService stub ─────────────────────────────────────────────────────
 
 type stubAdminUserSvc struct {
-	user    *domain.User
-	users   []*domain.User
-	profile *service.AdminUserProfile
-	err     error
+	user       *domain.User
+	users      []*domain.User
+	profile    *service.AdminUserProfile
+	bulkResult service.BulkBanResult
+	err        error
 }
 
 func (s *stubAdminUserSvc) BanUser(_ context.Context, _, _ int, _ string) (*domain.User, error) {
@@ -66,8 +67,11 @@ func (s *stubAdminUserSvc) UnbanUser(_ context.Context, _, _ int) (*domain.User,
 func (s *stubAdminUserSvc) ListUsers(_ context.Context) ([]*domain.User, error) {
 	return s.users, s.err
 }
-func (s *stubAdminUserSvc) BulkBan(_ context.Context, _ []int, _ int, _ string) error {
-	return s.err
+func (s *stubAdminUserSvc) BulkBan(_ context.Context, _ []int, _ int, _ string) (service.BulkBanResult, error) {
+	if s.err != nil {
+		return service.BulkBanResult{}, s.err
+	}
+	return s.bulkResult, nil
 }
 func (s *stubAdminUserSvc) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
 	return s.users, s.err
@@ -207,11 +211,15 @@ func (s *stubAdminParamSvc) BulkSet(_ context.Context, _ map[string]string, _ in
 
 type stubConflictSvc struct {
 	conflicts []domain.Conflict
+	summary   *service.ConflictSummaryResult
 	err       error
 }
 
 func (s *stubConflictSvc) ListConflicts(_ context.Context) ([]domain.Conflict, error) {
 	return s.conflicts, s.err
+}
+func (s *stubConflictSvc) ConflictSummary(_ context.Context) (*service.ConflictSummaryResult, error) {
+	return s.summary, s.err
 }
 func (s *stubConflictSvc) ResolveConflict(_ context.Context, _ string, _, _ int, _ string) error {
 	return s.err

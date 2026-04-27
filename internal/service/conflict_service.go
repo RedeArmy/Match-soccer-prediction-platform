@@ -101,6 +101,7 @@ func (s *conflictService) appendStalePaymentConflicts(ctx context.Context, now t
 				"age_days":    age,
 			},
 			DetectedAt: now,
+			AgeDays:    &age,
 		})
 	}
 	return out
@@ -124,9 +125,53 @@ func (s *conflictService) appendStaleMembershipConflicts(ctx context.Context, no
 				"age_days":    age,
 			},
 			DetectedAt: now,
+			AgeDays:    &age,
 		})
 	}
 	return out
+}
+
+// ConflictSummary aggregates the live conflict list into per-type counts and
+// average ages, suitable for a lightweight dashboard alert widget.
+func (s *conflictService) ConflictSummary(ctx context.Context) (*ConflictSummaryResult, error) {
+	conflicts, err := s.ListConflicts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type agg struct {
+		count    int
+		totalAge int
+		hasAge   int // number of conflicts with an AgeDays value
+	}
+	byType := make(map[domain.ConflictType]*agg)
+	for _, c := range conflicts {
+		a := byType[c.Type]
+		if a == nil {
+			a = &agg{}
+			byType[c.Type] = a
+		}
+		a.count++
+		if c.AgeDays != nil {
+			a.totalAge += *c.AgeDays
+			a.hasAge++
+		}
+	}
+
+	summaries := make([]ConflictTypeSummary, 0, len(byType))
+	for ct, a := range byType {
+		s := ConflictTypeSummary{Type: ct, Count: a.count}
+		if a.hasAge > 0 {
+			avg := float64(a.totalAge) / float64(a.hasAge)
+			s.AvgAgeDays = &avg
+		}
+		summaries = append(summaries, s)
+	}
+
+	return &ConflictSummaryResult{
+		TotalUnresolved: len(conflicts),
+		ByType:          summaries,
+	}, nil
 }
 
 // ResolveConflict records an admin acknowledgement of a conflict in the audit log.

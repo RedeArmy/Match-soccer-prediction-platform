@@ -78,21 +78,24 @@ func (s *adminUserService) ListUsers(ctx context.Context) ([]*domain.User, error
 	return s.userRepo.List(ctx)
 }
 
-// BulkBan bans every user in userIDs sequentially. A per-user failure is
-// logged and skipped so the remaining bans proceed. Returns the first error
-// encountered, or nil when all bans succeeded.
-func (s *adminUserService) BulkBan(ctx context.Context, userIDs []int, adminID int, reason string) error {
-	var firstErr error
+// BulkBan bans every user in userIDs sequentially. Per-user failures are
+// collected in BulkBanResult.Failed so the caller can report partial success;
+// the remaining bans always proceed regardless of individual failures.
+func (s *adminUserService) BulkBan(ctx context.Context, userIDs []int, adminID int, reason string) (BulkBanResult, error) {
+	result := BulkBanResult{
+		Banned: make([]int, 0, len(userIDs)),
+		Failed: make([]BulkBanError, 0),
+	}
 	for _, uid := range userIDs {
 		if _, err := s.BanUser(ctx, uid, adminID, reason); err != nil {
 			s.log.Warn("admin_user: bulk ban failed for user",
 				zap.Int("user_id", uid), zap.Error(err))
-			if firstErr == nil {
-				firstErr = err
-			}
+			result.Failed = append(result.Failed, BulkBanError{UserID: uid, Message: err.Error()})
+		} else {
+			result.Banned = append(result.Banned, uid)
 		}
 	}
-	return firstErr
+	return result, nil
 }
 
 // transferOwnedGroups finds all quinielas where userID is the CreateOwner and
