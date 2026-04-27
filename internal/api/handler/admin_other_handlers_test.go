@@ -29,6 +29,7 @@ const (
 	adminOtherPathAuditLog        = "/audit-log"
 	adminOtherPathConflicts       = "/conflicts"
 	adminOtherPathConflictResolve = "/conflicts/group_without_owner/1/resolve"
+	adminOtherPathConflictSummary = "/stats/conflicts/summary"
 	adminOtherScoringExact        = "scoring.exact"
 )
 
@@ -628,6 +629,7 @@ func newAdminConflictRouter(svc *stubConflictSvc) http.Handler {
 	h := handler.NewAdminConflictHandler(svc, zap.NewNop())
 	r.Get(adminOtherPathConflicts, h.ListConflicts)
 	r.Post("/conflicts/{type}/{id}/resolve", h.ResolveConflict)
+	r.Get(adminOtherPathConflictSummary, h.ConflictSummary)
 	return r
 }
 
@@ -686,6 +688,45 @@ func TestAdminResolveConflict_ServiceError_Returns500(t *testing.T) {
 		adminCaller,
 	)
 	w := doReq(newAdminConflictRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── AdminConflictHandler — ConflictSummary ────────────────────────────────────
+
+func TestAdminConflictSummary_Success_Returns200(t *testing.T) {
+	avg := 3.5
+	svc := &stubConflictSvc{
+		summary: &service.ConflictSummaryResult{
+			TotalUnresolved: 2,
+			ByType: []service.ConflictTypeSummary{
+				{Type: domain.ConflictPaymentStale, Count: 2, AvgAgeDays: &avg},
+			},
+		},
+	}
+	w := do(newAdminConflictRouter(svc), http.MethodGet, adminOtherPathConflictSummary, "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminConflictSummary_Empty_Returns200(t *testing.T) {
+	svc := &stubConflictSvc{
+		summary: &service.ConflictSummaryResult{
+			TotalUnresolved: 0,
+			ByType:          []service.ConflictTypeSummary{},
+		},
+	}
+	w := do(newAdminConflictRouter(svc), http.MethodGet, adminOtherPathConflictSummary, "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminConflictSummary_ServiceError_Returns500(t *testing.T) {
+	svc := &stubConflictSvc{err: errors.New(adminOtherDBError)}
+	w := do(newAdminConflictRouter(svc), http.MethodGet, adminOtherPathConflictSummary, "")
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, w.Code)
 	}

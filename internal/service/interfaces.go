@@ -302,6 +302,21 @@ type AdminGroupService interface {
 	TransferOwnership(ctx context.Context, quinielaID, newOwnerUserID, adminID int) error
 }
 
+// BulkBanError records a single ban failure within a BulkBan call.
+type BulkBanError struct {
+	UserID  int
+	Message string
+}
+
+// BulkBanResult is the outcome of a BulkBan call. Banned holds the IDs of
+// every user that was successfully banned; Failed holds the IDs and reasons
+// for every user whose ban could not be completed. The caller is responsible
+// for deciding the appropriate HTTP status (200 vs 207 Multi-Status).
+type BulkBanResult struct {
+	Banned []int
+	Failed []BulkBanError
+}
+
 // AdminUserService exposes administrative operations on User accounts.
 //
 // BanUser and BulkBan automatically transfer group ownership when the banned
@@ -313,10 +328,10 @@ type AdminUserService interface {
 	UnbanUser(ctx context.Context, targetUserID, adminID int) (*domain.User, error)
 	ListUsers(ctx context.Context) ([]*domain.User, error)
 	// BulkBan bans every user in userIDs with the same reason. It processes
-	// bans sequentially; a failure on one user is logged and skipped so the
-	// remaining users are still banned. Returns the first error encountered,
-	// or nil when all succeeded.
-	BulkBan(ctx context.Context, userIDs []int, adminID int, reason string) error
+	// bans sequentially so that a failure on one user does not block the
+	// remaining bans. Per-user failures are reported in BulkBanResult.Failed;
+	// the outer error is reserved for unexpected, request-level failures.
+	BulkBan(ctx context.Context, userIDs []int, adminID int, reason string) (BulkBanResult, error)
 	// ListFiltered returns users matching the given filters with pagination.
 	// Supersedes ListUsers for the admin panel where filters and paging are needed.
 	ListFiltered(ctx context.Context, f repository.UserFilters, p repository.Pagination) ([]*domain.User, error)
@@ -404,6 +419,21 @@ type AdminReadService interface {
 	ListSnapshotHistory(ctx context.Context, quinielaID, limit int) ([]*domain.LeaderboardSnapshot, error)
 }
 
+// ConflictTypeSummary aggregates detected conflicts for a single conflict type.
+type ConflictTypeSummary struct {
+	Type       domain.ConflictType
+	Count      int
+	AvgAgeDays *float64 // nil when no age information is available for this type
+}
+
+// ConflictSummaryResult is the outcome of a ConflictSummary call.
+// It provides per-type counts and average ages, enabling dashboards to surface
+// an alert when unresolved conflicts are accumulating or getting stale.
+type ConflictSummaryResult struct {
+	TotalUnresolved int
+	ByType          []ConflictTypeSummary
+}
+
 // ConflictService detects and resolves operational inconsistencies that require
 // administrative attention. Conflicts are computed on demand; they are not
 // persisted. Resolution records an audit log entry and is intended to
@@ -412,6 +442,11 @@ type ConflictService interface {
 	// ListConflicts returns all currently detected conflicts across all
 	// conflict categories.
 	ListConflicts(ctx context.Context) ([]domain.Conflict, error)
+	// ConflictSummary returns an aggregated view of all detected conflicts
+	// grouped by type, with count and average age per type. Intended for
+	// dashboard alert widgets that need a lightweight summary without the
+	// full conflict detail list.
+	ConflictSummary(ctx context.Context) (*ConflictSummaryResult, error)
 	// ResolveConflict records an admin acknowledgement of the given conflict.
 	// conflictType must be one of the domain.ConflictType constants.
 	ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, note string) error
