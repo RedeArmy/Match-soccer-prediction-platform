@@ -4461,3 +4461,244 @@ func TestGroupMembershipRepository_TransferOwnershipRoles_CancelledContext_Retur
 		t.Fatal("expected error for cancelled context, got nil")
 	}
 }
+
+// ── GroupMembershipRepository.ApproveMembership ───────────────────────────────
+
+func TestGroupMembershipRepository_ApproveMembership_PromotesToActiveAndSyncsStatus(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	qRepo := repository.NewPostgresQuinielaRepository(testDB)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	// owner counts as 1 active member
+	seedActiveMembership(t, q.ID, owner.ID)
+
+	// second active member — group reaches MinMembersForActive=3 only when pending is approved
+	seedActiveMembership(t, q.ID, seedUser(t).ID)
+
+	// pending member to be approved
+	joiner := seedUser(t)
+	pending := seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
+
+	now := time.Now().UTC()
+	m, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, now, domain.MinMembersForActive)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if m.Status != domain.MembershipActive {
+		t.Errorf("expected status=active after approval, got %q", m.Status)
+	}
+	if m.JoinedAt == nil {
+		t.Error("expected JoinedAt to be set after approval")
+	}
+
+	// quiniela status must now be active (3 active members == MinMembersForActive)
+	q2, err := qRepo.GetByID(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if q2.Status != domain.QuinielaStatusActive {
+		t.Errorf("expected quiniela status=active after approval, got %q", q2.Status)
+	}
+}
+
+func TestGroupMembershipRepository_ApproveMembership_BelowThreshold_QuinielaStaysInactive(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	qRepo := repository.NewPostgresQuinielaRepository(testDB)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedActiveMembership(t, q.ID, owner.ID) // only 1 active member before approval
+
+	joiner := seedUser(t)
+	pending := seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
+
+	// After approval: 2 active members, still below MinMembersForActive=3.
+	_, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	q2, err := qRepo.GetByID(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if q2.Status != domain.QuinielaStatusInactive {
+		t.Errorf("expected quiniela status=inactive with only 2 members, got %q", q2.Status)
+	}
+}
+
+func TestGroupMembershipRepository_ApproveMembership_AlreadyApproved_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	active := seedActiveMembership(t, q.ID, owner.ID)
+
+	// active.ID is already active — WHERE status='pending' matches 0 rows.
+	err := func() error {
+		_, e := repo.ApproveMembership(context.Background(), active.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive)
+		return e
+	}()
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict for already-active membership, got %v", err)
+	}
+}
+
+func TestGroupMembershipRepository_ApproveMembership_ExceedsMaxMembers_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	qRepo := repository.NewPostgresQuinielaRepository(testDB)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	owner := seedUser(t)
+	maxMembers := 1
+	q := &domain.Quiniela{
+		Name:           "Capped " + nextCode(),
+		OwnerID:        owner.ID,
+		InviteCode:     nextCode(),
+		Currency:       defaultCurrency,
+		PrizeThreshold: domain.DefaultPrizeThreshold,
+		MaxMembers:     &maxMembers,
+	}
+	if err := qRepo.Create(context.Background(), q); err != nil {
+		t.Fatalf("seed quiniela: %v", err)
+	}
+
+	// Fill the one active slot.
+	seedActiveMembership(t, q.ID, owner.ID)
+
+	// Add a pending member and try to approve past the cap.
+	joiner := seedUser(t)
+	pending := seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
+
+	_, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict when approving past max_members, got %v", err)
+	}
+}
+
+func TestGroupMembershipRepository_ApproveMembership_CancelledContext_ReturnsError(t *testing.T) {
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := repo.ApproveMembership(ctx, 1, 1, time.Now().UTC(), domain.MinMembersForActive); err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+// ── GroupMembershipRepository.LeaveMembership ─────────────────────────────────
+
+func TestGroupMembershipRepository_LeaveMembership_SetsLeftAndSyncsStatus(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	qRepo := repository.NewPostgresQuinielaRepository(testDB)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedActiveMembership(t, q.ID, owner.ID)
+
+	// add two more so the group starts active (3 members)
+	u2, u3 := seedUser(t), seedUser(t)
+	seedActiveMembership(t, q.ID, u2.ID)
+	seedActiveMembership(t, q.ID, u3.ID)
+
+	// Force quiniela to active so we can observe the downgrade.
+	if err := qRepo.UpdateStatus(context.Background(), q.ID, domain.QuinielaStatusActive); err != nil {
+		t.Fatalf("seed quiniela status: %v", err)
+	}
+
+	// u3 leaves — drops to 2 active members, below MinMembersForActive=3.
+	if err := repo.LeaveMembership(context.Background(), q.ID, u3.ID, time.Now().UTC(), domain.MinMembersForActive); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// membership must be left
+	m, err := repo.GetByQuinielaAndUser(context.Background(), q.ID, u3.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if m.Status != domain.MembershipLeft {
+		t.Errorf("expected status=left after leave, got %q", m.Status)
+	}
+	if m.JoinedAt != nil {
+		t.Error("expected JoinedAt=nil after leave")
+	}
+	if m.RemovedAt == nil {
+		t.Error("expected RemovedAt to be set after leave")
+	}
+	if m.RemovedBy != nil {
+		t.Error("expected RemovedBy=nil for self-exit")
+	}
+
+	// quiniela must be inactive (2 active members < 3)
+	q2, err := qRepo.GetByID(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if q2.Status != domain.QuinielaStatusInactive {
+		t.Errorf("expected quiniela status=inactive after member leaves, got %q", q2.Status)
+	}
+}
+
+func TestGroupMembershipRepository_LeaveMembership_StaysActive_WhenEnoughMembersRemain(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	qRepo := repository.NewPostgresQuinielaRepository(testDB)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedActiveMembership(t, q.ID, owner.ID)
+
+	users := make([]*domain.User, 3)
+	for i := range users {
+		users[i] = seedUser(t)
+		seedActiveMembership(t, q.ID, users[i].ID)
+	}
+	// 4 active members total; after one leaves, 3 remain == MinMembersForActive.
+	if err := qRepo.UpdateStatus(context.Background(), q.ID, domain.QuinielaStatusActive); err != nil {
+		t.Fatalf("seed quiniela status: %v", err)
+	}
+
+	if err := repo.LeaveMembership(context.Background(), q.ID, users[0].ID, time.Now().UTC(), domain.MinMembersForActive); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	q2, err := qRepo.GetByID(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if q2.Status != domain.QuinielaStatusActive {
+		t.Errorf("expected quiniela status=active with 3 remaining members, got %q", q2.Status)
+	}
+}
+
+func TestGroupMembershipRepository_LeaveMembership_NotActive_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	pending := seedMembership(t, q.ID, owner.ID, domain.MembershipPending, false)
+
+	// pending member tries to leave — WHERE status='active' matches 0 rows.
+	err := repo.LeaveMembership(context.Background(), q.ID, pending.UserID, time.Now().UTC(), domain.MinMembersForActive)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict for non-active member leave, got %v", err)
+	}
+}
+
+func TestGroupMembershipRepository_LeaveMembership_CancelledContext_ReturnsError(t *testing.T) {
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := repo.LeaveMembership(ctx, 1, 1, time.Now().UTC(), domain.MinMembersForActive); err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}

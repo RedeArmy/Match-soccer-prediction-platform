@@ -260,6 +260,18 @@ type GroupMembershipRepository interface {
 	// preventing the ConflictGroupNoOwner state that arises from a partial write.
 	// Returns NotFound when newOwnerMembershipID does not exist.
 	TransferOwnershipRoles(ctx context.Context, quinielaID, newOwnerMembershipID int) error
+	// ApproveMembership atomically promotes a pending membership to active and
+	// recalculates the quiniela's status within a single database transaction.
+	// minMembers is the minimum active-member count at or above which the
+	// quiniela transitions to active. Returns Conflict when the row is no longer
+	// pending — a concurrent approval committed between the caller's pre-flight
+	// check and this call.
+	ApproveMembership(ctx context.Context, membershipID, quinielaID int, now time.Time, minMembers int) (*domain.GroupMembership, error)
+	// LeaveMembership atomically marks a membership as left and recalculates
+	// the quiniela's status within a single database transaction. Returns
+	// Conflict when the membership is no longer active — e.g. an admin removed
+	// the member concurrently between the caller's pre-flight check and this call.
+	LeaveMembership(ctx context.Context, quinielaID, userID int, now time.Time, minMembers int) error
 }
 
 // TiebreakerRepository defines the persistence operations for the Tiebreaker

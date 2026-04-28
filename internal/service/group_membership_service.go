@@ -109,6 +109,13 @@ func (s *groupMembershipService) createPendingPayment(ctx context.Context, quini
 
 // checkCapacity returns a Conflict error when the quiniela has a max_members
 // cap and the number of active members has reached it.
+//
+// This is a pre-flight optimisation only: the gap between this read and the
+// subsequent INSERT is not serialised, so two concurrent joins can both pass
+// the check before either write commits. The database trigger
+// trg_enforce_max_members (SQLSTATE P0001 / max_members_exceeded) is the
+// authoritative enforcement point and is translated into a Conflict error by
+// the repository layer on violation.
 func (s *groupMembershipService) checkCapacity(ctx context.Context, quiniela *domain.Quiniela) error {
 	if quiniela.MaxMembers == nil {
 		return nil
@@ -147,10 +154,9 @@ func (s *groupMembershipService) requestRejoin(ctx context.Context, m *domain.Gr
 
 // ApproveJoin promotes a pending membership to active. The approverUserID must
 // be an active member of the same quiniela — any member may approve; there is
-// no admin-only gate. After approval, group status is synchronised via
-// syncGroupStatus.
+// no admin-only gate. The membership update and group status recalculation are
+// committed atomically via ApproveMembership.
 func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, membershipID, approverUserID int) (*domain.GroupMembership, error) {
-	// Verify the approver is an active member of this quiniela.
 	approver, err := s.memberRepo.GetByQuinielaAndUser(ctx, quinielaID, approverUserID)
 	if err != nil {
 		return nil, err
@@ -159,7 +165,6 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 		return nil, apperrors.Forbidden("only active members of this group may approve join requests")
 	}
 
-	// Load and validate the pending request.
 	pending, err := s.memberRepo.GetByID(ctx, membershipID)
 	if err != nil {
 		return nil, err
@@ -171,28 +176,26 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 		return nil, apperrors.Conflict("this join request is no longer pending")
 	}
 
-	now := time.Now().UTC()
-	pending.Status = domain.MembershipActive
-	pending.JoinedAt = &now
-	if err := s.memberRepo.Update(ctx, pending); err != nil {
+	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
+	m, err := s.memberRepo.ApproveMembership(ctx, membershipID, quinielaID, time.Now().UTC(), minMembers)
+	if err != nil {
 		return nil, err
 	}
 
 	resType := "membership"
-	s.audit.Log(ctx, &approverUserID, nil, domain.AuditActionJoinApproved, &resType, &pending.ID, map[string]any{
+	s.audit.Log(ctx, &approverUserID, nil, domain.AuditActionJoinApproved, &resType, &m.ID, map[string]any{
 		"quiniela_id":  quinielaID,
-		"approved_uid": pending.UserID,
+		"approved_uid": m.UserID,
 	})
-
-	s.syncGroupStatus(ctx, quinielaID)
-	return pending, nil
+	return m, nil
 }
 
 // Leave sets the caller's own membership to left. Only the member themselves
 // may call this — no admin or owner can remove another user. If the leaving
 // user holds MembershipRoleCreateOwner, ownership is automatically transferred
-// to the oldest remaining active member before the status is updated.
-// After leaving, group status is synchronised via syncGroupStatus.
+// to the oldest remaining active member before the status is updated. The
+// membership update and group status recalculation are committed atomically
+// via LeaveMembership.
 func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUserID int) error {
 	m, err := s.memberRepo.GetByQuinielaAndUser(ctx, quinielaID, callerUserID)
 	if err != nil {
@@ -211,17 +214,8 @@ func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUs
 		}
 	}
 
-	now := time.Now().UTC()
-	m.Status = domain.MembershipLeft
-	m.JoinedAt = nil
-	m.RemovedAt = &now
-	m.RemovedBy = nil // nil distinguishes self-exit from admin-forced removal
-	if err := s.memberRepo.Update(ctx, m); err != nil {
-		return err
-	}
-
-	s.syncGroupStatus(ctx, quinielaID)
-	return nil
+	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
+	return s.memberRepo.LeaveMembership(ctx, quinielaID, callerUserID, time.Now().UTC(), minMembers)
 }
 
 // transferOwnership assigns MembershipRoleCreateOwner to the oldest active
@@ -236,32 +230,6 @@ func (s *groupMembershipService) transferOwnership(ctx context.Context, quiniela
 		return nil
 	}
 	return s.memberRepo.SetRole(ctx, successor.ID, domain.MembershipRoleCreateOwner)
-}
-
-// syncGroupStatus recomputes whether the quiniela should be active or inactive
-// based on the current active member count. It is called after every membership
-// state transition. Errors are logged but not propagated — the membership change
-// already succeeded, and the status will self-correct on the next transition.
-func (s *groupMembershipService) syncGroupStatus(ctx context.Context, quinielaID int) {
-	count, err := s.memberRepo.CountActive(ctx, quinielaID)
-	if err != nil {
-		s.log.Warn("group status sync: failed to count active members",
-			zap.Int("quiniela_id", quinielaID), zap.Error(err))
-		return
-	}
-
-	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
-	status := domain.QuinielaStatusInactive
-	if count >= minMembers {
-		status = domain.QuinielaStatusActive
-	}
-
-	if err := s.quinielaRepo.UpdateStatus(ctx, quinielaID, status); err != nil {
-		s.log.Warn("group status sync: failed to update quiniela status",
-			zap.Int("quiniela_id", quinielaID),
-			zap.String("status", string(status)),
-			zap.Error(err))
-	}
 }
 
 // MarkPaid flips the paid flag to true for the given membership. It is

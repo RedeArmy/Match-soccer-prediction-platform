@@ -512,12 +512,13 @@ func TestGroupMembershipService_ListByUser_ReturnsMemberships(t *testing.T) {
 
 // ── MarkPaid ──────────────────────────────────────────────────────────────────
 
-// ── syncGroupStatus error paths ───────────────────────────────────────────────
+// ── ApproveMembership / LeaveMembership error propagation ─────────────────────
 
-// syncGroupStatus errors are logged and swallowed, so the parent operation
-// (ApproveJoin / Leave) must still succeed when CountActive or UpdateStatus fail.
+// The membership write and group-status recalculation are now committed
+// atomically. Any error from ApproveMembership or LeaveMembership must
+// propagate to the caller so the API can surface the failure correctly.
 
-func TestGroupMembershipService_ApproveJoin_SyncCountActiveError_StillSucceeds(t *testing.T) {
+func TestGroupMembershipService_ApproveJoin_ApproveMembershipError_PropagatesError(t *testing.T) {
 	approver := activeMembership(1, 10)
 	pending := pendingMembership(99, 1, 42)
 	svc := newMemberSvc(
@@ -525,27 +526,26 @@ func TestGroupMembershipService_ApproveJoin_SyncCountActiveError_StillSucceeds(t
 		&stubMemberRepo{
 			membership:     approver,
 			membershipByID: pending,
-			countActiveErr: errors.New(membershipDBError),
+			approveErr:     errors.New(membershipDBError),
 		},
 	)
 
-	got, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
-	if err != nil {
-		t.Fatalf("expected ApproveJoin to succeed despite sync error, got %v", err)
-	}
-	if got.Status != domain.MembershipActive {
-		t.Errorf("expected active status, got %s", got.Status)
+	if _, err := svc.ApproveJoin(context.Background(), 1, 99, 10); err == nil {
+		t.Fatal("expected ApproveJoin to fail when ApproveMembership returns error")
 	}
 }
 
-func TestGroupMembershipService_Leave_SyncUpdateStatusError_StillSucceeds(t *testing.T) {
+func TestGroupMembershipService_Leave_LeaveMembershipError_PropagatesError(t *testing.T) {
 	svc := newMemberSvc(
-		&stubQuinielaRepo{updateStatusErr: errors.New(membershipDBError)},
-		&stubMemberRepo{membership: activeMembership(1, 42), activeCount: 1},
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership: activeMembership(1, 42),
+			leaveErr:   errors.New(membershipDBError),
+		},
 	)
 
-	if err := svc.Leave(context.Background(), 1, 42); err != nil {
-		t.Errorf("expected Leave to succeed despite sync error, got %v", err)
+	if err := svc.Leave(context.Background(), 1, 42); err == nil {
+		t.Error("expected Leave to fail when LeaveMembership returns error")
 	}
 }
 
@@ -635,12 +635,6 @@ func (r *leaveOwnerMemberRepo) OldestActiveMember(_ context.Context, _, _ int) (
 func (r *leaveOwnerMemberRepo) SetRole(_ context.Context, membershipID int, _ domain.MembershipRole) error {
 	r.setRoleMembershipID = membershipID
 	return nil
-}
-func (r *leaveOwnerMemberRepo) Update(_ context.Context, _ *domain.GroupMembership) error {
-	return nil
-}
-func (r *leaveOwnerMemberRepo) CountActive(_ context.Context, _ int) (int, error) {
-	return 0, nil
 }
 
 // ── checkCapacity error path ───────────────────────────────────────────────────
