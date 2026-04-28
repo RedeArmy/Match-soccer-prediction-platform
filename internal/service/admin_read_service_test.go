@@ -29,7 +29,10 @@ func newAdminReadSvc(
 	tbRepo *stubTiebreakerRepo,
 	snapRepo *stubSnapshotRepo,
 ) AdminReadService {
-	return NewAdminReadService(predRepo, userRepo, &stubQuinielaRepo{}, &stubPaymentRepo{}, tbRepo, snapRepo, &noopSystemParamService{}, zap.NewNop())
+	return NewAdminReadService(
+		AdminReadRepos{Pred: predRepo, User: userRepo, Quiniela: &stubQuinielaRepo{}, Payment: &stubPaymentRepo{}, Tiebreaker: tbRepo, Snapshot: snapRepo},
+		&noopSystemParamService{}, zap.NewNop(),
+	)
 }
 
 func newAdminReadSvcWithRepos(
@@ -37,7 +40,10 @@ func newAdminReadSvcWithRepos(
 	paymentRepo *stubPaymentRepo,
 	userRepo *stubUserRepo,
 ) AdminReadService {
-	return NewAdminReadService(&stubTotalPointsPredRepo{}, userRepo, quinielaRepo, paymentRepo, &stubTiebreakerRepo{}, &stubSnapshotRepo{}, &noopSystemParamService{}, zap.NewNop())
+	return NewAdminReadService(
+		AdminReadRepos{Pred: &stubTotalPointsPredRepo{}, User: userRepo, Quiniela: quinielaRepo, Payment: paymentRepo, Tiebreaker: &stubTiebreakerRepo{}, Snapshot: &stubSnapshotRepo{}},
+		&noopSystemParamService{}, zap.NewNop(),
+	)
 }
 
 // ── GlobalLeaderboard ─────────────────────────────────────────────────────────
@@ -247,8 +253,7 @@ func TestAdminReadService_GetDashboardStats_Cache_ZeroTTL_DisablesCache(t *testi
 	qr := &stubQuinielaRepo{}
 	// noopSystemParamService returns 0 for GetInt → cache disabled.
 	svc := NewAdminReadService(
-		&stubTotalPointsPredRepo{}, &stubUserRepo{}, qr, &stubPaymentRepo{},
-		&stubTiebreakerRepo{}, &stubSnapshotRepo{},
+		AdminReadRepos{Pred: &stubTotalPointsPredRepo{}, User: &stubUserRepo{}, Quiniela: qr, Payment: &stubPaymentRepo{}, Tiebreaker: &stubTiebreakerRepo{}, Snapshot: &stubSnapshotRepo{}},
 		&zeroIntParamService{}, zap.NewNop(),
 	)
 

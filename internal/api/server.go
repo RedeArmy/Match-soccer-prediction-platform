@@ -453,7 +453,10 @@ func (s *Server) buildHandlers(
 	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
 	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, memberRepo, snapshotter, auditSvc, s.log)
 	adminUserSvc := service.NewAdminUserService(userRepo, memberRepo, paymentRepo, auditSvc, s.log)
-	adminReadSvc := service.NewAdminReadService(predRepo, userRepo, quinielaRepo, paymentRepo, tiebreakerRepo, snapRepo, params, s.log)
+	adminReadSvc := service.NewAdminReadService(
+		service.AdminReadRepos{Pred: predRepo, User: userRepo, Quiniela: quinielaRepo, Payment: paymentRepo, Tiebreaker: tiebreakerRepo, Snapshot: snapRepo},
+		params, s.log,
+	)
 	conflictSvc := service.NewConflictService(quinielaRepo, memberRepo, paymentRepo, params, auditSvc, s.log)
 
 	dlqSvc := s.dlqSvc
