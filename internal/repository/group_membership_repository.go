@@ -323,4 +323,49 @@ func (r *PostgresGroupMembershipRepository) BulkRemoveByAdmin(ctx context.Contex
 	return succeeded, rows.Err()
 }
 
+// TransferOwnershipRoles atomically demotes every active owner of quinielaID
+// to 'member' and promotes newOwnerMembershipID to 'owner' in one transaction.
+// If either UPDATE fails the transaction rolls back and neither change persists.
+func (r *PostgresGroupMembershipRepository) TransferOwnershipRoles(ctx context.Context, quinielaID, newOwnerMembershipID int) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// Demote all current owners. Using quinielaID scope instead of a specific
+	// membership ID handles the edge case where corrupted data left multiple
+	// owners; both are demoted atomically.
+	_, err = tx.Exec(ctx,
+		`UPDATE group_memberships
+		    SET role = 'member', updated_at = NOW()
+		  WHERE quiniela_id = $1
+		    AND role        = 'owner'
+		    AND status      = 'active'`,
+		quinielaID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+
+	// Promote the new owner.
+	tag, err := tx.Exec(ctx,
+		`UPDATE group_memberships
+		    SET role = 'owner', updated_at = NOW()
+		  WHERE id = $1`,
+		newOwnerMembershipID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound("new owner membership not found")
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)

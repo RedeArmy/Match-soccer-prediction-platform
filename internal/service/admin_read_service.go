@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -89,21 +90,36 @@ func (s *adminReadService) ListSnapshotHistory(ctx context.Context, quinielaID, 
 	return s.snapRepo.ListByQuiniela(ctx, quinielaID, limit)
 }
 
-// GetDashboardStats aggregates group, user, and payment counts in three
-// sequential queries and returns them as a single DashboardStats value.
+// GetDashboardStats aggregates group, user, and payment counts. The three
+// aggregate queries are independent so they run concurrently via errgroup,
+// reducing wall-clock latency to the slowest of the three rather than their sum.
 func (s *adminReadService) GetDashboardStats(ctx context.Context) (*domain.DashboardStats, error) {
-	groupCounts, err := s.quinielaRepo.GetStatusCounts(ctx)
-	if err != nil {
+	var (
+		groupCounts   repository.QuinielaStatusCounts
+		userCounts    repository.UserStatusCounts
+		paymentCounts repository.PaymentStatusCounts
+	)
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var err error
+		groupCounts, err = s.quinielaRepo.GetStatusCounts(gctx)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		userCounts, err = s.userRepo.GetStatusCounts(gctx)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		paymentCounts, err = s.paymentRepo.GetStatusCounts(gctx)
+		return err
+	})
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	userCounts, err := s.userRepo.GetStatusCounts(ctx)
-	if err != nil {
-		return nil, err
-	}
-	paymentCounts, err := s.paymentRepo.GetStatusCounts(ctx)
-	if err != nil {
-		return nil, err
-	}
+
 	return &domain.DashboardStats{
 		Groups: domain.GroupDashboardStats{
 			Total:    groupCounts.Total,

@@ -127,6 +127,7 @@ func (r *stubMemberRepo) BulkRemoveByAdmin(_ context.Context, ids []int, _ int) 
 	}
 	return ids, nil
 }
+func (r *stubMemberRepo) TransferOwnershipRoles(_ context.Context, _, _ int) error { return r.err }
 
 // ── QuinielaService tests ─────────────────────────────────────────────────────
 

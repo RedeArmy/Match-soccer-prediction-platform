@@ -99,12 +99,7 @@ func TestAdminGroupService_UpdateGroupSettings_RepoError_Propagates(t *testing.T
 
 func TestAdminGroupService_TransferOwnership_HappyPath_DemotesAndPromotes(t *testing.T) {
 	newOwner := &domain.GroupMembership{ID: 20, UserID: 2, Status: domain.MembershipActive, Role: domain.MembershipRoleMember}
-	currentOwner := &domain.GroupMembership{ID: 10, UserID: 1, Status: domain.MembershipActive, Role: domain.MembershipRoleCreateOwner}
-
-	mr := &stubMemberRepo{
-		membership:  newOwner,
-		memberships: []*domain.GroupMembership{currentOwner, newOwner},
-	}
+	mr := &stubMemberRepo{membership: newOwner}
 	svc := newAdminGroupSvc(&stubQuinielaRepo{}, mr)
 
 	if err := svc.TransferOwnership(context.Background(), 1, 2, 99); err != nil {
@@ -133,13 +128,13 @@ func TestAdminGroupService_TransferOwnership_NewOwnerInactive_ReturnsNotFound(t 
 	}
 }
 
-func TestAdminGroupService_TransferOwnership_ListError_Propagates(t *testing.T) {
+func TestAdminGroupService_TransferOwnership_TransferRolesError_Propagates(t *testing.T) {
 	newOwner := &domain.GroupMembership{ID: 20, UserID: 2, Status: domain.MembershipActive}
-	svc := NewAdminGroupService(&stubQuinielaRepo{}, &errOnListMemberRepo{newOwner: newOwner}, &noopSnapshotter{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminGroupService(&stubQuinielaRepo{}, &errOnTransferOwnershipRepo{newOwner: newOwner}, &noopSnapshotter{}, &noopAuditLogger{}, zap.NewNop())
 
 	err := svc.TransferOwnership(context.Background(), 1, 2, 99)
 	if err == nil {
-		t.Error("expected error from ListByQuiniela, got nil")
+		t.Error("expected error from TransferOwnershipRoles, got nil")
 	}
 }
 
@@ -226,15 +221,16 @@ func (*errSnapshotter) Snapshot(_ context.Context, _ int) (*domain.LeaderboardSn
 	return nil, errors.New("snapshotter error")
 }
 
-// errOnListMemberRepo returns the newOwner from GetByQuinielaAndUser but fails ListByQuiniela.
-type errOnListMemberRepo struct {
+// errOnTransferOwnershipRepo returns the newOwner from GetByQuinielaAndUser but
+// fails TransferOwnershipRoles, simulating a transaction error mid-transfer.
+type errOnTransferOwnershipRepo struct {
 	stubMemberRepo
 	newOwner *domain.GroupMembership
 }
 
-func (r *errOnListMemberRepo) GetByQuinielaAndUser(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
+func (r *errOnTransferOwnershipRepo) GetByQuinielaAndUser(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
 	return r.newOwner, nil
 }
-func (r *errOnListMemberRepo) ListByQuiniela(_ context.Context, _ int) ([]*domain.GroupMembership, error) {
-	return nil, errors.New("db error")
+func (r *errOnTransferOwnershipRepo) TransferOwnershipRoles(_ context.Context, _, _ int) error {
+	return errors.New("db error")
 }

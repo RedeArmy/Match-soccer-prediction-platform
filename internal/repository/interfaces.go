@@ -251,6 +251,13 @@ type GroupMembershipRepository interface {
 	// Returns the IDs that were successfully removed. Already-inactive IDs are
 	// silently skipped and do not appear in the result.
 	BulkRemoveByAdmin(ctx context.Context, ids []int, adminID int) ([]int, error)
+	// TransferOwnershipRoles atomically demotes every current owner of quinielaID
+	// to MembershipRoleMember and promotes newOwnerMembershipID to
+	// MembershipRoleCreateOwner within a single database transaction. If either
+	// UPDATE fails the transaction is rolled back and neither change persists,
+	// preventing the ConflictGroupNoOwner state that arises from a partial write.
+	// Returns NotFound when newOwnerMembershipID does not exist.
+	TransferOwnershipRoles(ctx context.Context, quinielaID, newOwnerMembershipID int) error
 }
 
 // TiebreakerRepository defines the persistence operations for the Tiebreaker
