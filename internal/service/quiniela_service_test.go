@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -62,6 +63,15 @@ func (r *stubQuinielaRepo) DeleteByAdmin(_ context.Context, _, _ int) error { re
 func (r *stubQuinielaRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.Quiniela, error) {
 	return r.quinielas, r.err
 }
+func (r *stubQuinielaRepo) GetStatusCounts(_ context.Context) (repository.QuinielaStatusCounts, error) {
+	return repository.QuinielaStatusCounts{}, r.err
+}
+func (r *stubQuinielaRepo) BulkDeleteByAdmin(_ context.Context, ids []int, _ int) ([]int, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return ids, nil
+}
 
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.
 // membershipByID is returned by GetByID (used in ApproveJoin to load the pending
@@ -111,11 +121,17 @@ func (r *stubMemberRepo) ListGroupIDsWithoutOwner(_ context.Context) ([]int, err
 func (r *stubMemberRepo) ListStalePending(_ context.Context, _ time.Time) ([]*domain.GroupMembership, error) {
 	return r.memberships, r.err
 }
+func (r *stubMemberRepo) BulkRemoveByAdmin(_ context.Context, ids []int, _ int) ([]int, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return ids, nil
+}
 
 // ── QuinielaService tests ─────────────────────────────────────────────────────
 
 func newQuinielaSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) QuinielaService {
-	return NewQuinielaService(qr, mr, &noopSystemParamService{})
+	return NewQuinielaService(qr, mr, &noopSystemParamService{}, &noopAuditLogger{})
 }
 
 func TestQuinielaService_Create_ValidQuiniela_ReturnsNil(t *testing.T) {

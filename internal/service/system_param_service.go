@@ -30,21 +30,22 @@ func (e *cacheEntry) valid() bool {
 // All reads go through an in-memory cache (TTL = 5 min). Set() immediately
 // evicts the affected key so the next read fetches the fresh value.
 type systemParamService struct {
-	repo repository.SystemParamRepository
-	mu   sync.RWMutex
-	// cache maps param key → *cacheEntry. Stale or missing entries trigger
-	// a read-through to the repository.
+	repo  repository.SystemParamRepository
+	mu    sync.RWMutex
 	cache map[string]*cacheEntry
 	ttl   time.Duration
+	audit AuditLogger
 	log   *zap.Logger
 }
 
 // NewSystemParamService constructs a systemParamService with a 5-minute TTL.
-func NewSystemParamService(repo repository.SystemParamRepository, log *zap.Logger) SystemParamService {
+// audit records param mutations in the audit trail.
+func NewSystemParamService(repo repository.SystemParamRepository, audit AuditLogger, log *zap.Logger) SystemParamService {
 	return &systemParamService{
 		repo:  repo,
 		cache: make(map[string]*cacheEntry),
 		ttl:   defaultCacheTTL,
+		audit: audit,
 		log:   log,
 	}
 }
@@ -84,6 +85,11 @@ func (s *systemParamService) Set(ctx context.Context, key, value string, actorID
 		return nil, err
 	}
 	s.evict(key)
+	if s.audit != nil {
+		resType := "system_param"
+		role := domain.RoleAdmin
+		s.audit.Log(ctx, &actorID, &role, domain.AuditActionParamUpdated, &resType, nil, map[string]any{"key": key, "value": value})
+	}
 	return p, nil
 }
 
@@ -218,6 +224,15 @@ func (s *systemParamService) BulkSet(ctx context.Context, params map[string]stri
 	}
 	for key := range params {
 		s.evict(key)
+	}
+	if s.audit != nil {
+		keys := make([]string, 0, len(params))
+		for k := range params {
+			keys = append(keys, k)
+		}
+		resType := "system_param"
+		role := domain.RoleAdmin
+		s.audit.Log(ctx, &actorID, &role, domain.AuditActionParamUpdated, &resType, nil, map[string]any{"keys": keys})
 	}
 	return nil
 }

@@ -296,4 +296,31 @@ func (r *PostgresGroupMembershipRepository) ListStalePending(ctx context.Context
 	return collectMemberships(rows)
 }
 
+// BulkRemoveByAdmin sets multiple memberships to 'left' on behalf of an admin.
+// Returns the IDs that were actually updated; already-inactive memberships are
+// silently skipped.
+func (r *PostgresGroupMembershipRepository) BulkRemoveByAdmin(ctx context.Context, ids []int, adminID int) ([]int, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		UPDATE group_memberships
+		SET status = 'left', removed_at = NOW(), removed_by = $2, updated_at = NOW()
+		WHERE id = ANY($1) AND status = 'active'
+		RETURNING id`, ids, adminID)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	var succeeded []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		succeeded = append(succeeded, id)
+	}
+	return succeeded, rows.Err()
+}
+
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)

@@ -62,6 +62,9 @@ type UserRepository interface {
 	ListBanned(ctx context.Context) ([]*domain.User, error)
 	// ListFiltered returns users matching the given filters with pagination.
 	ListFiltered(ctx context.Context, f UserFilters, p Pagination) ([]*domain.User, error)
+	// GetStatusCounts returns user counts grouped by lifecycle status.
+	// Used by the admin dashboard stats endpoint.
+	GetStatusCounts(ctx context.Context) (UserStatusCounts, error)
 }
 
 // MatchRepository defines the persistence operations for the Match entity.
@@ -194,6 +197,13 @@ type QuinielaRepository interface {
 	// Used by ConflictService to hydrate group details for conflict entries.
 	// An empty ids slice returns nil, nil without hitting the database.
 	ListByIDs(ctx context.Context, ids []int) ([]*domain.Quiniela, error)
+	// GetStatusCounts returns quiniela counts grouped by lifecycle status.
+	// Used by the admin dashboard stats endpoint.
+	GetStatusCounts(ctx context.Context) (QuinielaStatusCounts, error)
+	// BulkDeleteByAdmin soft-deletes multiple quinielas on behalf of an admin.
+	// Returns the IDs that were successfully deleted. Already-deleted IDs are
+	// silently skipped and do not appear in the result.
+	BulkDeleteByAdmin(ctx context.Context, ids []int, adminID int) ([]int, error)
 }
 
 // GroupMembershipRepository defines the persistence operations for the
@@ -237,6 +247,10 @@ type GroupMembershipRepository interface {
 	// ListStalePending returns pending memberships older than olderThan.
 	// Used by ConflictService to surface unresolved join requests.
 	ListStalePending(ctx context.Context, olderThan time.Time) ([]*domain.GroupMembership, error)
+	// BulkRemoveByAdmin soft-deletes multiple memberships on behalf of an admin.
+	// Returns the IDs that were successfully removed. Already-inactive IDs are
+	// silently skipped and do not appear in the result.
+	BulkRemoveByAdmin(ctx context.Context, ids []int, adminID int) ([]int, error)
 }
 
 // TiebreakerRepository defines the persistence operations for the Tiebreaker
@@ -365,6 +379,9 @@ type PaymentRecordRepository interface {
 	// ListStale returns pending records older than olderThan.
 	// Used by ConflictService to surface unreviewed payments.
 	ListStale(ctx context.Context, olderThan time.Time) ([]*domain.PaymentRecord, error)
+	// GetStatusCounts returns payment record counts grouped by lifecycle status.
+	// Used by the admin dashboard stats endpoint.
+	GetStatusCounts(ctx context.Context) (PaymentStatusCounts, error)
 }
 
 // LeaderboardSnapshotRepository persists point-in-time leaderboard copies.
@@ -382,4 +399,28 @@ type LeaderboardSnapshotRepository interface {
 	// GetLatest returns the most recently taken snapshot. Returns nil, nil when
 	// no snapshot exists yet.
 	GetLatest(ctx context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error)
+}
+
+// QuinielaStatusCounts groups quiniela counts by lifecycle status.
+type QuinielaStatusCounts struct {
+	Total    int
+	Active   int
+	Inactive int
+	Deleted  int
+}
+
+// UserStatusCounts groups user counts by lifecycle status.
+type UserStatusCounts struct {
+	Total  int
+	Active int
+	Banned int
+}
+
+// PaymentStatusCounts groups payment record counts by lifecycle status.
+// TotalCollected is the sum of confirmed payment amounts in minor currency units.
+type PaymentStatusCounts struct {
+	Pending        int
+	Confirmed      int
+	Rejected       int
+	TotalCollected int
 }

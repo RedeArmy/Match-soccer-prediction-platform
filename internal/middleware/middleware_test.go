@@ -53,6 +53,9 @@ func (r *stubUserRepo) ListBanned(_ context.Context) ([]*domain.User, error) { r
 func (r *stubUserRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
 	return nil, r.err
 }
+func (r *stubUserRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
+	return repository.UserStatusCounts{}, r.err
+}
 
 const (
 	fmtStatus        = "expected status %d, got %d"

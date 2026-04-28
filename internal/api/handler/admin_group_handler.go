@@ -207,3 +207,149 @@ func (h *AdminGroupHandler) TransferOwnership(w http.ResponseWriter, r *http.Req
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+type bulkGroupIDsRequest struct {
+	GroupIDs []int `json:"group_ids"`
+}
+
+// BulkDeleteGroups handles POST /admin/groups/bulk-delete.
+//
+// @Summary      Bulk delete groups
+// @Description  Soft-deletes multiple quiniela groups. Returns 200 when all
+//
+//	groups were deleted, 207 Multi-Status when some could not be
+//	deleted (already deleted or not found). Requires admin role.
+//
+// @Tags         admin-groups
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      handler.bulkGroupIDsRequest         true  "Group IDs to delete"
+// @Success      200   {object}  handler.BulkOperationResultResponse
+// @Success      207   {object}  handler.BulkOperationResultResponse
+// @Failure      401   {object}  handler.ErrorResponse
+// @Failure      403   {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422   {object}  handler.ErrorResponse  "group_ids is required"
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/groups/bulk-delete [post]
+func (h *AdminGroupHandler) BulkDeleteGroups(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	var req bulkGroupIDsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		middleware.WriteError(w, r, h.log, decodeError(err))
+		return
+	}
+	if len(req.GroupIDs) == 0 {
+		middleware.WriteError(w, r, h.log, apperrors.Validation("group_ids must not be empty"))
+		return
+	}
+
+	result, err := h.svc.BulkDeleteGroups(r.Context(), req.GroupIDs, caller.ID)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	status := http.StatusOK
+	if len(result.Failed) > 0 {
+		status = http.StatusMultiStatus
+	}
+	writeJSON(w, status, bulkOperationResultToResponse(result))
+}
+
+type bulkMemberIDsRequest struct {
+	MembershipIDs []int `json:"membership_ids"`
+}
+
+// BulkRemoveMembers handles POST /admin/groups/{id}/members/bulk-remove.
+//
+// @Summary      Bulk remove members
+// @Description  Sets multiple memberships to 'left'. Returns 200 when all
+//
+//	were removed, 207 Multi-Status when some could not be removed
+//	(already inactive or not found). Requires admin role.
+//
+// @Tags         admin-groups
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                                 true  "Group ID (for routing; not used in operation)"
+// @Param        body  body      handler.bulkMemberIDsRequest        true  "Membership IDs to remove"
+// @Success      200   {object}  handler.BulkOperationResultResponse
+// @Success      207   {object}  handler.BulkOperationResultResponse
+// @Failure      401   {object}  handler.ErrorResponse
+// @Failure      403   {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422   {object}  handler.ErrorResponse  "membership_ids is required"
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/groups/{id}/members/bulk-remove [post]
+func (h *AdminGroupHandler) BulkRemoveMembers(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	var req bulkMemberIDsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		middleware.WriteError(w, r, h.log, decodeError(err))
+		return
+	}
+	if len(req.MembershipIDs) == 0 {
+		middleware.WriteError(w, r, h.log, apperrors.Validation("membership_ids must not be empty"))
+		return
+	}
+
+	result, err := h.svc.BulkRemoveMembers(r.Context(), req.MembershipIDs, caller.ID)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	status := http.StatusOK
+	if len(result.Failed) > 0 {
+		status = http.StatusMultiStatus
+	}
+	writeJSON(w, status, bulkOperationResultToResponse(result))
+}
+
+// RecalculateLeaderboard handles POST /admin/groups/{id}/leaderboard/recalculate.
+//
+// @Summary      Recalculate leaderboard
+// @Description  Triggers an immediate leaderboard snapshot for the group.
+//
+//	Useful after manually correcting match results or membership
+//	data. Returns the newly created snapshot. Requires admin role.
+//
+// @Tags         admin-groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Group ID"
+// @Success      200  {object}  handler.SnapshotResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422  {object}  handler.ErrorResponse  "Invalid group ID"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/groups/{id}/leaderboard/recalculate [post]
+func (h *AdminGroupHandler) RecalculateLeaderboard(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil || id <= 0 {
+		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
+		return
+	}
+
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	snap, err := h.svc.RecalculateLeaderboard(r.Context(), id, caller.ID)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshotToResponse(snap))
+}

@@ -618,3 +618,35 @@ type Conflict struct {
 	// (e.g. group_without_owner, where the ownership-loss timestamp is unknown).
 	AgeDays *int
 }
+
+// DashboardStats is the aggregate view returned by GET /admin/stats, intended
+// for the admin dashboard's key-metric widgets.
+type DashboardStats struct {
+	Groups   GroupDashboardStats
+	Users    UserDashboardStats
+	Payments PaymentDashboardStats
+}
+
+// GroupDashboardStats counts quinielas by lifecycle status.
+type GroupDashboardStats struct {
+	Total    int
+	Active   int
+	Inactive int
+	Deleted  int
+}
+
+// UserDashboardStats counts registered users by lifecycle status.
+type UserDashboardStats struct {
+	Total  int
+	Active int
+	Banned int
+}
+
+// PaymentDashboardStats counts payment records by lifecycle status.
+// TotalCollected is the sum of confirmed payment amounts in minor currency units.
+type PaymentDashboardStats struct {
+	Pending        int
+	Confirmed      int
+	Rejected       int
+	TotalCollected int
+}

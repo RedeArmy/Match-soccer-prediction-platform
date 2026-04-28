@@ -161,7 +161,7 @@ func (s *Server) Routes() http.Handler {
 	memberRepo := repository.NewPostgresGroupMembershipRepository(s.db)
 	systemParamRepo := repository.NewPostgresSystemParamRepository(s.db)
 
-	paramSvc := service.NewSystemParamService(systemParamRepo, s.log)
+	paramSvc := service.NewSystemParamService(systemParamRepo, nil, s.log)
 
 	// Read infrastructure params once at startup. Changes require a process
 	// restart (is_runtime=FALSE in system_params). Use context.Background()
@@ -175,7 +175,7 @@ func (s *Server) Routes() http.Handler {
 	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, 5)) * time.Second
 
 	s.wireSubscribers(matchRepo, predRepo, paramSvc)
-	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler, tournamentHandler, adminUserH, adminGroupH, adminPaymentH, adminLeaderboardH, adminDLQH, adminAuditH, adminParamH, adminTiebreakerH, adminConflictH := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, paramSvc)
+	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler, tournamentHandler, adminUserH, adminGroupH, adminPaymentH, adminLeaderboardH, adminDLQH, adminAuditH, adminParamH, adminTiebreakerH, adminConflictH, adminStatsH := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, paramSvc)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -311,7 +311,13 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/conflicts/{type}/{id}/resolve", adminConflictH.ResolveConflict)
 
 			// Stats / observability
+			r.Get("/stats", adminStatsH.GetDashboardStats)
 			r.Get("/stats/conflicts/summary", adminConflictH.ConflictSummary)
+
+			// Bulk group operations
+			r.Post("/groups/bulk-delete", adminGroupH.BulkDeleteGroups)
+			r.Post("/groups/{id}/members/bulk-remove", adminGroupH.BulkRemoveMembers)
+			r.Post("/groups/{id}/leaderboard/recalculate", adminGroupH.RecalculateLeaderboard)
 		})
 	})
 
@@ -396,6 +402,7 @@ func (s *Server) buildHandlers(
 	*handler.AdminSystemParamHandler,
 	*handler.AdminTiebreakerHandler,
 	*handler.AdminConflictHandler,
+	*handler.AdminStatsHandler,
 ) {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
@@ -415,6 +422,11 @@ func (s *Server) buildHandlers(
 
 	auditSvc := service.NewAuditService(auditLogRepo, auditTimeout, s.log)
 
+	// Re-create paramSvc with the now-available audit service so that Set/BulkSet
+	// calls from admin handlers are recorded in the audit trail.
+	sysParamRepo := repository.NewPostgresSystemParamRepository(s.db)
+	paramSvcWithAudit := service.NewSystemParamService(sysParamRepo, auditSvc, s.log)
+
 	scorer := service.NewScoringService(matchRepo, predRepo, params, s.log)
 	matchSvc := service.NewMatchService(matchRepo, s.bus, scorer, auditSvc, s.log)
 	if s.cache != nil {
@@ -422,7 +434,7 @@ func (s *Server) buildHandlers(
 	}
 
 	predSvc := service.NewPredictionService(predRepo, matchRepo, params, s.log)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo, params)
+	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo, params, auditSvc)
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, params, auditSvc, paymentSvc, s.log)
 
@@ -434,9 +446,10 @@ func (s *Server) buildHandlers(
 	userStatsSvc := service.NewUserStatsService(predRepo)
 	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, memberRepo, tiebreakerRepo, auditSvc, s.log)
 	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, params, auditSvc, s.log)
-	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, memberRepo, auditSvc, s.log)
+	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
+	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, memberRepo, snapshotter, auditSvc, s.log)
 	adminUserSvc := service.NewAdminUserService(userRepo, memberRepo, paymentRepo, auditSvc, s.log)
-	adminReadSvc := service.NewAdminReadService(predRepo, userRepo, tiebreakerRepo, snapRepo, s.log)
+	adminReadSvc := service.NewAdminReadService(predRepo, userRepo, quinielaRepo, paymentRepo, tiebreakerRepo, snapRepo, s.log)
 	conflictSvc := service.NewConflictService(quinielaRepo, memberRepo, paymentRepo, params, auditSvc, s.log)
 
 	dlqSvc := s.dlqSvc
@@ -459,9 +472,10 @@ func (s *Server) buildHandlers(
 		handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
 		handler.NewAdminDLQHandler(dlqSvc, s.log),
 		handler.NewAdminAuditHandler(auditSvc, s.log),
-		handler.NewAdminSystemParamHandler(params, s.log),
+		handler.NewAdminSystemParamHandler(paramSvcWithAudit, s.log),
 		handler.NewAdminTiebreakerHandler(adminReadSvc, s.log),
-		handler.NewAdminConflictHandler(conflictSvc, s.log)
+		handler.NewAdminConflictHandler(conflictSvc, s.log),
+		handler.NewAdminStatsHandler(adminReadSvc, s.log)
 }
 
 // handleReadiness is a thin wrapper around health.ReadinessHandler that exists

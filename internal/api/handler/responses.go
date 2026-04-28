@@ -3,6 +3,7 @@ package handler
 import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
 // GroupResponse is the JSON representation of a Quiniela (group).
@@ -517,6 +518,44 @@ type ConflictSummaryResponse struct {
 	ByType          []ConflictTypeSummaryResponse `json:"by_type"`
 }
 
+// DashboardStatsResponse is the response body for GET /admin/stats.
+type DashboardStatsResponse struct {
+	Groups   GroupDashboardStatsResponse   `json:"groups"`
+	Users    UserDashboardStatsResponse    `json:"users"`
+	Payments PaymentDashboardStatsResponse `json:"payments"`
+}
+
+// GroupDashboardStatsResponse is the group-counts section of DashboardStatsResponse.
+type GroupDashboardStatsResponse struct {
+	Total    int `json:"total"`
+	Active   int `json:"active"`
+	Inactive int `json:"inactive"`
+	Deleted  int `json:"deleted"`
+}
+
+// UserDashboardStatsResponse is the user-counts section of DashboardStatsResponse.
+type UserDashboardStatsResponse struct {
+	Total  int `json:"total"`
+	Active int `json:"active"`
+	Banned int `json:"banned"`
+}
+
+// PaymentDashboardStatsResponse is the payment-counts section of DashboardStatsResponse.
+// TotalCollected is the sum of confirmed payment amounts in minor currency units (e.g. centavos).
+type PaymentDashboardStatsResponse struct {
+	Pending        int `json:"pending"`
+	Confirmed      int `json:"confirmed"`
+	Rejected       int `json:"rejected"`
+	TotalCollected int `json:"total_collected"`
+}
+
+// BulkOperationResultResponse is the response body for bulk admin operations.
+// HTTP 200 when all succeeded; HTTP 207 when some failed (partial success).
+type BulkOperationResultResponse struct {
+	Succeeded []int `json:"succeeded"`
+	Failed    []int `json:"failed"`
+}
+
 // BulkBanErrorResponse is the per-user failure detail within BulkBanResultResponse.
 type BulkBanErrorResponse struct {
 	UserID  int    `json:"user_id"`
@@ -616,6 +655,40 @@ func systemParamToResponse(p *domain.SystemParam) SystemParamResponse {
 		IsRuntime: p.IsRuntime,
 		UpdatedAt: p.UpdatedAt.Format(timeFormat),
 	}
+}
+
+func dashboardStatsToResponse(s *domain.DashboardStats) DashboardStatsResponse {
+	return DashboardStatsResponse{
+		Groups: GroupDashboardStatsResponse{
+			Total:    s.Groups.Total,
+			Active:   s.Groups.Active,
+			Inactive: s.Groups.Inactive,
+			Deleted:  s.Groups.Deleted,
+		},
+		Users: UserDashboardStatsResponse{
+			Total:  s.Users.Total,
+			Active: s.Users.Active,
+			Banned: s.Users.Banned,
+		},
+		Payments: PaymentDashboardStatsResponse{
+			Pending:        s.Payments.Pending,
+			Confirmed:      s.Payments.Confirmed,
+			Rejected:       s.Payments.Rejected,
+			TotalCollected: s.Payments.TotalCollected,
+		},
+	}
+}
+
+func bulkOperationResultToResponse(r service.BulkOperationResult) BulkOperationResultResponse {
+	succeeded := r.Succeeded
+	if succeeded == nil {
+		succeeded = []int{}
+	}
+	failed := r.Failed
+	if failed == nil {
+		failed = []int{}
+	}
+	return BulkOperationResultResponse{Succeeded: succeeded, Failed: failed}
 }
 
 func conflictToResponse(c domain.Conflict) ConflictResponse {

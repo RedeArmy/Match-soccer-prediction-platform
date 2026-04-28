@@ -16,8 +16,15 @@ const (
 	adminGroupExpectErrMsg = "expected error, got nil"
 )
 
+// noopSnapshotter implements Snapshotter for tests where snapshot content is irrelevant.
+type noopSnapshotter struct{}
+
+func (s *noopSnapshotter) Snapshot(_ context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error) {
+	return &domain.LeaderboardSnapshot{QuinielaID: quinielaID}, nil
+}
+
 func newAdminGroupSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) AdminGroupService {
-	return NewAdminGroupService(qr, mr, &noopAuditLogger{}, zap.NewNop())
+	return NewAdminGroupService(qr, mr, &noopSnapshotter{}, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── DeleteGroup ───────────────────────────────────────────────────────────────
@@ -128,12 +135,95 @@ func TestAdminGroupService_TransferOwnership_NewOwnerInactive_ReturnsNotFound(t 
 
 func TestAdminGroupService_TransferOwnership_ListError_Propagates(t *testing.T) {
 	newOwner := &domain.GroupMembership{ID: 20, UserID: 2, Status: domain.MembershipActive}
-	svc := NewAdminGroupService(&stubQuinielaRepo{}, &errOnListMemberRepo{newOwner: newOwner}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminGroupService(&stubQuinielaRepo{}, &errOnListMemberRepo{newOwner: newOwner}, &noopSnapshotter{}, &noopAuditLogger{}, zap.NewNop())
 
 	err := svc.TransferOwnership(context.Background(), 1, 2, 99)
 	if err == nil {
 		t.Error("expected error from ListByQuiniela, got nil")
 	}
+}
+
+// ── BulkDeleteGroups ──────────────────────────────────────────────────────────
+
+func TestAdminGroupService_BulkDeleteGroups_AllSucceed_ReturnsAllInSucceeded(t *testing.T) {
+	svc := newAdminGroupSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
+
+	result, err := svc.BulkDeleteGroups(context.Background(), []int{1, 2, 3}, 99)
+	if err != nil {
+		t.Fatalf(adminGroupNilErrFmt, err)
+	}
+	if len(result.Succeeded) != 3 {
+		t.Errorf("expected 3 succeeded, got %d", len(result.Succeeded))
+	}
+	if len(result.Failed) != 0 {
+		t.Errorf("expected 0 failed, got %d", len(result.Failed))
+	}
+}
+
+func TestAdminGroupService_BulkDeleteGroups_RepoError_Propagates(t *testing.T) {
+	svc := newAdminGroupSvc(&stubQuinielaRepo{err: errors.New("db error")}, &stubMemberRepo{})
+
+	_, err := svc.BulkDeleteGroups(context.Background(), []int{1, 2}, 99)
+	if err == nil {
+		t.Error(adminGroupExpectErrMsg)
+	}
+}
+
+// ── BulkRemoveMembers ─────────────────────────────────────────────────────────
+
+func TestAdminGroupService_BulkRemoveMembers_AllSucceed_ReturnsAllInSucceeded(t *testing.T) {
+	svc := newAdminGroupSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
+
+	result, err := svc.BulkRemoveMembers(context.Background(), []int{10, 11}, 99)
+	if err != nil {
+		t.Fatalf(adminGroupNilErrFmt, err)
+	}
+	if len(result.Succeeded) != 2 {
+		t.Errorf("expected 2 succeeded, got %d", len(result.Succeeded))
+	}
+	if len(result.Failed) != 0 {
+		t.Errorf("expected 0 failed, got %d", len(result.Failed))
+	}
+}
+
+func TestAdminGroupService_BulkRemoveMembers_RepoError_Propagates(t *testing.T) {
+	svc := newAdminGroupSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New("db error")})
+
+	_, err := svc.BulkRemoveMembers(context.Background(), []int{10}, 99)
+	if err == nil {
+		t.Error(adminGroupExpectErrMsg)
+	}
+}
+
+// ── RecalculateLeaderboard ────────────────────────────────────────────────────
+
+func TestAdminGroupService_RecalculateLeaderboard_HappyPath_ReturnsSnapshot(t *testing.T) {
+	svc := newAdminGroupSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
+
+	snap, err := svc.RecalculateLeaderboard(context.Background(), 5, 99)
+	if err != nil {
+		t.Fatalf(adminGroupNilErrFmt, err)
+	}
+	if snap == nil || snap.QuinielaID != 5 {
+		t.Errorf("expected snapshot with QuinielaID=5, got %v", snap)
+	}
+}
+
+func TestAdminGroupService_RecalculateLeaderboard_SnapshotterError_Propagates(t *testing.T) {
+	errSnap := &errSnapshotter{}
+	svc := NewAdminGroupService(&stubQuinielaRepo{}, &stubMemberRepo{}, errSnap, &noopAuditLogger{}, zap.NewNop())
+
+	_, err := svc.RecalculateLeaderboard(context.Background(), 5, 99)
+	if err == nil {
+		t.Error(adminGroupExpectErrMsg)
+	}
+}
+
+// errSnapshotter always fails Snapshot.
+type errSnapshotter struct{}
+
+func (*errSnapshotter) Snapshot(_ context.Context, _ int) (*domain.LeaderboardSnapshot, error) {
+	return nil, errors.New("snapshotter error")
 }
 
 // errOnListMemberRepo returns the newOwner from GetByQuinielaAndUser but fails ListByQuiniela.

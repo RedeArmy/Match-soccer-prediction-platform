@@ -174,15 +174,58 @@ func (s *conflictService) ConflictSummary(ctx context.Context) (*ConflictSummary
 	}, nil
 }
 
-// ResolveConflict records an admin acknowledgement of a conflict in the audit log.
-// It does not automatically fix the underlying issue.
-func (s *conflictService) ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, note string) error {
+// ResolveConflict records an admin action on a conflict. When action is
+// "auto_fix" the service attempts automatic remediation before logging.
+// Auto-fix failures are logged at WARN level but do not fail the call —
+// the audit entry is always written so the attempt is traceable.
+func (s *conflictService) ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, action, note string) error {
 	resType := "conflict"
 	role := domain.RoleAdmin
+
+	if action == "auto_fix" {
+		if err := s.autoFix(ctx, conflictType, entityID, adminID); err != nil {
+			s.log.Warn("conflict: auto_fix failed",
+				zap.String("type", conflictType),
+				zap.Int("entity_id", entityID),
+				zap.Error(err),
+			)
+		}
+		s.audit.Log(ctx, &adminID, &role, domain.AuditActionConflictAutoResolved, &resType, &entityID, map[string]any{
+			"conflict_type": conflictType,
+			"note":          note,
+		})
+		return nil
+	}
+
 	s.audit.Log(ctx, &adminID, &role, "conflict.resolved", &resType, &entityID, map[string]any{
 		"conflict_type": conflictType,
 		"note":          note,
 	})
+	return nil
+}
+
+// autoFix applies automatic remediation for the given conflict type.
+// The remediation is best-effort: callers must handle a non-nil error by
+// logging it rather than treating it as a hard failure.
+func (s *conflictService) autoFix(ctx context.Context, conflictType string, entityID, adminID int) error {
+	switch domain.ConflictType(conflictType) {
+	case domain.ConflictGroupNoOwner:
+		successor, err := s.memberRepo.OldestActiveMember(ctx, entityID, 0)
+		if err != nil {
+			return err
+		}
+		if successor == nil {
+			return nil // no eligible successor; nothing to promote
+		}
+		return s.memberRepo.SetRole(ctx, successor.ID, domain.MembershipRoleCreateOwner)
+
+	case domain.ConflictPaymentStale:
+		_, err := s.paymentRepo.Reject(ctx, entityID, adminID, "Auto-rejected by conflict resolution")
+		return err
+
+	case domain.ConflictMembershipStale:
+		return s.memberRepo.RemoveByAdmin(ctx, entityID, adminID)
+	}
 	return nil
 }
 
