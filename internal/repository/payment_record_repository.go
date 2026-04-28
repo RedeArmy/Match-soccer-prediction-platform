@@ -202,4 +202,21 @@ func (r *PostgresPaymentRecordRepository) ListStale(ctx context.Context, olderTh
 	)
 }
 
+// GetStatusCounts returns a single-row summary of payment record counts and
+// the total collected amount (sum of confirmed amounts) in one query.
+func (r *PostgresPaymentRecordRepository) GetStatusCounts(ctx context.Context) (PaymentStatusCounts, error) {
+	var c PaymentStatusCounts
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'pending'),
+			COUNT(*) FILTER (WHERE status = 'confirmed'),
+			COUNT(*) FILTER (WHERE status = 'rejected'),
+			COALESCE(SUM(amount) FILTER (WHERE status = 'confirmed'), 0)
+		FROM payment_records`).Scan(&c.Pending, &c.Confirmed, &c.Rejected, &c.TotalCollected)
+	if err != nil {
+		return PaymentStatusCounts{}, apperrors.Internal(err)
+	}
+	return c, nil
+}
+
 var _ PaymentRecordRepository = (*PostgresPaymentRecordRepository)(nil)

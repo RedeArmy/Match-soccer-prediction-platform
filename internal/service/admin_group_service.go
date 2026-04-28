@@ -14,6 +14,7 @@ import (
 type adminGroupService struct {
 	quinielaRepo repository.QuinielaRepository
 	memberRepo   repository.GroupMembershipRepository
+	snapshotter  Snapshotter
 	audit        AuditLogger
 	log          *zap.Logger
 }
@@ -22,12 +23,14 @@ type adminGroupService struct {
 func NewAdminGroupService(
 	quinielaRepo repository.QuinielaRepository,
 	memberRepo repository.GroupMembershipRepository,
+	snapshotter Snapshotter,
 	audit AuditLogger,
 	log *zap.Logger,
 ) AdminGroupService {
 	return &adminGroupService{
 		quinielaRepo: quinielaRepo,
 		memberRepo:   memberRepo,
+		snapshotter:  snapshotter,
 		audit:        audit,
 		log:          log,
 	}
@@ -109,6 +112,72 @@ func (s *adminGroupService) TransferOwnership(ctx context.Context, quinielaID, n
 		"new_owner_user_id": newOwnerUserID,
 	})
 	return nil
+}
+
+// BulkDeleteGroups soft-deletes multiple quinielas and records a single audit
+// entry listing all succeeded and failed IDs.
+func (s *adminGroupService) BulkDeleteGroups(ctx context.Context, ids []int, adminID int) (BulkOperationResult, error) {
+	succeeded, err := s.quinielaRepo.BulkDeleteByAdmin(ctx, ids, adminID)
+	if err != nil {
+		return BulkOperationResult{}, err
+	}
+	result := diffBulkResult(ids, succeeded)
+	if len(succeeded) > 0 {
+		resType := "quiniela"
+		role := domain.RoleAdmin
+		s.audit.Log(ctx, &adminID, &role, domain.AuditActionGroupBulkDeleted, &resType, nil, map[string]any{
+			"succeeded": result.Succeeded,
+			"failed":    result.Failed,
+		})
+	}
+	return result, nil
+}
+
+// BulkRemoveMembers sets multiple memberships to 'left' and records a single
+// audit entry listing all succeeded and failed IDs.
+func (s *adminGroupService) BulkRemoveMembers(ctx context.Context, ids []int, adminID int) (BulkOperationResult, error) {
+	succeeded, err := s.memberRepo.BulkRemoveByAdmin(ctx, ids, adminID)
+	if err != nil {
+		return BulkOperationResult{}, err
+	}
+	result := diffBulkResult(ids, succeeded)
+	if len(succeeded) > 0 {
+		resType := "group_membership"
+		role := domain.RoleAdmin
+		s.audit.Log(ctx, &adminID, &role, domain.AuditActionMemberBulkRemoved, &resType, nil, map[string]any{
+			"succeeded": result.Succeeded,
+			"failed":    result.Failed,
+		})
+	}
+	return result, nil
+}
+
+// diffBulkResult computes which of the requested ids were not returned in
+// succeeded and returns a BulkOperationResult with both slices populated.
+func diffBulkResult(ids, succeeded []int) BulkOperationResult {
+	succeededSet := make(map[int]bool, len(succeeded))
+	for _, id := range succeeded {
+		succeededSet[id] = true
+	}
+	var failed []int
+	for _, id := range ids {
+		if !succeededSet[id] {
+			failed = append(failed, id)
+		}
+	}
+	return BulkOperationResult{Succeeded: succeeded, Failed: failed}
+}
+
+// RecalculateLeaderboard triggers an immediate snapshot and records an audit entry.
+func (s *adminGroupService) RecalculateLeaderboard(ctx context.Context, quinielaID, adminID int) (*domain.LeaderboardSnapshot, error) {
+	snap, err := s.snapshotter.Snapshot(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+	resType := "quiniela"
+	role := domain.RoleAdmin
+	s.audit.Log(ctx, &adminID, &role, domain.AuditActionLeaderboardRefreshed, &resType, &quinielaID, nil)
+	return snap, nil
 }
 
 var _ AdminGroupService = (*adminGroupService)(nil)

@@ -243,6 +243,9 @@ func (r *createErrRepo) ListBanned(_ context.Context) ([]*domain.User, error) { 
 func (r *createErrRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
 	return nil, nil
 }
+func (r *createErrRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
+	return repository.UserStatusCounts{}, nil
+}
 
 // updateErrRepo returns an existing user from GetByClerkSubject and errors
 // from Update, isolating the Update error path in upsertUser.
@@ -273,4 +276,7 @@ func (r *updateErrRepo) Unban(_ context.Context, _ int) error                 { 
 func (r *updateErrRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }
 func (r *updateErrRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
 	return nil, nil
+}
+func (r *updateErrRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
+	return repository.UserStatusCounts{}, nil
 }

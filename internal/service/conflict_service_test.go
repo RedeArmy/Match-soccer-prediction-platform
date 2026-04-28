@@ -283,7 +283,7 @@ func TestConflictService_ResolveConflict_LogsAuditEntry(t *testing.T) {
 	audit := &spyAuditLogger{}
 	svc := NewConflictService(&stubQuinielaRepo{}, &stubMemberRepo{}, &stubPaymentRepo{}, &noopSystemParamService{}, audit, zap.NewNop())
 
-	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictGroupNoOwner), 7, 99, "ack"); err != nil {
+	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictGroupNoOwner), 7, 99, "ack", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !audit.called {
@@ -294,5 +294,79 @@ func TestConflictService_ResolveConflict_LogsAuditEntry(t *testing.T) {
 	}
 	if audit.metadata == nil || audit.metadata["conflict_type"] != string(domain.ConflictGroupNoOwner) {
 		t.Errorf("audit metadata conflict_type: want %q, got %v", string(domain.ConflictGroupNoOwner), audit.metadata)
+	}
+}
+
+// ── ResolveConflict — auto_fix ────────────────────────────────────────────────
+
+func TestConflictService_ResolveConflict_AutoFix_GroupNoOwner_TransfersOwnership(t *testing.T) {
+	successor := &domain.GroupMembership{ID: 5, UserID: 10, Status: domain.MembershipActive}
+	audit := &spyAuditLogger{}
+	mr := &stubMemberRepo{membership: successor}
+	svc := NewConflictService(&stubQuinielaRepo{}, mr, &stubPaymentRepo{}, &noopSystemParamService{}, audit, zap.NewNop())
+
+	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictGroupNoOwner), 1, 99, "auto_fix", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !audit.called {
+		t.Fatal("expected audit logger to be called")
+	}
+	if audit.action != domain.AuditActionConflictAutoResolved {
+		t.Errorf("expected action %q, got %q", domain.AuditActionConflictAutoResolved, audit.action)
+	}
+}
+
+func TestConflictService_ResolveConflict_AutoFix_GroupNoOwner_NoSuccessor_StillSucceeds(t *testing.T) {
+	audit := &spyAuditLogger{}
+	mr := &stubMemberRepo{membership: nil} // no eligible successor
+	svc := NewConflictService(&stubQuinielaRepo{}, mr, &stubPaymentRepo{}, &noopSystemParamService{}, audit, zap.NewNop())
+
+	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictGroupNoOwner), 1, 99, "auto_fix", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !audit.called {
+		t.Fatal("expected audit logger to be called even when auto_fix has nothing to do")
+	}
+}
+
+func TestConflictService_ResolveConflict_AutoFix_PaymentStale_AutoRejects(t *testing.T) {
+	rejected := &domain.PaymentRecord{ID: 7, Status: "rejected"}
+	audit := &spyAuditLogger{}
+	pr := &stubPaymentRepo{record: rejected}
+	svc := NewConflictService(&stubQuinielaRepo{}, &stubMemberRepo{}, pr, &noopSystemParamService{}, audit, zap.NewNop())
+
+	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictPaymentStale), 7, 99, "auto_fix", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !audit.called {
+		t.Fatal("expected audit logger to be called")
+	}
+}
+
+func TestConflictService_ResolveConflict_AutoFix_MembershipStale_RemovesMembership(t *testing.T) {
+	audit := &spyAuditLogger{}
+	mr := &stubMemberRepo{}
+	svc := NewConflictService(&stubQuinielaRepo{}, mr, &stubPaymentRepo{}, &noopSystemParamService{}, audit, zap.NewNop())
+
+	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictMembershipStale), 20, 99, "auto_fix", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !audit.called {
+		t.Fatal("expected audit logger to be called")
+	}
+}
+
+func TestConflictService_ResolveConflict_AutoFix_FixFails_StillLogsAudit(t *testing.T) {
+	// auto_fix for PaymentStale where Reject returns an error — should still write audit entry.
+	audit := &spyAuditLogger{}
+	pr := &stubPaymentRepo{err: errors.New("db error")}
+	svc := NewConflictService(&stubQuinielaRepo{}, &stubMemberRepo{}, pr, &noopSystemParamService{}, audit, zap.NewNop())
+
+	// Should NOT return the inner error — auto_fix failures are best-effort.
+	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictPaymentStale), 7, 99, "auto_fix", "note"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !audit.called {
+		t.Fatal("expected audit entry to be written even when auto_fix fails")
 	}
 }

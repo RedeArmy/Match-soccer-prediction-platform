@@ -138,6 +138,12 @@ const (
 	AuditActionPaymentValidated     = "payment.validated"
 	AuditActionPaymentRejected      = "payment.rejected"
 	AuditActionJoinApproved         = "group.join_approved"
+	AuditActionGroupRenamed         = "group.renamed"
+	AuditActionParamUpdated         = "param.updated"
+	AuditActionConflictAutoResolved = "conflict.auto_resolved"
+	AuditActionMemberBulkRemoved    = "admin_group.member_bulk_removed"
+	AuditActionGroupBulkDeleted     = "admin_group.bulk_deleted"
+	AuditActionLeaderboardRefreshed = "admin_group.leaderboard_refreshed"
 )
 
 // AllMatchPhases is the ordered list of every tournament phase defined in the

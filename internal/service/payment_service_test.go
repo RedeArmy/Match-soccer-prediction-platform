@@ -16,9 +16,10 @@ const paymentExpectErrMsg = "expected error, got nil"
 
 // stubPaymentRepo implements repository.PaymentRecordRepository for unit tests.
 type stubPaymentRepo struct {
-	record  *domain.PaymentRecord
-	records []*domain.PaymentRecord
-	err     error
+	record       *domain.PaymentRecord
+	records      []*domain.PaymentRecord
+	statusCounts repository.PaymentStatusCounts
+	err          error
 }
 
 func (r *stubPaymentRepo) Create(_ context.Context, record *domain.PaymentRecord) error {
@@ -51,6 +52,9 @@ func (r *stubPaymentRepo) List(_ context.Context, _ repository.PaymentFilters, _
 }
 func (r *stubPaymentRepo) ListStale(_ context.Context, _ time.Time) ([]*domain.PaymentRecord, error) {
 	return r.records, r.err
+}
+func (r *stubPaymentRepo) GetStatusCounts(_ context.Context) (repository.PaymentStatusCounts, error) {
+	return r.statusCounts, r.err
 }
 
 func newPaymentSvc(repo *stubPaymentRepo) PaymentService {

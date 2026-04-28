@@ -120,6 +120,17 @@ definitions:
           $ref: '#/definitions/internal_api_handler.BulkBanErrorResponse'
         type: array
     type: object
+  internal_api_handler.BulkOperationResultResponse:
+    properties:
+      failed:
+        items:
+          type: integer
+        type: array
+      succeeded:
+        items:
+          type: integer
+        type: array
+    type: object
   internal_api_handler.CityResponse:
     properties:
       id:
@@ -172,6 +183,15 @@ definitions:
       name:
         type: string
     type: object
+  internal_api_handler.DashboardStatsResponse:
+    properties:
+      groups:
+        $ref: '#/definitions/internal_api_handler.GroupDashboardStatsResponse'
+      payments:
+        $ref: '#/definitions/internal_api_handler.PaymentDashboardStatsResponse'
+      users:
+        $ref: '#/definitions/internal_api_handler.UserDashboardStatsResponse'
+    type: object
   internal_api_handler.ErrorResponse:
     properties:
       error:
@@ -187,6 +207,17 @@ definitions:
         type: integer
       user_name:
         type: string
+    type: object
+  internal_api_handler.GroupDashboardStatsResponse:
+    properties:
+      active:
+        type: integer
+      deleted:
+        type: integer
+      inactive:
+        type: integer
+      total:
+        type: integer
     type: object
   internal_api_handler.GroupResponse:
     properties:
@@ -347,6 +378,17 @@ definitions:
       page:
         $ref: '#/definitions/internal_api_handler.PageMeta'
     type: object
+  internal_api_handler.PaymentDashboardStatsResponse:
+    properties:
+      confirmed:
+        type: integer
+      pending:
+        type: integer
+      rejected:
+        type: integer
+      total_collected:
+        type: integer
+    type: object
   internal_api_handler.PaymentResponse:
     properties:
       amount:
@@ -471,6 +513,15 @@ definitions:
       user_name:
         type: string
     type: object
+  internal_api_handler.UserDashboardStatsResponse:
+    properties:
+      active:
+        type: integer
+      banned:
+        type: integer
+      total:
+        type: integer
+    type: object
   internal_api_handler.UserStatsResponse:
     properties:
       accuracy_pct:
@@ -508,6 +559,20 @@ definitions:
       reason:
         type: string
       user_ids:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_api_handler.bulkGroupIDsRequest:
+    properties:
+      group_ids:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_api_handler.bulkMemberIDsRequest:
+    properties:
+      membership_ids:
         items:
           type: integer
         type: array
@@ -563,6 +628,9 @@ definitions:
     type: object
   internal_api_handler.resolveConflictRequest:
     properties:
+      action:
+        description: '"ack" (default) or "auto_fix"'
+        type: string
       note:
         type: string
     type: object
@@ -975,6 +1043,43 @@ paths:
       summary: Group leaderboard snapshot history
       tags:
       - admin-groups
+  /api/v1/admin/groups/{id}/leaderboard/recalculate:
+    post:
+      description: Triggers an immediate leaderboard snapshot for the group.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.SnapshotResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid group ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Recalculate leaderboard
+      tags:
+      - admin-groups
   /api/v1/admin/groups/{id}/members/{membershipID}:
     delete:
       description: Sets the given membership to the 'left' status, effectively
@@ -1015,6 +1120,55 @@ paths:
       security:
       - BearerAuth: []
       summary: Remove a member
+      tags:
+      - admin-groups
+  /api/v1/admin/groups/{id}/members/bulk-remove:
+    post:
+      consumes:
+      - application/json
+      description: Sets multiple memberships to 'left'. Returns 200 when all
+      parameters:
+      - description: Group ID (for routing; not used in operation)
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Membership IDs to remove
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.bulkMemberIDsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.BulkOperationResultResponse'
+        "207":
+          description: Multi-Status
+          schema:
+            $ref: '#/definitions/internal_api_handler.BulkOperationResultResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: membership_ids is required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk remove members
       tags:
       - admin-groups
   /api/v1/admin/groups/{id}/payments:
@@ -1148,6 +1302,50 @@ paths:
       security:
       - BearerAuth: []
       summary: Transfer group ownership
+      tags:
+      - admin-groups
+  /api/v1/admin/groups/bulk-delete:
+    post:
+      consumes:
+      - application/json
+      description: Soft-deletes multiple quiniela groups. Returns 200 when all
+      parameters:
+      - description: Group IDs to delete
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.bulkGroupIDsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.BulkOperationResultResponse'
+        "207":
+          description: Multi-Status
+          schema:
+            $ref: '#/definitions/internal_api_handler.BulkOperationResultResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: group_ids is required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk delete groups
       tags:
       - admin-groups
   /api/v1/admin/leaderboard:
@@ -1452,6 +1650,33 @@ paths:
       summary: List predictions by match
       tags:
       - admin-leaderboard
+  /api/v1/admin/stats:
+    get:
+      description: Returns aggregate counts for groups, users, and payment records.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.DashboardStatsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Dashboard statistics
+      tags:
+      - admin-stats
   /api/v1/admin/stats/conflicts/summary:
     get:
       description: Returns an aggregated view of all currently detected conflicts

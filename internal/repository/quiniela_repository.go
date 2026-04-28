@@ -295,4 +295,47 @@ func (r *PostgresQuinielaRepository) ListByIDs(ctx context.Context, ids []int) (
 	return collectQuinielas(rows)
 }
 
+// GetStatusCounts returns a single-row summary of quiniela counts grouped by
+// lifecycle status. Deleted rows are counted separately.
+func (r *PostgresQuinielaRepository) GetStatusCounts(ctx context.Context) (QuinielaStatusCounts, error) {
+	var c QuinielaStatusCounts
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'active'   AND deleted_at IS NULL),
+			COUNT(*) FILTER (WHERE status = 'inactive' AND deleted_at IS NULL),
+			COUNT(*) FILTER (WHERE deleted_at IS NOT NULL)
+		FROM quinielas`).Scan(&c.Total, &c.Active, &c.Inactive, &c.Deleted)
+	if err != nil {
+		return QuinielaStatusCounts{}, apperrors.Internal(err)
+	}
+	return c, nil
+}
+
+// BulkDeleteByAdmin soft-deletes multiple quinielas. Returns the IDs that were
+// actually updated; already-deleted quinielas are silently skipped.
+func (r *PostgresQuinielaRepository) BulkDeleteByAdmin(ctx context.Context, ids []int, _ int) ([]int, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		UPDATE quinielas
+		SET deleted_at = NOW(), updated_at = NOW()
+		WHERE id = ANY($1) AND deleted_at IS NULL
+		RETURNING id`, ids)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	var succeeded []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		succeeded = append(succeeded, id)
+	}
+	return succeeded, rows.Err()
+}
+
 var _ QuinielaRepository = (*PostgresQuinielaRepository)(nil)

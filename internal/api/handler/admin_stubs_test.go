@@ -93,6 +93,24 @@ func (s *stubAdminGroupSvc) UpdateGroupSettings(_ context.Context, _ int, _ *int
 	return s.quiniela, s.err
 }
 func (s *stubAdminGroupSvc) TransferOwnership(_ context.Context, _, _, _ int) error { return s.err }
+func (s *stubAdminGroupSvc) BulkDeleteGroups(_ context.Context, ids []int, _ int) (service.BulkOperationResult, error) {
+	if s.err != nil {
+		return service.BulkOperationResult{}, s.err
+	}
+	return service.BulkOperationResult{Succeeded: ids, Failed: []int{}}, nil
+}
+func (s *stubAdminGroupSvc) BulkRemoveMembers(_ context.Context, ids []int, _ int) (service.BulkOperationResult, error) {
+	if s.err != nil {
+		return service.BulkOperationResult{}, s.err
+	}
+	return service.BulkOperationResult{Succeeded: ids}, nil
+}
+func (s *stubAdminGroupSvc) RecalculateLeaderboard(_ context.Context, quinielaID, _ int) (*domain.LeaderboardSnapshot, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &domain.LeaderboardSnapshot{QuinielaID: quinielaID}, nil
+}
 
 // ── AdminPaymentService stub (extends stubPaymentSvc) ────────────────────────
 
@@ -142,6 +160,12 @@ func (s *stubAdminReadSvc) ListTiebreakerSubmissions(_ context.Context, _ reposi
 }
 func (s *stubAdminReadSvc) ListSnapshotHistory(_ context.Context, _, _ int) ([]*domain.LeaderboardSnapshot, error) {
 	return s.snapshots, s.err
+}
+func (s *stubAdminReadSvc) GetDashboardStats(_ context.Context) (*domain.DashboardStats, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &domain.DashboardStats{}, nil
 }
 
 // ── DLQService stub ───────────────────────────────────────────────────────────
@@ -221,6 +245,6 @@ func (s *stubConflictSvc) ListConflicts(_ context.Context) ([]domain.Conflict, e
 func (s *stubConflictSvc) ConflictSummary(_ context.Context) (*service.ConflictSummaryResult, error) {
 	return s.summary, s.err
 }
-func (s *stubConflictSvc) ResolveConflict(_ context.Context, _ string, _, _ int, _ string) error {
+func (s *stubConflictSvc) ResolveConflict(_ context.Context, _ string, _, _ int, _, _ string) error {
 	return s.err
 }

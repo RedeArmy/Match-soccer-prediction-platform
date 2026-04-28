@@ -292,4 +292,20 @@ func itoa(n int) string {
 	return strconv.Itoa(n)
 }
 
+// GetStatusCounts returns a single-row summary of user counts grouped by
+// lifecycle status. Uses conditional aggregation to avoid multiple round-trips.
+func (r *PostgresUserRepository) GetStatusCounts(ctx context.Context) (UserStatusCounts, error) {
+	var c UserStatusCounts
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE deleted_at IS NULL),
+			COUNT(*) FILTER (WHERE deleted_at IS NULL AND banned_at IS NULL),
+			COUNT(*) FILTER (WHERE deleted_at IS NULL AND banned_at IS NOT NULL)
+		FROM users`).Scan(&c.Total, &c.Active, &c.Banned)
+	if err != nil {
+		return UserStatusCounts{}, apperrors.Internal(err)
+	}
+	return c, nil
+}
+
 var _ UserRepository = (*PostgresUserRepository)(nil)

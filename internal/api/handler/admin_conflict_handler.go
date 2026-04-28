@@ -95,7 +95,8 @@ func (h *AdminConflictHandler) ListConflicts(w http.ResponseWriter, r *http.Requ
 }
 
 type resolveConflictRequest struct {
-	Note string `json:"note"`
+	Action string `json:"action"` // "ack" (default) or "auto_fix"
+	Note   string `json:"note"`
 }
 
 // ResolveConflict handles POST /admin/conflicts/{type}/{id}/resolve.
@@ -143,7 +144,11 @@ func (h *AdminConflictHandler) ResolveConflict(w http.ResponseWriter, r *http.Re
 	var req resolveConflictRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // note is optional
 
-	if err := h.svc.ResolveConflict(r.Context(), conflictType, entityID, caller.ID, req.Note); err != nil {
+	action := req.Action
+	if action == "" {
+		action = "ack"
+	}
+	if err := h.svc.ResolveConflict(r.Context(), conflictType, entityID, caller.ID, action, req.Note); err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
