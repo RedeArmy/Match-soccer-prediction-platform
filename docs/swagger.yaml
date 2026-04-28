@@ -1128,7 +1128,7 @@ paths:
       - application/json
       description: Sets multiple memberships to 'left'. Returns 200 when all
       parameters:
-      - description: Group ID (for routing; not used in operation)
+      - description: Group ID — only memberships belonging to this group are removed
         in: path
         name: id
         required: true
@@ -1159,7 +1159,7 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "422":
-          description: membership_ids is required
+          description: membership_ids is required or exceeds limit
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "500":

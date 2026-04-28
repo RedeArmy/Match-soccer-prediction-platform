@@ -474,7 +474,7 @@ func (s *Server) buildHandlers(
 		tiebreaker:       handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
 		tournament:       handler.NewTournamentHandler(tournamentSvc, s.log),
 		adminUser:        handler.NewAdminUserHandler(adminUserSvc, s.log),
-		adminGroup:       handler.NewAdminGroupHandler(adminGroupSvc, s.log),
+		adminGroup:       handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),
 		adminPayment:     handler.NewAdminPaymentHandler(paymentSvc, s.log),
 		adminLeaderboard: handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
 		adminDLQ:         handler.NewAdminDLQHandler(dlqSvc, s.log),

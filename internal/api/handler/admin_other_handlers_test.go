@@ -3,7 +3,9 @@ package handler_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,7 +44,7 @@ const (
 
 func newAdminGroupRouter(svc service.AdminGroupService) http.Handler {
 	r := chi.NewRouter()
-	h := handler.NewAdminGroupHandler(svc, zap.NewNop())
+	h := handler.NewAdminGroupHandler(svc, &stubAdminParamSvc{}, zap.NewNop())
 	r.Delete("/groups/{id}", h.DeleteGroup)
 	r.Delete("/groups/{id}/members/{membershipID}", h.RemoveMember)
 	r.Patch("/groups/{id}/settings", h.UpdateGroupSettings)
@@ -797,6 +799,20 @@ func TestAdminBulkDeleteGroups_ServiceError_Returns500(t *testing.T) {
 	}
 }
 
+func TestAdminBulkDeleteGroups_ExceedsLimit_Returns422(t *testing.T) {
+	ids := make([]string, 1001)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%d", i+1)
+	}
+	body := `{"group_ids":[` + strings.Join(ids, ",") + `]}`
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroupsBulkDelete, body), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
 // ── AdminGroupHandler — BulkRemoveMembers ─────────────────────────────────────
 
 func TestAdminBulkRemoveMembers_Success_Returns200(t *testing.T) {
@@ -831,6 +847,29 @@ func TestAdminBulkRemoveMembers_ServiceError_Returns500(t *testing.T) {
 	w := doReq(newAdminGroupRouter(svc), req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminBulkRemoveMembers_ExceedsLimit_Returns422(t *testing.T) {
+	ids := make([]string, 1001)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%d", i+1)
+	}
+	body := `{"membership_ids":[` + strings.Join(ids, ",") + `]}`
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroups1BulkRemove, body), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminBulkRemoveMembers_InvalidGroupID_Returns422(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/groups/abc/members/bulk-remove", `{"membership_ids":[10]}`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
