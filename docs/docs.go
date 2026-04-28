@@ -448,6 +448,75 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/groups/bulk-delete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Soft-deletes multiple quiniela groups. Returns 200 when all",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-groups"
+                ],
+                "summary": "Bulk delete groups",
+                "parameters": [
+                    {
+                        "description": "Group IDs to delete",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.bulkGroupIDsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.BulkOperationResultResponse"
+                        }
+                    },
+                    "207": {
+                        "description": "Multi-Status",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.BulkOperationResultResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "group_ids is required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/groups/{id}": {
             "delete": {
                 "security": [
@@ -560,6 +629,140 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Invalid group ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/groups/{id}/leaderboard/recalculate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Triggers an immediate leaderboard snapshot for the group.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-groups"
+                ],
+                "summary": "Recalculate leaderboard",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.SnapshotResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid group ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/groups/{id}/members/bulk-remove": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets multiple memberships to 'left'. Returns 200 when all",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-groups"
+                ],
+                "summary": "Bulk remove members",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID (for routing; not used in operation)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Membership IDs to remove",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.bulkMemberIDsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.BulkOperationResultResponse"
+                        }
+                    },
+                    "207": {
+                        "description": "Multi-Status",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.BulkOperationResultResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "membership_ids is required",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -1305,6 +1508,49 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Invalid match ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns aggregate counts for groups, users, and payment records.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-stats"
+                ],
+                "summary": "Dashboard statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.DashboardStatsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -3286,6 +3532,23 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.BulkOperationResultResponse": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "succeeded": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
         "internal_api_handler.CityResponse": {
             "type": "object",
             "properties": {
@@ -3366,6 +3629,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.DashboardStatsResponse": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "$ref": "#/definitions/internal_api_handler.GroupDashboardStatsResponse"
+                },
+                "payments": {
+                    "$ref": "#/definitions/internal_api_handler.PaymentDashboardStatsResponse"
+                },
+                "users": {
+                    "$ref": "#/definitions/internal_api_handler.UserDashboardStatsResponse"
+                }
+            }
+        },
         "internal_api_handler.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -3388,6 +3665,23 @@ const docTemplate = `{
                 },
                 "user_name": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.GroupDashboardStatsResponse": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer"
+                },
+                "deleted": {
+                    "type": "integer"
+                },
+                "inactive": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -3629,6 +3923,23 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.PaymentDashboardStatsResponse": {
+            "type": "object",
+            "properties": {
+                "confirmed": {
+                    "type": "integer"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "rejected": {
+                    "type": "integer"
+                },
+                "total_collected": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.PaymentResponse": {
             "type": "object",
             "properties": {
@@ -3819,6 +4130,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.UserDashboardStatsResponse": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer"
+                },
+                "banned": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.UserStatsResponse": {
             "type": "object",
             "properties": {
@@ -3875,6 +4200,28 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "internal_api_handler.bulkGroupIDsRequest": {
+            "type": "object",
+            "properties": {
+                "group_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "internal_api_handler.bulkMemberIDsRequest": {
+            "type": "object",
+            "properties": {
+                "membership_ids": {
                     "type": "array",
                     "items": {
                         "type": "integer"
@@ -3961,6 +4308,10 @@ const docTemplate = `{
         "internal_api_handler.resolveConflictRequest": {
             "type": "object",
             "properties": {
+                "action": {
+                    "description": "\"ack\" (default) or \"auto_fix\"",
+                    "type": "string"
+                },
                 "note": {
                     "type": "string"
                 }

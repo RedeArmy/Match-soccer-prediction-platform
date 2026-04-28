@@ -300,6 +300,23 @@ type AdminGroupService interface {
 	// demotes the current owner to MembershipRoleMember. Returns NotFound when
 	// quinielaID does not exist or newOwnerUserID is not an active member.
 	TransferOwnership(ctx context.Context, quinielaID, newOwnerUserID, adminID int) error
+	// BulkDeleteGroups soft-deletes multiple quinielas. Succeeded contains IDs
+	// that were deleted; Failed contains IDs already deleted or not found.
+	BulkDeleteGroups(ctx context.Context, ids []int, adminID int) (BulkOperationResult, error)
+	// BulkRemoveMembers sets multiple memberships to 'left'. Succeeded contains
+	// IDs that were removed; Failed contains IDs already inactive or not found.
+	BulkRemoveMembers(ctx context.Context, ids []int, adminID int) (BulkOperationResult, error)
+	// RecalculateLeaderboard triggers an immediate leaderboard snapshot for the
+	// given quiniela. Returns the newly created snapshot.
+	RecalculateLeaderboard(ctx context.Context, quinielaID, adminID int) (*domain.LeaderboardSnapshot, error)
+}
+
+// BulkOperationResult is the outcome of a bulk administrative operation.
+// Succeeded holds the IDs of entities that were processed; Failed holds IDs
+// that could not be processed (not found or already in a terminal state).
+type BulkOperationResult struct {
+	Succeeded []int
+	Failed    []int
 }
 
 // BulkBanError records a single ban failure within a BulkBan call.
@@ -417,6 +434,9 @@ type AdminReadService interface {
 	ListTiebreakerSubmissions(ctx context.Context, p repository.Pagination) ([]TiebreakerSubmissionView, error)
 	// ListSnapshotHistory returns the most recent limit snapshots for a quiniela.
 	ListSnapshotHistory(ctx context.Context, quinielaID, limit int) ([]*domain.LeaderboardSnapshot, error)
+	// GetDashboardStats returns aggregate counts for groups, users, and payments.
+	// Intended for the admin dashboard home screen to populate summary widgets.
+	GetDashboardStats(ctx context.Context) (*domain.DashboardStats, error)
 }
 
 // ConflictTypeSummary aggregates detected conflicts for a single conflict type.
@@ -447,7 +467,8 @@ type ConflictService interface {
 	// dashboard alert widgets that need a lightweight summary without the
 	// full conflict detail list.
 	ConflictSummary(ctx context.Context) (*ConflictSummaryResult, error)
-	// ResolveConflict records an admin acknowledgement of the given conflict.
-	// conflictType must be one of the domain.ConflictType constants.
-	ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, note string) error
+	// ResolveConflict records an admin action on the given conflict. action must
+	// be "ack" (acknowledgement only) or "auto_fix" (attempt automatic remediation
+	// — transfers ownership, rejects stale payments, or removes stale memberships).
+	ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, action, note string) error
 }

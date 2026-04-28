@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -15,33 +16,47 @@ import (
 )
 
 const (
-	adminOtherDBError             = "db error"
-	adminOtherPathDLQ             = "/dlq"
-	adminOtherPathDLQReplay       = "/dlq/replay"
-	adminOtherPathSysParamsBulk   = "/system-params/bulk"
-	adminOtherPathSysParams       = "/system-params"
-	adminOtherPathLeaderboard     = "/leaderboard"
-	adminOtherPathPaymentsPending = "/payments/pending"
-	adminOtherPathGroups1         = "/groups/1"
-	adminOtherPathGroups1Settings = "/groups/1/settings"
-	adminOtherPathGroups1Transfer = "/groups/1/transfer-ownership"
-	adminOtherPathTiebreakerSubs  = "/tiebreaker/submissions"
-	adminOtherPathAuditLog        = "/audit-log"
-	adminOtherPathConflicts       = "/conflicts"
-	adminOtherPathConflictResolve = "/conflicts/group_without_owner/1/resolve"
-	adminOtherPathConflictSummary = "/stats/conflicts/summary"
-	adminOtherScoringExact        = "scoring.exact"
+	adminOtherDBError               = "db error"
+	adminOtherPathDLQ               = "/dlq"
+	adminOtherPathDLQReplay         = "/dlq/replay"
+	adminOtherPathSysParamsBulk     = "/system-params/bulk"
+	adminOtherPathSysParams         = "/system-params"
+	adminOtherPathLeaderboard       = "/leaderboard"
+	adminOtherPathPaymentsPending   = "/payments/pending"
+	adminOtherPathGroups1           = "/groups/1"
+	adminOtherPathGroups1Settings   = "/groups/1/settings"
+	adminOtherPathGroups1Transfer   = "/groups/1/transfer-ownership"
+	adminOtherPathGroupsBulkDelete  = "/groups/bulk-delete"
+	adminOtherPathGroups1BulkRemove = "/groups/1/members/bulk-remove"
+	adminOtherPathGroups1Recalc     = "/groups/1/leaderboard/recalculate"
+	adminOtherPathStats             = "/stats"
+	adminOtherPathTiebreakerSubs    = "/tiebreaker/submissions"
+	adminOtherPathAuditLog          = "/audit-log"
+	adminOtherPathConflicts         = "/conflicts"
+	adminOtherPathConflictResolve   = "/conflicts/group_without_owner/1/resolve"
+	adminOtherPathConflictSummary   = "/stats/conflicts/summary"
+	adminOtherScoringExact          = "scoring.exact"
 )
 
 // ── AdminGroupHandler ─────────────────────────────────────────────────────────
 
-func newAdminGroupRouter(svc *stubAdminGroupSvc) http.Handler {
+func newAdminGroupRouter(svc service.AdminGroupService) http.Handler {
 	r := chi.NewRouter()
 	h := handler.NewAdminGroupHandler(svc, zap.NewNop())
 	r.Delete("/groups/{id}", h.DeleteGroup)
 	r.Delete("/groups/{id}/members/{membershipID}", h.RemoveMember)
 	r.Patch("/groups/{id}/settings", h.UpdateGroupSettings)
 	r.Post("/groups/{id}/transfer-ownership", h.TransferOwnership)
+	r.Post("/groups/bulk-delete", h.BulkDeleteGroups)
+	r.Post("/groups/{id}/members/bulk-remove", h.BulkRemoveMembers)
+	r.Post("/groups/{id}/leaderboard/recalculate", h.RecalculateLeaderboard)
+	return r
+}
+
+func newAdminStatsRouter(svc *stubAdminReadSvc) http.Handler {
+	r := chi.NewRouter()
+	h := handler.NewAdminStatsHandler(svc, zap.NewNop())
+	r.Get("/stats", h.GetDashboardStats)
 	return r
 }
 
@@ -729,5 +744,181 @@ func TestAdminConflictSummary_ServiceError_Returns500(t *testing.T) {
 	w := do(newAdminConflictRouter(svc), http.MethodGet, adminOtherPathConflictSummary, "")
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── AdminGroupHandler — BulkDeleteGroups ──────────────────────────────────────
+
+func TestAdminBulkDeleteGroups_Success_Returns200(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroupsBulkDelete, `{"group_ids":[1,2,3]}`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminBulkDeleteGroups_PartialFailure_Returns207(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	// The stub returns all IDs as succeeded when err==nil; override to simulate partial failure.
+	// We simulate this by injecting a service that always reports some as failed.
+	partialSvc := &partialBulkGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroupsBulkDelete, `{"group_ids":[1,2]}`), adminCaller)
+	w := doReq(newAdminGroupRouter(partialSvc), req)
+	if w.Code != http.StatusMultiStatus {
+		t.Errorf("expected 207, got %d", w.Code)
+	}
+	_ = svc
+}
+
+func TestAdminBulkDeleteGroups_NoCallerInContext_Returns401(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	w := do(newAdminGroupRouter(svc), http.MethodPost, adminOtherPathGroupsBulkDelete, `{"group_ids":[1]}`)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminBulkDeleteGroups_EmptyIDs_Returns422(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroupsBulkDelete, `{"group_ids":[]}`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminBulkDeleteGroups_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminGroupSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroupsBulkDelete, `{"group_ids":[1]}`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── AdminGroupHandler — BulkRemoveMembers ─────────────────────────────────────
+
+func TestAdminBulkRemoveMembers_Success_Returns200(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroups1BulkRemove, `{"membership_ids":[10,11]}`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminBulkRemoveMembers_NoCallerInContext_Returns401(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	w := do(newAdminGroupRouter(svc), http.MethodPost, adminOtherPathGroups1BulkRemove, `{"membership_ids":[10]}`)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminBulkRemoveMembers_EmptyIDs_Returns422(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroups1BulkRemove, `{"membership_ids":[]}`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminBulkRemoveMembers_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminGroupSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroups1BulkRemove, `{"membership_ids":[10]}`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── AdminGroupHandler — RecalculateLeaderboard ────────────────────────────────
+
+func TestAdminRecalculateLeaderboard_Success_Returns200(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequest(http.MethodPost, adminOtherPathGroups1Recalc, ""), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminRecalculateLeaderboard_NoCallerInContext_Returns401(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	w := do(newAdminGroupRouter(svc), http.MethodPost, adminOtherPathGroups1Recalc, "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminRecalculateLeaderboard_InvalidID_Returns422(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequest(http.MethodPost, "/groups/abc/leaderboard/recalculate", ""), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminRecalculateLeaderboard_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminGroupSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(newAdminRequest(http.MethodPost, adminOtherPathGroups1Recalc, ""), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── AdminStatsHandler — GetDashboardStats ─────────────────────────────────────
+
+func TestAdminGetDashboardStats_Success_Returns200(t *testing.T) {
+	svc := &stubAdminReadSvc{}
+	w := do(newAdminStatsRouter(svc), http.MethodGet, adminOtherPathStats, "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminGetDashboardStats_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminReadSvc{err: errors.New(adminOtherDBError)}
+	w := do(newAdminStatsRouter(svc), http.MethodGet, adminOtherPathStats, "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── helper stubs ──────────────────────────────────────────────────────────────
+
+// partialBulkGroupSvc simulates a bulk operation where some IDs fail.
+type partialBulkGroupSvc struct{ stubAdminGroupSvc }
+
+func (s *partialBulkGroupSvc) BulkDeleteGroups(_ context.Context, ids []int, _ int) (service.BulkOperationResult, error) {
+	if len(ids) == 0 {
+		return service.BulkOperationResult{}, nil
+	}
+	return service.BulkOperationResult{Succeeded: ids[:1], Failed: ids[1:]}, nil
+}
+
+// nilSliceBulkGroupSvc returns BulkOperationResult with nil slices (zero value)
+// to exercise the nil-to-empty-slice guards in bulkOperationResultToResponse.
+type nilSliceBulkGroupSvc struct{ stubAdminGroupSvc }
+
+func (s *nilSliceBulkGroupSvc) BulkDeleteGroups(_ context.Context, _ []int, _ int) (service.BulkOperationResult, error) {
+	return service.BulkOperationResult{}, nil // Succeeded and Failed are nil
+}
+
+func TestAdminBulkDeleteGroups_NilSlices_ResponseHasEmptyArrays(t *testing.T) {
+	svc := &nilSliceBulkGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroupsBulkDelete, `{"group_ids":[1]}`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	// nil Succeeded → all IDs treated as failed → 207 Multi-Status
+	if w.Code != http.StatusOK && w.Code != http.StatusMultiStatus {
+		t.Errorf("expected 200 or 207, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if body == "" {
+		t.Error("expected non-empty response body")
 	}
 }

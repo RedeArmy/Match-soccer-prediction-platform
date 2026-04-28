@@ -14,6 +14,7 @@ import (
 const (
 	adminReadUnexpectedErr = "unexpected error: %v"
 	adminReadDBError       = "db error"
+	adminReadExpectErr     = "expected error, got nil"
 )
 
 func newAdminReadSvc(
@@ -22,7 +23,15 @@ func newAdminReadSvc(
 	tbRepo *stubTiebreakerRepo,
 	snapRepo *stubSnapshotRepo,
 ) AdminReadService {
-	return NewAdminReadService(predRepo, userRepo, tbRepo, snapRepo, zap.NewNop())
+	return NewAdminReadService(predRepo, userRepo, &stubQuinielaRepo{}, &stubPaymentRepo{}, tbRepo, snapRepo, zap.NewNop())
+}
+
+func newAdminReadSvcWithRepos(
+	quinielaRepo *stubQuinielaRepo,
+	paymentRepo *stubPaymentRepo,
+	userRepo *stubUserRepo,
+) AdminReadService {
+	return NewAdminReadService(&stubTotalPointsPredRepo{}, userRepo, quinielaRepo, paymentRepo, &stubTiebreakerRepo{}, &stubSnapshotRepo{}, zap.NewNop())
 }
 
 // ── GlobalLeaderboard ─────────────────────────────────────────────────────────
@@ -141,5 +150,69 @@ func TestAdminReadService_ListSnapshotHistory_ReturnsSnapshots(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 snapshot, got %d", len(got))
+	}
+}
+
+// ── GetDashboardStats ─────────────────────────────────────────────────────────
+
+func TestAdminReadService_GetDashboardStats_PropagatesAllCounts(t *testing.T) {
+	paymentRepo := &stubPaymentRepo{
+		statusCounts: repository.PaymentStatusCounts{
+			Pending:        2,
+			Confirmed:      5,
+			Rejected:       1,
+			TotalCollected: 15000,
+		},
+	}
+	svc := newAdminReadSvcWithRepos(&stubQuinielaRepo{}, paymentRepo, &stubUserRepo{})
+
+	got, err := svc.GetDashboardStats(context.Background())
+	if err != nil {
+		t.Fatalf(adminReadUnexpectedErr, err)
+	}
+	if got.Payments.TotalCollected != 15000 {
+		t.Errorf("expected TotalCollected=15000, got %d", got.Payments.TotalCollected)
+	}
+	if got.Payments.Pending != 2 {
+		t.Errorf("expected Pending=2, got %d", got.Payments.Pending)
+	}
+	if got.Payments.Confirmed != 5 {
+		t.Errorf("expected Confirmed=5, got %d", got.Payments.Confirmed)
+	}
+}
+
+func TestAdminReadService_GetDashboardStats_QuinielaRepoError_Propagates(t *testing.T) {
+	svc := newAdminReadSvcWithRepos(
+		&stubQuinielaRepo{err: errors.New(adminReadDBError)},
+		&stubPaymentRepo{},
+		&stubUserRepo{},
+	)
+	_, err := svc.GetDashboardStats(context.Background())
+	if err == nil {
+		t.Fatal(adminReadExpectErr)
+	}
+}
+
+func TestAdminReadService_GetDashboardStats_UserRepoError_Propagates(t *testing.T) {
+	svc := newAdminReadSvcWithRepos(
+		&stubQuinielaRepo{},
+		&stubPaymentRepo{},
+		&stubUserRepo{err: errors.New(adminReadDBError)},
+	)
+	_, err := svc.GetDashboardStats(context.Background())
+	if err == nil {
+		t.Fatal(adminReadExpectErr)
+	}
+}
+
+func TestAdminReadService_GetDashboardStats_PaymentRepoError_Propagates(t *testing.T) {
+	svc := newAdminReadSvcWithRepos(
+		&stubQuinielaRepo{},
+		&stubPaymentRepo{err: errors.New(adminReadDBError)},
+		&stubUserRepo{},
+	)
+	_, err := svc.GetDashboardStats(context.Background())
+	if err == nil {
+		t.Fatal(adminReadExpectErr)
 	}
 }

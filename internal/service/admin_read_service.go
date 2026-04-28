@@ -13,6 +13,8 @@ import (
 type adminReadService struct {
 	predRepo       repository.PredictionRepository
 	userRepo       repository.UserRepository
+	quinielaRepo   repository.QuinielaRepository
+	paymentRepo    repository.PaymentRecordRepository
 	tiebreakerRepo repository.TiebreakerRepository
 	snapRepo       repository.LeaderboardSnapshotRepository
 	log            *zap.Logger
@@ -22,6 +24,8 @@ type adminReadService struct {
 func NewAdminReadService(
 	predRepo repository.PredictionRepository,
 	userRepo repository.UserRepository,
+	quinielaRepo repository.QuinielaRepository,
+	paymentRepo repository.PaymentRecordRepository,
 	tiebreakerRepo repository.TiebreakerRepository,
 	snapRepo repository.LeaderboardSnapshotRepository,
 	log *zap.Logger,
@@ -29,6 +33,8 @@ func NewAdminReadService(
 	return &adminReadService{
 		predRepo:       predRepo,
 		userRepo:       userRepo,
+		quinielaRepo:   quinielaRepo,
+		paymentRepo:    paymentRepo,
 		tiebreakerRepo: tiebreakerRepo,
 		snapRepo:       snapRepo,
 		log:            log,
@@ -81,6 +87,42 @@ func (s *adminReadService) ListTiebreakerSubmissions(ctx context.Context, p repo
 
 func (s *adminReadService) ListSnapshotHistory(ctx context.Context, quinielaID, limit int) ([]*domain.LeaderboardSnapshot, error) {
 	return s.snapRepo.ListByQuiniela(ctx, quinielaID, limit)
+}
+
+// GetDashboardStats aggregates group, user, and payment counts in three
+// sequential queries and returns them as a single DashboardStats value.
+func (s *adminReadService) GetDashboardStats(ctx context.Context) (*domain.DashboardStats, error) {
+	groupCounts, err := s.quinielaRepo.GetStatusCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userCounts, err := s.userRepo.GetStatusCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	paymentCounts, err := s.paymentRepo.GetStatusCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.DashboardStats{
+		Groups: domain.GroupDashboardStats{
+			Total:    groupCounts.Total,
+			Active:   groupCounts.Active,
+			Inactive: groupCounts.Inactive,
+			Deleted:  groupCounts.Deleted,
+		},
+		Users: domain.UserDashboardStats{
+			Total:  userCounts.Total,
+			Active: userCounts.Active,
+			Banned: userCounts.Banned,
+		},
+		Payments: domain.PaymentDashboardStats{
+			Pending:        paymentCounts.Pending,
+			Confirmed:      paymentCounts.Confirmed,
+			Rejected:       paymentCounts.Rejected,
+			TotalCollected: paymentCounts.TotalCollected,
+		},
+	}, nil
 }
 
 var _ AdminReadService = (*adminReadService)(nil)

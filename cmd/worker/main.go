@@ -124,7 +124,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	matchRepo := repository.NewPostgresMatchRepository(db)
 	predRepo := repository.NewPostgresPredictionRepository(db)
 	systemParamRepo := repository.NewPostgresSystemParamRepository(db)
-	params := service.NewSystemParamService(systemParamRepo, log)
+	params := service.NewSystemParamService(systemParamRepo, nil, log)
 	messaging.Configure(
 		params.GetInt(ctx, domain.ParamKeyMessagingMaxRetries, 3),
 		int64(params.GetInt(ctx, domain.ParamKeyMessagingStreamMaxLen, 600_000)),

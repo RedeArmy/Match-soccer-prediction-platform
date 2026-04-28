@@ -49,7 +49,7 @@ func param(key, value string) *domain.SystemParam {
 }
 
 func newParamSvc(repo repository.SystemParamRepository) SystemParamService {
-	return NewSystemParamService(repo, zap.NewNop())
+	return NewSystemParamService(repo, nil, zap.NewNop())
 }
 
 // ── Get ───────────────────────────────────────────────────────────────────────
@@ -348,5 +348,37 @@ func TestSystemParamService_BulkSet_RepoError_Propagates(t *testing.T) {
 	err := svc.BulkSet(context.Background(), map[string]string{"k": "v"}, 1)
 	if err == nil {
 		t.Fatal("expected error from repo, got nil")
+	}
+}
+
+func TestSystemParamService_Set_WithAudit_CallsAuditLogger(t *testing.T) {
+	repo := &stubSystemParamRepo{param: typedParam("scoring.exact_score", "5", domain.SystemParamTypeInt)}
+	audit := &spyAuditLogger{}
+	svc := NewSystemParamService(repo, audit, zap.NewNop())
+
+	if _, err := svc.Set(context.Background(), "scoring.exact_score", "5", 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !audit.called {
+		t.Fatal("expected audit logger to be called on Set")
+	}
+	if audit.action != domain.AuditActionParamUpdated {
+		t.Errorf("expected action %q, got %q", domain.AuditActionParamUpdated, audit.action)
+	}
+}
+
+func TestSystemParamService_BulkSet_WithAudit_CallsAuditLogger(t *testing.T) {
+	repo := &stubSystemParamRepo{param: typedParam("scoring.exact_score", "5", domain.SystemParamTypeInt)}
+	audit := &spyAuditLogger{}
+	svc := NewSystemParamService(repo, audit, zap.NewNop())
+
+	if err := svc.BulkSet(context.Background(), map[string]string{"scoring.exact_score": "5"}, 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !audit.called {
+		t.Fatal("expected audit logger to be called on BulkSet")
+	}
+	if audit.action != domain.AuditActionParamUpdated {
+		t.Errorf("expected action %q, got %q", domain.AuditActionParamUpdated, audit.action)
 	}
 }

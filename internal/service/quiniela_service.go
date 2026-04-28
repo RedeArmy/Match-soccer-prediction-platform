@@ -23,13 +23,15 @@ type quinielaService struct {
 	repo       repository.QuinielaRepository
 	memberRepo repository.GroupMembershipRepository
 	params     SystemParamService
+	audit      AuditLogger
 }
 
 // NewQuinielaService constructs a quinielaService with the given dependencies.
 // memberRepo is required to verify group ownership in RenameGroup.
 // params is used to read group.invite_code_length at runtime.
-func NewQuinielaService(repo repository.QuinielaRepository, memberRepo repository.GroupMembershipRepository, params SystemParamService) QuinielaService {
-	return &quinielaService{repo: repo, memberRepo: memberRepo, params: params}
+// audit records rename operations in the audit trail.
+func NewQuinielaService(repo repository.QuinielaRepository, memberRepo repository.GroupMembershipRepository, params SystemParamService, audit AuditLogger) QuinielaService {
+	return &quinielaService{repo: repo, memberRepo: memberRepo, params: params, audit: audit}
 }
 
 // generateInviteCode returns a cryptographically random invite code of length
@@ -114,6 +116,9 @@ func (s *quinielaService) RenameGroup(ctx context.Context, quinielaID, callerUse
 	if err := s.repo.Update(ctx, q); err != nil {
 		return nil, err
 	}
+	resType := "quiniela"
+	role := domain.RoleUser
+	s.audit.Log(ctx, &callerUserID, &role, domain.AuditActionGroupRenamed, &resType, &quinielaID, map[string]any{"name": name})
 	return q, nil
 }
 

@@ -4203,3 +4203,176 @@ func TestPredictionRepository_ListQuinielaIDsByMatch_NoPredictions_ReturnsEmpty(
 		t.Errorf("expected empty slice, got %v", ids)
 	}
 }
+
+// ── UserRepository.GetStatusCounts ───────────────────────────────────────────
+
+func TestUserRepository_GetStatusCounts_ReturnsCorrectTotals(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+	admin := seedUser(t)
+
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	if _, err := repo.Ban(context.Background(), u1.ID, admin.ID, "spam"); err != nil {
+		t.Fatalf("ban: %v", err)
+	}
+
+	counts, err := repo.GetStatusCounts(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if counts.Total < 3 {
+		t.Errorf("expected Total ≥ 3, got %d", counts.Total)
+	}
+	if counts.Banned < 1 {
+		t.Errorf("expected Banned ≥ 1, got %d", counts.Banned)
+	}
+	if counts.Active < 2 {
+		t.Errorf("expected Active ≥ 2, got %d", counts.Active)
+	}
+	_ = u2
+}
+
+// ── QuinielaRepository.GetStatusCounts ───────────────────────────────────────
+
+func TestQuinielaRepository_GetStatusCounts_ReturnsCorrectTotals(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	quinielaRepo := repository.NewPostgresQuinielaRepository(testDB)
+
+	q1 := seedQuiniela(t, u.ID)
+	q2 := seedQuiniela(t, u.ID)
+	if err := quinielaRepo.DeleteByAdmin(context.Background(), q1.ID, admin.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	counts, err := quinielaRepo.GetStatusCounts(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if counts.Total < 2 {
+		t.Errorf("expected Total ≥ 2, got %d", counts.Total)
+	}
+	if counts.Deleted < 1 {
+		t.Errorf("expected Deleted ≥ 1, got %d", counts.Deleted)
+	}
+	_ = q2
+}
+
+// ── QuinielaRepository.BulkDeleteByAdmin ─────────────────────────────────────
+
+func TestQuinielaRepository_BulkDeleteByAdmin_DeletesAllIDs(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	q1 := seedQuiniela(t, u.ID)
+	q2 := seedQuiniela(t, u.ID)
+
+	succeeded, err := repo.BulkDeleteByAdmin(context.Background(), []int{q1.ID, q2.ID}, admin.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(succeeded) != 2 {
+		t.Errorf("expected 2 succeeded, got %d", len(succeeded))
+	}
+}
+
+func TestQuinielaRepository_BulkDeleteByAdmin_AlreadyDeletedSkipped(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	q := seedQuiniela(t, u.ID)
+	_, _ = repo.BulkDeleteByAdmin(context.Background(), []int{q.ID}, admin.ID)
+
+	succeeded, err := repo.BulkDeleteByAdmin(context.Background(), []int{q.ID}, admin.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(succeeded) != 0 {
+		t.Errorf("expected 0 succeeded for already-deleted ID, got %d", len(succeeded))
+	}
+}
+
+// ── GroupMembershipRepository.BulkRemoveByAdmin ───────────────────────────────
+
+func TestGroupMembershipRepository_BulkRemoveByAdmin_RemovesAllIDs(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	m1 := seedActiveMembership(t, q.ID, seedUser(t).ID)
+	m2 := seedActiveMembership(t, q.ID, seedUser(t).ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	succeeded, err := repo.BulkRemoveByAdmin(context.Background(), []int{m1.ID, m2.ID}, admin.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(succeeded) != 2 {
+		t.Errorf("expected 2 succeeded, got %d", len(succeeded))
+	}
+
+	for _, id := range []int{m1.ID, m2.ID} {
+		got, _ := repo.GetByID(context.Background(), id)
+		if got == nil || got.Status != domain.MembershipLeft {
+			t.Errorf("membership %d: expected status left, got %v", id, got)
+		}
+	}
+}
+
+func TestGroupMembershipRepository_BulkRemoveByAdmin_InactiveSkipped(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	m := seedActiveMembership(t, q.ID, seedUser(t).ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	_, _ = repo.BulkRemoveByAdmin(context.Background(), []int{m.ID}, admin.ID)
+
+	succeeded, err := repo.BulkRemoveByAdmin(context.Background(), []int{m.ID}, admin.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(succeeded) != 0 {
+		t.Errorf("expected 0 succeeded for already-inactive membership, got %d", len(succeeded))
+	}
+}
+
+// ── PaymentRecordRepository.GetStatusCounts ───────────────────────────────────
+
+func TestPaymentRecordRepository_GetStatusCounts_IncludesTotalCollected(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	member := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	paymentRepo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	pr1 := seedPaymentRecord(t, q.ID, member.ID) // pending (10 000 centavos)
+	pr2 := seedPaymentRecord(t, q.ID, owner.ID)  // will be confirmed
+
+	if _, err := paymentRepo.Validate(context.Background(), pr2.ID, admin.ID, "ok"); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	counts, err := paymentRepo.GetStatusCounts(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if counts.Pending < 1 {
+		t.Errorf("expected Pending ≥ 1, got %d", counts.Pending)
+	}
+	if counts.Confirmed < 1 {
+		t.Errorf("expected Confirmed ≥ 1, got %d", counts.Confirmed)
+	}
+	if counts.TotalCollected < 10000 {
+		t.Errorf("expected TotalCollected ≥ 10000 (one confirmed at 10000 centavos), got %d", counts.TotalCollected)
+	}
+	_ = pr1
+}
