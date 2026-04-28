@@ -4376,3 +4376,78 @@ func TestPaymentRecordRepository_GetStatusCounts_IncludesTotalCollected(t *testi
 	}
 	_ = pr1
 }
+
+// ── GroupMembershipRepository.TransferOwnershipRoles ─────────────────────────
+
+func TestGroupMembershipRepository_TransferOwnershipRoles_HappyPath_SwapsRoles(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	owner := seedUser(t)
+	member := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+
+	ownerMembership := seedMembership(t, q.ID, owner.ID, domain.MembershipActive, false)
+	if err := repo.SetRole(context.Background(), ownerMembership.ID, domain.MembershipRoleCreateOwner); err != nil {
+		t.Fatalf("seed owner role: %v", err)
+	}
+	memberMembership := seedActiveMembership(t, q.ID, member.ID)
+
+	if err := repo.TransferOwnershipRoles(context.Background(), q.ID, memberMembership.ID); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	demoted, err := repo.GetByID(context.Background(), ownerMembership.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if demoted.Role != domain.MembershipRoleMember {
+		t.Errorf("expected old owner role=member after transfer, got %q", demoted.Role)
+	}
+
+	promoted, err := repo.GetByID(context.Background(), memberMembership.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if promoted.Role != domain.MembershipRoleCreateOwner {
+		t.Errorf("expected new owner role=owner after transfer, got %q", promoted.Role)
+	}
+}
+
+func TestGroupMembershipRepository_TransferOwnershipRoles_InvalidPromotee_RollsBackDemotion(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+
+	ownerMembership := seedMembership(t, q.ID, owner.ID, domain.MembershipActive, false)
+	if err := repo.SetRole(context.Background(), ownerMembership.ID, domain.MembershipRoleCreateOwner); err != nil {
+		t.Fatalf("seed owner role: %v", err)
+	}
+
+	// Attempt to promote a membership ID that does not exist — the transaction
+	// must roll back and the original owner must retain the owner role.
+	if err := repo.TransferOwnershipRoles(context.Background(), q.ID, 999999); err == nil {
+		t.Fatal("expected error for non-existent promotee membership, got nil")
+	}
+
+	unchanged, err := repo.GetByID(context.Background(), ownerMembership.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if unchanged.Role != domain.MembershipRoleCreateOwner {
+		t.Errorf("rollback failed: expected role=owner after aborted transfer, got %q", unchanged.Role)
+	}
+}
+
+func TestGroupMembershipRepository_TransferOwnershipRoles_CancelledContext_ReturnsError(t *testing.T) {
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := repo.TransferOwnershipRoles(ctx, 1, 1); err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
