@@ -45,7 +45,7 @@ func NewConflictService(
 // sliced according to p. A zero Pagination (Limit == 0) returns the full list.
 func (s *conflictService) ListConflicts(ctx context.Context, p repository.Pagination) ([]domain.Conflict, error) {
 	now := time.Now().UTC()
-	staleDays := s.params.GetInt(ctx, domain.ParamKeyConflictStaleDays, domain.ConflictStaleDays)
+	staleDays := s.params.GetInt(ctx, domain.ParamKeyConflictStaleDays, domain.DefaultConflictStaleDays)
 	staleThreshold := now.Add(-time.Duration(staleDays) * 24 * time.Hour)
 
 	var conflicts []domain.Conflict

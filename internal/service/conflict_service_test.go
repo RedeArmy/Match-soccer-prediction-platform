@@ -284,7 +284,7 @@ func TestConflictService_ResolveConflict_LogsAuditEntry(t *testing.T) {
 	audit := &spyAuditLogger{}
 	svc := NewConflictService(&stubQuinielaRepo{}, &stubMemberRepo{}, &stubPaymentRepo{}, &noopSystemParamService{}, audit, zap.NewNop())
 
-	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictGroupNoOwner), 7, 99, "ack", ""); err != nil {
+	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictGroupNoOwner), 7, 99, "ack", "admin note"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !audit.called {
@@ -295,6 +295,25 @@ func TestConflictService_ResolveConflict_LogsAuditEntry(t *testing.T) {
 	}
 	if audit.metadata == nil || audit.metadata["conflict_type"] != string(domain.ConflictGroupNoOwner) {
 		t.Errorf("audit metadata conflict_type: want %q, got %v", string(domain.ConflictGroupNoOwner), audit.metadata)
+	}
+	if got, ok := audit.metadata["note"]; !ok || got != "admin note" {
+		t.Errorf("audit metadata note: want %q, got %v", "admin note", got)
+	}
+}
+
+func TestConflictService_ResolveConflict_AutoFix_RecordsNoteConsistently(t *testing.T) {
+	audit := &spyAuditLogger{}
+	svc := NewConflictService(&stubQuinielaRepo{}, &stubMemberRepo{}, &stubPaymentRepo{}, &noopSystemParamService{}, audit, zap.NewNop())
+
+	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictGroupNoOwner), 1, 99, "auto_fix", "auto note"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if audit.action != domain.AuditActionConflictAutoResolved {
+		t.Errorf("audit action: want %q, got %q", domain.AuditActionConflictAutoResolved, audit.action)
+	}
+	// Both "ack" and "auto_fix" must record the note under the same key "note".
+	if got, ok := audit.metadata["note"]; !ok || got != "auto note" {
+		t.Errorf("audit metadata note: want %q, got %v (key must be \"note\" in both branches)", "auto note", got)
 	}
 }
 

@@ -64,6 +64,12 @@ const StandingsWinPoints = 3
 // changing it here is sufficient to adjust the threshold system-wide.
 const MinMembersForActive = 3
 
+// DefaultConflictStaleDays is the fallback staleness threshold used by
+// ConflictService when ParamKeyConflictStaleDays is absent from system_params.
+// At runtime, the actual value is always read from the param table; this
+// constant is only the safe default, not the authoritative runtime value.
+const DefaultConflictStaleDays = 7
+
 // System parameter keys used by the service layer to fetch runtime-configurable
 // values from SystemParamRepository. Each constant names the row that must
 // exist in system_params (seeded by migrations). Services fall back to the
@@ -82,7 +88,7 @@ const (
 	// invite code. Defaults to inviteCodeLength (10) in QuinielaService.
 	ParamKeyGroupInviteCodeLength = "group.invite_code_length"
 	// ParamKeyConflictStaleDays is the age in days after which a pending payment
-	// or membership is flagged as a conflict. Defaults to ConflictStaleDays (7).
+	// or membership is flagged as a conflict. Defaults to DefaultConflictStaleDays (7).
 	ParamKeyConflictStaleDays = "conflict.stale_days"
 	// ParamKeyPaginationDefaultLimit and ParamKeyPaginationMaxLimit control the
 	// default and maximum page sizes returned by paginated admin endpoints.
