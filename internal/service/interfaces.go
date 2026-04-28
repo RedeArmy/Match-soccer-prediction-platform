@@ -383,6 +383,15 @@ type AuditReader interface {
 	ListAuditLogsByEntity(ctx context.Context, resourceType string, resourceID int, p repository.Pagination) ([]*domain.AuditLog, error)
 }
 
+// AuditService is the combined interface for callers that need both write and
+// read access to the audit trail — primarily the composition root (server.go)
+// where the service is wired and passed to both audit-writing and
+// audit-reading handlers.
+type AuditService interface {
+	AuditLogger
+	AuditReader
+}
+
 // DLQStat summarises the dead-letter queue for one event type.
 type DLQStat struct {
 	EventType string     `json:"event_type"`

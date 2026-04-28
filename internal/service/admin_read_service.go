@@ -32,24 +32,26 @@ type adminReadService struct {
 	dashCache      *cachedDashboard
 }
 
+// AdminReadRepos groups the repository dependencies for NewAdminReadService,
+// keeping the constructor within the project's parameter-count limit.
+type AdminReadRepos struct {
+	Pred       repository.PredictionRepository
+	User       repository.UserRepository
+	Quiniela   repository.QuinielaRepository
+	Payment    repository.PaymentRecordRepository
+	Tiebreaker repository.TiebreakerRepository
+	Snapshot   repository.LeaderboardSnapshotRepository
+}
+
 // NewAdminReadService constructs an adminReadService.
-func NewAdminReadService(
-	predRepo repository.PredictionRepository,
-	userRepo repository.UserRepository,
-	quinielaRepo repository.QuinielaRepository,
-	paymentRepo repository.PaymentRecordRepository,
-	tiebreakerRepo repository.TiebreakerRepository,
-	snapRepo repository.LeaderboardSnapshotRepository,
-	params SystemParamService,
-	log *zap.Logger,
-) AdminReadService {
+func NewAdminReadService(repos AdminReadRepos, params SystemParamService, log *zap.Logger) AdminReadService {
 	return &adminReadService{
-		predRepo:       predRepo,
-		userRepo:       userRepo,
-		quinielaRepo:   quinielaRepo,
-		paymentRepo:    paymentRepo,
-		tiebreakerRepo: tiebreakerRepo,
-		snapRepo:       snapRepo,
+		predRepo:       repos.Pred,
+		userRepo:       repos.User,
+		quinielaRepo:   repos.Quiniela,
+		paymentRepo:    repos.Payment,
+		tiebreakerRepo: repos.Tiebreaker,
+		snapRepo:       repos.Snapshot,
 		params:         params,
 		log:            log,
 	}

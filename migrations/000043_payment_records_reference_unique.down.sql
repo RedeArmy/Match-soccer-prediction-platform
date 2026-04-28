@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_payment_records_reference_unique;
