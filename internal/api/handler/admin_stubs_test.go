@@ -239,7 +239,7 @@ type stubConflictSvc struct {
 	err       error
 }
 
-func (s *stubConflictSvc) ListConflicts(_ context.Context) ([]domain.Conflict, error) {
+func (s *stubConflictSvc) ListConflicts(_ context.Context, _ repository.Pagination) ([]domain.Conflict, error) {
 	return s.conflicts, s.err
 }
 func (s *stubConflictSvc) ConflictSummary(_ context.Context) (*service.ConflictSummaryResult, error) {

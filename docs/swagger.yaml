@@ -351,6 +351,15 @@ definitions:
       page:
         $ref: '#/definitions/internal_api_handler.PageMeta'
     type: object
+  internal_api_handler.Paged-internal_api_handler_ConflictResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api_handler.ConflictResponse'
+        type: array
+      page:
+        $ref: '#/definitions/internal_api_handler.PageMeta'
+    type: object
   internal_api_handler.Paged-internal_api_handler_PaymentResponse:
     properties:
       data:
@@ -791,16 +800,23 @@ paths:
       - admin-audit-log
   /api/v1/admin/conflicts:
     get:
-      description: Returns all currently detected operational inconsistencies that
+      description: Returns currently detected operational inconsistencies that
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/internal_api_handler.ConflictResponse'
-            type: array
+            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_ConflictResponse'
         "401":
           description: Unauthorized
           schema:
