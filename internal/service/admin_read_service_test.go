@@ -11,6 +11,12 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
+// zeroIntParamService returns 0 for all GetInt calls — used to disable the
+// dashboard cache (TTL of 0 means skip caching entirely).
+type zeroIntParamService struct{ noopSystemParamService }
+
+func (*zeroIntParamService) GetInt(_ context.Context, _ string, _ int) int { return 0 }
+
 const (
 	adminReadUnexpectedErr = "unexpected error: %v"
 	adminReadDBError       = "db error"
@@ -23,7 +29,7 @@ func newAdminReadSvc(
 	tbRepo *stubTiebreakerRepo,
 	snapRepo *stubSnapshotRepo,
 ) AdminReadService {
-	return NewAdminReadService(predRepo, userRepo, &stubQuinielaRepo{}, &stubPaymentRepo{}, tbRepo, snapRepo, zap.NewNop())
+	return NewAdminReadService(predRepo, userRepo, &stubQuinielaRepo{}, &stubPaymentRepo{}, tbRepo, snapRepo, &noopSystemParamService{}, zap.NewNop())
 }
 
 func newAdminReadSvcWithRepos(
@@ -31,7 +37,7 @@ func newAdminReadSvcWithRepos(
 	paymentRepo *stubPaymentRepo,
 	userRepo *stubUserRepo,
 ) AdminReadService {
-	return NewAdminReadService(&stubTotalPointsPredRepo{}, userRepo, quinielaRepo, paymentRepo, &stubTiebreakerRepo{}, &stubSnapshotRepo{}, zap.NewNop())
+	return NewAdminReadService(&stubTotalPointsPredRepo{}, userRepo, quinielaRepo, paymentRepo, &stubTiebreakerRepo{}, &stubSnapshotRepo{}, &noopSystemParamService{}, zap.NewNop())
 }
 
 // ── GlobalLeaderboard ─────────────────────────────────────────────────────────
@@ -214,5 +220,42 @@ func TestAdminReadService_GetDashboardStats_PaymentRepoError_Propagates(t *testi
 	_, err := svc.GetDashboardStats(context.Background())
 	if err == nil {
 		t.Fatal(adminReadExpectErr)
+	}
+}
+
+func TestAdminReadService_GetDashboardStats_Cache_SecondCallDoesNotHitRepo(t *testing.T) {
+	qr := &stubQuinielaRepo{}
+	svc := newAdminReadSvcWithRepos(qr, &stubPaymentRepo{}, &stubUserRepo{})
+
+	first, err := svc.GetDashboardStats(context.Background())
+	if err != nil {
+		t.Fatalf(adminReadUnexpectedErr, err)
+	}
+	// Poison the repo so a second DB hit would fail.
+	qr.err = errors.New("should not be called")
+
+	second, err := svc.GetDashboardStats(context.Background())
+	if err != nil {
+		t.Fatalf(adminReadUnexpectedErr, err)
+	}
+	if first != second {
+		t.Error("expected second call to return cached stats pointer")
+	}
+}
+
+func TestAdminReadService_GetDashboardStats_Cache_ZeroTTL_DisablesCache(t *testing.T) {
+	qr := &stubQuinielaRepo{}
+	// noopSystemParamService returns 0 for GetInt → cache disabled.
+	svc := NewAdminReadService(
+		&stubTotalPointsPredRepo{}, &stubUserRepo{}, qr, &stubPaymentRepo{},
+		&stubTiebreakerRepo{}, &stubSnapshotRepo{},
+		&zeroIntParamService{}, zap.NewNop(),
+	)
+
+	_, _ = svc.GetDashboardStats(context.Background())
+	qr.err = errors.New("repo called on second request — cache should be disabled")
+	_, err := svc.GetDashboardStats(context.Background())
+	if err == nil {
+		t.Error("expected error on second call when cache is disabled")
 	}
 }

@@ -14,7 +14,10 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
-const defaultCacheTTL = 5 * time.Minute
+const (
+	defaultCacheTTL        = 5 * time.Minute
+	defaultRuntimeCacheTTL = 30 * time.Second // shorter TTL for is_runtime = TRUE params
+)
 
 // cacheEntry wraps a SystemParam with a TTL deadline.
 type cacheEntry struct {
@@ -27,26 +30,30 @@ func (e *cacheEntry) valid() bool {
 }
 
 // systemParamService is the concrete implementation of SystemParamService.
-// All reads go through an in-memory cache (TTL = 5 min). Set() immediately
-// evicts the affected key so the next read fetches the fresh value.
+// All reads go through an in-memory cache. is_runtime = TRUE params use a
+// shorter 30 s TTL so runtime changes propagate within one cache window per
+// replica; infrastructure params (is_runtime = FALSE) use the full 5 min TTL.
+// Set() immediately evicts the affected key so the next read fetches the fresh value.
 type systemParamService struct {
-	repo  repository.SystemParamRepository
-	mu    sync.RWMutex
-	cache map[string]*cacheEntry
-	ttl   time.Duration
-	audit AuditLogger
-	log   *zap.Logger
+	repo       repository.SystemParamRepository
+	mu         sync.RWMutex
+	cache      map[string]*cacheEntry
+	ttl        time.Duration
+	runtimeTTL time.Duration
+	audit      AuditLogger
+	log        *zap.Logger
 }
 
-// NewSystemParamService constructs a systemParamService with a 5-minute TTL.
+// NewSystemParamService constructs a systemParamService.
 // audit records param mutations in the audit trail.
 func NewSystemParamService(repo repository.SystemParamRepository, audit AuditLogger, log *zap.Logger) SystemParamService {
 	return &systemParamService{
-		repo:  repo,
-		cache: make(map[string]*cacheEntry),
-		ttl:   defaultCacheTTL,
-		audit: audit,
-		log:   log,
+		repo:       repo,
+		cache:      make(map[string]*cacheEntry),
+		ttl:        defaultCacheTTL,
+		runtimeTTL: defaultRuntimeCacheTTL,
+		audit:      audit,
+		log:        log,
 	}
 }
 
@@ -199,8 +206,12 @@ func (s *systemParamService) fromCache(key string) *domain.SystemParam {
 }
 
 func (s *systemParamService) setCache(key string, p *domain.SystemParam) {
+	ttl := s.ttl
+	if p.IsRuntime {
+		ttl = s.runtimeTTL
+	}
 	s.mu.Lock()
-	s.cache[key] = &cacheEntry{param: p, expiresAt: time.Now().Add(s.ttl)}
+	s.cache[key] = &cacheEntry{param: p, expiresAt: time.Now().Add(ttl)}
 	s.mu.Unlock()
 }
 

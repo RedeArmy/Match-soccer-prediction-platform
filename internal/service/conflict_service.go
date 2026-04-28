@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // conflictService is the concrete implementation of ConflictService.
@@ -39,8 +41,9 @@ func NewConflictService(
 	}
 }
 
-// ListConflicts returns all detected operational conflicts across all categories.
-func (s *conflictService) ListConflicts(ctx context.Context) ([]domain.Conflict, error) {
+// ListConflicts returns detected operational conflicts across all categories,
+// sliced according to p. A zero Pagination (Limit == 0) returns the full list.
+func (s *conflictService) ListConflicts(ctx context.Context, p repository.Pagination) ([]domain.Conflict, error) {
 	now := time.Now().UTC()
 	staleDays := s.params.GetInt(ctx, domain.ParamKeyConflictStaleDays, domain.ConflictStaleDays)
 	staleThreshold := now.Add(-time.Duration(staleDays) * 24 * time.Hour)
@@ -53,7 +56,19 @@ func (s *conflictService) ListConflicts(ctx context.Context) ([]domain.Conflict,
 	if conflicts == nil {
 		return []domain.Conflict{}, nil
 	}
-	return conflicts, nil
+	return paginate(conflicts, p), nil
+}
+
+// paginate applies offset and limit to a slice. A zero Limit means no upper bound.
+func paginate[T any](s []T, p repository.Pagination) []T {
+	if p.Offset >= len(s) {
+		return []T{}
+	}
+	s = s[p.Offset:]
+	if p.Limit > 0 && len(s) > p.Limit {
+		s = s[:p.Limit]
+	}
+	return s
 }
 
 func (s *conflictService) appendGroupOwnerConflicts(ctx context.Context, now time.Time, out []domain.Conflict) []domain.Conflict {
@@ -134,7 +149,7 @@ func (s *conflictService) appendStaleMembershipConflicts(ctx context.Context, no
 // ConflictSummary aggregates the live conflict list into per-type counts and
 // average ages, suitable for a lightweight dashboard alert widget.
 func (s *conflictService) ConflictSummary(ctx context.Context) (*ConflictSummaryResult, error) {
-	conflicts, err := s.ListConflicts(ctx)
+	conflicts, err := s.ListConflicts(ctx, repository.Pagination{})
 	if err != nil {
 		return nil, err
 	}
@@ -174,11 +189,17 @@ func (s *conflictService) ConflictSummary(ctx context.Context) (*ConflictSummary
 	}, nil
 }
 
-// ResolveConflict records an admin action on a conflict. When action is
-// "auto_fix" the service attempts automatic remediation before logging.
+// ResolveConflict records an admin action on a conflict. action must be "ack"
+// (acknowledgement only) or "auto_fix" (attempt automatic remediation). Any
+// other value is rejected with a validation error so misconfigured clients
+// cannot fall through to the ack branch silently.
 // Auto-fix failures are logged at WARN level but do not fail the call —
 // the audit entry is always written so the attempt is traceable.
 func (s *conflictService) ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, action, note string) error {
+	if action != "ack" && action != "auto_fix" {
+		return apperrors.Validation(fmt.Sprintf("action %q is not valid; accepted: ack, auto_fix", action))
+	}
+
 	resType := "conflict"
 	role := domain.RoleAdmin
 
@@ -197,7 +218,7 @@ func (s *conflictService) ResolveConflict(ctx context.Context, conflictType stri
 		return nil
 	}
 
-	s.audit.Log(ctx, &adminID, &role, "conflict.resolved", &resType, &entityID, map[string]any{
+	s.audit.Log(ctx, &adminID, &role, domain.AuditActionConflictAcknowledged, &resType, &entityID, map[string]any{
 		"conflict_type": conflictType,
 		"note":          note,
 	})

@@ -180,7 +180,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all currently detected operational inconsistencies that",
+                "description": "Returns currently detected operational inconsistencies that",
                 "produces": [
                     "application/json"
                 ],
@@ -188,14 +188,25 @@ const docTemplate = `{
                     "admin-conflicts"
                 ],
                 "summary": "List operational conflicts",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/internal_api_handler.ConflictResponse"
-                            }
+                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_ConflictResponse"
                         }
                     },
                     "401": {
@@ -3874,6 +3885,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/internal_api_handler.AuditLogResponse"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/internal_api_handler.PageMeta"
+                }
+            }
+        },
+        "internal_api_handler.Paged-internal_api_handler_ConflictResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.ConflictResponse"
                     }
                 },
                 "page": {

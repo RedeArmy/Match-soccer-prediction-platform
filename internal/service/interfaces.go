@@ -461,9 +461,9 @@ type ConflictSummaryResult struct {
 // persisted. Resolution records an audit log entry and is intended to
 // acknowledge the conflict — the underlying issue must be fixed separately.
 type ConflictService interface {
-	// ListConflicts returns all currently detected conflicts across all
-	// conflict categories.
-	ListConflicts(ctx context.Context) ([]domain.Conflict, error)
+	// ListConflicts returns currently detected conflicts across all conflict
+	// categories, sliced by p. A zero Pagination returns the full list.
+	ListConflicts(ctx context.Context, p repository.Pagination) ([]domain.Conflict, error)
 	// ConflictSummary returns an aggregated view of all detected conflicts
 	// grouped by type, with count and average age per type. Intended for
 	// dashboard alert widgets that need a lightweight summary without the
