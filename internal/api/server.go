@@ -199,7 +199,7 @@ func (s *Server) Routes() http.Handler {
 	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, 5)) * time.Second
 
 	s.wireSubscribers(matchRepo, predRepo, paramSvc)
-	h := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, systemParamRepo, paramSvc)
+	h := s.buildHandlers(infraCtx, userRepo, matchRepo, predRepo, memberRepo, systemParamRepo, paramSvc)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -404,6 +404,7 @@ func (s *Server) wireSubscribers(
 // publish domain events. When s.cache is non-nil, list-heavy services are
 // wrapped with read-through / write-invalidation cache decorators.
 func (s *Server) buildHandlers(
+	ctx context.Context,
 	userRepo repository.UserRepository,
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
@@ -420,10 +421,11 @@ func (s *Server) buildHandlers(
 	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(s.db)
 
 	// Read infrastructure params (startup-time, not per-request).
-	infraCtx := context.Background()
-	auditTimeout := time.Duration(params.GetInt(infraCtx, domain.ParamKeyAuditWriteTimeout, 5)) * time.Second
-	matchTTL := time.Duration(params.GetInt(infraCtx, domain.ParamKeyCacheMatchTTL, 300)) * time.Second
-	leaderboardTTL := time.Duration(params.GetInt(infraCtx, domain.ParamKeyCacheLeaderboardTTL, 60)) * time.Second
+	// ctx is the shared startup context created once in Routes() and passed here
+	// to avoid redundant context.Background() calls and to enable timeout injection in tests.
+	auditTimeout := time.Duration(params.GetInt(ctx, domain.ParamKeyAuditWriteTimeout, 5)) * time.Second
+	matchTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyCacheMatchTTL, 300)) * time.Second
+	leaderboardTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyCacheLeaderboardTTL, 60)) * time.Second
 
 	auditSvc := service.NewAuditService(auditLogRepo, auditTimeout, s.log)
 
