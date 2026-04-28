@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
 type spyAuditLogger struct {
@@ -71,7 +72,7 @@ func TestConflictService_ListConflicts_ReturnsAllCategories(t *testing.T) {
 
 	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
-	conflicts, err := svc.ListConflicts(context.Background())
+	conflicts, err := svc.ListConflicts(context.Background(), repository.Pagination{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -148,7 +149,7 @@ func TestConflictService_ListConflicts_PaymentRepoError_SkipsCategory(t *testing
 	pr := &stubPaymentRepo{err: errors.New("db error")}
 	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
-	conflicts, err := svc.ListConflicts(context.Background())
+	conflicts, err := svc.ListConflicts(context.Background(), repository.Pagination{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,7 +169,7 @@ func TestConflictService_ListConflicts_MembershipRepoError_SkipsCategory(t *test
 	pr := &stubPaymentRepo{}
 	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
-	conflicts, err := svc.ListConflicts(context.Background())
+	conflicts, err := svc.ListConflicts(context.Background(), repository.Pagination{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,7 +186,7 @@ func TestConflictService_ListConflicts_NoConflicts_ReturnsEmptySlice(t *testing.
 	pr := &stubPaymentRepo{records: nil}
 	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
-	conflicts, err := svc.ListConflicts(context.Background())
+	conflicts, err := svc.ListConflicts(context.Background(), repository.Pagination{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,8 +290,8 @@ func TestConflictService_ResolveConflict_LogsAuditEntry(t *testing.T) {
 	if !audit.called {
 		t.Fatal("expected audit logger to be called")
 	}
-	if audit.action != "conflict.resolved" {
-		t.Errorf("audit action: want conflict.resolved, got %q", audit.action)
+	if audit.action != domain.AuditActionConflictAcknowledged {
+		t.Errorf("audit action: want %q, got %q", domain.AuditActionConflictAcknowledged, audit.action)
 	}
 	if audit.metadata == nil || audit.metadata["conflict_type"] != string(domain.ConflictGroupNoOwner) {
 		t.Errorf("audit metadata conflict_type: want %q, got %v", string(domain.ConflictGroupNoOwner), audit.metadata)
@@ -368,5 +369,61 @@ func TestConflictService_ResolveConflict_AutoFix_FixFails_StillLogsAudit(t *test
 	}
 	if !audit.called {
 		t.Fatal("expected audit entry to be written even when auto_fix fails")
+	}
+}
+
+// ── ResolveConflict — unknown action ─────────────────────────────────────────
+
+func TestConflictService_ResolveConflict_UnknownAction_ReturnsValidationError(t *testing.T) {
+	audit := &spyAuditLogger{}
+	svc := NewConflictService(&stubQuinielaRepo{}, &stubMemberRepo{}, &stubPaymentRepo{}, &noopSystemParamService{}, audit, zap.NewNop())
+
+	err := svc.ResolveConflict(context.Background(), string(domain.ConflictGroupNoOwner), 1, 99, "fix", "")
+	if err == nil {
+		t.Fatal("expected validation error for unknown action, got nil")
+	}
+	if audit.called {
+		t.Error("expected audit logger NOT to be called for invalid action")
+	}
+}
+
+// ── ListConflicts — pagination ────────────────────────────────────────────────
+
+func TestConflictService_ListConflicts_Pagination_SlicesResults(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Hour)
+	payments := []*domain.PaymentRecord{
+		{ID: 1, CreatedAt: now.Add(-72 * time.Hour)},
+		{ID: 2, CreatedAt: now.Add(-72 * time.Hour)},
+		{ID: 3, CreatedAt: now.Add(-72 * time.Hour)},
+	}
+	qr := &stubQuinielaRepo{}
+	mr := &stubMemberRepoConflict{stubMemberRepo: &stubMemberRepo{}, groupIDs: nil}
+	pr := &stubPaymentRepo{records: payments}
+	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+
+	got, err := svc.ListConflicts(context.Background(), repository.Pagination{Limit: 2, Offset: 0})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("want 2 conflicts after limit, got %d", len(got))
+	}
+}
+
+func TestConflictService_ListConflicts_Pagination_OffsetBeyondEnd_ReturnsEmpty(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Hour)
+	pr := &stubPaymentRepo{records: []*domain.PaymentRecord{
+		{ID: 1, CreatedAt: now.Add(-72 * time.Hour)},
+	}}
+	qr := &stubQuinielaRepo{}
+	mr := &stubMemberRepoConflict{stubMemberRepo: &stubMemberRepo{}, groupIDs: nil}
+	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+
+	got, err := svc.ListConflicts(context.Background(), repository.Pagination{Offset: 100})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("want 0 conflicts for offset beyond end, got %d", len(got))
 	}
 }

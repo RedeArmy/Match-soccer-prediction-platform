@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -62,26 +63,32 @@ func (h *AdminConflictHandler) ConflictSummary(w http.ResponseWriter, r *http.Re
 	})
 }
 
-// ListConflicts handles GET /admin/conflicts — all currently detected conflicts.
+// ListConflicts handles GET /admin/conflicts — paginated detected conflicts.
 //
 // @Summary      List operational conflicts
-// @Description  Returns all currently detected operational inconsistencies that
+// @Description  Returns currently detected operational inconsistencies that
 //
 //	require administrative attention. Conflicts are computed on demand
 //	and are not persisted — they reflect the live database state.
-//	Categories include groups without an owner, unpaid paid members,
-//	and orphaned payment records. Requires admin role.
+//	Categories include groups without an owner, stale pending payments,
+//	and stale pending memberships. Supports ?page and ?limit. Requires admin role.
 //
 // @Tags         admin-conflicts
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {array}   handler.ConflictResponse
+// @Param        page   query  int  false  "Page number (default 1)"
+// @Param        limit  query  int  false  "Page size (default 50, max 200)"
+// @Success      200  {object}  handler.Paged[handler.ConflictResponse]
 // @Failure      401  {object}  handler.ErrorResponse
 // @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
 // @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/conflicts [get]
 func (h *AdminConflictHandler) ListConflicts(w http.ResponseWriter, r *http.Request) {
-	conflicts, err := h.svc.ListConflicts(r.Context())
+	p := parsePagination(r)
+	conflicts, err := h.svc.ListConflicts(r.Context(), repository.Pagination{
+		Limit:  p.Limit,
+		Offset: p.Offset,
+	})
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return
@@ -91,7 +98,10 @@ func (h *AdminConflictHandler) ListConflicts(w http.ResponseWriter, r *http.Requ
 	for i, c := range conflicts {
 		data[i] = conflictToResponse(c)
 	}
-	writeJSON(w, http.StatusOK, data)
+	writeJSON(w, http.StatusOK, Paged[ConflictResponse]{
+		Data: data,
+		Page: PageMeta{Limit: p.Limit, Offset: p.Offset},
+	})
 }
 
 type resolveConflictRequest struct {

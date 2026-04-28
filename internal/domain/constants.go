@@ -106,6 +106,11 @@ const (
 	ParamKeyCacheMatchTTL = "cache.match_ttl_seconds"
 	// ParamKeyCacheLeaderboardTTL is the leaderboard cache TTL in seconds.
 	ParamKeyCacheLeaderboardTTL = "cache.leaderboard_ttl_seconds"
+	// ParamKeyCacheDashboardTTLSeconds is the dashboard stats cache TTL in seconds.
+	// Defaults to 30 s — long enough to absorb repeated dashboard loads but short
+	// enough that aggregate counts stay reasonably fresh. is_runtime = TRUE so it
+	// can be tuned or set to 0 (disable cache) without a process restart.
+	ParamKeyCacheDashboardTTLSeconds = "cache.dashboard_ttl_seconds"
 	// ParamKeyAuditWriteTimeout is the maximum time in seconds the audit log
 	// goroutine waits to persist an entry before giving up.
 	ParamKeyAuditWriteTimeout = "audit.write_timeout_seconds"
@@ -146,6 +151,7 @@ const (
 	AuditActionJoinApproved         = "group.join_approved"
 	AuditActionGroupRenamed         = "group.renamed"
 	AuditActionParamUpdated         = "param.updated"
+	AuditActionConflictAcknowledged = "conflict.acknowledged"
 	AuditActionConflictAutoResolved = "conflict.auto_resolved"
 	AuditActionMemberBulkRemoved    = "admin_group.member_bulk_removed"
 	AuditActionGroupBulkDeleted     = "admin_group.bulk_deleted"

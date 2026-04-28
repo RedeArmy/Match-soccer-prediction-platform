@@ -382,3 +382,37 @@ func TestSystemParamService_BulkSet_WithAudit_CallsAuditLogger(t *testing.T) {
 		t.Errorf("expected action %q, got %q", domain.AuditActionParamUpdated, audit.action)
 	}
 }
+
+// ── Runtime TTL ───────────────────────────────────────────────────────────────
+
+func TestSystemParamService_RuntimeParam_UsesShortTTL(t *testing.T) {
+	runtimeParam := &domain.SystemParam{Key: "rt.key", Value: "v", IsRuntime: true}
+	infraParam := &domain.SystemParam{Key: "infra.key", Value: "v", IsRuntime: false}
+
+	svc := newParamSvc(&stubSystemParamRepo{param: runtimeParam}).(*systemParamService)
+	svc.runtimeTTL = 0 // zero TTL → always expired, forces re-fetch every call
+
+	// Populate cache for runtime param — entry should be written with runtimeTTL (0 here).
+	_, _ = svc.Get(context.Background(), "rt.key")
+	svc.mu.RLock()
+	rtEntry := svc.cache["rt.key"]
+	svc.mu.RUnlock()
+	if rtEntry == nil {
+		t.Fatal("expected cache entry for runtime param")
+	}
+
+	// Populate cache for infra param — entry should use the regular ttl (5 min).
+	svc.repo = &stubSystemParamRepo{param: infraParam}
+	_, _ = svc.Get(context.Background(), "infra.key")
+	svc.mu.RLock()
+	infraEntry := svc.cache["infra.key"]
+	svc.mu.RUnlock()
+	if infraEntry == nil {
+		t.Fatal("expected cache entry for infra param")
+	}
+
+	// infra entry should expire later than the zero-TTL runtime entry.
+	if !infraEntry.expiresAt.After(rtEntry.expiresAt) {
+		t.Error("infra param should have a longer cache TTL than runtime param")
+	}
+}
