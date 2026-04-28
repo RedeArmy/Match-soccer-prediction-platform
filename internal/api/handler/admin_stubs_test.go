@@ -103,7 +103,7 @@ func (s *stubAdminGroupSvc) BulkRemoveMembers(_ context.Context, ids []int, _ in
 	if s.err != nil {
 		return service.BulkOperationResult{}, s.err
 	}
-	return service.BulkOperationResult{Succeeded: ids, Failed: []int{}}, nil
+	return service.BulkOperationResult{Succeeded: ids}, nil
 }
 func (s *stubAdminGroupSvc) RecalculateLeaderboard(_ context.Context, quinielaID, _ int) (*domain.LeaderboardSnapshot, error) {
 	if s.err != nil {
