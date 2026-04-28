@@ -75,9 +75,9 @@ func (s *adminGroupService) UpdateGroupSettings(ctx context.Context, quinielaID 
 }
 
 // TransferOwnership assigns MembershipRoleCreateOwner to newOwnerUserID and
-// demotes the current owner to MembershipRoleMember. Both SetRole calls must
-// succeed or the function returns an error — the caller should treat partial
-// failure as a transient issue and retry.
+// demotes the current owner to MembershipRoleMember atomically. Both role
+// changes occur in a single database transaction via TransferOwnershipRoles,
+// so a partial failure cannot leave the group without an owner.
 func (s *adminGroupService) TransferOwnership(ctx context.Context, quinielaID, newOwnerUserID, adminID int) error {
 	newMembership, err := s.memberRepo.GetByQuinielaAndUser(ctx, quinielaID, newOwnerUserID)
 	if err != nil {
@@ -87,22 +87,7 @@ func (s *adminGroupService) TransferOwnership(ctx context.Context, quinielaID, n
 		return apperrors.NotFound("new owner must be an active member of this group")
 	}
 
-	// Find and demote the current owner before promoting the new one so the
-	// group is never left with two concurrent owners even on a partial failure.
-	members, err := s.memberRepo.ListByQuiniela(ctx, quinielaID)
-	if err != nil {
-		return err
-	}
-	for _, m := range members {
-		if m.Role == domain.MembershipRoleCreateOwner && m.UserID != newOwnerUserID {
-			if err := s.memberRepo.SetRole(ctx, m.ID, domain.MembershipRoleMember); err != nil {
-				return err
-			}
-			break
-		}
-	}
-
-	if err := s.memberRepo.SetRole(ctx, newMembership.ID, domain.MembershipRoleCreateOwner); err != nil {
+	if err := s.memberRepo.TransferOwnershipRoles(ctx, quinielaID, newMembership.ID); err != nil {
 		return err
 	}
 

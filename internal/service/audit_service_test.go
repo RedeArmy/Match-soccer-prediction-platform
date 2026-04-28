@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -73,17 +72,25 @@ func TestAuditService_Log_RepoError_DoesNotPanic(t *testing.T) {
 	waitForAuditEntry(t, repo, 0)
 }
 
-// waitForAuditEntry spins until the repo has at least n entries or the test
-// times out. This is necessary because Log is fire-and-forget (goroutine).
+// waitForAuditEntry polls until repo has at least n entries or 2 s elapses.
+// A real sleep between checks (rather than Gosched) guarantees the goroutine
+// scheduler has an opportunity to run the fire-and-forget audit write.
 func waitForAuditEntry(t *testing.T, repo *stubAuditLogRepo, n int) {
 	t.Helper()
-	for i := 0; i < 10000; i++ {
+	if n == 0 {
+		// Nothing to wait for; yield once to let any goroutine run.
+		time.Sleep(time.Millisecond)
+		return
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
 		repo.mu.Lock()
 		got := len(repo.created)
 		repo.mu.Unlock()
 		if got >= n {
 			return
 		}
-		runtime.Gosched()
+		time.Sleep(time.Millisecond)
 	}
+	t.Fatalf("timed out after 2 s waiting for %d audit entries to be persisted", n)
 }

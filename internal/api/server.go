@@ -43,6 +43,30 @@ const (
 	routeUsers       = "/users"
 )
 
+// appHandlers groups every route handler constructed by buildHandlers into a
+// single value so the function signature stays manageable as new handlers are
+// added. Fields are intentionally unexported — they are only accessed within
+// the Routes method of the same package.
+type appHandlers struct {
+	match            *handler.MatchHandler
+	prediction       *handler.PredictionHandler
+	group            *handler.GroupHandler
+	leaderboard      *handler.LeaderboardHandler
+	userStats        *handler.UserStatsHandler
+	tiebreaker       *handler.TiebreakerHandler
+	tournament       *handler.TournamentHandler
+	adminUser        *handler.AdminUserHandler
+	adminGroup       *handler.AdminGroupHandler
+	adminPayment     *handler.AdminPaymentHandler
+	adminLeaderboard *handler.AdminLeaderboardHandler
+	adminDLQ         *handler.AdminDLQHandler
+	adminAudit       *handler.AdminAuditHandler
+	adminParam       *handler.AdminSystemParamHandler
+	adminTiebreaker  *handler.AdminTiebreakerHandler
+	adminConflict    *handler.AdminConflictHandler
+	adminStats       *handler.AdminStatsHandler
+}
+
 // Server holds the shared dependencies made available to all HTTP handlers.
 // It is constructed once at application startup and is safe for concurrent
 // use by multiple goroutines once initialised.
@@ -175,7 +199,7 @@ func (s *Server) Routes() http.Handler {
 	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, 5)) * time.Second
 
 	s.wireSubscribers(matchRepo, predRepo, paramSvc)
-	matchHandler, predHandler, groupHandler, leaderboardHandler, userStatsHandler, tiebreakerHandler, tournamentHandler, adminUserH, adminGroupH, adminPaymentH, adminLeaderboardH, adminDLQH, adminAuditH, adminParamH, adminTiebreakerH, adminConflictH, adminStatsH := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, paramSvc)
+	h := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, paramSvc)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -190,11 +214,11 @@ func (s *Server) Routes() http.Handler {
 		// Admin-only match mutations are guarded by RequireRole. Read endpoints
 		// (List, Get) are accessible to all authenticated users.
 		r.Route("/matches", func(r chi.Router) {
-			r.Get("/", matchHandler.ListMatches)
-			r.Get("/{id}", matchHandler.GetMatch)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/", matchHandler.CreateMatch)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/{id}", matchHandler.UpdateResult)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/{id}/start", matchHandler.StartMatch)
+			r.Get("/", h.match.ListMatches)
+			r.Get("/{id}", h.match.GetMatch)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/", h.match.CreateMatch)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/{id}", h.match.UpdateResult)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/{id}/start", h.match.StartMatch)
 		})
 
 		// ResolveUser is applied at the subrouter level so all prediction and
@@ -205,55 +229,55 @@ func (s *Server) Routes() http.Handler {
 		// work that follows.
 		r.Route(routePredictions, func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
-			r.Post("/", predHandler.Submit)
-			r.Get("/", predHandler.ListByUser)
-			r.Patch("/{id}", predHandler.Update)
+			r.Post("/", h.prediction.Submit)
+			r.Get("/", h.prediction.ListByUser)
+			r.Patch("/{id}", h.prediction.Update)
 		})
 
 		r.Route("/groups", func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
-			r.Post("/", groupHandler.Create)
-			r.Post("/join", groupHandler.Join)
-			r.Get("/me", groupHandler.ListMyGroups)
-			r.Get("/{id}", groupHandler.GetByID)
+			r.Post("/", h.group.Create)
+			r.Post("/join", h.group.Join)
+			r.Get("/me", h.group.ListMyGroups)
+			r.Get("/{id}", h.group.GetByID)
 			// Only the CreateOwner (MembershipRoleCreateOwner) may rename the group.
 			// Ownership is enforced inside the service layer — not via RequireRole
 			// because it is resource-scoped, not system-role-scoped.
-			r.Patch("/{id}", groupHandler.RenameGroup)
-			r.Get("/{id}/members", groupHandler.ListMembers)
-			r.Get("/{id}/leaderboard", leaderboardHandler.GetLeaderboard)
+			r.Patch("/{id}", h.group.RenameGroup)
+			r.Get("/{id}/members", h.group.ListMembers)
+			r.Get("/{id}/leaderboard", h.leaderboard.GetLeaderboard)
 			// Any active member may approve a pending join request. The service
 			// layer enforces the membership check — no role-based middleware needed.
-			r.Post("/{id}/members/{membershipID}/approve", groupHandler.ApproveJoin)
+			r.Post("/{id}/members/{membershipID}/approve", h.group.ApproveJoin)
 			// Self-removal only: a user removes themselves from the group.
-			r.Delete("/{id}/members/me", groupHandler.Leave)
+			r.Delete("/{id}/members/me", h.group.Leave)
 			// Tiebreaker member routes: active members submit and view their prediction.
-			r.Post("/{id}/tiebreaker", tiebreakerHandler.Submit)
-			r.Get("/{id}/tiebreaker", tiebreakerHandler.GetMine)
+			r.Post("/{id}/tiebreaker", h.tiebreaker.Submit)
+			r.Get("/{id}/tiebreaker", h.tiebreaker.GetMine)
 		})
 
 		// Tiebreaker admin routes: only the system administrator may set the
 		// global question and confirm the result. RequireRole enforces this gate.
 		r.Route("/tiebreaker", func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/question", tiebreakerHandler.SetQuestion)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/result", tiebreakerHandler.ConfirmResult)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/question", h.tiebreaker.SetQuestion)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/result", h.tiebreaker.ConfirmResult)
 		})
 
 		// Tournament: real-time standings (all authenticated users) and bracket
 		// slot management (admin only).
 		r.Route("/tournament", func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
-			r.Get("/standings", tournamentHandler.GetAllStandings)
-			r.Get("/standings/{group}", tournamentHandler.GetGroupStanding)
-			r.Get("/slots", tournamentHandler.ListSlots)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/slots", tournamentHandler.CreateSlot)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/slots/{id}", tournamentHandler.ConfirmSlot)
+			r.Get("/standings", h.tournament.GetAllStandings)
+			r.Get("/standings/{group}", h.tournament.GetGroupStanding)
+			r.Get("/slots", h.tournament.ListSlots)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/slots", h.tournament.CreateSlot)
+			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/slots/{id}", h.tournament.ConfirmSlot)
 		})
 
 		r.Route(routeUsers, func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
-			r.Get("/me/stats", userStatsHandler.GetMyStats)
+			r.Get("/me/stats", h.userStats.GetMyStats)
 		})
 
 		// Admin panel — all routes require RoleAdmin. ResolveUser is applied so
@@ -263,61 +287,61 @@ func (s *Server) Routes() http.Handler {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
 
 			// Users
-			r.Get(routeUsers, adminUserH.ListUsers)
-			r.Get("/users/{id}", adminUserH.GetUserProfile)
-			r.Post("/users/{id}/ban", adminUserH.BanUser)
-			r.Delete("/users/{id}/ban", adminUserH.UnbanUser)
-			r.Post("/users/bulk-ban", adminUserH.BulkBan)
+			r.Get(routeUsers, h.adminUser.ListUsers)
+			r.Get("/users/{id}", h.adminUser.GetUserProfile)
+			r.Post("/users/{id}/ban", h.adminUser.BanUser)
+			r.Delete("/users/{id}/ban", h.adminUser.UnbanUser)
+			r.Post("/users/bulk-ban", h.adminUser.BulkBan)
 
 			// Groups
-			r.Delete("/groups/{id}", adminGroupH.DeleteGroup)
-			r.Delete("/groups/{id}/members/{membershipID}", adminGroupH.RemoveMember)
-			r.Patch("/groups/{id}/settings", adminGroupH.UpdateGroupSettings)
-			r.Post("/groups/{id}/transfer-ownership", adminGroupH.TransferOwnership)
-			r.Get("/groups/{id}/payments", adminPaymentH.ListByGroup)
-			r.Get("/groups/{id}/leaderboard/history", adminLeaderboardH.SnapshotHistory)
+			r.Delete("/groups/{id}", h.adminGroup.DeleteGroup)
+			r.Delete("/groups/{id}/members/{membershipID}", h.adminGroup.RemoveMember)
+			r.Patch("/groups/{id}/settings", h.adminGroup.UpdateGroupSettings)
+			r.Post("/groups/{id}/transfer-ownership", h.adminGroup.TransferOwnership)
+			r.Get("/groups/{id}/payments", h.adminPayment.ListByGroup)
+			r.Get("/groups/{id}/leaderboard/history", h.adminLeaderboard.SnapshotHistory)
 
 			// Payments
-			r.Get("/payments/pending", adminPaymentH.ListPending)
-			r.Get("/payments", adminPaymentH.List)
-			r.Post("/payments/{id}/validate", adminPaymentH.ValidateDeposit)
-			r.Post("/payments/{id}/reject", adminPaymentH.RejectDeposit)
+			r.Get("/payments/pending", h.adminPayment.ListPending)
+			r.Get("/payments", h.adminPayment.List)
+			r.Post("/payments/{id}/validate", h.adminPayment.ValidateDeposit)
+			r.Post("/payments/{id}/reject", h.adminPayment.RejectDeposit)
 
 			// Leaderboard & Predictions
-			r.Get("/leaderboard", adminLeaderboardH.GlobalLeaderboard)
-			r.Get(routePredictions, adminLeaderboardH.ListPredictions)
-			r.Get("/predictions/match/{matchID}", adminLeaderboardH.ListPredictionsByMatch)
+			r.Get("/leaderboard", h.adminLeaderboard.GlobalLeaderboard)
+			r.Get(routePredictions, h.adminLeaderboard.ListPredictions)
+			r.Get("/predictions/match/{matchID}", h.adminLeaderboard.ListPredictionsByMatch)
 
 			// DLQ
-			r.Get("/dlq", adminDLQH.Stats)
-			r.Post("/dlq/replay", adminDLQH.Replay)
-			r.Delete("/dlq", adminDLQH.Purge)
+			r.Get("/dlq", h.adminDLQ.Stats)
+			r.Post("/dlq/replay", h.adminDLQ.Replay)
+			r.Delete("/dlq", h.adminDLQ.Purge)
 
 			// Audit log
-			r.Get("/audit-log", adminAuditH.List)
-			r.Get("/audit-log/entity/{type}/{id}", adminAuditH.ListByEntity)
+			r.Get("/audit-log", h.adminAudit.List)
+			r.Get("/audit-log/entity/{type}/{id}", h.adminAudit.ListByEntity)
 
 			// System parameters
-			r.Get("/system-params", adminParamH.ListAll)
-			r.Get("/system-params/{key}", adminParamH.Get)
-			r.Patch("/system-params/{key}", adminParamH.Set)
-			r.Post("/system-params/bulk", adminParamH.BulkSet)
+			r.Get("/system-params", h.adminParam.ListAll)
+			r.Get("/system-params/{key}", h.adminParam.Get)
+			r.Patch("/system-params/{key}", h.adminParam.Set)
+			r.Post("/system-params/bulk", h.adminParam.BulkSet)
 
 			// Tiebreakers
-			r.Get("/tiebreaker/submissions", adminTiebreakerH.ListSubmissions)
+			r.Get("/tiebreaker/submissions", h.adminTiebreaker.ListSubmissions)
 
 			// Conflicts
-			r.Get("/conflicts", adminConflictH.ListConflicts)
-			r.Post("/conflicts/{type}/{id}/resolve", adminConflictH.ResolveConflict)
+			r.Get("/conflicts", h.adminConflict.ListConflicts)
+			r.Post("/conflicts/{type}/{id}/resolve", h.adminConflict.ResolveConflict)
 
 			// Stats / observability
-			r.Get("/stats", adminStatsH.GetDashboardStats)
-			r.Get("/stats/conflicts/summary", adminConflictH.ConflictSummary)
+			r.Get("/stats", h.adminStats.GetDashboardStats)
+			r.Get("/stats/conflicts/summary", h.adminConflict.ConflictSummary)
 
 			// Bulk group operations
-			r.Post("/groups/bulk-delete", adminGroupH.BulkDeleteGroups)
-			r.Post("/groups/{id}/members/bulk-remove", adminGroupH.BulkRemoveMembers)
-			r.Post("/groups/{id}/leaderboard/recalculate", adminGroupH.RecalculateLeaderboard)
+			r.Post("/groups/bulk-delete", h.adminGroup.BulkDeleteGroups)
+			r.Post("/groups/{id}/members/bulk-remove", h.adminGroup.BulkRemoveMembers)
+			r.Post("/groups/{id}/leaderboard/recalculate", h.adminGroup.RecalculateLeaderboard)
 		})
 	})
 
@@ -385,25 +409,7 @@ func (s *Server) buildHandlers(
 	predRepo repository.PredictionRepository,
 	memberRepo repository.GroupMembershipRepository,
 	params service.SystemParamService,
-) (
-	*handler.MatchHandler,
-	*handler.PredictionHandler,
-	*handler.GroupHandler,
-	*handler.LeaderboardHandler,
-	*handler.UserStatsHandler,
-	*handler.TiebreakerHandler,
-	*handler.TournamentHandler,
-	*handler.AdminUserHandler,
-	*handler.AdminGroupHandler,
-	*handler.AdminPaymentHandler,
-	*handler.AdminLeaderboardHandler,
-	*handler.AdminDLQHandler,
-	*handler.AdminAuditHandler,
-	*handler.AdminSystemParamHandler,
-	*handler.AdminTiebreakerHandler,
-	*handler.AdminConflictHandler,
-	*handler.AdminStatsHandler,
-) {
+) appHandlers {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
 	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(s.db)
@@ -459,23 +465,25 @@ func (s *Server) buildHandlers(
 	_ = dlqSampleSize // consumed by NewRedisDLQService when wired externally via SetDLQService
 	_ = dlqReplayLimit
 
-	return handler.NewMatchHandler(matchSvc, s.log),
-		handler.NewPredictionHandler(predSvc, s.log),
-		handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
-		handler.NewLeaderboardHandler(ranker, s.log),
-		handler.NewUserStatsHandler(userStatsSvc, s.log),
-		handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
-		handler.NewTournamentHandler(tournamentSvc, s.log),
-		handler.NewAdminUserHandler(adminUserSvc, s.log),
-		handler.NewAdminGroupHandler(adminGroupSvc, s.log),
-		handler.NewAdminPaymentHandler(paymentSvc, s.log),
-		handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
-		handler.NewAdminDLQHandler(dlqSvc, s.log),
-		handler.NewAdminAuditHandler(auditSvc, s.log),
-		handler.NewAdminSystemParamHandler(paramSvcWithAudit, s.log),
-		handler.NewAdminTiebreakerHandler(adminReadSvc, s.log),
-		handler.NewAdminConflictHandler(conflictSvc, s.log),
-		handler.NewAdminStatsHandler(adminReadSvc, s.log)
+	return appHandlers{
+		match:            handler.NewMatchHandler(matchSvc, s.log),
+		prediction:       handler.NewPredictionHandler(predSvc, s.log),
+		group:            handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
+		leaderboard:      handler.NewLeaderboardHandler(ranker, s.log),
+		userStats:        handler.NewUserStatsHandler(userStatsSvc, s.log),
+		tiebreaker:       handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
+		tournament:       handler.NewTournamentHandler(tournamentSvc, s.log),
+		adminUser:        handler.NewAdminUserHandler(adminUserSvc, s.log),
+		adminGroup:       handler.NewAdminGroupHandler(adminGroupSvc, s.log),
+		adminPayment:     handler.NewAdminPaymentHandler(paymentSvc, s.log),
+		adminLeaderboard: handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
+		adminDLQ:         handler.NewAdminDLQHandler(dlqSvc, s.log),
+		adminAudit:       handler.NewAdminAuditHandler(auditSvc, s.log),
+		adminParam:       handler.NewAdminSystemParamHandler(paramSvcWithAudit, s.log),
+		adminTiebreaker:  handler.NewAdminTiebreakerHandler(adminReadSvc, s.log),
+		adminConflict:    handler.NewAdminConflictHandler(conflictSvc, s.log),
+		adminStats:       handler.NewAdminStatsHandler(adminReadSvc, s.log),
+	}
 }
 
 // handleReadiness is a thin wrapper around health.ReadinessHandler that exists
