@@ -497,13 +497,21 @@ func TestRedisBus_RetriesAndPushesToDLQ_OnHandlerError(t *testing.T) {
 		}
 	}
 
-	// Allow DLQ push to land.
-	time.Sleep(100 * time.Millisecond)
-
-	// Verify the event was pushed to the DLQ list in Redis.
-	dlqLen, err := client.LLen(context.Background(), "dlq:match.finished").Result()
-	if err != nil {
-		t.Fatalf("redis LLEN: %v", err)
+	// Poll until the DLQ push lands (pushDLQ is synchronous in the consumer
+	// goroutine but may not have been scheduled yet under -race).
+	const dlqKeyName = "dlq:match.finished"
+	var dlqLen int64
+	pollDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(pollDeadline) {
+		n, err := client.LLen(context.Background(), dlqKeyName).Result()
+		if err != nil {
+			t.Fatalf("redis LLEN: %v", err)
+		}
+		if n > 0 {
+			dlqLen = n
+			break
+		}
+		time.Sleep(time.Millisecond)
 	}
 	if dlqLen == 0 {
 		t.Error("expected at least one entry in dlq:match.finished, got 0")
