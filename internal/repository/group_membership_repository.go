@@ -369,4 +369,125 @@ func (r *PostgresGroupMembershipRepository) TransferOwnershipRoles(ctx context.C
 	return nil
 }
 
+// syncStatusInTx recomputes the quiniela's active/inactive status inside an
+// open transaction. The COUNT subquery runs within the same snapshot as the
+// preceding membership write, so the status update is always consistent with
+// the member count. A soft-deleted quiniela matches 0 rows; the UPDATE is a
+// silent no-op — the group is already effectively removed.
+func syncStatusInTx(ctx context.Context, tx pgx.Tx, quinielaID, minMembers int) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE quinielas
+		   SET status = CASE
+		         WHEN (
+		           SELECT COUNT(*)
+		             FROM group_memberships
+		            WHERE quiniela_id = $1
+		              AND status = 'active'
+		         ) >= $2 THEN 'active'
+		         ELSE 'inactive'
+		       END,
+		       updated_at = NOW()
+		 WHERE id = $1
+		   AND deleted_at IS NULL`,
+		quinielaID, minMembers,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
+// ApproveMembership atomically promotes a pending membership to active and
+// recalculates the quiniela's status in a single transaction. The enforce_max_members
+// trigger fires on the UPDATE, so a capacity overflow is caught before commit.
+func (r *PostgresGroupMembershipRepository) ApproveMembership(
+	ctx context.Context,
+	membershipID, quinielaID int,
+	now time.Time,
+	minMembers int,
+) (*domain.GroupMembership, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	row := tx.QueryRow(ctx,
+		`UPDATE group_memberships
+		    SET status    = 'active',
+		        joined_at = $1,
+		        updated_at = NOW()
+		  WHERE id          = $2
+		    AND quiniela_id = $3
+		    AND status      = 'pending'
+		  RETURNING `+membershipColumns,
+		now, membershipID, quinielaID,
+	)
+	m, err := scanMembership(row)
+	if err != nil {
+		if isMaxMembersViolation(err) {
+			return nil, apperrors.Conflict("this group has reached its maximum number of members")
+		}
+		return nil, err
+	}
+	if m == nil {
+		// The service pre-flight confirmed the request was pending; 0 rows means
+		// a concurrent approval committed between that check and this call.
+		return nil, apperrors.Conflict("this join request is no longer pending")
+	}
+
+	if err := syncStatusInTx(ctx, tx, quinielaID, minMembers); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return m, nil
+}
+
+// LeaveMembership atomically transitions a membership to left and recalculates
+// the quiniela's status in a single transaction.
+func (r *PostgresGroupMembershipRepository) LeaveMembership(
+	ctx context.Context,
+	quinielaID, userID int,
+	now time.Time,
+	minMembers int,
+) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	tag, err := tx.Exec(ctx,
+		`UPDATE group_memberships
+		    SET status     = 'left',
+		        joined_at  = NULL,
+		        removed_at = $1,
+		        removed_by = NULL,
+		        updated_at = NOW()
+		  WHERE quiniela_id = $2
+		    AND user_id     = $3
+		    AND status      = 'active'`,
+		now, quinielaID, userID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Race: the member was removed concurrently before this call committed.
+		return apperrors.Conflict("you are no longer an active member of this group")
+	}
+
+	if err := syncStatusInTx(ctx, tx, quinielaID, minMembers); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)

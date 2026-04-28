@@ -50,7 +50,7 @@ func fakePool(t *testing.T) *pgxpool.Pool {
 
 const (
 	healthPath           = "/health"
-	readyPath            = "/health/ready"
+	readyPath            = healthPath + "/ready"
 	contentTypeJSON      = "application/json"
 	checkerNameDB        = "db"
 	checkerNameRedis     = "redis"

@@ -76,9 +76,10 @@ func (r *stubQuinielaRepo) BulkDeleteByAdmin(_ context.Context, ids []int, _ int
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.
 // membershipByID is returned by GetByID (used in ApproveJoin to load the pending
 // request). membership is returned by GetByQuinielaAndUser (used to look up the
-// approver and in Leave). activeCount is returned by CountActive.
-// countActiveErr, if set, is returned exclusively by CountActive so that
-// syncGroupStatus error paths can be tested without affecting earlier calls.
+// approver and in Leave). activeCount is returned by CountActive (checkCapacity).
+// approveErr, if set, is returned by ApproveMembership. leaveErr, if set, is
+// returned by LeaveMembership. countActiveErr, if set, is returned exclusively
+// by CountActive to test checkCapacity error paths without affecting other calls.
 type stubMemberRepo struct {
 	membership     *domain.GroupMembership
 	membershipByID *domain.GroupMembership
@@ -86,6 +87,8 @@ type stubMemberRepo struct {
 	activeCount    int
 	err            error
 	countActiveErr error
+	approveErr     error
+	leaveErr       error
 }
 
 func (r *stubMemberRepo) Create(_ context.Context, _ *domain.GroupMembership) error { return r.err }
@@ -128,6 +131,21 @@ func (r *stubMemberRepo) BulkRemoveByAdmin(_ context.Context, _ int, ids []int, 
 	return ids, nil
 }
 func (r *stubMemberRepo) TransferOwnershipRoles(_ context.Context, _, _ int) error { return r.err }
+func (r *stubMemberRepo) ApproveMembership(_ context.Context, _, _ int, now time.Time, _ int) (*domain.GroupMembership, error) {
+	if r.approveErr != nil {
+		return nil, r.approveErr
+	}
+	if r.membershipByID == nil {
+		return nil, apperrors.Conflict("this join request is no longer pending")
+	}
+	m := *r.membershipByID
+	m.Status = domain.MembershipActive
+	m.JoinedAt = &now
+	return &m, nil
+}
+func (r *stubMemberRepo) LeaveMembership(_ context.Context, _, _ int, _ time.Time, _ int) error {
+	return r.leaveErr
+}
 
 // ── QuinielaService tests ─────────────────────────────────────────────────────
 
