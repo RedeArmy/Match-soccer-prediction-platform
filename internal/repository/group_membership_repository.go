@@ -14,6 +14,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const errMsgMaxMembersReached = "this group has reached its maximum number of members"
+
 // PostgresGroupMembershipRepository is the PostgreSQL-backed implementation of
 // GroupMembershipRepository.
 type PostgresGroupMembershipRepository struct {
@@ -67,7 +69,7 @@ func (r *PostgresGroupMembershipRepository) Create(ctx context.Context, m *domai
 	result, err := scanMembership(row)
 	if err != nil {
 		if isMaxMembersViolation(err) {
-			return apperrors.Conflict("this group has reached its maximum number of members")
+			return apperrors.Conflict(errMsgMaxMembersReached)
 		}
 		return err
 	}
@@ -116,7 +118,7 @@ func (r *PostgresGroupMembershipRepository) Update(ctx context.Context, m *domai
 	result, err := scanMembership(row)
 	if err != nil {
 		if isMaxMembersViolation(err) {
-			return apperrors.Conflict("this group has reached its maximum number of members")
+			return apperrors.Conflict(errMsgMaxMembersReached)
 		}
 		return err
 	}
@@ -426,7 +428,7 @@ func (r *PostgresGroupMembershipRepository) ApproveMembership(
 	m, err := scanMembership(row)
 	if err != nil {
 		if isMaxMembersViolation(err) {
-			return nil, apperrors.Conflict("this group has reached its maximum number of members")
+			return nil, apperrors.Conflict(errMsgMaxMembersReached)
 		}
 		return nil, err
 	}
