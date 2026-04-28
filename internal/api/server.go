@@ -199,7 +199,7 @@ func (s *Server) Routes() http.Handler {
 	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, 5)) * time.Second
 
 	s.wireSubscribers(matchRepo, predRepo, paramSvc)
-	h := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, paramSvc)
+	h := s.buildHandlers(userRepo, matchRepo, predRepo, memberRepo, systemParamRepo, paramSvc)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -408,6 +408,7 @@ func (s *Server) buildHandlers(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 	memberRepo repository.GroupMembershipRepository,
+	sysParamRepo repository.SystemParamRepository,
 	params service.SystemParamService,
 ) appHandlers {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
@@ -423,14 +424,11 @@ func (s *Server) buildHandlers(
 	auditTimeout := time.Duration(params.GetInt(infraCtx, domain.ParamKeyAuditWriteTimeout, 5)) * time.Second
 	matchTTL := time.Duration(params.GetInt(infraCtx, domain.ParamKeyCacheMatchTTL, 300)) * time.Second
 	leaderboardTTL := time.Duration(params.GetInt(infraCtx, domain.ParamKeyCacheLeaderboardTTL, 60)) * time.Second
-	dlqSampleSize := params.GetInt(infraCtx, domain.ParamKeyDLQSampleSize, 5)
-	dlqReplayLimit := params.GetInt(infraCtx, domain.ParamKeyDLQReplayDefaultLimit, 10)
 
 	auditSvc := service.NewAuditService(auditLogRepo, auditTimeout, s.log)
 
-	// Re-create paramSvc with the now-available audit service so that Set/BulkSet
+	// Re-wire paramSvc with the now-available audit service so that Set/BulkSet
 	// calls from admin handlers are recorded in the audit trail.
-	sysParamRepo := repository.NewPostgresSystemParamRepository(s.db)
 	paramSvcWithAudit := service.NewSystemParamService(sysParamRepo, auditSvc, s.log)
 
 	scorer := service.NewScoringService(matchRepo, predRepo, params, s.log)
@@ -462,8 +460,6 @@ func (s *Server) buildHandlers(
 	if dlqSvc == nil {
 		dlqSvc = service.NoopDLQService{}
 	}
-	_ = dlqSampleSize // consumed by NewRedisDLQService when wired externally via SetDLQService
-	_ = dlqReplayLimit
 
 	return appHandlers{
 		match:            handler.NewMatchHandler(matchSvc, s.log),
