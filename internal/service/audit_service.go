@@ -20,9 +20,7 @@ type auditService struct {
 // NewAuditService constructs an auditService backed by the given repository.
 // writeTimeout caps the time each fire-and-forget goroutine waits to persist
 // an entry; pass defaultAuditWriteTimeout (5s) when no override is available.
-// The return type is *auditService so callers can use it as both AuditLogger
-// and AuditReader without a second constructor.
-func NewAuditService(repo repository.AuditLogRepository, writeTimeout time.Duration, log *zap.Logger) *auditService {
+func NewAuditService(repo repository.AuditLogRepository, writeTimeout time.Duration, log *zap.Logger) AuditService {
 	return &auditService{repo: repo, writeTimeout: writeTimeout, log: log}
 }
 
@@ -75,5 +73,4 @@ func (s *auditService) ListAuditLogsByEntity(ctx context.Context, resourceType s
 	return s.repo.ListByEntity(ctx, resourceType, resourceID, p)
 }
 
-var _ AuditLogger = (*auditService)(nil)
-var _ AuditReader = (*auditService)(nil)
+var _ AuditService = (*auditService)(nil)

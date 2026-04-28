@@ -71,12 +71,17 @@ func (r *PostgresPaymentRecordRepository) queryPaymentRecords(ctx context.Contex
 	return collectPaymentRecords(rows)
 }
 
-// Create inserts a new payment record in pending state. record.ID is
-// populated on success.
+// Create inserts a new payment record in pending state. When reference is
+// non-null and non-empty, the insert is idempotent: a duplicate reference
+// returns the existing row unchanged rather than an error, making the
+// operation safe to retry on webhook re-delivery or client retries.
+// record is populated with the inserted or existing row on success.
 func (r *PostgresPaymentRecordRepository) Create(ctx context.Context, record *domain.PaymentRecord) error {
 	row := r.db.QueryRow(ctx,
 		`INSERT INTO payment_records (quiniela_id, user_id, amount, currency, reference)
 		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (reference) WHERE reference IS NOT NULL AND reference <> ''
+		 DO UPDATE SET updated_at = payment_records.updated_at
 		 RETURNING `+paymentColumns,
 		record.QuinielaID, record.UserID, record.Amount, record.Currency, record.Reference,
 	)

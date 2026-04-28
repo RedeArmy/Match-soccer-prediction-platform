@@ -20,13 +20,31 @@ type stubPaymentRepo struct {
 	records      []*domain.PaymentRecord
 	statusCounts repository.PaymentStatusCounts
 	err          error
+	createCalls  int
+	// idempotentRef, when set, causes the second Create call with matching
+	// reference to behave as the real DB would: return the existing record.
+	idempotentRef string
+	idempotentRec *domain.PaymentRecord
 }
 
 func (r *stubPaymentRepo) Create(_ context.Context, record *domain.PaymentRecord) error {
 	if r.err != nil {
 		return r.err
 	}
+	r.createCalls++
+	if r.idempotentRef != "" && record.Reference != nil && *record.Reference == r.idempotentRef && r.createCalls > 1 {
+		*record = *r.idempotentRec
+		return nil
+	}
 	record.ID = 99
+	r.idempotentRec = &domain.PaymentRecord{
+		ID:         99,
+		QuinielaID: record.QuinielaID,
+		UserID:     record.UserID,
+		Amount:     record.Amount,
+		Currency:   record.Currency,
+		Reference:  record.Reference,
+	}
 	return nil
 }
 func (r *stubPaymentRepo) GetByID(_ context.Context, _ int) (*domain.PaymentRecord, error) {
@@ -81,6 +99,24 @@ func TestPaymentService_CreateRecord_RepoError_Propagates(t *testing.T) {
 	_, err := svc.CreateRecord(context.Background(), 1, 2, 500, "USD", "ref")
 	if err == nil {
 		t.Fatal(paymentExpectErrMsg)
+	}
+}
+
+func TestPaymentService_CreateRecord_SameReference_ReturnsExistingRecord(t *testing.T) {
+	repo := &stubPaymentRepo{idempotentRef: "ref-idem-001"}
+	svc := newPaymentSvc(repo)
+
+	first, err := svc.CreateRecord(context.Background(), 1, 2, 500, "USD", "ref-idem-001")
+	if err != nil {
+		t.Fatalf("first call: unexpected error: %v", err)
+	}
+
+	second, err := svc.CreateRecord(context.Background(), 1, 2, 500, "USD", "ref-idem-001")
+	if err != nil {
+		t.Fatalf("second call: unexpected error: %v", err)
+	}
+	if first.ID != second.ID {
+		t.Errorf("expected idempotent second call to return same record ID %d, got %d", first.ID, second.ID)
 	}
 }
 
