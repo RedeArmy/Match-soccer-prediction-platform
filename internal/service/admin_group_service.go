@@ -121,23 +121,13 @@ func (s *adminGroupService) BulkDeleteGroups(ctx context.Context, ids []int, adm
 	if err != nil {
 		return BulkOperationResult{}, err
 	}
-	succeededSet := make(map[int]bool, len(succeeded))
-	for _, id := range succeeded {
-		succeededSet[id] = true
-	}
-	var failed []int
-	for _, id := range ids {
-		if !succeededSet[id] {
-			failed = append(failed, id)
-		}
-	}
-	result := BulkOperationResult{Succeeded: succeeded, Failed: failed}
+	result := diffBulkResult(ids, succeeded)
 	if len(succeeded) > 0 {
 		resType := "quiniela"
 		role := domain.RoleAdmin
 		s.audit.Log(ctx, &adminID, &role, domain.AuditActionGroupBulkDeleted, &resType, nil, map[string]any{
-			"succeeded": succeeded,
-			"failed":    failed,
+			"succeeded": result.Succeeded,
+			"failed":    result.Failed,
 		})
 	}
 	return result, nil
@@ -150,6 +140,21 @@ func (s *adminGroupService) BulkRemoveMembers(ctx context.Context, ids []int, ad
 	if err != nil {
 		return BulkOperationResult{}, err
 	}
+	result := diffBulkResult(ids, succeeded)
+	if len(succeeded) > 0 {
+		resType := "group_membership"
+		role := domain.RoleAdmin
+		s.audit.Log(ctx, &adminID, &role, domain.AuditActionMemberBulkRemoved, &resType, nil, map[string]any{
+			"succeeded": result.Succeeded,
+			"failed":    result.Failed,
+		})
+	}
+	return result, nil
+}
+
+// diffBulkResult computes which of the requested ids were not returned in
+// succeeded and returns a BulkOperationResult with both slices populated.
+func diffBulkResult(ids, succeeded []int) BulkOperationResult {
 	succeededSet := make(map[int]bool, len(succeeded))
 	for _, id := range succeeded {
 		succeededSet[id] = true
@@ -160,16 +165,7 @@ func (s *adminGroupService) BulkRemoveMembers(ctx context.Context, ids []int, ad
 			failed = append(failed, id)
 		}
 	}
-	result := BulkOperationResult{Succeeded: succeeded, Failed: failed}
-	if len(succeeded) > 0 {
-		resType := "group_membership"
-		role := domain.RoleAdmin
-		s.audit.Log(ctx, &adminID, &role, domain.AuditActionMemberBulkRemoved, &resType, nil, map[string]any{
-			"succeeded": succeeded,
-			"failed":    failed,
-		})
-	}
-	return result, nil
+	return BulkOperationResult{Succeeded: succeeded, Failed: failed}
 }
 
 // RecalculateLeaderboard triggers an immediate snapshot and records an audit entry.
