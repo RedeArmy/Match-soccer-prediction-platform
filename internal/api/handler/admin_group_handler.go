@@ -2,28 +2,38 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
-const msgInvalidGroupID = "invalid group id"
+const (
+	msgInvalidGroupID = "invalid group id"
+	// maxBulkItemsDefault is the fallback upper bound for bulk admin operations
+	// when the system param has not been set. The live limit is read from
+	// admin.bulk_max_items in system_params on every request so it can be
+	// adjusted at runtime without a process restart.
+	maxBulkItemsDefault = 1000
+)
 
 // AdminGroupHandler handles admin endpoints for group management.
 type AdminGroupHandler struct {
-	svc service.AdminGroupService
-	log *zap.Logger
+	svc    service.AdminGroupService
+	params service.SystemParamService
+	log    *zap.Logger
 }
 
 // NewAdminGroupHandler constructs an AdminGroupHandler.
-func NewAdminGroupHandler(svc service.AdminGroupService, log *zap.Logger) *AdminGroupHandler {
-	return &AdminGroupHandler{svc: svc, log: log}
+func NewAdminGroupHandler(svc service.AdminGroupService, params service.SystemParamService, log *zap.Logger) *AdminGroupHandler {
+	return &AdminGroupHandler{svc: svc, params: params, log: log}
 }
 
 // DeleteGroup handles DELETE /admin/groups/{id}.
@@ -244,8 +254,13 @@ func (h *AdminGroupHandler) BulkDeleteGroups(w http.ResponseWriter, r *http.Requ
 		middleware.WriteError(w, r, h.log, decodeError(err))
 		return
 	}
-	if len(req.GroupIDs) == 0 {
+	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, maxBulkItemsDefault)
+	switch {
+	case len(req.GroupIDs) == 0:
 		middleware.WriteError(w, r, h.log, apperrors.Validation("group_ids must not be empty"))
+		return
+	case len(req.GroupIDs) > maxItems:
+		middleware.WriteError(w, r, h.log, apperrors.Validation(fmt.Sprintf("group_ids must not exceed %d items", maxItems)))
 		return
 	}
 
@@ -277,13 +292,13 @@ type bulkMemberIDsRequest struct {
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id    path      int                                 true  "Group ID (for routing; not used in operation)"
+// @Param        id    path      int                                 true  "Group ID — only memberships belonging to this group are removed"
 // @Param        body  body      handler.bulkMemberIDsRequest        true  "Membership IDs to remove"
 // @Success      200   {object}  handler.BulkOperationResultResponse
 // @Success      207   {object}  handler.BulkOperationResultResponse
 // @Failure      401   {object}  handler.ErrorResponse
 // @Failure      403   {object}  handler.ErrorResponse  "Caller is not an admin"
-// @Failure      422   {object}  handler.ErrorResponse  "membership_ids is required"
+// @Failure      422   {object}  handler.ErrorResponse  "membership_ids is required or exceeds limit"
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/groups/{id}/members/bulk-remove [post]
 func (h *AdminGroupHandler) BulkRemoveMembers(w http.ResponseWriter, r *http.Request) {
@@ -293,17 +308,28 @@ func (h *AdminGroupHandler) BulkRemoveMembers(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	quinielaID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
+		return
+	}
+
 	var req bulkMemberIDsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		middleware.WriteError(w, r, h.log, decodeError(err))
 		return
 	}
-	if len(req.MembershipIDs) == 0 {
+	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, maxBulkItemsDefault)
+	switch {
+	case len(req.MembershipIDs) == 0:
 		middleware.WriteError(w, r, h.log, apperrors.Validation("membership_ids must not be empty"))
+		return
+	case len(req.MembershipIDs) > maxItems:
+		middleware.WriteError(w, r, h.log, apperrors.Validation(fmt.Sprintf("membership_ids must not exceed %d items", maxItems)))
 		return
 	}
 
-	result, err := h.svc.BulkRemoveMembers(r.Context(), req.MembershipIDs, caller.ID)
+	result, err := h.svc.BulkRemoveMembers(r.Context(), quinielaID, req.MembershipIDs, caller.ID)
 	if err != nil {
 		middleware.WriteError(w, r, h.log, err)
 		return

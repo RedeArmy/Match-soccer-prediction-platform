@@ -721,7 +721,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Group ID (for routing; not used in operation)",
+                        "description": "Group ID — only memberships belonging to this group are removed",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -762,7 +762,7 @@ const docTemplate = `{
                         }
                     },
                     "422": {
-                        "description": "membership_ids is required",
+                        "description": "membership_ids is required or exceeds limit",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }

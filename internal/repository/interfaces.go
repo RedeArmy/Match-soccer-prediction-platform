@@ -248,9 +248,11 @@ type GroupMembershipRepository interface {
 	// Used by ConflictService to surface unresolved join requests.
 	ListStalePending(ctx context.Context, olderThan time.Time) ([]*domain.GroupMembership, error)
 	// BulkRemoveByAdmin soft-deletes multiple memberships on behalf of an admin.
+	// Only memberships that belong to quinielaID are affected; IDs from other
+	// groups are silently ignored, preventing cross-group scope bypass.
 	// Returns the IDs that were successfully removed. Already-inactive IDs are
 	// silently skipped and do not appear in the result.
-	BulkRemoveByAdmin(ctx context.Context, ids []int, adminID int) ([]int, error)
+	BulkRemoveByAdmin(ctx context.Context, quinielaID int, ids []int, adminID int) ([]int, error)
 	// TransferOwnershipRoles atomically demotes every current owner of quinielaID
 	// to MembershipRoleMember and promotes newOwnerMembershipID to
 	// MembershipRoleCreateOwner within a single database transaction. If either

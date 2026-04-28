@@ -119,9 +119,11 @@ func (s *adminGroupService) BulkDeleteGroups(ctx context.Context, ids []int, adm
 }
 
 // BulkRemoveMembers sets multiple memberships to 'left' and records a single
-// audit entry listing all succeeded and failed IDs.
-func (s *adminGroupService) BulkRemoveMembers(ctx context.Context, ids []int, adminID int) (BulkOperationResult, error) {
-	succeeded, err := s.memberRepo.BulkRemoveByAdmin(ctx, ids, adminID)
+// audit entry listing all succeeded and failed IDs. Only memberships that
+// belong to quinielaID are affected; the repo filters by quiniela_id to
+// prevent cross-group scope bypass.
+func (s *adminGroupService) BulkRemoveMembers(ctx context.Context, quinielaID int, ids []int, adminID int) (BulkOperationResult, error) {
+	succeeded, err := s.memberRepo.BulkRemoveByAdmin(ctx, quinielaID, ids, adminID)
 	if err != nil {
 		return BulkOperationResult{}, err
 	}

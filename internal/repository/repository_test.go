@@ -4309,7 +4309,7 @@ func TestGroupMembershipRepository_BulkRemoveByAdmin_RemovesAllIDs(t *testing.T)
 	m2 := seedActiveMembership(t, q.ID, seedUser(t).ID)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	succeeded, err := repo.BulkRemoveByAdmin(context.Background(), []int{m1.ID, m2.ID}, admin.ID)
+	succeeded, err := repo.BulkRemoveByAdmin(context.Background(), q.ID, []int{m1.ID, m2.ID}, admin.ID)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -4333,14 +4333,24 @@ func TestGroupMembershipRepository_BulkRemoveByAdmin_InactiveSkipped(t *testing.
 	m := seedActiveMembership(t, q.ID, seedUser(t).ID)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	_, _ = repo.BulkRemoveByAdmin(context.Background(), []int{m.ID}, admin.ID)
+	_, _ = repo.BulkRemoveByAdmin(context.Background(), q.ID, []int{m.ID}, admin.ID)
 
-	succeeded, err := repo.BulkRemoveByAdmin(context.Background(), []int{m.ID}, admin.ID)
+	succeeded, err := repo.BulkRemoveByAdmin(context.Background(), q.ID, []int{m.ID}, admin.ID)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if len(succeeded) != 0 {
 		t.Errorf("expected 0 succeeded for already-inactive membership, got %d", len(succeeded))
+	}
+}
+
+func TestGroupMembershipRepository_BulkRemoveByAdmin_CancelledContext_ReturnsError(t *testing.T) {
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := repo.BulkRemoveByAdmin(ctx, 1, []int{1}, 1)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
 	}
 }
 
