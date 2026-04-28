@@ -169,7 +169,7 @@ func TestAdminGroupService_BulkDeleteGroups_RepoError_Propagates(t *testing.T) {
 func TestAdminGroupService_BulkRemoveMembers_AllSucceed_ReturnsAllInSucceeded(t *testing.T) {
 	svc := newAdminGroupSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
 
-	result, err := svc.BulkRemoveMembers(context.Background(), []int{10, 11}, 99)
+	result, err := svc.BulkRemoveMembers(context.Background(), 1, []int{10, 11}, 99)
 	if err != nil {
 		t.Fatalf(adminGroupNilErrFmt, err)
 	}
@@ -184,7 +184,7 @@ func TestAdminGroupService_BulkRemoveMembers_AllSucceed_ReturnsAllInSucceeded(t 
 func TestAdminGroupService_BulkRemoveMembers_RepoError_Propagates(t *testing.T) {
 	svc := newAdminGroupSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New("db error")})
 
-	_, err := svc.BulkRemoveMembers(context.Background(), []int{10}, 99)
+	_, err := svc.BulkRemoveMembers(context.Background(), 1, []int{10}, 99)
 	if err == nil {
 		t.Error(adminGroupExpectErrMsg)
 	}

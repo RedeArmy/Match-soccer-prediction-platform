@@ -121,7 +121,7 @@ func (r *stubMemberRepo) ListGroupIDsWithoutOwner(_ context.Context) ([]int, err
 func (r *stubMemberRepo) ListStalePending(_ context.Context, _ time.Time) ([]*domain.GroupMembership, error) {
 	return r.memberships, r.err
 }
-func (r *stubMemberRepo) BulkRemoveByAdmin(_ context.Context, ids []int, _ int) ([]int, error) {
+func (r *stubMemberRepo) BulkRemoveByAdmin(_ context.Context, _ int, ids []int, _ int) ([]int, error) {
 	if r.err != nil {
 		return nil, r.err
 	}

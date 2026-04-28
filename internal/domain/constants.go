@@ -92,6 +92,12 @@ const (
 	// ParamKeyTournamentWinPoints is the standing points awarded for a group-stage
 	// win. Defaults to StandingsWinPoints (3). Read dynamically by TournamentService.
 	ParamKeyTournamentWinPoints = "tournament.win_points"
+	// ParamKeyAdminBulkMaxItems is the maximum number of IDs accepted in a single
+	// bulk admin operation (BulkDeleteGroups, BulkRemoveMembers). Requests that
+	// exceed this limit are rejected with 422 to prevent oversized ANY($1) queries.
+	// Read dynamically per request so it can be lowered during high-load periods
+	// without a process restart. Defaults to 1000.
+	ParamKeyAdminBulkMaxItems = "admin.bulk_max_items"
 
 	// Infrastructure params — read once at process startup; changes require restart.
 	// The is_runtime column in system_params is set to FALSE for all of these.

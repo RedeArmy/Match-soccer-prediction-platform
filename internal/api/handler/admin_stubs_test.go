@@ -99,7 +99,7 @@ func (s *stubAdminGroupSvc) BulkDeleteGroups(_ context.Context, ids []int, _ int
 	}
 	return service.BulkOperationResult{Succeeded: ids, Failed: []int{}}, nil
 }
-func (s *stubAdminGroupSvc) BulkRemoveMembers(_ context.Context, ids []int, _ int) (service.BulkOperationResult, error) {
+func (s *stubAdminGroupSvc) BulkRemoveMembers(_ context.Context, _ int, ids []int, _ int) (service.BulkOperationResult, error) {
 	if s.err != nil {
 		return service.BulkOperationResult{}, s.err
 	}

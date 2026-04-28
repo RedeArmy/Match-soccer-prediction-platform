@@ -303,9 +303,11 @@ type AdminGroupService interface {
 	// BulkDeleteGroups soft-deletes multiple quinielas. Succeeded contains IDs
 	// that were deleted; Failed contains IDs already deleted or not found.
 	BulkDeleteGroups(ctx context.Context, ids []int, adminID int) (BulkOperationResult, error)
-	// BulkRemoveMembers sets multiple memberships to 'left'. Succeeded contains
-	// IDs that were removed; Failed contains IDs already inactive or not found.
-	BulkRemoveMembers(ctx context.Context, ids []int, adminID int) (BulkOperationResult, error)
+	// BulkRemoveMembers sets multiple memberships to 'left'. Only memberships
+	// that belong to quinielaID are affected; IDs from other groups are silently
+	// ignored. Succeeded contains removed IDs; Failed contains IDs already
+	// inactive, not found, or belonging to a different group.
+	BulkRemoveMembers(ctx context.Context, quinielaID int, ids []int, adminID int) (BulkOperationResult, error)
 	// RecalculateLeaderboard triggers an immediate leaderboard snapshot for the
 	// given quiniela. Returns the newly created snapshot.
 	RecalculateLeaderboard(ctx context.Context, quinielaID, adminID int) (*domain.LeaderboardSnapshot, error)
