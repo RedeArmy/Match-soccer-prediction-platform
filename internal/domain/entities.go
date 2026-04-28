@@ -601,10 +601,6 @@ const (
 	ConflictMembershipStale ConflictType = "membership_stale"
 )
 
-// ConflictStaleDays is the number of days after which a pending payment or
-// membership join request is considered stale and surfaces as a conflict.
-const ConflictStaleDays = 7
-
 // Conflict is a computed, non-persisted operational issue detected by the
 // ConflictService that requires administrative attention.
 type Conflict struct {

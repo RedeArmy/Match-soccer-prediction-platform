@@ -63,6 +63,13 @@ var allAdminRoutes = []adminRoute{
 	// Conflicts
 	{http.MethodGet, "/api/v1/admin/conflicts"},
 	{http.MethodPost, "/api/v1/admin/conflicts/group_no_owner/1/resolve"},
+	// Stats / observability
+	{http.MethodGet, "/api/v1/admin/stats"},
+	{http.MethodGet, "/api/v1/admin/stats/conflicts/summary"},
+	// Bulk group operations
+	{http.MethodPost, "/api/v1/admin/groups/bulk-delete"},
+	{http.MethodPost, "/api/v1/admin/groups/1/members/bulk-remove"},
+	{http.MethodPost, "/api/v1/admin/groups/1/leaderboard/recalculate"},
 }
 
 // newAdminTestServer builds a Server with a fake (unreachable) database pool
