@@ -182,9 +182,13 @@ func (h *AdminPaymentHandler) RejectDeposit(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var req reviewPaymentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Notes == "" {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[reviewPaymentRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	if req.Notes == "" {
+		middleware.WriteError(w, r, h.log, apperrors.Validation("notes are required"))
 		return
 	}
 

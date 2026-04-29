@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -18,6 +19,23 @@ const (
 // writeJSON delegates to middleware.WriteJSON, the single canonical implementation
 // shared across the entire API surface.
 func writeJSON(w http.ResponseWriter, status int, v any) { middleware.WriteJSON(w, status, v) }
+
+// decodeJSON reads the request body and decodes it as JSON into a value of
+// type T. DisallowUnknownFields is always set so that unexpected keys in the
+// client payload are rejected rather than silently ignored — this catches
+// field-name typos that would otherwise produce confusing zero-value behaviour.
+//
+// On failure the returned error is already wrapped by decodeError and is safe
+// to pass directly to middleware.WriteError.
+func decodeJSON[T any](r *http.Request) (T, error) {
+	var v T
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&v); err != nil {
+		return v, decodeError(err)
+	}
+	return v, nil
+}
 
 // decodeError maps a JSON decode failure to the appropriate AppError.
 //

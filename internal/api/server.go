@@ -203,7 +203,8 @@ func (s *Server) Routes() http.Handler {
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
-	webhookHandler := handler.NewWebhookHandler(userRepo, s.cfg.Clerk.WebhookSecret, s.log)
+	clerkSyncer := service.NewClerkUserSyncService(userRepo, s.log)
+	webhookHandler := handler.NewWebhookHandler(clerkSyncer, s.cfg.Clerk.WebhookSecret, s.log)
 	r.Post("/webhooks/clerk", webhookHandler.HandleClerkWebhook)
 
 	// Versioned API surface with Clerk JWT authentication.

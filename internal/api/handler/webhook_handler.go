@@ -4,20 +4,18 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 
 	svix "github.com/svix/svix-webhooks/go"
 	"go.uber.org/zap"
 
-	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
-	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // WebhookHandler handles incoming Clerk webhook events.
 type WebhookHandler struct {
-	userRepo         repository.UserRepository
+	syncer           service.ClerkUserSyncer
 	verifier         *svix.Webhook // nil means skip OR reject — see skipVerification
 	skipVerification bool          // true only when WCQ_CLERK_WEBHOOKSECRET is intentionally absent (dev)
 	log              *zap.Logger
@@ -31,8 +29,8 @@ type WebhookHandler struct {
 // configuration outside development.
 // When the secret is present but malformed, all webhook requests are rejected
 // with 400 to prevent accepting unverified payloads silently.
-func NewWebhookHandler(userRepo repository.UserRepository, webhookSecret string, log *zap.Logger) *WebhookHandler {
-	h := &WebhookHandler{userRepo: userRepo, log: log}
+func NewWebhookHandler(syncer service.ClerkUserSyncer, webhookSecret string, log *zap.Logger) *WebhookHandler {
+	h := &WebhookHandler{syncer: syncer, log: log}
 	if webhookSecret == "" {
 		log.Warn("WebhookHandler: WCQ_CLERK_WEBHOOKSECRET is not set — webhook signature verification is DISABLED; do not use in production")
 		h.skipVerification = true
@@ -93,16 +91,12 @@ func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Reque
 	if !h.skipVerification {
 		if h.verifier == nil {
 			// Secret was provided but is malformed; reject all requests.
-			writeJSON(w, http.StatusBadRequest, ErrorResponse{
-				Error: ErrorDetail{Code: "bad_request", Message: "invalid webhook signature"},
-			})
+			middleware.WriteError(w, r, h.log, apperrors.BadRequest("invalid webhook configuration"))
 			return
 		}
 		if err := h.verifier.Verify(body, r.Header); err != nil {
 			h.log.Warn("webhook signature verification failed", zap.Error(err))
-			writeJSON(w, http.StatusBadRequest, ErrorResponse{
-				Error: ErrorDetail{Code: "bad_request", Message: "invalid webhook signature"},
-			})
+			middleware.WriteError(w, r, h.log, apperrors.BadRequest("invalid webhook signature"))
 			return
 		}
 	}
@@ -115,7 +109,7 @@ func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Reque
 
 	switch event.Type {
 	case "user.created", "user.updated":
-		if err := h.upsertUser(r, event.Data); err != nil {
+		if err := h.syncUser(r, event.Data); err != nil {
 			middleware.WriteError(w, r, h.log, err)
 			return
 		}
@@ -128,72 +122,26 @@ func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// primaryEmail resolves the primary email address from the Clerk payload.
-// It matches PrimaryEmailAddressID against the ID field of each address entry.
-// Falls back to the first entry when no match is found (e.g. transient Clerk
-// inconsistency) so user creation never fails on a missing primary pointer.
-func primaryEmail(addrs []clerkEmailAddress, primaryID string) string {
-	for _, a := range addrs {
-		if a.ID == primaryID {
-			return a.EmailAddress
-		}
-	}
-	if len(addrs) > 0 {
-		return addrs[0].EmailAddress
-	}
-	return ""
-}
-
-// upsertUser creates or updates an internal User from a Clerk user payload.
-func (h *WebhookHandler) upsertUser(r *http.Request, data json.RawMessage) error {
+// syncUser parses the Clerk user payload and delegates persistence to the
+// ClerkUserSyncer service. All business logic (email resolution, name
+// normalisation, create-or-update) lives in the service layer.
+func (h *WebhookHandler) syncUser(r *http.Request, data json.RawMessage) error {
 	var payload clerkUserPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return apperrors.Validation("could not parse user data in webhook payload")
 	}
 
-	email := primaryEmail(payload.EmailAddresses, payload.PrimaryEmailID)
-	if email != "" {
-		if err := domain.ValidateEmail(email); err != nil {
-			return apperrors.Validation("webhook payload contains an invalid email address")
-		}
+	emails := make([]service.ClerkEmail, len(payload.EmailAddresses))
+	for i, a := range payload.EmailAddresses {
+		emails[i] = service.ClerkEmail{ID: a.ID, Address: a.EmailAddress}
 	}
 
-	name := strings.TrimSpace(payload.FirstName + " " + payload.LastName)
-	if name == "" {
-		name = payload.ID
-	}
-
-	existing, err := h.userRepo.GetByClerkSubject(r.Context(), payload.ID)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-
-	if existing != nil {
-		existing.Name = name
-		existing.Email = email
-		existing.ClerkSubject = payload.ID
-		if err := h.userRepo.Update(r.Context(), existing); err != nil {
-			return err
-		}
-		h.log.Info("webhook: updated user",
-			zap.Int("user_id", existing.ID),
-			zap.String("clerk_subject", payload.ID),
-		)
-		return nil
-	}
-
-	user := &domain.User{
-		Name:         name,
-		Email:        email,
-		ClerkSubject: payload.ID,
-		Role:         domain.RoleUser,
-	}
-	if err := h.userRepo.Create(r.Context(), user); err != nil {
-		return err
-	}
-	h.log.Info("webhook: created user",
-		zap.Int("user_id", user.ID),
-		zap.String("clerk_subject", payload.ID),
+	return h.syncer.Upsert(
+		r.Context(),
+		payload.ID,
+		payload.FirstName,
+		payload.LastName,
+		payload.PrimaryEmailID,
+		emails,
 	)
-	return nil
 }

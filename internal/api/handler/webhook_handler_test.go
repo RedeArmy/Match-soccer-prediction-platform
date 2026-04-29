@@ -16,8 +16,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
-	"github.com/rede/world-cup-quiniela/internal/domain"
-	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/internal/service"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 const (
@@ -62,34 +62,39 @@ func doWebhook(h *handler.WebhookHandler, body string) *httptest.ResponseRecorde
 const userCreatedBody = `{"type":"user.created","data":{"id":"user_abc123","first_name":"Alice","last_name":"Smith","email_addresses":[{"email_address":"alice@example.com"}]}}`
 const userUpdatedBody = `{"type":"user.updated","data":{"id":"user_abc123","first_name":"Alice","last_name":"Updated","email_addresses":[{"email_address":"alice2@example.com"}]}}`
 
+// stubClerkUserSyncer is a test double for service.ClerkUserSyncer.
+// err controls the value returned by Upsert.
+type stubClerkUserSyncer struct{ err error }
+
+func (s *stubClerkUserSyncer) Upsert(_ context.Context, _, _, _, _ string, _ []service.ClerkEmail) error {
+	return s.err
+}
+
 // ── no signature verification ─────────────────────────────────────────────────
 
 func TestWebhook_NoSecret_UserCreated_Returns204(t *testing.T) {
-	// GetByClerkSubject → nil (new user) → Create path
-	h := handler.NewWebhookHandler(&stubUserRepo{}, "", zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
 	if w := doWebhook(h, userCreatedBody); w.Code != http.StatusNoContent {
 		t.Errorf(fmtExpect204, w.Code)
 	}
 }
 
 func TestWebhook_NoSecret_UserUpdated_Returns204(t *testing.T) {
-	// GetByClerkSubject → existing user → Update path
-	existing := &domain.User{ID: 1, Name: "Alice", Role: domain.RoleUser}
-	h := handler.NewWebhookHandler(&stubUserRepo{user: existing}, "", zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
 	if w := doWebhook(h, userUpdatedBody); w.Code != http.StatusNoContent {
 		t.Errorf(fmtExpect204, w.Code)
 	}
 }
 
 func TestWebhook_NoSecret_UnknownEventType_Returns204(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, "", zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
 	if w := doWebhook(h, `{"type":"organization.created","data":{}}`); w.Code != http.StatusNoContent {
 		t.Errorf("expected 204 for unknown event, got %d", w.Code)
 	}
 }
 
 func TestWebhook_NoSecret_InvalidJSON_Returns422(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, "", zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
 	if w := doWebhook(h, `not json`); w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
@@ -97,56 +102,42 @@ func TestWebhook_NoSecret_InvalidJSON_Returns422(t *testing.T) {
 
 func TestWebhook_NoSecret_InvalidUserData_Returns422(t *testing.T) {
 	// data is a JSON string, not an object — unmarshal into clerkUserPayload fails.
-	h := handler.NewWebhookHandler(&stubUserRepo{}, "", zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
 	if w := doWebhook(h, `{"type":"user.created","data":"not-an-object"}`); w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
-func TestWebhook_NoSecret_GetBySubjectError_Returns500(t *testing.T) {
-	userRepo := &stubUserRepo{err: errors.New("db unavailable")}
-	h := handler.NewWebhookHandler(userRepo, "", zap.NewNop())
+func TestWebhook_NoSecret_SyncerError_Returns500(t *testing.T) {
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{err: errors.New("db unavailable")}, "", zap.NewNop())
 	if w := doWebhook(h, userCreatedBody); w.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, w.Code)
 	}
 }
 
-func TestWebhook_NoSecret_CreateError_Returns500(t *testing.T) {
-	h := handler.NewWebhookHandler(&createErrRepo{createErr: errors.New("insert failed")}, "", zap.NewNop())
-	if w := doWebhook(h, userCreatedBody); w.Code != http.StatusInternalServerError {
-		t.Errorf(fmtExpect500, w.Code)
-	}
-}
-
-func TestWebhook_NoSecret_UpdateError_Returns500(t *testing.T) {
-	existing := &domain.User{ID: 1, Name: "Alice", Role: domain.RoleUser}
-	h := handler.NewWebhookHandler(&updateErrRepo{user: existing, updateErr: errors.New("update failed")}, "", zap.NewNop())
-	if w := doWebhook(h, userUpdatedBody); w.Code != http.StatusInternalServerError {
-		t.Errorf(fmtExpect500, w.Code)
-	}
-}
-
-func TestWebhook_NoSecret_EmptyName_FallsBackToSubjectID(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, "", zap.NewNop())
-	body := `{"type":"user.created","data":{"id":"user_noname","first_name":"","last_name":"","email_addresses":[]}}`
-	if w := doWebhook(h, body); w.Code != http.StatusNoContent {
-		t.Errorf(fmtExpect204, w.Code)
-	}
-}
-
-func TestWebhook_NoSecret_InvalidEmail_Returns422(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, "", zap.NewNop())
-	// "notanemail" has no "@" and no domain — ValidateEmail rejects it.
+func TestWebhook_NoSecret_SyncerValidationError_Returns422(t *testing.T) {
+	// The syncer returns a validation error (e.g. invalid email address) — handler must propagate 422.
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{err: apperrors.Validation("invalid email")}, "", zap.NewNop())
 	body := `{"type":"user.created","data":{"id":"user_bademail","first_name":"Bad","last_name":"Email","email_addresses":[{"email_address":"notanemail"}]}}`
 	if w := doWebhook(h, body); w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 
+func TestWebhook_NoSecret_EmptyName_Returns204(t *testing.T) {
+	// Name normalisation (fallback to subject ID when blank) is the service's responsibility.
+	// The handler should pass through and return 204 when the syncer succeeds.
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
+	body := `{"type":"user.created","data":{"id":"user_noname","first_name":"","last_name":"","email_addresses":[]}}`
+	if w := doWebhook(h, body); w.Code != http.StatusNoContent {
+		t.Errorf(fmtExpect204, w.Code)
+	}
+}
+
 // ── Svix signature verification ───────────────────────────────────────────────
 
 func TestWebhook_WithSecret_ValidSignature_Returns204(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, testWebhookSecret, zap.NewNop())
 	req := svixRequest(t, userCreatedBody, testWebhookSecret, time.Now())
 	w := httptest.NewRecorder()
 	h.HandleClerkWebhook(w, req)
@@ -156,7 +147,7 @@ func TestWebhook_WithSecret_ValidSignature_Returns204(t *testing.T) {
 }
 
 func TestWebhook_WithSecret_MissingHeaders_Returns400(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, testWebhookSecret, zap.NewNop())
 	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
 	w := httptest.NewRecorder()
 	h.HandleClerkWebhook(w, req)
@@ -166,7 +157,7 @@ func TestWebhook_WithSecret_MissingHeaders_Returns400(t *testing.T) {
 }
 
 func TestWebhook_WithSecret_WrongSignature_Returns400(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, testWebhookSecret, zap.NewNop())
 	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
 	req.Header.Set(headerSvixID, testMsgID)
 	req.Header.Set(headerSvixTimestamp, fmt.Sprintf("%d", time.Now().Unix()))
@@ -179,7 +170,7 @@ func TestWebhook_WithSecret_WrongSignature_Returns400(t *testing.T) {
 }
 
 func TestWebhook_WithSecret_OldTimestamp_Returns400(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, testWebhookSecret, zap.NewNop())
 	req := svixRequest(t, userCreatedBody, testWebhookSecret, time.Now().Add(-10*time.Minute))
 	w := httptest.NewRecorder()
 	h.HandleClerkWebhook(w, req)
@@ -189,7 +180,7 @@ func TestWebhook_WithSecret_OldTimestamp_Returns400(t *testing.T) {
 }
 
 func TestWebhook_WithSecret_InvalidBase64Secret_Returns400(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, "whsec_!!!notbase64!!!", zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "whsec_!!!notbase64!!!", zap.NewNop())
 	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
 	req.Header.Set(headerSvixID, testMsgID)
 	req.Header.Set(headerSvixTimestamp, fmt.Sprintf("%d", time.Now().Unix()))
@@ -202,7 +193,7 @@ func TestWebhook_WithSecret_InvalidBase64Secret_Returns400(t *testing.T) {
 }
 
 func TestWebhook_WithSecret_InvalidTimestampFormat_Returns400(t *testing.T) {
-	h := handler.NewWebhookHandler(&stubUserRepo{}, testWebhookSecret, zap.NewNop())
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, testWebhookSecret, zap.NewNop())
 	req := httptest.NewRequest(http.MethodPost, pathWebhookClerk, strings.NewReader(userCreatedBody))
 	req.Header.Set(headerSvixID, testMsgID)
 	req.Header.Set(headerSvixTimestamp, "not-a-number")
@@ -212,71 +203,4 @@ func TestWebhook_WithSecret_InvalidTimestampFormat_Returns400(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for non-numeric timestamp, got %d", w.Code)
 	}
-}
-
-// ── targeted stubs for isolated error paths ───────────────────────────────────
-
-// createErrRepo returns nil from GetByClerkSubject (no existing user) and
-// errors from Create, isolating the Create error path in upsertUser.
-type createErrRepo struct{ createErr error }
-
-func (r *createErrRepo) Create(_ context.Context, _ *domain.User) error { return r.createErr }
-func (r *createErrRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
-	return nil, nil
-}
-func (r *createErrRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
-	return nil, nil
-}
-func (r *createErrRepo) Update(_ context.Context, _ *domain.User) error { return nil }
-func (r *createErrRepo) Delete(_ context.Context, _ int) error          { return nil }
-func (r *createErrRepo) List(_ context.Context) ([]*domain.User, error) {
-	return nil, nil
-}
-func (r *createErrRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
-	return nil, nil
-}
-func (r *createErrRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
-	return nil, nil
-}
-func (r *createErrRepo) Unban(_ context.Context, _ int) error                 { return nil }
-func (r *createErrRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }
-func (r *createErrRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
-	return nil, nil
-}
-func (r *createErrRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
-	return repository.UserStatusCounts{}, nil
-}
-
-// updateErrRepo returns an existing user from GetByClerkSubject and errors
-// from Update, isolating the Update error path in upsertUser.
-type updateErrRepo struct {
-	user      *domain.User
-	updateErr error
-}
-
-func (r *updateErrRepo) Create(_ context.Context, _ *domain.User) error { return nil }
-func (r *updateErrRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
-	return nil, nil
-}
-func (r *updateErrRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
-	return r.user, nil
-}
-func (r *updateErrRepo) Update(_ context.Context, _ *domain.User) error { return r.updateErr }
-func (r *updateErrRepo) Delete(_ context.Context, _ int) error          { return nil }
-func (r *updateErrRepo) List(_ context.Context) ([]*domain.User, error) {
-	return nil, nil
-}
-func (r *updateErrRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
-	return nil, nil
-}
-func (r *updateErrRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
-	return nil, nil
-}
-func (r *updateErrRepo) Unban(_ context.Context, _ int) error                 { return nil }
-func (r *updateErrRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }
-func (r *updateErrRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
-	return nil, nil
-}
-func (r *updateErrRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
-	return repository.UserStatusCounts{}, nil
 }

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -46,9 +45,9 @@ func (h *TiebreakerHandler) SetQuestion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var req setQuestionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[setQuestionRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 
@@ -75,9 +74,9 @@ func (h *TiebreakerHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req submitTiebreakerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[submitTiebreakerRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 
@@ -121,9 +120,9 @@ func (h *TiebreakerHandler) ConfirmResult(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var req confirmResultRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[confirmResultRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 
