@@ -70,6 +70,39 @@ const MinMembersForActive = 3
 // constant is only the safe default, not the authoritative runtime value.
 const DefaultConflictStaleDays = 7
 
+// Default values for system parameters. Each constant is the fallback used when
+// the corresponding ParamKey row is absent or unparseable. They are the single
+// source of truth for numeric defaults: the same values must match the seed data
+// in migrations/000040_seed_system_params.up.sql and its follow-up migrations.
+const (
+	// Group configuration
+	DefaultGroupInviteCodeLength = 10 // group.invite_code_length
+
+	// Pagination
+	DefaultPaginationDefaultLimit = 50  // pagination.default_limit
+	DefaultPaginationMaxLimit     = 200 // pagination.max_limit
+
+	// Admin bulk operations
+	DefaultAdminBulkMaxItems = 1000 // admin.bulk_max_items
+
+	// Cache TTLs (seconds)
+	DefaultCacheDashboardTTLSeconds   = 30  // cache.dashboard_ttl_seconds
+	DefaultCacheMatchTTLSeconds       = 300 // cache.match_ttl_seconds
+	DefaultCacheLeaderboardTTLSeconds = 60  // cache.leaderboard_ttl_seconds
+
+	// Dead-letter queue
+	DefaultDLQSampleSize         = 5  // dlq.sample_size
+	DefaultDLQReplayDefaultLimit = 10 // dlq.replay_default_limit
+
+	// Messaging / Redis Streams
+	DefaultMessagingMaxRetries   = 3       // messaging.max_retries
+	DefaultMessagingStreamMaxLen = 600_000 // messaging.stream_max_len
+
+	// Infrastructure timeouts (seconds)
+	DefaultAuthValidationTimeoutSeconds = 5 // auth.validation_timeout_seconds
+	DefaultAuditWriteTimeoutSeconds     = 5 // audit.write_timeout_seconds
+)
+
 // System parameter keys used by the service layer to fetch runtime-configurable
 // values from SystemParamRepository. Each constant names the row that must
 // exist in system_params (seeded by migrations). Services fall back to the
@@ -85,7 +118,7 @@ const (
 	ParamKeyGroupMinMembers       = "group.min_members_for_active"
 	ParamKeyGroupDefaultPrize     = "group.default_prize_threshold"
 	// ParamKeyGroupInviteCodeLength is the number of characters in a generated
-	// invite code. Defaults to inviteCodeLength (10) in QuinielaService.
+	// invite code. Defaults to DefaultGroupInviteCodeLength (10).
 	ParamKeyGroupInviteCodeLength = "group.invite_code_length"
 	// ParamKeyConflictStaleDays is the age in days after which a pending payment
 	// or membership is flagged as a conflict. Defaults to DefaultConflictStaleDays (7).

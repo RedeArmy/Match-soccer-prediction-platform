@@ -12,6 +12,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/clock"
 )
 
 const (
@@ -68,7 +69,7 @@ func (noopPaymentService) List(_ context.Context, _ repository.PaymentFilters, _
 }
 
 func newMemberSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) GroupMembershipService {
-	return NewGroupMembershipService(qr, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, zap.NewNop())
+	return NewGroupMembershipService(qr, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, clock.Real{}, zap.NewNop())
 }
 
 func quinielaWithCode(id int, code string) *domain.Quiniela {
@@ -234,6 +235,7 @@ func TestGroupMembershipService_Join_PaidGroup_CreatesPendingPaymentRecord(t *te
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		recorder,
+		clock.Real{},
 		zap.NewNop(),
 	)
 
@@ -259,6 +261,7 @@ func TestGroupMembershipService_Join_PaidGroup_PaymentError_JoinStillSucceeds(t 
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		errPaymentService{},
+		clock.Real{},
 		zap.NewNop(),
 	)
 
@@ -297,6 +300,7 @@ func TestGroupMembershipService_Join_PaidGroup_Rejoin_CreatesPendingPayment(t *t
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		recorder,
+		clock.Real{},
 		zap.NewNop(),
 	)
 
@@ -321,6 +325,7 @@ func TestGroupMembershipService_Join_RejoinUpdateError_ReturnsError(t *testing.T
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		&noopPaymentService{},
+		clock.Real{},
 		zap.NewNop(),
 	)
 
@@ -571,7 +576,7 @@ func TestGroupMembershipService_Leave_CreateOwner_TransfersOwnership(t *testing.
 		ownerMembership: ownerMembership,
 		successor:       successor,
 	}
-	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, zap.NewNop())
+	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, clock.Real{}, zap.NewNop())
 
 	if err := svc.Leave(context.Background(), 1, 10); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -588,7 +593,7 @@ func TestGroupMembershipService_Leave_CreateOwner_NoSuccessor_StillLeaves(t *tes
 		Role:   domain.MembershipRoleCreateOwner,
 	}
 	mr := &leaveOwnerMemberRepo{ownerMembership: ownerMembership, successor: nil}
-	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, zap.NewNop())
+	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, clock.Real{}, zap.NewNop())
 
 	if err := svc.Leave(context.Background(), 1, 10); err != nil {
 		t.Fatalf("expected Leave to succeed even without a successor, got %v", err)
@@ -605,7 +610,7 @@ func TestGroupMembershipService_Leave_CreateOwner_TransferError_StillLeaves(t *t
 		ownerMembership: ownerMembership,
 		transferErr:     errors.New(membershipDBError),
 	}
-	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, zap.NewNop())
+	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, clock.Real{}, zap.NewNop())
 
 	// Transfer failure must be logged-and-swallowed; Leave itself must succeed.
 	if err := svc.Leave(context.Background(), 1, 10); err != nil {

@@ -174,10 +174,9 @@ func (s *adminReadService) dashboardFromCache() *domain.DashboardStats {
 }
 
 func (s *adminReadService) setDashboardCache(ctx context.Context, stats *domain.DashboardStats) {
-	const defaultSecs = 30
-	secs := defaultSecs
+	secs := domain.DefaultCacheDashboardTTLSeconds
 	if s.params != nil {
-		secs = s.params.GetInt(ctx, domain.ParamKeyCacheDashboardTTLSeconds, defaultSecs)
+		secs = s.params.GetInt(ctx, domain.ParamKeyCacheDashboardTTLSeconds, domain.DefaultCacheDashboardTTLSeconds)
 	}
 	if secs <= 0 {
 		return // TTL of 0 disables caching

@@ -151,18 +151,13 @@ func TestHealthEndpoint_OnlyAcceptsGET(t *testing.T) {
 	}
 }
 
-// TestUnknownRoute_Returns404 verifies that chi returns 404 for API paths that
-// are not registered in the route table. A real JWKS server is used so that
-// RequireAuth validates the Bearer token; without this, the fail-closed auth
-// middleware would return 401 before chi can report 404.
+// TestUnknownRoute_Returns404 verifies that chi returns 404 for paths that are
+// completely outside the routing table (not under /api/v1, /health, or /webhooks).
+// Paths under /api/v1 with a nil DB return 500 via the wildcard degradation stub.
 func TestUnknownRoute_Returns404(t *testing.T) {
-	jwksURL, signJWT := testJWKSServer(t)
-	cfg := &config.Config{}
-	cfg.Clerk.JWKSURL = jwksURL
-	handler := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes()
+	handler := newTestServer(t).Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/does-not-exist", nil)
-	req.Header.Set("Authorization", "Bearer "+signJWT("test"))
+	req := httptest.NewRequest(http.MethodGet, "/api/v99/does-not-exist", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -276,7 +271,7 @@ func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
 
 func TestRoutes_WithFakeDB_PredictionRouteRegistered(t *testing.T) {
 	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions?user_id=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions/me", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 

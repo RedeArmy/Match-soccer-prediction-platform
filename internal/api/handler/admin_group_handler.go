@@ -16,11 +16,6 @@ import (
 
 const (
 	msgInvalidGroupID = "invalid group id"
-	// maxBulkItemsDefault is the fallback upper bound for bulk admin operations
-	// when the system param has not been set. The live limit is read from
-	// admin.bulk_max_items in system_params on every request so it can be
-	// adjusted at runtime without a process restart.
-	maxBulkItemsDefault = 1000
 )
 
 // AdminGroupHandler handles admin endpoints for group management.
@@ -257,7 +252,7 @@ func (h *AdminGroupHandler) BulkDeleteGroups(w http.ResponseWriter, r *http.Requ
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, maxBulkItemsDefault)
+	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, domain.DefaultAdminBulkMaxItems)
 	switch {
 	case len(req.GroupIDs) == 0:
 		middleware.WriteError(w, r, h.log, apperrors.Validation("group_ids must not be empty"))
@@ -322,7 +317,7 @@ func (h *AdminGroupHandler) BulkRemoveMembers(w http.ResponseWriter, r *http.Req
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, maxBulkItemsDefault)
+	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, domain.DefaultAdminBulkMaxItems)
 	switch {
 	case len(req.MembershipIDs) == 0:
 		middleware.WriteError(w, r, h.log, apperrors.Validation("membership_ids must not be empty"))

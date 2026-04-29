@@ -33,7 +33,7 @@ func newPredRouter(svc *stubPredSvc, withAuth bool) http.Handler {
 	}
 	h := handler.NewPredictionHandler(svc, zap.NewNop())
 	r.Post("/", h.Submit)
-	r.Get("/", h.ListByUser)
+	r.Get("/me", h.GetMine)
 	r.Patch("/{id}", h.Update)
 	return r
 }
@@ -133,10 +133,10 @@ func TestPredUpdate_AnotherUsersPrediction_Returns403(t *testing.T) {
 	}
 }
 
-// ── ListByUser ────────────────────────────────────────────────────────────────
+// ── GetMine ───────────────────────────────────────────────────────────────────
 
-func TestListByUser_NoAuthContext_Returns401(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
+func TestGetMine_NoAuthContext_Returns401(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, urlGetMyPredictions, nil)
 	w := httptest.NewRecorder()
 	newPredRouter(&stubPredSvc{}, false).ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
@@ -144,62 +144,9 @@ func TestListByUser_NoAuthContext_Returns401(t *testing.T) {
 	}
 }
 
-func TestListByUser_Success_Returns200(t *testing.T) {
+func TestGetMine_Success_Returns200(t *testing.T) {
 	svc := &stubPredSvc{preds: []*domain.Prediction{{ID: 1, UserID: 1}}}
-	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
-	w := httptest.NewRecorder()
-	newPredRouter(svc, true).ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf(fmtExpect200, w.Code)
-	}
-}
-
-func TestListByUser_MissingUserID_Returns422(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	newPredRouter(&stubPredSvc{}, true).ServeHTTP(w, req)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf(fmtExpect422, w.Code)
-	}
-}
-
-func TestListByUser_InvalidUserID_Returns422(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/?user_id=abc", nil)
-	w := httptest.NewRecorder()
-	newPredRouter(&stubPredSvc{}, true).ServeHTTP(w, req)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf(fmtExpect422, w.Code)
-	}
-}
-
-func TestListByUser_ServiceError_Returns500(t *testing.T) {
-	svc := &stubPredSvc{err: apperrors.Internal(nil)}
-	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
-	w := httptest.NewRecorder()
-	newPredRouter(svc, true).ServeHTTP(w, req)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", w.Code)
-	}
-}
-
-// TestListByUser_AuthContextMismatch_Returns403 verifies that an authenticated
-// caller cannot retrieve another user's predictions. The auth middleware injects
-// userID "1" into context; the request asks for user_id=2.
-func TestListByUser_AuthContextMismatch_Returns403(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/?user_id=2", nil)
-	w := httptest.NewRecorder()
-	newPredRouter(&stubPredSvc{}, true).ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected 403, got %d", w.Code)
-	}
-}
-
-// TestListByUser_AuthContextMatch_Returns200 verifies that the authenticated
-// caller can retrieve their own predictions when user_id matches the token,
-// and that the response body contains those predictions.
-func TestListByUser_AuthContextMatch_Returns200(t *testing.T) {
-	svc := &stubPredSvc{preds: []*domain.Prediction{{ID: 1, UserID: 1}}}
-	req := httptest.NewRequest(http.MethodGet, urlListByUserID1, nil)
+	req := httptest.NewRequest(http.MethodGet, urlGetMyPredictions, nil)
 	w := httptest.NewRecorder()
 	newPredRouter(svc, true).ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -210,15 +157,25 @@ func TestListByUser_AuthContextMatch_Returns200(t *testing.T) {
 		t.Fatalf(predictionDecodeErrFmt, err)
 	}
 	if len(got) != 1 || got[0].UserID != 1 {
-		t.Errorf("expected 1 prediction for user 1, got %+v", got)
+		t.Errorf("expected 1 prediction for caller, got %+v", got)
 	}
 }
 
-// ── ListByUser with quiniela_id filter ────────────────────────────────────────
+func TestGetMine_ServiceError_Returns500(t *testing.T) {
+	svc := &stubPredSvc{err: apperrors.Internal(nil)}
+	req := httptest.NewRequest(http.MethodGet, urlGetMyPredictions, nil)
+	w := httptest.NewRecorder()
+	newPredRouter(svc, true).ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
+	}
+}
 
-func TestListByUser_WithQuinielaID_Success_Returns200(t *testing.T) {
+// ── GetMine with quiniela_id filter ──────────────────────────────────────────
+
+func TestGetMine_WithQuinielaID_Success_Returns200(t *testing.T) {
 	svc := &stubPredSvc{preds: []*domain.Prediction{{ID: 1, UserID: 1, MatchID: 5}}}
-	req := httptest.NewRequest(http.MethodGet, "/?user_id=1&quiniela_id=3", nil)
+	req := httptest.NewRequest(http.MethodGet, "/me?quiniela_id=3", nil)
 	w := httptest.NewRecorder()
 	newPredRouter(svc, true).ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -233,8 +190,8 @@ func TestListByUser_WithQuinielaID_Success_Returns200(t *testing.T) {
 	}
 }
 
-func TestListByUser_WithQuinielaID_InvalidParam_Returns422(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/?user_id=1&quiniela_id=abc", nil)
+func TestGetMine_WithQuinielaID_InvalidParam_Returns422(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/me?quiniela_id=abc", nil)
 	w := httptest.NewRecorder()
 	newPredRouter(&stubPredSvc{}, true).ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
@@ -242,10 +199,9 @@ func TestListByUser_WithQuinielaID_InvalidParam_Returns422(t *testing.T) {
 	}
 }
 
-func TestListByUser_WithQuinielaID_NonMember_ReturnsEmpty200(t *testing.T) {
-	// Service returns empty slice — user is not an active member of the quiniela.
+func TestGetMine_WithQuinielaID_NonMember_ReturnsEmpty200(t *testing.T) {
 	svc := &stubPredSvc{preds: []*domain.Prediction{}}
-	req := httptest.NewRequest(http.MethodGet, "/?user_id=1&quiniela_id=99", nil)
+	req := httptest.NewRequest(http.MethodGet, "/me?quiniela_id=99", nil)
 	w := httptest.NewRecorder()
 	newPredRouter(svc, true).ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -260,9 +216,9 @@ func TestListByUser_WithQuinielaID_NonMember_ReturnsEmpty200(t *testing.T) {
 	}
 }
 
-func TestListByUser_WithQuinielaID_ServiceError_Returns500(t *testing.T) {
+func TestGetMine_WithQuinielaID_ServiceError_Returns500(t *testing.T) {
 	svc := &stubPredSvc{err: apperrors.Internal(nil)}
-	req := httptest.NewRequest(http.MethodGet, "/?user_id=1&quiniela_id=3", nil)
+	req := httptest.NewRequest(http.MethodGet, "/me?quiniela_id=3", nil)
 	w := httptest.NewRecorder()
 	newPredRouter(svc, true).ServeHTTP(w, req)
 	if w.Code != http.StatusInternalServerError {

@@ -34,6 +34,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/clock"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
 )
@@ -148,31 +149,19 @@ func (s *Server) Routes() http.Handler {
 	))
 
 	if s.db == nil {
-		// When the database is unavailable, register the known routes with
-		// a stub that returns 503 so that registered paths return 503 and
-		// unregistered paths still return 404 (chi's default).
-		dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
-			middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
-		}
+		// When the database is unavailable, register the entire API surface with
+		// two catch-all stubs that return 503. Wildcard coverage means new routes
+		// added to the happy path are automatically covered without a second edit
+		// here. Infrastructure endpoints (/health, /swagger) remain reachable
+		// because they are registered above and are not part of /api/v1.
 		r.Route("/api/v1", func(r chi.Router) {
-			r.Use(middleware.RequestBodyLimit(64 * 1024)) // 64 KB — all API payloads are small JSON objects
+			r.Use(middleware.RequestBodyLimit(64 * 1024))
 			r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, middleware.DefaultJWKSWarmupTimeout, s.log))
-			r.Route("/matches", func(r chi.Router) {
-				r.HandleFunc("/*", dbUnavailable)
-				r.HandleFunc("/", dbUnavailable)
-			})
-			r.Route(routePredictions, func(r chi.Router) {
-				r.HandleFunc("/*", dbUnavailable)
-				r.HandleFunc("/", dbUnavailable)
-			})
-			r.Route("/groups", func(r chi.Router) {
-				r.HandleFunc("/*", dbUnavailable)
-				r.HandleFunc("/", dbUnavailable)
-			})
-			r.Route(routeUsers, func(r chi.Router) {
-				r.HandleFunc("/*", dbUnavailable)
-				r.HandleFunc("/", dbUnavailable)
-			})
+			dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
+				middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
+			}
+			r.HandleFunc("/*", dbUnavailable)
+			r.HandleFunc("/", dbUnavailable)
 		})
 		return r
 	}
@@ -192,14 +181,21 @@ func (s *Server) Routes() http.Handler {
 	// because this is a one-time read at construction time, not a request path.
 	infraCtx := context.Background()
 	messaging.Configure(
-		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingMaxRetries, 3),
-		int64(paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamMaxLen, 600_000)),
+		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingMaxRetries, domain.DefaultMessagingMaxRetries),
+		int64(paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamMaxLen, domain.DefaultMessagingStreamMaxLen)),
 		nil, // retain default RetryBackoff (1s, 2s); no array param defined
 	)
-	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, 5)) * time.Second
+	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, domain.DefaultAuthValidationTimeoutSeconds)) * time.Second
 
-	s.wireSubscribers(matchRepo, predRepo, paramSvc)
-	h := s.buildHandlers(infraCtx, userRepo, matchRepo, predRepo, memberRepo, systemParamRepo, paramSvc)
+	// scorer is constructed once and shared: local event subscribers and the
+	// match service both use the same stateless scoring logic. With the redis
+	// driver, the worker process owns all event consumption; the API server
+	// only publishes, so local subscription is skipped.
+	scorer := service.NewScoringService(matchRepo, predRepo, paramSvc, s.log)
+	if s.cfg.EventBus.Driver != "redis" {
+		s.registerLocalSubscribers(scorer)
+	}
+	h := s.buildHandlers(infraCtx, userRepo, matchRepo, predRepo, memberRepo, systemParamRepo, paramSvc, scorer)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
@@ -231,7 +227,7 @@ func (s *Server) Routes() http.Handler {
 		r.Route(routePredictions, func(r chi.Router) {
 			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.Post("/", h.prediction.Submit)
-			r.Get("/", h.prediction.ListByUser)
+			r.Get("/me", h.prediction.GetMine)
 			r.Patch("/{id}", h.prediction.Update)
 		})
 
@@ -353,38 +349,16 @@ func (s *Server) Routes() http.Handler {
 	return r
 }
 
-// wireSubscribers registers all domain event handlers on s.bus.
-//
-// This method is intentionally separate from bus construction: the bus
-// implementation (InMemory vs Redis) is selected at the composition root in
-// main.go and injected via New(). wireSubscribers only adds subscribers,
-// keeping routing logic in one place and bus lifecycle management in another.
-//
-// With the Redis driver the worker process owns all event processing
-// exclusively. Registering a scoring subscriber here as well would place
-// both the API server and the worker in the same consumer group, causing
-// every MatchFinished event to be scored twice. When driver=redis this
-// method is therefore a no-op: the API server only publishes events; it
-// never consumes them.
-func (s *Server) wireSubscribers(
-	matchRepo repository.MatchRepository,
-	predRepo repository.PredictionRepository,
-	params service.SystemParamService,
-) {
-	if s.cfg.EventBus.Driver == "redis" {
-		return
-	}
-
-	scorer := service.NewScoringService(matchRepo, predRepo, params, s.log)
-
-	// MatchFinished → ScoringService: calculate points for every prediction
-	// on the finished match. The handler runs inside a fresh background context
-	// so a cancelled HTTP request context does not abort the scoring job.
+// registerLocalSubscribers wires domain event handlers onto the in-process bus.
+// It is only called when EventBus.Driver != "redis"; with the Redis driver, the
+// worker process owns all event consumption exclusively and the API server only
+// publishes. scorer is passed in — not re-constructed here — so the same
+// stateless scoring instance is shared with the match service.
+func (s *Server) registerLocalSubscribers(scorer service.MatchScorer) {
 	s.bus.Subscribe(events.EventMatchFinished, func(ctx context.Context, env events.Envelope) error {
 		mf, ok := env.Payload.(events.MatchFinished)
 		if !ok {
-			// Malformed payload: retrying will not help, so return nil to
-			// prevent the bus from routing this to the dead-letter queue.
+			// Malformed payload: retrying will not help.
 			s.log.Error("scoring: unexpected payload type for MatchFinished event",
 				zap.String("event_type", string(env.Type)),
 			)
@@ -395,8 +369,6 @@ func (s *Server) wireSubscribers(
 				zap.Int("match_id", mf.MatchID),
 				zap.Error(err),
 			)
-			// Return the error so the bus can retry and, if all attempts
-			// fail, push the event to the dead-letter queue for manual replay.
 			return err
 		}
 		return nil
@@ -405,9 +377,11 @@ func (s *Server) wireSubscribers(
 
 // buildHandlers constructs the service layer (with optional cache decorators)
 // and returns the route handlers. The provided repositories are reused from
-// the caller's shared instances. s.bus is passed to services so they can
-// publish domain events. When s.cache is non-nil, list-heavy services are
-// wrapped with read-through / write-invalidation cache decorators.
+// the caller's shared instances. scorer is the pre-built MatchScorer shared
+// with registerLocalSubscribers so it is not constructed twice. s.bus is
+// passed to services so they can publish domain events. When s.cache is
+// non-nil, list-heavy services are wrapped with read-through / write-invalidation
+// cache decorators.
 func (s *Server) buildHandlers(
 	ctx context.Context,
 	userRepo repository.UserRepository,
@@ -416,6 +390,7 @@ func (s *Server) buildHandlers(
 	memberRepo repository.GroupMembershipRepository,
 	sysParamRepo repository.SystemParamRepository,
 	params service.SystemParamService,
+	scorer service.MatchScorer,
 ) appHandlers {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
@@ -428,9 +403,9 @@ func (s *Server) buildHandlers(
 	// Read infrastructure params (startup-time, not per-request).
 	// ctx is the shared startup context created once in Routes() and passed here
 	// to avoid redundant context.Background() calls and to enable timeout injection in tests.
-	auditTimeout := time.Duration(params.GetInt(ctx, domain.ParamKeyAuditWriteTimeout, 5)) * time.Second
-	matchTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyCacheMatchTTL, 300)) * time.Second
-	leaderboardTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyCacheLeaderboardTTL, 60)) * time.Second
+	auditTimeout := time.Duration(params.GetInt(ctx, domain.ParamKeyAuditWriteTimeout, domain.DefaultAuditWriteTimeoutSeconds)) * time.Second
+	matchTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyCacheMatchTTL, domain.DefaultCacheMatchTTLSeconds)) * time.Second
+	leaderboardTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyCacheLeaderboardTTL, domain.DefaultCacheLeaderboardTTLSeconds)) * time.Second
 
 	auditSvc := service.NewAuditService(auditLogRepo, auditTimeout, s.log)
 
@@ -438,16 +413,15 @@ func (s *Server) buildHandlers(
 	// calls from admin handlers are recorded in the audit trail.
 	paramSvcWithAudit := service.NewSystemParamService(sysParamRepo, auditSvc, s.log)
 
-	scorer := service.NewScoringService(matchRepo, predRepo, params, s.log)
 	matchSvc := service.NewMatchService(matchRepo, s.bus, scorer, auditSvc, s.log)
 	if s.cache != nil {
 		matchSvc = service.NewCachedMatchService(matchSvc, s.cache, matchTTL, s.log)
 	}
 
-	predSvc := service.NewPredictionService(predRepo, matchRepo, params, s.log)
+	predSvc := service.NewPredictionService(predRepo, matchRepo, params, clock.Real{}, s.log)
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo, params, auditSvc)
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
-	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, params, auditSvc, paymentSvc, s.log)
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, params, auditSvc, paymentSvc, clock.Real{}, s.log)
 
 	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, params, s.log)
 	if s.cache != nil {

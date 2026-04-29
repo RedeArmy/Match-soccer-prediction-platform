@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -64,24 +65,14 @@ func parseIntParam(s string) (int, error) {
 	return n, nil
 }
 
-// paginationDefaultLimit and paginationMaxLimit are the package-wide defaults
-// for paginated admin endpoints. They match the seed values in system_params
-// (pagination.default_limit / pagination.max_limit) and serve as the fallback
-// for call sites that read from system_params at request time.
-const (
-	paginationDefaultLimit = 50
-	paginationMaxLimit     = 200
-)
-
 // parsePagination reads ?limit and ?page from the request and returns a
 // Pagination value. Defaults: limit=50, page=1. Max limit is capped at 200.
 func parsePagination(r *http.Request) repository.Pagination {
-
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
-		limit = paginationDefaultLimit
-	} else if limit > paginationMaxLimit {
-		limit = paginationMaxLimit
+		limit = domain.DefaultPaginationDefaultLimit
+	} else if limit > domain.DefaultPaginationMaxLimit {
+		limit = domain.DefaultPaginationMaxLimit
 	}
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
