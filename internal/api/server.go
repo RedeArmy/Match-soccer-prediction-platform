@@ -257,17 +257,20 @@ func (s *Server) Routes() http.Handler {
 		})
 
 		// Tiebreaker admin routes: only the system administrator may set the
-		// global question and confirm the result. RequireRole enforces this gate.
+		// global question and confirm the result. RequireRole enforces this gate
+		// and stores the resolved user in context, so no separate ResolveUser
+		// middleware is needed on this subrouter.
 		r.Route("/tiebreaker", func(r chi.Router) {
-			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/question", h.tiebreaker.SetQuestion)
 			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/result", h.tiebreaker.ConfirmResult)
 		})
 
 		// Tournament: real-time standings (all authenticated users) and bracket
-		// slot management (admin only).
+		// slot management (admin only). The GET endpoints do not require a
+		// resolved domain.User. Admin mutations use RequireRole, which now stores
+		// the resolved user in context so ConfirmSlot can read caller.ID without
+		// an extra database query.
 		r.Route("/tournament", func(r chi.Router) {
-			r.Use(middleware.ResolveUser(userRepo, s.log))
 			r.Get("/standings", h.tournament.GetAllStandings)
 			r.Get("/standings/{group}", h.tournament.GetGroupStanding)
 			r.Get("/slots", h.tournament.ListSlots)
@@ -280,11 +283,12 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/me/stats", h.userStats.GetMyStats)
 		})
 
-		// Admin panel — all routes require RoleAdmin. ResolveUser is applied so
-		// handlers can read the caller's domain.User (for audit trail adminID).
+		// Admin panel — all routes require RoleAdmin. RequireRole now stores the
+		// resolved domain.User in context after the role check, so handlers can
+		// call UserFromContext (for audit trail adminID) without a second database
+		// round-trip. No separate ResolveUser middleware is needed.
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin))
-			r.Use(middleware.ResolveUser(userRepo, s.log))
 
 			// Users
 			r.Get(routeUsers, h.adminUser.ListUsers)

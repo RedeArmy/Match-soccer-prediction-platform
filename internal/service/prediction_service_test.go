@@ -20,12 +20,14 @@ const (
 )
 
 // stubPredRepo implements repository.PredictionRepository with configurable returns.
-// byID is returned by GetByID; byUserMatch is returned by GetByUserAndMatch;
-// list is returned by ListByUser and ListByMatch.
+// byID is returned by GetByID; list is returned by ListByUser and ListByMatch.
 // Updated predictions are collected in updated so callers can assert on them.
+// err is returned by Create and other mutating calls; set it to apperrors.Conflict
+// to simulate the unique-constraint violation that the database raises on duplicate
+// submissions (the service no longer does a pre-INSERT existence check).
 type stubPredRepo struct {
 	byID        *domain.Prediction
-	byUserMatch *domain.Prediction
+	byUserMatch *domain.Prediction // returned by GetByUserAndMatch; kept for interface compliance
 	list        []*domain.Prediction
 	err         error
 	updated     []*domain.Prediction
@@ -90,9 +92,9 @@ func (r *stubPredRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, 
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func newPredSvc(match *domain.Match, existingPred *domain.Prediction) PredictionService {
+func newPredSvc(match *domain.Match) PredictionService {
 	matchRepo := &stubMatchRepo{match: match}
-	predRepo := &stubPredRepo{byUserMatch: existingPred}
+	predRepo := &stubPredRepo{}
 	return NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, zap.NewNop())
 }
 
@@ -106,7 +108,7 @@ func openMatch() *domain.Match {
 // ── Submit ────────────────────────────────────────────────────────────────────
 
 func TestSubmit_ValidPrediction_ReturnsNil(t *testing.T) {
-	svc := newPredSvc(openMatch(), nil)
+	svc := newPredSvc(openMatch())
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 2, AwayScore: 1}
 
 	if err := svc.Submit(context.Background(), p); err != nil {
@@ -115,7 +117,7 @@ func TestSubmit_ValidPrediction_ReturnsNil(t *testing.T) {
 }
 
 func TestSubmit_MatchNotFound_ReturnsNotFound(t *testing.T) {
-	svc := newPredSvc(nil, nil) // matchRepo returns nil, nil
+	svc := newPredSvc(nil) // matchRepo returns nil, nil
 	p := &domain.Prediction{UserID: 1, MatchID: 99, HomeScore: 1, AwayScore: 0}
 
 	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrNotFound) {
@@ -128,7 +130,7 @@ func TestSubmit_PastDeadline_ReturnsValidation(t *testing.T) {
 		Status:    domain.MatchStatusScheduled,
 		KickoffAt: time.Now().Add(3 * time.Minute), // inside the 5-min lock window
 	}
-	svc := newPredSvc(match, nil)
+	svc := newPredSvc(match)
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
 
 	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
@@ -141,7 +143,7 @@ func TestSubmit_LiveMatch_ReturnsValidation(t *testing.T) {
 		Status:    domain.MatchStatusLive,
 		KickoffAt: time.Now().Add(30 * time.Minute),
 	}
-	svc := newPredSvc(match, nil)
+	svc := newPredSvc(match)
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
 
 	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
@@ -154,7 +156,7 @@ func TestSubmit_FinishedMatch_ReturnsValidation(t *testing.T) {
 		Status:    domain.MatchStatusFinished,
 		KickoffAt: time.Now().Add(-2 * time.Hour),
 	}
-	svc := newPredSvc(match, nil)
+	svc := newPredSvc(match)
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 0, AwayScore: 0}
 
 	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
@@ -162,9 +164,14 @@ func TestSubmit_FinishedMatch_ReturnsValidation(t *testing.T) {
 	}
 }
 
+// TestSubmit_DuplicatePrediction_ReturnsConflict verifies that the Conflict error
+// surfaced by the repository's unique-constraint handler propagates correctly.
+// The service no longer does a pre-INSERT existence check; atomicity is delegated
+// entirely to the database unique index on (user_id, match_id).
 func TestSubmit_DuplicatePrediction_ReturnsConflict(t *testing.T) {
-	existing := &domain.Prediction{ID: 5, UserID: 1, MatchID: 1}
-	svc := newPredSvc(openMatch(), existing)
+	matchRepo := &stubMatchRepo{match: openMatch()}
+	predRepo := &stubPredRepo{err: apperrors.Conflict("a prediction for this match has already been submitted")}
+	svc := NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, zap.NewNop())
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 2, AwayScore: 0}
 
 	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrConflict) {

@@ -67,19 +67,28 @@ func RequireRole(userRepo repository.UserRepository, log *zap.Logger, roles ...d
 
 func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, log *zap.Logger, roles []domain.UserRole) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		subject, ok := UserIDFromContext(r.Context())
+		// Reuse the domain.User already resolved by ResolveUser middleware when it
+		// ran earlier in the chain, avoiding a redundant database round-trip.
+		user, ok := UserFromContext(r.Context())
 		if !ok {
-			WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
-			return
-		}
-		user, err := userRepo.GetByClerkSubject(r.Context(), subject)
-		if err != nil {
-			WriteError(w, r, log, apperrors.Internal(err))
-			return
-		}
-		if user == nil {
-			WriteError(w, r, log, apperrors.Unauthorised("user account not found; please try again shortly"))
-			return
+			subject, subOk := UserIDFromContext(r.Context())
+			if !subOk {
+				WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
+				return
+			}
+			var err error
+			user, err = userRepo.GetByClerkSubject(r.Context(), subject)
+			if err != nil {
+				WriteError(w, r, log, apperrors.Internal(err))
+				return
+			}
+			if user == nil {
+				WriteError(w, r, log, apperrors.Unauthorised("user account not found; please try again shortly"))
+				return
+			}
+			// Store the resolved user so downstream handlers can call
+			// UserFromContext without issuing another database query.
+			r = r.WithContext(context.WithValue(r.Context(), contextKeyUser, user))
 		}
 		if user.BannedAt != nil {
 			WriteError(w, r, log, apperrors.Forbidden("your account has been suspended"))
@@ -120,8 +129,16 @@ const DefaultJWKSWarmupTimeout = 5 * time.Second
 // (5s) when no system_param override is available.
 func RequireAuth(jwksURL string, warmupTimeout time.Duration, log *zap.Logger) func(http.Handler) http.Handler {
 	if jwksURL == "" {
-		log.Warn("RequireAuth: WCQ_CLERK_JWKSURL is not set — authentication is DISABLED; do not use in production")
-		return func(next http.Handler) http.Handler { return next }
+		// Fail-closed: an unconfigured JWKS endpoint means we cannot verify any
+		// token. Returning a pass-through handler here would open the entire API
+		// to unauthenticated callers, which is never the correct production
+		// behaviour and can mask misconfiguration in staging environments.
+		log.Error("RequireAuth: WCQ_CLERK_JWKSURL is not set — all requests will be rejected; set WCQ_CLERK_JWKSURL")
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				WriteError(w, r, log, apperrors.Unauthorised("authentication is not configured"))
+			})
+		}
 	}
 
 	cache := jwk.NewCache(context.Background())

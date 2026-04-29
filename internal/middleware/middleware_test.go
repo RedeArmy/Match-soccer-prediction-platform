@@ -303,7 +303,10 @@ func TestWriteError_SetsJSONContentType(t *testing.T) {
 
 // ── RequireAuth ───────────────────────────────────────────────────────────────
 
-func TestRequireAuth_EmptyJWKSURL_BypassesAuth(t *testing.T) {
+// TestRequireAuth_EmptyJWKSURL_Returns401 verifies the fail-closed behaviour:
+// when WCQ_CLERK_JWKSURL is not configured, every request is rejected with 401
+// rather than bypassing authentication entirely.
+func TestRequireAuth_EmptyJWKSURL_Returns401(t *testing.T) {
 	log := zaptest.NewLogger(t)
 	reached := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -317,8 +320,11 @@ func TestRequireAuth_EmptyJWKSURL_BypassesAuth(t *testing.T) {
 
 	handler.ServeHTTP(rec, req)
 
-	if !reached {
-		t.Error("expected next handler to be called when JWKS URL is empty")
+	if reached {
+		t.Error("expected next handler NOT to be called when JWKS URL is empty")
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
 	}
 }
 
