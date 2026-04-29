@@ -53,8 +53,9 @@ import (
 // dlqMonitorInterval controls how often the DLQ monitoring goroutine logs
 // the dead-letter queue state. Five minutes is frequent enough to surface a
 // stuck queue within a reasonable SLA without spamming logs during normal
-// operation.
-const dlqMonitorInterval = 5 * time.Minute
+// operation. Declared as a var so tests can reduce it to a short duration
+// without modifying production code.
+var dlqMonitorInterval = 5 * time.Minute
 
 func main() {
 	cfg, err := config.LoadWorker()
@@ -212,10 +213,14 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 
 	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, log)
 
+	// srvErr receives a non-nil value only when the health server exits with an
+	// unexpected error. Buffered so the goroutine never blocks if startWorker
+	// returns before draining the channel (e.g. ctx already cancelled).
+	srvErr := make(chan error, 1)
 	go func() {
 		log.Sugar().Infof("worker health server listening on :%s", deps.cfg.Worker.HealthPort)
 		if err := healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Sugar().Fatalf("health server error: %v", err)
+			srvErr <- err
 		}
 	}()
 
@@ -225,8 +230,16 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	// dlqMonitorInterval of a scoring failure.
 	go monitorDLQ(ctx, deps.rc, log)
 
-	<-ctx.Done()
-	log.Sugar().Info("worker: shutdown signal received, stopping...")
+	var runErr error
+	select {
+	case <-ctx.Done():
+		log.Sugar().Info("worker: shutdown signal received, stopping...")
+	case err := <-srvErr:
+		// Health server failed before a shutdown signal arrived. Log and proceed
+		// to the graceful shutdown path so all defers in run() still execute.
+		log.Sugar().Errorf("worker: health server failed: %v", err)
+		runErr = err
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
@@ -235,7 +248,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		log.Sugar().Errorf("worker: health server shutdown failed: %v", err)
 	}
 	log.Sugar().Info("worker stopped")
-	return nil
+	return runErr
 }
 
 // monitorDLQ runs until ctx is cancelled, periodically logging the size of

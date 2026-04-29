@@ -67,18 +67,8 @@ func RequireRole(userRepo repository.UserRepository, log *zap.Logger, roles ...d
 
 func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, log *zap.Logger, roles []domain.UserRole) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		subject, ok := UserIDFromContext(r.Context())
+		user, r, ok := resolveRequestUser(w, r, userRepo, log)
 		if !ok {
-			WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
-			return
-		}
-		user, err := userRepo.GetByClerkSubject(r.Context(), subject)
-		if err != nil {
-			WriteError(w, r, log, apperrors.Internal(err))
-			return
-		}
-		if user == nil {
-			WriteError(w, r, log, apperrors.Unauthorised("user account not found; please try again shortly"))
 			return
 		}
 		if user.BannedAt != nil {
@@ -93,6 +83,35 @@ func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, l
 		}
 		WriteError(w, r, log, apperrors.Forbidden(apperrors.MsgForbidden))
 	}
+}
+
+// resolveRequestUser returns the domain.User for the current request.
+// It first checks the context (set by ResolveUser or a prior RequireRole call)
+// and falls back to a database lookup via GetByClerkSubject. On any failure it
+// writes the appropriate error response and returns (nil, r, false). On success
+// it returns (user, r, true); when the user was fetched from the database r
+// carries an updated context with the user stored under contextKeyUser so that
+// any downstream middleware or handler can call UserFromContext without a
+// second round-trip.
+func resolveRequestUser(w http.ResponseWriter, r *http.Request, userRepo repository.UserRepository, log *zap.Logger) (*domain.User, *http.Request, bool) {
+	if user, ok := UserFromContext(r.Context()); ok {
+		return user, r, true
+	}
+	subject, ok := UserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
+		return nil, r, false
+	}
+	user, err := userRepo.GetByClerkSubject(r.Context(), subject)
+	if err != nil {
+		WriteError(w, r, log, apperrors.Internal(err))
+		return nil, r, false
+	}
+	if user == nil {
+		WriteError(w, r, log, apperrors.Unauthorised(msgUserNotSynced))
+		return nil, r, false
+	}
+	return user, r.WithContext(context.WithValue(r.Context(), contextKeyUser, user)), true
 }
 
 // RequireAuth returns a middleware that validates the Clerk JWT present in
@@ -120,8 +139,16 @@ const DefaultJWKSWarmupTimeout = 5 * time.Second
 // (5s) when no system_param override is available.
 func RequireAuth(jwksURL string, warmupTimeout time.Duration, log *zap.Logger) func(http.Handler) http.Handler {
 	if jwksURL == "" {
-		log.Warn("RequireAuth: WCQ_CLERK_JWKSURL is not set — authentication is DISABLED; do not use in production")
-		return func(next http.Handler) http.Handler { return next }
+		// Fail-closed: an unconfigured JWKS endpoint means we cannot verify any
+		// token. Returning a pass-through handler here would open the entire API
+		// to unauthenticated callers, which is never the correct production
+		// behaviour and can mask misconfiguration in staging environments.
+		log.Error("RequireAuth: WCQ_CLERK_JWKSURL is not set — all requests will be rejected; set WCQ_CLERK_JWKSURL")
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				WriteError(w, r, log, apperrors.Unauthorised("authentication is not configured"))
+			})
+		}
 	}
 
 	cache := jwk.NewCache(context.Background())
