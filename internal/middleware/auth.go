@@ -67,28 +67,9 @@ func RequireRole(userRepo repository.UserRepository, log *zap.Logger, roles ...d
 
 func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, log *zap.Logger, roles []domain.UserRole) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Reuse the domain.User already resolved by ResolveUser middleware when it
-		// ran earlier in the chain, avoiding a redundant database round-trip.
-		user, ok := UserFromContext(r.Context())
+		user, r, ok := resolveRequestUser(w, r, userRepo, log)
 		if !ok {
-			subject, subOk := UserIDFromContext(r.Context())
-			if !subOk {
-				WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
-				return
-			}
-			var err error
-			user, err = userRepo.GetByClerkSubject(r.Context(), subject)
-			if err != nil {
-				WriteError(w, r, log, apperrors.Internal(err))
-				return
-			}
-			if user == nil {
-				WriteError(w, r, log, apperrors.Unauthorised("user account not found; please try again shortly"))
-				return
-			}
-			// Store the resolved user so downstream handlers can call
-			// UserFromContext without issuing another database query.
-			r = r.WithContext(context.WithValue(r.Context(), contextKeyUser, user))
+			return
 		}
 		if user.BannedAt != nil {
 			WriteError(w, r, log, apperrors.Forbidden("your account has been suspended"))
@@ -102,6 +83,35 @@ func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, l
 		}
 		WriteError(w, r, log, apperrors.Forbidden(apperrors.MsgForbidden))
 	}
+}
+
+// resolveRequestUser returns the domain.User for the current request.
+// It first checks the context (set by ResolveUser or a prior RequireRole call)
+// and falls back to a database lookup via GetByClerkSubject. On any failure it
+// writes the appropriate error response and returns (nil, r, false). On success
+// it returns (user, r, true); when the user was fetched from the database r
+// carries an updated context with the user stored under contextKeyUser so that
+// any downstream middleware or handler can call UserFromContext without a
+// second round-trip.
+func resolveRequestUser(w http.ResponseWriter, r *http.Request, userRepo repository.UserRepository, log *zap.Logger) (*domain.User, *http.Request, bool) {
+	if user, ok := UserFromContext(r.Context()); ok {
+		return user, r, true
+	}
+	subject, ok := UserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
+		return nil, r, false
+	}
+	user, err := userRepo.GetByClerkSubject(r.Context(), subject)
+	if err != nil {
+		WriteError(w, r, log, apperrors.Internal(err))
+		return nil, r, false
+	}
+	if user == nil {
+		WriteError(w, r, log, apperrors.Unauthorised(msgUserNotSynced))
+		return nil, r, false
+	}
+	return user, r.WithContext(context.WithValue(r.Context(), contextKeyUser, user)), true
 }
 
 // RequireAuth returns a middleware that validates the Clerk JWT present in
