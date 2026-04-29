@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -166,9 +165,13 @@ func (h *AdminUserHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req banRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Reason == "" {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[banRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	if req.Reason == "" {
+		middleware.WriteError(w, r, h.log, apperrors.Validation("reason is required"))
 		return
 	}
 
@@ -253,13 +256,13 @@ func (h *AdminUserHandler) BulkBan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req bulkBanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[bulkBanRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	if len(req.UserIDs) == 0 || req.Reason == "" {
-		middleware.WriteError(w, r, h.log, decodeError(nil))
+		middleware.WriteError(w, r, h.log, apperrors.Validation("user_ids and reason are required"))
 		return
 	}
 

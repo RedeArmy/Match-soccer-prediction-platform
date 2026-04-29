@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -83,9 +82,9 @@ func (h *TournamentHandler) CreateSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req createSlotRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[createSlotRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 
@@ -112,9 +111,9 @@ func (h *TournamentHandler) ConfirmSlot(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var req confirmSlotRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[confirmSlotRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 

@@ -93,6 +93,23 @@ func TestValidation_SetsFields(t *testing.T) {
 	}
 }
 
+func TestBadRequest_SetsFields(t *testing.T) {
+	err := apperrors.BadRequest("invalid webhook signature")
+
+	if err.Code != apperrors.CodeBadRequest {
+		t.Errorf(fmtCode, apperrors.CodeBadRequest, err.Code)
+	}
+	if err.Message != "invalid webhook signature" {
+		t.Errorf("Message: expected %q, got %q", "invalid webhook signature", err.Message)
+	}
+	if err.HTTPStatus != http.StatusBadRequest {
+		t.Errorf(fmtHTTPStatus, http.StatusBadRequest, err.HTTPStatus)
+	}
+	if err.Cause != nil {
+		t.Errorf("Cause: expected nil, got %v", err.Cause)
+	}
+}
+
 func TestInternal_SetsFieldsAndStoredCause(t *testing.T) {
 	cause := errors.New("pgx: connection refused")
 	err := apperrors.Internal(cause)

@@ -13,7 +13,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // MatchHandler handles HTTP requests for the /api/v1/matches resource.
@@ -131,9 +131,9 @@ func (h *MatchHandler) GetMatch(w http.ResponseWriter, r *http.Request) {
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/matches [post]
 func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
-	var req createMatchRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[createMatchRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	match := &domain.Match{
@@ -171,13 +171,13 @@ func (h *MatchHandler) UpdateResult(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	var req updateResultRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[updateResultRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	if req.HomeScore == nil || req.AwayScore == nil {
-		middleware.WriteError(w, r, h.log, decodeError(nil))
+		middleware.WriteError(w, r, h.log, apperrors.Validation("request body is missing required fields"))
 		return
 	}
 	match, err := h.svc.UpdateResult(r.Context(), id, *req.HomeScore, *req.AwayScore)

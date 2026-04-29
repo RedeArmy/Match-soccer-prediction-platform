@@ -46,6 +46,13 @@ const (
 	// Maps to HTTP 413 Request Entity Too Large.
 	CodeRequestBodyTooLarge Code = "REQUEST_BODY_TOO_LARGE"
 
+	// CodeBadRequest indicates that the server cannot process the request due
+	// to a client-side protocol error — for example, an invalid webhook
+	// signature or a malformed HMAC header. Unlike CodeValidation (422), this
+	// code is used when the failure occurs at the transport/security layer
+	// before business logic is reached. Maps to HTTP 400 Bad Request.
+	CodeBadRequest Code = "BAD_REQUEST"
+
 	// CodeInternal indicates an unexpected server-side failure. The cause is
 	// logged internally but never forwarded to the client, as it may contain
 	// sensitive infrastructure details (database errors, stack traces, etc.).

@@ -79,6 +79,7 @@ var (
 	ErrConflict            = &AppError{Code: CodeConflict}
 	ErrValidation          = &AppError{Code: CodeValidation}
 	ErrRequestBodyTooLarge = &AppError{Code: CodeRequestBodyTooLarge}
+	ErrBadRequest          = &AppError{Code: CodeBadRequest}
 	ErrInternal            = &AppError{Code: CodeInternal}
 )
 
@@ -170,6 +171,19 @@ func RequestBodyTooLarge() *AppError {
 		Code:       CodeRequestBodyTooLarge,
 		Message:    MsgRequestBodyTooLarge,
 		HTTPStatus: http.StatusRequestEntityTooLarge,
+	}
+}
+
+// BadRequest returns an AppError indicating that the server cannot process
+// the request due to a client-side protocol error. Use this for structural
+// failures at the transport or security layer — for example, a missing or
+// invalid webhook signature — that occur before business logic is reached.
+// For domain-level input failures use Validation instead.
+func BadRequest(message string) *AppError {
+	return &AppError{
+		Code:       CodeBadRequest,
+		Message:    message,
+		HTTPStatus: http.StatusBadRequest,
 	}
 }
 
