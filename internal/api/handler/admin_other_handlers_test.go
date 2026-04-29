@@ -188,6 +188,30 @@ func TestAdminTransferOwnership_InvalidNewOwner_Returns422(t *testing.T) {
 	}
 }
 
+func TestAdminUpdateGroupSettings_BadJSON_Returns422(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPatch, adminOtherPathGroups1Settings, `not-json`),
+		adminCaller,
+	)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminTransferOwnership_BadJSON_Returns422(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminOtherPathGroups1Transfer, `not-json`),
+		adminCaller,
+	)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
 // ── AdminPaymentHandler ───────────────────────────────────────────────────────
 
 func newAdminPaymentRouter(svc *stubAdminPaymentSvc) http.Handler {
@@ -283,6 +307,18 @@ func TestAdminRejectDeposit_MissingNotes_Returns422(t *testing.T) {
 	svc := &stubAdminPaymentSvc{}
 	req := withCaller(
 		newAdminRequestJSON(http.MethodPost, "/payments/1/reject", `{"notes":""}`),
+		adminCaller,
+	)
+	w := doReq(newAdminPaymentRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminRejectDeposit_BadJSON_Returns422(t *testing.T) {
+	svc := &stubAdminPaymentSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, "/payments/1/reject", `not-json`),
 		adminCaller,
 	)
 	w := doReq(newAdminPaymentRouter(svc), req)
@@ -592,6 +628,18 @@ func TestAdminParamBulkSet_Success_Returns204(t *testing.T) {
 	}
 }
 
+func TestAdminParamBulkSet_BadJSON_Returns422(t *testing.T) {
+	svc := &stubAdminParamSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminOtherPathSysParamsBulk, `not-json`),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
 func TestAdminParamBulkSet_EmptyParams_Returns422(t *testing.T) {
 	svc := &stubAdminParamSvc{}
 	req := withCaller(
@@ -781,6 +829,15 @@ func TestAdminBulkDeleteGroups_NoCallerInContext_Returns401(t *testing.T) {
 	}
 }
 
+func TestAdminBulkDeleteGroups_BadJSON_Returns422(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroupsBulkDelete, `not-json`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
 func TestAdminBulkDeleteGroups_EmptyIDs_Returns422(t *testing.T) {
 	svc := &stubAdminGroupSvc{}
 	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroupsBulkDelete, `{"group_ids":[]}`), adminCaller)
@@ -829,6 +886,15 @@ func TestAdminBulkRemoveMembers_NoCallerInContext_Returns401(t *testing.T) {
 	w := do(newAdminGroupRouter(svc), http.MethodPost, adminOtherPathGroups1BulkRemove, `{"membership_ids":[10]}`)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminBulkRemoveMembers_BadJSON_Returns422(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroups1BulkRemove, `not-json`), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 

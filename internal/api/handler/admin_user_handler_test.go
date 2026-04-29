@@ -132,6 +132,18 @@ func TestAdminBanUser_NoCallerInContext_Returns401(t *testing.T) {
 	}
 }
 
+func TestAdminBanUser_BadJSON_Returns422(t *testing.T) {
+	svc := &stubAdminUserSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminUserPathBan, `not-json`),
+		adminCaller,
+	)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
 func TestAdminBanUser_EmptyReason_Returns422(t *testing.T) {
 	svc := &stubAdminUserSvc{}
 	req := withCaller(
@@ -245,6 +257,18 @@ func TestAdminBulkBan_NoCallerInContext_Returns401(t *testing.T) {
 	w := do(newAdminUserRouter(svc), http.MethodPost, adminUserPathBulkBan, `{"user_ids":[1],"reason":"x"}`)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminBulkBan_BadJSON_Returns422(t *testing.T) {
+	svc := &stubAdminUserSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminUserPathBulkBan, `not-json`),
+		adminCaller,
+	)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }
 

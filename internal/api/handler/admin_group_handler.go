@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -150,9 +149,9 @@ func (h *AdminGroupHandler) UpdateGroupSettings(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var req updateGroupSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[updateGroupSettingsRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	if req.EntryFee == nil {
@@ -205,9 +204,13 @@ func (h *AdminGroupHandler) TransferOwnership(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	var req transferOwnershipRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewOwnerUserID <= 0 {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[transferOwnershipRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
+		return
+	}
+	if req.NewOwnerUserID <= 0 {
+		middleware.WriteError(w, r, h.log, apperrors.Validation("new_owner_user_id is required"))
 		return
 	}
 
@@ -249,9 +252,9 @@ func (h *AdminGroupHandler) BulkDeleteGroups(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var req bulkGroupIDsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[bulkGroupIDsRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, maxBulkItemsDefault)
@@ -314,9 +317,9 @@ func (h *AdminGroupHandler) BulkRemoveMembers(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	var req bulkMemberIDsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[bulkMemberIDsRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, maxBulkItemsDefault)

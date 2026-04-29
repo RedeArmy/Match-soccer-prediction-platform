@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -62,9 +61,9 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req submitPredictionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[submitPredictionRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 
@@ -110,9 +109,9 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	var req updatePredictionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[updatePredictionRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	prediction, err := h.svc.Update(r.Context(), caller.ID, id, req.HomeScore, req.AwayScore)

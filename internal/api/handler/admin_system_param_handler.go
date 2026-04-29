@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -124,9 +123,9 @@ func (h *AdminSystemParamHandler) Set(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req setParamRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[setParamRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 
@@ -167,9 +166,9 @@ func (h *AdminSystemParamHandler) BulkSet(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var req bulkSetParamRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[bulkSetParamRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	if len(req.Params) == 0 {

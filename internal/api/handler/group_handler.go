@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -72,9 +71,9 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req createGroupRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[createGroupRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 
@@ -145,9 +144,9 @@ func (h *GroupHandler) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req joinGroupRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[joinGroupRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	if req.InviteCode == "" {
@@ -309,9 +308,9 @@ func (h *GroupHandler) RenameGroup(w http.ResponseWriter, r *http.Request) {
 		middleware.WriteError(w, r, h.log, err)
 		return
 	}
-	var req renameGroupRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.WriteError(w, r, h.log, decodeError(err))
+	req, err := decodeJSON[renameGroupRequest](r)
+	if err != nil {
+		middleware.WriteError(w, r, h.log, err)
 		return
 	}
 	quiniela, err := h.quinielaSvc.RenameGroup(r.Context(), id, caller.ID, req.Name)
