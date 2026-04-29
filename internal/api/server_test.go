@@ -151,10 +151,18 @@ func TestHealthEndpoint_OnlyAcceptsGET(t *testing.T) {
 	}
 }
 
+// TestUnknownRoute_Returns404 verifies that chi returns 404 for API paths that
+// are not registered in the route table. A real JWKS server is used so that
+// RequireAuth validates the Bearer token; without this, the fail-closed auth
+// middleware would return 401 before chi can report 404.
 func TestUnknownRoute_Returns404(t *testing.T) {
-	handler := newTestServer(t).Routes()
+	jwksURL, signJWT := testJWKSServer(t)
+	cfg := &config.Config{}
+	cfg.Clerk.JWKSURL = jwksURL
+	handler := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/does-not-exist", nil)
+	req.Header.Set("Authorization", "Bearer "+signJWT("test"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -165,9 +173,17 @@ func TestUnknownRoute_Returns404(t *testing.T) {
 
 // ── nil db — known routes return 503, unknown return 404 ─────────────────────
 
+// TestRoutes_DBNil_MatchRoute_Returns503 verifies that known routes return 503
+// when the database pool is nil. A real JWKS server is used so that
+// RequireAuth validates the token before the request reaches the route handler.
 func TestRoutes_DBNil_MatchRoute_Returns503(t *testing.T) {
-	h := newTestServer(t).Routes()
+	jwksURL, signJWT := testJWKSServer(t)
+	cfg := &config.Config{}
+	cfg.Clerk.JWKSURL = jwksURL
+	h := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes()
+
 	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
+	req.Header.Set("Authorization", "Bearer "+signJWT("test"))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -176,9 +192,16 @@ func TestRoutes_DBNil_MatchRoute_Returns503(t *testing.T) {
 	}
 }
 
+// TestRoutes_DBNil_PredictionRoute_Returns503 mirrors TestRoutes_DBNil_MatchRoute_Returns503
+// for the /predictions resource path.
 func TestRoutes_DBNil_PredictionRoute_Returns503(t *testing.T) {
-	h := newTestServer(t).Routes()
+	jwksURL, signJWT := testJWKSServer(t)
+	cfg := &config.Config{}
+	cfg.Clerk.JWKSURL = jwksURL
+	h := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes()
+
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions", nil)
+	req.Header.Set("Authorization", "Bearer "+signJWT("test"))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 

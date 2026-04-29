@@ -9,7 +9,6 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/api"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 )
 
@@ -74,8 +73,9 @@ var allAdminRoutes = []adminRoute{
 
 // newAdminTestServer builds a Server with a fake (unreachable) database pool
 // so the full route table — including all /admin/* paths — is registered.
-// The empty Config leaves JWKS URL blank, which disables RequireAuth and
-// makes the auth middleware a passthrough for integration test purposes.
+// The empty Config leaves JWKS URL blank, which causes RequireAuth to reject
+// all requests with 401 (fail-closed). Tests that need to exercise the chain
+// past the auth check should use newAdminTestServerWithAuth instead.
 func newAdminTestServer(t *testing.T) *api.Server {
 	t.Helper()
 	return api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
@@ -87,14 +87,21 @@ func newAdminTestServer(t *testing.T) *api.Server {
 // /predictions, /groups, /users); every /admin/* path falls through to chi's
 // built-in 404 handler.
 //
-// This guards against accidental changes that would make admin endpoints
-// reachable without a real database connection.
+// A real JWKS server is used so that RequireAuth can validate the bearer token
+// and forward the request to the route table. Without a valid token, RequireAuth
+// would short-circuit with 401 before chi can report 404.
 func TestAdminRoutes_NilDB_Returns404(t *testing.T) {
-	h := newTestServer(t).Routes() // nil DB
+	jwksURL, signJWT := testJWKSServer(t)
+	cfg := &config.Config{}
+	cfg.Clerk.JWKSURL = jwksURL
+
+	h := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes()
+	token := "Bearer " + signJWT("test-subject")
 
 	for _, tc := range allAdminRoutes {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.Header.Set("Authorization", token)
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 
@@ -105,17 +112,11 @@ func TestAdminRoutes_NilDB_Returns404(t *testing.T) {
 	}
 }
 
-// TestAdminRoutes_Unauthenticated_Return401 verifies two things for every admin
-// endpoint:
-//
-//  1. The route is registered — a 404 response indicates it was never wired.
-//  2. The RequireRole middleware rejects requests with no user ID in context.
-//
-// The server is built with a non-nil fake pool so the full route table is
-// wired. RequireAuth is disabled (empty JWKS URL), so the missing userID in
-// context is caught by RequireRole — the first middleware on the admin
-// sub-router — which returns 401. This mirrors the production behaviour: a
-// caller without a valid JWT never reaches any admin handler.
+// TestAdminRoutes_Unauthenticated_Return401 verifies that every admin endpoint
+// rejects requests that carry no Bearer token. With fail-closed RequireAuth,
+// any missing or invalid JWT is stopped at the auth layer before reaching the
+// route handler, so the response is always 401 and never 404 (which would
+// indicate the route was not registered).
 func TestAdminRoutes_Unauthenticated_Return401(t *testing.T) {
 	h := newAdminTestServer(t).Routes()
 
@@ -136,22 +137,23 @@ func TestAdminRoutes_Unauthenticated_Return401(t *testing.T) {
 }
 
 // TestAdminRoutes_AuthenticatedUser_DBUnavailable_Returns500 verifies that once
-// a request carries a user ID in context (simulating a passed RequireAuth
-// check), RequireRole advances to the database-lookup phase. The fake pool is
-// unreachable, so GetByClerkSubject fails with a connection error, and the
-// middleware responds with 500.
+// a request carries a valid Bearer token, RequireRole advances past the JWT
+// check to the database-lookup phase. The fake pool is unreachable, so
+// GetByClerkSubject fails with a connection error and the middleware responds
+// with 500.
 //
-// This confirms the middleware chain is wired correctly past the initial
-// userID-presence check: after authentication, RequireRole always performs a
-// live database lookup to verify the caller's role before forwarding to any
-// admin handler.
+// A real JWKS server is used here so that RequireAuth can validate the token.
+// Previously this test relied on an empty JWKS URL bypassing auth entirely
+// (fail-open), which is the anti-pattern this change removes.
 func TestAdminRoutes_AuthenticatedUser_DBUnavailable_Returns500(t *testing.T) {
-	h := newAdminTestServer(t).Routes()
+	jwksURL, signJWT := testJWKSServer(t)
+	h := newAdminTestServerWithAuth(t, jwksURL).Routes()
+	token := "Bearer " + signJWT("clerk_fake_subject")
 
 	for _, tc := range allAdminRoutes {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)
-			req = req.WithContext(middleware.ContextWithUserID(req.Context(), "clerk_fake_subject"))
+			req.Header.Set("Authorization", token)
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 

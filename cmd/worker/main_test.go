@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -335,10 +336,83 @@ func TestBuildHealthCheckers_ReturnsCheckerForEachEventType(t *testing.T) {
 
 // ── monitorDLQ ────────────────────────────────────────────────────────────────
 
+func TestStartWorker_HealthServerFails_ReturnsError(t *testing.T) {
+	// Pre-occupy a port so the health-server goroutine inside startWorker fails
+	// with EADDRINUSE, which sends a non-nil error to srvErr and causes
+	// startWorker to return that error instead of waiting for ctx cancellation.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer ln.Close()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+
+	cfg := &config.Config{Worker: config.WorkerConfig{HealthPort: port}}
+	bus := messaging.NewInMemoryBus(zap.NewNop())
+
+	err = startWorker(context.Background(), workerDeps{cfg: cfg, bus: bus, scorer: &stubScorer{}}, zap.NewNop())
+	if err == nil {
+		t.Fatal("expected error when health server cannot bind, got nil")
+	}
+}
+
 func TestMonitorDLQ_NilClient_ReturnsImmediately(t *testing.T) {
 	// The nil-client guard prevents a panic when the worker is started without
 	// a Redis connection (e.g. unit tests). Verifies the guard fires correctly.
 	monitorDLQ(context.Background(), nil, zap.NewNop())
+}
+
+func TestMonitorDLQ_NonEmptyQueue_LogsError(t *testing.T) {
+	// Seed a DLQ key with one item so the n > 0 branch inside the ticker case
+	// is reached, then cancel the context to stop the loop.
+	mr := miniredis.RunT(t)
+	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rc.Close() //nolint:errcheck
+
+	dlqKey := "dlq:" + string(events.EventMatchStarted)
+	if _, err := mr.Lpush(dlqKey, "payload"); err != nil {
+		t.Fatalf("seed DLQ: %v", err)
+	}
+
+	dlqMonitorInterval = time.Millisecond
+	t.Cleanup(func() { dlqMonitorInterval = 5 * time.Minute })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		monitorDLQ(ctx, rc, zap.NewNop())
+		close(done)
+	}()
+
+	// Give the ticker enough time to fire at least once, then stop.
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+}
+
+func TestMonitorDLQ_EmptyQueue_LogsDebug(t *testing.T) {
+	// Empty DLQs exercise the else branch (debug-level log).
+	mr := miniredis.RunT(t)
+	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rc.Close() //nolint:errcheck
+
+	dlqMonitorInterval = time.Millisecond
+	t.Cleanup(func() { dlqMonitorInterval = 5 * time.Minute })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		monitorDLQ(ctx, rc, zap.NewNop())
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
 }
 
 func TestMonitorDLQ_CancelledContext_ReturnsWithoutTick(t *testing.T) {

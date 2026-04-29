@@ -51,9 +51,10 @@ func (s *predictionService) deadlineOffset(ctx context.Context) time.Duration {
 //     of the scheduled kickoff time, closing the race window that exists when
 //     an admin calls StartMatch before the time-based deadline expires.
 //
-// A uniqueness check (one prediction per user per match) is enforced before
-// the INSERT so that callers receive a Conflict error rather than a database
-// unique-constraint violation.
+// Uniqueness (one prediction per user per match) is enforced atomically by the
+// database unique index on (user_id, match_id). A Conflict error is surfaced
+// to the caller when the constraint fires, avoiding the check-then-act race
+// that a pre-INSERT SELECT would introduce.
 func (s *predictionService) Submit(ctx context.Context, prediction *domain.Prediction) error {
 	match, err := s.matchRepo.GetByID(ctx, prediction.MatchID)
 	if err != nil {
@@ -67,13 +68,6 @@ func (s *predictionService) Submit(ctx context.Context, prediction *domain.Predi
 	}
 	if err := domain.ValidatePrediction(prediction, match.KickoffAt, time.Now().UTC(), s.deadlineOffset(ctx)); err != nil {
 		return err
-	}
-	existing, err := s.predRepo.GetByUserAndMatch(ctx, prediction.UserID, prediction.MatchID)
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		return apperrors.Conflict("a prediction for this match has already been submitted")
 	}
 	return s.predRepo.Create(ctx, prediction)
 }
