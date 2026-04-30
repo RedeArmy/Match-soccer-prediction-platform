@@ -172,8 +172,8 @@ func TestQuinielaService_Create_SetsInviteCode(t *testing.T) {
 	if q.InviteCode == "" {
 		t.Error("expected InviteCode to be set after Create")
 	}
-	if len(q.InviteCode) != inviteCodeLength {
-		t.Errorf("expected invite code length %d, got %d", inviteCodeLength, len(q.InviteCode))
+	if len(q.InviteCode) != domain.DefaultGroupInviteCodeLength {
+		t.Errorf("expected invite code length %d, got %d", domain.DefaultGroupInviteCodeLength, len(q.InviteCode))
 	}
 }
 

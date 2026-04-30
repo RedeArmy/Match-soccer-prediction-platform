@@ -16,7 +16,6 @@ import (
 // digits with visually similar characters removed (0/O, 1/I/L) so codes are
 // easy to read aloud or type from a screenshot.
 const inviteCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-const inviteCodeLength = 10
 
 // quinielaService is the concrete implementation of QuinielaService.
 type quinielaService struct {
@@ -56,7 +55,7 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 		return err
 	}
 
-	length := s.params.GetInt(ctx, domain.ParamKeyGroupInviteCodeLength, inviteCodeLength)
+	length := s.params.GetInt(ctx, domain.ParamKeyGroupInviteCodeLength, domain.DefaultGroupInviteCodeLength)
 	code, err := generateInviteCode(length)
 	if err != nil {
 		return apperrors.Internal(err)

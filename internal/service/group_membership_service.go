@@ -2,13 +2,13 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/clock"
 )
 
 // groupMembershipService is the concrete implementation of GroupMembershipService.
@@ -18,6 +18,7 @@ type groupMembershipService struct {
 	params       SystemParamService
 	audit        AuditLogger
 	paymentSvc   PaymentService
+	clock        clock.Nower
 	log          *zap.Logger
 }
 
@@ -28,6 +29,7 @@ func NewGroupMembershipService(
 	params SystemParamService,
 	audit AuditLogger,
 	paymentSvc PaymentService,
+	clk clock.Nower,
 	log *zap.Logger,
 ) GroupMembershipService {
 	return &groupMembershipService{
@@ -36,6 +38,7 @@ func NewGroupMembershipService(
 		params:       params,
 		audit:        audit,
 		paymentSvc:   paymentSvc,
+		clock:        clk,
 		log:          log,
 	}
 }
@@ -177,7 +180,7 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 	}
 
 	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
-	m, err := s.memberRepo.ApproveMembership(ctx, membershipID, quinielaID, time.Now().UTC(), minMembers)
+	m, err := s.memberRepo.ApproveMembership(ctx, membershipID, quinielaID, s.clock.Now(), minMembers)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +218,7 @@ func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUs
 	}
 
 	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
-	return s.memberRepo.LeaveMembership(ctx, quinielaID, callerUserID, time.Now().UTC(), minMembers)
+	return s.memberRepo.LeaveMembership(ctx, quinielaID, callerUserID, s.clock.Now(), minMembers)
 }
 
 // transferOwnership assigns MembershipRoleCreateOwner to the oldest active

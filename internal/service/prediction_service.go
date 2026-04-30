@@ -10,6 +10,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/clock"
 )
 
 // predictionService is the concrete implementation of PredictionService.
@@ -17,6 +18,7 @@ type predictionService struct {
 	predRepo  repository.PredictionRepository
 	matchRepo repository.MatchRepository
 	params    SystemParamService
+	clock     clock.Nower
 	log       *zap.Logger
 }
 
@@ -25,12 +27,14 @@ func NewPredictionService(
 	predRepo repository.PredictionRepository,
 	matchRepo repository.MatchRepository,
 	params SystemParamService,
+	clk clock.Nower,
 	log *zap.Logger,
 ) PredictionService {
 	return &predictionService{
 		predRepo:  predRepo,
 		matchRepo: matchRepo,
 		params:    params,
+		clock:     clk,
 		log:       log,
 	}
 }
@@ -66,7 +70,7 @@ func (s *predictionService) Submit(ctx context.Context, prediction *domain.Predi
 	if match.Status != domain.MatchStatusScheduled {
 		return apperrors.Validation("cannot predict on a match that has already started")
 	}
-	if err := domain.ValidatePrediction(prediction, match.KickoffAt, time.Now().UTC(), s.deadlineOffset(ctx)); err != nil {
+	if err := domain.ValidatePrediction(prediction, match.KickoffAt, s.clock.Now(), s.deadlineOffset(ctx)); err != nil {
 		return err
 	}
 	return s.predRepo.Create(ctx, prediction)
@@ -102,7 +106,7 @@ func (s *predictionService) Update(ctx context.Context, callerUserID, id int, ho
 		HomeScore: homeScore,
 		AwayScore: awayScore,
 	}
-	if err := domain.ValidatePrediction(updated, match.KickoffAt, time.Now().UTC(), s.deadlineOffset(ctx)); err != nil {
+	if err := domain.ValidatePrediction(updated, match.KickoffAt, s.clock.Now(), s.deadlineOffset(ctx)); err != nil {
 		return nil, err
 	}
 	pred.HomeScore = homeScore

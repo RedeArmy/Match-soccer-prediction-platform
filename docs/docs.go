@@ -3048,71 +3048,6 @@ const docTemplate = `{
             }
         },
         "/api/v1/predictions": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns all predictions submitted by a specific user. The caller",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "predictions"
-                ],
-                "summary": "List predictions by user",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Internal user ID",
-                        "name": "user_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Scope results to this quiniela's active members",
-                        "name": "quiniela_id",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/internal_api_handler.PredictionResponse"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid auth token",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Caller requested another user's predictions",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "Missing or invalid user_id / quiniela_id",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    }
-                }
-            },
             "post": {
                 "security": [
                     {
@@ -3162,6 +3097,60 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/predictions/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all predictions submitted by the authenticated caller.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "predictions"
+                ],
+                "summary": "List my predictions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Scope results to this quiniela's active members",
+                        "name": "quiniela_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.PredictionResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid auth token",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid quiniela_id",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }

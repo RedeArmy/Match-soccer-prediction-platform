@@ -8,13 +8,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/service"
-)
-
-const (
-	defaultDLQSampleSize         = 5
-	defaultDLQReplayDefaultLimit = 10
 )
 
 // RedisDLQService implements service.DLQService against the Redis lists used by
@@ -34,10 +30,10 @@ type RedisDLQService struct {
 // eventTypes must match the full set of EventType constants used by RedisBus.
 func NewRedisDLQService(client *redis.Client, eventTypes []events.EventType, sampleSize, replayDefaultLimit int, log *zap.Logger) *RedisDLQService {
 	if sampleSize <= 0 {
-		sampleSize = defaultDLQSampleSize
+		sampleSize = domain.DefaultDLQSampleSize
 	}
 	if replayDefaultLimit <= 0 {
-		replayDefaultLimit = defaultDLQReplayDefaultLimit
+		replayDefaultLimit = domain.DefaultDLQReplayDefaultLimit
 	}
 	return &RedisDLQService{
 		client:             client,
