@@ -18,7 +18,7 @@ type predictionService struct {
 	predRepo  repository.PredictionRepository
 	matchRepo repository.MatchRepository
 	params    SystemParamService
-	clock     clock.Clock
+	clock     clock.Nower
 	log       *zap.Logger
 }
 
@@ -27,7 +27,7 @@ func NewPredictionService(
 	predRepo repository.PredictionRepository,
 	matchRepo repository.MatchRepository,
 	params SystemParamService,
-	clk clock.Clock,
+	clk clock.Nower,
 	log *zap.Logger,
 ) PredictionService {
 	return &predictionService{

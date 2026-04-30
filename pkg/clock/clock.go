@@ -2,8 +2,8 @@ package clock
 
 import "time"
 
-// Clock abstracts wall-clock access for testability and determinism.
-type Clock interface {
+// Nower abstracts wall-clock access for testability and determinism.
+type Nower interface {
 	Now() time.Time
 }
 

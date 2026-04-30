@@ -44,6 +44,17 @@ const (
 	routeUsers       = "/users"
 )
 
+// coreRepos bundles the five shared repository instances constructed once in
+// Routes and forwarded to buildHandlers. Grouping them reduces the parameter
+// count and makes future additions a single-field change.
+type coreRepos struct {
+	user     repository.UserRepository
+	match    repository.MatchRepository
+	pred     repository.PredictionRepository
+	member   repository.GroupMembershipRepository
+	sysParam repository.SystemParamRepository
+}
+
 // appHandlers groups every route handler constructed by buildHandlers into a
 // single value so the function signature stays manageable as new handlers are
 // added. Fields are intentionally unexported — they are only accessed within
@@ -168,13 +179,15 @@ func (s *Server) Routes() http.Handler {
 
 	// Construct repository instances once and share them across the event bus,
 	// webhook handler, and API handler layers.
-	userRepo := repository.NewPostgresUserRepository(s.db)
-	matchRepo := repository.NewPostgresMatchRepository(s.db)
-	predRepo := repository.NewPostgresPredictionRepository(s.db)
-	memberRepo := repository.NewPostgresGroupMembershipRepository(s.db)
-	systemParamRepo := repository.NewPostgresSystemParamRepository(s.db)
+	repos := coreRepos{
+		user:     repository.NewPostgresUserRepository(s.db),
+		match:    repository.NewPostgresMatchRepository(s.db),
+		pred:     repository.NewPostgresPredictionRepository(s.db),
+		member:   repository.NewPostgresGroupMembershipRepository(s.db),
+		sysParam: repository.NewPostgresSystemParamRepository(s.db),
+	}
 
-	paramSvc := service.NewSystemParamService(systemParamRepo, nil, s.log)
+	paramSvc := service.NewSystemParamService(repos.sysParam, nil, s.log)
 
 	// Read infrastructure params once at startup. Changes require a process
 	// restart (is_runtime=FALSE in system_params). Use context.Background()
@@ -191,15 +204,15 @@ func (s *Server) Routes() http.Handler {
 	// match service both use the same stateless scoring logic. With the redis
 	// driver, the worker process owns all event consumption; the API server
 	// only publishes, so local subscription is skipped.
-	scorer := service.NewScoringService(matchRepo, predRepo, paramSvc, s.log)
+	scorer := service.NewScoringService(repos.match, repos.pred, paramSvc, s.log)
 	if s.cfg.EventBus.Driver != "redis" {
 		s.registerLocalSubscribers(scorer)
 	}
-	h := s.buildHandlers(infraCtx, userRepo, matchRepo, predRepo, memberRepo, systemParamRepo, paramSvc, scorer)
+	h := s.buildHandlers(infraCtx, repos, paramSvc, scorer)
 
 	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
-	clerkSyncer := service.NewClerkUserSyncService(userRepo, s.log)
+	clerkSyncer := service.NewClerkUserSyncService(repos.user, s.log)
 	webhookHandler := handler.NewWebhookHandler(clerkSyncer, s.cfg.Clerk.WebhookSecret, s.log)
 	r.Post("/webhooks/clerk", webhookHandler.HandleClerkWebhook)
 
@@ -213,9 +226,9 @@ func (s *Server) Routes() http.Handler {
 		r.Route("/matches", func(r chi.Router) {
 			r.Get("/", h.match.ListMatches)
 			r.Get("/{id}", h.match.GetMatch)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/", h.match.CreateMatch)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/{id}", h.match.UpdateResult)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/{id}/start", h.match.StartMatch)
+			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Post("/", h.match.CreateMatch)
+			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Patch("/{id}", h.match.UpdateResult)
+			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Post("/{id}/start", h.match.StartMatch)
 		})
 
 		// ResolveUser is applied at the subrouter level so all prediction and
@@ -225,14 +238,14 @@ func (s *Server) Routes() http.Handler {
 		// indexed lookup (clerk_subject) is negligible compared to the handler
 		// work that follows.
 		r.Route(routePredictions, func(r chi.Router) {
-			r.Use(middleware.ResolveUser(userRepo, s.log))
+			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Post("/", h.prediction.Submit)
 			r.Get("/me", h.prediction.GetMine)
 			r.Patch("/{id}", h.prediction.Update)
 		})
 
 		r.Route("/groups", func(r chi.Router) {
-			r.Use(middleware.ResolveUser(userRepo, s.log))
+			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Post("/", h.group.Create)
 			r.Post("/join", h.group.Join)
 			r.Get("/me", h.group.ListMyGroups)
@@ -258,8 +271,8 @@ func (s *Server) Routes() http.Handler {
 		// and stores the resolved user in context, so no separate ResolveUser
 		// middleware is needed on this subrouter.
 		r.Route("/tiebreaker", func(r chi.Router) {
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/question", h.tiebreaker.SetQuestion)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/result", h.tiebreaker.ConfirmResult)
+			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Patch("/question", h.tiebreaker.SetQuestion)
+			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Patch("/result", h.tiebreaker.ConfirmResult)
 		})
 
 		// Tournament: real-time standings (all authenticated users) and bracket
@@ -271,12 +284,12 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/standings", h.tournament.GetAllStandings)
 			r.Get("/standings/{group}", h.tournament.GetGroupStanding)
 			r.Get("/slots", h.tournament.ListSlots)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Post("/slots", h.tournament.CreateSlot)
-			r.With(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin)).Patch("/slots/{id}", h.tournament.ConfirmSlot)
+			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Post("/slots", h.tournament.CreateSlot)
+			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Patch("/slots/{id}", h.tournament.ConfirmSlot)
 		})
 
 		r.Route(routeUsers, func(r chi.Router) {
-			r.Use(middleware.ResolveUser(userRepo, s.log))
+			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Get("/me/stats", h.userStats.GetMyStats)
 		})
 
@@ -285,7 +298,7 @@ func (s *Server) Routes() http.Handler {
 		// call UserFromContext (for audit trail adminID) without a second database
 		// round-trip. No separate ResolveUser middleware is needed.
 		r.Route("/admin", func(r chi.Router) {
-			r.Use(middleware.RequireRole(userRepo, s.log, domain.RoleAdmin))
+			r.Use(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin))
 
 			// Users
 			r.Get(routeUsers, h.adminUser.ListUsers)
@@ -384,11 +397,7 @@ func (s *Server) registerLocalSubscribers(scorer service.MatchScorer) {
 // cache decorators.
 func (s *Server) buildHandlers(
 	ctx context.Context,
-	userRepo repository.UserRepository,
-	matchRepo repository.MatchRepository,
-	predRepo repository.PredictionRepository,
-	memberRepo repository.GroupMembershipRepository,
-	sysParamRepo repository.SystemParamRepository,
+	repos coreRepos,
 	params service.SystemParamService,
 	scorer service.MatchScorer,
 ) appHandlers {
@@ -411,34 +420,34 @@ func (s *Server) buildHandlers(
 
 	// Re-wire paramSvc with the now-available audit service so that Set/BulkSet
 	// calls from admin handlers are recorded in the audit trail.
-	paramSvcWithAudit := service.NewSystemParamService(sysParamRepo, auditSvc, s.log)
+	paramSvcWithAudit := service.NewSystemParamService(repos.sysParam, auditSvc, s.log)
 
-	matchSvc := service.NewMatchService(matchRepo, s.bus, scorer, auditSvc, s.log)
+	matchSvc := service.NewMatchService(repos.match, s.bus, scorer, auditSvc, s.log)
 	if s.cache != nil {
 		matchSvc = service.NewCachedMatchService(matchSvc, s.cache, matchTTL, s.log)
 	}
 
-	predSvc := service.NewPredictionService(predRepo, matchRepo, params, clock.Real{}, s.log)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo, memberRepo, params, auditSvc)
+	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.Real{}, s.log)
+	quinielaSvc := service.NewQuinielaService(quinielaRepo, repos.member, params, auditSvc)
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
-	memberSvc := service.NewGroupMembershipService(quinielaRepo, memberRepo, params, auditSvc, paymentSvc, clock.Real{}, s.log)
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, clock.Real{}, s.log)
 
-	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, params, s.log)
+	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, tiebreakerRepo, tiebreakerConfigRepo, params, s.log)
 	if s.cache != nil {
 		ranker = service.NewCachedRankingService(ranker, s.cache, leaderboardTTL, s.log)
 	}
 
-	userStatsSvc := service.NewUserStatsService(predRepo)
-	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, memberRepo, tiebreakerRepo, auditSvc, s.log)
-	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, params, auditSvc, s.log)
+	userStatsSvc := service.NewUserStatsService(repos.pred)
+	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, repos.member, tiebreakerRepo, auditSvc, s.log)
+	tournamentSvc := service.NewTournamentService(repos.match, tournamentRepo, params, auditSvc, s.log)
 	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
-	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, memberRepo, snapshotter, auditSvc, s.log)
-	adminUserSvc := service.NewAdminUserService(userRepo, memberRepo, paymentRepo, auditSvc, s.log)
+	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, repos.member, snapshotter, auditSvc, s.log)
+	adminUserSvc := service.NewAdminUserService(repos.user, repos.member, paymentRepo, auditSvc, s.log)
 	adminReadSvc := service.NewAdminReadService(
-		service.AdminReadRepos{Pred: predRepo, User: userRepo, Quiniela: quinielaRepo, Payment: paymentRepo, Tiebreaker: tiebreakerRepo, Snapshot: snapRepo},
+		service.AdminReadRepos{Pred: repos.pred, User: repos.user, Quiniela: quinielaRepo, Payment: paymentRepo, Tiebreaker: tiebreakerRepo, Snapshot: snapRepo},
 		params, s.log,
 	)
-	conflictSvc := service.NewConflictService(quinielaRepo, memberRepo, paymentRepo, params, auditSvc, s.log)
+	conflictSvc := service.NewConflictService(quinielaRepo, repos.member, paymentRepo, params, auditSvc, s.log)
 
 	dlqSvc := s.dlqSvc
 	if dlqSvc == nil {

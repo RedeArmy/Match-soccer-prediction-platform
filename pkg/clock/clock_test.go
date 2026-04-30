@@ -42,6 +42,6 @@ func TestFrozen_NowIsStable(t *testing.T) {
 }
 
 func TestClockInterface_Satisfied(t *testing.T) {
-	var _ clock.Clock = clock.Real{}
-	var _ clock.Clock = clock.Frozen{}
+	var _ clock.Nower = clock.Real{}
+	var _ clock.Nower = clock.Frozen{}
 }

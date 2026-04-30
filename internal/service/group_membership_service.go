@@ -18,7 +18,7 @@ type groupMembershipService struct {
 	params       SystemParamService
 	audit        AuditLogger
 	paymentSvc   PaymentService
-	clock        clock.Clock
+	clock        clock.Nower
 	log          *zap.Logger
 }
 
@@ -29,7 +29,7 @@ func NewGroupMembershipService(
 	params SystemParamService,
 	audit AuditLogger,
 	paymentSvc PaymentService,
-	clk clock.Clock,
+	clk clock.Nower,
 	log *zap.Logger,
 ) GroupMembershipService {
 	return &groupMembershipService{
