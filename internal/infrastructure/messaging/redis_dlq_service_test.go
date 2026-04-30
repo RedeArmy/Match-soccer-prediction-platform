@@ -10,6 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 )
 
@@ -111,19 +112,19 @@ func TestRedisDLQService_Replay_MovesEntriesToStream(t *testing.T) {
 func TestNewRedisDLQService_DefaultsWhenZeroOrNegative(t *testing.T) {
 	_, client := newTestRedisClient(t)
 	svc := NewRedisDLQService(client, nil, 0, 0, zap.NewNop())
-	if svc.sampleSize != defaultDLQSampleSize {
-		t.Errorf("sampleSize: want %d, got %d", defaultDLQSampleSize, svc.sampleSize)
+	if svc.sampleSize != domain.DefaultDLQSampleSize {
+		t.Errorf("sampleSize: want %d, got %d", domain.DefaultDLQSampleSize, svc.sampleSize)
 	}
-	if svc.replayDefaultLimit != defaultDLQReplayDefaultLimit {
-		t.Errorf("replayDefaultLimit: want %d, got %d", defaultDLQReplayDefaultLimit, svc.replayDefaultLimit)
+	if svc.replayDefaultLimit != domain.DefaultDLQReplayDefaultLimit {
+		t.Errorf("replayDefaultLimit: want %d, got %d", domain.DefaultDLQReplayDefaultLimit, svc.replayDefaultLimit)
 	}
 
 	svc2 := NewRedisDLQService(client, nil, -1, -1, zap.NewNop())
-	if svc2.sampleSize != defaultDLQSampleSize {
-		t.Errorf("sampleSize (negative): want %d, got %d", defaultDLQSampleSize, svc2.sampleSize)
+	if svc2.sampleSize != domain.DefaultDLQSampleSize {
+		t.Errorf("sampleSize (negative): want %d, got %d", domain.DefaultDLQSampleSize, svc2.sampleSize)
 	}
-	if svc2.replayDefaultLimit != defaultDLQReplayDefaultLimit {
-		t.Errorf("replayDefaultLimit (negative): want %d, got %d", defaultDLQReplayDefaultLimit, svc2.replayDefaultLimit)
+	if svc2.replayDefaultLimit != domain.DefaultDLQReplayDefaultLimit {
+		t.Errorf("replayDefaultLimit (negative): want %d, got %d", domain.DefaultDLQReplayDefaultLimit, svc2.replayDefaultLimit)
 	}
 }
 

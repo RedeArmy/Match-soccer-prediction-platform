@@ -45,8 +45,8 @@ func NewAdminLeaderboardHandler(svc service.AdminReadService, params service.Sys
 // @Router       /api/v1/admin/leaderboard [get]
 func (h *AdminLeaderboardHandler) GlobalLeaderboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	defaultLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationDefaultLimit, paginationDefaultLimit)
-	maxLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationMaxLimit, paginationMaxLimit)
+	defaultLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationDefaultLimit, domain.DefaultPaginationDefaultLimit)
+	maxLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationMaxLimit, domain.DefaultPaginationMaxLimit)
 	limit := defaultLimit
 	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= maxLimit {
 		limit = l
@@ -99,8 +99,8 @@ func (h *AdminLeaderboardHandler) SnapshotHistory(w http.ResponseWriter, r *http
 	}
 
 	ctx := r.Context()
-	defaultLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationDefaultLimit, paginationDefaultLimit)
-	maxLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationMaxLimit, paginationMaxLimit)
+	defaultLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationDefaultLimit, domain.DefaultPaginationDefaultLimit)
+	maxLimit := h.params.GetInt(ctx, domain.ParamKeyPaginationMaxLimit, domain.DefaultPaginationMaxLimit)
 	limit := defaultLimit
 	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= maxLimit {
 		limit = l

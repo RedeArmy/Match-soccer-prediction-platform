@@ -81,16 +81,15 @@ func newAdminTestServer(t *testing.T) *api.Server {
 	return api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
 }
 
-// TestAdminRoutes_NilDB_Returns404 verifies that admin routes are absent from
-// the chi route table when the database pool is nil. The server registers only
-// a minimal stub table for the four known non-admin prefixes (/matches,
-// /predictions, /groups, /users); every /admin/* path falls through to chi's
-// built-in 404 handler.
+// TestAdminRoutes_NilDB_Returns503 verifies that all admin routes return 503
+// when the database pool is nil. The server registers a wildcard catch-all
+// under /api/v1 so that every known and unknown path returns a consistent
+// "database unavailable" error rather than chi's built-in 404, which would
+// incorrectly imply the endpoint does not exist.
 //
 // A real JWKS server is used so that RequireAuth can validate the bearer token
-// and forward the request to the route table. Without a valid token, RequireAuth
-// would short-circuit with 401 before chi can report 404.
-func TestAdminRoutes_NilDB_Returns404(t *testing.T) {
+// and forward the request past the auth layer.
+func TestAdminRoutes_NilDB_Returns503(t *testing.T) {
 	jwksURL, signJWT := testJWKSServer(t)
 	cfg := &config.Config{}
 	cfg.Clerk.JWKSURL = jwksURL
@@ -105,8 +104,8 @@ func TestAdminRoutes_NilDB_Returns404(t *testing.T) {
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 
-			if rec.Code != http.StatusNotFound {
-				t.Errorf("expected 404 (route absent without DB), got %d", rec.Code)
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("expected 500 (db unavailable), got %d", rec.Code)
 			}
 		})
 	}

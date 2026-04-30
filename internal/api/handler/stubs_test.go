@@ -41,13 +41,13 @@ func (r *stubUserRepo) GetStatusCounts(_ context.Context) (repository.UserStatus
 }
 
 const (
-	fmtExpect200     = "expected 200, got %d"
-	fmtExpect204     = "expected 204, got %d"
-	fmtExpect400     = "expected 400, got %d"
-	fmtExpect401     = "expected 401, got %d"
-	fmtExpect422     = "expected 422, got %d"
-	fmtExpect500     = "expected 500, got %d"
-	urlListByUserID1 = "/?user_id=1"
+	fmtExpect200        = "expected 200, got %d"
+	fmtExpect204        = "expected 204, got %d"
+	fmtExpect400        = "expected 400, got %d"
+	fmtExpect401        = "expected 401, got %d"
+	fmtExpect422        = "expected 422, got %d"
+	fmtExpect500        = "expected 500, got %d"
+	urlGetMyPredictions = "/me"
 
 	homeTeam = "Brazil"
 	awayTeam = "Argentina"
