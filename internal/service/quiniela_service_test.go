@@ -9,6 +9,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/codegen"
 )
 
 const (
@@ -150,7 +151,7 @@ func (r *stubMemberRepo) LeaveMembership(_ context.Context, _, _ int, _ time.Tim
 // ── QuinielaService tests ─────────────────────────────────────────────────────
 
 func newQuinielaSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) QuinielaService {
-	return NewQuinielaService(qr, mr, &noopSystemParamService{}, &noopAuditLogger{})
+	return NewQuinielaService(qr, mr, &noopSystemParamService{}, &noopAuditLogger{}, codegen.Fixed{Code: "AAAAAAAAAA"})
 }
 
 func TestQuinielaService_Create_ValidQuiniela_ReturnsNil(t *testing.T) {

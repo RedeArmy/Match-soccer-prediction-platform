@@ -100,7 +100,7 @@ func (s *adminUserService) BulkBan(ctx context.Context, userIDs []int, adminID i
 
 // transferOwnedGroups finds all quinielas where userID is the CreateOwner and
 // transfers each to the oldest active member. Groups with no other active
-// member are left without a CreateOwner — the group itself is unchanged.
+// member are left without a CreateOwner - the group itself is unchanged.
 func (s *adminUserService) transferOwnedGroups(ctx context.Context, userID int) error {
 	memberships, err := s.memberRepo.ListByUser(ctx, userID)
 	if err != nil {

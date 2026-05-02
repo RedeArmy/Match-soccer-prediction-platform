@@ -156,7 +156,7 @@ func (s *groupMembershipService) requestRejoin(ctx context.Context, m *domain.Gr
 }
 
 // ApproveJoin promotes a pending membership to active. The approverUserID must
-// be an active member of the same quiniela — any member may approve; there is
+// be an active member of the same quiniela - any member may approve; there is
 // no admin-only gate. The membership update and group status recalculation are
 // committed atomically via ApproveMembership.
 func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, membershipID, approverUserID int) (*domain.GroupMembership, error) {
@@ -194,7 +194,7 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 }
 
 // Leave sets the caller's own membership to left. Only the member themselves
-// may call this — no admin or owner can remove another user. If the leaving
+// may call this - no admin or owner can remove another user. If the leaving
 // user holds MembershipRoleCreateOwner, ownership is automatically transferred
 // to the oldest remaining active member before the status is updated. The
 // membership update and group status recalculation are committed atomically
@@ -237,7 +237,7 @@ func (s *groupMembershipService) transferOwnership(ctx context.Context, quiniela
 
 // MarkPaid flips the paid flag to true for the given membership. It is
 // intended to be called by the payment system after a successful transaction
-// — never from an HTTP handler directly.
+// - never from an HTTP handler directly.
 func (s *groupMembershipService) MarkPaid(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error) {
 	m, err := s.memberRepo.MarkPaid(ctx, quinielaID, userID)
 	if err != nil {

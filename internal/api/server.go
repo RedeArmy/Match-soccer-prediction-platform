@@ -35,6 +35,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
+	"github.com/rede/world-cup-quiniela/pkg/codegen"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
 )
@@ -55,10 +56,7 @@ type coreRepos struct {
 	sysParam repository.SystemParamRepository
 }
 
-// appHandlers groups every route handler constructed by buildHandlers into a
-// single value so the function signature stays manageable as new handlers are
-// added. Fields are intentionally unexported — they are only accessed within
-// the Routes method of the same package.
+// appHandlers groups all route handlers; fields are unexported and used only within Routes.
 type appHandlers struct {
 	match            *handler.MatchHandler
 	prediction       *handler.PredictionHandler
@@ -90,18 +88,12 @@ type Server struct {
 	db  *pgxpool.Pool
 	cfg *config.Config
 	log *zap.Logger
-	// bus is the event bus used to publish and receive domain events.
-	// The implementation is selected at startup via WCQ_EVENTBUS_DRIVER:
-	//   "in_memory" — InMemoryBus, safe for single-replica / local dev.
-	//   "redis"     — RedisBus, required for multi-replica production deployments.
+	// bus publishes and receives domain events; driver selected via WCQ_EVENTBUS_DRIVER.
 	bus events.Bus
-	// cache is the optional key-value store used to cache list responses and
-	// leaderboard results. When nil (e.g. Redis is not configured), caching is
-	// disabled and every request hits the database directly.
+	// cache is optional; nil disables caching and all requests hit the database directly.
 	cache    cache.Store
 	checkers []health.Checker
-	// dlqSvc is nil when EventBus.Driver != "redis". Admin DLQ endpoints
-	// delegate to service.NoopDLQService when this field is nil.
+	// dlqSvc is nil when the event bus driver is not "redis"; admin DLQ endpoints use NoopDLQService.
 	dlqSvc service.DLQService
 }
 
@@ -144,14 +136,14 @@ func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger, bus events.Bus, 
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 
-	// Global middleware — applied to every request.
+	// Global middleware - applied to every request.
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.Recover(s.log))
 	r.Use(middleware.RequestLogger(s.log))
 	r.Use(middleware.CORS(s.cfg.CORS.AllowedOrigins))
 
-	// Infrastructure endpoints — not versioned, no authentication required.
+	// Infrastructure endpoints - not versioned, no authentication required.
 	r.Get("/health", s.handleHealth)
 	r.Get("/health/ready", s.handleReadiness)
 	r.Get("/swagger/*", httpSwagger.Handler(
@@ -210,7 +202,7 @@ func (s *Server) Routes() http.Handler {
 	}
 	h := s.buildHandlers(infraCtx, repos, paramSvc, scorer)
 
-	// Webhook endpoint — authenticated via Svix signature, not Clerk JWT.
+	// Webhook endpoint - authenticated via Svix signature, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
 	clerkSyncer := service.NewClerkUserSyncService(repos.user, s.log)
 	webhookHandler := handler.NewWebhookHandler(clerkSyncer, s.cfg.Clerk.WebhookSecret, s.log)
@@ -218,7 +210,7 @@ func (s *Server) Routes() http.Handler {
 
 	// Versioned API surface with Clerk JWT authentication.
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(middleware.RequestBodyLimit(64 * 1024)) // 64 KB — all API payloads are small JSON objects
+		r.Use(middleware.RequestBodyLimit(64 * 1024)) // 64 KB - all API payloads are small JSON objects
 		r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, authWarmup, s.log))
 
 		// Admin-only match mutations are guarded by RequireRole. Read endpoints
@@ -251,13 +243,13 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/me", h.group.ListMyGroups)
 			r.Get("/{id}", h.group.GetByID)
 			// Only the CreateOwner (MembershipRoleCreateOwner) may rename the group.
-			// Ownership is enforced inside the service layer — not via RequireRole
+			// Ownership is enforced inside the service layer - not via RequireRole
 			// because it is resource-scoped, not system-role-scoped.
 			r.Patch("/{id}", h.group.RenameGroup)
 			r.Get("/{id}/members", h.group.ListMembers)
 			r.Get("/{id}/leaderboard", h.leaderboard.GetLeaderboard)
 			// Any active member may approve a pending join request. The service
-			// layer enforces the membership check — no role-based middleware needed.
+			// layer enforces the membership check - no role-based middleware needed.
 			r.Post("/{id}/members/{membershipID}/approve", h.group.ApproveJoin)
 			// Self-removal only: a user removes themselves from the group.
 			r.Delete("/{id}/members/me", h.group.Leave)
@@ -293,7 +285,7 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/me/stats", h.userStats.GetMyStats)
 		})
 
-		// Admin panel — all routes require RoleAdmin. RequireRole now stores the
+		// Admin panel - all routes require RoleAdmin. RequireRole now stores the
 		// resolved domain.User in context after the role check, so handlers can
 		// call UserFromContext (for audit trail adminID) without a second database
 		// round-trip. No separate ResolveUser middleware is needed.
@@ -365,7 +357,7 @@ func (s *Server) Routes() http.Handler {
 // registerLocalSubscribers wires domain event handlers onto the in-process bus.
 // It is only called when EventBus.Driver != "redis"; with the Redis driver, the
 // worker process owns all event consumption exclusively and the API server only
-// publishes. scorer is passed in — not re-constructed here — so the same
+// publishes. scorer is passed in - not re-constructed here - so the same
 // stateless scoring instance is shared with the match service.
 func (s *Server) registerLocalSubscribers(scorer service.MatchScorer) {
 	s.bus.Subscribe(events.EventMatchFinished, func(ctx context.Context, env events.Envelope) error {
@@ -428,7 +420,7 @@ func (s *Server) buildHandlers(
 	}
 
 	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.Real{}, s.log)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo, repos.member, params, auditSvc)
+	quinielaSvc := service.NewQuinielaService(quinielaRepo, repos.member, params, auditSvc, codegen.Crypto{})
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, clock.Real{}, s.log)
 

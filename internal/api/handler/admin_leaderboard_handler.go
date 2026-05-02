@@ -8,7 +8,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -26,7 +25,7 @@ func NewAdminLeaderboardHandler(svc service.AdminReadService, params service.Sys
 	return &AdminLeaderboardHandler{svc: svc, params: params, log: log}
 }
 
-// GlobalLeaderboard handles GET /admin/leaderboard — top N users by total points across all groups.
+// GlobalLeaderboard handles GET /admin/leaderboard - top N users by total points across all groups.
 //
 // @Summary      Global leaderboard
 // @Description  Returns the top N users ranked by total scored points across all
@@ -54,7 +53,7 @@ func (h *AdminLeaderboardHandler) GlobalLeaderboard(w http.ResponseWriter, r *ht
 
 	entries, err := h.svc.GlobalLeaderboard(r.Context(), limit)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -94,7 +93,7 @@ func (h *AdminLeaderboardHandler) GlobalLeaderboard(w http.ResponseWriter, r *ht
 func (h *AdminLeaderboardHandler) SnapshotHistory(w http.ResponseWriter, r *http.Request) {
 	groupID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || groupID <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid group id"))
+		writeError(w, r, h.log, apperrors.Validation("invalid group id"))
 		return
 	}
 
@@ -108,7 +107,7 @@ func (h *AdminLeaderboardHandler) SnapshotHistory(w http.ResponseWriter, r *http
 
 	snapshots, err := h.svc.ListSnapshotHistory(r.Context(), groupID, limit)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -119,7 +118,7 @@ func (h *AdminLeaderboardHandler) SnapshotHistory(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, data)
 }
 
-// ListPredictions handles GET /admin/predictions — all predictions with optional filters.
+// ListPredictions handles GET /admin/predictions - all predictions with optional filters.
 //
 // @Summary      List all predictions
 // @Description  Returns a paginated list of predictions across all users and groups.
@@ -150,7 +149,7 @@ func (h *AdminLeaderboardHandler) ListPredictions(w http.ResponseWriter, r *http
 
 	predictions, err := h.svc.ListPredictions(r.Context(), f, p)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -187,7 +186,7 @@ func (h *AdminLeaderboardHandler) ListPredictions(w http.ResponseWriter, r *http
 func (h *AdminLeaderboardHandler) ListPredictionsByMatch(w http.ResponseWriter, r *http.Request) {
 	matchID, err := strconv.Atoi(chi.URLParam(r, "matchID"))
 	if err != nil || matchID <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid match id"))
+		writeError(w, r, h.log, apperrors.Validation("invalid match id"))
 		return
 	}
 
@@ -196,7 +195,7 @@ func (h *AdminLeaderboardHandler) ListPredictionsByMatch(w http.ResponseWriter, 
 
 	predictions, err := h.svc.ListPredictions(r.Context(), f, p)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
