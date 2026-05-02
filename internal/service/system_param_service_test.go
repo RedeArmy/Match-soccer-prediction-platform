@@ -307,6 +307,51 @@ func TestValidateParamValue_StringType_AlwaysValid(t *testing.T) {
 	}
 }
 
+// ── validateParamConstraints ─────────────────────────────────────────────────
+
+func TestValidateParamConstraints_OutOfRange_ReturnsError(t *testing.T) {
+	// scoring.exact_score range is [1, 100]; 0 is below min.
+	if err := validateParamConstraints(domain.ParamKeyScoringExactScore, "0", domain.SystemParamTypeInt); err == nil {
+		t.Error("expected error for value below min, got nil")
+	}
+	// scoring.exact_score range is [1, 100]; 101 is above max.
+	if err := validateParamConstraints(domain.ParamKeyScoringExactScore, "101", domain.SystemParamTypeInt); err == nil {
+		t.Error("expected error for value above max, got nil")
+	}
+}
+
+func TestValidateParamConstraints_InRange_ReturnsNil(t *testing.T) {
+	if err := validateParamConstraints(domain.ParamKeyScoringExactScore, "5", domain.SystemParamTypeInt); err != nil {
+		t.Errorf("unexpected error for in-range value: %v", err)
+	}
+}
+
+func TestValidateParamConstraints_NonIntType_ReturnsNil(t *testing.T) {
+	if err := validateParamConstraints("any.key", "not-checked", domain.SystemParamTypeString); err != nil {
+		t.Errorf("unexpected error for non-int type: %v", err)
+	}
+}
+
+func TestValidateParamConstraints_UnknownKey_ReturnsNil(t *testing.T) {
+	// Keys not in paramIntConstraints accept any parseable integer.
+	if err := validateParamConstraints("unknown.key", "99999", domain.SystemParamTypeInt); err != nil {
+		t.Errorf("unexpected error for unknown key: %v", err)
+	}
+}
+
+// ── Set: range validation via validateValueForKey ─────────────────────────────
+
+func TestSystemParamService_Set_OutOfRange_ReturnsValidationError(t *testing.T) {
+	// scoring.exact_score is int with range [1, 100]; value 0 must be rejected.
+	repo := &stubSystemParamRepo{param: typedParam(domain.ParamKeyScoringExactScore, "5", domain.SystemParamTypeInt)}
+	svc := newParamSvc(repo)
+
+	_, err := svc.Set(context.Background(), domain.ParamKeyScoringExactScore, "0", 1)
+	if err == nil {
+		t.Fatal("expected validation error for out-of-range value, got nil")
+	}
+}
+
 // ── BulkSet ───────────────────────────────────────────────────────────────────
 
 func typedParam(key, value string, typ domain.SystemParamType) *domain.SystemParam {
