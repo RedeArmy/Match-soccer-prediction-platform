@@ -5,7 +5,7 @@
 // external consumer (package api_test) and interact only through the
 // public API (api.New, *Server.Routes). This mirrors how the application
 // is used in production and catches integration issues that unit tests of
-// individual handlers would miss — for example, a middleware that intercepts
+// individual handlers would miss - for example, a middleware that intercepts
 // all requests and short-circuits a handler unexpectedly.
 //
 // The database pool is passed as nil in all tests below. Handlers that
@@ -166,7 +166,7 @@ func TestUnknownRoute_Returns404(t *testing.T) {
 	}
 }
 
-// ── nil db — known routes return 503, unknown return 404 ─────────────────────
+// ── nil db - known routes return 503, unknown return 404 ─────────────────────
 
 // TestRoutes_DBNil_MatchRoute_Returns503 verifies that known routes return 503
 // when the database pool is nil. A real JWKS server is used so that
@@ -265,7 +265,7 @@ func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
 		Payload:    events.MatchFinished{MatchID: 1, HomeTeam: "Brazil", AwayTeam: "Argentina"},
 	}
 	// ScoreMatch will fail (fake pool, no real DB); handler returns the error,
-	// bus retries and eventually dead-letters — none of this must panic.
+	// bus retries and eventually dead-letters - none of this must panic.
 	_ = bus.Publish(context.Background(), env)
 }
 

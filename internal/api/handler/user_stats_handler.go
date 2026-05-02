@@ -43,13 +43,13 @@ func NewUserStatsHandler(svc service.MyStatsGetter, log *zap.Logger) *UserStatsH
 func (h *UserStatsHandler) GetMyStats(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	stats, err := h.svc.GetMyStats(r.Context(), caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 

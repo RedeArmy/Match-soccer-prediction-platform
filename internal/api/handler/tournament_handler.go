@@ -36,7 +36,7 @@ type confirmSlotRequest struct {
 func (h *TournamentHandler) GetAllStandings(w http.ResponseWriter, r *http.Request) {
 	standings, err := h.svc.GetAllStandings(r.Context())
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, allStandingsToResponse(standings))
@@ -48,7 +48,7 @@ func (h *TournamentHandler) GetGroupStanding(w http.ResponseWriter, r *http.Requ
 	group := chi.URLParam(r, "group")
 	entries, err := h.svc.GetGroupStanding(r.Context(), group)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	rows := make([]GroupStandingResponse, len(entries))
@@ -63,7 +63,7 @@ func (h *TournamentHandler) GetGroupStanding(w http.ResponseWriter, r *http.Requ
 func (h *TournamentHandler) ListSlots(w http.ResponseWriter, r *http.Request) {
 	slots, err := h.svc.ListSlots(r.Context())
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	resp := make([]TournamentSlotResponse, len(slots))
@@ -78,19 +78,19 @@ func (h *TournamentHandler) ListSlots(w http.ResponseWriter, r *http.Request) {
 func (h *TournamentHandler) CreateSlot(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[createSlotRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	slot, err := h.svc.CreateSlot(r.Context(), req.Label)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, slotToResponse(slot))
@@ -101,25 +101,25 @@ func (h *TournamentHandler) CreateSlot(w http.ResponseWriter, r *http.Request) {
 func (h *TournamentHandler) ConfirmSlot(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	req, err := decodeJSON[confirmSlotRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	slot, err := h.svc.ConfirmSlot(r.Context(), id, caller.ID, req.Team)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, slotToResponse(slot))

@@ -39,10 +39,10 @@ func testTiebreakerRouter(h *handler.TiebreakerHandler, user *domain.User) http.
 			})
 		})
 	}
-	// Admin routes — no group ID required.
+	// Admin routes - no group ID required.
 	r.Patch("/tiebreaker/question", h.SetQuestion)
 	r.Patch("/tiebreaker/result", h.ConfirmResult)
-	// Member routes — scoped to a specific group.
+	// Member routes - scoped to a specific group.
 	r.Route("/groups/{id}", func(r chi.Router) {
 		r.Post("/tiebreaker", h.Submit)
 		r.Get("/tiebreaker", h.GetMine)

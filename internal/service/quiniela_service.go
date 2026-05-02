@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"strings"
 	"time"
@@ -10,12 +9,8 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/codegen"
 )
-
-// inviteCodeAlphabet uses an unambiguous character set: uppercase letters and
-// digits with visually similar characters removed (0/O, 1/I/L) so codes are
-// easy to read aloud or type from a screenshot.
-const inviteCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 // quinielaService is the concrete implementation of QuinielaService.
 type quinielaService struct {
@@ -23,28 +18,15 @@ type quinielaService struct {
 	memberRepo repository.GroupMembershipRepository
 	params     SystemParamService
 	audit      AuditLogger
+	codeGen    codegen.Generator
 }
 
 // NewQuinielaService constructs a quinielaService with the given dependencies.
 // memberRepo is required to verify group ownership in RenameGroup.
 // params is used to read group.invite_code_length at runtime.
 // audit records rename operations in the audit trail.
-func NewQuinielaService(repo repository.QuinielaRepository, memberRepo repository.GroupMembershipRepository, params SystemParamService, audit AuditLogger) QuinielaService {
-	return &quinielaService{repo: repo, memberRepo: memberRepo, params: params, audit: audit}
-}
-
-// generateInviteCode returns a cryptographically random invite code of length
-// characters drawn from inviteCodeAlphabet.
-func generateInviteCode(length int) (string, error) {
-	b := make([]byte, length)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate invite code: %w", err)
-	}
-	result := make([]byte, length)
-	for i, v := range b {
-		result[i] = inviteCodeAlphabet[int(v)%len(inviteCodeAlphabet)]
-	}
-	return string(result), nil
+func NewQuinielaService(repo repository.QuinielaRepository, memberRepo repository.GroupMembershipRepository, params SystemParamService, audit AuditLogger, codeGen codegen.Generator) QuinielaService {
+	return &quinielaService{repo: repo, memberRepo: memberRepo, params: params, audit: audit, codeGen: codeGen}
 }
 
 func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela) error {
@@ -56,7 +38,7 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 	}
 
 	length := s.params.GetInt(ctx, domain.ParamKeyGroupInviteCodeLength, domain.DefaultGroupInviteCodeLength)
-	code, err := generateInviteCode(length)
+	code, err := s.codeGen.Generate(length)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
@@ -73,7 +55,7 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 	}
 
 	// The owner is the CreateOwner (MembershipRoleCreateOwner) and becomes an active
-	// member immediately — no approval required. Marked as paid for free groups;
+	// member immediately - no approval required. Marked as paid for free groups;
 	// for paid groups the payment system will flip paid=true after confirmation.
 	// Both writes are wrapped in a single transaction via CreateWithMembership.
 	now := time.Now().UTC()

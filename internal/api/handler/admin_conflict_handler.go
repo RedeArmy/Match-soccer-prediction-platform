@@ -45,7 +45,7 @@ func NewAdminConflictHandler(svc service.ConflictService, log *zap.Logger) *Admi
 func (h *AdminConflictHandler) ConflictSummary(w http.ResponseWriter, r *http.Request) {
 	summary, err := h.svc.ConflictSummary(r.Context())
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -63,13 +63,13 @@ func (h *AdminConflictHandler) ConflictSummary(w http.ResponseWriter, r *http.Re
 	})
 }
 
-// ListConflicts handles GET /admin/conflicts — paginated detected conflicts.
+// ListConflicts handles GET /admin/conflicts - paginated detected conflicts.
 //
 // @Summary      List operational conflicts
 // @Description  Returns currently detected operational inconsistencies that
 //
 //	require administrative attention. Conflicts are computed on demand
-//	and are not persisted — they reflect the live database state.
+//	and are not persisted - they reflect the live database state.
 //	Categories include groups without an owner, stale pending payments,
 //	and stale pending memberships. Supports ?page and ?limit. Requires admin role.
 //
@@ -90,7 +90,7 @@ func (h *AdminConflictHandler) ListConflicts(w http.ResponseWriter, r *http.Requ
 		Offset: p.Offset,
 	})
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -114,7 +114,7 @@ type resolveConflictRequest struct {
 // @Summary      Resolve a conflict
 // @Description  Records an admin acknowledgement of the given conflict. This does
 //
-//	not fix the underlying data issue — it marks the conflict as
+//	not fix the underlying data issue - it marks the conflict as
 //	reviewed and records an audit log entry. The conflict will
 //	reappear in ListConflicts until the root cause is corrected.
 //	An optional note can be provided for the audit trail. Requires admin role.
@@ -135,19 +135,19 @@ type resolveConflictRequest struct {
 func (h *AdminConflictHandler) ResolveConflict(w http.ResponseWriter, r *http.Request) {
 	conflictType := chi.URLParam(r, "type")
 	if conflictType == "" {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("conflict type is required"))
+		writeError(w, r, h.log, apperrors.Validation("conflict type is required"))
 		return
 	}
 
 	entityID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || entityID <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid entity id"))
+		writeError(w, r, h.log, apperrors.Validation("invalid entity id"))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
@@ -159,7 +159,7 @@ func (h *AdminConflictHandler) ResolveConflict(w http.ResponseWriter, r *http.Re
 		action = "ack"
 	}
 	if err := h.svc.ResolveConflict(r.Context(), conflictType, entityID, caller.ID, action, req.Note); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

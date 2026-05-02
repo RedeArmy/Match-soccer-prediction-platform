@@ -6,7 +6,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
@@ -48,13 +47,13 @@ func NewLeaderboardHandler(ranker service.Ranker, log *zap.Logger) *LeaderboardH
 func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	phase := domain.MatchPhase(r.URL.Query().Get("phase"))
 	if err := domain.ValidateMatchPhase(phase); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -65,7 +64,7 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 		entries, err = h.ranker.GetPhaseLeaderboard(r.Context(), id, phase)
 	}
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 

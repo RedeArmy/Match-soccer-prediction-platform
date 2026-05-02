@@ -64,7 +64,7 @@ func TestSubmit_InvalidJSON_Returns422(t *testing.T) {
 }
 
 // Note: "repo error on user lookup" and "user not synced" cases are now covered
-// by ResolveUser middleware tests — they are not reachable from the handler
+// by ResolveUser middleware tests - they are not reachable from the handler
 // since user resolution happens before the handler is called.
 
 func TestSubmit_ServiceError_Returns422(t *testing.T) {

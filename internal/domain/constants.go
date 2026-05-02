@@ -7,18 +7,18 @@ import "time"
 // The full matrix, from best to worst:
 //
 //	PointsExactScore (5)
-//	  — player predicts the exact scoreline (e.g. 2–1 → 2–1).
+//	  - player predicts the exact scoreline (e.g. 2-1 -> 2-1).
 //
 //	PointsCorrectOutcome (2) [+ PointsGoalDifference (1) when applicable]
-//	  — player predicts the correct winner or draw but not the exact score.
-//	  — an extra PointsGoalDifference point is added when the predicted
-//	    goal margin equals the actual margin (e.g. predict 2–0, result 3–1:
+//	  - player predicts the correct winner or draw but not the exact score.
+//	  - an extra PointsGoalDifference point is added when the predicted
+//	    goal margin equals the actual margin (e.g. predict 2-0, result 3-1:
 //	    both are a 2-goal home win). This bonus does NOT apply to draws
 //	    because every draw has a goal difference of 0, making the check
 //	    trivially true and not a meaningful prediction skill.
 //
 //	PointsIncorrectResult (0)
-//	  — player predicts the wrong outcome, or no prediction was submitted.
+//	  - player predicts the wrong outcome, or no prediction was submitted.
 //
 // These constants are the single source of truth referenced by MatchScorer;
 // no other package should hard-code scoring values.
@@ -59,7 +59,7 @@ const StandingsWinPoints = 3
 // this threshold are QuinielaStatusInactive: predictions can still be submitted
 // but the group is not eligible for payment processing or prize distribution.
 //
-// The value is 3 — a group of 1 (owner only) or 2 cannot be active. This
+// The value is 3 - a group of 1 (owner only) or 2 cannot be active. This
 // constant is the single source of truth referenced by GroupMembershipService;
 // changing it here is sufficient to adjust the threshold system-wide.
 const MinMembersForActive = 3
@@ -138,7 +138,7 @@ const (
 	// without a process restart. Defaults to 1000.
 	ParamKeyAdminBulkMaxItems = "admin.bulk_max_items"
 
-	// Infrastructure params — read once at process startup; changes require restart.
+	// Infrastructure params - read once at process startup; changes require restart.
 	// The is_runtime column in system_params is set to FALSE for all of these.
 
 	// ParamKeyCacheMatchTTL is the match-list cache TTL in seconds.
@@ -146,7 +146,7 @@ const (
 	// ParamKeyCacheLeaderboardTTL is the leaderboard cache TTL in seconds.
 	ParamKeyCacheLeaderboardTTL = "cache.leaderboard_ttl_seconds"
 	// ParamKeyCacheDashboardTTLSeconds is the dashboard stats cache TTL in seconds.
-	// Defaults to 30 s — long enough to absorb repeated dashboard loads but short
+	// Defaults to 30 s - long enough to absorb repeated dashboard loads but short
 	// enough that aggregate counts stay reasonably fresh. is_runtime = TRUE so it
 	// can be tuned or set to 0 (disable cache) without a process restart.
 	ParamKeyCacheDashboardTTLSeconds = "cache.dashboard_ttl_seconds"
@@ -199,7 +199,7 @@ const (
 
 // AllMatchPhases is the ordered list of every tournament phase defined in the
 // MatchPhase type. It is the single source of truth for any code that must
-// iterate over all phases — for example, cache invalidation, report generation,
+// iterate over all phases - for example, cache invalidation, report generation,
 // or test matrix construction. The slice is ordered by tournament progression;
 // do not reorder it without updating dependent consumers.
 var AllMatchPhases = [...]MatchPhase{

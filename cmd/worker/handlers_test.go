@@ -131,7 +131,7 @@ func TestDecodePayload_UnmarshalablePayload_ReturnsError(t *testing.T) {
 }
 
 func TestDecodePayload_WrongTypeInMap_ReturnsError(t *testing.T) {
-	// MatchID is int; "not-a-number" cannot be decoded into int → unmarshal fails.
+	// MatchID is int; "not-a-number" cannot be decoded into int -> unmarshal fails.
 	env := events.Envelope{
 		Type: events.EventMatchFinished,
 		Payload: map[string]interface{}{
@@ -165,7 +165,7 @@ func TestMatchStartedHandler_StructPayload_ReturnsNil(t *testing.T) {
 func TestMatchStartedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 	// A channel cannot be JSON-marshalled. The handler must log and return nil
 	// rather than an error so the bus does not retry a structurally invalid
-	// message — identical policy to newMatchFinishedHandler.
+	// message - identical policy to newMatchFinishedHandler.
 	h := newMatchStartedHandler(zap.NewNop())
 
 	env := events.Envelope{
