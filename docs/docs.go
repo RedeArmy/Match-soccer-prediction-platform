@@ -732,7 +732,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Group ID — only memberships belonging to this group are removed",
+                        "description": "Group ID - only memberships belonging to this group are removed",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1681,7 +1681,7 @@ const docTemplate = `{
                 "summary": "Bulk-update system parameters",
                 "parameters": [
                     {
-                        "description": "Map of key → value pairs",
+                        "description": "Map of key -\u003e value pairs",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -2028,7 +2028,7 @@ const docTemplate = `{
                         }
                     },
                     "207": {
-                        "description": "Partial success — some bans failed",
+                        "description": "Partial success - some bans failed",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.BulkBanResultResponse"
                         }

@@ -8,7 +8,6 @@ import (
 	svix "github.com/svix/svix-webhooks/go"
 	"go.uber.org/zap"
 
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -16,7 +15,7 @@ import (
 // WebhookHandler handles incoming Clerk webhook events.
 type WebhookHandler struct {
 	syncer           service.ClerkUserSyncer
-	verifier         *svix.Webhook // nil means skip OR reject — see skipVerification
+	verifier         *svix.Webhook // nil means skip OR reject - see skipVerification
 	skipVerification bool          // true only when WCQ_CLERK_WEBHOOKSECRET is intentionally absent (dev)
 	log              *zap.Logger
 }
@@ -24,7 +23,7 @@ type WebhookHandler struct {
 // NewWebhookHandler constructs a WebhookHandler.
 //
 // webhookSecret is the "whsec_<base64>" value from the Clerk webhook dashboard.
-// When empty, signature verification is skipped and a warning is logged —
+// When empty, signature verification is skipped and a warning is logged -
 // acceptable for local development only. Startup validation must reject this
 // configuration outside development.
 // When the secret is present but malformed, all webhook requests are rejected
@@ -32,14 +31,14 @@ type WebhookHandler struct {
 func NewWebhookHandler(syncer service.ClerkUserSyncer, webhookSecret string, log *zap.Logger) *WebhookHandler {
 	h := &WebhookHandler{syncer: syncer, log: log}
 	if webhookSecret == "" {
-		log.Warn("WebhookHandler: WCQ_CLERK_WEBHOOKSECRET is not set — webhook signature verification is DISABLED; do not use in production")
+		log.Warn("WebhookHandler: WCQ_CLERK_WEBHOOKSECRET is not set - webhook signature verification is DISABLED; do not use in production")
 		h.skipVerification = true
 		return h
 	}
 	wh, err := svix.NewWebhook(webhookSecret)
 	if err != nil {
-		log.Error("WebhookHandler: invalid webhook secret format — all webhook requests will be rejected", zap.Error(err))
-		return h // verifier=nil, skipVerification=false → always rejects
+		log.Error("WebhookHandler: invalid webhook secret format - all webhook requests will be rejected", zap.Error(err))
+		return h // verifier=nil, skipVerification=false -> always rejects
 	}
 	h.verifier = wh
 	return h
@@ -84,33 +83,33 @@ type clerkWebhookEvent struct {
 func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1 MB limit
 	if err != nil {
-		middleware.WriteError(w, r, h.log, apperrors.Internal(err))
+		writeError(w, r, h.log, apperrors.Internal(err))
 		return
 	}
 
 	if !h.skipVerification {
 		if h.verifier == nil {
 			// Secret was provided but is malformed; reject all requests.
-			middleware.WriteError(w, r, h.log, apperrors.BadRequest("invalid webhook configuration"))
+			writeError(w, r, h.log, apperrors.BadRequest("invalid webhook configuration"))
 			return
 		}
 		if err := h.verifier.Verify(body, r.Header); err != nil {
 			h.log.Warn("webhook signature verification failed", zap.Error(err))
-			middleware.WriteError(w, r, h.log, apperrors.BadRequest("invalid webhook signature"))
+			writeError(w, r, h.log, apperrors.BadRequest("invalid webhook signature"))
 			return
 		}
 	}
 
 	var event clerkWebhookEvent
 	if err := json.Unmarshal(body, &event); err != nil {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("could not parse webhook payload"))
+		writeError(w, r, h.log, apperrors.Validation("could not parse webhook payload"))
 		return
 	}
 
 	switch event.Type {
 	case "user.created", "user.updated":
 		if err := h.syncUser(r, event.Data); err != nil {
-			middleware.WriteError(w, r, h.log, err)
+			writeError(w, r, h.log, err)
 			return
 		}
 	default:

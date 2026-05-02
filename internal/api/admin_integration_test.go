@@ -72,7 +72,7 @@ var allAdminRoutes = []adminRoute{
 }
 
 // newAdminTestServer builds a Server with a fake (unreachable) database pool
-// so the full route table — including all /admin/* paths — is registered.
+// so the full route table - including all /admin/* paths - is registered.
 // The empty Config leaves JWKS URL blank, which causes RequireAuth to reject
 // all requests with 401 (fail-closed). Tests that need to exercise the chain
 // past the auth check should use newAdminTestServerWithAuth instead.

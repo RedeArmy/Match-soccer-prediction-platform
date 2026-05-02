@@ -44,7 +44,7 @@ func decodePayload[T any](env events.Envelope) (T, error) {
 // Prediction-window enforcement is handled synchronously in PredictionService:
 // Submit and Update both check match.Status and reject requests against a Live
 // or Finished match. The async event is therefore used exclusively for
-// observability, not for enforcement — making the handler safe to implement as
+// observability, not for enforcement - making the handler safe to implement as
 // a fire-and-forget log with no downstream side-effects and no retriable errors.
 //
 // On a malformed payload the handler logs an error and returns nil.
@@ -61,7 +61,7 @@ func newMatchStartedHandler(log *zap.Logger) func(context.Context, events.Envelo
 			return nil
 		}
 
-		log.Info("worker: match started — prediction window closed",
+		log.Info("worker: match started - prediction window closed",
 			zap.Int("match_id", ms.MatchID),
 			zap.String("home_team", ms.HomeTeam),
 			zap.String("away_team", ms.AwayTeam),
@@ -89,7 +89,7 @@ func newMatchFinishedHandler(
 		mf, err := decodePayload[events.MatchFinished](env)
 		if err != nil {
 			// A payload that cannot be decoded will never succeed on retry.
-			// Log, then return nil so the bus does not route it to the DLQ —
+			// Log, then return nil so the bus does not route it to the DLQ -
 			// retrying a structurally invalid message would burn retry budget.
 			log.Error("worker: cannot decode MatchFinished payload",
 				zap.String("event_type", string(env.Type)),
@@ -108,7 +108,7 @@ func newMatchFinishedHandler(
 			return err
 		}
 
-		log.Sugar().Infof("worker: scored match %d (%s %d–%d %s)",
+		log.Sugar().Infof("worker: scored match %d (%s %d-%d %s)",
 			mf.MatchID, mf.HomeTeam, mf.HomeScore, mf.AwayScore, mf.AwayTeam)
 
 		snapshotAffectedQuinielas(ctx, mf.MatchID, snapshotter, predRepo, log)

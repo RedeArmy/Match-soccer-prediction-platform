@@ -1143,7 +1143,7 @@ paths:
       - application/json
       description: Sets multiple memberships to 'left'. Returns 200 when all
       parameters:
-      - description: Group ID — only memberships belonging to this group are removed
+      - description: Group ID - only memberships belonging to this group are removed
         in: path
         name: id
         required: true
@@ -1843,7 +1843,7 @@ paths:
       - application/json
       description: Updates multiple system parameters in a single atomic operation.
       parameters:
-      - description: Map of key → value pairs
+      - description: Map of key -> value pairs
         in: body
         name: body
         required: true
@@ -2111,7 +2111,7 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_handler.BulkBanResultResponse'
         "207":
-          description: Partial success — some bans failed
+          description: Partial success - some bans failed
           schema:
             $ref: '#/definitions/internal_api_handler.BulkBanResultResponse'
         "401":

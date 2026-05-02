@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"go.uber.org/zap"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -21,9 +23,14 @@ const (
 // shared across the entire API surface.
 func writeJSON(w http.ResponseWriter, status int, v any) { middleware.WriteJSON(w, status, v) }
 
+// writeError delegates to middleware.WriteError, the single canonical error serialiser.
+func writeError(w http.ResponseWriter, r *http.Request, log *zap.Logger, err error) {
+	middleware.WriteError(w, r, log, err)
+}
+
 // decodeJSON reads the request body and decodes it as JSON into a value of
 // type T. DisallowUnknownFields is always set so that unexpected keys in the
-// client payload are rejected rather than silently ignored — this catches
+// client payload are rejected rather than silently ignored - this catches
 // field-name typos that would otherwise produce confusing zero-value behaviour.
 //
 // On failure the returned error is already wrapped by decodeError and is safe

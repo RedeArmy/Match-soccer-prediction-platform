@@ -374,7 +374,7 @@ func TestGroupMembershipService_ApproveJoin_ApproverNotMember_ReturnsForbidden(t
 }
 
 func TestGroupMembershipService_ApproveJoin_ApproverPending_ReturnsForbidden(t *testing.T) {
-	// approver is pending (not yet active) — must not be able to approve
+	// approver is pending (not yet active) - must not be able to approve
 	svc := newMemberSvc(
 		&stubQuinielaRepo{},
 		&stubMemberRepo{membership: pendingMembership(1, 1, 10)},
@@ -453,7 +453,7 @@ func TestGroupMembershipService_Leave_ActiveMember_ReturnsNil(t *testing.T) {
 }
 
 func TestGroupMembershipService_Leave_NotMember_ReturnsValidation(t *testing.T) {
-	// GetByQuinielaAndUser returns nil — user has no membership
+	// GetByQuinielaAndUser returns nil - user has no membership
 	svc := newMemberSvc(
 		&stubQuinielaRepo{},
 		&stubMemberRepo{membership: nil},
@@ -554,7 +554,7 @@ func TestGroupMembershipService_Leave_LeaveMembershipError_PropagatesError(t *te
 	}
 }
 
-// ── Leave — ownership transfer ────────────────────────────────────────────────
+// ── Leave - ownership transfer ────────────────────────────────────────────────
 
 func TestGroupMembershipService_Leave_CreateOwner_TransfersOwnership(t *testing.T) {
 	// Leaving user is the CreateOwner; there is an eligible successor.

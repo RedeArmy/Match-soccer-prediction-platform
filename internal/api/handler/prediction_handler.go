@@ -57,13 +57,13 @@ type updatePredictionRequest struct {
 func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[submitPredictionRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		AwayScore: req.AwayScore,
 	}
 	if err := h.svc.Submit(r.Context(), prediction); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, predToResponse(prediction))
@@ -101,22 +101,22 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	req, err := decodeJSON[updatePredictionRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	prediction, err := h.svc.Update(r.Context(), caller.ID, id, req.HomeScore, req.AwayScore)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, predToResponse(prediction))
@@ -144,7 +144,7 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *PredictionHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
@@ -155,7 +155,7 @@ func (h *PredictionHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 	if quinielaIDStr := r.URL.Query().Get("quiniela_id"); quinielaIDStr != "" {
 		quinielaID, qErr := parseIntParam(quinielaIDStr)
 		if qErr != nil {
-			middleware.WriteError(w, r, h.log, apperrors.Validation("quiniela_id must be a positive integer"))
+			writeError(w, r, h.log, apperrors.Validation("quiniela_id must be a positive integer"))
 			return
 		}
 		predictions, err = h.svc.GetByUserAndQuiniela(r.Context(), caller.ID, quinielaID)
@@ -163,7 +163,7 @@ func (h *PredictionHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 		predictions, err = h.svc.GetByUser(r.Context(), caller.ID)
 	}
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	out := make([]PredictionResponse, len(predictions))

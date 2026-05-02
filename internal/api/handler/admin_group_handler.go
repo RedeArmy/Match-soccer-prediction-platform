@@ -50,18 +50,18 @@ func NewAdminGroupHandler(svc service.AdminGroupService, params service.SystemPa
 func (h *AdminGroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	if err := h.svc.DeleteGroup(r.Context(), id, caller.ID); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -89,18 +89,18 @@ func (h *AdminGroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) 
 func (h *AdminGroupHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	membershipID, err := strconv.Atoi(chi.URLParam(r, "membershipID"))
 	if err != nil || membershipID <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid membership id"))
+		writeError(w, r, h.log, apperrors.Validation("invalid membership id"))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	if err := h.svc.RemoveMember(r.Context(), membershipID, caller.ID); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -134,29 +134,29 @@ type updateGroupSettingsRequest struct {
 func (h *AdminGroupHandler) UpdateGroupSettings(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[updateGroupSettingsRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	if req.EntryFee == nil {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("entry_fee is required"))
+		writeError(w, r, h.log, apperrors.Validation("entry_fee is required"))
 		return
 	}
 
 	q, err := h.svc.UpdateGroupSettings(r.Context(), id, req.MaxMembers, *req.EntryFee, caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, groupToResponse(q))
@@ -189,28 +189,28 @@ type transferOwnershipRequest struct {
 func (h *AdminGroupHandler) TransferOwnership(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[transferOwnershipRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	if req.NewOwnerUserID <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("new_owner_user_id is required"))
+		writeError(w, r, h.log, apperrors.Validation("new_owner_user_id is required"))
 		return
 	}
 
 	if err := h.svc.TransferOwnership(r.Context(), id, req.NewOwnerUserID, caller.ID); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -243,28 +243,28 @@ type bulkGroupIDsRequest struct {
 func (h *AdminGroupHandler) BulkDeleteGroups(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[bulkGroupIDsRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, domain.DefaultAdminBulkMaxItems)
 	switch {
 	case len(req.GroupIDs) == 0:
-		middleware.WriteError(w, r, h.log, apperrors.Validation("group_ids must not be empty"))
+		writeError(w, r, h.log, apperrors.Validation("group_ids must not be empty"))
 		return
 	case len(req.GroupIDs) > maxItems:
-		middleware.WriteError(w, r, h.log, apperrors.Validation(fmt.Sprintf("group_ids must not exceed %d items", maxItems)))
+		writeError(w, r, h.log, apperrors.Validation(fmt.Sprintf("group_ids must not exceed %d items", maxItems)))
 		return
 	}
 
 	result, err := h.svc.BulkDeleteGroups(r.Context(), req.GroupIDs, caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	status := http.StatusOK
@@ -290,7 +290,7 @@ type bulkMemberIDsRequest struct {
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id    path      int                                 true  "Group ID — only memberships belonging to this group are removed"
+// @Param        id    path      int                                 true  "Group ID - only memberships belonging to this group are removed"
 // @Param        body  body      handler.bulkMemberIDsRequest        true  "Membership IDs to remove"
 // @Success      200   {object}  handler.BulkOperationResultResponse
 // @Success      207   {object}  handler.BulkOperationResultResponse
@@ -302,34 +302,34 @@ type bulkMemberIDsRequest struct {
 func (h *AdminGroupHandler) BulkRemoveMembers(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	quinielaID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
-		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
 		return
 	}
 
 	req, err := decodeJSON[bulkMemberIDsRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	maxItems := h.params.GetInt(r.Context(), domain.ParamKeyAdminBulkMaxItems, domain.DefaultAdminBulkMaxItems)
 	switch {
 	case len(req.MembershipIDs) == 0:
-		middleware.WriteError(w, r, h.log, apperrors.Validation("membership_ids must not be empty"))
+		writeError(w, r, h.log, apperrors.Validation("membership_ids must not be empty"))
 		return
 	case len(req.MembershipIDs) > maxItems:
-		middleware.WriteError(w, r, h.log, apperrors.Validation(fmt.Sprintf("membership_ids must not exceed %d items", maxItems)))
+		writeError(w, r, h.log, apperrors.Validation(fmt.Sprintf("membership_ids must not exceed %d items", maxItems)))
 		return
 	}
 
 	result, err := h.svc.BulkRemoveMembers(r.Context(), quinielaID, req.MembershipIDs, caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	status := http.StatusOK
@@ -360,19 +360,19 @@ func (h *AdminGroupHandler) BulkRemoveMembers(w http.ResponseWriter, r *http.Req
 func (h *AdminGroupHandler) RecalculateLeaderboard(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	snap, err := h.svc.RecalculateLeaderboard(r.Context(), id, caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, snapshotToResponse(snap))

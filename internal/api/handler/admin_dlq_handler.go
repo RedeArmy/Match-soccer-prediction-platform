@@ -6,7 +6,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -23,7 +22,7 @@ func NewAdminDLQHandler(svc service.DLQService, log *zap.Logger) *AdminDLQHandle
 	return &AdminDLQHandler{svc: svc, log: log}
 }
 
-// Stats handles GET /admin/dlq — count, oldest message age, and sample payloads per event type.
+// Stats handles GET /admin/dlq - count, oldest message age, and sample payloads per event type.
 //
 // @Summary      Dead-letter queue stats
 // @Description  Returns the count, oldest entry age, and a sample of messages for
@@ -44,7 +43,7 @@ func NewAdminDLQHandler(svc service.DLQService, log *zap.Logger) *AdminDLQHandle
 func (h *AdminDLQHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.svc.Stats(r.Context())
 	if err != nil {
-		middleware.WriteError(w, r, h.log, apperrors.Internal(err))
+		writeError(w, r, h.log, apperrors.Internal(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
@@ -54,7 +53,7 @@ type replayRequest struct {
 	Limit *int `json:"limit"`
 }
 
-// Replay handles POST /admin/dlq/replay — re-enqueue DLQ messages.
+// Replay handles POST /admin/dlq/replay - re-enqueue DLQ messages.
 //
 // @Summary      Replay dead-letter queue
 // @Description  Re-enqueues up to limit entries from all DLQ keys back onto their
@@ -84,13 +83,13 @@ func (h *AdminDLQHandler) Replay(w http.ResponseWriter, r *http.Request) {
 
 	replayed, err := h.svc.Replay(r.Context(), limit)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, apperrors.Internal(err))
+		writeError(w, r, h.log, apperrors.Internal(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"replayed": replayed})
 }
 
-// Purge handles DELETE /admin/dlq — delete all DLQ entries.
+// Purge handles DELETE /admin/dlq - delete all DLQ entries.
 //
 // @Summary      Purge dead-letter queue
 // @Description  Permanently deletes all entries from all DLQ keys. Use with
@@ -109,7 +108,7 @@ func (h *AdminDLQHandler) Replay(w http.ResponseWriter, r *http.Request) {
 func (h *AdminDLQHandler) Purge(w http.ResponseWriter, r *http.Request) {
 	removed, err := h.svc.Purge(r.Context())
 	if err != nil {
-		middleware.WriteError(w, r, h.log, apperrors.Internal(err))
+		writeError(w, r, h.log, apperrors.Internal(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int64{"removed": removed})

@@ -41,19 +41,19 @@ type confirmResultRequest struct {
 func (h *TiebreakerHandler) SetQuestion(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[setQuestionRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	cfg, err := h.svc.SetQuestion(r.Context(), req.Question)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, tiebreakerConfigToResponse(cfg))
@@ -64,25 +64,25 @@ func (h *TiebreakerHandler) SetQuestion(w http.ResponseWriter, r *http.Request) 
 func (h *TiebreakerHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	req, err := decodeJSON[submitTiebreakerRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	tb, err := h.svc.Submit(r.Context(), id, caller.ID, req.Prediction)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, tiebreakerToResponse(tb))
@@ -93,19 +93,19 @@ func (h *TiebreakerHandler) Submit(w http.ResponseWriter, r *http.Request) {
 func (h *TiebreakerHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	view, err := h.svc.GetMine(r.Context(), id, caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, tiebreakerViewToResponse(view))
@@ -116,18 +116,18 @@ func (h *TiebreakerHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 func (h *TiebreakerHandler) ConfirmResult(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[confirmResultRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	if err := h.svc.ConfirmResult(r.Context(), req.Result); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

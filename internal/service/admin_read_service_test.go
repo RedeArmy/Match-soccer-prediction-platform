@@ -11,7 +11,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
-// zeroIntParamService returns 0 for all GetInt calls — used to disable the
+// zeroIntParamService returns 0 for all GetInt calls - used to disable the
 // dashboard cache (TTL of 0 means skip caching entirely).
 type zeroIntParamService struct{ noopSystemParamService }
 
@@ -251,14 +251,14 @@ func TestAdminReadService_GetDashboardStats_Cache_SecondCallDoesNotHitRepo(t *te
 
 func TestAdminReadService_GetDashboardStats_Cache_ZeroTTL_DisablesCache(t *testing.T) {
 	qr := &stubQuinielaRepo{}
-	// noopSystemParamService returns 0 for GetInt → cache disabled.
+	// noopSystemParamService returns 0 for GetInt -> cache disabled.
 	svc := NewAdminReadService(
 		AdminReadRepos{Pred: &stubTotalPointsPredRepo{}, User: &stubUserRepo{}, Quiniela: qr, Payment: &stubPaymentRepo{}, Tiebreaker: &stubTiebreakerRepo{}, Snapshot: &stubSnapshotRepo{}},
 		&zeroIntParamService{}, zap.NewNop(),
 	)
 
 	_, _ = svc.GetDashboardStats(context.Background())
-	qr.err = errors.New("repo called on second request — cache should be disabled")
+	qr.err = errors.New("repo called on second request - cache should be disabled")
 	_, err := svc.GetDashboardStats(context.Background())
 	if err == nil {
 		t.Error("expected error on second call when cache is disabled")

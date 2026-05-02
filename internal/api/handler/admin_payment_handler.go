@@ -44,7 +44,7 @@ func NewAdminPaymentHandler(svc service.PaymentService, log *zap.Logger) *AdminP
 func (h *AdminPaymentHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 	records, err := h.svc.ListPending(r.Context())
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	data := make([]PaymentResponse, len(records))
@@ -54,7 +54,7 @@ func (h *AdminPaymentHandler) ListPending(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, data)
 }
 
-// List handles GET /admin/payments — full list with optional filters and pagination.
+// List handles GET /admin/payments - full list with optional filters and pagination.
 //
 // @Summary      List all payments
 // @Description  Returns a paginated list of all payment records. Supports optional
@@ -87,7 +87,7 @@ func (h *AdminPaymentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	records, err := h.svc.List(r.Context(), f, p)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	data := make([]PaymentResponse, len(records))
@@ -128,13 +128,13 @@ type reviewPaymentRequest struct {
 func (h *AdminPaymentHandler) ValidateDeposit(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid payment id"))
+		writeError(w, r, h.log, apperrors.Validation("invalid payment id"))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
@@ -143,7 +143,7 @@ func (h *AdminPaymentHandler) ValidateDeposit(w http.ResponseWriter, r *http.Req
 
 	record, err := h.svc.ValidateDeposit(r.Context(), id, caller.ID, req.Notes)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, paymentToResponse(record))
@@ -172,29 +172,29 @@ func (h *AdminPaymentHandler) ValidateDeposit(w http.ResponseWriter, r *http.Req
 func (h *AdminPaymentHandler) RejectDeposit(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid payment id"))
+		writeError(w, r, h.log, apperrors.Validation("invalid payment id"))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[reviewPaymentRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	if req.Notes == "" {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("notes are required"))
+		writeError(w, r, h.log, apperrors.Validation("notes are required"))
 		return
 	}
 
 	record, err := h.svc.RejectDeposit(r.Context(), id, caller.ID, req.Notes)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, paymentToResponse(record))
@@ -220,13 +220,13 @@ func (h *AdminPaymentHandler) RejectDeposit(w http.ResponseWriter, r *http.Reque
 func (h *AdminPaymentHandler) ListByGroup(w http.ResponseWriter, r *http.Request) {
 	groupID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || groupID <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid group id"))
+		writeError(w, r, h.log, apperrors.Validation("invalid group id"))
 		return
 	}
 
 	records, err := h.svc.ListByQuiniela(r.Context(), groupID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	data := make([]PaymentResponse, len(records))

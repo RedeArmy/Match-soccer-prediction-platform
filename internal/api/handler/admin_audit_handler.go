@@ -7,7 +7,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -63,7 +62,7 @@ func (h *AdminAuditHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := h.svc.ListAuditLogs(r.Context(), f, p)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -101,13 +100,13 @@ func (h *AdminAuditHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *AdminAuditHandler) ListByEntity(w http.ResponseWriter, r *http.Request) {
 	resourceType := chi.URLParam(r, "type")
 	if resourceType == "" {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("resource type is required"))
+		writeError(w, r, h.log, apperrors.Validation("resource type is required"))
 		return
 	}
 
 	resourceID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || resourceID <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invalid resource id"))
+		writeError(w, r, h.log, apperrors.Validation("invalid resource id"))
 		return
 	}
 
@@ -115,7 +114,7 @@ func (h *AdminAuditHandler) ListByEntity(w http.ResponseWriter, r *http.Request)
 
 	entries, err := h.svc.ListAuditLogsByEntity(r.Context(), resourceType, resourceID, p)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 

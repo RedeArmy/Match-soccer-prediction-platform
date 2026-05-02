@@ -27,7 +27,7 @@ func NewAdminUserHandler(svc service.AdminUserService, log *zap.Logger) *AdminUs
 	return &AdminUserHandler{svc: svc, log: log}
 }
 
-// ListUsers handles GET /admin/users — paginated user list with optional filters.
+// ListUsers handles GET /admin/users - paginated user list with optional filters.
 //
 // @Summary      List users
 // @Description  Returns a paginated list of all user accounts. Supports optional
@@ -65,7 +65,7 @@ func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	users, err := h.svc.ListFiltered(r.Context(), f, p)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetUserProfile handles GET /admin/users/{id} — full user profile.
+// GetUserProfile handles GET /admin/users/{id} - full user profile.
 //
 // @Summary      Get user profile
 // @Description  Returns the full admin view of a user account: base profile, group
@@ -100,13 +100,13 @@ func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUserHandler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
 		return
 	}
 
 	profile, err := h.svc.GetProfile(r.Context(), id)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -155,29 +155,29 @@ type banRequest struct {
 func (h *AdminUserHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[banRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	if req.Reason == "" {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("reason is required"))
+		writeError(w, r, h.log, apperrors.Validation("reason is required"))
 		return
 	}
 
 	banned, err := h.svc.BanUser(r.Context(), id, caller.ID, req.Reason)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, adminUserToResponse(banned))
@@ -204,19 +204,19 @@ func (h *AdminUserHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUserHandler) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
 		return
 	}
 
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	user, err := h.svc.UnbanUser(r.Context(), id, caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, adminUserToResponse(user))
@@ -243,7 +243,7 @@ type bulkBanRequest struct {
 // @Security     BearerAuth
 // @Param        body  body      handler.bulkBanRequest          true  "List of user IDs and ban reason"
 // @Success      200   {object}  handler.BulkBanResultResponse
-// @Success      207   {object}  handler.BulkBanResultResponse   "Partial success — some bans failed"
+// @Success      207   {object}  handler.BulkBanResultResponse   "Partial success - some bans failed"
 // @Failure      401   {object}  handler.ErrorResponse
 // @Failure      403   {object}  handler.ErrorResponse           "Caller is not an admin"
 // @Failure      422   {object}  handler.ErrorResponse           "user_ids or reason missing"
@@ -252,23 +252,23 @@ type bulkBanRequest struct {
 func (h *AdminUserHandler) BulkBan(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[bulkBanRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	if len(req.UserIDs) == 0 || req.Reason == "" {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("user_ids and reason are required"))
+		writeError(w, r, h.log, apperrors.Validation("user_ids and reason are required"))
 		return
 	}
 
 	result, err := h.svc.BulkBan(r.Context(), req.UserIDs, caller.ID, req.Reason)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
