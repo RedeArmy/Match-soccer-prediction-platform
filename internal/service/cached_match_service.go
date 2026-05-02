@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"go.uber.org/zap"
@@ -10,21 +9,6 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
-
-// Cache keys for match list results. The keys must be invalidated by any
-// operation that mutates match state (create, start, update result).
-const (
-	cacheKeyMatchesAll        = "matches:all"
-	msgCacheGetFallingThrough = "cache get failed, falling through to db"
-)
-
-func cacheKeyMatchesByPhase(phase domain.MatchPhase) string {
-	return "matches:phase:" + string(phase)
-}
-
-func cacheKeyMatchesByStatus(status domain.MatchStatus) string {
-	return "matches:status:" + string(status)
-}
 
 // cachedMatchService wraps a MatchService with a read-through / write-
 // invalidation cache layer. List operations are served from the cache when
@@ -50,18 +34,14 @@ func NewCachedMatchService(svc MatchService, store cache.Store, ttl time.Duratio
 
 // ListMatches returns all matches, using the cache when available.
 func (s *cachedMatchService) ListMatches(ctx context.Context) ([]*domain.Match, error) {
-	var cached []*domain.Match
-	if err := s.store.Get(ctx, cacheKeyMatchesAll, &cached); err == nil {
+	if cached, ok := cacheGet[[]*domain.Match](ctx, s.store, cacheKeyMatchesAll, s.log); ok {
 		return cached, nil
-	} else if !errors.Is(err, cache.ErrCacheMiss) {
-		s.log.Warn(msgCacheGetFallingThrough, zap.String("key", cacheKeyMatchesAll), zap.Error(err))
 	}
-
 	matches, err := s.inner.ListMatches(ctx)
 	if err != nil {
 		return nil, err
 	}
-	s.setQuiet(ctx, cacheKeyMatchesAll, matches, s.ttl)
+	cacheSet(ctx, s.store, cacheKeyMatchesAll, matches, s.ttl, s.log)
 	return matches, nil
 }
 
@@ -69,18 +49,14 @@ func (s *cachedMatchService) ListMatches(ctx context.Context) ([]*domain.Match, 
 // using the cache when available.
 func (s *cachedMatchService) ListMatchesByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error) {
 	key := cacheKeyMatchesByPhase(phase)
-	var cached []*domain.Match
-	if err := s.store.Get(ctx, key, &cached); err == nil {
+	if cached, ok := cacheGet[[]*domain.Match](ctx, s.store, key, s.log); ok {
 		return cached, nil
-	} else if !errors.Is(err, cache.ErrCacheMiss) {
-		s.log.Warn(msgCacheGetFallingThrough, zap.String("key", key), zap.Error(err))
 	}
-
 	matches, err := s.inner.ListMatchesByPhase(ctx, phase)
 	if err != nil {
 		return nil, err
 	}
-	s.setQuiet(ctx, key, matches, s.ttl)
+	cacheSet(ctx, s.store, key, matches, s.ttl, s.log)
 	return matches, nil
 }
 
@@ -89,18 +65,14 @@ func (s *cachedMatchService) ListMatchesByPhase(ctx context.Context, phase domai
 // status transitions happen throughout the tournament.
 func (s *cachedMatchService) ListMatchesByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error) {
 	key := cacheKeyMatchesByStatus(status)
-	var cached []*domain.Match
-	if err := s.store.Get(ctx, key, &cached); err == nil {
+	if cached, ok := cacheGet[[]*domain.Match](ctx, s.store, key, s.log); ok {
 		return cached, nil
-	} else if !errors.Is(err, cache.ErrCacheMiss) {
-		s.log.Warn(msgCacheGetFallingThrough, zap.String("key", key), zap.Error(err))
 	}
-
 	matches, err := s.inner.ListMatchesByStatus(ctx, status)
 	if err != nil {
 		return nil, err
 	}
-	s.setQuiet(ctx, key, matches, s.ttl)
+	cacheSet(ctx, s.store, key, matches, s.ttl, s.log)
 	return matches, nil
 }
 
@@ -160,15 +132,6 @@ func (s *cachedMatchService) invalidateMatchLists(ctx context.Context, phase dom
 	}
 	if err := s.store.Delete(ctx, keys...); err != nil {
 		s.log.Warn("cache invalidation failed", zap.Error(err))
-	}
-}
-
-// setQuiet calls store.Set and swallows the error after logging a warning.
-// Cache write failures are non-fatal: the caller already has a fresh result
-// to return; the worst outcome is a cache miss on the next request.
-func (s *cachedMatchService) setQuiet(ctx context.Context, key string, value interface{}, ttl time.Duration) {
-	if err := s.store.Set(ctx, key, value, ttl); err != nil {
-		s.log.Warn("cache set failed", zap.String("key", key), zap.Error(err))
 	}
 }
 
