@@ -2,8 +2,8 @@
 //
 // This binary is responsible solely for wiring dependencies together and
 // managing the application lifecycle. Business logic must not live here.
-// Keeping this file intentionally thin ensures that each concern — config,
-// logging, persistence, and routing — can be tested and replaced in isolation
+// Keeping this file intentionally thin ensures that each concern - config,
+// logging, persistence, and routing - can be tested and replaced in isolation
 // without modifying the composition root.
 //
 // @title           World Cup Quiniela API
@@ -70,7 +70,7 @@ func main() {
 //
 // Extracting lifecycle management from main makes every code path testable
 // without forking a subprocess or intercepting os.Exit: tests can pass a
-// pre-cancelled context to exercise the full startup → shutdown sequence in
+// pre-cancelled context to exercise the full startup -> shutdown sequence in
 // milliseconds, or an invalid DSN / Redis address to cover error branches.
 //
 // Order of operations:
@@ -89,7 +89,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 
 	// The database connection is treated as optional at startup intentionally.
 	// The /health endpoint must remain reachable even when the database is
-	// temporarily unavailable — a common situation during rolling deployments
+	// temporarily unavailable - a common situation during rolling deployments
 	// or cold-start sequences in container orchestration platforms. Handlers
 	// that require a live connection will fail at request time rather than
 	// preventing the entire process from starting.
@@ -102,8 +102,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 
 	// Select and construct the event bus implementation based on configuration.
-	// The bus is constructed here — at the composition root — so its full
-	// lifecycle (construction → subscriber wiring → graceful shutdown) is
+	// The bus is constructed here - at the composition root - so its full
+	// lifecycle (construction -> subscriber wiring -> graceful shutdown) is
 	// visible in one place without any hidden state inside the Server.
 	bus, closeBus, err := setupEventBus(setupCtx, cfg, log)
 	if err != nil {
@@ -137,7 +137,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 
 	// The api.Server owns the routing table and receives all shared
-	// dependencies. Constructing it here — at the composition root —
+	// dependencies. Constructing it here - at the composition root -
 	// rather than inside a package-level init function makes every
 	// dependency explicit and eliminates hidden global state.
 	app := api.New(db, cfg, log, bus, cacheStore, checkers)
@@ -170,7 +170,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// and wait for in-flight requests to complete. The 30-second budget is
 	// chosen to be longer than the slowest expected handler (a full scoring
 	// recalculation) but shorter than the default Kubernetes termination
-	// grace period (also 30 s by default — adjust both together if changed).
+	// grace period (also 30 s by default - adjust both together if changed).
 	// ctx is already cancelled at this point (it unblocked the select above),
 	// so WithoutCancel is required to give the timeout a valid parent.
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)

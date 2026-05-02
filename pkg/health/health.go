@@ -7,7 +7,7 @@
 // HTTP 200 when every check passes or HTTP 503 when at least one fails.
 //
 // Keeping the interface in a top-level package (rather than internal/api)
-// makes it available to future binaries — e.g. the background worker — without
+// makes it available to future binaries - e.g. the background worker - without
 // creating an import cycle.
 package health
 
@@ -49,7 +49,7 @@ type Response struct {
 // Returns HTTP 200 when every check passes, or 503 when any check fails.
 //
 // This consolidates the readiness probe logic shared by the API server and
-// the background worker — both processes expose an identical /health/ready
+// the background worker - both processes expose an identical /health/ready
 // endpoint and previously duplicated this implementation verbatim.
 func ReadinessHandler(checkers []Checker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

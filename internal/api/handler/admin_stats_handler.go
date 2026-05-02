@@ -5,7 +5,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
@@ -38,7 +37,7 @@ func NewAdminStatsHandler(svc service.AdminReadService, log *zap.Logger) *AdminS
 func (h *AdminStatsHandler) GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.svc.GetDashboardStats(r.Context())
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, dashboardStatsToResponse(stats))

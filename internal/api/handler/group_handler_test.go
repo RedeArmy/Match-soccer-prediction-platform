@@ -52,7 +52,7 @@ func testGroupRouter(h *handler.GroupHandler) http.Handler {
 }
 
 // testGroupRouterNoUser wires GroupHandler without injecting any user into the
-// context — simulates a request where ResolveUser did not run (unauthenticated).
+// context - simulates a request where ResolveUser did not run (unauthenticated).
 func testGroupRouterNoUser(h *handler.GroupHandler) http.Handler {
 	return buildGroupRouter(h, nil)
 }

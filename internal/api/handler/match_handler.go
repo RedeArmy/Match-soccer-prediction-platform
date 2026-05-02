@@ -21,7 +21,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -39,7 +38,7 @@ func NewMatchHandler(svc service.MatchService, log *zap.Logger) *MatchHandler {
 
 // createMatchRequest is the JSON body accepted by POST /api/v1/matches.
 // Valid phase values: group_stage, round_of_32, round_of_16, quarter_final, semi_final, third_place, final.
-// GroupLabel is required for group_stage matches ("A"–"L") and must be omitted
+// GroupLabel is required for group_stage matches ("A"-"L") and must be omitted
 // for all knockout phases.
 type createMatchRequest struct {
 	HomeTeam   string    `json:"home_team"`
@@ -73,7 +72,7 @@ func (h *MatchHandler) ListMatches(w http.ResponseWriter, r *http.Request) {
 	)
 	if phase := domain.MatchPhase(r.URL.Query().Get("phase")); phase != "" {
 		if err := domain.ValidateMatchPhase(phase); err != nil {
-			middleware.WriteError(w, r, h.log, err)
+			writeError(w, r, h.log, err)
 			return
 		}
 		matches, err = h.svc.ListMatchesByPhase(r.Context(), phase)
@@ -81,7 +80,7 @@ func (h *MatchHandler) ListMatches(w http.ResponseWriter, r *http.Request) {
 		matches, err = h.svc.ListMatches(r.Context())
 	}
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	out := make([]MatchResponse, len(matches))
@@ -106,12 +105,12 @@ func (h *MatchHandler) ListMatches(w http.ResponseWriter, r *http.Request) {
 func (h *MatchHandler) GetMatch(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	match, err := h.svc.GetMatch(r.Context(), id)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, matchToResponse(match))
@@ -133,7 +132,7 @@ func (h *MatchHandler) GetMatch(w http.ResponseWriter, r *http.Request) {
 func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[createMatchRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	match := &domain.Match{
@@ -144,7 +143,7 @@ func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 		KickoffAt:  req.KickoffAt,
 	}
 	if err := h.svc.CreateMatch(r.Context(), match); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, matchToResponse(match))
@@ -168,21 +167,21 @@ func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 func (h *MatchHandler) UpdateResult(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	req, err := decodeJSON[updateResultRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	if req.HomeScore == nil || req.AwayScore == nil {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("request body is missing required fields"))
+		writeError(w, r, h.log, apperrors.Validation("request body is missing required fields"))
 		return
 	}
 	match, err := h.svc.UpdateResult(r.Context(), id, *req.HomeScore, *req.AwayScore)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, matchToResponse(match))
@@ -204,12 +203,12 @@ func (h *MatchHandler) UpdateResult(w http.ResponseWriter, r *http.Request) {
 func (h *MatchHandler) StartMatch(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	match, err := h.svc.StartMatch(r.Context(), id)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, matchToResponse(match))

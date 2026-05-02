@@ -67,13 +67,13 @@ type joinGroupRequest struct {
 func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[createGroupRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
@@ -83,10 +83,10 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 		EntryFee:       req.EntryFee,
 		Currency:       req.Currency,
 		MaxMembers:     req.MaxMembers,
-		PrizeThreshold: req.PrizeThreshold, // 0 → service applies DefaultPrizeThreshold
+		PrizeThreshold: req.PrizeThreshold, // 0 -> service applies DefaultPrizeThreshold
 	}
 	if err := h.quinielaSvc.Create(r.Context(), quiniela); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, groupToResponse(quiniela))
@@ -107,12 +107,12 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	quiniela, err := h.quinielaSvc.GetByID(r.Context(), id)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, groupToResponse(quiniela))
@@ -140,23 +140,23 @@ func (h *GroupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) Join(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 
 	req, err := decodeJSON[joinGroupRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	if req.InviteCode == "" {
-		middleware.WriteError(w, r, h.log, apperrors.Validation("invite_code is required"))
+		writeError(w, r, h.log, apperrors.Validation("invite_code is required"))
 		return
 	}
 
 	membership, err := h.memberSvc.Join(r.Context(), req.InviteCode, caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, memberToResponse(membership))
@@ -176,12 +176,12 @@ func (h *GroupHandler) Join(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	members, err := h.memberSvc.ListByQuiniela(r.Context(), id)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	out := make([]MemberResponse, len(members))
@@ -196,7 +196,7 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 // @Summary      Approve a join request
 // @Description  Promotes a pending membership to active. Any active member of
 //
-//	the group may approve — there is no admin-only restriction.
+//	the group may approve - there is no admin-only restriction.
 //	After approval the group status is re-evaluated: the group
 //	transitions to "active" when it reaches the minimum active-member
 //	threshold.
@@ -217,23 +217,23 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) ApproveJoin(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 	quinielaID, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	membershipID, err := pathID(r, "membershipID")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	membership, err := h.memberSvc.ApproveJoin(r.Context(), quinielaID, membershipID, caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, memberToResponse(membership))
@@ -244,7 +244,7 @@ func (h *GroupHandler) ApproveJoin(w http.ResponseWriter, r *http.Request) {
 // @Summary      Leave a group
 // @Description  Removes the authenticated user from the group. Only the user
 //
-//	themselves may leave — no admin or owner can remove another
+//	themselves may leave - no admin or owner can remove another
 //	member. After leaving, the group status is re-evaluated and may
 //	become "inactive" if the active member count falls below the
 //	minimum threshold.
@@ -260,17 +260,17 @@ func (h *GroupHandler) ApproveJoin(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) Leave(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 	quinielaID, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
 	if err := h.memberSvc.Leave(r.Context(), quinielaID, caller.ID); err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -300,22 +300,22 @@ func (h *GroupHandler) Leave(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) RenameGroup(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 	id, err := pathID(r, "id")
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	req, err := decodeJSON[renameGroupRequest](r)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	quiniela, err := h.quinielaSvc.RenameGroup(r.Context(), id, caller.ID, req.Name)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, groupToResponse(quiniela))
@@ -335,12 +335,12 @@ func (h *GroupHandler) RenameGroup(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
-		middleware.WriteError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
 	members, err := h.memberSvc.ListByUser(r.Context(), caller.ID)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 	out := make([]MemberResponse, len(members))

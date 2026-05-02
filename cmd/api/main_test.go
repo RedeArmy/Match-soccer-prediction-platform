@@ -2,7 +2,7 @@
 //
 // All tests are white-box (package main) so they can call setupDB() directly
 // without spawning a subprocess or intercepting os.Exit. The full main()
-// lifecycle (signal handling, HTTP server) is intentionally excluded — it
+// lifecycle (signal handling, HTTP server) is intentionally excluded - it
 // is covered by the api package tests (internal/api/server_test.go) and
 // end-to-end smoke tests at the infrastructure layer.
 //
@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,30 @@ func TestSetupDB_InvalidDSN_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestSetupDB_MigratesButPoolFails_ReturnsError(t *testing.T) {
+	// Migrations succeed (valid DSN, reachable DB), but pool creation fails
+	// because MaxOpenConns=0 is rejected by pgxpool. Exercises the NewPool
+	// error branch that is otherwise unreachable in the happy path.
+	dsn := testutil.SetupPostgres(t)
+	log := newTestLogger(t)
+	cfg := &config.Config{
+		Database: config.DatabaseConfig{
+			DSN:             dsn,
+			MaxOpenConns:    0, // triggers "MaxSize must be >= 1"
+			MaxIdleConns:    0,
+			ConnMaxLifetime: time.Minute,
+		},
+	}
+
+	_, err := setupDB(context.Background(), cfg, log)
+	if err == nil {
+		t.Fatal("expected error when pool config is invalid, got nil")
+	}
+	if !strings.Contains(err.Error(), "database unavailable") {
+		t.Errorf("expected error to mention database unavailable, got: %v", err)
+	}
+}
+
 // ── setupEventBus ─────────────────────────────────────────────────────────────
 
 func TestSetupEventBus_InMemoryDriver_ReturnsBusAndNoopCleanup(t *testing.T) {
@@ -161,9 +186,29 @@ func TestSetupEventBus_RedisDriver_ValidAddr_ReturnsBusAndCleanup(t *testing.T) 
 	cleanup()
 }
 
+func TestSetupEventBus_RedisCleanupDoubleClose_LogsWarn(t *testing.T) {
+	// RedisBus.Close cancels goroutine contexts but does NOT close the
+	// underlying Redis client. Calling cleanup() twice therefore causes the
+	// second redisClient.Close() to return "redis: client is closed", which
+	// exercises the Warnf branch inside the cleanup closure.
+	mr := miniredis.RunT(t)
+	log := newTestLogger(t)
+	cfg := &config.Config{
+		EventBus: config.EventBusConfig{Driver: "redis"},
+		Redis:    config.RedisConfig{Addr: mr.Addr()},
+	}
+
+	_, cleanup, err := setupEventBus(context.Background(), cfg, log)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	cleanup()
+	cleanup() // second call: redisClient.Close() returns error → logs Warn
+}
+
 // ── run ───────────────────────────────────────────────────────────────────────
 
-// TestRun_ImmediateShutdown_ReturnsNil exercises the full startup → graceful
+// TestRun_ImmediateShutdown_ReturnsNil exercises the full startup -> graceful
 // shutdown cycle without any real I/O. A pre-cancelled context causes run() to
 // exit the select immediately after the HTTP listener starts, covering the
 // ctx.Done branch and the "server stopped" log line that marks a clean shutdown.
@@ -243,9 +288,34 @@ func TestRun_WithRedisAddr_ImmediateShutdown(t *testing.T) {
 	}
 }
 
+// TestRun_PortInUse_ReturnsServerError covers the `case err := <-srvErr` branch
+// in run(): when the port is already occupied, ListenAndServe returns EADDRINUSE,
+// the goroutine sends the error to srvErr, and run() propagates it.
+func TestRun_PortInUse_ReturnsServerError(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer ln.Close()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: port},
+		EventBus: config.EventBusConfig{Driver: "in_memory"},
+	}
+
+	err = run(context.Background(), cfg, zap.NewNop())
+	if err == nil {
+		t.Fatal("expected error when port is in use, got nil")
+	}
+	if !strings.Contains(err.Error(), "server") {
+		t.Errorf("expected error to mention server, got: %v", err)
+	}
+}
+
 // TestRun_WithValidDB_ImmediateShutdown covers the db != nil branches: the
 // deferred pool close and the DB health-checker creation. A pre-cancelled
-// context keeps the test fast — no HTTP traffic is required.
+// context keeps the test fast - no HTTP traffic is required.
 func TestRun_WithValidDB_ImmediateShutdown(t *testing.T) {
 	dsn := testutil.SetupPostgres(t)
 	ctx, cancel := context.WithCancel(context.Background())

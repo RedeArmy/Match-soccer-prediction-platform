@@ -101,7 +101,7 @@ func TestWebhook_NoSecret_InvalidJSON_Returns422(t *testing.T) {
 }
 
 func TestWebhook_NoSecret_InvalidUserData_Returns422(t *testing.T) {
-	// data is a JSON string, not an object — unmarshal into clerkUserPayload fails.
+	// data is a JSON string, not an object - unmarshal into clerkUserPayload fails.
 	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
 	if w := doWebhook(h, `{"type":"user.created","data":"not-an-object"}`); w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
@@ -116,7 +116,7 @@ func TestWebhook_NoSecret_SyncerError_Returns500(t *testing.T) {
 }
 
 func TestWebhook_NoSecret_SyncerValidationError_Returns422(t *testing.T) {
-	// The syncer returns a validation error (e.g. invalid email address) — handler must propagate 422.
+	// The syncer returns a validation error (e.g. invalid email address) - handler must propagate 422.
 	h := handler.NewWebhookHandler(&stubClerkUserSyncer{err: apperrors.Validation("invalid email")}, "", zap.NewNop())
 	body := `{"type":"user.created","data":{"id":"user_bademail","first_name":"Bad","last_name":"Email","email_addresses":[{"email_address":"notanemail"}]}}`
 	if w := doWebhook(h, body); w.Code != http.StatusUnprocessableEntity {

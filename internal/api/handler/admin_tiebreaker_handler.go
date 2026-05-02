@@ -5,7 +5,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
@@ -20,7 +19,7 @@ func NewAdminTiebreakerHandler(svc service.AdminReadService, log *zap.Logger) *A
 	return &AdminTiebreakerHandler{svc: svc, log: log}
 }
 
-// ListSubmissions handles GET /admin/tiebreaker/submissions — all tiebreaker predictions.
+// ListSubmissions handles GET /admin/tiebreaker/submissions - all tiebreaker predictions.
 //
 // @Summary      List tiebreaker submissions
 // @Description  Returns all tiebreaker numeric predictions from every user, with
@@ -43,7 +42,7 @@ func (h *AdminTiebreakerHandler) ListSubmissions(w http.ResponseWriter, r *http.
 
 	views, err := h.svc.ListTiebreakerSubmissions(r.Context(), p)
 	if err != nil {
-		middleware.WriteError(w, r, h.log, err)
+		writeError(w, r, h.log, err)
 		return
 	}
 
