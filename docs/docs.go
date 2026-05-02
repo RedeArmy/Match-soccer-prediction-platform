@@ -3704,7 +3704,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "invite_code_expires_at": {
-                    "description": "always nil; invite links never expire",
                     "type": "string"
                 },
                 "max_members": {
