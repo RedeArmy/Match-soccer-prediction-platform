@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -215,7 +216,15 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	// fixed interval. Operators should configure an alert on log lines that
 	// contain "dead-letter queue is non-empty" to be notified within one
 	// dlqMonitorInterval of a scoring failure.
-	go monitorDLQ(ctx, deps.rc, log)
+	// A WaitGroup ensures the goroutine has fully exited before startWorker
+	// returns, preventing a data race on dlqMonitorInterval in tests that
+	// run under -race.
+	var dlqDone sync.WaitGroup
+	dlqDone.Add(1)
+	go func() {
+		defer dlqDone.Done()
+		monitorDLQ(ctx, deps.rc, log)
+	}()
 
 	var runErr error
 	select {
@@ -234,6 +243,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	if err := healthSrv.Shutdown(shutdownCtx); err != nil {
 		log.Sugar().Errorf("worker: health server shutdown failed: %v", err)
 	}
+	dlqDone.Wait()
 	log.Sugar().Info("worker stopped")
 	return runErr
 }
