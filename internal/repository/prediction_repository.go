@@ -27,12 +27,8 @@ const predictionColumns = "id, user_id, match_id, home_score, away_score, points
 
 func scanPrediction(row pgx.Row) (*domain.Prediction, error) {
 	p := &domain.Prediction{}
-	err := row.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.Points, &p.CreatedAt, &p.UpdatedAt)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, apperrors.Internal(err)
+	if err := row.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.Points, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		return nil, singleScanErr(err)
 	}
 	return p, nil
 }
@@ -231,16 +227,16 @@ func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context
 }
 
 func collectUserPointTotals(rows pgx.Rows) (map[int]int, error) {
-	result := make(map[int]int)
-	for rows.Next() {
-		var userID, totalPoints int
-		if err := rows.Scan(&userID, &totalPoints); err != nil {
-			return nil, apperrors.Internal(err)
-		}
-		result[userID] = totalPoints
+	pairs, err := collectRows(rows, func(r pgx.Rows) ([2]int, error) {
+		var pair [2]int
+		return pair, r.Scan(&pair[0], &pair[1])
+	})
+	if err != nil {
+		return nil, err
 	}
-	if err := rows.Err(); err != nil {
-		return nil, apperrors.Internal(err)
+	result := make(map[int]int, len(pairs))
+	for _, p := range pairs {
+		result[p[0]] = p[1]
 	}
 	return result, nil
 }
@@ -430,18 +426,10 @@ func (r *PostgresPredictionRepository) UpdateManyPoints(ctx context.Context, poi
 }
 
 func collectPredictions(rows pgx.Rows) ([]*domain.Prediction, error) {
-	var preds []*domain.Prediction
-	for rows.Next() {
+	return collectRows(rows, func(r pgx.Rows) (*domain.Prediction, error) {
 		p := &domain.Prediction{}
-		if err := rows.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.Points, &p.CreatedAt, &p.UpdatedAt); err != nil {
-			return nil, apperrors.Internal(err)
-		}
-		preds = append(preds, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return preds, nil
+		return p, r.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.Points, &p.CreatedAt, &p.UpdatedAt)
+	})
 }
 
 // ListAdmin returns predictions matching the given admin filters with pagination.

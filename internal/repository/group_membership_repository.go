@@ -45,12 +45,8 @@ const (
 func scanMembership(row pgx.Row) (*domain.GroupMembership, error) {
 	m := &domain.GroupMembership{}
 	var joinedAt *time.Time
-	err := row.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt, &m.RemovedAt, &m.RemovedBy)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, apperrors.Internal(err)
+	if err := row.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt, &m.RemovedAt, &m.RemovedBy); err != nil {
+		return nil, singleScanErr(err)
 	}
 	m.JoinedAt = joinedAt
 	return m, nil
@@ -184,20 +180,15 @@ func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, user
 }
 
 func collectMemberships(rows pgx.Rows) ([]*domain.GroupMembership, error) {
-	var memberships []*domain.GroupMembership
-	for rows.Next() {
+	return collectRows(rows, func(r pgx.Rows) (*domain.GroupMembership, error) {
 		m := &domain.GroupMembership{}
 		var joinedAt *time.Time
-		if err := rows.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt, &m.RemovedAt, &m.RemovedBy); err != nil {
-			return nil, apperrors.Internal(err)
+		if err := r.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid, &joinedAt, &m.CreatedAt, &m.UpdatedAt, &m.RemovedAt, &m.RemovedBy); err != nil {
+			return nil, err
 		}
 		m.JoinedAt = joinedAt
-		memberships = append(memberships, m)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return memberships, nil
+		return m, nil
+	})
 }
 
 // OldestActiveMember returns the active membership with the earliest JoinedAt
