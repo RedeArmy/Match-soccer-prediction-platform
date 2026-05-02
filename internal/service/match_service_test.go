@@ -116,7 +116,7 @@ func newMatchSvc(match *domain.Match) (MatchService, *stubPublisher) {
 	return svc, pub
 }
 
-// ── UpdateResult — status guard ───────────────────────────────────────────────
+// ── UpdateResult - status guard ───────────────────────────────────────────────
 
 // TestUpdateResult_LiveMatch_ConfirmsResultAndEmitsEvent is the happy path:
 // a live match can receive a final score and emits MatchFinished.
@@ -213,7 +213,7 @@ func TestUpdateResult_PublishFails_ScorerAlsoFails_StillReturnsResult(t *testing
 	}
 }
 
-// ── StartMatch — status guard ─────────────────────────────────────────────────
+// ── StartMatch - status guard ─────────────────────────────────────────────────
 
 func TestStartMatch_ScheduledMatch_TransitionsToLiveAndEmitsEvent(t *testing.T) {
 	match := &domain.Match{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina,

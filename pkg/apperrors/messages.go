@@ -2,7 +2,7 @@ package apperrors
 
 // Default user-facing messages for each error code.
 //
-// These constants are safe to include in API responses — they describe the
+// These constants are safe to include in API responses - they describe the
 // error category without exposing internal implementation details such as
 // database error messages, stack traces, or infrastructure topology.
 //

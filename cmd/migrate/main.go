@@ -7,9 +7,9 @@
 //
 // Usage:
 //
-//	migrate              — apply pending migrations
-//	migrate --seed       — apply migrations then insert development fixtures
-//	migrate --down N     — roll back the last N migrations
+//	migrate              - apply pending migrations
+//	migrate --seed       - apply migrations then insert development fixtures
+//	migrate --down N     - roll back the last N migrations
 package main
 
 import (

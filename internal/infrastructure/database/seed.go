@@ -13,7 +13,7 @@ import (
 // It is safe to call on an already-seeded database because each INSERT uses
 // ON CONFLICT DO NOTHING, preventing duplicate rows without returning an error.
 //
-// Guard the call site with a flag or environment variable — this function must
+// Guard the call site with a flag or environment variable - this function must
 // never be invoked against a production database.
 func Seed(ctx context.Context, db *pgxpool.Pool) error {
 	if err := seedUsers(ctx, db); err != nil {

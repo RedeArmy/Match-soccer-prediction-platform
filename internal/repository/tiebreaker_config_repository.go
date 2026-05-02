@@ -75,7 +75,7 @@ func (r *PostgresTiebreakerConfigRepository) SetResult(ctx context.Context, resu
 		return apperrors.Internal(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("tiebreaker config not found — set the question first")
+		return apperrors.NotFound("tiebreaker config not found - set the question first")
 	}
 	return nil
 }

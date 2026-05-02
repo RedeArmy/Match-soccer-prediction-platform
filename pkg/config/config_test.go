@@ -3,7 +3,7 @@
 //
 // All tests are black-box (package config_test) and interact only through
 // Load(), which is the sole public entry point. The internal helpers
-// setDefaults and validate are exercised indirectly — testing them in
+// setDefaults and validate are exercised indirectly - testing them in
 // isolation would couple the tests to unexported implementation details
 // that are free to change without affecting the observable contract of Load.
 //

@@ -758,7 +758,7 @@ func TestAdminResolveConflict_ServiceError_Returns500(t *testing.T) {
 	}
 }
 
-// ── AdminConflictHandler — ConflictSummary ────────────────────────────────────
+// ── AdminConflictHandler - ConflictSummary ────────────────────────────────────
 
 func TestAdminConflictSummary_Success_Returns200(t *testing.T) {
 	avg := 3.5
@@ -797,7 +797,7 @@ func TestAdminConflictSummary_ServiceError_Returns500(t *testing.T) {
 	}
 }
 
-// ── AdminGroupHandler — BulkDeleteGroups ──────────────────────────────────────
+// ── AdminGroupHandler - BulkDeleteGroups ──────────────────────────────────────
 
 func TestAdminBulkDeleteGroups_Success_Returns200(t *testing.T) {
 	svc := &stubAdminGroupSvc{}
@@ -870,7 +870,7 @@ func TestAdminBulkDeleteGroups_ExceedsLimit_Returns422(t *testing.T) {
 	}
 }
 
-// ── AdminGroupHandler — BulkRemoveMembers ─────────────────────────────────────
+// ── AdminGroupHandler - BulkRemoveMembers ─────────────────────────────────────
 
 func TestAdminBulkRemoveMembers_Success_Returns200(t *testing.T) {
 	svc := &stubAdminGroupSvc{}
@@ -939,7 +939,7 @@ func TestAdminBulkRemoveMembers_InvalidGroupID_Returns422(t *testing.T) {
 	}
 }
 
-// ── AdminGroupHandler — RecalculateLeaderboard ────────────────────────────────
+// ── AdminGroupHandler - RecalculateLeaderboard ────────────────────────────────
 
 func TestAdminRecalculateLeaderboard_Success_Returns200(t *testing.T) {
 	svc := &stubAdminGroupSvc{}
@@ -976,7 +976,7 @@ func TestAdminRecalculateLeaderboard_ServiceError_Returns500(t *testing.T) {
 	}
 }
 
-// ── AdminStatsHandler — GetDashboardStats ─────────────────────────────────────
+// ── AdminStatsHandler - GetDashboardStats ─────────────────────────────────────
 
 func TestAdminGetDashboardStats_Success_Returns200(t *testing.T) {
 	svc := &stubAdminReadSvc{}
@@ -1018,7 +1018,7 @@ func TestAdminBulkDeleteGroups_NilSlices_ResponseHasEmptyArrays(t *testing.T) {
 	svc := &nilSliceBulkGroupSvc{}
 	req := withCaller(newAdminRequestJSON(http.MethodPost, adminOtherPathGroupsBulkDelete, `{"group_ids":[1]}`), adminCaller)
 	w := doReq(newAdminGroupRouter(svc), req)
-	// nil Succeeded → all IDs treated as failed → 207 Multi-Status
+	// nil Succeeded -> all IDs treated as failed -> 207 Multi-Status
 	if w.Code != http.StatusOK && w.Code != http.StatusMultiStatus {
 		t.Errorf("expected 200 or 207, got %d", w.Code)
 	}

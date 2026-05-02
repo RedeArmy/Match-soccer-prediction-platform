@@ -187,7 +187,7 @@ func TestSeed_IdempotentOnSecondCall(t *testing.T) {
 	if err := database.Seed(ctx, pool); err != nil {
 		t.Fatalf("first seed: %v", err)
 	}
-	// ON CONFLICT DO NOTHING — second call must not error or duplicate rows.
+	// ON CONFLICT DO NOTHING - second call must not error or duplicate rows.
 	if err := database.Seed(ctx, pool); err != nil {
 		t.Fatalf("second seed (idempotent): %v", err)
 	}

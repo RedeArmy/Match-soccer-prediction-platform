@@ -435,9 +435,9 @@ func TestSystemParamService_RuntimeParam_UsesShortTTL(t *testing.T) {
 	infraParam := &domain.SystemParam{Key: "infra.key", Value: "v", IsRuntime: false}
 
 	svc := newParamSvc(&stubSystemParamRepo{param: runtimeParam}).(*systemParamService)
-	svc.runtimeTTL = 0 // zero TTL → always expired, forces re-fetch every call
+	svc.runtimeTTL = 0 // zero TTL -> always expired, forces re-fetch every call
 
-	// Populate cache for runtime param — entry should be written with runtimeTTL (0 here).
+	// Populate cache for runtime param - entry should be written with runtimeTTL (0 here).
 	_, _ = svc.Get(context.Background(), "rt.key")
 	svc.mu.RLock()
 	rtEntry := svc.cache["rt.key"]
@@ -446,7 +446,7 @@ func TestSystemParamService_RuntimeParam_UsesShortTTL(t *testing.T) {
 		t.Fatal("expected cache entry for runtime param")
 	}
 
-	// Populate cache for infra param — entry should use the regular ttl (5 min).
+	// Populate cache for infra param - entry should use the regular ttl (5 min).
 	svc.repo = &stubSystemParamRepo{param: infraParam}
 	_, _ = svc.Get(context.Background(), "infra.key")
 	svc.mu.RLock()

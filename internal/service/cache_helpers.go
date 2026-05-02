@@ -15,7 +15,7 @@ const msgCacheGetFallingThrough = "cache get failed, falling through to db"
 // cacheGet checks the cache for key and deserialises the result into *v.
 // Returns (value, true) on a hit. On a miss it returns the zero value and
 // false. On any other error it logs a warning and also returns false so the
-// caller falls through to the database — cache errors are never fatal.
+// caller falls through to the database - cache errors are never fatal.
 func cacheGet[T any](ctx context.Context, store cache.Store, key string, log *zap.Logger) (T, bool) {
 	var v T
 	if err := store.Get(ctx, key, &v); err == nil {

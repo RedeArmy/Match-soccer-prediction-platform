@@ -10,6 +10,32 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
+// Audit policy
+//
+// Every operation that mutates shared state on behalf of an actor is recorded.
+// Read-only operations, background scoring, and Clerk webhook sync are not audited
+// (no actor-driven intent). The complete set of audited actions is defined as
+// AuditAction* constants in internal/domain/constants.go.
+//
+// Categories and their audited operations:
+//
+//   match      - match.created, match.started, match.result_set
+//   tiebreaker - tiebreaker.question_set, tiebreaker.result_confirmed
+//   tournament - tournament.slot_confirmed
+//   group      - group.join_approved, group.renamed
+//   admin_group- admin_group.deleted, admin_group.member_removed,
+//                admin_group.settings_updated, admin_group.ownership_transferred,
+//                admin_group.member_bulk_removed, admin_group.bulk_deleted,
+//                admin_group.leaderboard_refreshed
+//   admin_user - admin_user.banned, admin_user.unbanned
+//   payment    - payment.created, payment.validated, payment.rejected
+//   param      - param.updated
+//   conflict   - conflict.acknowledged, conflict.auto_resolved
+//
+// The fire-and-forget model (goroutine + 5 s timeout) ensures audit writes never
+// block or roll back a committed business operation. Audit failures are logged at
+// WARN level only.
+
 // auditService is the concrete implementation of AuditLogger.
 type auditService struct {
 	repo         repository.AuditLogRepository
@@ -31,7 +57,7 @@ func NewAuditService(repo repository.AuditLogRepository, writeTimeout time.Durat
 // succeeded. Instead, a fresh background context with a 5-second timeout
 // guarantees the write completes promptly without blocking the caller.
 //
-// Failures are logged at WARN level and silently swallowed — audit logging
+// Failures are logged at WARN level and silently swallowed - audit logging
 // is a best-effort observability concern and must never propagate errors that
 // would roll back an already-committed business operation.
 func (s *auditService) Log(

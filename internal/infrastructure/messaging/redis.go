@@ -155,7 +155,7 @@ func (b *RedisBus) Publish(ctx context.Context, envelope events.Envelope) error 
 
 // ensureConsumerGroup creates the consumer group for eventType if it does not
 // already exist. "0" as the start ID means the group will receive all entries
-// already in the stream; this is intentional — if a new subscriber is added
+// already in the stream; this is intentional - if a new subscriber is added
 // to a stream that already has events it should process them from the beginning.
 // MKSTREAM creates the stream key if it does not yet exist.
 func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) {
@@ -165,7 +165,7 @@ func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) {
 		consumerGroup,
 		"0",
 	).Err()
-	// BUSYGROUP is returned when the group already exists — safe to ignore.
+	// BUSYGROUP is returned when the group already exists - safe to ignore.
 	if err != nil && !isBusyGroup(err) {
 		b.log.Error("redis bus: failed to create consumer group",
 			zap.String("stream", streamKey(eventType)),
@@ -208,7 +208,7 @@ func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 				return
 			}
 			if errors.Is(err, redis.Nil) {
-				// Timeout with no new messages — loop and check ctx.
+				// Timeout with no new messages - loop and check ctx.
 				continue
 			}
 			b.log.Error("redis bus: XReadGroup error",
@@ -331,7 +331,7 @@ func (b *RedisBus) pushDLQ(envelope events.Envelope, handlerErr error) {
 			zap.Error(err),
 		)
 	}
-	b.log.Error("event handler failed after all retries — dead-lettered",
+	b.log.Error("event handler failed after all retries - dead-lettered",
 		zap.String("event_type", string(envelope.Type)),
 		zap.String("dlq_key", dlqKey(envelope.Type)),
 		zap.Int("attempts", maxHandlerAttempts),

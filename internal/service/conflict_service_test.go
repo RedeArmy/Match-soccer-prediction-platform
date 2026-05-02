@@ -317,7 +317,7 @@ func TestConflictService_ResolveConflict_AutoFix_RecordsNoteConsistently(t *test
 	}
 }
 
-// ── ResolveConflict — auto_fix ────────────────────────────────────────────────
+// ── ResolveConflict - auto_fix ────────────────────────────────────────────────
 
 func TestConflictService_ResolveConflict_AutoFix_GroupNoOwner_TransfersOwnership(t *testing.T) {
 	successor := &domain.GroupMembership{ID: 5, UserID: 10, Status: domain.MembershipActive}
@@ -377,12 +377,12 @@ func TestConflictService_ResolveConflict_AutoFix_MembershipStale_RemovesMembersh
 }
 
 func TestConflictService_ResolveConflict_AutoFix_FixFails_StillLogsAudit(t *testing.T) {
-	// auto_fix for PaymentStale where Reject returns an error — should still write audit entry.
+	// auto_fix for PaymentStale where Reject returns an error - should still write audit entry.
 	audit := &spyAuditLogger{}
 	pr := &stubPaymentRepo{err: errors.New("db error")}
 	svc := NewConflictService(&stubQuinielaRepo{}, &stubMemberRepo{}, pr, &noopSystemParamService{}, audit, zap.NewNop())
 
-	// Should NOT return the inner error — auto_fix failures are best-effort.
+	// Should NOT return the inner error - auto_fix failures are best-effort.
 	if err := svc.ResolveConflict(context.Background(), string(domain.ConflictPaymentStale), 7, 99, "auto_fix", "note"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestConflictService_ResolveConflict_AutoFix_FixFails_StillLogsAudit(t *test
 	}
 }
 
-// ── ResolveConflict — unknown action ─────────────────────────────────────────
+// ── ResolveConflict - unknown action ─────────────────────────────────────────
 
 func TestConflictService_ResolveConflict_UnknownAction_ReturnsValidationError(t *testing.T) {
 	audit := &spyAuditLogger{}
@@ -406,7 +406,7 @@ func TestConflictService_ResolveConflict_UnknownAction_ReturnsValidationError(t 
 	}
 }
 
-// ── ListConflicts — pagination ────────────────────────────────────────────────
+// ── ListConflicts - pagination ────────────────────────────────────────────────
 
 func TestConflictService_ListConflicts_Pagination_SlicesResults(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Hour)

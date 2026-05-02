@@ -366,7 +366,7 @@ func (r *PostgresGroupMembershipRepository) TransferOwnershipRoles(ctx context.C
 // open transaction. The COUNT subquery runs within the same snapshot as the
 // preceding membership write, so the status update is always consistent with
 // the member count. A soft-deleted quiniela matches 0 rows; the UPDATE is a
-// silent no-op — the group is already effectively removed.
+// silent no-op - the group is already effectively removed.
 func syncStatusInTx(ctx context.Context, tx pgx.Tx, quinielaID, minMembers int) error {
 	_, err := tx.Exec(ctx, `
 		UPDATE quinielas

@@ -4,9 +4,9 @@ package main
 //
 // Each function has a single responsibility: construct one dependency and
 // return it (plus a cleanup function where applicable). Keeping them in a
-// separate file from main.go makes the composition root easier to read —
+// separate file from main.go makes the composition root easier to read -
 // main() describes the application lifecycle while setup.go describes how
-// each dependency is wired — and allows the helpers to be tested in
+// each dependency is wired - and allows the helpers to be tested in
 // isolation without starting a full HTTP server.
 
 import (
@@ -88,9 +88,9 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 
 // setupDB applies pending migrations and opens a connection pool.
 //
-// Returns (nil, nil) when DSN is empty — the server is intentionally started
+// Returns (nil, nil) when DSN is empty - the server is intentionally started
 // without a database only in that case (e.g. a /health-only smoke test).
-// Any other failure — migration error or pool creation error — is returned as
+// Any other failure - migration error or pool creation error - is returned as
 // a non-nil error so that main can call os.Exit(1) immediately.  Allowing the
 // server to start with a configured-but-unreachable database would serve
 // requests that silently fail at the query layer, which is far harder to

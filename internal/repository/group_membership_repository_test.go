@@ -360,7 +360,7 @@ func TestGroupMembershipRepository_CountActive_IgnoresPendingAndLeft(t *testing.
 	}
 }
 
-// ── GroupMembershipRepository — OldestActiveMember ────────────────────────────
+// ── GroupMembershipRepository - OldestActiveMember ────────────────────────────
 
 func TestGroupMembershipRepository_OldestActiveMember_ReturnsMemberWithEarliestJoinedAt(t *testing.T) {
 	cleanTables(t)
@@ -424,7 +424,7 @@ func TestGroupMembershipRepository_OldestActiveMember_NoSuccessor_ReturnsNil(t *
 	}
 }
 
-// ── GroupMembershipRepository — SetRole ────────────────────────────────────────
+// ── GroupMembershipRepository - SetRole ────────────────────────────────────────
 
 func TestGroupMembershipRepository_SetRole_UpdatesRole(t *testing.T) {
 	cleanTables(t)
@@ -683,7 +683,7 @@ func TestGroupMembershipRepository_TransferOwnershipRoles_InvalidPromotee_RollsB
 		t.Fatalf("seed owner role: %v", err)
 	}
 
-	// Promote a non-existent membership — the transaction must roll back.
+	// Promote a non-existent membership - the transaction must roll back.
 	if err := repo.TransferOwnershipRoles(context.Background(), q.ID, 999999); err == nil {
 		t.Fatal("expected error for non-existent promotee membership, got nil")
 	}

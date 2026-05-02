@@ -21,9 +21,9 @@ func NewUserStatsService(predRepo repository.PredictionRepository) MyStatsGetter
 // GetMyStats builds the complete performance profile for the given user.
 //
 // Three repository calls are made in sequence:
-//  1. GetUserPredictionCounts — aggregate counts + total points in one SQL pass.
-//  2. GetUserPointsByPhase — phase breakdown for PointsByPhase.
-//  3. ListUserScoredPointsChronological — ordered points for streak computation.
+//  1. GetUserPredictionCounts - aggregate counts + total points in one SQL pass.
+//  2. GetUserPointsByPhase - phase breakdown for PointsByPhase.
+//  3. ListUserScoredPointsChronological - ordered points for streak computation.
 //
 // AccuracyPct and AvgPointsPerPred are both 0.0 when no predictions have been
 // scored yet, avoiding division-by-zero without special-casing in the handler.

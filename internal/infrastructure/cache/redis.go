@@ -2,9 +2,9 @@
 // messaging across the application.
 //
 // Redis serves two distinct purposes in this service:
-//  1. Response caching — reducing repeated database reads for frequently
+//  1. Response caching - reducing repeated database reads for frequently
 //     accessed, slowly changing data such as the published match schedule.
-//  2. Pub/sub messaging — delivering domain events between the API server
+//  2. Pub/sub messaging - delivering domain events between the API server
 //     and the worker process when in-order, at-least-once delivery is
 //     acceptable and the overhead of a dedicated broker is not justified.
 //

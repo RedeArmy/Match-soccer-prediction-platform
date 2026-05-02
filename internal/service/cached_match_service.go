@@ -88,7 +88,7 @@ func (s *cachedMatchService) CreateMatch(ctx context.Context, match *domain.Matc
 
 // UpdateResult delegates to the inner service and invalidates relevant caches.
 // The phase list and all status lists are invalidated because the match has
-// transitioned from Live → Finished; any cached Live or Finished list is stale.
+// transitioned from Live -> Finished; any cached Live or Finished list is stale.
 func (s *cachedMatchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int) (*domain.Match, error) {
 	m, err := s.inner.UpdateResult(ctx, id, homeScore, awayScore)
 	if err != nil {
@@ -99,7 +99,7 @@ func (s *cachedMatchService) UpdateResult(ctx context.Context, id int, homeScore
 }
 
 // StartMatch delegates to the inner service and invalidates caches affected
-// by the Scheduled → Live status transition.
+// by the Scheduled -> Live status transition.
 func (s *cachedMatchService) StartMatch(ctx context.Context, id int) (*domain.Match, error) {
 	m, err := s.inner.StartMatch(ctx, id)
 	if err != nil {
@@ -109,7 +109,7 @@ func (s *cachedMatchService) StartMatch(ctx context.Context, id int) (*domain.Ma
 	return m, nil
 }
 
-// GetMatch delegates directly — single-entity reads are not cached because
+// GetMatch delegates directly - single-entity reads are not cached because
 // the cache benefit is small (one DB query) and the invalidation surface would
 // grow with every match mutation.
 func (s *cachedMatchService) GetMatch(ctx context.Context, id int) (*domain.Match, error) {

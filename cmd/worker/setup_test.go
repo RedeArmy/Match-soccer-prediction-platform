@@ -72,7 +72,7 @@ func TestSetupEventBus_UnknownDriver_ReturnsError(t *testing.T) {
 
 func TestSetupEventBus_RedisUnreachable_ReturnsError(t *testing.T) {
 	// Port 1 is reserved and will produce an immediate "connection refused"
-	// from the OS without blocking — no timeout required.
+	// from the OS without blocking - no timeout required.
 	cfg := &config.Config{
 		EventBus: config.EventBusConfig{Driver: driverRedis},
 		Redis:    config.RedisConfig{Addr: "localhost:1"},

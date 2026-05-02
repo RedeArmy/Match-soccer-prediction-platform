@@ -1,7 +1,7 @@
 package repository_test
 
 // index_usage_test.go verifies that the performance indexes introduced in
-// migrations 000019–000021 are actually used by the planner for the queries
+// migrations 000019-000021 are actually used by the planner for the queries
 // they were designed to accelerate.
 //
 // Each test runs EXPLAIN (FORMAT JSON, ANALYZE FALSE) with sequential scans
@@ -126,7 +126,7 @@ func TestIndexUsage_QuinielaInviteCode(t *testing.T) {
 		"TESTCODE01",
 	)
 	if !containsIndexScan(plan, wantIndex) {
-		t.Errorf("expected plan to use %q but got node type %q — run migrations 000022+",
+		t.Errorf("expected plan to use %q but got node type %q - run migrations 000022+",
 			wantIndex, plan.NodeType)
 	}
 }
@@ -146,7 +146,7 @@ func TestIndexUsage_QuinielaOwnerCreated(t *testing.T) {
 		1,
 	)
 	if !containsIndexScan(plan, wantIndex) {
-		t.Errorf("expected plan to use %q but got node type %q — run migrations 000019+",
+		t.Errorf("expected plan to use %q but got node type %q - run migrations 000019+",
 			wantIndex, plan.NodeType)
 	}
 }
@@ -169,7 +169,7 @@ func TestIndexUsage_MatchesStatusKickoff(t *testing.T) {
 		"scheduled",
 	)
 	if !containsIndexScan(plan, wantIndex) {
-		t.Errorf("expected plan to use %q — run migrations 000020+", wantIndex)
+		t.Errorf("expected plan to use %q - run migrations 000020+", wantIndex)
 	}
 }
 
@@ -188,7 +188,7 @@ func TestIndexUsage_MatchesPhaseKickoff(t *testing.T) {
 		"group_stage",
 	)
 	if !containsIndexScan(plan, wantIndex) {
-		t.Errorf("expected plan to use %q — run migrations 000020+", wantIndex)
+		t.Errorf("expected plan to use %q - run migrations 000020+", wantIndex)
 	}
 }
 
@@ -206,6 +206,6 @@ func TestIndexUsage_GroupMembershipsStatusPaid(t *testing.T) {
 		1,
 	)
 	if !containsIndexScan(plan, wantIndex) {
-		t.Errorf("expected plan to use %q — run migrations 000021+", wantIndex)
+		t.Errorf("expected plan to use %q - run migrations 000021+", wantIndex)
 	}
 }

@@ -5,7 +5,7 @@ package repository
 // soft deletion (users, quinielas) carry a nullable deleted_at column; a
 // non-NULL value marks the row as logically deleted.
 //
-// Correct usage — appended after an existing predicate:
+// Correct usage - appended after an existing predicate:
 //
 //	`SELECT ` + cols + ` FROM users WHERE id=$1` + activeOnly
 //

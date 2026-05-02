@@ -260,7 +260,7 @@ func TestPredictionRepository_UpdateManyPoints_LargeBatch(t *testing.T) {
 	}
 }
 
-// ── PredictionRepository — TotalPointsByQuiniela ──────────────────────────────
+// ── PredictionRepository - TotalPointsByQuiniela ──────────────────────────────
 
 func TestPredictionRepository_TotalPointsByQuiniela_ReturnsSumPerUser(t *testing.T) {
 	cleanTables(t)
@@ -368,7 +368,7 @@ func TestPredictionRepository_TotalPointsByQuiniela_EmptyQuiniela_ReturnsEmptyMa
 	}
 }
 
-// ── PredictionRepository — TotalPointsByQuinielaAndPhase ─────────────────────
+// ── PredictionRepository - TotalPointsByQuinielaAndPhase ─────────────────────
 
 func TestPredictionRepository_TotalPointsByQuinielaAndPhase_MatchingPhase_ReturnsSumPerUser(t *testing.T) {
 	cleanTables(t)
@@ -602,7 +602,7 @@ func TestPredictionRepository_ListByUserAndQuiniela_InactiveMember_ReturnsEmpty(
 	}
 }
 
-// ── PredictionRepository — PredictionStatsByQuiniela ─────────────────────────
+// ── PredictionRepository - PredictionStatsByQuiniela ─────────────────────────
 
 func TestPredictionRepository_PredictionStatsByQuiniela_ReturnsCountsPerUser(t *testing.T) {
 	cleanTables(t)
@@ -774,7 +774,7 @@ func TestPredictionRepository_PredictionStatsByQuiniela_CancelledContext_Returns
 	}
 }
 
-// ── PredictionRepository — GetUserPredictionCounts ───────────────────────────
+// ── PredictionRepository - GetUserPredictionCounts ───────────────────────────
 
 func TestPredictionRepository_GetUserPredictionCounts_ReturnsAggregates(t *testing.T) {
 	cleanTables(t)
@@ -882,7 +882,7 @@ func TestPredictionRepository_GetUserPredictionCounts_CancelledContext_ReturnsEr
 	}
 }
 
-// ── PredictionRepository — GetUserPointsByPhase ───────────────────────────────
+// ── PredictionRepository - GetUserPointsByPhase ───────────────────────────────
 
 func TestPredictionRepository_GetUserPointsByPhase_ReturnsPerPhasePoints(t *testing.T) {
 	cleanTables(t)
@@ -961,7 +961,7 @@ func TestPredictionRepository_GetUserPointsByPhase_CancelledContext_ReturnsError
 	}
 }
 
-// ── PredictionRepository — ListUserScoredPointsChronological ─────────────────
+// ── PredictionRepository - ListUserScoredPointsChronological ─────────────────
 
 func TestPredictionRepository_ListUserScoredPointsChronological_ReturnsAllScoredPoints(t *testing.T) {
 	cleanTables(t)
@@ -1062,7 +1062,7 @@ func TestPredictionRepository_ListUserScoredPointsChronological_CancelledContext
 	}
 }
 
-// ── PredictionRepository — admin extensions ───────────────────────────────────
+// ── PredictionRepository - admin extensions ───────────────────────────────────
 
 func TestPredictionRepository_ListAdmin_NoFilter_ReturnsAll(t *testing.T) {
 	cleanTables(t)
@@ -1182,7 +1182,7 @@ func TestPredictionRepository_GlobalLeaderboard_LimitRespected(t *testing.T) {
 	}
 }
 
-// ── PredictionRepository — ListQuinielaIDsByMatch ────────────────────────────
+// ── PredictionRepository - ListQuinielaIDsByMatch ────────────────────────────
 
 func TestPredictionRepository_ListQuinielaIDsByMatch_ReturnsAffectedQuinielas(t *testing.T) {
 	cleanTables(t)
