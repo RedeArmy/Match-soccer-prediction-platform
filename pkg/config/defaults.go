@@ -9,7 +9,7 @@ import (
 // setDefaults registers a fallback value for every configuration key known
 // to the application.
 //
-// Registering a default — even an explicit empty string — is required for
+// Registering a default - even an explicit empty string - is required for
 // viper's AutomaticEnv mechanism to resolve that key from the process
 // environment. Keys that have no registered default are silently ignored
 // during Unmarshal, which produces a subtle class of bug: the developer

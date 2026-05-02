@@ -2,7 +2,7 @@
 //
 // Each service orchestrates one domain concern: it reads from and writes to
 // repositories, enforces business rules, and emits domain events. Services
-// must not be aware of HTTP or database implementation details — they operate
+// must not be aware of HTTP or database implementation details - they operate
 // exclusively on domain entities and depend on repository interfaces defined
 // in internal/repository, not on concrete PostgreSQL implementations.
 //
@@ -62,7 +62,7 @@ type PredictionService interface {
 //
 // ScoreMatch is intended to be called from a MatchFinished event handler, not
 // directly from an HTTP handler, which is why it does not return a full list
-// of updated predictions — the caller's context is asynchronous.
+// of updated predictions - the caller's context is asynchronous.
 type MatchScorer interface {
 	ScoreMatch(ctx context.Context, matchID int) error
 }
@@ -85,7 +85,7 @@ type Ranker interface {
 // active member (MembershipRoleCreateOwner). GetByInviteCode enables the join flow:
 // the caller obtains the quiniela from a short code before creating the membership.
 //
-// The invite code is permanent — it is generated once at creation and never
+// The invite code is permanent - it is generated once at creation and never
 // rotated. Groups are identified by a stable code for the tournament's duration.
 type QuinielaService interface {
 	Create(ctx context.Context, quiniela *domain.Quiniela) error
@@ -101,12 +101,12 @@ type QuinielaService interface {
 // GroupMembershipService manages user membership in Quinielas.
 //
 // Join resolves the invite code to a Quiniela and creates a pending join
-// request — the user is NOT active until any existing active member calls
+// request - the user is NOT active until any existing active member calls
 // ApproveJoin. ListByQuiniela returns the full roster. ListByUser returns all
 // groups a user belongs to, regardless of status.
 //
 // ApproveJoin promotes a pending request to active. Any active member of the
-// quiniela may approve — there is no admin-only gate. After approval the group
+// quiniela may approve - there is no admin-only gate. After approval the group
 // status is synchronised: if active member count reaches MinMembersForActive
 // the quiniela transitions from inactive to active.
 //
@@ -115,7 +115,7 @@ type QuinielaService interface {
 // the group status is re-evaluated and may become inactive.
 //
 // MarkPaid is called exclusively by the payment system after a transaction is
-// confirmed. It must never be exposed as a direct API action — callers cannot
+// confirmed. It must never be exposed as a direct API action - callers cannot
 // mark themselves as paid. For free groups (entry_fee = 0), paid is set to
 // true automatically at join time and this method is never invoked.
 type GroupMembershipService interface {
@@ -132,7 +132,7 @@ type GroupMembershipService interface {
 // GetMyStats aggregates prediction counts, points by tournament phase, and
 // streak information for the given userID. It is called exclusively from the
 // authenticated GET /api/v1/users/me/stats endpoint and operates on global
-// predictions — not scoped to any single quiniela.
+// predictions - not scoped to any single quiniela.
 type MyStatsGetter interface {
 	GetMyStats(ctx context.Context, userID int) (*domain.UserStats, error)
 }
@@ -146,7 +146,7 @@ type MyStatsGetter interface {
 //     prompt (e.g. "total goals in the Final"). Until set, no member may
 //     submit a prediction.
 //  2. Members call Submit (or re-Submit to update) with their numeric estimate.
-//     Predictions are global — one per user, applied to every group they
+//     Predictions are global - one per user, applied to every group they
 //     belong to.
 //  3. After the tournament, the administrator calls ConfirmResult with the
 //     actual value. After confirmation, Submit returns Conflict.
@@ -216,7 +216,7 @@ type Notifier interface {
 //
 // All Get* helpers return a typed value and fall back to their defaultVal
 // argument when the key is absent or the stored string cannot be parsed.
-// This means callers never receive an error from a missing param — the domain
+// This means callers never receive an error from a missing param - the domain
 // constant is always the fallback, so the system degrades gracefully.
 //
 // Set invalidates the in-memory cache entry for the affected key immediately,
@@ -284,7 +284,7 @@ type PaymentService interface {
 // are not available to regular members.
 //
 // All methods require an adminID that is stored in the audit trail. The admin
-// role gate is enforced at the HTTP layer via RequireRole — this service does
+// role gate is enforced at the HTTP layer via RequireRole - this service does
 // not re-check it internally.
 type AdminGroupService interface {
 	// DeleteGroup soft-deletes the quiniela. Returns NotFound when it does not
@@ -339,7 +339,7 @@ type BulkBanResult struct {
 // AdminUserService exposes administrative operations on User accounts.
 //
 // BanUser and BulkBan automatically transfer group ownership when the banned
-// user holds MembershipRoleCreateOwner in any quiniela — see
+// user holds MembershipRoleCreateOwner in any quiniela - see
 // GroupMembershipService for the transfer algorithm. The admin role gate is
 // enforced at the HTTP layer; this service does not re-check it.
 type AdminUserService interface {
@@ -384,7 +384,7 @@ type AuditReader interface {
 }
 
 // AuditService is the combined interface for callers that need both write and
-// read access to the audit trail — primarily the composition root (server.go)
+// read access to the audit trail - primarily the composition root (server.go)
 // where the service is wired and passed to both audit-writing and
 // audit-reading handlers.
 type AuditService interface {
@@ -468,7 +468,7 @@ type ConflictSummaryResult struct {
 // ConflictService detects and resolves operational inconsistencies that require
 // administrative attention. Conflicts are computed on demand; they are not
 // persisted. Resolution records an audit log entry and is intended to
-// acknowledge the conflict — the underlying issue must be fixed separately.
+// acknowledge the conflict - the underlying issue must be fixed separately.
 type ConflictService interface {
 	// ListConflicts returns currently detected conflicts across all conflict
 	// categories, sliced by p. A zero Pagination returns the full list.
@@ -480,6 +480,6 @@ type ConflictService interface {
 	ConflictSummary(ctx context.Context) (*ConflictSummaryResult, error)
 	// ResolveConflict records an admin action on the given conflict. action must
 	// be "ack" (acknowledgement only) or "auto_fix" (attempt automatic remediation
-	// — transfers ownership, rejects stale payments, or removes stale memberships).
+	// - transfers ownership, rejects stale payments, or removes stale memberships).
 	ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, action, note string) error
 }

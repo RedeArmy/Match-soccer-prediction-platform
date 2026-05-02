@@ -107,12 +107,12 @@ func TestValidateMatchResult_NegativeAwayScore_ReturnsValidation(t *testing.T) {
 	}
 }
 
-// ── ValidatePrediction — deadline ─────────────────────────────────────────────
+// ── ValidatePrediction - deadline ─────────────────────────────────────────────
 
 // TestValidatePrediction_WellBeforeDeadline verifies that a prediction
 // submitted more than 5 minutes before kick-off is accepted.
 func TestValidatePrediction_WellBeforeDeadline_ReturnsNil(t *testing.T) {
-	kickoff := time.Now().Add(10 * time.Minute) // 10 min away — comfortably open
+	kickoff := time.Now().Add(10 * time.Minute) // 10 min away - comfortably open
 	p := &domain.Prediction{HomeScore: 1, AwayScore: 0}
 	if err := domain.ValidatePrediction(p, kickoff, time.Now(), domain.PredictionDeadlineOffset); err != nil {
 		t.Errorf("expected nil for prediction 10 min before kickoff, got %v", err)
@@ -124,7 +124,7 @@ func TestValidatePrediction_WellBeforeDeadline_ReturnsNil(t *testing.T) {
 // (i.e. time.Now() == kickoff - 5min) is on the boundary; the implementation
 // uses After so equal-to-deadline is still rejected.
 func TestValidatePrediction_WithinDeadlineWindow_ReturnsValidation(t *testing.T) {
-	kickoff := time.Now().Add(3 * time.Minute) // 3 min away — inside the 5-min lock
+	kickoff := time.Now().Add(3 * time.Minute) // 3 min away - inside the 5-min lock
 	p := &domain.Prediction{HomeScore: 1, AwayScore: 0}
 	if err := domain.ValidatePrediction(p, kickoff, time.Now(), domain.PredictionDeadlineOffset); !isValidation(err) {
 		t.Errorf("expected validation error for prediction within 5-min lock window, got %v", err)

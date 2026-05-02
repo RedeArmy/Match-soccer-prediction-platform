@@ -76,7 +76,7 @@ func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, pr
 
 	if existing != nil {
 		if cfg.Result != nil {
-			return nil, apperrors.Conflict("tiebreaker result has already been confirmed — predictions are closed")
+			return nil, apperrors.Conflict("tiebreaker result has already been confirmed - predictions are closed")
 		}
 		existing.Prediction = prediction
 		if err := s.tiebreakerRepo.Update(ctx, existing); err != nil {
@@ -86,7 +86,7 @@ func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, pr
 	}
 
 	if cfg.Result != nil {
-		return nil, apperrors.Conflict("tiebreaker result has already been confirmed — predictions are closed")
+		return nil, apperrors.Conflict("tiebreaker result has already been confirmed - predictions are closed")
 	}
 
 	tb := &domain.Tiebreaker{
@@ -131,7 +131,7 @@ func (s *tiebreakerService) ConfirmResult(ctx context.Context, result int) error
 		return err
 	}
 	if cfg == nil {
-		return apperrors.Validation("tiebreaker question has not been configured — cannot confirm result")
+		return apperrors.Validation("tiebreaker question has not been configured - cannot confirm result")
 	}
 	if err := s.configRepo.SetResult(ctx, result); err != nil {
 		return err

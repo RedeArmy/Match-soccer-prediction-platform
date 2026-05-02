@@ -89,10 +89,10 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 //
 // Decision table (evaluated top-to-bottom, first match wins):
 //
-//	Exact scoreline                          → cfg.exactScore (default 5)
-//	Correct outcome (non-draw) + same margin → cfg.correctOutcome + cfg.goalDifference (default 3)
-//	Correct outcome only                     → cfg.correctOutcome (default 2)
-//	Wrong outcome / no prediction            → 0
+//	Exact scoreline                          -> cfg.exactScore (default 5)
+//	Correct outcome (non-draw) + same margin -> cfg.correctOutcome + cfg.goalDifference (default 3)
+//	Correct outcome only                     -> cfg.correctOutcome (default 2)
+//	Wrong outcome / no prediction            -> 0
 func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, cfg scoringConfig) int {
 	if pred.HomeScore == actualHome && pred.AwayScore == actualAway {
 		return cfg.exactScore

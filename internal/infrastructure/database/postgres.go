@@ -2,8 +2,8 @@
 // repository implementations in this service.
 //
 // pgx is chosen over the standard database/sql driver for two reasons.
-// First, it exposes native PostgreSQL types — arrays, JSONB, UUIDs, custom
-// enums — without requiring a sql.Scanner implementation for each, which
+// First, it exposes native PostgreSQL types - arrays, JSONB, UUIDs, custom
+// enums - without requiring a sql.Scanner implementation for each, which
 // reduces boilerplate and eliminates a category of runtime type-assertion
 // panics. Second, pgxpool manages connection lifecycles more predictably
 // than sql.DB under high-concurrency workloads, exposing explicit MinConns

@@ -117,7 +117,7 @@ func (s *matchService) StartMatch(ctx context.Context, id int) (*domain.Match, e
 // The match must be in Live status. Confirming a result on a Scheduled match
 // is rejected because the match must be explicitly started first via StartMatch,
 // ensuring the prediction deadline has already closed. Updating a Finished
-// match is rejected to prevent silent overwrites of confirmed results — once
+// match is rejected to prevent silent overwrites of confirmed results - once
 // the score is confirmed it is permanent.
 func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int) (*domain.Match, error) {
 	if err := domain.ValidateMatchResult(&homeScore, &awayScore); err != nil {
@@ -157,7 +157,7 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 		s.log.Error("failed to publish MatchFinished event; falling back to synchronous scoring",
 			zap.Int("match_id", id), zap.Error(err))
 		if scoreErr := s.scorer.ScoreMatch(ctx, m.ID); scoreErr != nil {
-			s.log.Error("synchronous fallback scoring failed — predictions for this match may be unscored",
+			s.log.Error("synchronous fallback scoring failed - predictions for this match may be unscored",
 				zap.Int("match_id", id), zap.Error(scoreErr))
 		}
 	}

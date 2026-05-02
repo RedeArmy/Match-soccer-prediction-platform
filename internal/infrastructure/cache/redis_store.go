@@ -38,7 +38,7 @@ func (s *RedisStore) Get(ctx context.Context, key string, dest interface{}) erro
 		return fmt.Errorf("cache get %q: %w", key, err)
 	}
 	if err := json.Unmarshal(raw, dest); err != nil {
-		// Corrupted or schema-changed cached value — treat as a miss so the
+		// Corrupted or schema-changed cached value - treat as a miss so the
 		// caller can repopulate with the current schema.
 		return ErrCacheMiss
 	}

@@ -2,10 +2,10 @@
 // defined in internal/domain/events.
 //
 // Multiple backends are available and selected at startup via configuration:
-//   - in_memory.go  — synchronous, in-process delivery; used in tests and
+//   - in_memory.go  - synchronous, in-process delivery; used in tests and
 //     single-replica local development only. Events are lost
 //     on process restart and cannot cross process boundaries.
-//   - redis.go      — asynchronous pub/sub via Redis; suitable for multi-replica
+//   - redis.go      - asynchronous pub/sub via Redis; suitable for multi-replica
 //     deployments where low-latency delivery matters more than
 //     durability.
 //
@@ -75,7 +75,7 @@ func (b *InMemoryBus) Publish(ctx context.Context, envelope events.Envelope) err
 	// request does not abort event side-effects (e.g. scoring must complete
 	// even if the client disconnected). context.WithoutCancel preserves any
 	// values carried by ctx (trace IDs, request IDs) so they remain available
-	// to handlers for structured logging and distributed tracing — something
+	// to handlers for structured logging and distributed tracing - something
 	// context.Background() would silently discard.
 	// handlerCtx strips cancellation so a cancelled HTTP request does not
 	// abort event side-effects, while preserving trace/request-ID values.
@@ -97,7 +97,7 @@ func (b *InMemoryBus) Publish(ctx context.Context, envelope events.Envelope) err
 // Operators can use the logged envelope JSON to replay the event manually.
 func (b *InMemoryBus) logDLQ(envelope events.Envelope, handlerErr error) {
 	raw, _ := json.Marshal(envelope)
-	b.log.Error("event handler failed after all retries — dead-lettered",
+	b.log.Error("event handler failed after all retries - dead-lettered",
 		zap.String("event_type", string(envelope.Type)),
 		zap.Time("occurred_at", envelope.OccurredAt),
 		zap.Time("dead_lettered_at", time.Now().UTC()),

@@ -11,7 +11,7 @@ import (
 // DLQChecker reports the number of unprocessed events sitting in the Redis
 // dead-letter queue for a specific event type. A non-empty DLQ means that
 // at least one event handler exhausted all retry attempts without succeeding
-// — likely indicating a persistent failure (database down, bug in handler)
+// - likely indicating a persistent failure (database down, bug in handler)
 // that requires operator intervention.
 //
 // The check is informational rather than binary: it returns a Result with
@@ -52,7 +52,7 @@ func (c *DLQChecker) Check(ctx context.Context) Result {
 		return Result{
 			Status:    "error",
 			LatencyMS: latency,
-			Error:     fmt.Sprintf("%d unprocessed event(s) in dead-letter queue — manual replay required", n),
+			Error:     fmt.Sprintf("%d unprocessed event(s) in dead-letter queue - manual replay required", n),
 		}
 	}
 	return Result{Status: "ok", LatencyMS: latency}
@@ -61,7 +61,7 @@ func (c *DLQChecker) Check(ctx context.Context) Result {
 // StreamPendingChecker reports the number of messages in the Redis Streams
 // pending-entry list (PEL) for a given consumer group and stream. A growing
 // PEL signals that the worker is consuming events more slowly than they are
-// published — or, in the worst case, that the worker is down entirely and
+// published - or, in the worst case, that the worker is down entirely and
 // messages are accumulating without being processed.
 //
 // Unlike DLQChecker, a non-zero PEL is not immediately alarming: messages
@@ -99,7 +99,7 @@ func (c *StreamPendingChecker) Check(ctx context.Context) Result {
 	if err != nil {
 		// NOGROUP is returned when the stream or group does not yet exist
 		// (worker has never started). That is not an error from an operator
-		// standpoint — the group is created lazily on first Subscribe call.
+		// standpoint - the group is created lazily on first Subscribe call.
 		if isNoGroupError(err) {
 			return Result{Status: "ok", LatencyMS: time.Since(start).Milliseconds()}
 		}
@@ -110,7 +110,7 @@ func (c *StreamPendingChecker) Check(ctx context.Context) Result {
 		return Result{
 			Status:    "error",
 			LatencyMS: latency,
-			Error:     fmt.Sprintf("%d message(s) pending in stream %s (group %s) — worker may be lagging or down", pending.Count, c.streamKey, c.group),
+			Error:     fmt.Sprintf("%d message(s) pending in stream %s (group %s) - worker may be lagging or down", pending.Count, c.streamKey, c.group),
 		}
 	}
 	return Result{Status: "ok", LatencyMS: latency}

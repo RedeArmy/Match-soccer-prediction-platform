@@ -12,8 +12,8 @@ import "time"
 
 // Config is the root configuration object for the application.
 // It is populated once at startup by Load and treated as immutable thereafter.
-// Passing *Config explicitly through the dependency graph — rather than
-// accessing a global — makes every component's requirements visible and
+// Passing *Config explicitly through the dependency graph - rather than
+// accessing a global - makes every component's requirements visible and
 // verifiable without running the full application.
 type Config struct {
 	Environment string         `mapstructure:"environment"`
@@ -29,7 +29,7 @@ type Config struct {
 
 // IsDevelopment reports whether the application is running in a relaxed local
 // environment where auth/webhook secrets may be omitted intentionally.
-// An empty Environment is treated as production — an unset WCQ_ENVIRONMENT
+// An empty Environment is treated as production - an unset WCQ_ENVIRONMENT
 // in a deployed container is a misconfiguration, not implicit development mode.
 // The viper default ("dev") ensures a developer who never sets the variable
 // still gets development mode; only an explicit empty string is rejected.
@@ -143,13 +143,13 @@ type WorkerConfig struct {
 // Clerk signs tokens with RS256 using a rotating key pair. The public keys
 // are published at the JWKS endpoint and must be fetched and cached at
 // startup. The JWKSURL value is available in the Clerk dashboard under
-// API Keys → Advanced → JWKS URL.
+// API Keys -> Advanced -> JWKS URL.
 type ClerkConfig struct {
 	JWKSURL string `mapstructure:"jwksUrl"`
 	// WebhookSecret is the signing secret from the Clerk webhook dashboard
 	// (format "whsec_<base64>"). It is used to validate the Svix signature on
 	// incoming webhook events. If empty, signature validation is skipped and a
-	// warning is logged — acceptable for local development only. Startup
+	// warning is logged - acceptable for local development only. Startup
 	// validation must reject this configuration outside development.
 	WebhookSecret string `mapstructure:"webhookSecret"`
 }

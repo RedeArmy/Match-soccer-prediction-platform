@@ -16,6 +16,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/testutil"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
 )
@@ -191,7 +192,7 @@ func TestNewHealthServer_RegistersRoutes(t *testing.T) {
 
 func TestRun_EventBusUnreachable_ReturnsError(t *testing.T) {
 	// driver passes the "redis" check, but the Dial to port 1 is immediately
-	// refused by the OS — covering the setupEventBus error branch inside run().
+	// refused by the OS - covering the setupEventBus error branch inside run().
 	cfg := &config.Config{
 		EventBus: config.EventBusConfig{Driver: driverRedis},
 		Redis:    config.RedisConfig{Addr: "localhost:1"},
@@ -242,11 +243,51 @@ func TestRun_InvalidDSN_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestRun_FullStartup_ImmediateShutdown(t *testing.T) {
+	// Exercises the full service-wiring path inside run(): setupEventBus and
+	// setupDB both succeed, all repos/services are constructed, and startWorker
+	// exits cleanly when the context is cancelled.
+	// A pre-cancelled context cannot be used here because cache.NewClient pings
+	// Redis synchronously with the caller's context; instead we cancel shortly
+	// after the goroutine starts so setup has time to complete.
+	mr := miniredis.RunT(t)
+	dsn := testutil.SetupPostgres(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Config{
+		EventBus: config.EventBusConfig{Driver: driverRedis},
+		Redis:    config.RedisConfig{Addr: mr.Addr()},
+		Database: config.DatabaseConfig{
+			DSN:             dsn,
+			MaxOpenConns:    5,
+			MaxIdleConns:    2,
+			ConnMaxLifetime: time.Minute,
+		},
+		Worker: config.WorkerConfig{HealthPort: "0"},
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- run(ctx, cfg, zap.NewNop()) }()
+
+	time.AfterFunc(300*time.Millisecond, cancel)
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run() did not return within timeout")
+	}
+}
+
 // ── startWorker ───────────────────────────────────────────────────────────────
 
 func TestStartWorker_ImmediateShutdown_ReturnsNil(t *testing.T) {
 	// A pre-cancelled context causes startWorker to exit immediately after
-	// setting up subscribers and the health server — no real I/O required.
+	// setting up subscribers and the health server - no real I/O required.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -323,7 +364,7 @@ func TestStartWorker_SubscribesBeforeShutdown(t *testing.T) {
 func TestBuildHealthCheckers_ReturnsCheckerForEachEventType(t *testing.T) {
 	// buildHealthCheckers constructors are pure: they only store references and
 	// do not dial any backend. Passing nil for both arguments is safe because
-	// Check() is never called here — we only verify the slice length and that
+	// Check() is never called here - we only verify the slice length and that
 	// every expected event type has both a DLQ and stream-pending checker.
 	checkers := buildHealthCheckers(nil, nil)
 
@@ -417,7 +458,7 @@ func TestMonitorDLQ_EmptyQueue_LogsDebug(t *testing.T) {
 
 func TestMonitorDLQ_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	// A pre-cancelled context causes monitorDLQ to enter the select loop once
-	// and immediately return via the ctx.Done() case — without waiting for the
+	// and immediately return via the ctx.Done() case - without waiting for the
 	// 5-minute ticker. This exercises the ticker/monitoredEvents setup path.
 	mr := miniredis.RunT(t)
 	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})

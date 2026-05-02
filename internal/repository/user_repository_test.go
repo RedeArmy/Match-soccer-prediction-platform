@@ -156,7 +156,7 @@ func TestUserRepository_List_ReturnsAll(t *testing.T) {
 	}
 }
 
-// ── UserRepository — ListByIDs ─────────────────────────────────────────────────
+// ── UserRepository - ListByIDs ─────────────────────────────────────────────────
 
 func TestUserRepository_ListByIDs_ReturnsMatchingUsers(t *testing.T) {
 	cleanTables(t)
@@ -193,7 +193,7 @@ func TestUserRepository_ListByIDs_IgnoresDeletedUsers(t *testing.T) {
 	u2 := seedUser(t)
 	userRepo := repository.NewPostgresUserRepository(testDB)
 
-	// Soft-delete u2 — it must not appear in ListByIDs results.
+	// Soft-delete u2 - it must not appear in ListByIDs results.
 	if err := userRepo.Delete(context.Background(), u2.ID); err != nil {
 		t.Fatalf("delete u2: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestUserRepository_Unban_IsIdempotent(t *testing.T) {
 	user := seedUser(t)
 	repo := repository.NewPostgresUserRepository(testDB)
 
-	// user is not banned — should succeed silently
+	// user is not banned - should succeed silently
 	if err := repo.Unban(context.Background(), user.ID); err != nil {
 		t.Fatalf("unban on unbanned user should not error: %v", err)
 	}

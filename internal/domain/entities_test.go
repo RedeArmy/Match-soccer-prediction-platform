@@ -4,7 +4,7 @@ package domain_test
 //
 // These tests verify that the string values stored in the database match the
 // named constants in code. A failing test here signals a breaking change to
-// the DB schema or a mismatched backfill — both require a migration.
+// the DB schema or a mismatched backfill - both require a migration.
 
 import (
 	"testing"

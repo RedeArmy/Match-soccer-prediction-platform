@@ -123,8 +123,8 @@ func (r *PostgresQuinielaRepository) GetByID(ctx context.Context, id int) (*doma
 }
 
 func (r *PostgresQuinielaRepository) GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error) {
-	// The expiry check is enforced here at the persistence layer — not only in
-	// the service — so that any future caller of this method gets consistent
+	// The expiry check is enforced here at the persistence layer - not only in
+	// the service - so that any future caller of this method gets consistent
 	// behaviour without relying on the service to apply the guard. An expired
 	// code returns nil (not found) rather than an error, matching the nil-for-
 	// not-found convention used throughout the repository layer.
@@ -261,7 +261,7 @@ func (r *PostgresQuinielaRepository) UpdateGroupSettings(ctx context.Context, qu
 }
 
 // DeleteByAdmin soft-deletes a quiniela on behalf of an administrator.
-// The adminID identifies the actor for the caller's audit trail — it is not
+// The adminID identifies the actor for the caller's audit trail - it is not
 // stored in the quinielas table. Returns NotFound when the quiniela does not
 // exist or is already soft-deleted.
 func (r *PostgresQuinielaRepository) DeleteByAdmin(ctx context.Context, quinielaID, _ int) error {

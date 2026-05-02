@@ -6,8 +6,8 @@ REST API for managing World Cup prediction pools built with Go.
 
 | Branch    | Purpose                  | Merge policy                                |
 |-----------|--------------------------|---------------------------------------------|
-| `main`    | Production               | PRs from `develop` only — CI must pass      |
-| `develop` | Integration / staging    | PRs from feature branches — CI must pass    |
+| `main`    | Production               | PRs from `develop` only - CI must pass      |
+| `develop` | Integration / staging    | PRs from feature branches - CI must pass    |
 
 Feature branches must be merged into `develop` first. Direct PRs from feature
 branches to `main` are rejected by the CI pipeline.

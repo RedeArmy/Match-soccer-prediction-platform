@@ -12,8 +12,8 @@ import (
 
 // ErrorResponse is the JSON envelope written for all error responses.
 //
-// Using a consistent envelope across every error — regardless of which
-// handler produced it — makes the API surface predictable for clients and
+// Using a consistent envelope across every error - regardless of which
+// handler produced it - makes the API surface predictable for clients and
 // simplifies frontend error handling. Clients can always expect to find the
 // machine-readable code and the human-readable message at the same path in
 // the response body.
@@ -38,7 +38,7 @@ type errorDetail = ErrorDetail
 //
 // If err is (or wraps) an *apperrors.AppError, WriteError uses its HTTPStatus
 // code and Message. If the AppError carries a Cause, that internal error is
-// logged at error level — it must never appear in the response body.
+// logged at error level - it must never appear in the response body.
 //
 // If err is not an AppError, WriteError logs it and responds with 500 and the
 // generic internal error message. This fallback ensures that unexpected errors

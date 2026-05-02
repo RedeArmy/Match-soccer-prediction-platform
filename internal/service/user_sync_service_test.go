@@ -55,7 +55,7 @@ func newClerkSyncer(repo *clerkSyncRepo) ClerkUserSyncer {
 	return NewClerkUserSyncService(repo, zap.NewNop())
 }
 
-// ── Upsert — happy paths ──────────────────────────────────────────────────────
+// ── Upsert - happy paths ──────────────────────────────────────────────────────
 
 func TestClerkUserSyncer_Upsert_NewUser_CallsCreate(t *testing.T) {
 	repo := &clerkSyncRepo{}
@@ -122,7 +122,7 @@ func TestClerkUserSyncer_Upsert_NoEmailAddresses_SkipsValidation(t *testing.T) {
 	}
 }
 
-// ── Upsert — error paths ──────────────────────────────────────────────────────
+// ── Upsert - error paths ──────────────────────────────────────────────────────
 
 func TestClerkUserSyncer_Upsert_InvalidEmail_ReturnsValidation(t *testing.T) {
 	repo := &clerkSyncRepo{}
@@ -186,7 +186,7 @@ func TestClerkUserSyncer_PrimaryEmail_MatchingID_UsesCorrectAddress(t *testing.T
 }
 
 func TestClerkUserSyncer_PrimaryEmail_NonMatchingID_FallsBackToFirst(t *testing.T) {
-	// primaryEmailID does not match any entry — service should fall back to the first
+	// primaryEmailID does not match any entry - service should fall back to the first
 	// address and log a warning (not fail).
 	repo := &clerkSyncRepo{}
 	svc := newClerkSyncer(repo)
@@ -204,7 +204,7 @@ func TestClerkUserSyncer_PrimaryEmail_EmptyList_EmptyEmail(t *testing.T) {
 	repo := &clerkSyncRepo{}
 	svc := newClerkSyncer(repo)
 
-	// Empty address list with a non-empty primaryEmailID — should not error.
+	// Empty address list with a non-empty primaryEmailID - should not error.
 	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_ghost", nil); err != nil {
 		t.Fatalf("expected no error for empty address list: %v", err)
 	}

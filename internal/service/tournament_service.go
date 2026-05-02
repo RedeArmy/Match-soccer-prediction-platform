@@ -38,7 +38,7 @@ func NewTournamentService(
 }
 
 // GetAllStandings returns real-time standings for every group that has at
-// least one match scheduled. The map key is the group label ("A"–"L").
+// least one match scheduled. The map key is the group label ("A"-"L").
 // Points are accumulated only from finished matches; scheduled/live matches
 // are included to show teams with 0 points before their first result.
 func (s *tournamentService) GetAllStandings(ctx context.Context) (map[string][]*domain.GroupStanding, error) {
@@ -178,7 +178,7 @@ func applyMatchResult(home, away *domain.GroupStanding, hs, as, winPoints int) {
 }
 
 // lessStanding returns true when a ranks above b.
-// Order: Pts DESC → GD DESC → GF DESC → Team ASC.
+// Order: Pts DESC -> GD DESC -> GF DESC -> Team ASC.
 func lessStanding(a, b *domain.GroupStanding) bool {
 	if a.Points != b.Points {
 		return a.Points > b.Points

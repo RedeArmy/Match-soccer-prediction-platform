@@ -34,7 +34,7 @@ func LoadWorker() (*Config, error) {
 }
 
 // Load resolves the application configuration in the following precedence
-// order (highest to lowest): environment variables → registered defaults.
+// order (highest to lowest): environment variables -> registered defaults.
 //
 // Every environment variable must be prefixed with WCQ_ and use underscores
 // to separate nested keys. For example, the configuration key "database.dsn"

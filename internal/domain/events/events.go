@@ -9,7 +9,7 @@
 // and be added or removed without modifying the code that raises the event.
 //
 // Events in this package are pure data structures. They carry no behaviour
-// and have no dependencies on infrastructure — they are safe to construct
+// and have no dependencies on infrastructure - they are safe to construct
 // and inspect in unit tests without any external setup.
 package events
 

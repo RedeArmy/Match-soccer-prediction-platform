@@ -193,7 +193,7 @@ func (s *conflictService) ConflictSummary(ctx context.Context) (*ConflictSummary
 // (acknowledgement only) or "auto_fix" (attempt automatic remediation). Any
 // other value is rejected with a validation error so misconfigured clients
 // cannot fall through to the ack branch silently.
-// Auto-fix failures are logged at WARN level but do not fail the call —
+// Auto-fix failures are logged at WARN level but do not fail the call -
 // the audit entry is always written so the attempt is traceable.
 func (s *conflictService) ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, action, note string) error {
 	if action != "ack" && action != "auto_fix" {

@@ -73,8 +73,8 @@ func (s *cachedRankingService) GetPhaseLeaderboard(ctx context.Context, quiniela
 // InvalidateLeaderboard evicts all cached leaderboard entries for the given
 // quiniela in a single Delete call. The set of keys is:
 //
-//   - leaderboard:{quinielaID}                          — overall standings
-//   - leaderboard:{quinielaID}:phase:{phase}            — one key per phase
+//   - leaderboard:{quinielaID}                          - overall standings
+//   - leaderboard:{quinielaID}:phase:{phase}            - one key per phase
 //
 // All 8 keys (1 overall + 7 phases) are sent in a single Redis DEL command so
 // the eviction is atomic from the cache's perspective. This prevents a race

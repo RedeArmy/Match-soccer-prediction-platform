@@ -25,18 +25,18 @@ const (
 
 	// CodeForbidden indicates that the authenticated user does not have
 	// permission to perform the requested action. Re-authenticating will
-	// not resolve this — the user lacks the required role or ownership.
+	// not resolve this - the user lacks the required role or ownership.
 	// Maps to HTTP 403 Forbidden.
 	CodeForbidden Code = "FORBIDDEN"
 
 	// CodeConflict indicates that the request conflicts with the current
-	// state of the resource — for example, a duplicate prediction or a
+	// state of the resource - for example, a duplicate prediction or a
 	// quiniela name that is already taken.
 	// Maps to HTTP 409 Conflict.
 	CodeConflict Code = "CONFLICT"
 
 	// CodeValidation indicates that the request body or parameters failed
-	// domain-level validation — for example, a negative score, a prediction
+	// domain-level validation - for example, a negative score, a prediction
 	// submitted after kickoff, or a missing required field.
 	// Maps to HTTP 422 Unprocessable Entity.
 	CodeValidation Code = "VALIDATION"
@@ -47,7 +47,7 @@ const (
 	CodeRequestBodyTooLarge Code = "REQUEST_BODY_TOO_LARGE"
 
 	// CodeBadRequest indicates that the server cannot process the request due
-	// to a client-side protocol error — for example, an invalid webhook
+	// to a client-side protocol error - for example, an invalid webhook
 	// signature or a malformed HMAC header. Unlike CodeValidation (422), this
 	// code is used when the failure occurs at the transport/security layer
 	// before business logic is reached. Maps to HTTP 400 Bad Request.

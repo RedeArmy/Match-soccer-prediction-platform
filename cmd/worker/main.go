@@ -82,23 +82,10 @@ func main() {
 	}
 }
 
-// run bootstraps all worker dependencies and delegates lifecycle management
-// to startWorker. It is extracted from main so that integration tests can
-// drive the full startup sequence with a cancellable context without forking
-// a process or intercepting os.Exit.
-//
-// Order of operations:
-//  1. Validate that the event bus driver is "redis" (fail fast before I/O).
-//  2. Open the event bus connection (Redis is the worker's primary interface).
-//  3. Open the database pool.
-//  4. Build repositories and the scoring service.
-//  5. Create health checkers for readiness probes.
-//  6. Delegate the subscriber + health server lifecycle to startWorker.
-//
-// The event bus is opened before the database because Redis is the worker's
-// primary interface: if the event bus is unreachable, the worker cannot
-// receive any events and has no useful work to do regardless of DB state.
-// Detecting that failure first produces a clearer startup error.
+// run bootstraps worker dependencies and starts the event loop. Extracted from
+// main so tests can exercise the full startup path with a cancellable context.
+// Redis is opened before the database: an unreachable event bus makes the worker
+// useless regardless of DB state, so failing fast on it produces the clearer error.
 func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// Validate the event bus driver before establishing any connections.
 	// Failing here surfaces a misconfiguration error without incurring the
@@ -174,7 +161,7 @@ const workerConsumerGroup = "quiniela-workers"
 // buildHealthCheckers constructs the full set of readiness checkers for the
 // worker process. Extracting this into its own function keeps run() readable
 // and makes the checker list independently testable without needing a live
-// database or Redis connection — the constructors are pure and only perform
+// database or Redis connection - the constructors are pure and only perform
 // I/O when Check() is called.
 func buildHealthCheckers(db *pgxpool.Pool, rc *redis.Client) []health.Checker {
 	return []health.Checker{
@@ -202,7 +189,7 @@ type workerDeps struct {
 
 // All parameters are already constructed so this function has no I/O of its
 // own. This makes it the boundary between infrastructure setup (run) and
-// lifecycle management — and the part that can be exercised in unit tests
+// lifecycle management - and the part that can be exercised in unit tests
 // by injecting an InMemoryBus, a stub scorer, and a pre-cancelled context.
 func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	deps.bus.Subscribe(events.EventMatchStarted, newMatchStartedHandler(log))
@@ -258,7 +245,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 // (Datadog, CloudWatch Logs Insights, Loki) can match on the "dlq_size" field.
 //
 // If rc is nil (e.g. in unit tests where Redis is not available), the goroutine
-// exits immediately — DLQ monitoring is best-effort and must not block startup.
+// exits immediately - DLQ monitoring is best-effort and must not block startup.
 func monitorDLQ(ctx context.Context, rc *redis.Client, log *zap.Logger) {
 	if rc == nil {
 		return
@@ -285,7 +272,7 @@ func monitorDLQ(ctx context.Context, rc *redis.Client, log *zap.Logger) {
 					continue
 				}
 				if n > 0 {
-					log.Error("worker: dead-letter queue is non-empty — manual replay required",
+					log.Error("worker: dead-letter queue is non-empty - manual replay required",
 						zap.String("dlq_key", dlqKey),
 						zap.String("event_type", string(et)),
 						zap.Int64("dlq_size", n),
@@ -317,7 +304,7 @@ func newHealthServer(port string, checkers []health.Checker, log *zap.Logger) *h
 }
 
 // handleLiveness responds to liveness probes. It only verifies that the
-// process is alive — not that its dependencies are reachable.
+// process is alive - not that its dependencies are reachable.
 func handleLiveness(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
