@@ -10,7 +10,7 @@
 // that the HTTP handler layer maps to an appropriate status code, and they
 // carry a human-readable Message suitable for inclusion in API responses.
 // Internal error details (database errors, stack traces) must never be
-// forwarded to clients — wrap them in the Cause field and log them at the
+// forwarded to clients - wrap them in the Cause field and log them at the
 // service layer before returning the AppError to the handler.
 //
 // Typical usage in a service:
@@ -130,7 +130,7 @@ func Unauthorised(message string) *AppError {
 
 // Forbidden returns an AppError indicating that the authenticated user does
 // not have permission to perform the requested action. Re-authenticating
-// will not resolve this error — the user lacks the required role or resource
+// will not resolve this error - the user lacks the required role or resource
 // ownership.
 func Forbidden(message string) *AppError {
 	return &AppError{
@@ -141,7 +141,7 @@ func Forbidden(message string) *AppError {
 }
 
 // Conflict returns an AppError indicating that the request conflicts with
-// the current state of a resource — for example, submitting a prediction
+// the current state of a resource - for example, submitting a prediction
 // for a match the user has already predicted, or creating a quiniela with
 // a name that is already taken.
 func Conflict(message string) *AppError {
@@ -176,8 +176,8 @@ func RequestBodyTooLarge() *AppError {
 
 // BadRequest returns an AppError indicating that the server cannot process
 // the request due to a client-side protocol error. Use this for structural
-// failures at the transport or security layer — for example, a missing or
-// invalid webhook signature — that occur before business logic is reached.
+// failures at the transport or security layer - for example, a missing or
+// invalid webhook signature - that occur before business logic is reached.
 // For domain-level input failures use Validation instead.
 func BadRequest(message string) *AppError {
 	return &AppError{

@@ -384,7 +384,7 @@ func TestRequireAuth_JWKSFetchError_Returns500(t *testing.T) {
 // paired with a malformed/unsigned JWT causes RequireAuth to respond 401.
 func TestRequireAuth_InvalidToken_Returns401(t *testing.T) {
 	// Serve a minimal valid JWKS (empty key set). The token will fail to parse
-	// because no matching key exists — this exercises the jwt.Parse error branch.
+	// because no matching key exists - this exercises the jwt.Parse error branch.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"keys":[]}`))

@@ -23,7 +23,7 @@ const msgUserNotSynced = "user account not found; please try again shortly"
 // UserFromContext instead of querying the database themselves.
 //
 // Must be placed after RequireAuth in the middleware chain. Returns 401 when
-// the Clerk subject has no matching internal user row — this is transient and
+// the Clerk subject has no matching internal user row - this is transient and
 // the client should retry.
 func ResolveUser(userRepo repository.UserRepository, log *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

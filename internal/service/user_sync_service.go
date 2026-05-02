@@ -94,7 +94,7 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 // a transient eventual-consistency state (the primary pointer was updated before
 // the address list propagated). A warning is logged so operators can correlate
 // it with Clerk delivery logs, and the first available address is used as a
-// safe fallback — user creation must not fail on a missing primary pointer.
+// safe fallback - user creation must not fail on a missing primary pointer.
 //
 // When primaryEmailID is empty (e.g. OAuth users without a verified email) the
 // first address is used without a warning.

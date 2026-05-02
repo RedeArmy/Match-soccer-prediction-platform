@@ -4,7 +4,7 @@
 // Middleware is applied in the Routes() method of internal/api/Server and
 // must be stateless and safe for concurrent use by multiple goroutines.
 //
-// Custom middleware in this package supplements — rather than replaces — the
+// Custom middleware in this package supplements - rather than replaces - the
 // middleware provided by go-chi/chi/v5/middleware. Generic HTTP concerns
 // (RequestID, RealIP) are delegated to chi; application-specific concerns
 // (JWT validation, structured zap logging, Clerk authentication) are

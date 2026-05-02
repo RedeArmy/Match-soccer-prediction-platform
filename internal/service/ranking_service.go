@@ -52,7 +52,7 @@ func NewRankingService(
 // predictions appear with TotalPoints = 0. PrizeWinner is set to true on
 // entries within the prize positions derived from the quiniela's PrizeThreshold.
 //
-// Ranking algorithm — standard competition ranking (1224…):
+// Ranking algorithm - standard competition ranking (1224…):
 // Two members with equal points receive the same rank. The rank after a tie
 // of N members at position P is P+N (not P+1). This is the most common
 // expectation in tournament contexts.
@@ -68,9 +68,9 @@ func NewRankingService(
 // stable sort key so the output order is always reproducible.
 //
 // The implementation is three database round-trips:
-//  1. TotalPointsByQuiniela — one SQL query with a LEFT JOIN; O(members).
-//  2. ListByIDs — one query using ANY($1); O(members).
-//  3. ListByQuiniela (tiebreakers) — one query; O(members).
+//  1. TotalPointsByQuiniela - one SQL query with a LEFT JOIN; O(members).
+//  2. ListByIDs - one query using ANY($1); O(members).
+//  3. ListByQuiniela (tiebreakers) - one query; O(members).
 //
 // No N+1 queries regardless of group size.
 func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.LeaderboardEntry, error) {
@@ -164,7 +164,7 @@ func (s *rankingService) prizeThreshold(ctx context.Context, quinielaThreshold i
 	return s.params.GetInt(ctx, domain.ParamKeyGroupDefaultPrize, domain.DefaultPrizeThreshold)
 }
 
-// buildEntries hydrates LeaderboardEntry values from a userID→points map.
+// buildEntries hydrates LeaderboardEntry values from a userID->points map.
 // It fetches all user objects in a single batch query and logs a warning for
 // any user ID that is absent from the users table (soft-deleted users).
 //
@@ -173,7 +173,7 @@ func (s *rankingService) prizeThreshold(ctx context.Context, quinielaThreshold i
 // because sortAndRank operates on the complete slice after construction and
 // imposes a fully deterministic final order. Do not change this function to
 // stream entries incrementally (e.g. write into a channel before the slice is
-// complete) without ensuring sortAndRank still receives the full set — partial
+// complete) without ensuring sortAndRank still receives the full set - partial
 // construction would surface the map non-determinism in the final output.
 func (s *rankingService) buildEntries(ctx context.Context, quinielaID int, pointsByUser map[int]int) ([]*domain.LeaderboardEntry, error) {
 	userIDs := make([]int, 0, len(pointsByUser))
@@ -194,7 +194,7 @@ func (s *rankingService) buildEntries(ctx context.Context, quinielaID int, point
 	for userID, pts := range pointsByUser {
 		u, ok := userByID[userID]
 		if !ok {
-			s.log.Warn("leaderboard: skipping member absent from users table — likely soft-deleted",
+			s.log.Warn("leaderboard: skipping member absent from users table - likely soft-deleted",
 				zap.Int("user_id", userID),
 				zap.Int("quiniela_id", quinielaID),
 			)
@@ -287,16 +287,16 @@ func statsFor(stats map[int]*domain.UserPredictionStats, userID int) domain.User
 // competition ranks (1224…).
 //
 // Tie-breaking proceeds through a four-rule chain:
-//  1. CorrectCount DESC — the member with more correct predictions ranks higher.
-//  2. TotalCount ASC   — among equally-correct members, fewer submissions ranks higher.
-//  3. ExactCount DESC  — among members with the same correct and total counts,
+//  1. CorrectCount DESC - the member with more correct predictions ranks higher.
+//  2. TotalCount ASC   - among equally-correct members, fewer submissions ranks higher.
+//  3. ExactCount DESC  - among members with the same correct and total counts,
 //     more exact-score hits (PointsExactScore = 5) ranks higher.
-//  4. TiebreakerDistance ASC — closest numeric forecast to the confirmed result
+//  4. TiebreakerDistance ASC - closest numeric forecast to the confirmed result
 //     ranks higher; math.MaxInt when result not yet confirmed or member did not
 //     submit.
 //
 // If all four rules still cannot separate two entries, user ID is used as a
-// final stable sort key. This last step is not a business rule — it exists
+// final stable sort key. This last step is not a business rule - it exists
 // solely to guarantee a reproducible output order across identical datasets.
 // Do not replace it with an unstable comparator such as a hash or pointer address.
 func sortAndRank(entries []*domain.LeaderboardEntry, stats map[int]*domain.UserPredictionStats, distances map[int]int) {

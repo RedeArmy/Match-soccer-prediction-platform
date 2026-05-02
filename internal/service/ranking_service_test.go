@@ -273,7 +273,7 @@ func TestGetLeaderboard_PredictionStatsError_Propagated(t *testing.T) {
 // ── Tiebreaker rule 1: CorrectCount DESC ──────────────────────────────────────
 
 func TestGetLeaderboard_CorrectCountBreaksTie(t *testing.T) {
-	// Alice 8 correct, Bob 5 correct — same total points → Alice ranks higher.
+	// Alice 8 correct, Bob 5 correct - same total points -> Alice ranks higher.
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	userA := &domain.User{ID: 1, Name: rankingAlice}
 	userB := &domain.User{ID: 2, Name: "Bob"}
@@ -305,7 +305,7 @@ func TestGetLeaderboard_CorrectCountBreaksTie(t *testing.T) {
 // ── Tiebreaker rule 2: TotalCount ASC ────────────────────────────────────────
 
 func TestGetLeaderboard_TotalCountBreaksTie_WhenCorrectCountEqual(t *testing.T) {
-	// Alice 5 total, Bob 7 total — same correct count → Alice ranks higher (fewer is better).
+	// Alice 5 total, Bob 7 total - same correct count -> Alice ranks higher (fewer is better).
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	userA := &domain.User{ID: 1, Name: rankingAlice}
 	userB := &domain.User{ID: 2, Name: "Bob"}
@@ -334,7 +334,7 @@ func TestGetLeaderboard_TotalCountBreaksTie_WhenCorrectCountEqual(t *testing.T) 
 // ── Tiebreaker rule 3: ExactCount DESC ────────────────────────────────────────
 
 func TestGetLeaderboard_ExactCountBreaksTie_WhenFirstTwoRulesEqual(t *testing.T) {
-	// Alice 3 exact, Bob 1 exact — same correct and total counts → Alice ranks higher.
+	// Alice 3 exact, Bob 1 exact - same correct and total counts -> Alice ranks higher.
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	userA := &domain.User{ID: 1, Name: rankingAlice}
 	userB := &domain.User{ID: 2, Name: "Bob"}
@@ -360,10 +360,10 @@ func TestGetLeaderboard_ExactCountBreaksTie_WhenFirstTwoRulesEqual(t *testing.T)
 	}
 }
 
-// ── All three rules equal → shared rank, stable fallback ──────────────────────
+// ── All three rules equal -> shared rank, stable fallback ──────────────────────
 
 func TestGetLeaderboard_AllStatsEqual_SameRank_FallsBackToUserID(t *testing.T) {
-	// All stats identical → both share rank 1; stable fallback sorts by user ID.
+	// All stats identical -> both share rank 1; stable fallback sorts by user ID.
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	userA := &domain.User{ID: 1, Name: rankingAlice}
 	userB := &domain.User{ID: 2, Name: "Bob"}
@@ -390,7 +390,7 @@ func TestGetLeaderboard_AllStatsEqual_SameRank_FallsBackToUserID(t *testing.T) {
 }
 
 func TestGetLeaderboard_EmptyStats_SameRank_FallsBackToUserID(t *testing.T) {
-	// Stats map is nil → statsFor returns zero values for all users → same rank.
+	// Stats map is nil -> statsFor returns zero values for all users -> same rank.
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	userA := &domain.User{ID: 1, Name: rankingAlice}
 	userB := &domain.User{ID: 2, Name: "Bob"}
@@ -735,7 +735,7 @@ func TestTiebreakerDistance_AbsoluteDifference(t *testing.T) {
 
 func TestGetLeaderboard_TiebreakerDistanceBreaksTie_WhenAllStatsEqual(t *testing.T) {
 	// Alice predicts 8, Bob predicts 15; result is 10.
-	// Alice distance=2, Bob distance=5 → Alice ranks higher.
+	// Alice distance=2, Bob distance=5 -> Alice ranks higher.
 	result := 10
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	userA := &domain.User{ID: 1, Name: rankingAlice}
@@ -781,7 +781,7 @@ func TestGetLeaderboard_TiebreakerDistanceBreaksTie_WhenAllStatsEqual(t *testing
 }
 
 func TestGetLeaderboard_TiebreakerDistanceEqual_SameRank(t *testing.T) {
-	// Both predict exactly the result → distance=0 for both → shared rank.
+	// Both predict exactly the result -> distance=0 for both -> shared rank.
 	result := 10
 	q := &domain.Quiniela{ID: 1, PrizeThreshold: 3}
 	userA := &domain.User{ID: 1, Name: rankingAlice}

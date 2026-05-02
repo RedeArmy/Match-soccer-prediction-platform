@@ -122,7 +122,7 @@ func TestQuinielaRepository_ListByOwner_ReturnsRows(t *testing.T) {
 	}
 }
 
-// ── QuinielaRepository — new fields ──────────────────────────────────────────
+// ── QuinielaRepository - new fields ──────────────────────────────────────────
 
 func TestQuinielaRepository_Create_HydratesInviteCode(t *testing.T) {
 	cleanTables(t)
@@ -186,7 +186,7 @@ func TestQuinielaRepository_GetByInviteCode_NotFound_ReturnsNil(t *testing.T) {
 	}
 }
 
-// ── QuinielaRepository — RotateInviteCode ─────────────────────────────────────
+// ── QuinielaRepository - RotateInviteCode ─────────────────────────────────────
 
 func TestQuinielaRepository_RotateInviteCode_UpdatesCode(t *testing.T) {
 	cleanTables(t)
@@ -222,7 +222,7 @@ func TestQuinielaRepository_RotateInviteCode_NotFound_ReturnsNotFound(t *testing
 	}
 }
 
-// ── QuinielaRepository — UpdateStatus ────────────────────────────────────────
+// ── QuinielaRepository - UpdateStatus ────────────────────────────────────────
 
 func TestQuinielaRepository_UpdateStatus_SetsStatus(t *testing.T) {
 	cleanTables(t)
@@ -251,7 +251,7 @@ func TestQuinielaRepository_UpdateStatus_NotFound_ReturnsError(t *testing.T) {
 	}
 }
 
-// ── QuinielaRepository — CreateWithMembership ─────────────────────────────────
+// ── QuinielaRepository - CreateWithMembership ─────────────────────────────────
 
 func TestQuinielaRepository_CreateWithMembership_HydratesBothIDs(t *testing.T) {
 	cleanTables(t)

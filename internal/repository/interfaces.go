@@ -2,8 +2,8 @@
 // domain entities.
 //
 // Each interface here represents the complete set of data operations that the
-// service layer requires. Defining interfaces in this package — rather than
-// alongside the concrete implementations — is the Dependency Inversion
+// service layer requires. Defining interfaces in this package - rather than
+// alongside the concrete implementations - is the Dependency Inversion
 // Principle applied deliberately: the high-level policy (service) does not
 // depend on the low-level detail (PostgreSQL); both depend on the abstraction
 // defined here.
@@ -28,7 +28,7 @@ import (
 // the HTTP layer (client disconnects, request timeouts). Propagating it
 // to every database call ensures that a cancelled request releases its
 // database connection promptly rather than holding it until the query
-// completes naturally — a critical property under sustained load.
+// completes naturally - a critical property under sustained load.
 //
 // Methods return pointer types (*domain.User) rather than value types to
 // avoid copying potentially large structs on every call, and to allow nil
@@ -104,7 +104,7 @@ type PredictionRepository interface {
 	// the partial-scoring state where some predictions on a finished match are
 	// scored and others are not. An empty map is a no-op.
 	UpdateManyPoints(ctx context.Context, points map[int]int) error
-	// TotalPointsByQuiniela returns a map of userID → total scored points for
+	// TotalPointsByQuiniela returns a map of userID -> total scored points for
 	// every active, paid member of the given quiniela. It is used exclusively
 	// by the ranking service to compute leaderboard standings in a single query,
 	// avoiding N+1 database round-trips when the group is large.
@@ -171,7 +171,7 @@ type QuinielaRepository interface {
 	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
 	// GetByInviteCode returns the quiniela matching code only when the code has
 	// not expired (invite_code_expires_at IS NULL OR > NOW()). Returns nil, nil
-	// for an unknown or expired code — callers should surface a 404 to the client
+	// for an unknown or expired code - callers should surface a 404 to the client
 	// so that the difference between "wrong code" and "expired code" is not
 	// exposed.
 	GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error)
@@ -264,12 +264,12 @@ type GroupMembershipRepository interface {
 	// recalculates the quiniela's status within a single database transaction.
 	// minMembers is the minimum active-member count at or above which the
 	// quiniela transitions to active. Returns Conflict when the row is no longer
-	// pending — a concurrent approval committed between the caller's pre-flight
+	// pending - a concurrent approval committed between the caller's pre-flight
 	// check and this call.
 	ApproveMembership(ctx context.Context, membershipID, quinielaID int, now time.Time, minMembers int) (*domain.GroupMembership, error)
 	// LeaveMembership atomically marks a membership as left and recalculates
 	// the quiniela's status within a single database transaction. Returns
-	// Conflict when the membership is no longer active — e.g. an admin removed
+	// Conflict when the membership is no longer active - e.g. an admin removed
 	// the member concurrently between the caller's pre-flight check and this call.
 	LeaveMembership(ctx context.Context, quinielaID, userID int, now time.Time, minMembers int) error
 }
@@ -331,7 +331,7 @@ type TournamentRepository interface {
 
 // SystemParamRepository manages runtime-configurable key-value settings.
 //
-// Params are upserted — not inserted — so the table acts as a live
+// Params are upserted - not inserted - so the table acts as a live
 // configuration store. The type, category, and is_runtime columns are set at
 // first creation (typically by a migration seed) and preserved on subsequent
 // value updates via Set and BulkSet.

@@ -4,7 +4,7 @@
 // Middleware is applied in the Routes() method of internal/api/Server and
 // must be stateless and safe for concurrent use by multiple goroutines.
 //
-// Custom middleware in this package supplements — rather than replaces — the
+// Custom middleware in this package supplements - rather than replaces - the
 // middleware provided by go-chi/chi/v5/middleware. Generic HTTP concerns
 // (RequestID, RealIP) are delegated to chi; application-specific concerns
 // (JWT validation, structured zap logging, Clerk authentication) are
@@ -56,7 +56,7 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 // the middleware chain so that a valid Clerk subject is already in the context.
 //
 // The subject is resolved to an internal User row via GetByClerkSubject. If the
-// subject has no matching row — i.e. the user-sync webhook has not yet fired —
+// subject has no matching row - i.e. the user-sync webhook has not yet fired -
 // the request is rejected with 401. If the user exists but lacks the required
 // role, the request is rejected with 403.
 func RequireRole(userRepo repository.UserRepository, log *zap.Logger, roles ...domain.UserRole) func(http.Handler) http.Handler {
@@ -143,7 +143,7 @@ func RequireAuth(jwksURL string, warmupTimeout time.Duration, log *zap.Logger) f
 		// token. Returning a pass-through handler here would open the entire API
 		// to unauthenticated callers, which is never the correct production
 		// behaviour and can mask misconfiguration in staging environments.
-		log.Error("RequireAuth: WCQ_CLERK_JWKSURL is not set — all requests will be rejected; set WCQ_CLERK_JWKSURL")
+		log.Error("RequireAuth: WCQ_CLERK_JWKSURL is not set - all requests will be rejected; set WCQ_CLERK_JWKSURL")
 		return func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				WriteError(w, r, log, apperrors.Unauthorised("authentication is not configured"))

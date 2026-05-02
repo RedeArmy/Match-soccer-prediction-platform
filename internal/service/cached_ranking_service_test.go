@@ -188,7 +188,7 @@ func TestCachedRankingService_InvalidateLeaderboard_DeleteError_NonFatal(t *test
 	ranker := &stubRanker{}
 
 	svc := NewCachedRankingService(ranker, st, 60*time.Second, zap.NewNop())
-	// Must not panic or return an error — the method has no return value.
+	// Must not panic or return an error - the method has no return value.
 	svc.InvalidateLeaderboard(context.Background(), 4)
 }
 

@@ -2,13 +2,13 @@
 //
 // Tests are organised into three groups:
 //
-//  1. Constructor tests — verify that each constructor sets the correct Code,
+//  1. Constructor tests - verify that each constructor sets the correct Code,
 //     Message, HTTPStatus, and Cause fields.
 //
-//  2. errors.Is tests — verify that the Is method enables category-level
+//  2. errors.Is tests - verify that the Is method enables category-level
 //     matching via sentinel errors (e.g. errors.Is(err, ErrNotFound)).
 //
-//  3. errors.As tests — verify that errors.As extracts an *AppError from an
+//  3. errors.As tests - verify that errors.As extracts an *AppError from an
 //     error chain that may include wrapping via fmt.Errorf("%w", ...).
 //
 // No mocks or external dependencies are required; the package is pure Go.

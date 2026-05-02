@@ -65,7 +65,7 @@ func TestRedisStore_Get_ValidKey_DeserializesValue(t *testing.T) {
 
 func TestRedisStore_Get_CorruptedJSON_ReturnsErrCacheMiss(t *testing.T) {
 	mr, st := newTestStore(t)
-	// Manually write invalid JSON bytes — bypasses Set's marshal step.
+	// Manually write invalid JSON bytes - bypasses Set's marshal step.
 	mr.Set("bad-json-key", "not-json")
 
 	var dest map[string]string

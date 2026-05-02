@@ -23,7 +23,7 @@ type CityResponse struct {
 }
 
 // StadiumResponse is the JSON representation of a Stadium with its full
-// location hierarchy (city → state → country).
+// location hierarchy (city -> state -> country).
 type StadiumResponse struct {
 	ID       int          `json:"id"`
 	Name     string       `json:"name"`

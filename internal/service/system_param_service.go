@@ -81,7 +81,7 @@ func (s *systemParamService) GetByCategory(ctx context.Context, cat string) ([]*
 
 // Set upserts a param and evicts the cache entry so the next read fetches
 // the fresh value. When the key already exists its declared type is fetched
-// first and the new value is validated against it — an unparseable value
+// first and the new value is validated against it - an unparseable value
 // is rejected with ErrValidation before any write reaches the repository.
 func (s *systemParamService) Set(ctx context.Context, key, value string, actorID int) (*domain.SystemParam, error) {
 	if err := s.validateValueForKey(ctx, key, value); err != nil {
@@ -107,7 +107,7 @@ func (s *systemParamService) Set(ctx context.Context, key, value string, actorID
 func (s *systemParamService) validateValueForKey(ctx context.Context, key, value string) error {
 	existing, err := s.Get(ctx, key)
 	if err != nil || existing == nil {
-		return err // missing key → no type to validate against
+		return err // missing key -> no type to validate against
 	}
 	if err := validateParamValue(value, existing.Type); err != nil {
 		return err

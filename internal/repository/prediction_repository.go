@@ -161,7 +161,7 @@ func (r *PostgresPredictionRepository) ListByUserAndQuiniela(ctx context.Context
 	return collectPredictions(rows)
 }
 
-// TotalPointsByQuiniela returns a map of userID → total scored points for
+// TotalPointsByQuiniela returns a map of userID -> total scored points for
 // every active, paid member of the given quiniela. It uses a single SQL
 // query with a LEFT JOIN between group_memberships and predictions so the
 // ranking service never issues N+1 queries when computing a leaderboard.
@@ -188,14 +188,14 @@ func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context
 	return collectUserPointTotals(rows)
 }
 
-// TotalPointsByQuinielaAndPhase returns a map of userID → total scored points
+// TotalPointsByQuinielaAndPhase returns a map of userID -> total scored points
 // for every active, paid member of the given quiniela, restricted to matches
 // in the provided phase.
 //
 // A member with no scored predictions in the requested phase appears in the map
 // with value 0, preserving the same semantics as TotalPointsByQuiniela.
 //
-// Query design — derived table instead of correlated EXISTS:
+// Query design - derived table instead of correlated EXISTS:
 // The phase filter is applied inside a derived table (phase_pred) that joins
 // predictions with matches before the outer LEFT JOIN executes. This lets the
 // planner use a hash join between group_memberships and the pre-filtered

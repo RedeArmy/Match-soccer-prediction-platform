@@ -14,7 +14,7 @@ import (
 // returns (nil, nil), signalling "not found"). Any other error is wrapped in
 // apperrors.Internal.
 //
-// Usage — replace the two-branch sentinel check in every scanX helper:
+// Usage - replace the two-branch sentinel check in every scanX helper:
 //
 //	if err := row.Scan(...); err != nil {
 //	    return nil, singleScanErr(err)

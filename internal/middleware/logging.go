@@ -36,12 +36,12 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 // completed HTTP request using the provided zap logger.
 //
 // The following fields are logged on every request:
-//   - request_id  — correlates log entries with a specific request
-//   - method      — HTTP verb
-//   - path        — URL path (query string excluded to avoid logging PII)
-//   - status      — HTTP status code written by the handler
-//   - latency_ms  — wall-clock duration from first byte received to last byte sent
-//   - remote_ip   — client IP address as set by chi's RealIP middleware
+//   - request_id  - correlates log entries with a specific request
+//   - method      - HTTP verb
+//   - path        - URL path (query string excluded to avoid logging PII)
+//   - status      - HTTP status code written by the handler
+//   - latency_ms  - wall-clock duration from first byte received to last byte sent
+//   - remote_ip   - client IP address as set by chi's RealIP middleware
 //
 // The user_id field is appended only when the request context contains a
 // Clerk user ID (i.e. the request passed through RequireAuth).

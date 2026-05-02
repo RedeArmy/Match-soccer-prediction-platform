@@ -9,7 +9,7 @@ import (
 
 // emailRE is a structural check that catches obvious mistakes (missing "@",
 // missing domain, empty local part). Full RFC 5322 compliance is intentionally
-// not attempted here — Clerk already validates email format at signup, so this
+// not attempted here - Clerk already validates email format at signup, so this
 // check is a defence-in-depth layer, not the primary gate.
 var emailRE = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 

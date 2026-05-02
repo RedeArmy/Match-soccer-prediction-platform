@@ -126,7 +126,7 @@ func TestStreamPendingChecker_Name_ContainsStreamKey(t *testing.T) {
 
 func TestStreamPendingChecker_NoGroupYet_ReturnsOK(t *testing.T) {
 	// The stream/group does not exist; XPENDING returns NOGROUP, which is treated
-	// as healthy — the worker simply has not started yet.
+	// as healthy - the worker simply has not started yet.
 	_, rc := newTestRedis(t)
 	c := NewStreamPendingChecker(rc, testStream, testGroup)
 
@@ -179,7 +179,7 @@ func TestStreamPendingChecker_PendingMessages_ReturnsError(t *testing.T) {
 	if err := rc.XGroupCreate(context.Background(), testStream, testGroup, "0").Err(); err != nil {
 		t.Fatalf("XGroupCreate: %v", err)
 	}
-	// Read but do NOT acknowledge → message stays in pending-entry list.
+	// Read but do NOT acknowledge -> message stays in pending-entry list.
 	if _, err := rc.XReadGroup(context.Background(), &redis.XReadGroupArgs{
 		Group:    testGroup,
 		Consumer: "consumer-1",

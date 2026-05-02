@@ -108,7 +108,7 @@ func TestInMemoryBus_Publish_DoesNotCrossDeliver(t *testing.T) {
 		return nil
 	})
 
-	// Publish a different event type — the MatchStarted handler must not fire.
+	// Publish a different event type - the MatchStarted handler must not fire.
 	if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -331,7 +331,7 @@ func TestRedisBus_Publish_DoesNotCrossDeliver(t *testing.T) {
 	case <-called:
 		t.Error("handler for EventMatchStarted must not be called for EventMatchFinished")
 	case <-time.After(200 * time.Millisecond):
-		// correct — no cross-delivery
+		// correct - no cross-delivery
 	}
 }
 
@@ -409,7 +409,7 @@ func TestRedisBus_DLQPushError_DoesNotPanic(t *testing.T) {
 		t.Fatal("handler was not called 3 times within timeout")
 	}
 
-	// Give the goroutine time to attempt the failing RPush — must not panic.
+	// Give the goroutine time to attempt the failing RPush - must not panic.
 	time.Sleep(150 * time.Millisecond)
 }
 
@@ -432,12 +432,12 @@ func TestRedisBus_ProcessMessage_MissingPayload_DoesNotPanic(t *testing.T) {
 		Values: map[string]any{"not_payload": "ignored"},
 	})
 
-	// The handler must NOT be called — the message is dropped at the missing-payload check.
+	// The handler must NOT be called - the message is dropped at the missing-payload check.
 	select {
 	case <-handlerCalled:
 		t.Error("handler must not be called for a message with no payload field")
 	case <-time.After(300 * time.Millisecond):
-		// correct — message was silently dropped
+		// correct - message was silently dropped
 	}
 }
 
@@ -463,7 +463,7 @@ func TestRedisBus_ProcessMessage_InvalidJSONPayload_DoesNotPanic(t *testing.T) {
 	case <-handlerCalled:
 		t.Error("handler must not be called for a message with invalid JSON payload")
 	case <-time.After(300 * time.Millisecond):
-		// correct — message was silently dropped
+		// correct - message was silently dropped
 	}
 }
 

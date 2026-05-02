@@ -4,7 +4,7 @@
 // This package must remain entirely free of infrastructure concerns: no
 // database drivers, no HTTP types, no serialisation tags, no external
 // library dependencies. The entities here represent concepts that the
-// business cares about — Users, Matches, Predictions — not how they are
+// business cares about - Users, Matches, Predictions - not how they are
 // stored in PostgreSQL or transported over HTTP.
 //
 // This boundary is what makes the business logic testable in isolation
@@ -91,7 +91,7 @@ type City struct {
 // is stored for display purposes; it is not used in any business rule.
 //
 // CityID is the foreign key to the cities table. City is the full location
-// hierarchy (city → state → country) hydrated by the repository.
+// hierarchy (city -> state -> country) hydrated by the repository.
 type Stadium struct {
 	ID        int
 	Name      string
@@ -121,7 +121,7 @@ const (
 // Match represents a single World Cup fixture in the tournament schedule.
 //
 // HomeScore and AwayScore are pointers because a nil value is semantically
-// distinct from zero: a score of 0–0 is a valid final result, whereas nil
+// distinct from zero: a score of 0-0 is a valid final result, whereas nil
 // means the match has not yet been played or the result has not been
 // confirmed. Using pointers makes this nullable semantics explicit at the
 // type level, avoiding the need for a sentinel value (e.g. -1) that could
@@ -132,7 +132,7 @@ const (
 // match with venue detail; it is nil when only the match metadata is needed.
 //
 // GroupLabel is nil for knockout matches and holds the FIFA group letter
-// ("A"–"L") for group-stage fixtures. It drives real-time standings
+// ("A"-"L") for group-stage fixtures. It drives real-time standings
 // calculation without a separate teams table.
 type Match struct {
 	ID         int
@@ -142,7 +142,7 @@ type Match struct {
 	AwayScore  *int
 	Status     MatchStatus
 	Phase      MatchPhase
-	GroupLabel *string // nil for knockout; "A"–"L" for group stage
+	GroupLabel *string // nil for knockout; "A"-"L" for group stage
 	StadiumID  *int
 	Stadium    *Stadium
 	KickoffAt  time.Time
@@ -228,9 +228,9 @@ type Prediction struct {
 // QuinielaStatus is the system-managed lifecycle state of a Quiniela.
 //
 // The transition rules are enforced exclusively by the membership service:
-//   - QuinielaStatusActive   — group has ≥ MinMembersForActive active members;
+//   - QuinielaStatusActive   - group has ≥ MinMembersForActive active members;
 //     eligible for payment processing and prize distribution.
-//   - QuinielaStatusInactive — group has < MinMembersForActive active members;
+//   - QuinielaStatusInactive - group has < MinMembersForActive active members;
 //     predictions can still be submitted but payments are blocked.
 //
 // No HTTP endpoint exposes a direct status change. The status cannot be set
@@ -247,7 +247,7 @@ const (
 // Quiniela represents a named prediction group in the tournament.
 //
 // Each Quiniela is created by an owner (OwnerID) who becomes its first active
-// member. Other users join via the InviteCode — a short, human-friendly token
+// member. Other users join via the InviteCode - a short, human-friendly token
 // shared out-of-band (WhatsApp, SMS). Membership records are stored in the
 // group_memberships table; this struct carries only the group metadata.
 //
@@ -434,9 +434,9 @@ type UserStats struct {
 
 	// Points
 	TotalPoints   int
-	PointsByPhase map[MatchPhase]int // phase → total scored points; empty when no scored predictions
+	PointsByPhase map[MatchPhase]int // phase -> total scored points; empty when no scored predictions
 
-	// Derived rates — rounded to two decimal places
+	// Derived rates - rounded to two decimal places
 	AccuracyPct      float64 // CorrectPredictions / ScoredPredictions * 100; 0.0 if ScoredPredictions == 0
 	AvgPointsPerPred float64 // TotalPoints / ScoredPredictions; 0.0 if ScoredPredictions == 0
 
@@ -449,7 +449,7 @@ type UserStats struct {
 }
 
 // Tiebreaker is a single user's numeric estimate for the global tiebreaker
-// question. Predictions are global — one per user across all groups — because
+// question. Predictions are global - one per user across all groups - because
 // the question is set once by the system administrator and applies uniformly
 // to every group's leaderboard. The confirmed result lives in TiebreakerConfig,
 // not here.
@@ -493,14 +493,14 @@ type SystemParam struct {
 }
 
 // AuditLog is an immutable record of a significant administrative or system
-// action. Rows are append-only — no UPDATE or DELETE is ever issued against
+// action. Rows are append-only - no UPDATE or DELETE is ever issued against
 // this table. ActorID is nil when the action was triggered by the system
 // itself (e.g. a scheduled job). ResourceType / ResourceID identify the
 // entity that was affected; both are nil for system-level actions.
 //
 // Metadata holds action-specific context serialised as a free-form key-value
 // map; the infrastructure layer marshals it to/from JSONB. No business logic
-// should depend on the content of Metadata — it is for human review only.
+// should depend on the content of Metadata - it is for human review only.
 type AuditLog struct {
 	ID           int
 	ActorID      *int
@@ -591,7 +591,7 @@ type ConflictType string
 
 const (
 	// ConflictGroupNoOwner indicates an active quiniela with no active
-	// CreateOwner membership — ownership may have been lost after a ban.
+	// CreateOwner membership - ownership may have been lost after a ban.
 	ConflictGroupNoOwner ConflictType = "group_without_owner"
 	// ConflictPaymentStale indicates a payment record stuck in "pending"
 	// beyond the configured staleness threshold.

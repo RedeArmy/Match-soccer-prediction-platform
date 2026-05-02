@@ -89,7 +89,7 @@ func (r *PostgresSystemParamRepository) GetByCategory(ctx context.Context, categ
 // value and updated_at are changed; type, category, and is_runtime are
 // preserved from the original row. Returns the full param after the upsert.
 // actorID identifies the caller for audit purposes and is handled by the
-// service layer — it is accepted here to keep the interface consistent.
+// service layer - it is accepted here to keep the interface consistent.
 func (r *PostgresSystemParamRepository) Set(ctx context.Context, key, value string, _ int) (*domain.SystemParam, error) {
 	row := r.db.QueryRow(ctx,
 		`INSERT INTO system_params (key, value)

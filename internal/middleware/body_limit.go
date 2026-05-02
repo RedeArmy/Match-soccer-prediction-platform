@@ -5,7 +5,7 @@ import "net/http"
 // RequestBodyLimit wraps r.Body with http.MaxBytesReader so that any read
 // beyond maxBytes returns a *http.MaxBytesError. The actual 413 response is
 // produced by handler.decodeError when it receives that error from
-// json.Decode — this middleware only installs the guard; it does not read
+// json.Decode - this middleware only installs the guard; it does not read
 // the body itself.
 //
 // Apply this middleware at the subrouter level for endpoints that accept a

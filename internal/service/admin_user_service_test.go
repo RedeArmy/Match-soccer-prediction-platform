@@ -70,7 +70,7 @@ func TestAdminUserService_BanUser_TransfersOwnedGroups(t *testing.T) {
 }
 
 func TestAdminUserService_BanUser_NoOwnedGroups_TransferIsNoop(t *testing.T) {
-	// User has no CreateOwner memberships — transfer should be a no-op.
+	// User has no CreateOwner memberships - transfer should be a no-op.
 	regularMembership := &domain.GroupMembership{
 		ID: 10, QuinielaID: 1, UserID: 5,
 		Status: domain.MembershipActive,

@@ -13,7 +13,7 @@ import (
 )
 
 // errExecTx is a pgx.Tx stub whose Exec always returns an error.
-// syncStatusInTx only calls tx.Exec, so all other methods panic — they are
+// syncStatusInTx only calls tx.Exec, so all other methods panic - they are
 // never reached and would signal a logic bug if they were.
 type errExecTx struct{}
 

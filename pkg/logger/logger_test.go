@@ -3,7 +3,7 @@
 // The logger package is a thin factory over zap. Tests here verify that
 // construction succeeds with valid configuration and fails with a descriptive
 // error for invalid configuration. zap's internal encoding and level
-// behaviour is intentionally not tested — that is the responsibility of the
+// behaviour is intentionally not tested - that is the responsibility of the
 // zap library's own test suite, not ours.
 package logger_test
 

@@ -14,11 +14,11 @@ import (
 
 // TestCalculatePoints verifies the full scoring decision table:
 //
-//	5 pts — exact scoreline
-//	3 pts — correct non-draw outcome + correct goal margin
-//	2 pts — correct non-draw outcome, wrong goal margin
-//	2 pts — correct draw (no goal-difference bonus for draws)
-//	0 pts — incorrect outcome
+//	5 pts - exact scoreline
+//	3 pts - correct non-draw outcome + correct goal margin
+//	2 pts - correct non-draw outcome, wrong goal margin
+//	2 pts - correct draw (no goal-difference bonus for draws)
+//	0 pts - incorrect outcome
 func TestCalculatePoints(t *testing.T) {
 	const (
 		fmtPoints = "calculatePoints(%d-%d | actual %d-%d): expected %d pts, got %d"
@@ -98,11 +98,11 @@ func TestCalculatePoints(t *testing.T) {
 			wantPts: domain.PointsCorrectOutcome, // 2
 		},
 
-		// ── Tier 2c: correct draw — no goal-difference bonus ──────────────────
+		// ── Tier 2c: correct draw - no goal-difference bonus ──────────────────
 		{
 			name:     "correct_draw_no_margin_bonus",
 			predHome: 2, predAway: 2,
-			realHome: 1, realAway: 1, // both draw, both margin 0 — bonus NOT awarded
+			realHome: 1, realAway: 1, // both draw, both margin 0 - bonus NOT awarded
 			wantPts: domain.PointsCorrectOutcome, // 2, not 3
 		},
 		{
@@ -168,9 +168,9 @@ func TestScoreMatch_FinishedMatch_CalculatesAndPersistsPoints(t *testing.T) {
 		HomeScore: &home, AwayScore: &away,
 	}
 	preds := []*domain.Prediction{
-		{ID: 1, HomeScore: 2, AwayScore: 1}, // exact → 5
-		{ID: 2, HomeScore: 1, AwayScore: 0}, // correct outcome + margin 1 → 3
-		{ID: 3, HomeScore: 0, AwayScore: 1}, // wrong outcome → 0
+		{ID: 1, HomeScore: 2, AwayScore: 1}, // exact -> 5
+		{ID: 2, HomeScore: 1, AwayScore: 0}, // correct outcome + margin 1 -> 3
+		{ID: 3, HomeScore: 0, AwayScore: 1}, // wrong outcome -> 0
 	}
 	predRepo := &stubPredRepo{list: preds}
 	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, &noopSystemParamService{}, zap.NewNop())
@@ -221,7 +221,7 @@ func TestScoreMatch_MatchRepoError_PropagatesError(t *testing.T) {
 func TestScoreMatch_NoPredictions_ReturnsNil(t *testing.T) {
 	home, away := 1, 0
 	match := &domain.Match{ID: 1, Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away}
-	predRepo := &stubPredRepo{list: nil} // empty — no predictions for this match
+	predRepo := &stubPredRepo{list: nil} // empty - no predictions for this match
 	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, &noopSystemParamService{}, zap.NewNop())
 
 	if err := svc.ScoreMatch(context.Background(), 1); err != nil {
