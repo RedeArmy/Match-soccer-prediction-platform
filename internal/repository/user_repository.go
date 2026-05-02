@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -62,11 +61,8 @@ func scanUserFields(s rowScanner) (*domain.User, error) {
 // real database error without importing pgx in the service layer.
 func scanUser(row pgx.Row) (*domain.User, error) {
 	u, err := scanUserFields(row)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
 	if err != nil {
-		return nil, apperrors.Internal(err)
+		return nil, singleScanErr(err)
 	}
 	return u, nil
 }
@@ -167,20 +163,11 @@ func (r *PostgresUserRepository) ListByIDs(ctx context.Context, ids []int) ([]*d
 }
 
 func collectUsers(rows pgx.Rows) ([]*domain.User, error) {
-	var users []*domain.User
-	for rows.Next() {
+	return collectRows(rows, func(r pgx.Rows) (*domain.User, error) {
 		// pgx.Rows satisfies rowScanner, so scanUserFields is reused directly
 		// instead of duplicating the Scan call and clerkSubject unwrap here.
-		u, err := scanUserFields(rows)
-		if err != nil {
-			return nil, apperrors.Internal(err)
-		}
-		users = append(users, u)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return users, nil
+		return scanUserFields(r)
+	})
 }
 
 // Ban sets banned_at, banned_by, and ban_reason for the given user, returning
@@ -268,15 +255,7 @@ func (r *PostgresUserRepository) ListFiltered(ctx context.Context, f UserFilters
 	}
 
 	q += ` ORDER BY created_at DESC`
-	if p.Limit > 0 {
-		q += ` LIMIT $` + itoa(n)
-		args = append(args, p.Limit)
-		n++
-	}
-	if p.Offset > 0 {
-		q += ` OFFSET $` + itoa(n)
-		args = append(args, p.Offset)
-	}
+	q, args, _ = applyPagination(q, args, n, p)
 
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
@@ -284,12 +263,6 @@ func (r *PostgresUserRepository) ListFiltered(ctx context.Context, f UserFilters
 	}
 	defer rows.Close()
 	return collectUsers(rows)
-}
-
-// itoa converts an int to its decimal string representation.
-// Used to build $N placeholders without importing fmt.
-func itoa(n int) string {
-	return strconv.Itoa(n)
 }
 
 // GetStatusCounts returns a single-row summary of user counts grouped by
