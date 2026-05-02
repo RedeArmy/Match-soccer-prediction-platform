@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -14,14 +12,6 @@ import (
 
 // Compile-time check: cachedRankingService must implement Ranker.
 var _ Ranker = (*cachedRankingService)(nil)
-
-func cacheKeyLeaderboard(quinielaID int) string {
-	return fmt.Sprintf("leaderboard:%d", quinielaID)
-}
-
-func cacheKeyPhaseLeaderboard(quinielaID int, phase domain.MatchPhase) string {
-	return fmt.Sprintf("leaderboard:%d:phase:%s", quinielaID, phase)
-}
 
 // cachedRankingService wraps a Ranker with a read-through / write-invalidation
 // cache. GetLeaderboard is served from the cache when available; callers that
@@ -48,22 +38,15 @@ func NewCachedRankingService(ranker Ranker, store cache.Store, ttl time.Duration
 // available, or falls through to the inner Ranker and caches the result.
 func (s *cachedRankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.LeaderboardEntry, error) {
 	key := cacheKeyLeaderboard(quinielaID)
-	var cached []*domain.LeaderboardEntry
-	if err := s.store.Get(ctx, key, &cached); err == nil {
+	if cached, ok := cacheGet[[]*domain.LeaderboardEntry](ctx, s.store, key, s.log); ok {
 		return cached, nil
-	} else if !errors.Is(err, cache.ErrCacheMiss) {
-		s.log.Warn("leaderboard cache get failed, falling through to db",
-			zap.String("key", key), zap.Error(err))
 	}
-
 	entries, err := s.inner.GetLeaderboard(ctx, quinielaID)
 	if err != nil {
 		return nil, err
 	}
 	if len(entries) > 0 {
-		if setErr := s.store.Set(ctx, key, entries, s.ttl); setErr != nil {
-			s.log.Warn("leaderboard cache set failed", zap.String("key", key), zap.Error(setErr))
-		}
+		cacheSet(ctx, s.store, key, entries, s.ttl, s.log)
 	}
 	return entries, nil
 }
@@ -74,22 +57,15 @@ func (s *cachedRankingService) GetLeaderboard(ctx context.Context, quinielaID in
 // outage never makes the leaderboard unavailable.
 func (s *cachedRankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) ([]*domain.LeaderboardEntry, error) {
 	key := cacheKeyPhaseLeaderboard(quinielaID, phase)
-	var cached []*domain.LeaderboardEntry
-	if err := s.store.Get(ctx, key, &cached); err == nil {
+	if cached, ok := cacheGet[[]*domain.LeaderboardEntry](ctx, s.store, key, s.log); ok {
 		return cached, nil
-	} else if !errors.Is(err, cache.ErrCacheMiss) {
-		s.log.Warn("phase leaderboard cache get failed, falling through to db",
-			zap.String("key", key), zap.Error(err))
 	}
-
 	entries, err := s.inner.GetPhaseLeaderboard(ctx, quinielaID, phase)
 	if err != nil {
 		return nil, err
 	}
 	if len(entries) > 0 {
-		if setErr := s.store.Set(ctx, key, entries, s.ttl); setErr != nil {
-			s.log.Warn("phase leaderboard cache set failed", zap.String("key", key), zap.Error(setErr))
-		}
+		cacheSet(ctx, s.store, key, entries, s.ttl, s.log)
 	}
 	return entries, nil
 }
