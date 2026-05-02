@@ -1,0 +1,2 @@
+-- no-op: rows inserted by this migration were already seeded by 000040-000042.
+-- Deleting them here would undo the original seeds that remain in place.

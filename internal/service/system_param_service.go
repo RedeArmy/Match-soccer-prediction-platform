@@ -101,14 +101,18 @@ func (s *systemParamService) Set(ctx context.Context, key, value string, actorID
 }
 
 // validateValueForKey fetches the declared type of key and checks that value
-// can be parsed to that type. It is a no-op when the key does not yet exist
-// (new params have no type constraint at write time).
+// can be parsed to that type and satisfies per-key business-rule constraints.
+// It is a no-op when the key does not yet exist (new params have no constraint
+// at write time).
 func (s *systemParamService) validateValueForKey(ctx context.Context, key, value string) error {
 	existing, err := s.Get(ctx, key)
 	if err != nil || existing == nil {
 		return err // missing key → no type to validate against
 	}
-	return validateParamValue(value, existing.Type)
+	if err := validateParamValue(value, existing.Type); err != nil {
+		return err
+	}
+	return validateParamConstraints(key, value, existing.Type)
 }
 
 // validateParamValue returns ErrValidation when value cannot be parsed to typ.
@@ -128,6 +132,54 @@ func validateParamValue(value string, typ domain.SystemParamType) error {
 		}
 	case domain.SystemParamTypeString:
 		// any string is valid
+	}
+	return nil
+}
+
+// paramIntRange is an inclusive [min, max] bound for an integer system param.
+type paramIntRange struct{ min, max int }
+
+// paramIntConstraints maps every known integer param key to its valid range.
+// The bounds encode business rules (e.g. scoring must be non-negative, invite
+// codes need at least 6 chars to resist brute-force). Keys absent from the map
+// accept any parseable integer.
+var paramIntConstraints = map[string]paramIntRange{
+	domain.ParamKeyScoringExactScore:        {1, 100},
+	domain.ParamKeyScoringCorrectOutcome:    {0, 100},
+	domain.ParamKeyScoringGoalDiff:          {0, 100},
+	domain.ParamKeyPredictionDeadlineMin:    {0, 1440}, // 0 = no deadline; max 24 h
+	domain.ParamKeyGroupMinMembers:          {2, 1000},
+	domain.ParamKeyGroupDefaultPrize:        {1, 100},
+	domain.ParamKeyGroupInviteCodeLength:    {6, 64},
+	domain.ParamKeyConflictStaleDays:        {1, 365},
+	domain.ParamKeyPaginationDefaultLimit:   {1, 1_000},
+	domain.ParamKeyPaginationMaxLimit:       {1, 10_000},
+	domain.ParamKeyTournamentWinPoints:      {1, 10},
+	domain.ParamKeyAdminBulkMaxItems:        {1, 10_000},
+	domain.ParamKeyCacheMatchTTL:            {0, 86_400}, // 0 = disable cache
+	domain.ParamKeyCacheLeaderboardTTL:      {0, 86_400},
+	domain.ParamKeyCacheDashboardTTLSeconds: {0, 86_400},
+	domain.ParamKeyAuditWriteTimeout:        {1, 60},
+	domain.ParamKeyDLQSampleSize:            {1, 100},
+	domain.ParamKeyDLQReplayDefaultLimit:    {1, 1_000},
+	domain.ParamKeyMessagingMaxRetries:      {1, 20},
+	domain.ParamKeyMessagingStreamMaxLen:    {10_000, 10_000_000},
+	domain.ParamKeyAuthValidationTimeout:    {1, 60},
+}
+
+// validateParamConstraints enforces per-key business-rule bounds for int params.
+// validateParamValue must be called first to ensure value is already parseable.
+func validateParamConstraints(key, value string, typ domain.SystemParamType) error {
+	if typ != domain.SystemParamTypeInt {
+		return nil
+	}
+	n, _ := strconv.Atoi(value) // safe: already validated
+	c, ok := paramIntConstraints[key]
+	if !ok {
+		return nil
+	}
+	if n < c.min || n > c.max {
+		return apperrors.Validation(fmt.Sprintf("value %d is out of allowed range [%d, %d]", n, c.min, c.max))
 	}
 	return nil
 }
