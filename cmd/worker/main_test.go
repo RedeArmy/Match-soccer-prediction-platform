@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -480,4 +481,94 @@ func TestMonitorDLQ_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	cancel()
 
 	monitorDLQ(ctx, rc, nil, zap.NewNop())
+}
+
+// ── monitorPurge ──────────────────────────────────────────────────────────────
+
+// stubPurger implements repository.Purger for monitorPurge unit tests.
+type stubPurger struct {
+	userCalled     int
+	quinielaCalled int
+	userCount      int64
+	quinielaCount  int64
+	err            error
+}
+
+func (s *stubPurger) PurgeDeletedUsers(_ context.Context, _ time.Time) (int64, error) {
+	s.userCalled++
+	return s.userCount, s.err
+}
+
+func (s *stubPurger) PurgeDeletedQuinielas(_ context.Context, _ time.Time) (int64, error) {
+	s.quinielaCalled++
+	return s.quinielaCount, s.err
+}
+
+func TestMonitorPurge_NilPurger_ReturnsImmediately(t *testing.T) {
+	monitorPurge(context.Background(), nil, 24*time.Hour, nil, zap.NewNop())
+}
+
+func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	purger := &stubPurger{}
+	monitorPurge(ctx, purger, 24*time.Hour, nil, zap.NewNop())
+
+	if purger.userCalled != 0 {
+		t.Errorf("expected no purge calls with cancelled context, got %d", purger.userCalled)
+	}
+}
+
+func TestMonitorPurge_OnTick_CallsPurge(t *testing.T) {
+	purger := &stubPurger{userCount: 2, quinielaCount: 1}
+	tickC := make(chan time.Time, 1)
+	tickC <- time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		monitorPurge(ctx, purger, 24*time.Hour, tickC, zap.NewNop())
+		close(done)
+	}()
+
+	for len(tickC) > 0 {
+		runtime.Gosched()
+	}
+	cancel()
+	<-done
+
+	if purger.userCalled != 1 {
+		t.Errorf("expected PurgeDeletedUsers called once, got %d", purger.userCalled)
+	}
+	if purger.quinielaCalled != 1 {
+		t.Errorf("expected PurgeDeletedQuinielas called once, got %d", purger.quinielaCalled)
+	}
+}
+
+func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
+	purger := &stubPurger{err: errors.New("db error")}
+	tickC := make(chan time.Time, 1)
+	tickC <- time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		monitorPurge(ctx, purger, 24*time.Hour, tickC, zap.NewNop())
+		close(done)
+	}()
+
+	for len(tickC) > 0 {
+		runtime.Gosched()
+	}
+	cancel()
+	<-done
+
+	if purger.userCalled != 1 {
+		t.Errorf("expected PurgeDeletedUsers called once despite error, got %d", purger.userCalled)
+	}
 }

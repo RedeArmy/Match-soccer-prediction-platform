@@ -43,6 +43,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -57,6 +58,12 @@ import (
 // operation. Declared as a var so tests can reduce it to a short duration
 // without modifying production code.
 var dlqMonitorInterval = 5 * time.Minute
+
+// purgeTickInterval controls how often the purge goroutine runs. Daily is
+// sufficient: soft-deleted rows accumulate slowly and exact timing is not
+// critical. Declared as a var so tests can inject a shorter interval or a
+// pre-loaded channel without modifying production code.
+var purgeTickInterval = 24 * time.Hour
 
 func main() {
 	cfg, err := config.LoadWorker()
@@ -131,7 +138,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 
 	// A dedicated Redis client for health checks avoids sharing connections
 	// with the event bus, whose long-lived XREADGROUP calls would otherwise
-	// inflate the apparent latency of a ping.
+	// inflate the apparent latency of a ping. The same client is reused for
+	// cache invalidation: DEL and SCAN+DEL are short-lived commands that do
+	// not interfere with health-ping latency.
 	rc := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
@@ -139,14 +148,26 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	})
 	defer rc.Close() //nolint:errcheck
 
+	cacheStore := cache.NewRedisStore(rc)
+	invalidators := []service.PostScoringInvalidator{
+		service.NewPostScoringCacheFlush(cacheStore, log),
+	}
+
+	purger := repository.NewPostgresPurger(db)
+	retentionDays := params.GetInt(ctx, domain.ParamKeyPurgeRetentionDays, domain.DefaultPurgeRetentionDays)
+	purgeRetention := time.Duration(retentionDays) * 24 * time.Hour
+
 	return startWorker(ctx, workerDeps{
-		cfg:         cfg,
-		bus:         bus,
-		scorer:      scorer,
-		snapshotter: snapshotter,
-		predRepo:    predRepo,
-		rc:          rc,
-		checkers:    buildHealthCheckers(db, rc),
+		cfg:            cfg,
+		bus:            bus,
+		scorer:         scorer,
+		snapshotter:    snapshotter,
+		predRepo:       predRepo,
+		invalidators:   invalidators,
+		purger:         purger,
+		purgeRetention: purgeRetention,
+		rc:             rc,
+		checkers:       buildHealthCheckers(db, rc),
 	}, log)
 }
 
@@ -179,13 +200,16 @@ func buildHealthCheckers(db *pgxpool.Pool, rc *redis.Client) []health.Checker {
 // parameter list within the 7-param lint limit while remaining easy to
 // extend without changing the function signature.
 type workerDeps struct {
-	cfg         *config.Config
-	bus         events.Bus
-	scorer      service.MatchScorer
-	snapshotter service.Snapshotter
-	predRepo    repository.PredictionRepository
-	rc          *redis.Client
-	checkers    []health.Checker
+	cfg            *config.Config
+	bus            events.Bus
+	scorer         service.MatchScorer
+	snapshotter    service.Snapshotter
+	predRepo       repository.PredictionRepository
+	invalidators   []service.PostScoringInvalidator
+	purger         repository.Purger
+	purgeRetention time.Duration
+	rc             *redis.Client
+	checkers       []health.Checker
 }
 
 // All parameters are already constructed so this function has no I/O of its
@@ -196,7 +220,8 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	deps.bus.Subscribe(events.EventMatchStarted, newMatchStartedHandler(log))
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
-	deps.bus.Subscribe(events.EventMatchFinished, newMatchFinishedHandler(deps.scorer, deps.snapshotter, deps.predRepo, log))
+	deps.bus.Subscribe(events.EventMatchFinished,
+		newMatchFinishedHandler(deps.scorer, deps.snapshotter, deps.predRepo, deps.invalidators, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
 	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, log)
@@ -229,6 +254,15 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		monitorDLQ(ctx, deps.rc, ticker.C, log)
 	}()
 
+	var purgeDone sync.WaitGroup
+	purgeDone.Add(1)
+	purgeTicker := time.NewTicker(purgeTickInterval)
+	go func() {
+		defer purgeDone.Done()
+		defer purgeTicker.Stop()
+		monitorPurge(ctx, deps.purger, deps.purgeRetention, purgeTicker.C, log)
+	}()
+
 	var runErr error
 	select {
 	case <-ctx.Done():
@@ -247,8 +281,41 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		log.Sugar().Errorf("worker: health server shutdown failed: %v", err)
 	}
 	dlqDone.Wait()
+	purgeDone.Wait()
 	log.Sugar().Info("worker stopped")
 	return runErr
+}
+
+// monitorPurge runs until ctx is cancelled, permanently removing soft-deleted
+// users and quinielas older than retention on each tick received from tickC.
+// Errors are logged at Warn level and swallowed: a failed purge tick is retried
+// on the next interval, so transient DB hiccups do not stop the worker.
+//
+// If purger is nil (e.g. in unit tests where the database is not available),
+// the function returns immediately.
+func monitorPurge(ctx context.Context, purger repository.Purger, retention time.Duration, tickC <-chan time.Time, log *zap.Logger) {
+	if purger == nil {
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tickC:
+			olderThan := time.Now().Add(-retention)
+			if n, err := purger.PurgeDeletedUsers(ctx, olderThan); err != nil {
+				log.Warn("worker: purge deleted users failed", zap.Error(err))
+			} else if n > 0 {
+				log.Info("worker: purged soft-deleted users", zap.Int64("count", n))
+			}
+			if n, err := purger.PurgeDeletedQuinielas(ctx, olderThan); err != nil {
+				log.Warn("worker: purge deleted quinielas failed", zap.Error(err))
+			} else if n > 0 {
+				log.Info("worker: purged soft-deleted quinielas", zap.Int64("count", n))
+			}
+		}
+	}
 }
 
 // monitorDLQ runs until ctx is cancelled, logging the size of every

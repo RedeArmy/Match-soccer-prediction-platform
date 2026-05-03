@@ -445,3 +445,20 @@ type PaymentStatusCounts struct {
 	Rejected       int
 	TotalCollected int
 }
+
+// Purger permanently removes soft-deleted rows that have aged beyond the
+// configured retention window. The scoring worker calls it on a daily tick;
+// the caller is responsible for computing olderThan from the configured
+// retention duration.
+//
+// Only rows whose deleted_at is strictly before olderThan are removed.
+// Foreign-key constraints may prevent deletion of rows that still have
+// dependent records; such errors are returned without partial commits.
+type Purger interface {
+	// PurgeDeletedUsers permanently removes user rows soft-deleted before
+	// olderThan. Returns the number of rows removed.
+	PurgeDeletedUsers(ctx context.Context, olderThan time.Time) (int64, error)
+	// PurgeDeletedQuinielas permanently removes quiniela rows soft-deleted
+	// before olderThan. Returns the number of rows removed.
+	PurgeDeletedQuinielas(ctx context.Context, olderThan time.Time) (int64, error)
+}

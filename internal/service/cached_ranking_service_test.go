@@ -380,6 +380,29 @@ func TestCachedRankingService_InvalidateAll_FlushError_NonFatal(t *testing.T) {
 	svc.InvalidateAll(context.Background()) // must not panic
 }
 
+// ── InvalidateAfterScoring ────────────────────────────────────────────────────
+
+func TestCachedRankingService_InvalidateAfterScoring_CallsDeleteForEachID(t *testing.T) {
+	st := newStubCache()
+	svc := NewCachedRankingService(&stubRanker{}, st, 60*time.Second, zap.NewNop())
+	svc.InvalidateAfterScoring(context.Background(), []int{1, 2, 3})
+
+	wantCount := 3 * (1 + len(domain.AllMatchPhases))
+	if len(st.deleted) != wantCount {
+		t.Errorf("expected %d keys deleted (3 IDs × %d keys each), got %d",
+			wantCount, 1+len(domain.AllMatchPhases), len(st.deleted))
+	}
+}
+
+func TestCachedRankingService_InvalidateAfterScoring_EmptyIDs_NoDeleteCalls(t *testing.T) {
+	st := newStubCache()
+	svc := NewCachedRankingService(&stubRanker{}, st, 60*time.Second, zap.NewNop())
+	svc.InvalidateAfterScoring(context.Background(), nil)
+	if len(st.deleted) != 0 {
+		t.Errorf("expected no Delete calls for empty IDs, got %d", len(st.deleted))
+	}
+}
+
 // spyPrefixFlusher implements both cache.Store and cache.PrefixFlusher.
 type spyPrefixFlusher struct {
 	prefixes []string

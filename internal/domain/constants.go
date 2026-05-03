@@ -101,6 +101,9 @@ const (
 	// Infrastructure timeouts (seconds)
 	DefaultAuthValidationTimeoutSeconds = 5 // auth.validation_timeout_seconds
 	DefaultAuditWriteTimeoutSeconds     = 5 // audit.write_timeout_seconds
+
+	// Soft-delete retention
+	DefaultPurgeRetentionDays = 30 // system.purge_retention_days
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -169,6 +172,10 @@ const (
 	ParamKeyMessagingStreamMaxLen = "messaging.stream_max_len"
 	// ParamKeyAuthValidationTimeout is the JWKS warm-up timeout in seconds.
 	ParamKeyAuthValidationTimeout = "auth.validation_timeout_seconds"
+	// ParamKeyPurgeRetentionDays is the age in days after which soft-deleted
+	// users and quinielas are permanently removed by the worker purge goroutine.
+	// is_runtime = FALSE: changing the value requires a worker restart.
+	ParamKeyPurgeRetentionDays = "system.purge_retention_days"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather

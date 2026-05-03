@@ -74,6 +74,68 @@ func TestAdminReadService_GlobalLeaderboard_PropagatesError(t *testing.T) {
 	}
 }
 
+func newAdminReadSvcWithCache(predRepo *stubTotalPointsPredRepo, store *stubCacheStore) AdminReadService {
+	return NewAdminReadService(
+		AdminReadRepos{
+			Pred:        predRepo,
+			User:        &stubUserRepo{},
+			Quiniela:    &stubQuinielaRepo{},
+			Payment:     &stubPaymentRepo{},
+			Tiebreaker:  &stubTiebreakerRepo{},
+			Snapshot:    &stubSnapshotRepo{},
+			GlobalCache: store,
+		},
+		&noopSystemParamService{}, zap.NewNop(),
+	)
+}
+
+func TestAdminReadService_GlobalLeaderboard_CacheHit_NoDbCall(t *testing.T) {
+	st := newStubCache()
+	entries := []*domain.GlobalLeaderboardEntry{{Rank: 1, UserID: 1, TotalPoints: 30}}
+	st.seed(cacheKeyGlobalLeaderboard(10), entries)
+
+	predRepo := &stubTotalPointsPredRepo{}
+	predRepo.globalErr = errors.New("should not reach db on cache hit")
+	svc := newAdminReadSvcWithCache(predRepo, st)
+
+	got, err := svc.GlobalLeaderboard(context.Background(), 10)
+	if err != nil {
+		t.Fatalf(adminReadUnexpectedErr, err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected 1 entry from cache, got %d", len(got))
+	}
+}
+
+func TestAdminReadService_GlobalLeaderboard_CacheMiss_SetsCache(t *testing.T) {
+	st := newStubCache()
+	entries := []*domain.GlobalLeaderboardEntry{{Rank: 1, UserID: 2, TotalPoints: 20}}
+	predRepo := &stubTotalPointsPredRepo{globalEntries: entries}
+	svc := newAdminReadSvcWithCache(predRepo, st)
+
+	_, err := svc.GlobalLeaderboard(context.Background(), 5)
+	if err != nil {
+		t.Fatalf(adminReadUnexpectedErr, err)
+	}
+	if st.setCalls != 1 {
+		t.Errorf("expected 1 cache Set call on miss, got %d", st.setCalls)
+	}
+}
+
+func TestAdminReadService_GlobalLeaderboard_EmptyResult_NotCached(t *testing.T) {
+	st := newStubCache()
+	predRepo := &stubTotalPointsPredRepo{globalEntries: []*domain.GlobalLeaderboardEntry{}}
+	svc := newAdminReadSvcWithCache(predRepo, st)
+
+	_, err := svc.GlobalLeaderboard(context.Background(), 5)
+	if err != nil {
+		t.Fatalf(adminReadUnexpectedErr, err)
+	}
+	if st.setCalls != 0 {
+		t.Errorf("empty results must not be cached, got %d Set calls", st.setCalls)
+	}
+}
+
 // ── ListPredictions ───────────────────────────────────────────────────────────
 
 func TestAdminReadService_ListPredictions_ReturnsSlice(t *testing.T) {

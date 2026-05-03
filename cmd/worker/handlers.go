@@ -82,22 +82,23 @@ func newMatchStartedHandler(log *zap.Logger) func(context.Context, events.Envelo
 // on the bus for EventMatchFinished events. It is extracted as a constructor
 // so it can be unit-tested in isolation without starting the full worker.
 //
-// After scoring succeeds, the handler triggers a leaderboard snapshot for
-// every quiniela that has active, paid members with predictions on the finished
-// match. Snapshot failures are logged and swallowed: scoring already committed
-// and the snapshot can be regenerated on the next scoring event or manually.
+// After scoring succeeds the handler runs postScoringWork, which fetches the
+// affected quinielas once, flushes their cache entries via every registered
+// PostScoringInvalidator, and then triggers a leaderboard snapshot for each.
+// All post-scoring steps are best-effort: failures are logged and swallowed
+// because scoring has already committed.
 func newMatchFinishedHandler(
 	scorer service.MatchScorer,
 	snapshotter service.Snapshotter,
 	predRepo repository.PredictionRepository,
+	invalidators []service.PostScoringInvalidator,
 	log *zap.Logger,
 ) func(context.Context, events.Envelope) error {
 	return func(ctx context.Context, env events.Envelope) error {
 		mf, err := decodePayload[events.MatchFinished](env)
 		if err != nil {
 			// A payload that cannot be decoded will never succeed on retry.
-			// Log, then return nil so the bus does not route it to the DLQ -
-			// retrying a structurally invalid message would burn retry budget.
+			// Log, then return nil so the bus does not route it to the DLQ.
 			log.Error("worker: cannot decode MatchFinished payload",
 				zap.String("event_type", string(env.Type)),
 				zap.Error(err),
@@ -118,40 +119,52 @@ func newMatchFinishedHandler(
 		log.Sugar().Infof("worker: scored match %d (%s %d-%d %s)",
 			mf.MatchID, mf.HomeTeam, mf.HomeScore, mf.AwayScore, mf.AwayTeam)
 
-		snapshotAffectedQuinielas(ctx, mf.MatchID, snapshotter, predRepo, log)
+		postScoringWork(ctx, mf.MatchID, snapshotter, predRepo, invalidators, log)
 		return nil
 	}
 }
 
-// snapshotAffectedQuinielas queries which quinielas had active paid members
-// with predictions on matchID, then persists a fresh leaderboard snapshot for
-// each using retrySnapshot. Errors after all retries are logged and swallowed:
-// scoring has already committed and the snapshot can be regenerated on the next
-// scoring event or via manual replay.
+// postScoringWork fetches the quinielas affected by matchID exactly once, then
+// runs cache invalidation and snapshot generation in that order: invalidation
+// first so the snapshot write is not racing a stale read.
 //
-// When multiple matches finish simultaneously and their workers overlap,
-// concurrent calls to Snapshot for the same quiniela produce redundant rows.
-// This is safe: GetLatest always returns the most recent snapshot, which
-// reflects all committed scores by the time it is taken.
-func snapshotAffectedQuinielas(
+// All steps are best-effort. A failure to fetch quiniela IDs skips both
+// invalidation and snapshots but does not propagate: scoring has committed.
+//
+// When multiple matches finish simultaneously, concurrent calls to Snapshot
+// for the same quiniela produce redundant rows. This is safe: GetLatest always
+// returns the most recent snapshot.
+func postScoringWork(
 	ctx context.Context,
 	matchID int,
 	snapshotter service.Snapshotter,
 	predRepo repository.PredictionRepository,
+	invalidators []service.PostScoringInvalidator,
 	log *zap.Logger,
 ) {
-	if predRepo == nil || snapshotter == nil {
+	if predRepo == nil {
 		return
 	}
+
 	quinielaIDs, err := predRepo.ListQuinielaIDsByMatch(ctx, matchID)
 	if err != nil {
-		log.Warn("worker: could not fetch quiniela IDs for snapshot after scoring",
+		log.Warn("worker: could not fetch quiniela IDs after scoring",
 			zap.Int("match_id", matchID),
 			zap.Error(err),
 		)
 		return
 	}
+	if len(quinielaIDs) == 0 {
+		return
+	}
 
+	for _, inv := range invalidators {
+		inv.InvalidateAfterScoring(ctx, quinielaIDs)
+	}
+
+	if snapshotter == nil {
+		return
+	}
 	for _, qid := range quinielaIDs {
 		retrySnapshot(ctx, matchID, qid, snapshotter, log)
 	}

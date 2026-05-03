@@ -211,6 +211,19 @@ type Notifier interface {
 	Notify(ctx context.Context, userID int, message string) error
 }
 
+// PostScoringInvalidator is the contract for any cache layer that holds data
+// derived from prediction scores. The scoring worker calls InvalidateAfterScoring
+// once per MatchFinished event, after ScoreMatch succeeds, so subsequent reads
+// within the same Redis cluster see fresh point totals without waiting for
+// natural TTL expiry.
+//
+// Implementations must be non-fatal: cache errors must be logged and swallowed,
+// never returned, because scoring has already committed and a brief period of
+// stale cache is preferable to blocking the event pipeline.
+type PostScoringInvalidator interface {
+	InvalidateAfterScoring(ctx context.Context, quinielaIDs []int)
+}
+
 // MutationHookRegisterer is an optional extension of SystemParamService that
 // allows callers to register post-mutation callbacks. Each hook is called
 // synchronously after a successful Set or BulkSet for the matching key, and

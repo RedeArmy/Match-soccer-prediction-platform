@@ -28,3 +28,10 @@ func cacheKeyLeaderboard(quinielaID int) string {
 func cacheKeyPhaseLeaderboard(quinielaID int, phase domain.MatchPhase) string {
 	return fmt.Sprintf("leaderboard:%d:phase:%s", quinielaID, phase)
 }
+
+// Global leaderboard cache key (admin-only, keyed by result limit).
+// All variants share the "global_leaderboard:" prefix so PostScoringCacheFlush
+// can evict them with a single FlushByPrefix call.
+func cacheKeyGlobalLeaderboard(limit int) string {
+	return fmt.Sprintf("global_leaderboard:%d", limit)
+}
