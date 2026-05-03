@@ -326,4 +326,4 @@ func (s *systemParamService) BulkSet(ctx context.Context, params map[string]stri
 }
 
 var _ SystemParamService = (*systemParamService)(nil)
-var _ MutationHookRegistrar = (*systemParamService)(nil)
+var _ MutationHookRegisterer = (*systemParamService)(nil)

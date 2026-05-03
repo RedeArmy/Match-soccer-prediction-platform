@@ -185,6 +185,30 @@ var canonicalSystemParams = []canonicalParam{
 		"JWKS validation timeout in seconds at process startup"},
 }
 
+// assertCanonicalParam checks that a retrieved SystemParam matches its
+// expected canonical metadata.
+func assertCanonicalParam(t *testing.T, got *domain.SystemParam, want canonicalParam) {
+	t.Helper()
+	if got.Type != domain.SystemParamTypeInt {
+		t.Errorf("type: got %q, want %q", got.Type, domain.SystemParamTypeInt)
+	}
+	if got.Category != want.category {
+		t.Errorf("category: got %q, want %q", got.Category, want.category)
+	}
+	if got.IsRuntime != want.isRuntime {
+		t.Errorf("is_runtime: got %v, want %v", got.IsRuntime, want.isRuntime)
+	}
+	if got.Description == "" {
+		t.Error("description must not be empty")
+	}
+	if _, err := strconv.Atoi(got.Value); err != nil {
+		t.Errorf("default value %q is not parseable as int: %v", got.Value, err)
+	}
+	if got.Value != want.defaultVal {
+		t.Errorf("default value: got %q, want %q", got.Value, want.defaultVal)
+	}
+}
+
 // TestSystemParamRepository_AllDomainConstantsSeeded verifies that every
 // ParamKey* domain constant has a corresponding row in system_params with
 // the correct type, category, is_runtime flag, parseable default value, and
@@ -219,7 +243,6 @@ func TestSystemParamRepository_AllDomainConstantsSeeded(t *testing.T) {
 		t.Fatalf("GetAll: %v", err)
 	}
 
-	// Index by key for O(1) lookup.
 	byKey := make(map[string]*domain.SystemParam, len(all))
 	for _, p := range all {
 		byKey[p.Key] = p
@@ -231,25 +254,7 @@ func TestSystemParamRepository_AllDomainConstantsSeeded(t *testing.T) {
 			if !ok {
 				t.Fatalf("row missing for key %q", want.key)
 			}
-			if got.Type != domain.SystemParamTypeInt {
-				t.Errorf("type: got %q, want %q", got.Type, domain.SystemParamTypeInt)
-			}
-			if got.Category != want.category {
-				t.Errorf("category: got %q, want %q", got.Category, want.category)
-			}
-			if got.IsRuntime != want.isRuntime {
-				t.Errorf("is_runtime: got %v, want %v", got.IsRuntime, want.isRuntime)
-			}
-			if got.Description == "" {
-				t.Error("description must not be empty")
-			}
-			if _, err := strconv.Atoi(got.Value); err != nil {
-				t.Errorf("default value %q is not parseable as int: %v", got.Value, err)
-			}
-			// Verify the seeded default value matches the domain constant.
-			if got.Value != want.defaultVal {
-				t.Errorf("default value: got %q, want %q", got.Value, want.defaultVal)
-			}
+			assertCanonicalParam(t, got, want)
 		})
 	}
 
@@ -257,5 +262,4 @@ func TestSystemParamRepository_AllDomainConstantsSeeded(t *testing.T) {
 	if len(canonicalSystemParams) != 21 {
 		t.Errorf("canonicalSystemParams has %d entries; expected 21 (one per ParamKey* constant)", len(canonicalSystemParams))
 	}
-
 }

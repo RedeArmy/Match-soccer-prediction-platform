@@ -430,7 +430,7 @@ func (s *Server) buildHandlers(
 		// When an admin changes cache.leaderboard_ttl_seconds, update the active
 		// TTL for future cache writes and flush all existing leaderboard entries so
 		// the change takes effect immediately rather than after natural expiry.
-		if mh, ok := paramSvcWithAudit.(service.MutationHookRegistrar); ok {
+		if mh, ok := paramSvcWithAudit.(service.MutationHookRegisterer); ok {
 			mh.RegisterMutationHook(domain.ParamKeyCacheLeaderboardTTL,
 				leaderboardTTLHook(paramSvcWithAudit, cachedRanker))
 		}

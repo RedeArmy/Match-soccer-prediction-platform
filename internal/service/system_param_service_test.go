@@ -476,7 +476,7 @@ func TestSystemParamService_Set_CallsHookAfterEviction(t *testing.T) {
 	repo.param = param("k", "new")
 
 	var hookSaw string
-	svc.(MutationHookRegistrar).RegisterMutationHook("k", func(ctx context.Context) {
+	svc.(MutationHookRegisterer).RegisterMutationHook("k", func(ctx context.Context) {
 		p, _ := svc.Get(ctx, "k")
 		if p != nil {
 			hookSaw = p.Value
@@ -497,7 +497,7 @@ func TestSystemParamService_BulkSet_CallsHookForEachKey(t *testing.T) {
 	svc := NewSystemParamService(repo, nil, zap.NewNop())
 
 	var called []string
-	hr := svc.(MutationHookRegistrar)
+	hr := svc.(MutationHookRegisterer)
 	hr.RegisterMutationHook("a", func(_ context.Context) { called = append(called, "a") })
 	hr.RegisterMutationHook("b", func(_ context.Context) { called = append(called, "b") })
 
@@ -518,7 +518,7 @@ func TestSystemParamService_Set_HookNotCalledOnRepoError(t *testing.T) {
 	svc := NewSystemParamService(&stubSystemParamRepo{setErr: errors.New("db down")}, nil, zap.NewNop())
 
 	hookCalled := false
-	svc.(MutationHookRegistrar).RegisterMutationHook("k", func(_ context.Context) { hookCalled = true })
+	svc.(MutationHookRegisterer).RegisterMutationHook("k", func(_ context.Context) { hookCalled = true })
 
 	_, _ = svc.Set(context.Background(), "k", "v", 1)
 	if hookCalled {
@@ -530,7 +530,7 @@ func TestSystemParamService_MultipleHooksForSameKey_AllCalled(t *testing.T) {
 	svc := NewSystemParamService(&stubSystemParamRepo{param: param("k", "v")}, nil, zap.NewNop())
 
 	var count int
-	hr := svc.(MutationHookRegistrar)
+	hr := svc.(MutationHookRegisterer)
 	hr.RegisterMutationHook("k", func(_ context.Context) { count++ })
 	hr.RegisterMutationHook("k", func(_ context.Context) { count++ })
 
