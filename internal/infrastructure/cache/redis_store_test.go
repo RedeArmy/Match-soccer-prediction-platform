@@ -188,3 +188,66 @@ func TestRedisStore_Delete_RedisError_ReturnsError(t *testing.T) {
 		t.Fatal(msgRedisFailErr)
 	}
 }
+
+// ── FlushByPrefix ─────────────────────────────────────────────────────────────
+
+func TestRedisStore_FlushByPrefix_NoMatchingKeys_ReturnsNil(t *testing.T) {
+	_, st := newTestStore(t)
+	ctx := context.Background()
+
+	// Seed a key that must NOT be deleted.
+	if err := st.Set(ctx, "other:key1", "v", time.Minute); err != nil {
+		t.Fatalf(fmtSetErr, err)
+	}
+
+	if err := st.FlushByPrefix(ctx, "leaderboard:"); err != nil {
+		t.Fatalf("FlushByPrefix on empty prefix: %v", err)
+	}
+
+	// Unrelated key must survive.
+	var dest string
+	if err := st.Get(ctx, "other:key1", &dest); err != nil {
+		t.Errorf("key outside prefix was unexpectedly deleted: %v", err)
+	}
+}
+
+func TestRedisStore_FlushByPrefix_MatchingKeys_DeletesThem(t *testing.T) {
+	_, st := newTestStore(t)
+	ctx := context.Background()
+
+	// Seed matching and non-matching keys.
+	for _, k := range []string{"leaderboard:1", "leaderboard:2"} {
+		if err := st.Set(ctx, k, "v", time.Minute); err != nil {
+			t.Fatalf(fmtSetErr, err)
+		}
+	}
+	if err := st.Set(ctx, "other:key", "v", time.Minute); err != nil {
+		t.Fatalf(fmtSetErr, err)
+	}
+
+	if err := st.FlushByPrefix(ctx, "leaderboard:"); err != nil {
+		t.Fatalf("FlushByPrefix: %v", err)
+	}
+
+	for _, k := range []string{"leaderboard:1", "leaderboard:2"} {
+		var dest string
+		if err := st.Get(ctx, k, &dest); !errors.Is(err, cache.ErrCacheMiss) {
+			t.Errorf("key %q: expected ErrCacheMiss after flush, got %v", k, err)
+		}
+	}
+
+	// Key outside the prefix must survive.
+	var dest string
+	if err := st.Get(ctx, "other:key", &dest); err != nil {
+		t.Errorf("key outside prefix was unexpectedly deleted: %v", err)
+	}
+}
+
+func TestRedisStore_FlushByPrefix_ScanError_ReturnsWrappedError(t *testing.T) {
+	mr, st := newTestStore(t)
+	mr.Close() // force all Redis commands to fail
+
+	if err := st.FlushByPrefix(context.Background(), "leaderboard:"); err == nil {
+		t.Fatal("expected error when Redis is unavailable, got nil")
+	}
+}
