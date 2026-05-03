@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
 
 const (
@@ -313,4 +314,86 @@ func TestCachedRankingService_GetPhaseLeaderboard_SetError_StillReturnsData(t *t
 	if len(got) != 1 {
 		t.Errorf("expected 1 entry despite cache set error, got %d", len(got))
 	}
+}
+
+// ── UpdateTTL ─────────────────────────────────────────────────────────────────
+
+func TestCachedRankingService_UpdateTTL_NewEntriesUseUpdatedTTL(t *testing.T) {
+	// Verify that cache writes after UpdateTTL use the new duration.
+	// Each GetLeaderboard for a distinct quinielaID is a guaranteed cache miss
+	// (the stub store starts empty), so each call triggers a Set with the
+	// current TTL - no eviction step required.
+	st := &stubTTLCacheStore{stubCacheStore: newStubCache()}
+	entries := []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1, Name: "Alice"}, TotalPoints: 10, Rank: 1},
+	}
+	svc := NewCachedRankingService(&stubRanker{entries: entries}, st, 60*time.Second, zap.NewNop())
+
+	_, _ = svc.GetLeaderboard(context.Background(), 1) // quiniela 1 - misses, writes with 60s TTL
+	if len(st.ttls) == 0 || st.ttls[0] != 60*time.Second {
+		t.Fatalf("expected initial TTL=60s, got %v", st.ttls)
+	}
+
+	svc.UpdateTTL(10 * time.Second)
+
+	_, _ = svc.GetLeaderboard(context.Background(), 2) // quiniela 2 - fresh miss, writes with 10s TTL
+	if len(st.ttls) < 2 || st.ttls[len(st.ttls)-1] != 10*time.Second {
+		t.Errorf("expected updated TTL=10s after UpdateTTL, got %v", st.ttls)
+	}
+}
+
+// stubTTLCacheStore extends stubCacheStore to record the TTL of each Set call.
+type stubTTLCacheStore struct {
+	*stubCacheStore
+	ttls []time.Duration
+}
+
+func (s *stubTTLCacheStore) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
+	s.ttls = append(s.ttls, ttl)
+	return s.stubCacheStore.Set(ctx, key, value, ttl)
+}
+
+// ── InvalidateAll ─────────────────────────────────────────────────────────────
+
+func TestCachedRankingService_InvalidateAll_CallsFlushByPrefix(t *testing.T) {
+	// A store that implements PrefixFlusher should have FlushByPrefix called
+	// with the "leaderboard:" prefix.
+	pf := &spyPrefixFlusher{}
+	svc := NewCachedRankingService(&stubRanker{}, pf, 60*time.Second, zap.NewNop())
+
+	svc.InvalidateAll(context.Background())
+
+	if len(pf.prefixes) != 1 || pf.prefixes[0] != "leaderboard:" {
+		t.Errorf("expected FlushByPrefix(%q), got %v", "leaderboard:", pf.prefixes)
+	}
+}
+
+func TestCachedRankingService_InvalidateAll_NonPrefixFlusherStore_IsNoop(t *testing.T) {
+	// stubCacheStore does not implement PrefixFlusher; InvalidateAll must not panic.
+	svc := NewCachedRankingService(&stubRanker{}, newStubCache(), 60*time.Second, zap.NewNop())
+	svc.InvalidateAll(context.Background()) // should not panic or error
+}
+
+func TestCachedRankingService_InvalidateAll_FlushError_NonFatal(t *testing.T) {
+	pf := &spyPrefixFlusher{err: errors.New("redis error")}
+	svc := NewCachedRankingService(&stubRanker{}, pf, 60*time.Second, zap.NewNop())
+	svc.InvalidateAll(context.Background()) // must not panic
+}
+
+// spyPrefixFlusher implements both cache.Store and cache.PrefixFlusher.
+type spyPrefixFlusher struct {
+	prefixes []string
+	err      error
+}
+
+func (s *spyPrefixFlusher) Get(_ context.Context, _ string, _ any) error {
+	return cache.ErrCacheMiss
+}
+func (s *spyPrefixFlusher) Set(_ context.Context, _ string, _ any, _ time.Duration) error {
+	return nil
+}
+func (s *spyPrefixFlusher) Delete(_ context.Context, _ ...string) error { return nil }
+func (s *spyPrefixFlusher) FlushByPrefix(_ context.Context, prefix string) error {
+	s.prefixes = append(s.prefixes, prefix)
+	return s.err
 }

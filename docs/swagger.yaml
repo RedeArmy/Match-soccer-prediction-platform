@@ -495,6 +495,8 @@ definitions:
     properties:
       category:
         type: string
+      description:
+        type: string
       is_runtime:
         type: boolean
       key:

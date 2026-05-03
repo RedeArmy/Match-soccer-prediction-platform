@@ -461,3 +461,84 @@ func TestSystemParamService_RuntimeParam_UsesShortTTL(t *testing.T) {
 		t.Error("infra param should have a longer cache TTL than runtime param")
 	}
 }
+
+// ── RegisterMutationHook ──────────────────────────────────────────────────────
+
+func TestSystemParamService_Set_CallsHookAfterEviction(t *testing.T) {
+	// Hook must be called after the cache entry is evicted so that a Get inside
+	// the hook reads the fresh value from the repo, not a stale cache hit.
+	repo := &stubSystemParamRepo{param: param("k", "old")}
+	svc := NewSystemParamService(repo, nil, zap.NewNop())
+
+	// Warm the cache.
+	_, _ = svc.Get(context.Background(), "k")
+
+	repo.param = param("k", "new")
+
+	var hookSaw string
+	svc.(MutationHookRegisterer).RegisterMutationHook("k", func(ctx context.Context) {
+		p, _ := svc.Get(ctx, "k")
+		if p != nil {
+			hookSaw = p.Value
+		}
+	})
+
+	_, err := svc.Set(context.Background(), "k", "new", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hookSaw != "new" {
+		t.Errorf("hook saw %q, expected %q", hookSaw, "new")
+	}
+}
+
+func TestSystemParamService_BulkSet_CallsHookForEachKey(t *testing.T) {
+	repo := &stubSystemParamRepo{param: param("a", "1")}
+	svc := NewSystemParamService(repo, nil, zap.NewNop())
+
+	var called []string
+	hr := svc.(MutationHookRegisterer)
+	hr.RegisterMutationHook("a", func(_ context.Context) { called = append(called, "a") })
+	hr.RegisterMutationHook("b", func(_ context.Context) { called = append(called, "b") })
+
+	if err := svc.BulkSet(context.Background(), map[string]string{"a": "1", "b": "2"}, 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	seen := map[string]bool{}
+	for _, k := range called {
+		seen[k] = true
+	}
+	if !seen["a"] || !seen["b"] {
+		t.Errorf("expected hooks for both keys, got %v", called)
+	}
+}
+
+func TestSystemParamService_Set_HookNotCalledOnRepoError(t *testing.T) {
+	svc := NewSystemParamService(&stubSystemParamRepo{setErr: errors.New("db down")}, nil, zap.NewNop())
+
+	hookCalled := false
+	svc.(MutationHookRegisterer).RegisterMutationHook("k", func(_ context.Context) { hookCalled = true })
+
+	_, _ = svc.Set(context.Background(), "k", "v", 1)
+	if hookCalled {
+		t.Error("hook should not fire when repo.Set returns an error")
+	}
+}
+
+func TestSystemParamService_MultipleHooksForSameKey_AllCalled(t *testing.T) {
+	svc := NewSystemParamService(&stubSystemParamRepo{param: param("k", "v")}, nil, zap.NewNop())
+
+	var count int
+	hr := svc.(MutationHookRegisterer)
+	hr.RegisterMutationHook("k", func(_ context.Context) { count++ })
+	hr.RegisterMutationHook("k", func(_ context.Context) { count++ })
+
+	_, err := svc.Set(context.Background(), "k", "v", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 hook calls, got %d", count)
+	}
+}

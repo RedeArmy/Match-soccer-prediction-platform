@@ -216,14 +216,17 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	// fixed interval. Operators should configure an alert on log lines that
 	// contain "dead-letter queue is non-empty" to be notified within one
 	// dlqMonitorInterval of a scoring failure.
+	// The ticker is created here and its Stop is deferred inside the goroutine
+	// so tests can inject a pre-loaded channel without touching dlqMonitorInterval.
 	// A WaitGroup ensures the goroutine has fully exited before startWorker
-	// returns, preventing a data race on dlqMonitorInterval in tests that
-	// run under -race.
+	// returns, preventing a data race in tests that run under -race.
 	var dlqDone sync.WaitGroup
 	dlqDone.Add(1)
+	ticker := time.NewTicker(dlqMonitorInterval)
 	go func() {
 		defer dlqDone.Done()
-		monitorDLQ(ctx, deps.rc, log)
+		defer ticker.Stop()
+		monitorDLQ(ctx, deps.rc, ticker.C, log)
 	}()
 
 	var runErr error
@@ -248,20 +251,22 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	return runErr
 }
 
-// monitorDLQ runs until ctx is cancelled, periodically logging the size of
-// every event-type dead-letter queue managed by this worker. A non-zero count
-// indicates events that exhausted all handler retry attempts and require manual
-// operator replay. The log line is structured so log-based alerting systems
-// (Datadog, CloudWatch Logs Insights, Loki) can match on the "dlq_size" field.
+// monitorDLQ runs until ctx is cancelled, logging the size of every
+// event-type dead-letter queue on each tick received from tickC. A non-zero
+// count indicates events that exhausted all handler retry attempts and require
+// manual operator replay. The log line is structured so log-based alerting
+// systems (Datadog, CloudWatch Logs Insights, Loki) can match on "dlq_size".
 //
-// If rc is nil (e.g. in unit tests where Redis is not available), the goroutine
-// exits immediately - DLQ monitoring is best-effort and must not block startup.
-func monitorDLQ(ctx context.Context, rc *redis.Client, log *zap.Logger) {
+// tickC is injected by the caller so tests can pass a pre-loaded buffered
+// channel without mutating any global state. In production startWorker passes
+// time.NewTicker(dlqMonitorInterval).C.
+//
+// If rc is nil (e.g. in unit tests where Redis is not available), the function
+// returns immediately - DLQ monitoring is best-effort and must not block startup.
+func monitorDLQ(ctx context.Context, rc *redis.Client, tickC <-chan time.Time, log *zap.Logger) {
 	if rc == nil {
 		return
 	}
-	ticker := time.NewTicker(dlqMonitorInterval)
-	defer ticker.Stop()
 
 	// The event types whose DLQ keys this worker is responsible for.
 	monitoredEvents := []events.EventType{events.EventMatchStarted, events.EventMatchFinished}
@@ -270,7 +275,7 @@ func monitorDLQ(ctx context.Context, rc *redis.Client, log *zap.Logger) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-tickC:
 			for _, et := range monitoredEvents {
 				dlqKey := "dlq:" + string(et)
 				n, err := rc.LLen(ctx, dlqKey).Result()

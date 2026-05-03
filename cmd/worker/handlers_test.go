@@ -326,6 +326,9 @@ func TestSnapshotAffectedQuinielas_SnapshotSuccess_LogsInfo(t *testing.T) {
 }
 
 func TestSnapshotAffectedQuinielas_SnapshotError_LogsWarn(t *testing.T) {
+	snapshotRetryBase = 0
+	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
+
 	predRepo := &stubWorkerPredRepo{ids: []int{10}}
 	snap := &stubSnapshotter{err: errors.New("snapshot failed")}
 	snapshotAffectedQuinielas(context.Background(), 5, snap, predRepo, zap.NewNop())
@@ -343,4 +346,79 @@ func TestMatchFinishedHandler_WithSnapshot_ScoresAndSnapshots(t *testing.T) {
 	if scorer.called != 1 || scorer.lastID != 10 {
 		t.Errorf("expected ScoreMatch(10) called once, got called=%d id=%d", scorer.called, scorer.lastID)
 	}
+}
+
+// ── retrySnapshot ─────────────────────────────────────────────────────────────
+
+func TestRetrySnapshot_FirstAttemptSucceeds_CalledOnce(t *testing.T) {
+	snapshotRetryBase = 0
+	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
+
+	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
+	retrySnapshot(context.Background(), 5, 10, snap, zap.NewNop())
+
+	if snap.calls != 1 {
+		t.Errorf("expected 1 call on immediate success, got %d", snap.calls)
+	}
+}
+
+func TestRetrySnapshot_SucceedsOnSecondAttempt_RetriesOnce(t *testing.T) {
+	snapshotRetryBase = 0
+	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
+
+	snap := &countingSnapshotter{
+		succeedAt: 2,
+		snap:      &domain.LeaderboardSnapshot{ID: 1},
+		err:       errors.New("transient"),
+	}
+	retrySnapshot(context.Background(), 5, 10, snap, zap.NewNop())
+
+	if snap.calls != 2 {
+		t.Errorf("expected 2 calls (1 fail + 1 success), got %d", snap.calls)
+	}
+}
+
+func TestRetrySnapshot_AllAttemptsFail_LogsAndReturns(t *testing.T) {
+	snapshotRetryBase = 0
+	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
+
+	snap := &countingSnapshotter{succeedAt: 0, err: errors.New("db down")}
+	retrySnapshot(context.Background(), 5, 10, snap, zap.NewNop())
+
+	if snap.calls != maxSnapshotAttempts {
+		t.Errorf("expected %d calls on total failure, got %d", maxSnapshotAttempts, snap.calls)
+	}
+}
+
+func TestRetrySnapshot_ContextCancelled_StopsEarly(t *testing.T) {
+	snapshotRetryBase = time.Hour // would block forever without context cancellation
+	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancelled
+
+	snap := &countingSnapshotter{succeedAt: 0, err: errors.New("transient")}
+	retrySnapshot(ctx, 5, 10, snap, zap.NewNop())
+
+	// First attempt always runs; retry sleep is skipped because ctx is done.
+	if snap.calls < 1 {
+		t.Error("expected at least one attempt before context cancellation")
+	}
+}
+
+// countingSnapshotter counts Snapshot calls and returns success starting at
+// the nth call (succeedAt). Zero succeedAt means always return err.
+type countingSnapshotter struct {
+	calls     int
+	succeedAt int
+	snap      *domain.LeaderboardSnapshot
+	err       error
+}
+
+func (s *countingSnapshotter) Snapshot(_ context.Context, _ int) (*domain.LeaderboardSnapshot, error) {
+	s.calls++
+	if s.succeedAt > 0 && s.calls >= s.succeedAt {
+		return s.snap, nil
+	}
+	return nil, s.err
 }

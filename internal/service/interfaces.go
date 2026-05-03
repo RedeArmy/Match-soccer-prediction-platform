@@ -211,6 +211,16 @@ type Notifier interface {
 	Notify(ctx context.Context, userID int, message string) error
 }
 
+// MutationHookRegisterer is an optional extension of SystemParamService that
+// allows callers to register post-mutation callbacks. Each hook is called
+// synchronously after a successful Set or BulkSet for the matching key, and
+// after the in-process cache has been evicted. Wiring code uses a type
+// assertion to check for support; the hook is silently skipped on
+// implementations that do not implement this interface.
+type MutationHookRegisterer interface {
+	RegisterMutationHook(key string, fn func(ctx context.Context))
+}
+
 // SystemParamService provides typed, cached access to runtime-configurable
 // key-value settings stored in the system_params table.
 //

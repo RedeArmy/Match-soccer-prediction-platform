@@ -4103,6 +4103,9 @@ const docTemplate = `{
                 "category": {
                     "type": "string"
                 },
+                "description": {
+                    "type": "string"
+                },
                 "is_runtime": {
                     "type": "boolean"
                 },
