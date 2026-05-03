@@ -444,7 +444,11 @@ func (s *Server) buildHandlers(
 	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, repos.member, snapshotter, auditSvc, s.log)
 	adminUserSvc := service.NewAdminUserService(repos.user, repos.member, paymentRepo, auditSvc, s.log)
 	adminReadSvc := service.NewAdminReadService(
-		service.AdminReadRepos{Pred: repos.pred, User: repos.user, Quiniela: quinielaRepo, Payment: paymentRepo, Tiebreaker: tiebreakerRepo, Snapshot: snapRepo},
+		service.AdminReadRepos{
+			Pred: repos.pred, User: repos.user, Quiniela: quinielaRepo,
+			Payment: paymentRepo, Tiebreaker: tiebreakerRepo, Snapshot: snapRepo,
+			GlobalCache: s.cache,
+		},
 		params, s.log,
 	)
 	conflictSvc := service.NewConflictService(quinielaRepo, repos.member, paymentRepo, params, auditSvc, s.log)

@@ -112,6 +112,18 @@ func (s *CachedRankingService) InvalidateLeaderboard(ctx context.Context, quinie
 	}
 }
 
+// InvalidateAfterScoring implements PostScoringInvalidator: it evicts all
+// cached leaderboard entries (overall and all phases) for each quiniela in
+// quinielaIDs. Called by the API server if it ever needs to invalidate its
+// own in-process cache after an inline scoring operation.
+func (s *CachedRankingService) InvalidateAfterScoring(ctx context.Context, quinielaIDs []int) {
+	for _, id := range quinielaIDs {
+		s.InvalidateLeaderboard(ctx, id)
+	}
+}
+
+var _ PostScoringInvalidator = (*CachedRankingService)(nil)
+
 // InvalidateAll evicts every leaderboard cache entry regardless of quiniela ID.
 // It is invoked after a cache.leaderboard_ttl_seconds mutation so that the
 // next request repopulates the cache with the updated TTL.
