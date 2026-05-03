@@ -13,7 +13,7 @@ import (
 // ── NewPostScoringCacheFlush ──────────────────────────────────────────────────
 
 func TestNewPostScoringCacheFlush_ReturnsNonNil(t *testing.T) {
-	if f := NewPostScoringCacheFlush(newStubCache(), zap.NewNop()); f == nil {
+	if NewPostScoringCacheFlush(newStubCache(), zap.NewNop()) == nil {
 		t.Fatal("expected non-nil PostScoringCacheFlush")
 	}
 }
