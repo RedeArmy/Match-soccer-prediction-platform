@@ -138,12 +138,15 @@ const (
 	// without a process restart. Defaults to 1000.
 	ParamKeyAdminBulkMaxItems = "admin.bulk_max_items"
 
-	// Infrastructure params - read once at process startup; changes require restart.
-	// The is_runtime column in system_params is set to FALSE for all of these.
+	// Infrastructure params - read once at process startup; changes require restart,
+	// except cache.leaderboard_ttl_seconds which is propagated immediately via the
+	// mutation hook registered in server.go buildHandlers.
 
 	// ParamKeyCacheMatchTTL is the match-list cache TTL in seconds.
 	ParamKeyCacheMatchTTL = "cache.match_ttl_seconds"
 	// ParamKeyCacheLeaderboardTTL is the leaderboard cache TTL in seconds.
+	// is_runtime = TRUE: the mutation hook calls CachedRankingService.UpdateTTL
+	// and InvalidateAll so the new value takes effect without a restart.
 	ParamKeyCacheLeaderboardTTL = "cache.leaderboard_ttl_seconds"
 	// ParamKeyCacheDashboardTTLSeconds is the dashboard stats cache TTL in seconds.
 	// Defaults to 30 s - long enough to absorb repeated dashboard loads but short

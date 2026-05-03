@@ -426,7 +426,20 @@ func (s *Server) buildHandlers(
 
 	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, tiebreakerRepo, tiebreakerConfigRepo, params, s.log)
 	if s.cache != nil {
-		ranker = service.NewCachedRankingService(ranker, s.cache, leaderboardTTL, s.log)
+		cachedRanker := service.NewCachedRankingService(ranker, s.cache, leaderboardTTL, s.log)
+		// When an admin changes cache.leaderboard_ttl_seconds, update the active
+		// TTL for future cache writes and flush all existing leaderboard entries so
+		// the change takes effect immediately rather than after natural expiry.
+		if mh, ok := paramSvcWithAudit.(service.MutationHookRegistrar); ok {
+			mh.RegisterMutationHook(domain.ParamKeyCacheLeaderboardTTL, func(ctx context.Context) {
+				newTTL := time.Duration(paramSvcWithAudit.GetInt(
+					ctx, domain.ParamKeyCacheLeaderboardTTL, domain.DefaultCacheLeaderboardTTLSeconds,
+				)) * time.Second
+				cachedRanker.UpdateTTL(newTTL)
+				cachedRanker.InvalidateAll(ctx)
+			})
+		}
+		ranker = cachedRanker
 	}
 
 	userStatsSvc := service.NewUserStatsService(repos.pred)

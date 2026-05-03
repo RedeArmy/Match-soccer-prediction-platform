@@ -38,6 +38,7 @@ type systemParamService struct {
 	repo       repository.SystemParamRepository
 	mu         sync.RWMutex
 	cache      map[string]*cacheEntry
+	hooks      map[string][]func(context.Context) // protected by mu
 	ttl        time.Duration
 	runtimeTTL time.Duration
 	audit      AuditLogger
@@ -50,10 +51,32 @@ func NewSystemParamService(repo repository.SystemParamRepository, audit AuditLog
 	return &systemParamService{
 		repo:       repo,
 		cache:      make(map[string]*cacheEntry),
+		hooks:      make(map[string][]func(context.Context)),
 		ttl:        defaultCacheTTL,
 		runtimeTTL: defaultRuntimeCacheTTL,
 		audit:      audit,
 		log:        log,
+	}
+}
+
+// RegisterMutationHook registers fn to be called synchronously after a
+// successful Set or BulkSet that mutates key. The hook fires after the
+// in-process cache entry has been evicted, so fn can safely call Get to
+// read the fresh value.
+func (s *systemParamService) RegisterMutationHook(key string, fn func(ctx context.Context)) {
+	s.mu.Lock()
+	s.hooks[key] = append(s.hooks[key], fn)
+	s.mu.Unlock()
+}
+
+// callHooks invokes all hooks registered for key. Called after eviction so
+// hooks always observe the new value on the next Get.
+func (s *systemParamService) callHooks(ctx context.Context, key string) {
+	s.mu.RLock()
+	fns := s.hooks[key]
+	s.mu.RUnlock()
+	for _, fn := range fns {
+		fn(ctx)
 	}
 }
 
@@ -92,6 +115,7 @@ func (s *systemParamService) Set(ctx context.Context, key, value string, actorID
 		return nil, err
 	}
 	s.evict(key)
+	s.callHooks(ctx, key)
 	if s.audit != nil {
 		resType := "system_param"
 		role := domain.RoleAdmin
@@ -287,6 +311,7 @@ func (s *systemParamService) BulkSet(ctx context.Context, params map[string]stri
 	}
 	for key := range params {
 		s.evict(key)
+		s.callHooks(ctx, key)
 	}
 	if s.audit != nil {
 		keys := make([]string, 0, len(params))
@@ -301,3 +326,4 @@ func (s *systemParamService) BulkSet(ctx context.Context, params map[string]stri
 }
 
 var _ SystemParamService = (*systemParamService)(nil)
+var _ MutationHookRegistrar = (*systemParamService)(nil)

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -400,7 +401,9 @@ func TestStartWorker_HealthServerFails_ReturnsError(t *testing.T) {
 func TestMonitorDLQ_NilClient_ReturnsImmediately(t *testing.T) {
 	// The nil-client guard prevents a panic when the worker is started without
 	// a Redis connection (e.g. unit tests). Verifies the guard fires correctly.
-	monitorDLQ(context.Background(), nil, zap.NewNop())
+	// A nil tickC is safe here because the function returns before reaching the
+	// select loop.
+	monitorDLQ(context.Background(), nil, nil, zap.NewNop())
 }
 
 func TestMonitorDLQ_NonEmptyQueue_LogsError(t *testing.T) {
@@ -415,20 +418,27 @@ func TestMonitorDLQ_NonEmptyQueue_LogsError(t *testing.T) {
 		t.Fatalf("seed DLQ: %v", err)
 	}
 
-	dlqMonitorInterval = time.Millisecond
-	t.Cleanup(func() { dlqMonitorInterval = 5 * time.Minute })
+	// Pre-load exactly one tick so the non-empty-queue branch is exercised.
+	// Using an injected channel eliminates any mutation of global state and
+	// removes the need for a time.Sleep.
+	tickC := make(chan time.Time, 1)
+	tickC <- time.Now()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	done := make(chan struct{})
 	go func() {
-		monitorDLQ(ctx, rc, zap.NewNop())
+		monitorDLQ(ctx, rc, tickC, zap.NewNop())
 		close(done)
 	}()
 
-	// Give the ticker enough time to fire at least once, then stop.
-	time.Sleep(20 * time.Millisecond)
+	// Spin until the goroutine has consumed the pre-loaded tick, guaranteeing
+	// the non-empty-queue code path is exercised before we cancel. This is safe
+	// under -race: len() on a channel is a synchronised read.
+	for len(tickC) > 0 {
+		runtime.Gosched()
+	}
 	cancel()
 	<-done
 }
@@ -439,27 +449,29 @@ func TestMonitorDLQ_EmptyQueue_LogsDebug(t *testing.T) {
 	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	defer rc.Close() //nolint:errcheck
 
-	dlqMonitorInterval = time.Millisecond
-	t.Cleanup(func() { dlqMonitorInterval = 5 * time.Minute })
+	tickC := make(chan time.Time, 1)
+	tickC <- time.Now()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	done := make(chan struct{})
 	go func() {
-		monitorDLQ(ctx, rc, zap.NewNop())
+		monitorDLQ(ctx, rc, tickC, zap.NewNop())
 		close(done)
 	}()
 
-	time.Sleep(20 * time.Millisecond)
+	for len(tickC) > 0 {
+		runtime.Gosched()
+	}
 	cancel()
 	<-done
 }
 
 func TestMonitorDLQ_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	// A pre-cancelled context causes monitorDLQ to enter the select loop once
-	// and immediately return via the ctx.Done() case - without waiting for the
-	// 5-minute ticker. This exercises the ticker/monitoredEvents setup path.
+	// and immediately return via the ctx.Done() case. A nil tickC is used so
+	// that case is never selectable - only ctx.Done() can fire.
 	mr := miniredis.RunT(t)
 	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	defer rc.Close() //nolint:errcheck
@@ -467,5 +479,5 @@ func TestMonitorDLQ_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	monitorDLQ(ctx, rc, zap.NewNop())
+	monitorDLQ(ctx, rc, nil, zap.NewNop())
 }
