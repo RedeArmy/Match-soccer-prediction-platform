@@ -69,3 +69,29 @@ func (s *RedisStore) Delete(ctx context.Context, keys ...string) error {
 	}
 	return nil
 }
+
+// FlushByPrefix deletes all keys whose names begin with prefix using a
+// cursor-based SCAN loop. Each page of matches is deleted in a single DEL to
+// minimise round-trips. The operation is best-effort and not atomic: keys
+// written concurrently during the scan may not be evicted.
+func (s *RedisStore) FlushByPrefix(ctx context.Context, prefix string) error {
+	var cursor uint64
+	for {
+		keys, next, err := s.client.Scan(ctx, cursor, prefix+"*", 100).Result()
+		if err != nil {
+			return fmt.Errorf("cache flush prefix %q: scan: %w", prefix, err)
+		}
+		if len(keys) > 0 {
+			if err := s.client.Del(ctx, keys...).Err(); err != nil {
+				return fmt.Errorf("cache flush prefix %q: del: %w", prefix, err)
+			}
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
+}
+
+var _ PrefixFlusher = (*RedisStore)(nil)

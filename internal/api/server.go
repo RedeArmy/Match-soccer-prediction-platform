@@ -426,7 +426,15 @@ func (s *Server) buildHandlers(
 
 	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, tiebreakerRepo, tiebreakerConfigRepo, params, s.log)
 	if s.cache != nil {
-		ranker = service.NewCachedRankingService(ranker, s.cache, leaderboardTTL, s.log)
+		cachedRanker := service.NewCachedRankingService(ranker, s.cache, leaderboardTTL, s.log)
+		// When an admin changes cache.leaderboard_ttl_seconds, update the active
+		// TTL for future cache writes and flush all existing leaderboard entries so
+		// the change takes effect immediately rather than after natural expiry.
+		if mh, ok := paramSvcWithAudit.(service.MutationHookRegisterer); ok {
+			mh.RegisterMutationHook(domain.ParamKeyCacheLeaderboardTTL,
+				leaderboardTTLHook(paramSvcWithAudit, cachedRanker))
+		}
+		ranker = cachedRanker
 	}
 
 	userStatsSvc := service.NewUserStatsService(repos.pred)
@@ -509,4 +517,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok","service":"world-cup-quiniela"}`)
+}
+
+// leaderboardTTLHook returns the mutation hook registered for
+// ParamKeyCacheLeaderboardTTL. When the admin updates that param, the hook
+// reads the fresh value and propagates it to ranker so the change takes effect
+// immediately without a process restart.
+func leaderboardTTLHook(paramSvc service.SystemParamService, ranker *service.CachedRankingService) func(context.Context) {
+	return func(ctx context.Context) {
+		newTTL := time.Duration(paramSvc.GetInt(
+			ctx, domain.ParamKeyCacheLeaderboardTTL, domain.DefaultCacheLeaderboardTTLSeconds,
+		)) * time.Second
+		ranker.UpdateTTL(newTTL)
+		ranker.InvalidateAll(ctx)
+	}
 }

@@ -21,11 +21,11 @@ func NewPostgresSystemParamRepository(db *pgxpool.Pool) *PostgresSystemParamRepo
 	return &PostgresSystemParamRepository{db: db}
 }
 
-const systemParamColumns = "key, value, type, category, is_runtime, created_at, updated_at"
+const systemParamColumns = "key, value, type, category, is_runtime, description, created_at, updated_at"
 
 func scanSystemParam(row pgx.Row) (*domain.SystemParam, error) {
 	p := &domain.SystemParam{}
-	err := row.Scan(&p.Key, &p.Value, &p.Type, &p.Category, &p.IsRuntime, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.Key, &p.Value, &p.Type, &p.Category, &p.IsRuntime, &p.Description, &p.CreatedAt, &p.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -39,7 +39,7 @@ func collectSystemParams(rows pgx.Rows) ([]*domain.SystemParam, error) {
 	var params []*domain.SystemParam
 	for rows.Next() {
 		p := &domain.SystemParam{}
-		if err := rows.Scan(&p.Key, &p.Value, &p.Type, &p.Category, &p.IsRuntime, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.Key, &p.Value, &p.Type, &p.Category, &p.IsRuntime, &p.Description, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		params = append(params, p)

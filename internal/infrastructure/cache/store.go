@@ -31,3 +31,11 @@ type Store interface {
 	Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error
 	Delete(ctx context.Context, keys ...string) error
 }
+
+// PrefixFlusher is an optional extension of Store for pattern-based key
+// eviction. Implementations backed by a scan-capable store (e.g. Redis SCAN)
+// may implement this; callers use a type assertion to check for support.
+// The operation is not atomic: keys inserted concurrently may not be deleted.
+type PrefixFlusher interface {
+	FlushByPrefix(ctx context.Context, prefix string) error
+}

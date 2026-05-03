@@ -13,6 +13,13 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
+// snapshotRetryBase is the initial backoff duration between snapshot attempts.
+// Subsequent attempts double this value. Declared as a var so tests can set it
+// to zero to avoid sleeping.
+var snapshotRetryBase = 100 * time.Millisecond
+
+const maxSnapshotAttempts = 3
+
 // decodePayload re-encodes env.Payload as JSON and then unmarshals it into T.
 //
 // events.Envelope.Payload is declared as `any`. When InMemoryBus delivers an
@@ -118,8 +125,14 @@ func newMatchFinishedHandler(
 
 // snapshotAffectedQuinielas queries which quinielas had active paid members
 // with predictions on matchID, then persists a fresh leaderboard snapshot for
-// each. Errors are logged and swallowed: scoring has already committed and the
-// snapshot is a best-effort observability aid that can be regenerated later.
+// each using retrySnapshot. Errors after all retries are logged and swallowed:
+// scoring has already committed and the snapshot can be regenerated on the next
+// scoring event or via manual replay.
+//
+// When multiple matches finish simultaneously and their workers overlap,
+// concurrent calls to Snapshot for the same quiniela produce redundant rows.
+// This is safe: GetLatest always returns the most recent snapshot, which
+// reflects all committed scores by the time it is taken.
 func snapshotAffectedQuinielas(
 	ctx context.Context,
 	matchID int,
@@ -140,14 +153,49 @@ func snapshotAffectedQuinielas(
 	}
 
 	for _, qid := range quinielaIDs {
-		if _, err := snapshotter.Snapshot(ctx, qid); err != nil {
-			log.Warn("worker: leaderboard snapshot failed",
+		retrySnapshot(ctx, matchID, qid, snapshotter, log)
+	}
+}
+
+// retrySnapshot attempts to take a leaderboard snapshot for quinielaID up to
+// maxSnapshotAttempts times with exponential backoff starting at
+// snapshotRetryBase. On final failure the error is logged at Warn level and
+// the function returns without propagating it: scoring has already committed
+// and the snapshot is regenerated on the next event.
+func retrySnapshot(
+	ctx context.Context,
+	matchID int,
+	quinielaID int,
+	snapshotter service.Snapshotter,
+	log *zap.Logger,
+) {
+	backoff := snapshotRetryBase
+	for attempt := 1; attempt <= maxSnapshotAttempts; attempt++ {
+		if _, err := snapshotter.Snapshot(ctx, quinielaID); err == nil {
+			log.Sugar().Infof("worker: leaderboard snapshot saved for quiniela %d (match %d)", quinielaID, matchID)
+			return
+		} else if attempt == maxSnapshotAttempts {
+			log.Warn("worker: leaderboard snapshot failed after all retries",
 				zap.Int("match_id", matchID),
-				zap.Int("quiniela_id", qid),
+				zap.Int("quiniela_id", quinielaID),
+				zap.Int("attempts", attempt),
 				zap.Error(err),
 			)
+			return
 		} else {
-			log.Sugar().Infof("worker: leaderboard snapshot saved for quiniela %d (match %d)", qid, matchID)
+			log.Warn("worker: leaderboard snapshot failed, retrying",
+				zap.Int("match_id", matchID),
+				zap.Int("quiniela_id", quinielaID),
+				zap.Int("attempt", attempt),
+				zap.Duration("backoff", backoff),
+				zap.Error(err),
+			)
 		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff *= 2
 	}
 }
