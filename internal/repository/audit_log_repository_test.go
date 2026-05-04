@@ -2,10 +2,12 @@ package repository_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── AuditLogRepository ────────────────────────────────────────────────────────
@@ -180,5 +182,18 @@ func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
 	}
 	if got.Metadata["reason"] != "inactivity" {
 		t.Errorf("expected metadata reason 'inactivity', got %v", got.Metadata["reason"])
+	}
+}
+
+func TestAuditLogRepository_List_ZeroLimitReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	_, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Pagination{Limit: 0})
+	if err == nil {
+		t.Fatal("expected validation error for zero limit, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error, got %v", err)
 	}
 }
