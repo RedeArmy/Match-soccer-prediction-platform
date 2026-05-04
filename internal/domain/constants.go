@@ -70,6 +70,14 @@ const MinMembersForActive = 3
 // constant is only the safe default, not the authoritative runtime value.
 const DefaultConflictStaleDays = 7
 
+// DefaultConflictMaxScan caps the number of conflicts loaded into memory during
+// internal scan operations (ConflictSummary). Under normal operation this limit
+// should never be hit - 5000 unresolved conflicts indicates a systemic issue.
+// The cap prevents unbounded memory growth when ConflictSummary is called by
+// background jobs or dashboard widgets. Admin endpoints that paginate conflict
+// lists (ListConflicts via GET /admin/conflicts) are unaffected by this limit.
+const DefaultConflictMaxScan = 5000
+
 // Default values for system parameters. Each constant is the fallback used when
 // the corresponding ParamKey row is absent or unparseable. They are the single
 // source of truth for numeric defaults: the same values must match the seed data
@@ -126,6 +134,10 @@ const (
 	// ParamKeyConflictStaleDays is the age in days after which a pending payment
 	// or membership is flagged as a conflict. Defaults to DefaultConflictStaleDays (7).
 	ParamKeyConflictStaleDays = "conflict.stale_days"
+	// ParamKeyConflictMaxScan caps the number of conflicts loaded into memory
+	// by ConflictSummary. Prevents unbounded memory usage when invoked by background
+	// jobs or dashboard endpoints. Defaults to DefaultConflictMaxScan (5000).
+	ParamKeyConflictMaxScan = "conflict.max_scan"
 	// ParamKeyPaginationDefaultLimit and ParamKeyPaginationMaxLimit control the
 	// default and maximum page sizes returned by paginated admin endpoints.
 	ParamKeyPaginationDefaultLimit = "pagination.default_limit"

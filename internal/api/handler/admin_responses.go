@@ -122,6 +122,13 @@ type ConflictTypeSummaryResponse struct {
 type ConflictSummaryResponse struct {
 	TotalUnresolved int                           `json:"total_unresolved"`
 	ByType          []ConflictTypeSummaryResponse `json:"by_type"`
+	// LimitReached is true when the conflict backlog equals or exceeds max_scan.
+	// When true, the summary is incomplete - some conflicts were not scanned.
+	// Dashboard widgets should display an urgent alert when this flag is set.
+	LimitReached bool `json:"limit_reached"`
+	// MaxScan is the configured scan limit (conflict.max_scan) applied to this request.
+	// Provides context for interpreting total_unresolved and limit_reached.
+	MaxScan int `json:"max_scan"`
 }
 
 // DashboardStatsResponse is the response body for GET /admin/stats.
