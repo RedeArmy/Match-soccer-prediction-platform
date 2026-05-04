@@ -219,32 +219,55 @@ func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 		default:
 		}
 
-		msgs, err := b.client.XReadGroup(ctx, &redis.XReadGroupArgs{
-			Group:    consumerGroup,
-			Consumer: b.consumerName,
-			Streams:  []string{key, ">"},
-			Block:    streamReadBlock,
-			Count:    10,
-		}).Result()
+		msgs, err := b.readStreamMessages(ctx, key)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if b.shouldExitOnError(err) {
 				return
 			}
-			if errors.Is(err, redis.Nil) {
-				// Timeout with no new messages - loop and check ctx.
-				continue
-			}
-			b.log.Error("redis bus: XReadGroup error",
-				zap.String("stream", key),
-				zap.Error(err),
-			)
 			continue
 		}
 
-		for i := range msgs {
-			for _, msg := range msgs[i].Messages {
-				b.processMessage(ctx, eventType, key, msg)
-			}
+		b.processStreamMessages(ctx, eventType, key, msgs)
+	}
+}
+
+// readStreamMessages attempts to read messages from the Redis stream.
+// Returns nil error for non-fatal conditions (timeout, transient errors).
+func (b *RedisBus) readStreamMessages(ctx context.Context, key string) ([]redis.XStream, error) {
+	msgs, err := b.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    consumerGroup,
+		Consumer: b.consumerName,
+		Streams:  []string{key, ">"},
+		Block:    streamReadBlock,
+		Count:    10,
+	}).Result()
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		if errors.Is(err, redis.Nil) {
+			// Timeout with no new messages - return nil to continue loop.
+			return nil, nil
+		}
+		b.log.Error("redis bus: XReadGroup error",
+			zap.String("stream", key),
+			zap.Error(err),
+		)
+		return nil, nil
+	}
+	return msgs, nil
+}
+
+// shouldExitOnError determines if consume() should exit based on error type.
+func (b *RedisBus) shouldExitOnError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// processStreamMessages processes all messages in the stream result.
+func (b *RedisBus) processStreamMessages(ctx context.Context, eventType events.EventType, key string, msgs []redis.XStream) {
+	for i := range msgs {
+		for _, msg := range msgs[i].Messages {
+			b.processMessage(ctx, eventType, key, msg)
 		}
 	}
 }

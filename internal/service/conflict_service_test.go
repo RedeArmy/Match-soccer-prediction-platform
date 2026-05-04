@@ -510,92 +510,25 @@ func TestConflictService_ConflictSummary_Load_10KConflicts(t *testing.T) {
 		t.Skip("skipping load test in short mode")
 	}
 
-	now := time.Now().UTC()
-
-	// Generate 4000 stale payments (40% of total conflicts)
-	payments := make([]*domain.PaymentRecord, 4000)
-	for i := 0; i < 4000; i++ {
-		payments[i] = &domain.PaymentRecord{
-			ID:         i + 1,
-			QuinielaID: (i % 100) + 1,
-			UserID:     (i % 500) + 1,
-			Amount:     100 + (i % 900),
-			CreatedAt:  now.Add(-time.Duration(8+i%30) * 24 * time.Hour), // 8-38 days old
-		}
-	}
-
-	// Generate 4000 stale memberships (40% of total conflicts)
-	memberships := make([]*domain.GroupMembership, 4000)
-	for i := 0; i < 4000; i++ {
-		memberships[i] = &domain.GroupMembership{
-			ID:         i + 1,
-			QuinielaID: (i % 100) + 1,
-			UserID:     (i % 500) + 1,
-			CreatedAt:  now.Add(-time.Duration(8+i%30) * 24 * time.Hour), // 8-38 days old
-		}
-	}
-
-	// Generate 2000 groups without owner (20% of total conflicts)
-	groupIDs := make([]int, 2000)
-	quinielas := make([]*domain.Quiniela, 2000)
-	for i := 0; i < 2000; i++ {
-		groupIDs[i] = i + 1
-		quinielas[i] = &domain.Quiniela{
-			ID:   i + 1,
-			Name: "Orphaned Group " + string(rune('A'+i%26)),
-		}
-	}
-
-	// Total conflicts: 4000 + 4000 + 2000 = 10,000
-
-	qr := &stubQuinielaRepo{quinielas: quinielas}
-	mr := &stubMemberRepoConflict{
-		stubMemberRepo: &stubMemberRepo{memberships: memberships},
-		groupIDs:       groupIDs,
-	}
-	pr := &stubPaymentRepo{records: payments}
+	qr, mr, pr := generate10KConflictData(t)
 
 	// Test with default limit (5000)
 	t.Run("respects_max_scan_limit", func(t *testing.T) {
 		maxScan := 5000
-		paramSvc := &systemParamServiceWithMaxScan{maxScan: maxScan}
-		svc := NewConflictService(qr, mr, pr, paramSvc, &noopAuditLogger{}, zap.NewNop())
+		svc := newConflictServiceWithMaxScan(qr, mr, pr, maxScan)
 
 		result, err := svc.ConflictSummary(context.Background())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// Verify that TotalUnresolved is capped at maxScan, not the full 10K
-		if result.TotalUnresolved > maxScan {
-			t.Errorf("TotalUnresolved exceeds max_scan limit: want <=%d, got %d", maxScan, result.TotalUnresolved)
-		}
-
-		// With 10K conflicts available, we should hit the cap
-		if result.TotalUnresolved != maxScan {
-			t.Logf("WARNING: Expected to hit max_scan cap of %d with 10K conflicts, got %d", maxScan, result.TotalUnresolved)
-		}
-
-		// Verify at least some conflict types are represented in the summary.
-		// When the max_scan limit is hit with a large backlog, not all types may
-		// appear (e.g., if we scan 5000 conflicts from groups+payments, memberships
-		// might not be included). This is expected behavior - the limit is working.
-		if len(result.ByType) == 0 {
-			t.Error("expected at least one conflict type in summary, got zero")
-		}
-
-		// Log which types were included for observability
-		t.Logf("Conflict types included with max_scan=%d: %d types", maxScan, len(result.ByType))
-		for _, ts := range result.ByType {
-			t.Logf("  - %s: count=%d", ts.Type, ts.Count)
-		}
+		verifyMaxScanLimit(t, result, maxScan)
 	})
 
 	// Test with lower limit (1000) to verify configurability
 	t.Run("respects_custom_max_scan", func(t *testing.T) {
 		maxScan := 1000
-		paramSvc := &systemParamServiceWithMaxScan{maxScan: maxScan}
-		svc := NewConflictService(qr, mr, pr, paramSvc, &noopAuditLogger{}, zap.NewNop())
+		svc := newConflictServiceWithMaxScan(qr, mr, pr, maxScan)
 
 		result, err := svc.ConflictSummary(context.Background())
 		if err != nil {
@@ -610,8 +543,7 @@ func TestConflictService_ConflictSummary_Load_10KConflicts(t *testing.T) {
 	// Test performance under extreme load
 	t.Run("performance_under_load", func(t *testing.T) {
 		maxScan := 5000
-		paramSvc := &systemParamServiceWithMaxScan{maxScan: maxScan}
-		svc := NewConflictService(qr, mr, pr, paramSvc, &noopAuditLogger{}, zap.NewNop())
+		svc := newConflictServiceWithMaxScan(qr, mr, pr, maxScan)
 
 		start := time.Now()
 		_, err := svc.ConflictSummary(context.Background())
@@ -660,141 +592,233 @@ func TestConflictService_ConflictSummary_Load_10KConflicts(t *testing.T) {
 // 2. MaxScan is returned for context
 // 3. Logs are emitted at appropriate levels (WARN at 80%, ERROR at 100%)
 func TestConflictService_ConflictSummary_AlertThreshold(t *testing.T) {
-	now := time.Now().UTC()
-
-	// Helper to generate N payment conflicts
-	generatePayments := func(count int) []*domain.PaymentRecord {
-		payments := make([]*domain.PaymentRecord, count)
-		for i := 0; i < count; i++ {
-			payments[i] = &domain.PaymentRecord{
-				ID:        i + 1,
-				CreatedAt: now.Add(-8 * 24 * time.Hour),
-			}
-		}
-		return payments
+	tests := []struct {
+		name             string
+		conflictCount    int
+		maxScan          int
+		wantTotal        int
+		wantLimitReached bool
+		wantWarnCalled   bool
+		wantErrorCalled  bool
+		needsSpyLogger   bool
+	}{
+		{
+			name:             "below_threshold_no_alert",
+			conflictCount:    1000,
+			maxScan:          5000,
+			wantTotal:        1000,
+			wantLimitReached: false,
+			needsSpyLogger:   false,
+		},
+		{
+			name:             "at_80_percent_threshold_warns",
+			conflictCount:    4000,
+			maxScan:          5000,
+			wantTotal:        4000,
+			wantLimitReached: false,
+			wantWarnCalled:   true,
+			wantErrorCalled:  false,
+			needsSpyLogger:   true,
+		},
+		{
+			name:             "limit_reached_errors",
+			conflictCount:    5000,
+			maxScan:          5000,
+			wantTotal:        5000,
+			wantLimitReached: true,
+			wantErrorCalled:  true,
+			needsSpyLogger:   true,
+		},
+		{
+			name:             "above_limit_still_capped",
+			conflictCount:    5001,
+			maxScan:          5000,
+			wantTotal:        5000,
+			wantLimitReached: true,
+			needsSpyLogger:   false,
+		},
 	}
 
-	t.Run("below_threshold_no_alert", func(t *testing.T) {
-		// 1000 conflicts, max_scan=5000 → 20%, below 80% threshold
-		payments := generatePayments(1000)
-		qr := &stubQuinielaRepo{}
-		mr := &stubMemberRepoConflict{stubMemberRepo: &stubMemberRepo{}, groupIDs: nil}
-		pr := &stubPaymentRepo{records: payments}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repos := setupAlertThresholdTest(tt.conflictCount)
+			var svc ConflictService
 
-		maxScan := 5000
-		paramSvc := &systemParamServiceWithMaxScan{maxScan: maxScan}
-		svc := NewConflictService(qr, mr, pr, paramSvc, &noopAuditLogger{}, zap.NewNop())
+			if tt.needsSpyLogger {
+				svc = createConflictServiceWithSpyLogger(t, repos, tt.maxScan, &tt.wantWarnCalled, &tt.wantErrorCalled)
+			} else {
+				svc = newConflictServiceWithMaxScan(repos.qr, repos.mr, repos.pr, tt.maxScan)
+			}
 
-		result, err := svc.ConflictSummary(context.Background())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+			result, err := svc.ConflictSummary(context.Background())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-		if result.TotalUnresolved != 1000 {
-			t.Errorf("TotalUnresolved: want 1000, got %d", result.TotalUnresolved)
-		}
-		if result.LimitReached {
-			t.Error("LimitReached: want false (below threshold), got true")
-		}
-		if result.MaxScan != maxScan {
-			t.Errorf("MaxScan: want %d, got %d", maxScan, result.MaxScan)
-		}
-	})
-
-	t.Run("at_80_percent_threshold_warns", func(t *testing.T) {
-		// 4000 conflicts, max_scan=5000 → exactly 80%, should log WARN
-		payments := generatePayments(4000)
-		qr := &stubQuinielaRepo{}
-		mr := &stubMemberRepoConflict{stubMemberRepo: &stubMemberRepo{}, groupIDs: nil}
-		pr := &stubPaymentRepo{records: payments}
-
-		maxScan := 5000
-		paramSvc := &systemParamServiceWithMaxScan{maxScan: maxScan}
-
-		// Use a spy logger to verify WARN level log
-		spyLog := &spyLogger{}
-		spyLog.logger = spyLog.newLogger()
-		svc := NewConflictService(qr, mr, pr, paramSvc, &noopAuditLogger{}, spyLog.logger)
-
-		result, err := svc.ConflictSummary(context.Background())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if result.TotalUnresolved != 4000 {
-			t.Errorf("TotalUnresolved: want 4000, got %d", result.TotalUnresolved)
-		}
-		if result.LimitReached {
-			t.Error("LimitReached: want false (at threshold but not exceeded), got true")
-		}
-		if !spyLog.warnCalled {
-			t.Error("expected WARN log at 80% threshold, but warn was not called")
-		}
-		if spyLog.errorCalled {
-			t.Error("expected WARN log at 80%, but ERROR was called instead")
-		}
-	})
-
-	t.Run("limit_reached_errors", func(t *testing.T) {
-		// 5000 conflicts, max_scan=5000 → 100%, should set LimitReached and log ERROR
-		payments := generatePayments(5000)
-		qr := &stubQuinielaRepo{}
-		mr := &stubMemberRepoConflict{stubMemberRepo: &stubMemberRepo{}, groupIDs: nil}
-		pr := &stubPaymentRepo{records: payments}
-
-		maxScan := 5000
-		paramSvc := &systemParamServiceWithMaxScan{maxScan: maxScan}
-
-		spyLog := &spyLogger{}
-		spyLog.logger = spyLog.newLogger()
-		svc := NewConflictService(qr, mr, pr, paramSvc, &noopAuditLogger{}, spyLog.logger)
-
-		result, err := svc.ConflictSummary(context.Background())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if result.TotalUnresolved != 5000 {
-			t.Errorf("TotalUnresolved: want 5000, got %d", result.TotalUnresolved)
-		}
-		if !result.LimitReached {
-			t.Error("LimitReached: want true (limit hit), got false")
-		}
-		if result.MaxScan != maxScan {
-			t.Errorf("MaxScan: want %d, got %d", maxScan, result.MaxScan)
-		}
-		if !spyLog.errorCalled {
-			t.Error("expected ERROR log when limit is reached, but error was not called")
-		}
-	})
-
-	t.Run("above_limit_still_capped", func(t *testing.T) {
-		// Actual conflicts > max_scan → capped at max_scan, LimitReached=true
-		// We can't actually generate more than max_scan in the result due to pagination,
-		// but we can verify the flag is set when we hit the cap
-		payments := generatePayments(5001) // one more than limit, but scan will cap at 5000
-		qr := &stubQuinielaRepo{}
-		mr := &stubMemberRepoConflict{stubMemberRepo: &stubMemberRepo{}, groupIDs: nil}
-		pr := &stubPaymentRepo{records: payments}
-
-		maxScan := 5000
-		paramSvc := &systemParamServiceWithMaxScan{maxScan: maxScan}
-		svc := NewConflictService(qr, mr, pr, paramSvc, &noopAuditLogger{}, zap.NewNop())
-
-		result, err := svc.ConflictSummary(context.Background())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		// Should be capped at maxScan due to Pagination{Limit: maxScan}
-		if result.TotalUnresolved != maxScan {
-			t.Errorf("TotalUnresolved: want %d (capped), got %d", maxScan, result.TotalUnresolved)
-		}
-		if !result.LimitReached {
-			t.Error("LimitReached: want true, got false")
-		}
-	})
+			verifyAlertThresholdResult(t, result, tt.wantTotal, tt.wantLimitReached, tt.maxScan)
+		})
+	}
 }
+
+// alertThresholdRepos holds the repositories for alert threshold tests.
+type alertThresholdRepos struct {
+	qr *stubQuinielaRepo
+	mr *stubMemberRepoConflict
+	pr *stubPaymentRepo
+}
+
+// setupAlertThresholdTest creates test repositories with N payment conflicts.
+func setupAlertThresholdTest(count int) alertThresholdRepos {
+	now := time.Now().UTC()
+	payments := make([]*domain.PaymentRecord, count)
+	for i := 0; i < count; i++ {
+		payments[i] = &domain.PaymentRecord{
+			ID:        i + 1,
+			CreatedAt: now.Add(-8 * 24 * time.Hour),
+		}
+	}
+
+	return alertThresholdRepos{
+		qr: &stubQuinielaRepo{},
+		mr: &stubMemberRepoConflict{stubMemberRepo: &stubMemberRepo{}, groupIDs: nil},
+		pr: &stubPaymentRepo{records: payments},
+	}
+}
+
+// createConflictServiceWithSpyLogger creates a service with a spy logger and validates alert calls.
+func createConflictServiceWithSpyLogger(
+	t *testing.T,
+	repos alertThresholdRepos,
+	maxScan int,
+	wantWarnCalled *bool,
+	wantErrorCalled *bool,
+) ConflictService {
+	t.Helper()
+	paramSvc := &systemParamServiceWithMaxScan{maxScan: maxScan}
+	spyLog := &spyLogger{}
+	spyLog.logger = spyLog.newLogger()
+
+	// Register cleanup to verify spy assertions after test
+	t.Cleanup(func() {
+		if wantWarnCalled != nil && *wantWarnCalled != spyLog.warnCalled {
+			t.Errorf("WARN log call: want %v, got %v", *wantWarnCalled, spyLog.warnCalled)
+		}
+		if wantErrorCalled != nil && *wantErrorCalled != spyLog.errorCalled {
+			t.Errorf("ERROR log call: want %v, got %v", *wantErrorCalled, spyLog.errorCalled)
+		}
+	})
+
+	return NewConflictService(repos.qr, repos.mr, repos.pr, paramSvc, &noopAuditLogger{}, spyLog.logger)
+}
+
+// verifyAlertThresholdResult validates the ConflictSummary result fields.
+func verifyAlertThresholdResult(t *testing.T, result *ConflictSummaryResult, wantTotal int, wantLimitReached bool, maxScan int) {
+	t.Helper()
+
+	if result.TotalUnresolved != wantTotal {
+		t.Errorf("TotalUnresolved: want %d, got %d", wantTotal, result.TotalUnresolved)
+	}
+	if result.LimitReached != wantLimitReached {
+		t.Errorf("LimitReached: want %v, got %v", wantLimitReached, result.LimitReached)
+	}
+	if result.MaxScan != maxScan {
+		t.Errorf("MaxScan: want %d, got %d", maxScan, result.MaxScan)
+	}
+}
+
+// ── Test helpers for load tests ──────────────────────────────────────────────
+
+// generate10KConflictData creates test fixtures for load testing.
+// Returns repositories with 4000 payments + 4000 memberships + 2000 groups = 10,000 conflicts.
+func generate10KConflictData(t *testing.T) (*stubQuinielaRepo, *stubMemberRepoConflict, *stubPaymentRepo) {
+	t.Helper()
+	now := time.Now().UTC()
+
+	// Generate 4000 stale payments (40% of total conflicts)
+	payments := make([]*domain.PaymentRecord, 4000)
+	for i := 0; i < 4000; i++ {
+		payments[i] = &domain.PaymentRecord{
+			ID:         i + 1,
+			QuinielaID: (i % 100) + 1,
+			UserID:     (i % 500) + 1,
+			Amount:     100 + (i % 900),
+			CreatedAt:  now.Add(-time.Duration(8+i%30) * 24 * time.Hour), // 8-38 days old
+		}
+	}
+
+	// Generate 4000 stale memberships (40% of total conflicts)
+	memberships := make([]*domain.GroupMembership, 4000)
+	for i := 0; i < 4000; i++ {
+		memberships[i] = &domain.GroupMembership{
+			ID:         i + 1,
+			QuinielaID: (i % 100) + 1,
+			UserID:     (i % 500) + 1,
+			CreatedAt:  now.Add(-time.Duration(8+i%30) * 24 * time.Hour), // 8-38 days old
+		}
+	}
+
+	// Generate 2000 groups without owner (20% of total conflicts)
+	groupIDs := make([]int, 2000)
+	quinielas := make([]*domain.Quiniela, 2000)
+	for i := 0; i < 2000; i++ {
+		groupIDs[i] = i + 1
+		quinielas[i] = &domain.Quiniela{
+			ID:   i + 1,
+			Name: "Orphaned Group " + string(rune('A'+i%26)),
+		}
+	}
+
+	qr := &stubQuinielaRepo{quinielas: quinielas}
+	mr := &stubMemberRepoConflict{
+		stubMemberRepo: &stubMemberRepo{memberships: memberships},
+		groupIDs:       groupIDs,
+	}
+	pr := &stubPaymentRepo{records: payments}
+
+	return qr, mr, pr
+}
+
+// newConflictServiceWithMaxScan creates a ConflictService with a specific max_scan parameter.
+func newConflictServiceWithMaxScan(
+	qr *stubQuinielaRepo,
+	mr *stubMemberRepoConflict,
+	pr *stubPaymentRepo,
+	maxScan int,
+) ConflictService {
+	paramSvc := &systemParamServiceWithMaxScan{maxScan: maxScan}
+	return NewConflictService(qr, mr, pr, paramSvc, &noopAuditLogger{}, zap.NewNop())
+}
+
+// verifyMaxScanLimit checks that the result respects the max_scan limit and logs observability data.
+func verifyMaxScanLimit(t *testing.T, result *ConflictSummaryResult, maxScan int) {
+	t.Helper()
+
+	// Verify that TotalUnresolved is capped at maxScan, not the full 10K
+	if result.TotalUnresolved > maxScan {
+		t.Errorf("TotalUnresolved exceeds max_scan limit: want <=%d, got %d", maxScan, result.TotalUnresolved)
+	}
+
+	// With 10K conflicts available, we should hit the cap
+	if result.TotalUnresolved != maxScan {
+		t.Logf("WARNING: Expected to hit max_scan cap of %d with 10K conflicts, got %d", maxScan, result.TotalUnresolved)
+	}
+
+	// Verify at least some conflict types are represented in the summary.
+	// When the max_scan limit is hit with a large backlog, not all types may
+	// appear (e.g., if we scan 5000 conflicts from groups+payments, memberships
+	// might not be included). This is expected behavior - the limit is working.
+	if len(result.ByType) == 0 {
+		t.Error("expected at least one conflict type in summary, got zero")
+	}
+
+	// Log which types were included for observability
+	t.Logf("Conflict types included with max_scan=%d: %d types", maxScan, len(result.ByType))
+	for _, ts := range result.ByType {
+		t.Logf("  - %s: count=%d", ts.Type, ts.Count)
+	}
+}
+
+// ── Test helpers for alert threshold tests ───────────────────────────────────
 
 // spyLogger captures log calls for test verification
 type spyLogger struct {
