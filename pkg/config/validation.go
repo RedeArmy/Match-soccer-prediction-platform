@@ -56,6 +56,12 @@ func validate(cfg *Config) error {
 		if cfg.Clerk.WebhookSecret == "" {
 			return errors.New("clerk.webhookSecret must not be empty outside development (WCQ_CLERK_WEBHOOKSECRET)")
 		}
+		if cfg.EventBus.Driver == "in_memory" {
+			return fmt.Errorf(
+				"eventBus.driver=in_memory is not permitted in production (environment=%q); the in-memory bus cannot deliver events across process boundaries (API → worker). Set WCQ_EVENTBUS_DRIVER=redis",
+				cfg.Environment,
+			)
+		}
 	}
 	if _, ok := knownLogLevels[cfg.Logger.Level]; !ok {
 		return fmt.Errorf(

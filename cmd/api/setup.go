@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -128,4 +129,51 @@ func setupDB(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool
 	}
 	log.Sugar().Info("database connection established")
 	return pool, nil
+}
+
+// logStartupBanner emits a structured summary of the application configuration
+// immediately after logger initialisation. This makes critical settings visible
+// at the top of the log stream rather than buried in startup messages, and
+// surfaces misconfigurations before any infrastructure connections are attempted.
+//
+// The banner format is intentional: parseable by both humans (CloudWatch console,
+// kubectl logs) and log aggregation systems (grep, awk, structured filters).
+func logStartupBanner(cfg *config.Config, log *zap.Logger) {
+	log.Sugar().Info("╔═══════════════════════════════════════════════════════════╗")
+	log.Sugar().Info("║              World Cup Quiniela API                       ║")
+	log.Sugar().Info("╠═══════════════════════════════════════════════════════════╣")
+	log.Sugar().Infof("║ Environment:      %-37s ║", cfg.Environment)
+	log.Sugar().Infof("║ Event Bus Driver: %-37s ║", cfg.EventBus.Driver)
+	log.Sugar().Infof("║ Database:         %-37s ║", maskDSN(cfg.Database.DSN))
+	log.Sugar().Infof("║ Redis:            %-37s ║", cfg.Redis.Addr)
+	log.Sugar().Infof("║ Server Port:      %-37s ║", cfg.Server.Port)
+	log.Sugar().Info("╚═══════════════════════════════════════════════════════════╝")
+
+	// Emit a machine-parseable structured log for automated alerting.
+	// Log aggregation systems can match on event_bus_driver="in_memory" to
+	// detect misconfigured deployments even if the validation was bypassed.
+	log.Info("startup configuration loaded",
+		zap.String("environment", cfg.Environment),
+		zap.String("event_bus_driver", cfg.EventBus.Driver),
+		zap.String("redis_addr", cfg.Redis.Addr),
+		zap.String("server_port", cfg.Server.Port),
+	)
+}
+
+// maskDSN redacts credentials from a PostgreSQL connection string for safe
+// logging. Returns "not configured" when DSN is empty, preventing confusing
+// blank lines in the startup banner.
+func maskDSN(dsn string) string {
+	if dsn == "" {
+		return "not configured"
+	}
+	// DSN format: postgres://user:pass@host:port/db?params
+	// Mask everything between "://" and "@" to hide username:password.
+	if idx := strings.Index(dsn, "://"); idx != -1 {
+		if idx2 := strings.Index(dsn[idx+3:], "@"); idx2 != -1 {
+			return dsn[:idx+3] + "***:***" + dsn[idx+3+idx2:]
+		}
+	}
+	// Fallback: DSN format is unexpected; mask the whole string to be safe.
+	return "***masked***"
 }

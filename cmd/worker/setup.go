@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -79,4 +80,41 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 		}
 	}
 	return bus, cleanup, nil
+}
+
+// logStartupBanner emits a structured summary of the worker configuration
+// immediately after logger initialisation. Matches the API banner format for
+// consistency, making it easy to compare configuration across processes when
+// debugging multi-process deployment issues.
+func logStartupBanner(cfg *config.Config, log *zap.Logger) {
+	log.Sugar().Info("╔═══════════════════════════════════════════════════════════╗")
+	log.Sugar().Info("║          World Cup Quiniela Worker                        ║")
+	log.Sugar().Info("╠═══════════════════════════════════════════════════════════╣")
+	log.Sugar().Infof("║ Environment:      %-37s ║", cfg.Environment)
+	log.Sugar().Infof("║ Event Bus Driver: %-37s ║", cfg.EventBus.Driver)
+	log.Sugar().Infof("║ Database:         %-37s ║", maskDSN(cfg.Database.DSN))
+	log.Sugar().Infof("║ Redis:            %-37s ║", cfg.Redis.Addr)
+	log.Sugar().Infof("║ Health Port:      %-37s ║", cfg.Worker.HealthPort)
+	log.Sugar().Info("╚═══════════════════════════════════════════════════════════╝")
+
+	log.Info("worker configuration loaded",
+		zap.String("environment", cfg.Environment),
+		zap.String("event_bus_driver", cfg.EventBus.Driver),
+		zap.String("redis_addr", cfg.Redis.Addr),
+		zap.String("health_port", cfg.Worker.HealthPort),
+	)
+}
+
+// maskDSN redacts credentials from a PostgreSQL connection string for safe
+// logging. Returns "not configured" when DSN is empty.
+func maskDSN(dsn string) string {
+	if dsn == "" {
+		return "not configured"
+	}
+	if idx := strings.Index(dsn, "://"); idx != -1 {
+		if idx2 := strings.Index(dsn[idx+3:], "@"); idx2 != -1 {
+			return dsn[:idx+3] + "***:***" + dsn[idx+3+idx2:]
+		}
+	}
+	return "***masked***"
 }

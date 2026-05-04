@@ -82,6 +82,11 @@ func main() {
 	}
 	defer log.Sync() //nolint:errcheck
 
+	// Wire the defensive logger for repository deferred rollback failures.
+	repository.SetDefensiveLogger(log)
+
+	logStartupBanner(cfg, log)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

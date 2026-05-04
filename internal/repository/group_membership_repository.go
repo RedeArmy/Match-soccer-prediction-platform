@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -325,7 +326,15 @@ func (r *PostgresGroupMembershipRepository) TransferOwnershipRoles(ctx context.C
 	if err != nil {
 		return apperrors.Internal(err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			defensiveLog.Warn("transaction rollback failed",
+				zap.String("repository", "GroupMembershipRepository"),
+				zap.String("method", "TransferOwnershipRoles"),
+				zap.Error(err),
+			)
+		}
+	}()
 
 	// Demote all current owners. Using quinielaID scope instead of a specific
 	// membership ID handles the edge case where corrupted data left multiple
@@ -403,7 +412,15 @@ func (r *PostgresGroupMembershipRepository) ApproveMembership(
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			defensiveLog.Warn("transaction rollback failed",
+				zap.String("repository", "GroupMembershipRepository"),
+				zap.String("method", "ApproveMembership"),
+				zap.Error(err),
+			)
+		}
+	}()
 
 	row := tx.QueryRow(ctx,
 		`UPDATE group_memberships
@@ -451,7 +468,15 @@ func (r *PostgresGroupMembershipRepository) LeaveMembership(
 	if err != nil {
 		return apperrors.Internal(err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			defensiveLog.Warn("transaction rollback failed",
+				zap.String("repository", "GroupMembershipRepository"),
+				zap.String("method", "LeaveMembership"),
+				zap.Error(err),
+			)
+		}
+	}()
 
 	tag, err := tx.Exec(ctx,
 		`UPDATE group_memberships
