@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -252,5 +253,119 @@ func TestValidateMatchPhase_AllKnownPhases_ReturnNil(t *testing.T) {
 func TestValidateMatchPhase_UnknownPhase_ReturnsValidation(t *testing.T) {
 	if err := domain.ValidateMatchPhase("semifinals"); !isValidation(err) {
 		t.Errorf("expected validation error for unrecognised phase, got %v", err)
+	}
+}
+
+// ── Length validation tests ───────────────────────────────────────────────────
+
+func TestValidateEmail_ExceedsMaxLength_ReturnsValidation(t *testing.T) {
+	// RFC 5321 max is 320. Build a 321-character email that is otherwise valid.
+	localPart := strings.Repeat("a", 64)
+	// Build domain to push total over 320: 64 + 1(@) + 256 = 321
+	domainPart := strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." +
+		strings.Repeat("d", 63) + "." + strings.Repeat("e", 63) + ".com"
+	oversized := localPart + "@" + domainPart
+	if len(oversized) <= 320 {
+		t.Fatalf("test setup error: email is %d chars, need >320", len(oversized))
+	}
+	if err := domain.ValidateEmail(oversized); !isValidation(err) {
+		t.Errorf("expected validation error for email >320 chars, got %v", err)
+	}
+}
+
+func TestValidateEmail_ExactlyAtMaxLength_Accepted(t *testing.T) {
+	// 64-char local + @ + 255-char domain = 320 total
+	local := strings.Repeat("a", 64)
+	// Need exactly 255 chars for domain part to reach RFC 5321 max of 320
+	// Structure: 62.62.62.62.com = 62+1+62+1+62+1+62+4 = 255 ✓
+	domainPart := strings.Repeat("b", 62) + "." + strings.Repeat("c", 62) + "." +
+		strings.Repeat("d", 62) + "." + strings.Repeat("e", 62) + ".com"
+	exactly320 := local + "@" + domainPart
+	if len(exactly320) != 320 {
+		t.Fatalf("test setup error: email is %d chars, expected 320", len(exactly320))
+	}
+	if err := domain.ValidateEmail(exactly320); err != nil {
+		t.Errorf("expected nil for 320-char email, got %v", err)
+	}
+}
+
+func TestValidateMatch_HomeTeamExceedsMaxLength_ReturnsValidation(t *testing.T) {
+	oversized := strings.Repeat("x", 101)
+	m := &domain.Match{
+		HomeTeam:  oversized,
+		AwayTeam:  teamArgentina,
+		KickoffAt: time.Now().Add(time.Hour),
+	}
+	if err := domain.ValidateMatch(m); !isValidation(err) {
+		t.Errorf("expected validation error for home team >100 chars, got %v", err)
+	}
+}
+
+func TestValidateMatch_AwayTeamExceedsMaxLength_ReturnsValidation(t *testing.T) {
+	oversized := strings.Repeat("y", 101)
+	m := &domain.Match{
+		HomeTeam:  teamBrazil,
+		AwayTeam:  oversized,
+		KickoffAt: time.Now().Add(time.Hour),
+	}
+	if err := domain.ValidateMatch(m); !isValidation(err) {
+		t.Errorf("expected validation error for away team >100 chars, got %v", err)
+	}
+}
+
+func TestValidateMatch_TeamNamesAtMaxLength_Accepted(t *testing.T) {
+	exactly100 := strings.Repeat("z", 100)
+	m := &domain.Match{
+		HomeTeam:  exactly100,
+		AwayTeam:  "Short",
+		KickoffAt: time.Now().Add(time.Hour),
+	}
+	if err := domain.ValidateMatch(m); err != nil {
+		t.Errorf("expected nil for 100-char team name, got %v", err)
+	}
+}
+
+func TestValidateQuiniela_NameExceedsMaxLength_ReturnsValidation(t *testing.T) {
+	oversized := strings.Repeat("q", 201)
+	q := &domain.Quiniela{
+		Name:           oversized,
+		OwnerID:        1,
+		PrizeThreshold: 3,
+	}
+	if err := domain.ValidateQuiniela(q); !isValidation(err) {
+		t.Errorf("expected validation error for quiniela name >200 chars, got %v", err)
+	}
+}
+
+func TestValidateQuiniela_NameAtMaxLength_Accepted(t *testing.T) {
+	exactly200 := strings.Repeat("n", 200)
+	q := &domain.Quiniela{
+		Name:           exactly200,
+		OwnerID:        1,
+		PrizeThreshold: 3,
+	}
+	if err := domain.ValidateQuiniela(q); err != nil {
+		t.Errorf("expected nil for 200-char quiniela name, got %v", err)
+	}
+}
+
+func TestValidateUserName_ExceedsMaxLength_ReturnsValidation(t *testing.T) {
+	oversized := strings.Repeat("u", 201)
+	if err := domain.ValidateUserName(oversized); !isValidation(err) {
+		t.Errorf("expected validation error for user name >200 chars, got %v", err)
+	}
+}
+
+func TestValidateUserName_AtMaxLength_Accepted(t *testing.T) {
+	exactly200 := strings.Repeat("w", 200)
+	if err := domain.ValidateUserName(exactly200); err != nil {
+		t.Errorf("expected nil for 200-char user name, got %v", err)
+	}
+}
+
+func TestValidateUserName_EmptyString_Accepted(t *testing.T) {
+	// Empty names are permitted - Clerk sync falls back to subject ID
+	if err := domain.ValidateUserName(""); err != nil {
+		t.Errorf("expected nil for empty user name, got %v", err)
 	}
 }

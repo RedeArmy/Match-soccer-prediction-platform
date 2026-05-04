@@ -1074,7 +1074,7 @@ func TestPredictionRepository_ListAdmin_NoFilter_ReturnsAll(t *testing.T) {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
-	results, err := repo.ListAdmin(context.Background(), repository.PredictionAdminFilters{}, repository.Pagination{})
+	results, err := repo.ListAdmin(context.Background(), repository.PredictionAdminFilters{}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -1096,7 +1096,7 @@ func TestPredictionRepository_ListAdmin_FilterByUserID(t *testing.T) {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
-	results, err := repo.ListAdmin(context.Background(), repository.PredictionAdminFilters{UserID: &u1.ID}, repository.Pagination{})
+	results, err := repo.ListAdmin(context.Background(), repository.PredictionAdminFilters{UserID: &u1.ID}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}

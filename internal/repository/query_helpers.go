@@ -61,12 +61,21 @@ func collectRows[T any](rows pgx.Rows, scan func(pgx.Rows) (T, error)) ([]T, err
 
 // applyPagination appends LIMIT/OFFSET clauses to q and corresponding values to args.
 // n is the next positional argument index (1-based) for the query being built.
+//
+// Pagination.Limit must be positive (bounded) or -1 (unbounded via Unbounded()).
+// Zero-value Pagination{} (Limit=0) triggers a panic to fail fast during development
+// rather than silently executing an unbounded query that could exhaust memory in
+// production. Tests that need unbounded queries must explicitly call Unbounded().
 func applyPagination(q string, args []any, n int, p Pagination) (string, []any, int) {
+	if p.Limit == 0 {
+		panic("repository: Pagination.Limit=0 is invalid; use positive limit or Unbounded()")
+	}
 	if p.Limit > 0 {
 		q += " LIMIT $" + itoa(n)
 		args = append(args, p.Limit)
 		n++
 	}
+	// p.Limit == unboundedLimit (-1): no LIMIT clause, query returns all rows
 	if p.Offset > 0 {
 		q += " OFFSET $" + itoa(n)
 		args = append(args, p.Offset)

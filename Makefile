@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run run-worker test test-cover lint clean docker-up docker-down docker-logs migrate dev hooks swagger-gen swagger-clean help
+.PHONY: build run run-worker test test-cover lint clean docker-up docker-down docker-logs migrate dev hooks swagger-gen swagger-clean validate-params help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -96,6 +96,14 @@ hooks:
 ## migrate: Apply pending database schema migrations
 migrate:
 	go run ./cmd/migrate
+
+## validate-params: Validate system_params table synchronization with constants.go
+##                  Requires: Database to be running (make docker-up) and migrated (make migrate).
+##                  Verifies that every ParamKey* constant has a matching row in system_params
+##                  with correct type, category, and description.
+validate-params:
+	@DATABASE_URL="postgres://quiniela:quiniela@localhost:5432/quiniela?sslmode=disable" \
+	go run ./cmd/validate-params
 
 ## swagger-gen: Generate OpenAPI spec and Swagger UI assets from handler annotations.
 ##              Install the CLI once with: go install github.com/swaggo/swag/cmd/swag@latest

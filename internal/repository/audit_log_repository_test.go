@@ -2,10 +2,12 @@ package repository_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── AuditLogRepository ────────────────────────────────────────────────────────
@@ -60,7 +62,7 @@ func TestAuditLogRepository_ListByActor(t *testing.T) {
 	otherID := other.ID
 	_ = repo.Create(context.Background(), &domain.AuditLog{ActorID: &otherID, Action: "other_action"})
 
-	results, err := repo.ListByActor(context.Background(), u.ID, repository.Pagination{})
+	results, err := repo.ListByActor(context.Background(), u.ID, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -82,7 +84,7 @@ func TestAuditLogRepository_ListByEntity(t *testing.T) {
 	otherType := "user"
 	_ = repo.Create(context.Background(), &domain.AuditLog{Action: "ban", ResourceType: &otherType, ResourceID: &resID})
 
-	results, err := repo.ListByEntity(context.Background(), repoResourceQuiniela, 42, repository.Pagination{})
+	results, err := repo.ListByEntity(context.Background(), repoResourceQuiniela, 42, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -100,7 +102,7 @@ func TestAuditLogRepository_ListByAction(t *testing.T) {
 	}
 	_ = repo.Create(context.Background(), &domain.AuditLog{Action: "payment_reject"})
 
-	results, err := repo.ListByAction(context.Background(), "payment_validate", repository.Pagination{})
+	results, err := repo.ListByAction(context.Background(), "payment_validate", repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -167,7 +169,7 @@ func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 
-	results, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Pagination{})
+	results, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -180,5 +182,18 @@ func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
 	}
 	if got.Metadata["reason"] != "inactivity" {
 		t.Errorf("expected metadata reason 'inactivity', got %v", got.Metadata["reason"])
+	}
+}
+
+func TestAuditLogRepository_List_ZeroLimitReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	_, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Pagination{Limit: 0})
+	if err == nil {
+		t.Fatal("expected validation error for zero limit, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error, got %v", err)
 	}
 }

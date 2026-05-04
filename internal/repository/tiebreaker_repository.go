@@ -110,7 +110,12 @@ func (r *PostgresTiebreakerRepository) ListByUserIDs(ctx context.Context, userID
 }
 
 // ListAll returns all tiebreaker submissions with pagination.
+// Pagination.Limit must be positive or unbounded (via Unbounded()).
 func (r *PostgresTiebreakerRepository) ListAll(ctx context.Context, p Pagination) ([]*domain.Tiebreaker, error) {
+	if p.Limit == 0 {
+		return nil, apperrors.Validation("pagination limit must be positive or use Unbounded()")
+	}
+
 	q := `SELECT ` + tiebreakerColumns + ` FROM tiebreakers ORDER BY created_at DESC`
 	args := []any{}
 	n := 1
@@ -120,6 +125,7 @@ func (r *PostgresTiebreakerRepository) ListAll(ctx context.Context, p Pagination
 		args = append(args, p.Limit)
 		n++
 	}
+	// p.IsUnbounded() case: no LIMIT clause
 	if p.Offset > 0 {
 		q += ` OFFSET $` + strconv.Itoa(n)
 		args = append(args, p.Offset)

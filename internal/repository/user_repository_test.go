@@ -308,7 +308,7 @@ func TestUserRepository_ListFiltered_NoFilter_ReturnsAll(t *testing.T) {
 	seedUser(t)
 	repo := repository.NewPostgresUserRepository(testDB)
 
-	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.Pagination{})
+	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -326,7 +326,7 @@ func TestUserRepository_ListFiltered_FilterByBanned(t *testing.T) {
 	_, _ = repo.Ban(context.Background(), u1.ID, admin.ID, "test")
 
 	banned := true
-	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Banned: &banned}, repository.Pagination{})
+	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Banned: &banned}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -345,7 +345,7 @@ func TestUserRepository_ListFiltered_FilterByRole(t *testing.T) {
 	seedUser(t) // role = player
 
 	role := domain.RoleAdmin
-	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Role: &role}, repository.Pagination{})
+	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Role: &role}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -365,7 +365,7 @@ func TestUserRepository_ListFiltered_FilterBySearch(t *testing.T) {
 	}
 
 	search := "alic"
-	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Search: &search}, repository.Pagination{})
+	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Search: &search}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}

@@ -2,12 +2,45 @@ package repository
 
 import "github.com/rede/world-cup-quiniela/internal/domain"
 
+const (
+	// unboundedLimit is the internal sentinel value for Pagination.Limit that
+	// indicates "no upper bound". Using -1 instead of 0 prevents accidental
+	// unbounded queries from zero-value Pagination{} structs. Code that needs
+	// unlimited result sets must explicitly call Pagination.Unbounded().
+	unboundedLimit = -1
+)
+
 // Pagination carries LIMIT / OFFSET parameters for listing operations.
-// A zero Limit means no upper bound; callers should always supply a positive
-// value in production to prevent unbounded result sets.
+//
+// Production code must always use explicit pagination:
+//   - Bounded queries: Pagination{Limit: 50, Offset: 0}
+//   - Unbounded queries: Pagination.Unbounded() (use sparingly, only in controlled contexts)
+//
+// Zero-value Pagination{} (Limit=0) is NOT supported and will be rejected by
+// repository methods. This prevents accidental full-table scans from zero-value
+// structs passed between service layers.
 type Pagination struct {
-	Limit  int // 0 = no limit
+	Limit  int // positive = bounded, -1 = unbounded (via Unbounded()), 0 = invalid
 	Offset int
+}
+
+// Unbounded returns a Pagination configured for unlimited result sets.
+//
+// Use this ONLY when:
+//   - You need the complete dataset for an aggregation or batch operation
+//   - The result set is known to be small (e.g., system config tables)
+//   - You're in test code verifying full-dataset behavior
+//
+// For all other cases, use explicit positive Limit values to prevent memory
+// exhaustion and unbounded query execution times.
+func Unbounded() Pagination {
+	return Pagination{Limit: unboundedLimit, Offset: 0}
+}
+
+// IsUnbounded returns true if this Pagination was created via Unbounded() and
+// therefore has no upper limit on result set size.
+func (p Pagination) IsUnbounded() bool {
+	return p.Limit == unboundedLimit
 }
 
 // AuditLogFilters narrows an audit_log query. All non-nil fields are combined
