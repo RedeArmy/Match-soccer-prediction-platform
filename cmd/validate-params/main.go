@@ -89,75 +89,121 @@ func main() {
 func run() error {
 	ctx := context.Background()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		return fmt.Errorf("DATABASE_URL environment variable not set")
-	}
-
-	pool, err := pgxpool.New(ctx, dbURL)
+	pool, err := connectDatabase()
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		return err
 	}
 	defer pool.Close()
 
-	// Fetch all params from DB
 	dbParams, err := fetchAllParams(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("failed to fetch system_params: %w", err)
 	}
 
-	// Build lookup map
-	dbMap := make(map[string]dbParam)
+	dbMap := buildParamMap(dbParams)
+	errors := validateAllParams(dbMap)
+	checkUnexpectedParams(dbParams)
+
+	return reportResults(errors)
+}
+
+func connectDatabase() (*pgxpool.Pool, error) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL environment variable not set")
+	}
+
+	pool, err := pgxpool.New(context.Background(), dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+	return pool, nil
+}
+
+func buildParamMap(dbParams []dbParam) map[string]dbParam {
+	dbMap := make(map[string]dbParam, len(dbParams))
 	for _, p := range dbParams {
 		dbMap[p.key] = p
 	}
+	return dbMap
+}
 
-	// Validate each expected param
+func validateAllParams(dbMap map[string]dbParam) []string {
 	var errors []string
 	for _, spec := range allParams {
-		db, exists := dbMap[spec.key]
-		if !exists {
-			errors = append(errors, fmt.Sprintf("❌ MISSING: %s (expected default: %s)", spec.key, spec.defaultValue))
-			continue
-		}
+		errs := validateSingleParam(spec, dbMap)
+		errors = append(errors, errs...)
+	}
+	return errors
+}
 
-		// Validate type
-		if db.paramType != spec.paramType {
-			errors = append(errors, fmt.Sprintf("❌ TYPE MISMATCH: %s (expected: %s, got: %s)", spec.key, spec.paramType, db.paramType))
-		}
-
-		// Validate category
-		if db.category != spec.category {
-			errors = append(errors, fmt.Sprintf("❌ CATEGORY MISMATCH: %s (expected: %s, got: %s)", spec.key, spec.category, db.category))
-		}
-
-		// Validate default value (only if DB value has not been overridden)
-		if db.value != spec.defaultValue {
-			fmt.Printf("⚠️  VALUE OVERRIDE: %s (code default: %s, DB value: %s) — operator override detected\n", spec.key, spec.defaultValue, db.value)
-		}
-
-		// Validate description exists
-		if db.description == "" {
-			errors = append(errors, fmt.Sprintf("❌ MISSING DESCRIPTION: %s", spec.key))
-		}
-
-		fmt.Printf("✅ %s = %s (%s, %s)\n", spec.key, db.value, db.paramType, db.category)
+func validateSingleParam(spec paramSpec, dbMap map[string]dbParam) []string {
+	db, exists := dbMap[spec.key]
+	if !exists {
+		return []string{fmt.Sprintf("❌ MISSING: %s (expected default: %s)", spec.key, spec.defaultValue)}
 	}
 
-	// Check for unexpected params in DB
+	var errors []string
+	errors = append(errors, validateType(spec, db)...)
+	errors = append(errors, validateCategory(spec, db)...)
+	errors = append(errors, validateDescription(spec, db)...)
+
+	checkValueOverride(spec, db)
+	printValidParam(spec, db)
+
+	return errors
+}
+
+func validateType(spec paramSpec, db dbParam) []string {
+	if db.paramType != spec.paramType {
+		return []string{fmt.Sprintf("❌ TYPE MISMATCH: %s (expected: %s, got: %s)", spec.key, spec.paramType, db.paramType)}
+	}
+	return nil
+}
+
+func validateCategory(spec paramSpec, db dbParam) []string {
+	if db.category != spec.category {
+		return []string{fmt.Sprintf("❌ CATEGORY MISMATCH: %s (expected: %s, got: %s)", spec.key, spec.category, db.category)}
+	}
+	return nil
+}
+
+func validateDescription(spec paramSpec, db dbParam) []string {
+	if db.description == "" {
+		return []string{fmt.Sprintf("❌ MISSING DESCRIPTION: %s", spec.key)}
+	}
+	return nil
+}
+
+func checkValueOverride(spec paramSpec, db dbParam) {
+	if db.value != spec.defaultValue {
+		fmt.Printf("⚠️  VALUE OVERRIDE: %s (code default: %s, DB value: %s) — operator override detected\n",
+			spec.key, spec.defaultValue, db.value)
+	}
+}
+
+func printValidParam(spec paramSpec, db dbParam) {
+	fmt.Printf("✅ %s = %s (%s, %s)\n", spec.key, db.value, db.paramType, db.category)
+}
+
+func checkUnexpectedParams(dbParams []dbParam) {
+	expectedKeys := buildExpectedKeysSet()
 	for _, db := range dbParams {
-		found := false
-		for _, spec := range allParams {
-			if spec.key == db.key {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !expectedKeys[db.key] {
 			fmt.Printf("⚠️  UNEXPECTED PARAM IN DB: %s (not defined in constants.go) — consider removing or documenting\n", db.key)
 		}
 	}
+}
 
+func buildExpectedKeysSet() map[string]bool {
+	expected := make(map[string]bool, len(allParams))
+	for _, spec := range allParams {
+		expected[spec.key] = true
+	}
+	return expected
+}
+
+func reportResults(errors []string) error {
 	if len(errors) > 0 {
 		fmt.Println("\n❌ VALIDATION FAILED:")
 		for _, err := range errors {
