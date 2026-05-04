@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -62,13 +61,7 @@ func (r *PostgresQuinielaRepository) CreateWithMembership(ctx context.Context, q
 		return apperrors.Internal(err)
 	}
 	defer func() {
-		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			defensiveLog.Warn("transaction rollback failed",
-				zap.String("repository", "QuinielaRepository"),
-				zap.String("method", "CreateWithMembership"),
-				zap.Error(err),
-			)
-		}
+		logRollbackFailure(tx.Rollback(ctx), "QuinielaRepository", "CreateWithMembership")
 	}()
 
 	qRow := tx.QueryRow(ctx,

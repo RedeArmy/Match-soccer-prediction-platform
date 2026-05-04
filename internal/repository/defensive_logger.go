@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"errors"
+
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 )
 
@@ -28,5 +31,24 @@ var defensiveLog = zap.NewNop()
 func SetDefensiveLogger(log *zap.Logger) {
 	if log != nil {
 		defensiveLog = log
+	}
+}
+
+// logRollbackFailure logs unexpected transaction rollback failures to the
+// defensive logger. It filters out pgx.ErrTxClosed (the expected error after
+// successful commit) and only logs genuine infrastructure failures.
+//
+// This function is extracted from inline defer blocks to make the defensive
+// logging logic testable via unit tests, since simulating rollback failures
+// in integration tests requires flaky infrastructure failure simulation.
+//
+// Called from deferred cleanup in repository methods that use transactions.
+func logRollbackFailure(err error, repository, method string) {
+	if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+		defensiveLog.Warn("transaction rollback failed",
+			zap.String("repository", repository),
+			zap.String("method", method),
+			zap.Error(err),
+		)
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -327,13 +326,7 @@ func (r *PostgresGroupMembershipRepository) TransferOwnershipRoles(ctx context.C
 		return apperrors.Internal(err)
 	}
 	defer func() {
-		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			defensiveLog.Warn("transaction rollback failed",
-				zap.String("repository", "GroupMembershipRepository"),
-				zap.String("method", "TransferOwnershipRoles"),
-				zap.Error(err),
-			)
-		}
+		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "TransferOwnershipRoles")
 	}()
 
 	// Demote all current owners. Using quinielaID scope instead of a specific
@@ -413,13 +406,7 @@ func (r *PostgresGroupMembershipRepository) ApproveMembership(
 		return nil, apperrors.Internal(err)
 	}
 	defer func() {
-		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			defensiveLog.Warn("transaction rollback failed",
-				zap.String("repository", "GroupMembershipRepository"),
-				zap.String("method", "ApproveMembership"),
-				zap.Error(err),
-			)
-		}
+		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "ApproveMembership")
 	}()
 
 	row := tx.QueryRow(ctx,
@@ -469,13 +456,7 @@ func (r *PostgresGroupMembershipRepository) LeaveMembership(
 		return apperrors.Internal(err)
 	}
 	defer func() {
-		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			defensiveLog.Warn("transaction rollback failed",
-				zap.String("repository", "GroupMembershipRepository"),
-				zap.String("method", "LeaveMembership"),
-				zap.Error(err),
-			)
-		}
+		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "LeaveMembership")
 	}()
 
 	tag, err := tx.Exec(ctx,

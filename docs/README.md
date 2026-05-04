@@ -70,6 +70,7 @@ This directory contains comprehensive technical documentation for the World Cup 
 |----------|-------------|------|
 | [REFACTORING_SUMMARY.md](./REFACTORING_SUMMARY.md) | Cognitive complexity refactoring | 2 KB |
 | [DEFENSIVE_CODE_COVERAGE.md](./DEFENSIVE_CODE_COVERAGE.md) | Defensive code coverage analysis | 9 KB |
+| [COVERAGE_ACCEPTANCE.md](./COVERAGE_ACCEPTANCE.md) | 68.3% coverage acceptance rationale | 7 KB |
 
 **Achievements:**
 - ✅ Complexity: 26 → 3 (88% reduction)
