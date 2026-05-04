@@ -180,6 +180,16 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		log.Sugar().Errorf("graceful shutdown failed: %v", err)
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
+
+	// Drain in-flight audit writes before closing the database pool. This
+	// prevents losing audit entries that were queued during request processing
+	// but not yet persisted. The audit service write timeout (default 5 s)
+	// caps the maximum wait per goroutine, so this returns promptly even under
+	// high load. Must run after srv.Shutdown to ensure no new audit entries
+	// can be queued while we drain.
+	log.Sugar().Info("draining audit log writes...")
+	app.DrainAudit()
+
 	log.Sugar().Info("server stopped")
 	return nil
 }

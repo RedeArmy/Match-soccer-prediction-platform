@@ -116,6 +116,11 @@ func (b *RedisBus) Close() {
 // idempotently on first registration. Handlers must return an error to signal
 // transient failures; the bus retries up to maxHandlerAttempts times before
 // pushing the event to the dead-letter queue at dlq:<event_type>.
+//
+// The consumer group is created inside the consume goroutine (not before launch)
+// to avoid a race where the goroutine starts reading from a group that failed to
+// be created due to transient Redis unavailability. If group creation fails, the
+// goroutine exits cleanly and logs an error rather than spinning in a retry loop.
 func (b *RedisBus) Subscribe(eventType events.EventType, handler func(context.Context, events.Envelope) error) {
 	b.mu.Lock()
 	existing := b.handlers[eventType]
@@ -130,7 +135,6 @@ func (b *RedisBus) Subscribe(eventType events.EventType, handler func(context.Co
 	b.mu.Unlock()
 
 	if len(existing) == 0 {
-		b.ensureConsumerGroup(eventType)
 		go b.consume(ctx, eventType)
 	}
 }
@@ -158,7 +162,10 @@ func (b *RedisBus) Publish(ctx context.Context, envelope events.Envelope) error 
 // already in the stream; this is intentional - if a new subscriber is added
 // to a stream that already has events it should process them from the beginning.
 // MKSTREAM creates the stream key if it does not yet exist.
-func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) {
+//
+// Returns true if the group exists (either created now or already present),
+// false if creation failed due to a non-recoverable Redis error.
+func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) bool {
 	err := b.client.XGroupCreateMkStream(
 		context.Background(),
 		streamKey(eventType),
@@ -172,18 +179,34 @@ func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) {
 			zap.String("group", consumerGroup),
 			zap.Error(err),
 		)
+		return false
 	}
+	return true
 }
 
 // consume runs the Redis Streams consumer loop for the given event type.
 //
-// On startup it first reads pending entries (ID "0") to recover any messages
-// that were delivered in a previous run but not acknowledged before the process
-// crashed. Once the pending list is drained it switches to reading new entries
-// (ID ">"). This two-phase approach provides at-least-once delivery: a message
-// is never lost unless it is explicitly acknowledged.
+// On startup it first ensures the consumer group exists. If group creation
+// fails (e.g., Redis temporarily unavailable), the goroutine exits cleanly
+// rather than entering a retry loop with no valid consumer group.
+//
+// Once the group is verified, it reads pending entries (ID "0") to recover
+// any messages that were delivered in a previous run but not acknowledged
+// before the process crashed. Once the pending list is drained it switches to
+// reading new entries (ID ">"). This two-phase approach provides at-least-once
+// delivery: a message is never lost unless it is explicitly acknowledged.
 func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 	key := streamKey(eventType)
+
+	// Ensure the consumer group exists before attempting to read from it.
+	// If this fails, exit cleanly - retrying in a loop would spam errors and
+	// consume resources without a valid group to read from.
+	if !b.ensureConsumerGroup(eventType) {
+		b.log.Error("redis bus: consumer group setup failed, goroutine exiting",
+			zap.String("stream", key),
+		)
+		return
+	}
 
 	// Phase 1: recover unacknowledged messages from a previous run.
 	b.recoverPending(ctx, eventType, key)

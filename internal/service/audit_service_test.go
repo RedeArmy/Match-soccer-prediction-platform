@@ -94,3 +94,125 @@ func waitForAuditEntry(t *testing.T, repo *stubAuditLogRepo, n int) {
 	}
 	t.Fatalf("timed out after 2 s waiting for %d audit entries to be persisted", n)
 }
+
+// ── Drain tests ───────────────────────────────────────────────────────────────
+
+// TestAuditService_Drain_WaitsForInFlightGoroutines validates that Drain
+// blocks until all Log goroutines complete, preventing data loss during
+// graceful shutdown.
+func TestAuditService_Drain_WaitsForInFlightGoroutines(t *testing.T) {
+	repo := &stubAuditLogRepo{}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	// Launch 10 audit log writes concurrently
+	const numLogs = 10
+	for i := 0; i < numLogs; i++ {
+		id := i + 1
+		action := "test.action"
+		svc.Log(context.Background(), &id, nil, action, nil, &id, nil)
+	}
+
+	// Drain should block until all goroutines complete
+	start := time.Now()
+	svc.Drain()
+	elapsed := time.Since(start)
+
+	// Verify all entries were persisted
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if len(repo.created) != numLogs {
+		t.Errorf("expected %d audit entries after Drain, got %d", numLogs, len(repo.created))
+	}
+
+	// Drain should complete quickly (< 1s) since writes are fast
+	if elapsed > time.Second {
+		t.Errorf("Drain took %v, expected < 1s", elapsed)
+	}
+}
+
+// TestAuditService_Drain_NoInFlightGoroutines validates that Drain is a no-op
+// when there are no in-flight goroutines (safe to call multiple times).
+func TestAuditService_Drain_NoInFlightGoroutines(t *testing.T) {
+	repo := &stubAuditLogRepo{}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	// Call Drain with no in-flight goroutines - should return immediately
+	start := time.Now()
+	svc.Drain()
+	elapsed := time.Since(start)
+
+	if elapsed > 10*time.Millisecond {
+		t.Errorf("Drain with no goroutines took %v, expected instant", elapsed)
+	}
+}
+
+// TestAuditService_Drain_MultipleCalls validates that Drain can be called
+// multiple times safely (e.g., in defer blocks or error paths).
+func TestAuditService_Drain_MultipleCalls(t *testing.T) {
+	repo := &stubAuditLogRepo{}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	id := 1
+	svc.Log(context.Background(), &id, nil, "test.action", nil, &id, nil)
+
+	// First drain waits for goroutine
+	svc.Drain()
+
+	// Second drain should be instant (no goroutines)
+	start := time.Now()
+	svc.Drain()
+	elapsed := time.Since(start)
+
+	if elapsed > 10*time.Millisecond {
+		t.Errorf("Second Drain took %v, expected instant", elapsed)
+	}
+}
+
+// TestAuditService_Drain_WithSlowWrites validates that Drain respects the
+// write timeout and completes even if some writes are slow.
+func TestAuditService_Drain_WithSlowWrites(t *testing.T) {
+	// Use a stub that delays writes to simulate slow DB
+	slowRepo := &slowAuditLogRepo{
+		stubAuditLogRepo: &stubAuditLogRepo{},
+		delay:            50 * time.Millisecond,
+	}
+	svc := NewAuditService(slowRepo, 5*time.Second, zap.NewNop())
+
+	// Launch 5 concurrent writes
+	const numLogs = 5
+	for i := 0; i < numLogs; i++ {
+		id := i + 1
+		svc.Log(context.Background(), &id, nil, "test.action", nil, &id, nil)
+	}
+
+	// Drain should wait for all writes to complete (they run concurrently)
+	start := time.Now()
+	svc.Drain()
+	elapsed := time.Since(start)
+
+	// With 50ms delay and concurrent execution, should complete in ~50-100ms
+	if elapsed < 50*time.Millisecond {
+		t.Errorf("Drain completed too quickly (%v), writes may not have finished", elapsed)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("Drain took too long (%v), expected ~50-100ms for concurrent writes", elapsed)
+	}
+
+	// Verify all entries were persisted
+	slowRepo.mu.Lock()
+	defer slowRepo.mu.Unlock()
+	if len(slowRepo.created) != numLogs {
+		t.Errorf("expected %d audit entries, got %d", numLogs, len(slowRepo.created))
+	}
+}
+
+// slowAuditLogRepo simulates a slow database by adding a delay to Create.
+type slowAuditLogRepo struct {
+	*stubAuditLogRepo
+	delay time.Duration
+}
+
+func (r *slowAuditLogRepo) Create(ctx context.Context, entry *domain.AuditLog) error {
+	time.Sleep(r.delay)
+	return r.stubAuditLogRepo.Create(ctx, entry)
+}

@@ -148,10 +148,43 @@ func (s *conflictService) appendStaleMembershipConflicts(ctx context.Context, no
 
 // ConflictSummary aggregates the live conflict list into per-type counts and
 // average ages, suitable for a lightweight dashboard alert widget.
+//
+// To prevent unbounded memory consumption, the scan is capped at
+// conflict.max_scan (default 5000). This limit protects background jobs and
+// dashboard widgets from OOM when the conflict backlog is pathologically large.
+// The limit should never be hit under normal operation - thousands of unresolved
+// conflicts indicates a systemic operational issue. Paginated conflict reads via
+// GET /admin/conflicts are unaffected by this cap.
+//
+// When the conflict backlog reaches 80% of max_scan, a WARNING is logged to
+// alert operators that the system is approaching a pathological state. When the
+// limit is reached (LimitReached=true), the summary is incomplete and dashboards
+// should surface an urgent alert.
 func (s *conflictService) ConflictSummary(ctx context.Context) (*ConflictSummaryResult, error) {
-	conflicts, err := s.ListConflicts(ctx, repository.Pagination{})
+	maxScan := s.params.GetInt(ctx, domain.ParamKeyConflictMaxScan, domain.DefaultConflictMaxScan)
+	conflicts, err := s.ListConflicts(ctx, repository.Pagination{Limit: maxScan})
 	if err != nil {
 		return nil, err
+	}
+
+	totalUnresolved := len(conflicts)
+	limitReached := totalUnresolved >= maxScan
+
+	// Alert threshold: 80% of max_scan. At this point, operators should
+	// investigate why conflicts are accumulating faster than they're being resolved.
+	alertThreshold := int(float64(maxScan) * 0.8)
+	if totalUnresolved >= alertThreshold {
+		logLevel := s.log.Warn
+		if limitReached {
+			logLevel = s.log.Error
+		}
+		logLevel("conflict backlog approaching or exceeding scan limit",
+			zap.Int("total_unresolved", totalUnresolved),
+			zap.Int("max_scan", maxScan),
+			zap.Int("alert_threshold", alertThreshold),
+			zap.Bool("limit_reached", limitReached),
+			zap.Float64("percentage", float64(totalUnresolved)/float64(maxScan)*100),
+		)
 	}
 
 	type agg struct {
@@ -184,8 +217,10 @@ func (s *conflictService) ConflictSummary(ctx context.Context) (*ConflictSummary
 	}
 
 	return &ConflictSummaryResult{
-		TotalUnresolved: len(conflicts),
+		TotalUnresolved: totalUnresolved,
 		ByType:          summaries,
+		LimitReached:    limitReached,
+		MaxScan:         maxScan,
 	}, nil
 }
 
