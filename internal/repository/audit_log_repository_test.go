@@ -60,7 +60,7 @@ func TestAuditLogRepository_ListByActor(t *testing.T) {
 	otherID := other.ID
 	_ = repo.Create(context.Background(), &domain.AuditLog{ActorID: &otherID, Action: "other_action"})
 
-	results, err := repo.ListByActor(context.Background(), u.ID, repository.Pagination{})
+	results, err := repo.ListByActor(context.Background(), u.ID, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -82,7 +82,7 @@ func TestAuditLogRepository_ListByEntity(t *testing.T) {
 	otherType := "user"
 	_ = repo.Create(context.Background(), &domain.AuditLog{Action: "ban", ResourceType: &otherType, ResourceID: &resID})
 
-	results, err := repo.ListByEntity(context.Background(), repoResourceQuiniela, 42, repository.Pagination{})
+	results, err := repo.ListByEntity(context.Background(), repoResourceQuiniela, 42, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -100,7 +100,7 @@ func TestAuditLogRepository_ListByAction(t *testing.T) {
 	}
 	_ = repo.Create(context.Background(), &domain.AuditLog{Action: "payment_reject"})
 
-	results, err := repo.ListByAction(context.Background(), "payment_validate", repository.Pagination{})
+	results, err := repo.ListByAction(context.Background(), "payment_validate", repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -167,7 +167,7 @@ func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 
-	results, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Pagination{})
+	results, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}

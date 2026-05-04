@@ -125,8 +125,13 @@ func (r *PostgresAuditLogRepository) ListByAction(ctx context.Context, action st
 }
 
 // List is the general-purpose query method. Non-nil filter fields are combined
-// with AND. Pagination.Limit = 0 means no upper bound.
+// with AND. Pagination.Limit must be positive or unbounded (via Unbounded()).
+// Zero-value Pagination{} is rejected to prevent accidental unbounded queries.
 func (r *PostgresAuditLogRepository) List(ctx context.Context, f AuditLogFilters, p Pagination) ([]*domain.AuditLog, error) {
+	if p.Limit == 0 {
+		return nil, apperrors.Validation("pagination limit must be positive or use Unbounded()")
+	}
+
 	q := `SELECT ` + auditLogColumns + ` FROM audit_log`
 	var args []any
 	argIdx := 1
@@ -161,6 +166,7 @@ func (r *PostgresAuditLogRepository) List(ctx context.Context, f AuditLogFilters
 		q += fmt.Sprintf(" LIMIT $%d", argIdx)
 		argIdx++
 	}
+	// p.IsUnbounded() case: no LIMIT clause, query returns all matching rows
 	if p.Offset > 0 {
 		args = append(args, p.Offset)
 		q += fmt.Sprintf(" OFFSET $%d", argIdx)

@@ -73,7 +73,7 @@ func TestConflictService_ListConflicts_ReturnsAllCategories(t *testing.T) {
 
 	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
-	conflicts, err := svc.ListConflicts(context.Background(), repository.Pagination{})
+	conflicts, err := svc.ListConflicts(context.Background(), repository.Unbounded())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestConflictService_ListConflicts_PaymentRepoError_SkipsCategory(t *testing
 	pr := &stubPaymentRepo{err: errors.New("db error")}
 	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
-	conflicts, err := svc.ListConflicts(context.Background(), repository.Pagination{})
+	conflicts, err := svc.ListConflicts(context.Background(), repository.Unbounded())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestConflictService_ListConflicts_MembershipRepoError_SkipsCategory(t *test
 	pr := &stubPaymentRepo{}
 	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
-	conflicts, err := svc.ListConflicts(context.Background(), repository.Pagination{})
+	conflicts, err := svc.ListConflicts(context.Background(), repository.Unbounded())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestConflictService_ListConflicts_NoConflicts_ReturnsEmptySlice(t *testing.
 	pr := &stubPaymentRepo{records: nil}
 	svc := NewConflictService(qr, mr, pr, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
 
-	conflicts, err := svc.ListConflicts(context.Background(), repository.Pagination{})
+	conflicts, err := svc.ListConflicts(context.Background(), repository.Unbounded())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

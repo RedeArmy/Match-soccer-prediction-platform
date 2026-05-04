@@ -213,7 +213,7 @@ func TestPaymentRecordRepository_List_NoFilter_ReturnsAll(t *testing.T) {
 	seedPaymentRecord(t, q.ID, u.ID)
 	repo := repository.NewPostgresPaymentRecordRepository(testDB)
 
-	results, err := repo.List(context.Background(), repository.PaymentFilters{}, repository.Pagination{})
+	results, err := repo.List(context.Background(), repository.PaymentFilters{}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -231,7 +231,7 @@ func TestPaymentRecordRepository_List_FilterByQuinielaID(t *testing.T) {
 	seedPaymentRecord(t, q2.ID, u.ID)
 	repo := repository.NewPostgresPaymentRecordRepository(testDB)
 
-	results, err := repo.List(context.Background(), repository.PaymentFilters{QuinielaID: &q1.ID}, repository.Pagination{})
+	results, err := repo.List(context.Background(), repository.PaymentFilters{QuinielaID: &q1.ID}, repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}

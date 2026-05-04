@@ -2,6 +2,26 @@ package domain
 
 import "time"
 
+// Input validation length limits enforce application-layer bounds on text fields
+// before they reach the database. This prevents DoS attacks via oversized JSON
+// payloads and provides fast-fail feedback at the API boundary rather than relying
+// on DB truncation errors. These limits apply to all user-supplied text regardless
+// of whether the underlying column is VARCHAR(n) or TEXT.
+const (
+	// MaxEmailLength is the RFC 5321 maximum: 64 (local-part) + 1 (@) + 255 (domain).
+	// Enforced by ValidateEmail before any database write or external API call.
+	MaxEmailLength = 320
+
+	// MaxNameLength caps user.name and quiniela.name. 200 characters is generous
+	// enough for international names and group titles while preventing multi-KB abuse.
+	MaxNameLength = 200
+
+	// MaxTeamNameLength caps match.home_team and match.away_team. 100 characters
+	// covers the longest real-world team names (e.g. "Borussia Mönchengladbach")
+	// with headroom for future FIFA expansions.
+	MaxTeamNameLength = 100
+)
+
 // Scoring rules define the points awarded per prediction outcome.
 //
 // The full matrix, from best to worst:
