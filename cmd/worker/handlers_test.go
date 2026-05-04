@@ -11,6 +11,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
 // stubScorer is a MatchScorer stub that records the last matchID it received
@@ -181,7 +182,7 @@ func TestMatchStartedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 
 func TestMatchFinishedHandler_MapPayload_CallsScorer(t *testing.T) {
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, nil, nil, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, nil, nil, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithMap(99)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -196,7 +197,7 @@ func TestMatchFinishedHandler_MapPayload_CallsScorer(t *testing.T) {
 
 func TestMatchFinishedHandler_StructPayload_CallsScorer(t *testing.T) {
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, nil, nil, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, nil, nil, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithStruct(5)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -208,7 +209,7 @@ func TestMatchFinishedHandler_StructPayload_CallsScorer(t *testing.T) {
 
 func TestMatchFinishedHandler_ScorerError_PropagatesError(t *testing.T) {
 	scorer := &stubScorer{err: errors.New("db down")}
-	h := newMatchFinishedHandler(scorer, nil, nil, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, nil, nil, zap.NewNop())
 
 	err := h(context.Background(), envelopeWithMap(1))
 	if err == nil {
@@ -221,7 +222,7 @@ func TestMatchFinishedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 	// return nil rather than propagating the error, because retrying a
 	// structurally invalid message would burn retry budget uselessly.
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, nil, nil, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, nil, nil, zap.NewNop())
 
 	env := events.Envelope{
 		Type:    events.EventMatchFinished,
@@ -235,7 +236,7 @@ func TestMatchFinishedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 	}
 }
 
-// ── snapshotAffectedQuinielas ─────────────────────────────────────────────────
+// ── postScoringWork ───────────────────────────────────────────────────────────
 
 // stubSnapshotter implements service.Snapshotter for worker snapshot tests.
 type stubSnapshotter struct {
@@ -301,44 +302,54 @@ func (r *stubWorkerPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*dom
 	return nil, nil
 }
 
-func TestSnapshotAffectedQuinielas_NilPredRepo_Noop(t *testing.T) {
-	snapshotAffectedQuinielas(context.Background(), 1, &stubSnapshotter{}, nil, zap.NewNop())
+func TestPostScoringWork_NilPredRepo_Noop(t *testing.T) {
+	postScoringWork(context.Background(), 1, &stubSnapshotter{}, nil, nil, zap.NewNop())
 }
 
-func TestSnapshotAffectedQuinielas_NilSnapshotter_Noop(t *testing.T) {
-	snapshotAffectedQuinielas(context.Background(), 1, nil, &stubWorkerPredRepo{ids: []int{1}}, zap.NewNop())
+func TestPostScoringWork_NilSnapshotter_Noop(t *testing.T) {
+	postScoringWork(context.Background(), 1, nil, &stubWorkerPredRepo{ids: []int{1}}, nil, zap.NewNop())
 }
 
-func TestSnapshotAffectedQuinielas_ListError_LogsWarnAndReturns(t *testing.T) {
+func TestPostScoringWork_ListError_LogsWarnAndReturns(t *testing.T) {
 	predRepo := &stubWorkerPredRepo{err: errors.New("db down")}
-	snapshotAffectedQuinielas(context.Background(), 1, &stubSnapshotter{}, predRepo, zap.NewNop())
+	postScoringWork(context.Background(), 1, &stubSnapshotter{}, predRepo, nil, zap.NewNop())
 }
 
-func TestSnapshotAffectedQuinielas_EmptyList_NoSnapshot(t *testing.T) {
+func TestPostScoringWork_EmptyList_NoSnapshot(t *testing.T) {
 	predRepo := &stubWorkerPredRepo{ids: []int{}}
-	snapshotAffectedQuinielas(context.Background(), 1, &stubSnapshotter{}, predRepo, zap.NewNop())
+	postScoringWork(context.Background(), 1, &stubSnapshotter{}, predRepo, nil, zap.NewNop())
 }
 
-func TestSnapshotAffectedQuinielas_SnapshotSuccess_LogsInfo(t *testing.T) {
+func TestPostScoringWork_SnapshotSuccess_LogsInfo(t *testing.T) {
 	predRepo := &stubWorkerPredRepo{ids: []int{10, 20}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	snapshotAffectedQuinielas(context.Background(), 5, snap, predRepo, zap.NewNop())
+	postScoringWork(context.Background(), 5, snap, predRepo, nil, zap.NewNop())
 }
 
-func TestSnapshotAffectedQuinielas_SnapshotError_LogsWarn(t *testing.T) {
+func TestPostScoringWork_SnapshotError_LogsWarn(t *testing.T) {
 	snapshotRetryBase = 0
 	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
 
 	predRepo := &stubWorkerPredRepo{ids: []int{10}}
 	snap := &stubSnapshotter{err: errors.New("snapshot failed")}
-	snapshotAffectedQuinielas(context.Background(), 5, snap, predRepo, zap.NewNop())
+	postScoringWork(context.Background(), 5, snap, predRepo, nil, zap.NewNop())
+}
+
+func TestPostScoringWork_CallsInvalidators(t *testing.T) {
+	called := false
+	inv := &stubInvalidator{fn: func(ids []int) { called = true }}
+	predRepo := &stubWorkerPredRepo{ids: []int{1}}
+	postScoringWork(context.Background(), 5, nil, predRepo, []service.PostScoringInvalidator{inv}, zap.NewNop())
+	if !called {
+		t.Error("expected PostScoringInvalidator to be called")
+	}
 }
 
 func TestMatchFinishedHandler_WithSnapshot_ScoresAndSnapshots(t *testing.T) {
 	scorer := &stubScorer{}
 	predRepo := &stubWorkerPredRepo{ids: []int{1, 2}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	h := newMatchFinishedHandler(scorer, snap, predRepo, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, snap, predRepo, nil, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithStruct(10)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -403,6 +414,18 @@ func TestRetrySnapshot_ContextCancelled_StopsEarly(t *testing.T) {
 	// First attempt always runs; retry sleep is skipped because ctx is done.
 	if snap.calls < 1 {
 		t.Error("expected at least one attempt before context cancellation")
+	}
+}
+
+// stubInvalidator is a PostScoringInvalidator stub that records whether it was
+// called and delegates to an optional fn so tests can inspect the quinielaIDs.
+type stubInvalidator struct {
+	fn func(ids []int)
+}
+
+func (s *stubInvalidator) InvalidateAfterScoring(_ context.Context, ids []int) {
+	if s.fn != nil {
+		s.fn(ids)
 	}
 }
 

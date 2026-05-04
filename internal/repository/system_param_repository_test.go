@@ -183,6 +183,8 @@ var canonicalSystemParams = []canonicalParam{
 		"Approximate maximum length of the Redis event stream (MAXLEN ~)"},
 	{domain.ParamKeyAuthValidationTimeout, strconv.Itoa(domain.DefaultAuthValidationTimeoutSeconds), "system", false,
 		"JWKS validation timeout in seconds at process startup"},
+	{domain.ParamKeyPurgeRetentionDays, strconv.Itoa(domain.DefaultPurgeRetentionDays), "system", false,
+		"Age in days after which soft-deleted users and quinielas are permanently removed from the database by the worker purge goroutine"},
 }
 
 // assertCanonicalParam checks that a retrieved SystemParam matches its
@@ -259,7 +261,7 @@ func TestSystemParamRepository_AllDomainConstantsSeeded(t *testing.T) {
 	}
 
 	// Ensure no domain constant was silently omitted from the canonical table.
-	if len(canonicalSystemParams) != 21 {
-		t.Errorf("canonicalSystemParams has %d entries; expected 21 (one per ParamKey* constant)", len(canonicalSystemParams))
+	if len(canonicalSystemParams) != 22 {
+		t.Errorf("canonicalSystemParams has %d entries; expected 22 (one per ParamKey* constant)", len(canonicalSystemParams))
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
@@ -27,13 +28,14 @@ type adminReadService struct {
 	tiebreakerRepo repository.TiebreakerRepository
 	snapRepo       repository.LeaderboardSnapshotRepository
 	params         SystemParamService
+	globalCache    cache.Store // optional; nil disables GlobalLeaderboard caching
 	log            *zap.Logger
 	mu             sync.RWMutex
 	dashCache      *cachedDashboard
 }
 
-// AdminReadRepos groups the repository dependencies for NewAdminReadService,
-// keeping the constructor within the project's parameter-count limit.
+// AdminReadRepos groups the repository and optional cache dependencies for
+// NewAdminReadService, keeping the constructor within the parameter-count limit.
 type AdminReadRepos struct {
 	Pred       repository.PredictionRepository
 	User       repository.UserRepository
@@ -41,6 +43,9 @@ type AdminReadRepos struct {
 	Payment    repository.PaymentRecordRepository
 	Tiebreaker repository.TiebreakerRepository
 	Snapshot   repository.LeaderboardSnapshotRepository
+	// GlobalCache is optional. When non-nil, GlobalLeaderboard results are
+	// cached in Redis using ParamKeyCacheLeaderboardTTL as the TTL.
+	GlobalCache cache.Store
 }
 
 // NewAdminReadService constructs an adminReadService.
@@ -53,12 +58,36 @@ func NewAdminReadService(repos AdminReadRepos, params SystemParamService, log *z
 		tiebreakerRepo: repos.Tiebreaker,
 		snapRepo:       repos.Snapshot,
 		params:         params,
+		globalCache:    repos.GlobalCache,
 		log:            log,
 	}
 }
 
+// GlobalLeaderboard returns the top-N users by total scored points. Results are
+// cached in Redis (when globalCache is set) using ParamKeyCacheLeaderboardTTL
+// as the TTL. The scoring worker flushes the "global_leaderboard:" prefix via
+// PostScoringCacheFlush after each MatchFinished event so the cache does not
+// serve stale totals for longer than one TTL period after a match is scored.
 func (s *adminReadService) GlobalLeaderboard(ctx context.Context, limit int) ([]*domain.GlobalLeaderboardEntry, error) {
-	return s.predRepo.GlobalLeaderboard(ctx, limit)
+	if s.globalCache != nil {
+		key := cacheKeyGlobalLeaderboard(limit)
+		if cached, ok := cacheGet[[]*domain.GlobalLeaderboardEntry](ctx, s.globalCache, key, s.log); ok {
+			return cached, nil
+		}
+	}
+	entries, err := s.predRepo.GlobalLeaderboard(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	if s.globalCache != nil && len(entries) > 0 {
+		ttlSecs := domain.DefaultCacheLeaderboardTTLSeconds
+		if s.params != nil {
+			ttlSecs = s.params.GetInt(ctx, domain.ParamKeyCacheLeaderboardTTL, domain.DefaultCacheLeaderboardTTLSeconds)
+		}
+		cacheSet(ctx, s.globalCache, cacheKeyGlobalLeaderboard(limit), entries,
+			time.Duration(ttlSecs)*time.Second, s.log)
+	}
+	return entries, nil
 }
 
 func (s *adminReadService) ListPredictions(ctx context.Context, f repository.PredictionAdminFilters, p repository.Pagination) ([]*domain.Prediction, error) {
