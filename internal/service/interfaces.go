@@ -413,6 +413,10 @@ type AuditReader interface {
 type AuditService interface {
 	AuditLogger
 	AuditReader
+	// Drain blocks until all in-flight audit Log goroutines complete. Must be
+	// called during graceful shutdown before closing the database connection
+	// pool to prevent losing audit entries that were queued but not yet persisted.
+	Drain()
 }
 
 // DLQStat summarises the dead-letter queue for one event type.
@@ -486,6 +490,13 @@ type ConflictTypeSummary struct {
 type ConflictSummaryResult struct {
 	TotalUnresolved int
 	ByType          []ConflictTypeSummary
+	// LimitReached is true when the conflict backlog equals or exceeds max_scan,
+	// meaning the summary is incomplete and some conflicts were not included.
+	// Dashboard widgets should display a warning when this flag is set.
+	LimitReached bool
+	// MaxScan is the configured limit applied to this scan (conflict.max_scan).
+	// Provided for context when interpreting TotalUnresolved and LimitReached.
+	MaxScan int
 }
 
 // ConflictService detects and resolves operational inconsistencies that require

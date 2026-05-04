@@ -60,6 +60,8 @@ func (h *AdminConflictHandler) ConflictSummary(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, ConflictSummaryResponse{
 		TotalUnresolved: summary.TotalUnresolved,
 		ByType:          byType,
+		LimitReached:    summary.LimitReached,
+		MaxScan:         summary.MaxScan,
 	})
 }
 

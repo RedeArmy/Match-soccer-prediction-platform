@@ -162,6 +162,17 @@ definitions:
         items:
           $ref: '#/definitions/internal_api_handler.ConflictTypeSummaryResponse'
         type: array
+      limit_reached:
+        description: |-
+          LimitReached is true when the conflict backlog equals or exceeds max_scan.
+          When true, the summary is incomplete - some conflicts were not scanned.
+          Dashboard widgets should display an urgent alert when this flag is set.
+        type: boolean
+      max_scan:
+        description: |-
+          MaxScan is the configured scan limit (conflict.max_scan) applied to this request.
+          Provides context for interpreting total_unresolved and limit_reached.
+        type: integer
       total_unresolved:
         type: integer
     type: object

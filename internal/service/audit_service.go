@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -41,6 +42,9 @@ type auditService struct {
 	repo         repository.AuditLogRepository
 	writeTimeout time.Duration
 	log          *zap.Logger
+	// wg tracks fire-and-forget goroutines launched by Log. Drain blocks until
+	// all in-flight audit writes complete, preventing data loss during graceful shutdown.
+	wg sync.WaitGroup
 }
 
 // NewAuditService constructs an auditService backed by the given repository.
@@ -60,6 +64,9 @@ func NewAuditService(repo repository.AuditLogRepository, writeTimeout time.Durat
 // Failures are logged at WARN level and silently swallowed - audit logging
 // is a best-effort observability concern and must never propagate errors that
 // would roll back an already-committed business operation.
+//
+// The goroutine is tracked via s.wg so that Drain() can block until all
+// in-flight audit writes complete during graceful shutdown, preventing data loss.
 func (s *auditService) Log(
 	_ context.Context,
 	actorID *int,
@@ -77,7 +84,9 @@ func (s *auditService) Log(
 		ResourceID:   resourceID,
 		Metadata:     metadata,
 	}
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), s.writeTimeout)
 		defer cancel()
 		if err := s.repo.Create(ctx, entry); err != nil {
@@ -97,6 +106,19 @@ func (s *auditService) ListAuditLogs(ctx context.Context, f repository.AuditLogF
 // ListAuditLogsByEntity returns audit log entries for a specific resource.
 func (s *auditService) ListAuditLogsByEntity(ctx context.Context, resourceType string, resourceID int, p repository.Pagination) ([]*domain.AuditLog, error) {
 	return s.repo.ListByEntity(ctx, resourceType, resourceID, p)
+}
+
+// Drain blocks until all in-flight audit goroutines complete. Must be called
+// during graceful shutdown before closing the database connection pool to
+// prevent losing audit entries that were queued but not yet persisted.
+//
+// Drain is safe to call multiple times; subsequent calls are no-ops.
+// The writeTimeout (default 5 s) caps the maximum time any single goroutine
+// can block, so Drain returns within (writeTimeout * concurrency) in the
+// worst case. With a 5 s timeout and 10 concurrent audit writes, Drain blocks
+// for at most 5 s (all writes run concurrently, not sequentially).
+func (s *auditService) Drain() {
+	s.wg.Wait()
 }
 
 var _ AuditService = (*auditService)(nil)

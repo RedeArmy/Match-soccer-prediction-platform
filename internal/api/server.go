@@ -95,11 +95,24 @@ type Server struct {
 	checkers []health.Checker
 	// dlqSvc is nil when the event bus driver is not "redis"; admin DLQ endpoints use NoopDLQService.
 	dlqSvc service.DLQService
+	// auditSvc is set by Routes() after constructing the service; exposed to main.go
+	// so the shutdown path can call Drain() to wait for in-flight audit writes.
+	auditSvc service.AuditService
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
 // Call this after New() when the Redis event bus driver is active.
 func (s *Server) SetDLQService(dlq service.DLQService) { s.dlqSvc = dlq }
+
+// DrainAudit blocks until all in-flight audit log writes complete. Must be
+// called during graceful shutdown before closing the database connection pool
+// to prevent losing audit entries that were queued but not yet persisted.
+// Safe to call even if auditSvc is nil (no-op).
+func (s *Server) DrainAudit() {
+	if s.auditSvc != nil {
+		s.auditSvc.Drain()
+	}
+}
 
 // New constructs a Server with the provided dependencies.
 //
@@ -409,6 +422,9 @@ func (s *Server) buildHandlers(
 	leaderboardTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyCacheLeaderboardTTL, domain.DefaultCacheLeaderboardTTLSeconds)) * time.Second
 
 	auditSvc := service.NewAuditService(auditLogRepo, auditTimeout, s.log)
+	// Store auditSvc on the server so the shutdown path can call Drain() to
+	// wait for in-flight audit writes before closing the database pool.
+	s.auditSvc = auditSvc
 
 	// Re-wire paramSvc with the now-available audit service so that Set/BulkSet
 	// calls from admin handlers are recorded in the audit trail.
