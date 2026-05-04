@@ -13,15 +13,29 @@ import (
 // check is a defence-in-depth layer, not the primary gate.
 var emailRE = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
-// ValidateEmail returns a validation error when email is empty or fails the
-// basic structural check. Call this wherever user email data enters the system
-// (webhook handler, user creation endpoints).
+// ValidateEmail returns a validation error when email is empty, exceeds the
+// RFC 5321 length limit, or fails the basic structural check. Call this wherever
+// user email data enters the system (webhook handler, user creation endpoints).
 func ValidateEmail(email string) error {
 	if email == "" {
 		return apperrors.Validation("email must not be empty")
 	}
+	if len(email) > MaxEmailLength {
+		return apperrors.Validation("email must not exceed 320 characters")
+	}
 	if !emailRE.MatchString(email) {
 		return apperrors.Validation("email is not a valid address")
+	}
+	return nil
+}
+
+// ValidateUserName returns a validation error when name exceeds the maximum
+// allowed length. Call this before persisting User.Name from webhook payloads
+// or admin update endpoints. Empty names are permitted (Clerk sync falls back
+// to subject ID when first/last name are both absent).
+func ValidateUserName(name string) error {
+	if len(name) > MaxNameLength {
+		return apperrors.Validation("user name must not exceed 200 characters")
 	}
 	return nil
 }
@@ -36,8 +50,14 @@ func ValidateMatch(m *Match) error {
 	if m.HomeTeam == "" {
 		return apperrors.Validation("home team must not be empty")
 	}
+	if len(m.HomeTeam) > MaxTeamNameLength {
+		return apperrors.Validation("home team must not exceed 100 characters")
+	}
 	if m.AwayTeam == "" {
 		return apperrors.Validation("away team must not be empty")
+	}
+	if len(m.AwayTeam) > MaxTeamNameLength {
+		return apperrors.Validation("away team must not exceed 100 characters")
 	}
 	if m.HomeTeam == m.AwayTeam {
 		return apperrors.Validation("home team and away team must be different")
@@ -85,11 +105,14 @@ func ValidatePrediction(p *Prediction, kickoffAt, now time.Time, deadlineOffset 
 	return nil
 }
 
-// ValidateQuiniela checks that the essential fields of a Quiniela are present
-// and that PrizeThreshold is positive when provided.
+// ValidateQuiniela checks that the essential fields of a Quiniela are present,
+// within length bounds, and that PrizeThreshold is positive when provided.
 func ValidateQuiniela(q *Quiniela) error {
 	if q.Name == "" {
 		return apperrors.Validation("quiniela name must not be empty")
+	}
+	if len(q.Name) > MaxNameLength {
+		return apperrors.Validation("quiniela name must not exceed 200 characters")
 	}
 	if q.OwnerID == 0 {
 		return apperrors.Validation("quiniela must have an owner")

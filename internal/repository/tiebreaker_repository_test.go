@@ -2,10 +2,12 @@ package repository_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── TiebreakerRepository ──────────────────────────────────────────────────────
@@ -213,7 +215,7 @@ func TestTiebreakerRepository_ListAll_ReturnsList(t *testing.T) {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
-	results, err := repo.ListAll(context.Background(), repository.Pagination{})
+	results, err := repo.ListAll(context.Background(), repository.Unbounded())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -241,5 +243,18 @@ func TestTiebreakerRepository_ListAll_PaginationLimit(t *testing.T) {
 	}
 	if len(results) != 1 {
 		t.Errorf("expected 1 tiebreaker with limit=1, got %d", len(results))
+	}
+}
+
+func TestTiebreakerRepository_ListAll_ZeroLimitReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerRepository(testDB)
+
+	_, err := repo.ListAll(context.Background(), repository.Pagination{Limit: 0})
+	if err == nil {
+		t.Fatal("expected validation error for zero limit, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error, got %v", err)
 	}
 }

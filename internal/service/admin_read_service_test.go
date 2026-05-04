@@ -158,7 +158,7 @@ func TestAdminReadService_ListPredictions_ReturnsSlice(t *testing.T) {
 func TestAdminReadService_ListTiebreakerSubmissions_Empty_ReturnsEmptySlice(t *testing.T) {
 	svc := newAdminReadSvc(&stubTotalPointsPredRepo{}, &stubUserRepo{}, &stubTiebreakerRepo{}, &stubSnapshotRepo{})
 
-	got, err := svc.ListTiebreakerSubmissions(context.Background(), repository.Pagination{})
+	got, err := svc.ListTiebreakerSubmissions(context.Background(), repository.Unbounded())
 	if err != nil {
 		t.Fatalf(adminReadUnexpectedErr, err)
 	}
@@ -174,7 +174,7 @@ func TestAdminReadService_ListTiebreakerSubmissions_ResolvesUserNames(t *testing
 	userRepo := &stubUserRepo{users: users}
 	svc := newAdminReadSvc(&stubTotalPointsPredRepo{}, userRepo, tbRepo, &stubSnapshotRepo{})
 
-	got, err := svc.ListTiebreakerSubmissions(context.Background(), repository.Pagination{})
+	got, err := svc.ListTiebreakerSubmissions(context.Background(), repository.Unbounded())
 	if err != nil {
 		t.Fatalf(adminReadUnexpectedErr, err)
 	}
@@ -192,7 +192,7 @@ func TestAdminReadService_ListTiebreakerSubmissions_UserRepoError_StillReturns(t
 	userRepo := &stubUserRepo{err: errors.New(adminReadDBError)}
 	svc := newAdminReadSvc(&stubTotalPointsPredRepo{}, userRepo, tbRepo, &stubSnapshotRepo{})
 
-	got, err := svc.ListTiebreakerSubmissions(context.Background(), repository.Pagination{})
+	got, err := svc.ListTiebreakerSubmissions(context.Background(), repository.Unbounded())
 	if err != nil {
 		t.Fatalf("unexpected error from ListTiebreakerSubmissions when user lookup fails: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestAdminReadService_ListTiebreakerSubmissions_TiebreakerRepoError_Propagat
 	tbRepo := &stubTiebreakerRepo{err: errors.New(adminReadDBError)}
 	svc := newAdminReadSvc(&stubTotalPointsPredRepo{}, &stubUserRepo{}, tbRepo, &stubSnapshotRepo{})
 
-	_, err := svc.ListTiebreakerSubmissions(context.Background(), repository.Pagination{})
+	_, err := svc.ListTiebreakerSubmissions(context.Background(), repository.Unbounded())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

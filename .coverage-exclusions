@@ -1,0 +1,23 @@
+# Coverage Exclusions
+#
+# Files and patterns excluded from code coverage analysis.
+# These exclusions follow industry best practices for Go projects.
+
+# CLI entry points (main packages)
+# Justification: main() functions are not testable via unit tests
+# Business logic is tested separately in *_test.go files
+cmd/*/main.go
+
+# Generated code
+# Justification: Generated files should not be counted in coverage metrics
+**/mock_*.go
+**/*_gen.go
+**/wire_gen.go
+
+# Third-party code
+# Justification: External dependencies are not our responsibility
+vendor/**
+
+# Documentation examples
+# Justification: Example code is not production code
+examples/**

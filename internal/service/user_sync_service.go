@@ -52,6 +52,9 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 	if name == "" {
 		name = subject
 	}
+	if err := domain.ValidateUserName(name); err != nil {
+		return apperrors.Validation("webhook payload contains an invalid user name")
+	}
 
 	existing, err := s.userRepo.GetByClerkSubject(ctx, subject)
 	if err != nil {
