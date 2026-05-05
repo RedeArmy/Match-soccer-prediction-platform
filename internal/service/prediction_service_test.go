@@ -42,6 +42,10 @@ func (r *stubPredRepo) Update(_ context.Context, p *domain.Prediction) error {
 	r.updated = append(r.updated, p)
 	return r.err
 }
+func (r *stubPredRepo) UpdateIfUnchanged(_ context.Context, p *domain.Prediction, _ time.Time) error {
+	r.updated = append(r.updated, p)
+	return r.err
+}
 func (r *stubPredRepo) GetByUserAndMatch(_ context.Context, _, _ int) (*domain.Prediction, error) {
 	return r.byUserMatch, r.err
 }
@@ -271,6 +275,20 @@ func TestUpdate_FinishedMatch_ReturnsValidation(t *testing.T) {
 
 	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for finished match, got %v", err)
+	}
+}
+
+func TestUpdate_ConcurrentModification_ReturnsConflict(t *testing.T) {
+	match := openMatch()
+	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0, UpdatedAt: time.Now()}
+	predRepo := &stubPredRepo{
+		byID: pred,
+		err:  apperrors.Conflict("prediction was modified by another request; please retry"),
+	}
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
+
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict error for concurrent modification, got %v", err)
 	}
 }
 

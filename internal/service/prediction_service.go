@@ -109,9 +109,10 @@ func (s *predictionService) Update(ctx context.Context, callerUserID, id int, ho
 	if err := domain.ValidatePrediction(updated, match.KickoffAt, s.clock.Now(), s.deadlineOffset(ctx)); err != nil {
 		return nil, err
 	}
+	expectedUpdatedAt := pred.UpdatedAt
 	pred.HomeScore = homeScore
 	pred.AwayScore = awayScore
-	if err := s.predRepo.Update(ctx, pred); err != nil {
+	if err := s.predRepo.UpdateIfUnchanged(ctx, pred, expectedUpdatedAt); err != nil {
 		return nil, err
 	}
 	return pred, nil

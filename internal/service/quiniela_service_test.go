@@ -85,6 +85,9 @@ type stubMemberRepo struct {
 	membership       *domain.GroupMembership
 	membershipByID   *domain.GroupMembership
 	memberships      []*domain.GroupMembership
+	joinQuiniela     *domain.Quiniela
+	joinMembership   *domain.GroupMembership
+	joinErr          error
 	activeCount      int
 	err              error
 	countActiveErr   error
@@ -94,6 +97,39 @@ type stubMemberRepo struct {
 }
 
 func (r *stubMemberRepo) Create(_ context.Context, _ *domain.GroupMembership) error { return r.err }
+func (r *stubMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
+	if r.joinErr != nil {
+		return nil, nil, r.joinErr
+	}
+	if r.joinQuiniela == nil {
+		return nil, nil, apperrors.NotFound("group not found for the given invite code")
+	}
+	if r.joinMembership == nil {
+		if r.membership != nil {
+			switch r.membership.Status {
+			case domain.MembershipActive:
+				return nil, nil, apperrors.Conflict("you are already a member of this group")
+			case domain.MembershipPending:
+				return nil, nil, apperrors.Conflict("you already have a pending join request for this group")
+			default:
+				m := *r.membership
+				m.Status = domain.MembershipPending
+				m.Paid = r.joinQuiniela.EntryFee == 0
+				m.JoinedAt = nil
+				m.RemovedAt = nil
+				m.RemovedBy = nil
+				r.joinMembership = &m
+			}
+		} else {
+			r.joinMembership = &domain.GroupMembership{
+				QuinielaID: r.joinQuiniela.ID,
+				Status:     domain.MembershipPending,
+				Paid:       r.joinQuiniela.EntryFee == 0,
+			}
+		}
+	}
+	return r.joinQuiniela, r.joinMembership, nil
+}
 func (r *stubMemberRepo) GetByID(_ context.Context, _ int) (*domain.GroupMembership, error) {
 	return r.membershipByID, r.err
 }

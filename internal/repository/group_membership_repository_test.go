@@ -322,6 +322,57 @@ func TestGroupMembershipRepository_GetByID_NotFound_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestGroupMembershipRepository_RequestJoinByInviteCode_NewMembershipCreatesPendingRow(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	joiner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	if err != nil {
+		t.Fatalf("RequestJoinByInviteCode: %v", err)
+	}
+	if gotQ == nil || gotQ.ID != q.ID {
+		t.Fatalf("expected quiniela %d, got %+v", q.ID, gotQ)
+	}
+	if gotM == nil {
+		t.Fatal("expected membership, got nil")
+	}
+	if gotM.Status != domain.MembershipPending {
+		t.Errorf("expected pending membership, got %q", gotM.Status)
+	}
+	if gotM.UserID != joiner.ID {
+		t.Errorf("expected user %d, got %d", joiner.ID, gotM.UserID)
+	}
+}
+
+func TestGroupMembershipRepository_RequestJoinByInviteCode_LeftMembershipBecomesPending(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	joiner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	existing := seedMembership(t, q.ID, joiner.ID, domain.MembershipLeft, false)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	if err != nil {
+		t.Fatalf("RequestJoinByInviteCode: %v", err)
+	}
+	if gotQ == nil || gotQ.ID != q.ID {
+		t.Fatalf("expected quiniela %d, got %+v", q.ID, gotQ)
+	}
+	if gotM.ID != existing.ID {
+		t.Errorf("expected membership id %d, got %d", existing.ID, gotM.ID)
+	}
+	if gotM.Status != domain.MembershipPending {
+		t.Errorf("expected pending status, got %q", gotM.Status)
+	}
+	if gotM.JoinedAt != nil {
+		t.Error("expected JoinedAt=nil after rejoin request")
+	}
+}
+
 func TestGroupMembershipRepository_CountActive_ReturnsCount(t *testing.T) {
 	cleanTables(t)
 	owner := seedUser(t)
