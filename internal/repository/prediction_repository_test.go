@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -106,6 +107,57 @@ func TestPredictionRepository_Update_NotFound_ReturnsError(t *testing.T) {
 
 	if err := repo.Update(context.Background(), ghost); !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestPredictionRepository_UpdateIfUnchanged_SucceedsWhenVersionMatches(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := repo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	expectedUpdatedAt := p.UpdatedAt
+	p.HomeScore = 2
+	p.AwayScore = 1
+	if err := repo.UpdateIfUnchanged(context.Background(), p, expectedUpdatedAt); err != nil {
+		t.Fatalf("UpdateIfUnchanged: %v", err)
+	}
+	if p.HomeScore != 2 || p.AwayScore != 1 {
+		t.Errorf("scores not updated: got %d-%d", p.HomeScore, p.AwayScore)
+	}
+	if !p.UpdatedAt.After(expectedUpdatedAt) {
+		t.Errorf("expected UpdatedAt to advance, got before=%v after=%v", expectedUpdatedAt, p.UpdatedAt)
+	}
+}
+
+func TestPredictionRepository_UpdateIfUnchanged_StaleVersionReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := repo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	staleVersion := p.UpdatedAt
+	time.Sleep(10 * time.Millisecond)
+
+	other := *p
+	other.HomeScore = 3
+	other.AwayScore = 2
+	if err := repo.Update(context.Background(), &other); err != nil {
+		t.Fatalf("concurrent update seed: %v", err)
+	}
+
+	p.HomeScore = 2
+	p.AwayScore = 1
+	if err := repo.UpdateIfUnchanged(context.Background(), p, staleVersion); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict for stale version, got %v", err)
 	}
 }
 

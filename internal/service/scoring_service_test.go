@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -267,6 +268,9 @@ func (r *failOnUpdateRepo) GetByID(_ context.Context, _ int) (*domain.Prediction
 	return nil, nil
 }
 func (r *failOnUpdateRepo) Update(_ context.Context, _ *domain.Prediction) error { return nil }
+func (r *failOnUpdateRepo) UpdateIfUnchanged(_ context.Context, _ *domain.Prediction, _ time.Time) error {
+	return nil
+}
 func (r *failOnUpdateRepo) GetByUserAndMatch(_ context.Context, _, _ int) (*domain.Prediction, error) {
 	return nil, nil
 }
