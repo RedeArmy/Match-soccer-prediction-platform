@@ -272,6 +272,11 @@ type GroupMembershipRepository interface {
 	// Conflict when the membership is no longer active - e.g. an admin removed
 	// the member concurrently between the caller's pre-flight check and this call.
 	LeaveMembership(ctx context.Context, quinielaID, userID int, now time.Time, minMembers int) error
+	// LeaveMembershipAndTransferOwnership atomically promotes successorMembershipID
+	// to MembershipRoleCreateOwner, marks leavingUserID as left, and recalculates
+	// the quiniela's status in one transaction. Used when the current owner leaves
+	// so the group never commits a "no active owner" intermediate state.
+	LeaveMembershipAndTransferOwnership(ctx context.Context, quinielaID, leavingUserID, successorMembershipID int, now time.Time, minMembers int) error
 }
 
 // TiebreakerRepository defines the persistence operations for the Tiebreaker

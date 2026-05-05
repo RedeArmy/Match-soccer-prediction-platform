@@ -82,14 +82,15 @@ func (r *stubQuinielaRepo) BulkDeleteByAdmin(_ context.Context, ids []int, _ int
 // returned by LeaveMembership. countActiveErr, if set, is returned exclusively
 // by CountActive to test checkCapacity error paths without affecting other calls.
 type stubMemberRepo struct {
-	membership     *domain.GroupMembership
-	membershipByID *domain.GroupMembership
-	memberships    []*domain.GroupMembership
-	activeCount    int
-	err            error
-	countActiveErr error
-	approveErr     error
-	leaveErr       error
+	membership       *domain.GroupMembership
+	membershipByID   *domain.GroupMembership
+	memberships      []*domain.GroupMembership
+	activeCount      int
+	err              error
+	countActiveErr   error
+	approveErr       error
+	leaveErr         error
+	leaveTransferErr error
 }
 
 func (r *stubMemberRepo) Create(_ context.Context, _ *domain.GroupMembership) error { return r.err }
@@ -146,6 +147,9 @@ func (r *stubMemberRepo) ApproveMembership(_ context.Context, _, _ int, now time
 }
 func (r *stubMemberRepo) LeaveMembership(_ context.Context, _, _ int, _ time.Time, _ int) error {
 	return r.leaveErr
+}
+func (r *stubMemberRepo) LeaveMembershipAndTransferOwnership(_ context.Context, _, _, _ int, _ time.Time, _ int) error {
+	return r.leaveTransferErr
 }
 
 // ── QuinielaService tests ─────────────────────────────────────────────────────

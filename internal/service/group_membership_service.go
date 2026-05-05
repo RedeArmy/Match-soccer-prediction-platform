@@ -195,10 +195,8 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 
 // Leave sets the caller's own membership to left. Only the member themselves
 // may call this - no admin or owner can remove another user. If the leaving
-// user holds MembershipRoleCreateOwner, ownership is automatically transferred
-// to the oldest remaining active member before the status is updated. The
-// membership update and group status recalculation are committed atomically
-// via LeaveMembership.
+// user holds MembershipRoleCreateOwner, ownership is transferred to the oldest
+// remaining active member within the same transaction as the leave operation.
 func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUserID int) error {
 	m, err := s.memberRepo.GetByQuinielaAndUser(ctx, quinielaID, callerUserID)
 	if err != nil {
@@ -208,31 +206,25 @@ func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUs
 		return apperrors.Validation("you are not an active member of this group")
 	}
 
+	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
 	if m.Role == domain.MembershipRoleCreateOwner {
-		if terr := s.transferOwnership(ctx, quinielaID, callerUserID); terr != nil {
-			s.log.Warn("membership: ownership transfer on leave failed",
-				zap.Int("quiniela_id", quinielaID),
-				zap.Int("leaving_user", callerUserID),
-				zap.Error(terr))
+		successor, err := s.memberRepo.OldestActiveMember(ctx, quinielaID, callerUserID)
+		if err != nil {
+			return err
+		}
+		if successor != nil {
+			return s.memberRepo.LeaveMembershipAndTransferOwnership(
+				ctx,
+				quinielaID,
+				callerUserID,
+				successor.ID,
+				s.clock.Now(),
+				minMembers,
+			)
 		}
 	}
 
-	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
 	return s.memberRepo.LeaveMembership(ctx, quinielaID, callerUserID, s.clock.Now(), minMembers)
-}
-
-// transferOwnership assigns MembershipRoleCreateOwner to the oldest active
-// member of quinielaID, excluding excludeUserID. A no-op when no eligible
-// successor exists.
-func (s *groupMembershipService) transferOwnership(ctx context.Context, quinielaID, excludeUserID int) error {
-	successor, err := s.memberRepo.OldestActiveMember(ctx, quinielaID, excludeUserID)
-	if err != nil {
-		return err
-	}
-	if successor == nil {
-		return nil
-	}
-	return s.memberRepo.SetRole(ctx, successor.ID, domain.MembershipRoleCreateOwner)
 }
 
 // MarkPaid flips the paid flag to true for the given membership. It is

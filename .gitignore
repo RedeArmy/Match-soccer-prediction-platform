@@ -21,6 +21,8 @@ coverage.out
 # but adds significant noise to pull request diffs; prefer go.sum for
 # reproducibility.
 vendor/
+.gocache/
+.gomodcache/
 
 # ── Environment files and secrets ─────────────────────────────────────────────
 # .env files contain real credentials and must never reach version control.
