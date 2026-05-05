@@ -60,7 +60,9 @@ func (r *PostgresQuinielaRepository) CreateWithMembership(ctx context.Context, q
 	if err != nil {
 		return apperrors.Internal(err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() {
+		logRollbackFailure(tx.Rollback(ctx), "QuinielaRepository", "CreateWithMembership")
+	}()
 
 	qRow := tx.QueryRow(ctx,
 		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold)

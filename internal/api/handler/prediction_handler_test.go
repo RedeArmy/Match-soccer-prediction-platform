@@ -152,12 +152,12 @@ func TestGetMine_Success_Returns200(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
 	}
-	var got []handler.PredictionResponse
+	var got handler.Paged[handler.PredictionResponse]
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf(predictionDecodeErrFmt, err)
 	}
-	if len(got) != 1 || got[0].UserID != 1 {
-		t.Errorf("expected 1 prediction for caller, got %+v", got)
+	if len(got.Data) != 1 || got.Data[0].UserID != 1 {
+		t.Errorf("expected 1 prediction for caller, got %+v", got.Data)
 	}
 }
 
@@ -181,12 +181,12 @@ func TestGetMine_WithQuinielaID_Success_Returns200(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
 	}
-	var got []handler.PredictionResponse
+	var got handler.Paged[handler.PredictionResponse]
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf(predictionDecodeErrFmt, err)
 	}
-	if len(got) != 1 {
-		t.Errorf("expected 1 prediction, got %d", len(got))
+	if len(got.Data) != 1 {
+		t.Errorf("expected 1 prediction, got %d", len(got.Data))
 	}
 }
 
@@ -207,12 +207,12 @@ func TestGetMine_WithQuinielaID_NonMember_ReturnsEmpty200(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
 	}
-	var got []handler.PredictionResponse
+	var got handler.Paged[handler.PredictionResponse]
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf(predictionDecodeErrFmt, err)
 	}
-	if len(got) != 0 {
-		t.Errorf("expected empty array for non-member, got %d entries", len(got))
+	if len(got.Data) != 0 {
+		t.Errorf("expected empty array for non-member, got %d entries", len(got.Data))
 	}
 }
 

@@ -131,12 +131,15 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 //	belonging to active members of that quiniela. A caller who is not
 //	an active member of the quiniela receives an empty array (not a 403),
 //	consistent with the empty-collection-on-no-results contract.
+//	Supports optional pagination via ?limit and ?offset (defaults to unbounded).
 //
 // @Tags         predictions
 // @Produce      json
 // @Security     BearerAuth
 // @Param        quiniela_id  query     int  false  "Scope results to this quiniela's active members"
-// @Success      200          {array}   handler.PredictionResponse
+// @Param        limit        query     int  false  "Maximum number of results to return (0 = unbounded)"
+// @Param        offset       query     int  false  "Number of results to skip (default: 0)"
+// @Success      200          {object}  handler.Paged[handler.PredictionResponse]
 // @Failure      401          {object}  handler.ErrorResponse  "Missing or invalid auth token"
 // @Failure      422          {object}  handler.ErrorResponse  "Invalid quiniela_id"
 // @Failure      500          {object}  handler.ErrorResponse
@@ -147,6 +150,8 @@ func (h *PredictionHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
+
+	limit, offset := parsePaginationParams(r)
 
 	var (
 		predictions []*domain.Prediction
@@ -166,9 +171,17 @@ func (h *PredictionHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, err)
 		return
 	}
-	out := make([]PredictionResponse, len(predictions))
-	for i, p := range predictions {
+
+	// Apply in-memory pagination (service layer does not support pagination yet).
+	pagedPredictions := applySlicePagination(predictions, limit, offset)
+
+	out := make([]PredictionResponse, len(pagedPredictions))
+	for i, p := range pagedPredictions {
 		out[i] = predToResponse(p)
 	}
-	writeJSON(w, http.StatusOK, out)
+
+	writeJSON(w, http.StatusOK, Paged[PredictionResponse]{
+		Data: out,
+		Page: PageMeta{Limit: limit, Offset: offset},
+	})
 }

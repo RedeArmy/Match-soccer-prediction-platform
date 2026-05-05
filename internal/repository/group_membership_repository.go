@@ -325,7 +325,9 @@ func (r *PostgresGroupMembershipRepository) TransferOwnershipRoles(ctx context.C
 	if err != nil {
 		return apperrors.Internal(err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() {
+		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "TransferOwnershipRoles")
+	}()
 
 	// Demote all current owners. Using quinielaID scope instead of a specific
 	// membership ID handles the edge case where corrupted data left multiple
@@ -403,7 +405,9 @@ func (r *PostgresGroupMembershipRepository) ApproveMembership(
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() {
+		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "ApproveMembership")
+	}()
 
 	row := tx.QueryRow(ctx,
 		`UPDATE group_memberships
@@ -451,7 +455,9 @@ func (r *PostgresGroupMembershipRepository) LeaveMembership(
 	if err != nil {
 		return apperrors.Internal(err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() {
+		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "LeaveMembership")
+	}()
 
 	tag, err := tx.Exec(ctx,
 		`UPDATE group_memberships
