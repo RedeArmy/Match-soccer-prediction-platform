@@ -166,12 +166,17 @@ func (h *GroupHandler) Join(w http.ResponseWriter, r *http.Request) {
 //
 // @Summary      List group members
 // @Description  Returns all memberships for the given group.
+//
+//	Supports optional pagination via ?limit and ?offset (defaults to unbounded).
+//
 // @Tags         groups
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id   path      int  true  "Group ID"
-// @Success      200  {array}   handler.MemberResponse
-// @Failure      500  {object}  handler.ErrorResponse
+// @Param        id      path   int  true   "Group ID"
+// @Param        limit   query  int  false  "Maximum number of results to return (0 = unbounded)"
+// @Param        offset  query  int  false  "Number of results to skip (default: 0)"
+// @Success      200     {object}  handler.Paged[handler.MemberResponse]
+// @Failure      500     {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/{id}/members [get]
 func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
@@ -179,16 +184,27 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, err)
 		return
 	}
+
+	limit, offset := parsePaginationParams(r)
+
 	members, err := h.memberSvc.ListByQuiniela(r.Context(), id)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
-	out := make([]MemberResponse, len(members))
-	for i, m := range members {
+
+	// Apply in-memory pagination (service layer does not support pagination yet).
+	pagedMembers := applySlicePagination(members, limit, offset)
+
+	out := make([]MemberResponse, len(pagedMembers))
+	for i, m := range pagedMembers {
 		out[i] = memberToResponse(m)
 	}
-	writeJSON(w, http.StatusOK, out)
+
+	writeJSON(w, http.StatusOK, Paged[MemberResponse]{
+		Data: out,
+		Page: PageMeta{Limit: limit, Offset: offset},
+	})
 }
 
 // ApproveJoin handles POST /api/v1/groups/{id}/members/{membershipID}/approve.

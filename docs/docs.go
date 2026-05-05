@@ -2652,16 +2652,25 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (0 = unbounded)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of results to skip (default: 0)",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/internal_api_handler.MemberResponse"
-                            }
+                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_MemberResponse"
                         }
                     },
                     "500": {
@@ -3131,16 +3140,25 @@ const docTemplate = `{
                         "description": "Scope results to this quiniela's active members",
                         "name": "quiniela_id",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (0 = unbounded)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of results to skip (default: 0)",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/internal_api_handler.PredictionResponse"
-                            }
+                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_PredictionResponse"
                         }
                     },
                     "401": {
@@ -3895,6 +3913,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/internal_api_handler.ConflictResponse"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/internal_api_handler.PageMeta"
+                }
+            }
+        },
+        "internal_api_handler.Paged-internal_api_handler_MemberResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.MemberResponse"
                     }
                 },
                 "page": {

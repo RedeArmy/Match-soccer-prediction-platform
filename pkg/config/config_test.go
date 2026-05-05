@@ -198,9 +198,72 @@ func TestLoad_ProductionWithClerkSettings_ReturnsNoError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
 
 	if _, err := config.Load(); err != nil {
 		t.Fatalf("expected no error for complete production config, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithInMemoryBus_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "in_memory")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for in_memory event bus in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "eventBus.driver=in_memory") {
+		t.Errorf("expected error to reference eventBus.driver=in_memory, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "WCQ_EVENTBUS_DRIVER=redis") {
+		t.Errorf("expected error to suggest WCQ_EVENTBUS_DRIVER=redis, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithDefaultInMemoryBus_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	// Explicitly NOT setting WCQ_EVENTBUS_DRIVER so it defaults to in_memory
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for default in_memory event bus in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "in_memory") {
+		t.Errorf("expected error to reference in_memory, got: %v", err)
+	}
+}
+
+func TestLoad_StagingWithInMemoryBus_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "staging")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	// in_memory is the default
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for in_memory event bus in staging, got nil")
+	}
+}
+
+func TestLoad_DevelopmentWithInMemoryBus_ReturnsNoError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "dev")
+	// in_memory is the default; this should be allowed in development
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("expected no error for in_memory event bus in dev, got: %v", err)
+	}
+	if cfg.EventBus.Driver != "in_memory" {
+		t.Errorf("EventBus.Driver: expected %q, got %q", "in_memory", cfg.EventBus.Driver)
 	}
 }
 

@@ -106,3 +106,33 @@ func parseOptionalInt(r *http.Request, name string) *int {
 	}
 	return &n
 }
+
+// parsePaginationParams reads optional ?limit and ?offset query parameters.
+// When limit is absent or zero, returns 0 (treated as unbounded by the caller).
+// When offset is absent, defaults to 0.
+// This is used for endpoints that historically returned unbounded results and
+// are being migrated to support optional pagination for consistency.
+func parsePaginationParams(r *http.Request) (limit, offset int) {
+	limit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ = strconv.Atoi(r.URL.Query().Get("offset"))
+	// Negative values are treated as 0 by Atoi's error case (already handled).
+	// limit=0 is valid and means "return all results".
+	return limit, offset
+}
+
+// applySlicePagination returns a subslice of items bounded by limit and offset.
+// When limit is 0, all items from offset onwards are returned (unbounded).
+// When offset >= len(items), an empty slice is returned (not an error).
+// This is used to apply in-memory pagination to results that were fetched
+// without pagination support at the repository layer.
+func applySlicePagination[T any](items []T, limit, offset int) []T {
+	if offset >= len(items) {
+		return []T{} // offset past end of results
+	}
+	start := offset
+	end := len(items)
+	if limit > 0 && start+limit < end {
+		end = start + limit
+	}
+	return items[start:end]
+}

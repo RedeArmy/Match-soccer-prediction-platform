@@ -34,6 +34,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/api"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
@@ -55,6 +56,12 @@ func main() {
 		os.Exit(1)
 	}
 	defer log.Sync() //nolint:errcheck
+
+	// Wire the defensive logger for repository deferred rollback failures.
+	// Must be called after logger initialization but before any repository methods.
+	repository.SetDefensiveLogger(log)
+
+	logStartupBanner(cfg, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

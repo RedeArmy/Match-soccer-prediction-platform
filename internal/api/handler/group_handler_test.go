@@ -324,12 +324,12 @@ func TestGroupListMembers_ReturnsJSONArray(t *testing.T) {
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
 
-	var out []handler.MemberResponse
+	var out handler.Paged[handler.MemberResponse]
 	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
 		t.Fatalf(fmtDecodeFail, err)
 	}
-	if len(out) != 2 {
-		t.Errorf("expected 2 members, got %d", len(out))
+	if len(out.Data) != 2 {
+		t.Errorf("expected 2 members, got %d", len(out.Data))
 	}
 }
 
