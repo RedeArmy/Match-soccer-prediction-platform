@@ -581,8 +581,8 @@ func TestGroupMembershipService_Leave_CreateOwner_TransfersOwnership(t *testing.
 	if err := svc.Leave(context.Background(), 1, 10); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
-	if mr.setRoleMembershipID != successor.ID {
-		t.Errorf("expected SetRole on successor membership %d, got %d", successor.ID, mr.setRoleMembershipID)
+	if mr.leaveTransferSuccessorID != successor.ID {
+		t.Errorf("expected atomic transfer to successor membership %d, got %d", successor.ID, mr.leaveTransferSuccessorID)
 	}
 }
 
@@ -600,7 +600,7 @@ func TestGroupMembershipService_Leave_CreateOwner_NoSuccessor_StillLeaves(t *tes
 	}
 }
 
-func TestGroupMembershipService_Leave_CreateOwner_TransferError_StillLeaves(t *testing.T) {
+func TestGroupMembershipService_Leave_CreateOwner_TransferError_ReturnsError(t *testing.T) {
 	ownerMembership := &domain.GroupMembership{
 		ID: 1, QuinielaID: 1, UserID: 10,
 		Status: domain.MembershipActive,
@@ -612,20 +612,20 @@ func TestGroupMembershipService_Leave_CreateOwner_TransferError_StillLeaves(t *t
 	}
 	svc := NewGroupMembershipService(&stubQuinielaRepo{}, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, clock.Real{}, zap.NewNop())
 
-	// Transfer failure must be logged-and-swallowed; Leave itself must succeed.
-	if err := svc.Leave(context.Background(), 1, 10); err != nil {
-		t.Fatalf("expected Leave to succeed despite transfer error, got %v", err)
+	if err := svc.Leave(context.Background(), 1, 10); err == nil {
+		t.Fatal("expected Leave to fail when ownership transfer cannot be completed atomically")
 	}
 }
 
-// leaveOwnerMemberRepo lets GetByQuinielaAndUser return the owner membership
-// and OldestActiveMember return a configurable successor.
+// leaveOwnerMemberRepo lets GetByQuinielaAndUser return the owner membership,
+// OldestActiveMember return a configurable successor, and
+// LeaveMembershipAndTransferOwnership record the chosen successor.
 type leaveOwnerMemberRepo struct {
 	stubMemberRepo
-	ownerMembership     *domain.GroupMembership
-	successor           *domain.GroupMembership
-	transferErr         error
-	setRoleMembershipID int
+	ownerMembership          *domain.GroupMembership
+	successor                *domain.GroupMembership
+	transferErr              error
+	leaveTransferSuccessorID int
 }
 
 func (r *leaveOwnerMemberRepo) GetByQuinielaAndUser(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
@@ -637,23 +637,23 @@ func (r *leaveOwnerMemberRepo) OldestActiveMember(_ context.Context, _, _ int) (
 	}
 	return r.successor, nil
 }
-func (r *leaveOwnerMemberRepo) SetRole(_ context.Context, membershipID int, _ domain.MembershipRole) error {
-	r.setRoleMembershipID = membershipID
-	return nil
+func (r *leaveOwnerMemberRepo) LeaveMembershipAndTransferOwnership(_ context.Context, _, _, successorMembershipID int, _ time.Time, _ int) error {
+	r.leaveTransferSuccessorID = successorMembershipID
+	return r.leaveErr
 }
 
 // ── checkCapacity error path ───────────────────────────────────────────────────
 
-func TestGroupMembershipService_Join_ListByQuinielaError_ReturnsError(t *testing.T) {
+func TestGroupMembershipService_Join_CountActiveError_ReturnsError(t *testing.T) {
 	maxMembers := 5
 	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 1, InviteCode: membershipCode, MaxMembers: &maxMembers}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{err: errors.New(membershipDBError)},
+		&stubMemberRepo{countActiveErr: errors.New(membershipDBError)},
 	)
 
 	if _, err := svc.Join(context.Background(), membershipCode, 42); err == nil {
-		t.Error("expected error when ListByQuiniela fails in checkCapacity, got nil")
+		t.Error("expected error when CountActive fails in checkCapacity, got nil")
 	}
 }
 
