@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -70,6 +71,29 @@ func (r *PostgresPredictionRepository) Update(ctx context.Context, p *domain.Pre
 	}
 	if result == nil {
 		return apperrors.NotFound("prediction not found")
+	}
+	*p = *result
+	return nil
+}
+
+func (r *PostgresPredictionRepository) UpdateIfUnchanged(ctx context.Context, p *domain.Prediction, expectedUpdatedAt time.Time) error {
+	row := r.db.QueryRow(ctx,
+		`UPDATE predictions
+		    SET home_score = $1,
+		        away_score = $2,
+		        points     = $3,
+		        updated_at = NOW()
+		  WHERE id         = $4
+		    AND updated_at = $5
+		  RETURNING `+predictionColumns,
+		p.HomeScore, p.AwayScore, p.Points, p.ID, expectedUpdatedAt,
+	)
+	result, err := scanPrediction(row)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return apperrors.Conflict("prediction was modified by another request; please retry")
 	}
 	*p = *result
 	return nil

@@ -95,6 +95,12 @@ type PredictionRepository interface {
 	Create(ctx context.Context, prediction *domain.Prediction) error
 	GetByID(ctx context.Context, id int) (*domain.Prediction, error)
 	Update(ctx context.Context, prediction *domain.Prediction) error
+	// UpdateIfUnchanged applies the new scores only when prediction.updated_at
+	// still equals expectedUpdatedAt. This optimistic-lock check prevents
+	// concurrent editors from silently overwriting each other with a last-write-
+	// wins outcome. Returns Conflict when another request has already updated
+	// the row since the caller last read it.
+	UpdateIfUnchanged(ctx context.Context, prediction *domain.Prediction, expectedUpdatedAt time.Time) error
 	GetByUserAndMatch(ctx context.Context, userID, matchID int) (*domain.Prediction, error)
 	ListByUser(ctx context.Context, userID int) ([]*domain.Prediction, error)
 	ListByMatch(ctx context.Context, matchID int) ([]*domain.Prediction, error)
@@ -216,6 +222,14 @@ type QuinielaRepository interface {
 // by the payment system after a transaction is confirmed.
 type GroupMembershipRepository interface {
 	Create(ctx context.Context, m *domain.GroupMembership) error
+	// RequestJoinByInviteCode resolves inviteCode, serialises membership lookup
+	// and mutation inside one transaction, and either inserts a new pending
+	// membership or re-queues a left membership back to pending. The returned
+	// quiniela is the locked group row used for the operation, allowing callers
+	// to continue with side effects such as payment-record creation without a
+	// second lookup. Returns NotFound for unknown or expired codes, and Conflict
+	// when the user is already active, already pending, or the group is full.
+	RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID int) (*domain.Quiniela, *domain.GroupMembership, error)
 	// GetByID returns a membership by its primary key. Returns nil, nil when no
 	// matching row exists. Used by ApproveJoin to load the pending request.
 	GetByID(ctx context.Context, membershipID int) (*domain.GroupMembership, error)

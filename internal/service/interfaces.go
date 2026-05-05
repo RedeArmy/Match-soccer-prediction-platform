@@ -40,11 +40,11 @@ type MatchService interface {
 
 // PredictionService defines operations on the Prediction entity.
 //
-// Submit enforces the prediction deadline: it delegates to the domain
-// validator which rejects submissions after kick-off. It also rejects
-// duplicate predictions (one per user per match) by checking for an existing
-// record before creating a new one. Update follows the same deadline rules and
-// requires the caller to own the prediction being modified.
+// Submit enforces the prediction deadline and relies on the repository's
+// atomic INSERT + unique index handling to reject duplicate predictions
+// without a pre-read race window. Update follows the same deadline rules,
+// requires the caller to own the prediction being modified, and uses
+// optimistic concurrency to prevent silent last-write-wins overwrites.
 type PredictionService interface {
 	Submit(ctx context.Context, prediction *domain.Prediction) error
 	Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int) (*domain.Prediction, error)
@@ -100,10 +100,10 @@ type QuinielaService interface {
 
 // GroupMembershipService manages user membership in Quinielas.
 //
-// Join resolves the invite code to a Quiniela and creates a pending join
-// request - the user is NOT active until any existing active member calls
-// ApproveJoin. ListByQuiniela returns the full roster. ListByUser returns all
-// groups a user belongs to, regardless of status.
+// Join resolves the invite code and creates a pending join request inside a
+// single repository transaction - the user is NOT active until any existing
+// active member calls ApproveJoin. ListByQuiniela returns the full roster.
+// ListByUser returns all groups a user belongs to, regardless of status.
 //
 // ApproveJoin promotes a pending request to active. Any active member of the
 // quiniela may approve - there is no admin-only gate. After approval the group

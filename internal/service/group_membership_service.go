@@ -48,46 +48,8 @@ func NewGroupMembershipService(
 // If the user was previously a member but left, they are re-queued as pending
 // for a new approval round.
 func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error) {
-	quiniela, err := s.quinielaRepo.GetByInviteCode(ctx, inviteCode)
+	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID)
 	if err != nil {
-		return nil, err
-	}
-	if quiniela == nil {
-		return nil, apperrors.NotFound("group not found for the given invite code")
-	}
-
-	if err := s.checkCapacity(ctx, quiniela); err != nil {
-		return nil, err
-	}
-
-	existing, err := s.memberRepo.GetByQuinielaAndUser(ctx, quiniela.ID, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// paid is set at request time: free groups auto-pay immediately;
-	// paid groups wait for the payment system to call MarkPaid.
-	autoPaid := quiniela.EntryFee == 0
-
-	if existing != nil {
-		m, err := s.requestRejoin(ctx, existing, autoPaid)
-		if err != nil {
-			return nil, err
-		}
-		if quiniela.EntryFee > 0 {
-			s.createPendingPayment(ctx, quiniela, userID)
-		}
-		return m, nil
-	}
-
-	m := &domain.GroupMembership{
-		QuinielaID: quiniela.ID,
-		UserID:     userID,
-		Status:     domain.MembershipPending,
-		Paid:       autoPaid,
-		JoinedAt:   nil, // populated when the request is approved
-	}
-	if err := s.memberRepo.Create(ctx, m); err != nil {
 		return nil, err
 	}
 	if quiniela.EntryFee > 0 {
@@ -107,51 +69,6 @@ func (s *groupMembershipService) createPendingPayment(ctx context.Context, quini
 			zap.Int("user_id", userID),
 			zap.Error(err),
 		)
-	}
-}
-
-// checkCapacity returns a Conflict error when the quiniela has a max_members
-// cap and the number of active members has reached it.
-//
-// This is a pre-flight optimisation only: the gap between this read and the
-// subsequent INSERT is not serialised, so two concurrent joins can both pass
-// the check before either write commits. The database trigger
-// trg_enforce_max_members (SQLSTATE P0001 / max_members_exceeded) is the
-// authoritative enforcement point and is translated into a Conflict error by
-// the repository layer on violation.
-func (s *groupMembershipService) checkCapacity(ctx context.Context, quiniela *domain.Quiniela) error {
-	if quiniela.MaxMembers == nil {
-		return nil
-	}
-	count, err := s.memberRepo.CountActive(ctx, quiniela.ID)
-	if err != nil {
-		return err
-	}
-	if count >= *quiniela.MaxMembers {
-		return apperrors.Conflict("this group has reached its maximum number of members")
-	}
-	return nil
-}
-
-// requestRejoin handles the case where a membership row already exists.
-// Active and Pending states return Conflict; a Left membership is re-queued
-// as Pending so the user must be approved again before becoming active.
-func (s *groupMembershipService) requestRejoin(ctx context.Context, m *domain.GroupMembership, autoPaid bool) (*domain.GroupMembership, error) {
-	switch m.Status {
-	case domain.MembershipActive:
-		return nil, apperrors.Conflict("you are already a member of this group")
-	case domain.MembershipPending:
-		return nil, apperrors.Conflict("you already have a pending join request for this group")
-	default: // MembershipLeft
-		m.Status = domain.MembershipPending
-		m.Paid = autoPaid
-		m.JoinedAt = nil  // reset; will be set when approved
-		m.RemovedAt = nil // clear audit fields from the previous exit
-		m.RemovedBy = nil
-		if err := s.memberRepo.Update(ctx, m); err != nil {
-			return nil, err
-		}
-		return m, nil
 	}
 }
 

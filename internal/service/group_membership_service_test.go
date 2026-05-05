@@ -69,6 +69,9 @@ func (noopPaymentService) List(_ context.Context, _ repository.PaymentFilters, _
 }
 
 func newMemberSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) GroupMembershipService {
+	if mr.joinQuiniela == nil && qr.quiniela != nil {
+		mr.joinQuiniela = qr.quiniela
+	}
 	return NewGroupMembershipService(qr, mr, &noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{}, clock.Real{}, zap.NewNop())
 }
 
@@ -180,7 +183,7 @@ func TestGroupMembershipService_Join_MaxMembersReached_ReturnsConflict(t *testin
 	q := &domain.Quiniela{ID: 1, Name: "Full", OwnerID: 1, InviteCode: membershipCode, MaxMembers: &maxMembers}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{activeCount: 1}, // CountActive returns 1, which equals maxMembers
+		&stubMemberRepo{joinErr: apperrors.Conflict("this group has reached its maximum number of members")},
 	)
 
 	_, err := svc.Join(context.Background(), membershipCode, 42)
@@ -231,7 +234,7 @@ func TestGroupMembershipService_Join_PaidGroup_CreatesPendingPaymentRecord(t *te
 	recorder := &recordingPaymentService{}
 	svc := NewGroupMembershipService(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{membership: nil},
+		&stubMemberRepo{joinQuiniela: q},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		recorder,
@@ -257,7 +260,7 @@ func TestGroupMembershipService_Join_PaidGroup_PaymentError_JoinStillSucceeds(t 
 
 	svc := NewGroupMembershipService(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{membership: nil},
+		&stubMemberRepo{joinQuiniela: q},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		errPaymentService{},
@@ -274,17 +277,15 @@ func TestGroupMembershipService_Join_PaidGroup_PaymentError_JoinStillSucceeds(t 
 	}
 }
 
-// failOnUpdateMemberRepo wraps stubMemberRepo but overrides Update so that
-// GetByQuinielaAndUser can succeed (returning the existing membership) while
-// Update returns an error. This lets tests exercise the requestRejoin error
-// path in Join without failing the prior lookup.
+// failOnUpdateMemberRepo wraps stubMemberRepo but forces the atomic join
+// operation to fail, allowing Join error propagation to be tested directly.
 type failOnUpdateMemberRepo struct {
 	stubMemberRepo
 	updateErr error
 }
 
-func (r *failOnUpdateMemberRepo) Update(_ context.Context, _ *domain.GroupMembership) error {
-	return r.updateErr
+func (r *failOnUpdateMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
+	return nil, nil, r.updateErr
 }
 
 func TestGroupMembershipService_Join_PaidGroup_Rejoin_CreatesPendingPayment(t *testing.T) {
@@ -296,7 +297,7 @@ func TestGroupMembershipService_Join_PaidGroup_Rejoin_CreatesPendingPayment(t *t
 	recorder := &recordingPaymentService{}
 	svc := NewGroupMembershipService(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{membership: existing},
+		&stubMemberRepo{membership: existing, joinQuiniela: q},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		recorder,
@@ -316,7 +317,7 @@ func TestGroupMembershipService_Join_RejoinUpdateError_ReturnsError(t *testing.T
 	q := quinielaWithCode(1, "CODE")
 	existing := &domain.GroupMembership{ID: 5, QuinielaID: 1, UserID: 42, Status: domain.MembershipLeft}
 	mr := &failOnUpdateMemberRepo{
-		stubMemberRepo: stubMemberRepo{membership: existing},
+		stubMemberRepo: stubMemberRepo{membership: existing, joinQuiniela: q},
 		updateErr:      errors.New("db write failed"),
 	}
 	svc := NewGroupMembershipService(
@@ -644,16 +645,15 @@ func (r *leaveOwnerMemberRepo) LeaveMembershipAndTransferOwnership(_ context.Con
 
 // ── checkCapacity error path ───────────────────────────────────────────────────
 
-func TestGroupMembershipService_Join_CountActiveError_ReturnsError(t *testing.T) {
-	maxMembers := 5
-	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 1, InviteCode: membershipCode, MaxMembers: &maxMembers}
+func TestGroupMembershipService_Join_AtomicJoinError_ReturnsError(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 1, InviteCode: membershipCode}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{countActiveErr: errors.New(membershipDBError)},
+		&stubMemberRepo{joinErr: errors.New(membershipDBError)},
 	)
 
 	if _, err := svc.Join(context.Background(), membershipCode, 42); err == nil {
-		t.Error("expected error when CountActive fails in checkCapacity, got nil")
+		t.Error("expected error when atomic join operation fails, got nil")
 	}
 }
 

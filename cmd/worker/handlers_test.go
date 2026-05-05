@@ -261,6 +261,9 @@ func (r *stubWorkerPredRepo) GetByID(_ context.Context, _ int) (*domain.Predicti
 	return nil, nil
 }
 func (r *stubWorkerPredRepo) Update(_ context.Context, _ *domain.Prediction) error { return nil }
+func (r *stubWorkerPredRepo) UpdateIfUnchanged(_ context.Context, _ *domain.Prediction, _ time.Time) error {
+	return nil
+}
 func (r *stubWorkerPredRepo) GetByUserAndMatch(_ context.Context, _, _ int) (*domain.Prediction, error) {
 	return nil, nil
 }
