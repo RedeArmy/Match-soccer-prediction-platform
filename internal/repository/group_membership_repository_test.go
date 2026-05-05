@@ -922,6 +922,112 @@ func TestGroupMembershipRepository_LeaveMembership_NotActive_ReturnsConflict(t *
 	}
 }
 
+func TestGroupMembershipRepository_LeaveMembershipAndTransferOwnership_SwapsOwnerAndLeavesAtomically(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	qRepo := repository.NewPostgresQuinielaRepository(testDB)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	ownerMembership := seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	if err := repo.SetRole(context.Background(), ownerMembership.ID, domain.MembershipRoleCreateOwner); err != nil {
+		t.Fatalf("seed owner role: %v", err)
+	}
+
+	successorUser := seedUser(t)
+	successorMembership := seedMembership(t, q.ID, successorUser.ID, domain.MembershipActive, true)
+
+	if err := qRepo.UpdateStatus(context.Background(), q.ID, domain.QuinielaStatusActive); err != nil {
+		t.Fatalf("seed quiniela status: %v", err)
+	}
+
+	if err := repo.LeaveMembershipAndTransferOwnership(
+		context.Background(),
+		q.ID,
+		owner.ID,
+		successorMembership.ID,
+		time.Now().UTC(),
+		domain.MinMembersForActive,
+	); err != nil {
+		t.Fatalf("LeaveMembershipAndTransferOwnership: %v", err)
+	}
+
+	leftOwner, err := repo.GetByQuinielaAndUser(context.Background(), q.ID, owner.ID)
+	if err != nil {
+		t.Fatalf("reload leaving owner: %v", err)
+	}
+	if leftOwner.Status != domain.MembershipLeft {
+		t.Errorf("expected leaving owner status=left, got %q", leftOwner.Status)
+	}
+	if leftOwner.Role != domain.MembershipRoleMember {
+		t.Errorf("expected leaving owner role=member after exit, got %q", leftOwner.Role)
+	}
+
+	promoted, err := repo.GetByID(context.Background(), successorMembership.ID)
+	if err != nil {
+		t.Fatalf("reload successor: %v", err)
+	}
+	if promoted.Role != domain.MembershipRoleCreateOwner {
+		t.Errorf("expected successor role=%q, got %q", domain.MembershipRoleCreateOwner, promoted.Role)
+	}
+
+	q2, err := qRepo.GetByID(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf("reload quiniela: %v", err)
+	}
+	if q2.Status != domain.QuinielaStatusInactive {
+		t.Errorf("expected quiniela status=inactive with one active member remaining, got %q", q2.Status)
+	}
+}
+
+func TestGroupMembershipRepository_LeaveMembershipAndTransferOwnership_InvalidSuccessor_RollsBackLeave(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	ownerMembership := seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	if err := repo.SetRole(context.Background(), ownerMembership.ID, domain.MembershipRoleCreateOwner); err != nil {
+		t.Fatalf("seed owner role: %v", err)
+	}
+
+	member := seedUser(t)
+	seedMembership(t, q.ID, member.ID, domain.MembershipActive, true)
+
+	if err := repo.LeaveMembershipAndTransferOwnership(
+		context.Background(),
+		q.ID,
+		owner.ID,
+		999999,
+		time.Now().UTC(),
+		domain.MinMembersForActive,
+	); err == nil {
+		t.Fatal("expected error for invalid successor membership, got nil")
+	}
+
+	unchangedOwner, err := repo.GetByQuinielaAndUser(context.Background(), q.ID, owner.ID)
+	if err != nil {
+		t.Fatalf("reload owner after rollback: %v", err)
+	}
+	if unchangedOwner.Status != domain.MembershipActive {
+		t.Errorf("expected owner to remain active after rollback, got %q", unchangedOwner.Status)
+	}
+	if unchangedOwner.Role != domain.MembershipRoleCreateOwner {
+		t.Errorf("expected owner role to remain %q after rollback, got %q", domain.MembershipRoleCreateOwner, unchangedOwner.Role)
+	}
+}
+
+func TestGroupMembershipRepository_LeaveMembershipAndTransferOwnership_CancelledContext_ReturnsError(t *testing.T) {
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := repo.LeaveMembershipAndTransferOwnership(ctx, 1, 1, 2, time.Now().UTC(), domain.MinMembersForActive); err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
 func TestGroupMembershipRepository_LeaveMembership_CancelledContext_ReturnsError(t *testing.T) {
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 

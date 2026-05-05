@@ -489,4 +489,79 @@ func (r *PostgresGroupMembershipRepository) LeaveMembership(
 	return nil
 }
 
+// LeaveMembershipAndTransferOwnership atomically hands ownership to an active
+// successor, marks the current owner as left, and refreshes group status.
+func (r *PostgresGroupMembershipRepository) LeaveMembershipAndTransferOwnership(
+	ctx context.Context,
+	quinielaID, leavingUserID, successorMembershipID int,
+	now time.Time,
+	minMembers int,
+) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	defer func() {
+		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "LeaveMembershipAndTransferOwnership")
+	}()
+
+	// Demote any currently-active owners first so the promotion below is the
+	// only surviving owner role when the transaction commits.
+	if _, err := tx.Exec(ctx,
+		`UPDATE group_memberships
+		    SET role = 'member', updated_at = NOW()
+		  WHERE quiniela_id = $1
+		    AND role        = 'owner'
+		    AND status      = 'active'`,
+		quinielaID,
+	); err != nil {
+		return apperrors.Internal(err)
+	}
+
+	tag, err := tx.Exec(ctx,
+		`UPDATE group_memberships
+		    SET role = 'owner', updated_at = NOW()
+		  WHERE id          = $1
+		    AND quiniela_id = $2
+		    AND status      = 'active'
+		    AND user_id    != $3`,
+		successorMembershipID, quinielaID, leavingUserID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound("new owner membership not found")
+	}
+
+	tag, err = tx.Exec(ctx,
+		`UPDATE group_memberships
+		    SET status     = 'left',
+		        role       = 'member',
+		        joined_at  = NULL,
+		        removed_at = $1,
+		        removed_by = NULL,
+		        updated_at = NOW()
+		  WHERE quiniela_id = $2
+		    AND user_id     = $3
+		    AND status      = 'active'`,
+		now, quinielaID, leavingUserID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.Conflict("you are no longer an active member of this group")
+	}
+
+	if err := syncStatusInTx(ctx, tx, quinielaID, minMembers); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)
