@@ -63,105 +63,33 @@ func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.
 		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "RequestJoinByInviteCode")
 	}()
 
-	qRow := tx.QueryRow(ctx,
-		`SELECT `+quinielaColumns+` FROM quinielas
-		  WHERE invite_code = $1
-		    AND deleted_at IS NULL
-		    AND (invite_code_expires_at IS NULL OR invite_code_expires_at > NOW())
-		  FOR UPDATE`,
-		inviteCode,
-	)
-	q, err := scanQuiniela(qRow)
+	q, err := findQuinielaByInviteCode(ctx, tx, inviteCode)
 	if err != nil {
 		return nil, nil, err
 	}
-	if q == nil {
-		return nil, nil, apperrors.NotFound("group not found for the given invite code")
+
+	existing, err := findMembershipForLocking(ctx, tx, q.ID, userID)
+	if err != nil {
+		return nil, nil, err
 	}
+
+	if err := validateMembershipStatus(existing); err != nil {
+		return nil, nil, err
+	}
+
+	if err := enforceMaxMembers(ctx, tx, q); err != nil {
+		return nil, nil, err
+	}
+
 	autoPaid := q.EntryFee == 0
-
-	row := tx.QueryRow(ctx,
-		`SELECT `+membershipColumns+`
-		   FROM group_memberships
-		  WHERE quiniela_id = $1
-		    AND user_id     = $2
-		  FOR UPDATE`,
-		q.ID, userID,
-	)
-	existing, err := scanMembership(row)
-	if err != nil {
-		return nil, nil, err
-	}
+	var m *domain.GroupMembership
 
 	if existing != nil {
-		switch existing.Status {
-		case domain.MembershipActive:
-			return nil, nil, apperrors.Conflict("you are already a member of this group")
-		case domain.MembershipPending:
-			return nil, nil, apperrors.Conflict("you already have a pending join request for this group")
-		}
+		m, err = reactivateMembership(ctx, tx, existing.ID, autoPaid)
+	} else {
+		m, err = createPendingMembership(ctx, tx, q.ID, userID, autoPaid)
 	}
-
-	if q.MaxMembers != nil {
-		var count int
-		if err := tx.QueryRow(ctx,
-			`SELECT COUNT(*)
-			   FROM group_memberships
-			  WHERE quiniela_id = $1
-			    AND status      = 'active'`,
-			q.ID,
-		).Scan(&count); err != nil {
-			return nil, nil, apperrors.Internal(err)
-		}
-		if count >= *q.MaxMembers {
-			return nil, nil, apperrors.Conflict(errMsgMaxMembersReached)
-		}
-	}
-
-	if existing != nil {
-		row = tx.QueryRow(ctx,
-			`UPDATE group_memberships
-			    SET status     = 'pending',
-			        paid       = $1,
-			        joined_at  = NULL,
-			        removed_at = NULL,
-			        removed_by = NULL,
-			        updated_at = NOW()
-			  WHERE id     = $2
-			    AND status = 'left'
-			  RETURNING `+membershipColumns,
-			autoPaid, existing.ID,
-		)
-		m, err := scanMembership(row)
-		if err != nil {
-			if isMaxMembersViolation(err) {
-				return nil, nil, apperrors.Conflict(errMsgMaxMembersReached)
-			}
-			return nil, nil, err
-		}
-		if m == nil {
-			return nil, nil, apperrors.Conflict("this membership request changed; please retry")
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return nil, nil, apperrors.Internal(err)
-		}
-		return q, m, nil
-	}
-
-	row = tx.QueryRow(ctx,
-		`INSERT INTO group_memberships (quiniela_id, user_id, status, role, paid, joined_at)
-		 VALUES ($1, $2, 'pending', 'member', $3, NULL)
-		 RETURNING `+membershipColumns,
-		q.ID, userID, autoPaid,
-	)
-	m, err := scanMembership(row)
 	if err != nil {
-		if isMaxMembersViolation(err) {
-			return nil, nil, apperrors.Conflict(errMsgMaxMembersReached)
-		}
-		if isUniqueViolation(err) {
-			return nil, nil, apperrors.Conflict("you already have a membership record for this group")
-		}
 		return nil, nil, err
 	}
 
@@ -169,6 +97,118 @@ func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.
 		return nil, nil, apperrors.Internal(err)
 	}
 	return q, m, nil
+}
+
+func findQuinielaByInviteCode(ctx context.Context, tx pgx.Tx, inviteCode string) (*domain.Quiniela, error) {
+	row := tx.QueryRow(ctx,
+		`SELECT `+quinielaColumns+` FROM quinielas
+		  WHERE invite_code = $1
+		    AND deleted_at IS NULL
+		    AND (invite_code_expires_at IS NULL OR invite_code_expires_at > NOW())
+		  FOR UPDATE`,
+		inviteCode,
+	)
+	q, err := scanQuiniela(row)
+	if err != nil {
+		return nil, err
+	}
+	if q == nil {
+		return nil, apperrors.NotFound("group not found for the given invite code")
+	}
+	return q, nil
+}
+
+func findMembershipForLocking(ctx context.Context, tx pgx.Tx, quinielaID, userID int) (*domain.GroupMembership, error) {
+	row := tx.QueryRow(ctx,
+		`SELECT `+membershipColumns+`
+		   FROM group_memberships
+		  WHERE quiniela_id = $1
+		    AND user_id     = $2
+		  FOR UPDATE`,
+		quinielaID, userID,
+	)
+	return scanMembership(row)
+}
+
+func validateMembershipStatus(existing *domain.GroupMembership) error {
+	if existing == nil {
+		return nil
+	}
+	switch existing.Status {
+	case domain.MembershipActive:
+		return apperrors.Conflict("you are already a member of this group")
+	case domain.MembershipPending:
+		return apperrors.Conflict("you already have a pending join request for this group")
+	}
+	return nil
+}
+
+func enforceMaxMembers(ctx context.Context, tx pgx.Tx, q *domain.Quiniela) error {
+	if q.MaxMembers == nil {
+		return nil
+	}
+	var count int
+	err := tx.QueryRow(ctx,
+		`SELECT COUNT(*)
+		   FROM group_memberships
+		  WHERE quiniela_id = $1
+		    AND status      = 'active'`,
+		q.ID,
+	).Scan(&count)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if count >= *q.MaxMembers {
+		return apperrors.Conflict(errMsgMaxMembersReached)
+	}
+	return nil
+}
+
+func reactivateMembership(ctx context.Context, tx pgx.Tx, membershipID int, autoPaid bool) (*domain.GroupMembership, error) {
+	row := tx.QueryRow(ctx,
+		`UPDATE group_memberships
+		    SET status     = 'pending',
+		        paid       = $1,
+		        joined_at  = NULL,
+		        removed_at = NULL,
+		        removed_by = NULL,
+		        updated_at = NOW()
+		  WHERE id     = $2
+		    AND status = 'left'
+		  RETURNING `+membershipColumns,
+		autoPaid, membershipID,
+	)
+	m, err := scanMembership(row)
+	if err != nil {
+		if isMaxMembersViolation(err) {
+			return nil, apperrors.Conflict(errMsgMaxMembersReached)
+		}
+		return nil, err
+	}
+	if m == nil {
+		return nil, apperrors.Conflict("this membership request changed; please retry")
+	}
+	return m, nil
+}
+
+func createPendingMembership(ctx context.Context, tx pgx.Tx, quinielaID, userID int, autoPaid bool) (*domain.GroupMembership, error) {
+	row := tx.QueryRow(ctx,
+		`INSERT INTO group_memberships (quiniela_id, user_id, status, role, paid, joined_at)
+		 VALUES ($1, $2, 'pending', 'member', $3, NULL)
+		 RETURNING `+membershipColumns,
+		quinielaID, userID, autoPaid,
+	)
+	m, err := scanMembership(row)
+	if err != nil {
+		if isMaxMembersViolation(err) {
+			return nil, apperrors.Conflict(errMsgMaxMembersReached)
+		}
+		if isUniqueViolation(err) {
+			return nil, apperrors.Conflict("you already have a membership record for this group")
+		}
+		return nil, err
+	}
+	return m, nil
 }
 
 func (r *PostgresGroupMembershipRepository) Create(ctx context.Context, m *domain.GroupMembership) error {
