@@ -373,6 +373,62 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_LeftMembershipBecomes
 	}
 }
 
+func TestGroupMembershipRepository_RequestJoinByInviteCode_InvalidCodeReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	joiner := seedUser(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), "INVALID123", joiner.ID)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestGroupMembershipRepository_RequestJoinByInviteCode_ActiveMemberReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	joiner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedMembership(t, q.ID, joiner.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestGroupMembershipRepository_RequestJoinByInviteCode_PendingMemberReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	joiner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestGroupMembershipRepository_RequestJoinByInviteCode_MaxMembersReachedReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	member1 := seedUser(t)
+	joiner := seedUser(t)
+	maxMembers := 2
+	q := seedQuinielaWithMaxMembers(t, owner.ID, &maxMembers)
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, member1.ID, domain.MembershipActive, true)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict for max members reached, got %v", err)
+	}
+}
+
 func TestGroupMembershipRepository_CountActive_ReturnsCount(t *testing.T) {
 	cleanTables(t)
 	owner := seedUser(t)

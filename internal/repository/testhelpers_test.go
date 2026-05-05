@@ -184,6 +184,23 @@ func seedQuiniela(t *testing.T, ownerID int) *domain.Quiniela {
 	return q
 }
 
+func seedQuinielaWithMaxMembers(t *testing.T, ownerID int, maxMembers *int) *domain.Quiniela {
+	t.Helper()
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+	q := &domain.Quiniela{
+		Name:           fmt.Sprintf("Oficina %s", nextCode()),
+		OwnerID:        ownerID,
+		InviteCode:     nextCode(),
+		Currency:       defaultCurrency,
+		PrizeThreshold: domain.DefaultPrizeThreshold,
+		MaxMembers:     maxMembers,
+	}
+	if err := repo.Create(context.Background(), q); err != nil {
+		t.Fatalf("seed quiniela with max members: %v", err)
+	}
+	return q
+}
+
 func seedMembership(t *testing.T, quinielaID, userID int, status domain.MembershipStatus, paid bool) *domain.GroupMembership {
 	t.Helper()
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
