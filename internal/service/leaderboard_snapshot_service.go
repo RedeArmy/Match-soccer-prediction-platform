@@ -32,9 +32,14 @@ func NewLeaderboardSnapshotService(
 // caller can distinguish "snapshot taken but nobody has points" from "no
 // snapshot has ever been taken".
 func (s *leaderboardSnapshotService) Snapshot(ctx context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error) {
-	entries, err := s.ranker.GetLeaderboard(ctx, quinielaID)
+	result, err := s.ranker.GetLeaderboard(ctx, quinielaID)
 	if err != nil {
 		return nil, err
+	}
+
+	var entries []*domain.LeaderboardEntry
+	if result != nil {
+		entries = result.Entries
 	}
 
 	snapshotEntries := make([]domain.LeaderboardSnapshotEntry, 0, len(entries))

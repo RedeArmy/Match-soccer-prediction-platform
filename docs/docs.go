@@ -3732,20 +3732,14 @@ const docTemplate = `{
                 "invite_code_expires_at": {
                     "type": "string"
                 },
-                "max_members": {
-                    "type": "integer"
-                },
                 "name": {
                     "type": "string"
                 },
                 "owner_user_id": {
                     "type": "integer"
                 },
-                "prize_threshold": {
-                    "type": "integer"
-                },
                 "status": {
-                    "description": "Status is system-managed: \"active\" when the group has ≥ 3 active members,\n\"inactive\" otherwise. Only active groups are eligible for payment processing\nand prize distribution.",
+                    "description": "Status is system-managed: \"active\" when the group has ≥ 5 active members,\n\"inactive\" otherwise. Only active groups are eligible for payment processing\nand prize distribution.",
                     "type": "string"
                 },
                 "updated_at": {
@@ -3776,6 +3770,12 @@ const docTemplate = `{
         "internal_api_handler.LeaderboardResponse": {
             "type": "object",
             "properties": {
+                "active_paid_members": {
+                    "type": "integer"
+                },
+                "eligible_for_prizes": {
+                    "type": "boolean"
+                },
                 "entries": {
                     "type": "array",
                     "items": {
@@ -3787,6 +3787,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "quiniela_id": {
+                    "type": "integer"
+                },
+                "winner_count": {
                     "type": "integer"
                 }
             }
@@ -4305,15 +4308,8 @@ const docTemplate = `{
                 "entry_fee": {
                     "type": "integer"
                 },
-                "max_members": {
-                    "type": "integer"
-                },
                 "name": {
                     "type": "string"
-                },
-                "prize_threshold": {
-                    "description": "optional; defaults to DefaultPrizeThreshold when 0",
-                    "type": "integer"
                 }
             }
         },
@@ -4415,9 +4411,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "entry_fee": {
-                    "type": "integer"
-                },
-                "max_members": {
                     "type": "integer"
                 }
             }

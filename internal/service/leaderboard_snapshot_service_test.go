@@ -35,11 +35,17 @@ type stubRankerSnap struct {
 	err     error
 }
 
-func (r *stubRankerSnap) GetLeaderboard(_ context.Context, _ int) ([]*domain.LeaderboardEntry, error) {
-	return r.entries, r.err
+func (r *stubRankerSnap) GetLeaderboard(_ context.Context, _ int) (*LeaderboardResult, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return &LeaderboardResult{Entries: r.entries}, nil
 }
-func (r *stubRankerSnap) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) ([]*domain.LeaderboardEntry, error) {
-	return r.entries, r.err
+func (r *stubRankerSnap) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) (*LeaderboardResult, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return &LeaderboardResult{Entries: r.entries}, nil
 }
 
 // ── Snapshot ──────────────────────────────────────────────────────────────────

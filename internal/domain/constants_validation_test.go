@@ -25,7 +25,6 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	paramKeys["ParamKeyScoringGoalDiff"] = ParamKeyScoringGoalDiff
 	paramKeys["ParamKeyPredictionDeadlineMin"] = ParamKeyPredictionDeadlineMin
 	paramKeys["ParamKeyGroupMinMembers"] = ParamKeyGroupMinMembers
-	paramKeys["ParamKeyGroupDefaultPrize"] = ParamKeyGroupDefaultPrize
 	paramKeys["ParamKeyGroupInviteCodeLength"] = ParamKeyGroupInviteCodeLength
 	paramKeys["ParamKeyConflictStaleDays"] = ParamKeyConflictStaleDays
 	paramKeys["ParamKeyConflictMaxScan"] = ParamKeyConflictMaxScan
@@ -74,7 +73,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// the count matches what we expect. This is a smoke test - if new
 		// ParamKey constants are added, this test will fail as a reminder
 		// to update the enumeration above.
-		expectedCount := 23 // Update this when adding new ParamKey constants
+		expectedCount := 22 // Update this when adding new ParamKey constants
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Logf("If you added a new ParamKey* constant, update the enumeration in this test")
@@ -126,7 +125,6 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyScoringGoalDiff", ParamKeyScoringGoalDiff, "scoring"},
 		{"ParamKeyPredictionDeadlineMin", ParamKeyPredictionDeadlineMin, "prediction"},
 		{"ParamKeyGroupMinMembers", ParamKeyGroupMinMembers, "group"},
-		{"ParamKeyGroupDefaultPrize", ParamKeyGroupDefaultPrize, "group"},
 		{"ParamKeyGroupInviteCodeLength", ParamKeyGroupInviteCodeLength, "group"},
 		{"ParamKeyConflictStaleDays", ParamKeyConflictStaleDays, "conflict"},
 		{"ParamKeyConflictMaxScan", ParamKeyConflictMaxScan, "conflict"},
@@ -248,8 +246,8 @@ func TestConstantsDocumentation(t *testing.T) {
 		if MinMembersForActive < 2 {
 			t.Errorf("MinMembersForActive = %d: should be at least 2", MinMembersForActive)
 		}
-		if DefaultPrizeThreshold < 1 {
-			t.Errorf("DefaultPrizeThreshold = %d: should be at least 1", DefaultPrizeThreshold)
+		if MaxMembersPerGroup < MinMembersPerGroup {
+			t.Errorf("MaxMembersPerGroup (%d) must be >= MinMembersPerGroup (%d)", MaxMembersPerGroup, MinMembersPerGroup)
 		}
 		if StandingsWinPoints < 1 {
 			t.Errorf("StandingsWinPoints = %d: should be at least 1", StandingsWinPoints)

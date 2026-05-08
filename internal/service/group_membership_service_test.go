@@ -179,8 +179,7 @@ func TestGroupMembershipService_Join_PreviouslyLeft_ReturnsPending(t *testing.T)
 }
 
 func TestGroupMembershipService_Join_MaxMembersReached_ReturnsConflict(t *testing.T) {
-	maxMembers := 1
-	q := &domain.Quiniela{ID: 1, Name: "Full", OwnerID: 1, InviteCode: membershipCode, MaxMembers: &maxMembers}
+	q := &domain.Quiniela{ID: 1, Name: "Full", OwnerID: 1, InviteCode: membershipCode}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: q},
 		&stubMemberRepo{joinErr: apperrors.Conflict("this group has reached its maximum number of members")},

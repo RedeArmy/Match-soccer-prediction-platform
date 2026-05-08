@@ -440,7 +440,7 @@ func (s *Server) buildHandlers(
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, clock.Real{}, s.log)
 
-	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, tiebreakerRepo, tiebreakerConfigRepo, params, s.log)
+	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, repos.member, tiebreakerRepo, tiebreakerConfigRepo, s.log)
 	if s.cache != nil {
 		cachedRanker := service.NewCachedRankingService(ranker, s.cache, leaderboardTTL, s.log)
 		// When an admin changes cache.leaderboard_ttl_seconds, update the active

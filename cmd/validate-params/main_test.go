@@ -17,7 +17,6 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyScoringGoalDiff:          true,
 		domain.ParamKeyPredictionDeadlineMin:    true,
 		domain.ParamKeyGroupMinMembers:          true,
-		domain.ParamKeyGroupDefaultPrize:        true,
 		domain.ParamKeyGroupInviteCodeLength:    true,
 		domain.ParamKeyConflictStaleDays:        true,
 		domain.ParamKeyConflictMaxScan:          true,
@@ -90,7 +89,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 23 // Update when adding new system parameters
+	const expectedCount = 22 // Update when adding new system parameters
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

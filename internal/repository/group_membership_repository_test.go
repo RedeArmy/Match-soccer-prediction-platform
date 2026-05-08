@@ -64,60 +64,39 @@ func TestGroupMembershipRepository_Create_FreeMembership_PaidFalse(t *testing.T)
 func TestGroupMembershipRepository_Create_ExceedsMaxMembers_ReturnsConflict(t *testing.T) {
 	cleanTables(t)
 	owner := seedUser(t)
-	maxMembers := 1
-	quinielaRepo := repository.NewPostgresQuinielaRepository(testDB)
-	q := &domain.Quiniela{
-		Name:           "Capped " + nextCode(),
-		OwnerID:        owner.ID,
-		InviteCode:     nextCode(),
-		Currency:       defaultCurrency,
-		PrizeThreshold: domain.DefaultPrizeThreshold,
-		MaxMembers:     &maxMembers,
-	}
-	if err := quinielaRepo.Create(context.Background(), q); err != nil {
-		t.Fatalf("seed quiniela: %v", err)
-	}
+	q := seedQuiniela(t, owner.ID)
 
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 	now := time.Now().UTC()
 
 	m1 := &domain.GroupMembership{QuinielaID: q.ID, UserID: owner.ID, Status: domain.MembershipActive, Paid: true, JoinedAt: &now}
 	if err := repo.Create(context.Background(), m1); err != nil {
-		t.Fatalf("first membership: %v", err)
+		t.Fatalf("owner membership: %v", err)
 	}
+	fillGroupToCapacity(t, q.ID, 1) // fill remaining 19 slots
 
-	u2 := seedUser(t)
-	m2 := &domain.GroupMembership{QuinielaID: q.ID, UserID: u2.ID, Status: domain.MembershipActive, Paid: true, JoinedAt: &now}
-	if err := repo.Create(context.Background(), m2); !errors.Is(err, apperrors.ErrConflict) {
-		t.Errorf("expected ErrConflict when exceeding max_members, got %v", err)
+	extra := seedUser(t)
+	m := &domain.GroupMembership{QuinielaID: q.ID, UserID: extra.ID, Status: domain.MembershipActive, Paid: true, JoinedAt: &now}
+	if err := repo.Create(context.Background(), m); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict when exceeding MaxMembersPerGroup, got %v", err)
 	}
 }
 
 func TestGroupMembershipRepository_Update_ExceedsMaxMembers_ReturnsConflict(t *testing.T) {
 	cleanTables(t)
 	owner := seedUser(t)
-	maxMembers := 1
-	quinielaRepo := repository.NewPostgresQuinielaRepository(testDB)
-	q := &domain.Quiniela{
-		Name:           "Capped " + nextCode(),
-		OwnerID:        owner.ID,
-		InviteCode:     nextCode(),
-		Currency:       defaultCurrency,
-		PrizeThreshold: domain.DefaultPrizeThreshold,
-		MaxMembers:     &maxMembers,
-	}
-	if err := quinielaRepo.Create(context.Background(), q); err != nil {
-		t.Fatalf("seed quiniela: %v", err)
-	}
+	q := seedQuiniela(t, owner.ID)
 
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 	now := time.Now().UTC()
 
 	m1 := &domain.GroupMembership{QuinielaID: q.ID, UserID: owner.ID, Status: domain.MembershipActive, Paid: true, JoinedAt: &now}
 	if err := repo.Create(context.Background(), m1); err != nil {
-		t.Fatalf("first membership: %v", err)
+		t.Fatalf("owner membership: %v", err)
 	}
+	fillGroupToCapacity(t, q.ID, 1) // fill remaining 19 active slots
 
+	// Add a pending member; the UPDATE that activates them must fail.
 	u2 := seedUser(t)
 	m2 := &domain.GroupMembership{QuinielaID: q.ID, UserID: u2.ID, Status: domain.MembershipPending, Paid: false}
 	if err := repo.Create(context.Background(), m2); err != nil {
@@ -126,7 +105,7 @@ func TestGroupMembershipRepository_Update_ExceedsMaxMembers_ReturnsConflict(t *t
 	m2.Status = domain.MembershipActive
 	m2.JoinedAt = &now
 	if err := repo.Update(context.Background(), m2); !errors.Is(err, apperrors.ErrConflict) {
-		t.Errorf("expected ErrConflict when approving past max_members, got %v", err)
+		t.Errorf("expected ErrConflict when activating past MaxMembersPerGroup, got %v", err)
 	}
 }
 
@@ -415,17 +394,16 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_PendingMemberReturnsC
 func TestGroupMembershipRepository_RequestJoinByInviteCode_MaxMembersReachedReturnsConflict(t *testing.T) {
 	cleanTables(t)
 	owner := seedUser(t)
-	member1 := seedUser(t)
-	joiner := seedUser(t)
-	maxMembers := 2
-	q := seedQuinielaWithMaxMembers(t, owner.ID, &maxMembers)
+	q := seedQuiniela(t, owner.ID)
 	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
-	seedMembership(t, q.ID, member1.ID, domain.MembershipActive, true)
+	fillGroupToCapacity(t, q.ID, 1) // fill remaining 19 active slots
+
+	joiner := seedUser(t)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
 	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
 	if !errors.Is(err, apperrors.ErrConflict) {
-		t.Errorf("expected ErrConflict for max members reached, got %v", err)
+		t.Errorf("expected ErrConflict for MaxMembersPerGroup reached, got %v", err)
 	}
 }
 
@@ -825,7 +803,9 @@ func TestGroupMembershipRepository_ApproveMembership_PromotesToActiveAndSyncsSta
 	owner := seedUser(t)
 	q := seedQuiniela(t, owner.ID)
 	seedActiveMembership(t, q.ID, owner.ID)
-	seedActiveMembership(t, q.ID, seedUser(t).ID)
+	for i := 0; i < domain.MinMembersForActive-2; i++ {
+		seedActiveMembership(t, q.ID, seedUser(t).ID)
+	}
 
 	joiner := seedUser(t)
 	pending := seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
@@ -896,31 +876,20 @@ func TestGroupMembershipRepository_ApproveMembership_AlreadyApproved_ReturnsConf
 
 func TestGroupMembershipRepository_ApproveMembership_ExceedsMaxMembers_ReturnsConflict(t *testing.T) {
 	cleanTables(t)
-	qRepo := repository.NewPostgresQuinielaRepository(testDB)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
 	owner := seedUser(t)
-	maxMembers := 1
-	q := &domain.Quiniela{
-		Name:           "Capped " + nextCode(),
-		OwnerID:        owner.ID,
-		InviteCode:     nextCode(),
-		Currency:       defaultCurrency,
-		PrizeThreshold: domain.DefaultPrizeThreshold,
-		MaxMembers:     &maxMembers,
-	}
-	if err := qRepo.Create(context.Background(), q); err != nil {
-		t.Fatalf("seed quiniela: %v", err)
-	}
+	q := seedQuiniela(t, owner.ID)
 
 	seedActiveMembership(t, q.ID, owner.ID)
+	fillGroupToCapacity(t, q.ID, 1) // fill remaining 19 active slots
 
 	joiner := seedUser(t)
 	pending := seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
 
 	_, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive)
 	if !errors.Is(err, apperrors.ErrConflict) {
-		t.Errorf("expected ErrConflict when approving past max_members, got %v", err)
+		t.Errorf("expected ErrConflict when approving past MaxMembersPerGroup, got %v", err)
 	}
 }
 
@@ -993,7 +962,7 @@ func TestGroupMembershipRepository_LeaveMembership_StaysActive_WhenEnoughMembers
 	q := seedQuiniela(t, owner.ID)
 	seedActiveMembership(t, q.ID, owner.ID)
 
-	users := make([]*domain.User, 3)
+	users := make([]*domain.User, domain.MinMembersForActive)
 	for i := range users {
 		users[i] = seedUser(t)
 		seedActiveMembership(t, q.ID, users[i].ID)
@@ -1011,7 +980,7 @@ func TestGroupMembershipRepository_LeaveMembership_StaysActive_WhenEnoughMembers
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if q2.Status != domain.QuinielaStatusActive {
-		t.Errorf("expected quiniela status=active with 3 remaining members, got %q", q2.Status)
+		t.Errorf("expected quiniela status=active with %d remaining members, got %q", domain.MinMembersForActive, q2.Status)
 	}
 }
 

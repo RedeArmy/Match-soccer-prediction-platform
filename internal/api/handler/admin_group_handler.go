@@ -107,8 +107,7 @@ func (h *AdminGroupHandler) RemoveMember(w http.ResponseWriter, r *http.Request)
 }
 
 type updateGroupSettingsRequest struct {
-	MaxMembers *int `json:"max_members"`
-	EntryFee   *int `json:"entry_fee"`
+	EntryFee *int `json:"entry_fee"`
 }
 
 // UpdateGroupSettings handles PATCH /admin/groups/{id}/settings.
@@ -154,7 +153,7 @@ func (h *AdminGroupHandler) UpdateGroupSettings(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	q, err := h.svc.UpdateGroupSettings(r.Context(), id, req.MaxMembers, *req.EntryFee, caller.ID)
+	q, err := h.svc.UpdateGroupSettings(r.Context(), id, *req.EntryFee, caller.ID)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

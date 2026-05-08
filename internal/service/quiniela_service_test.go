@@ -57,7 +57,7 @@ func (r *stubQuinielaRepo) RotateInviteCode(_ context.Context, _ int, _ string, 
 func (r *stubQuinielaRepo) UpdateStatus(_ context.Context, _ int, _ domain.QuinielaStatus) error {
 	return r.updateStatusErr
 }
-func (r *stubQuinielaRepo) UpdateGroupSettings(_ context.Context, _ int, _ *int, _ int) (*domain.Quiniela, error) {
+func (r *stubQuinielaRepo) UpdateGroupSettings(_ context.Context, _, _ int) (*domain.Quiniela, error) {
 	return r.quiniela, r.err
 }
 func (r *stubQuinielaRepo) DeleteByAdmin(_ context.Context, _, _ int) error { return r.err }
@@ -147,6 +147,9 @@ func (r *stubMemberRepo) ListByUser(_ context.Context, _ int) ([]*domain.GroupMe
 	return r.memberships, r.err
 }
 func (r *stubMemberRepo) CountActive(_ context.Context, _ int) (int, error) {
+	return r.activeCount, r.countActiveErr
+}
+func (r *stubMemberRepo) CountActivePaid(_ context.Context, _ int) (int, error) {
 	return r.activeCount, r.countActiveErr
 }
 func (r *stubMemberRepo) OldestActiveMember(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
@@ -294,30 +297,6 @@ func TestQuinielaService_Create_DefaultsCurrencyToMXN(t *testing.T) {
 	}
 	if q.Currency != "MXN" {
 		t.Errorf("expected default currency MXN, got %q", q.Currency)
-	}
-}
-
-func TestQuinielaService_Create_DefaultsPrizeThresholdWhenZero(t *testing.T) {
-	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
-	q := &domain.Quiniela{Name: quinielaPool, OwnerID: 1}
-
-	if err := svc.Create(context.Background(), q); err != nil {
-		t.Fatalf(fmtExpectNil, err)
-	}
-	if q.PrizeThreshold != domain.DefaultPrizeThreshold {
-		t.Errorf("expected default prize_threshold %d, got %d", domain.DefaultPrizeThreshold, q.PrizeThreshold)
-	}
-}
-
-func TestQuinielaService_Create_ExplicitPrizeThreshold_Preserved(t *testing.T) {
-	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubMemberRepo{})
-	q := &domain.Quiniela{Name: quinielaPool, OwnerID: 1, PrizeThreshold: 5}
-
-	if err := svc.Create(context.Background(), q); err != nil {
-		t.Fatalf(fmtExpectNil, err)
-	}
-	if q.PrizeThreshold != 5 {
-		t.Errorf("explicit prize_threshold should be preserved, got %d", q.PrizeThreshold)
 	}
 }
 

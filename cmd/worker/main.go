@@ -134,11 +134,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	scorer := service.NewScoringService(matchRepo, predRepo, params, log)
 
 	quinielaRepo := repository.NewPostgresQuinielaRepository(db)
+	memberRepo := repository.NewPostgresGroupMembershipRepository(db)
 	userRepo := repository.NewPostgresUserRepository(db)
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(db)
 	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(db)
 	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(db)
-	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, tiebreakerRepo, tiebreakerConfigRepo, params, log)
+	ranker := service.NewRankingService(quinielaRepo, predRepo, userRepo, memberRepo, tiebreakerRepo, tiebreakerConfigRepo, log)
 	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
 
 	// A dedicated Redis client for health checks avoids sharing connections

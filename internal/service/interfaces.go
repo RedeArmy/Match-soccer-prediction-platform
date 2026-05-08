@@ -67,16 +67,44 @@ type MatchScorer interface {
 	ScoreMatch(ctx context.Context, matchID int) error
 }
 
+// LeaderboardResult is the value returned by Ranker methods. It bundles the
+// ranked entries with group-level metadata that the handler layer needs to
+// compute prize eligibility and winner count without an additional round-trip.
+//
+// ActivePaidMembers is the count of members with status=active AND paid=true
+// in the quiniela at query time. This is the authoritative input to
+// domain.WinnerCount and domain.EligibleForPayments. It may differ from
+// len(Entries) when some paid members have not yet submitted any predictions
+// (they appear in the member roster but not in the leaderboard entries).
+//
+// WinnerCount is pre-computed from domain.WinnerCount(ActivePaidMembers) so
+// callers do not need to import the domain package to derive it.
+//
+// EligibleForPrizes is pre-computed from domain.EligibleForPayments(ActivePaidMembers).
+// When false, no prizes should be displayed or distributed regardless of the
+// entry_fee setting.
+type LeaderboardResult struct {
+	Entries           []*domain.LeaderboardEntry
+	ActivePaidMembers int
+	WinnerCount       int
+	EligibleForPrizes bool
+}
+
 // Ranker computes leaderboard standings for a given Quiniela.
 //
 // GetLeaderboard returns the overall standings sorted descending by TotalPoints.
 // GetPhaseLeaderboard returns standings restricted to a single tournament phase.
 // Only active, paid members are included in both variants. Unscored predictions
 // (nil points) are excluded from the aggregation. PrizeWinner is set to true on
-// entries that rank within the prize positions computed from PrizeThreshold.
+// entries that rank within the prize positions determined by domain.WinnerCount.
+//
+// Both methods return a LeaderboardResult that includes group-level prize
+// metadata (ActivePaidMembers, WinnerCount, EligibleForPrizes) alongside the
+// ranked entries, so the handler layer never needs a second DB round-trip to
+// determine whether prizes apply.
 type Ranker interface {
-	GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.LeaderboardEntry, error)
-	GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) ([]*domain.LeaderboardEntry, error)
+	GetLeaderboard(ctx context.Context, quinielaID int) (*LeaderboardResult, error)
+	GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) (*LeaderboardResult, error)
 }
 
 // QuinielaService defines operations on the Quiniela entity.
@@ -316,9 +344,8 @@ type AdminGroupService interface {
 	// RemoveMember sets the membership status to 'left'. Returns NotFound for
 	// inactive or non-existent memberships.
 	RemoveMember(ctx context.Context, membershipID, adminID int) error
-	// UpdateGroupSettings changes max_members cap and entry_fee atomically.
-	// A nil maxMembers removes the cap. Returns the updated Quiniela.
-	UpdateGroupSettings(ctx context.Context, quinielaID int, maxMembers *int, entryFee, adminID int) (*domain.Quiniela, error)
+	// UpdateGroupSettings changes the entry_fee for a group. Returns the updated Quiniela.
+	UpdateGroupSettings(ctx context.Context, quinielaID int, entryFee, adminID int) (*domain.Quiniela, error)
 	// TransferOwnership assigns MembershipRoleCreateOwner to newOwnerUserID and
 	// demotes the current owner to MembershipRoleMember. Returns NotFound when
 	// quinielaID does not exist or newOwnerUserID is not an active member.

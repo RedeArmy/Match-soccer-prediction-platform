@@ -65,22 +65,11 @@ func TestAdminGroupService_RemoveMember_RepoError_Propagates(t *testing.T) {
 
 // ── UpdateGroupSettings ───────────────────────────────────────────────────────
 
-func TestAdminGroupService_UpdateGroupSettings_WithMaxMembers_ReturnsQuiniela(t *testing.T) {
-	q := &domain.Quiniela{ID: 1, Name: "Test"}
+func TestAdminGroupService_UpdateGroupSettings_ReturnsQuiniela(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: "Test", EntryFee: 500}
 	svc := newAdminGroupSvc(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
 
-	cap := 10
-	got, err := svc.UpdateGroupSettings(context.Background(), 1, &cap, 0, 99)
-	if err != nil || got == nil {
-		t.Fatalf("expected quiniela, got %v err=%v", got, err)
-	}
-}
-
-func TestAdminGroupService_UpdateGroupSettings_NilMaxMembers_ReturnsQuiniela(t *testing.T) {
-	q := &domain.Quiniela{ID: 1}
-	svc := newAdminGroupSvc(&stubQuinielaRepo{quiniela: q}, &stubMemberRepo{})
-
-	got, err := svc.UpdateGroupSettings(context.Background(), 1, nil, 500, 99)
+	got, err := svc.UpdateGroupSettings(context.Background(), 1, 500, 99)
 	if err != nil || got == nil {
 		t.Fatalf("expected quiniela, got %v err=%v", got, err)
 	}
@@ -89,7 +78,7 @@ func TestAdminGroupService_UpdateGroupSettings_NilMaxMembers_ReturnsQuiniela(t *
 func TestAdminGroupService_UpdateGroupSettings_RepoError_Propagates(t *testing.T) {
 	svc := newAdminGroupSvc(&stubQuinielaRepo{err: errors.New("not found")}, &stubMemberRepo{})
 
-	_, err := svc.UpdateGroupSettings(context.Background(), 1, nil, 0, 99)
+	_, err := svc.UpdateGroupSettings(context.Background(), 1, 0, 99)
 	if err == nil {
 		t.Error(adminGroupExpectErrMsg)
 	}

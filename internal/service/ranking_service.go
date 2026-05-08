@@ -18,9 +18,9 @@ type rankingService struct {
 	quinielaRepo      repository.QuinielaRepository
 	predRepo          repository.PredictionRepository
 	userRepo          repository.UserRepository
+	memberRepo        repository.GroupMembershipRepository
 	tiebreakerRepo    repository.TiebreakerRepository
 	tiebreakerCfgRepo repository.TiebreakerConfigRepository
-	params            SystemParamService
 	log               *zap.Logger
 }
 
@@ -29,18 +29,18 @@ func NewRankingService(
 	quinielaRepo repository.QuinielaRepository,
 	predRepo repository.PredictionRepository,
 	userRepo repository.UserRepository,
+	memberRepo repository.GroupMembershipRepository,
 	tiebreakerRepo repository.TiebreakerRepository,
 	tiebreakerCfgRepo repository.TiebreakerConfigRepository,
-	params SystemParamService,
 	log *zap.Logger,
 ) Ranker {
 	return &rankingService{
 		quinielaRepo:      quinielaRepo,
 		predRepo:          predRepo,
 		userRepo:          userRepo,
+		memberRepo:        memberRepo,
 		tiebreakerRepo:    tiebreakerRepo,
 		tiebreakerCfgRepo: tiebreakerCfgRepo,
-		params:            params,
 		log:               log,
 	}
 }
@@ -50,7 +50,14 @@ func NewRankingService(
 // Only active, paid members are included. Predictions with nil points (match
 // not yet scored) are excluded from the aggregation. Members with no scored
 // predictions appear with TotalPoints = 0. PrizeWinner is set to true on
-// entries within the prize positions derived from the quiniela's PrizeThreshold.
+// entries within the prize positions determined by domain.WinnerCount.
+//
+// The returned LeaderboardResult includes ActivePaidMembers, WinnerCount, and
+// EligibleForPrizes so the handler layer never needs a second DB round-trip
+// to determine whether prizes apply. ActivePaidMembers is fetched from the
+// database independently of the prediction aggregation so that members who
+// have not yet submitted any predictions are still counted for prize-tier
+// purposes.
 //
 // Ranking algorithm - standard competition ranking (1224…):
 // Two members with equal points receive the same rank. The rank after a tie
@@ -67,13 +74,14 @@ func NewRankingService(
 // If all four rules still yield a tie, user ID is used as a last-resort
 // stable sort key so the output order is always reproducible.
 //
-// The implementation is three database round-trips:
-//  1. TotalPointsByQuiniela - one SQL query with a LEFT JOIN; O(members).
-//  2. ListByIDs - one query using ANY($1); O(members).
-//  3. ListByQuiniela (tiebreakers) - one query; O(members).
+// The implementation is four database round-trips:
+//  1. QuinielaRepository.GetByID — verify the group exists.
+//  2. GroupMembershipRepository.CountActivePaid — authoritative prize count.
+//  3. PredictionRepository.TotalPointsByQuiniela — O(members) LEFT JOIN.
+//  4. UserRepository.ListByIDs + TiebreakerRepository.ListByUserIDs — O(members).
 //
 // No N+1 queries regardless of group size.
-func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.LeaderboardEntry, error) {
+func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) (*LeaderboardResult, error) {
 	q, err := s.quinielaRepo.GetByID(ctx, quinielaID)
 	if err != nil {
 		return nil, err
@@ -86,37 +94,20 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]
 	if err != nil {
 		return nil, err
 	}
-	if len(pointsByUser) == 0 {
-		return nil, nil
-	}
 
-	entries, err := s.buildEntries(ctx, quinielaID, pointsByUser)
-	if err != nil {
-		return nil, err
-	}
-
-	stats, err := s.fetchPredictionStats(ctx, quinielaID)
-	if err != nil {
-		return nil, err
-	}
-
-	userIDs := extractUserIDs(entries)
-	distances, err := s.fetchTiebreakerDistances(ctx, userIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	sortAndRank(entries, stats, distances)
-	assignPrizes(entries, s.prizeThreshold(ctx, q.PrizeThreshold))
-
-	return entries, nil
+	return s.buildLeaderboard(ctx, quinielaID, pointsByUser)
 }
 
 // GetPhaseLeaderboard returns standings restricted to predictions on matches in
 // the specified tournament phase. The algorithm is identical to GetLeaderboard
 // but delegates point aggregation to TotalPointsByQuinielaAndPhase so only
 // phase-relevant predictions are counted.
-func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) ([]*domain.LeaderboardEntry, error) {
+//
+// Note: ActivePaidMembers and prize metadata always reflect the full group
+// membership, not just members who have predictions in the given phase. This
+// is intentional: prize eligibility is a group-level property, not a
+// phase-level one.
+func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) (*LeaderboardResult, error) {
 	q, err := s.quinielaRepo.GetByID(ctx, quinielaID)
 	if err != nil {
 		return nil, err
@@ -129,8 +120,35 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 	if err != nil {
 		return nil, err
 	}
+
+	return s.buildLeaderboard(ctx, quinielaID, pointsByUser)
+}
+
+// buildLeaderboard is the shared core of GetLeaderboard and GetPhaseLeaderboard.
+// It fetches the authoritative active-paid count, hydrates entries from
+// pointsByUser, attaches tiebreaker distances and prediction stats, then sorts,
+// ranks, and marks prize winners.
+//
+// pointsByUser may be empty (no scored predictions yet); in that case the
+// result is returned with a nil Entries slice and correct prize metadata.
+func (s *rankingService) buildLeaderboard(ctx context.Context, quinielaID int, pointsByUser map[int]int) (*LeaderboardResult, error) {
+	// Fetch the authoritative active-paid count independently of the prediction
+	// aggregation. This ensures members who have not submitted any predictions
+	// are still counted for prize-tier purposes.
+	activePaid, err := s.memberRepo.CountActivePaid(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &LeaderboardResult{
+		ActivePaidMembers: activePaid,
+		WinnerCount:       domain.WinnerCount(activePaid),
+		EligibleForPrizes: domain.EligibleForPayments(activePaid),
+	}
+
 	if len(pointsByUser) == 0 {
-		return nil, nil
+		result.Entries = nil
+		return result, nil
 	}
 
 	entries, err := s.buildEntries(ctx, quinielaID, pointsByUser)
@@ -150,18 +168,10 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 	}
 
 	sortAndRank(entries, stats, distances)
-	assignPrizes(entries, s.prizeThreshold(ctx, q.PrizeThreshold))
+	assignPrizes(entries, activePaid)
 
-	return entries, nil
-}
-
-// prizeThreshold returns the effective prize threshold: the quiniela-specific
-// value when positive, otherwise the system param (or domain constant default).
-func (s *rankingService) prizeThreshold(ctx context.Context, quinielaThreshold int) int {
-	if quinielaThreshold > 0 {
-		return quinielaThreshold
-	}
-	return s.params.GetInt(ctx, domain.ParamKeyGroupDefaultPrize, domain.DefaultPrizeThreshold)
+	result.Entries = entries
+	return result, nil
 }
 
 // buildEntries hydrates LeaderboardEntry values from a userID->points map.
@@ -357,33 +367,39 @@ func assignRanks(entries []*domain.LeaderboardEntry, stats map[int]*domain.UserP
 	}
 }
 
-// assignPrizes marks entries as PrizeWinner = true based on the quiniela's
-// prize distribution formula:
+// assignPrizes marks entries as PrizeWinner = true based on the fixed prize
+// tiers defined by domain.WinnerCount(activePaidMembers).
 //
-//	winnerCount = max(1, floor(len(entries) / prizeThreshold))
+// activePaidMembers is the authoritative count of active, paid members in the
+// group — it must come from GroupMembershipRepository.CountActivePaid, not
+// from len(entries). The two values differ when some paid members have not yet
+// submitted any predictions: those members appear in the member roster but not
+// in the leaderboard entries slice. Using len(entries) would under-count the
+// group size and assign fewer prizes than the business rules require.
 //
-// All entries whose Rank is ≤ winnerCount are prize winners, including tied
-// entries that share a rank at the boundary. This means the actual number of
-// prize winners may exceed winnerCount when a tie falls on the cut-off rank.
+// All entries whose Rank is ≤ winnerCount are marked, including tied entries
+// that share a rank at the boundary — so the actual number of winners can
+// exceed winnerCount when a tie falls exactly on the cut-off rank.
 // The entries slice must already be sorted and ranked before this is called.
-//
-// If prizeThreshold is zero or negative (invalid data, should never reach this
-// point after validation), DefaultPrizeThreshold is used as a safe fallback to
-// prevent a division-by-zero panic.
-func assignPrizes(entries []*domain.LeaderboardEntry, prizeThreshold int) {
+func assignPrizes(entries []*domain.LeaderboardEntry, activePaidMembers int) {
 	if len(entries) == 0 {
 		return
 	}
-	if prizeThreshold <= 0 {
-		prizeThreshold = domain.DefaultPrizeThreshold
+	winnerCount := domain.WinnerCount(activePaidMembers)
+	if winnerCount == 0 {
+		return // group below minimum; no prizes
 	}
-	winnerCount := len(entries) / prizeThreshold
-	if winnerCount < 1 {
-		winnerCount = 1
+	if winnerCount > len(entries) {
+		// Fewer entries than winners (some paid members have no predictions yet).
+		// Mark all current entries as prize winners; the remaining prize slots
+		// will be filled as those members submit and score predictions.
+		for _, e := range entries {
+			e.PrizeWinner = true
+		}
+		return
 	}
-	// Determine the rank threshold. Because entries are sorted and multiple
-	// entries can share a rank, we read the rank of the winnerCount-th entry
-	// (0-indexed: winnerCount-1) to include all tied entries at that rank.
+	// Read the rank of the winnerCount-th entry (0-indexed) to capture all
+	// members tied at the boundary rank.
 	cutoffRank := entries[winnerCount-1].Rank
 	for _, e := range entries {
 		e.PrizeWinner = e.Rank <= cutoffRank
