@@ -173,7 +173,6 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyScoringGoalDiff:          {0, 100},
 	domain.ParamKeyPredictionDeadlineMin:    {0, 1440}, // 0 = no deadline; max 24 h
 	domain.ParamKeyGroupMinMembers:          {2, 1000},
-	domain.ParamKeyGroupDefaultPrize:        {1, 100},
 	domain.ParamKeyGroupInviteCodeLength:    {6, 64},
 	domain.ParamKeyConflictStaleDays:        {1, 365},
 	domain.ParamKeyPaginationDefaultLimit:   {1, 1_000},
