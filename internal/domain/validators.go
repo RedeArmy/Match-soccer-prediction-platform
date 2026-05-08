@@ -105,8 +105,12 @@ func ValidatePrediction(p *Prediction, kickoffAt, now time.Time, deadlineOffset 
 	return nil
 }
 
-// ValidateQuiniela checks that the essential fields of a Quiniela are present,
-// within length bounds, and that PrizeThreshold is positive when provided.
+// ValidateQuiniela checks that the essential fields of a Quiniela are present
+// and within length bounds.
+//
+// entry_fee must be non-negative: zero means the group is free; positive values
+// trigger the payment workflow. Negative values are rejected here so that the
+// database CHECK constraint is never the first line of defence.
 func ValidateQuiniela(q *Quiniela) error {
 	if q.Name == "" {
 		return apperrors.Validation("quiniela name must not be empty")
@@ -117,8 +121,31 @@ func ValidateQuiniela(q *Quiniela) error {
 	if q.OwnerID == 0 {
 		return apperrors.Validation("quiniela must have an owner")
 	}
-	if q.PrizeThreshold < 1 {
-		return apperrors.Validation("prize_threshold must be at least 1")
+	if q.EntryFee < 0 {
+		return apperrors.Validation("entry fee must not be negative")
+	}
+	return nil
+}
+
+// ValidateGroupSize returns a validation error when n falls outside the
+// platform-enforced membership bounds [MinMembersPerGroup, MaxMembersPerGroup].
+//
+// This function encapsulates the group-size business rule so that any future
+// change to the bounds requires only one edit here, rather than scattered
+// comparisons across the service layer. It is intended for use in service
+// methods that receive an explicit member count (e.g. admin bulk operations),
+// not for the hot path of individual join/leave operations where the database
+// trigger is the authoritative guard.
+func ValidateGroupSize(n int) error {
+	if n < MinMembersPerGroup {
+		return apperrors.Validation(
+			"group must have at least 5 active members to be eligible for payments and prizes",
+		)
+	}
+	if n > MaxMembersPerGroup {
+		return apperrors.Validation(
+			"group cannot have more than 20 active members",
+		)
 	}
 	return nil
 }

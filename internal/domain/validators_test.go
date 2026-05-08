@@ -207,9 +207,16 @@ func TestValidateEmail_WithSpaces_ReturnsValidation(t *testing.T) {
 // ── ValidateQuiniela ──────────────────────────────────────────────────────────
 
 func TestValidateQuiniela_Valid_ReturnsNil(t *testing.T) {
-	q := &domain.Quiniela{Name: testGroupName, OwnerID: 1, PrizeThreshold: 3}
+	q := &domain.Quiniela{Name: testGroupName, OwnerID: 1, EntryFee: 0}
 	if err := domain.ValidateQuiniela(q); err != nil {
 		t.Errorf(fmtUnexpectedErr, err)
+	}
+}
+
+func TestValidateQuiniela_ValidWithEntryFee_ReturnsNil(t *testing.T) {
+	q := &domain.Quiniela{Name: testGroupName, OwnerID: 1, EntryFee: 100}
+	if err := domain.ValidateQuiniela(q); err != nil {
+		t.Errorf("expected nil for valid quiniela with entry fee, got %v", err)
 	}
 }
 
@@ -227,10 +234,51 @@ func TestValidateQuiniela_ZeroOwner_ReturnsValidation(t *testing.T) {
 	}
 }
 
-func TestValidateQuiniela_ZeroPrizeThreshold_ReturnsValidation(t *testing.T) {
-	q := &domain.Quiniela{Name: testGroupName, OwnerID: 1, PrizeThreshold: 0}
+func TestValidateQuiniela_NegativeEntryFee_ReturnsValidation(t *testing.T) {
+	q := &domain.Quiniela{Name: testGroupName, OwnerID: 1, EntryFee: -1}
 	if err := domain.ValidateQuiniela(q); !isValidation(err) {
-		t.Errorf("expected validation error for PrizeThreshold=0, got %v", err)
+		t.Errorf("expected validation error for negative entry fee, got %v", err)
+	}
+}
+
+// ── ValidateGroupSize ─────────────────────────────────────────────────────────
+
+func TestValidateGroupSize_AtMinimum_ReturnsNil(t *testing.T) {
+	if err := domain.ValidateGroupSize(domain.MinMembersPerGroup); err != nil {
+		t.Errorf("expected nil at minimum group size (%d), got %v", domain.MinMembersPerGroup, err)
+	}
+}
+
+func TestValidateGroupSize_AtMaximum_ReturnsNil(t *testing.T) {
+	if err := domain.ValidateGroupSize(domain.MaxMembersPerGroup); err != nil {
+		t.Errorf("expected nil at maximum group size (%d), got %v", domain.MaxMembersPerGroup, err)
+	}
+}
+
+func TestValidateGroupSize_BelowMinimum_ReturnsValidation(t *testing.T) {
+	cases := []int{0, 1, 2, 3, 4}
+	for _, n := range cases {
+		if err := domain.ValidateGroupSize(n); !isValidation(err) {
+			t.Errorf("ValidateGroupSize(%d): expected validation error, got %v", n, err)
+		}
+	}
+}
+
+func TestValidateGroupSize_AboveMaximum_ReturnsValidation(t *testing.T) {
+	cases := []int{21, 50, 100}
+	for _, n := range cases {
+		if err := domain.ValidateGroupSize(n); !isValidation(err) {
+			t.Errorf("ValidateGroupSize(%d): expected validation error, got %v", n, err)
+		}
+	}
+}
+
+func TestValidateGroupSize_MidRange_ReturnsNil(t *testing.T) {
+	cases := []int{6, 9, 10, 14, 15, 19}
+	for _, n := range cases {
+		if err := domain.ValidateGroupSize(n); err != nil {
+			t.Errorf("ValidateGroupSize(%d): expected nil, got %v", n, err)
+		}
 	}
 }
 
@@ -328,9 +376,8 @@ func TestValidateMatch_TeamNamesAtMaxLength_Accepted(t *testing.T) {
 func TestValidateQuiniela_NameExceedsMaxLength_ReturnsValidation(t *testing.T) {
 	oversized := strings.Repeat("q", 201)
 	q := &domain.Quiniela{
-		Name:           oversized,
-		OwnerID:        1,
-		PrizeThreshold: 3,
+		Name:    oversized,
+		OwnerID: 1,
 	}
 	if err := domain.ValidateQuiniela(q); !isValidation(err) {
 		t.Errorf("expected validation error for quiniela name >200 chars, got %v", err)
@@ -340,9 +387,8 @@ func TestValidateQuiniela_NameExceedsMaxLength_ReturnsValidation(t *testing.T) {
 func TestValidateQuiniela_NameAtMaxLength_Accepted(t *testing.T) {
 	exactly200 := strings.Repeat("n", 200)
 	q := &domain.Quiniela{
-		Name:           exactly200,
-		OwnerID:        1,
-		PrizeThreshold: 3,
+		Name:    exactly200,
+		OwnerID: 1,
 	}
 	if err := domain.ValidateQuiniela(q); err != nil {
 		t.Errorf("expected nil for 200-char quiniela name, got %v", err)

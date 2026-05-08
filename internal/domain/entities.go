@@ -251,37 +251,30 @@ const (
 // shared out-of-band (WhatsApp, SMS). Membership records are stored in the
 // group_memberships table; this struct carries only the group metadata.
 //
-// EntryFee and Currency support future payment-tracking workflows; they
-// default to 0 / "MXN" and are never nil in a hydrated struct.
-// MaxMembers is nil when the group has no size cap.
+// EntryFee and Currency support payment-tracking workflows; they default to
+// 0 / "GTQ" and are never nil in a hydrated struct.
 //
 // InviteCodeExpiresAt is always nil: invite links never expire by design.
 // RotateInviteCode can be used to invalidate a leaked link by generating a
 // new one; the old code becomes unreachable immediately after rotation.
 //
 // Status is system-managed: the membership service sets it to
-// QuinielaStatusActive when MinMembersForActive active members are present,
+// QuinielaStatusActive when MinMembersPerGroup active members are present,
 // and reverts to QuinielaStatusInactive when the count falls below that
 // threshold. Only active groups are eligible for payments and prizes.
 //
-// PrizeThreshold drives proportional prize distribution:
-//
-//	winnerCount = max(1, floor(memberCount / PrizeThreshold))
-//
-// A threshold of 3 means roughly 1-in-3 active+paid members receive a prize.
-// The service layer defaults this to DefaultPrizeThreshold when the caller
-// omits it. Must be positive; enforced by a CHECK constraint in the database.
+// The number of prize winners is determined by WinnerCount(activePaidMembers).
+// The platform enforces a hard cap of MaxMembersPerGroup (20) active members;
+// the minimum for prize eligibility is MinMembersPerGroup (5).
 type Quiniela struct {
 	ID                  int
 	Name                string
 	OwnerID             int
 	InviteCode          string
 	InviteCodeExpiresAt *time.Time     // always nil; invite links never expire
-	Status              QuinielaStatus // system-managed: active iff ≥ MinMembersForActive active members
+	Status              QuinielaStatus // system-managed: active iff ≥ MinMembersPerGroup active members
 	EntryFee            int
 	Currency            string
-	MaxMembers          *int
-	PrizeThreshold      int // ≥ 1; winnerCount = max(1, floor(N/PrizeThreshold))
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	DeletedAt           *time.Time // nil for active groups; set when the record is soft-deleted
@@ -319,9 +312,8 @@ type TiebreakerView struct {
 // Two entries with equal TotalPoints receive the same rank (standard
 // competition ranking), and the next rank is skipped accordingly.
 //
-// PrizeWinner is computed by the ranking service using the Quiniela's
-// PrizeThreshold: winnerCount = max(1, floor(memberCount / PrizeThreshold)).
-// It is never stored in the database.
+// PrizeWinner is computed by the ranking service using WinnerCount(n) where n
+// is the number of active paid members. It is never stored in the database.
 type LeaderboardEntry struct {
 	User        *User
 	TotalPoints int
