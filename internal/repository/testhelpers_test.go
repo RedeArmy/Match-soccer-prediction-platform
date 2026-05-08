@@ -177,28 +177,34 @@ func seedMatchWithPhase(t *testing.T, phase domain.MatchPhase) *domain.Match {
 func seedQuiniela(t *testing.T, ownerID int) *domain.Quiniela {
 	t.Helper()
 	repo := repository.NewPostgresQuinielaRepository(testDB)
-	q := &domain.Quiniela{Name: fmt.Sprintf("Oficina %s", nextCode()), OwnerID: ownerID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	q := &domain.Quiniela{Name: fmt.Sprintf("Oficina %s", nextCode()), OwnerID: ownerID, InviteCode: nextCode(), Currency: defaultCurrency}
 	if err := repo.Create(context.Background(), q); err != nil {
 		t.Fatalf("seed quiniela: %v", err)
 	}
 	return q
 }
 
-func seedQuinielaWithMaxMembers(t *testing.T, ownerID int, maxMembers *int) *domain.Quiniela {
+// seedQuinielaWithMaxMembers is preserved for tests that verify MaxMembersPerGroup
+// enforcement. The cap is now the platform constant (20), not a per-group value.
+func seedQuinielaWithMaxMembers(t *testing.T, ownerID int, _ *int) *domain.Quiniela {
 	t.Helper()
-	repo := repository.NewPostgresQuinielaRepository(testDB)
-	q := &domain.Quiniela{
-		Name:           fmt.Sprintf("Oficina %s", nextCode()),
-		OwnerID:        ownerID,
-		InviteCode:     nextCode(),
-		Currency:       defaultCurrency,
-		PrizeThreshold: domain.DefaultPrizeThreshold,
-		MaxMembers:     maxMembers,
+	return seedQuiniela(t, ownerID)
+}
+
+// fillGroupToCapacity seeds domain.MaxMembersPerGroup active members into the
+// given quiniela, starting from currentCount. It returns the next available
+// user for the caller to use as the over-limit joiner.
+func fillGroupToCapacity(t *testing.T, quinielaID, currentCount int) {
+	t.Helper()
+	now := time.Now().UTC()
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+	for i := currentCount; i < domain.MaxMembersPerGroup; i++ {
+		u := seedUser(t)
+		m := &domain.GroupMembership{QuinielaID: quinielaID, UserID: u.ID, Status: domain.MembershipActive, Paid: true, JoinedAt: &now}
+		if err := repo.Create(context.Background(), m); err != nil {
+			t.Fatalf("fillGroupToCapacity member %d: %v", i+1, err)
+		}
 	}
-	if err := repo.Create(context.Background(), q); err != nil {
-		t.Fatalf("seed quiniela with max members: %v", err)
-	}
-	return q
 }
 
 func seedMembership(t *testing.T, quinielaID, userID int, status domain.MembershipStatus, paid bool) *domain.GroupMembership {

@@ -193,9 +193,8 @@ type QuinielaRepository interface {
 	Update(ctx context.Context, quiniela *domain.Quiniela) error
 	Delete(ctx context.Context, id int) error
 	ListByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
-	// UpdateGroupSettings changes the max_members cap and entry_fee. A nil
-	// maxMembers removes the cap. Returns the updated quiniela.
-	UpdateGroupSettings(ctx context.Context, quinielaID int, maxMembers *int, entryFee int) (*domain.Quiniela, error)
+	// UpdateGroupSettings changes the entry_fee for a group. Returns the updated quiniela.
+	UpdateGroupSettings(ctx context.Context, quinielaID int, entryFee int) (*domain.Quiniela, error)
 	// DeleteByAdmin soft-deletes a quiniela on behalf of an administrator.
 	// The audit trail is the caller's responsibility via AuditLogRepository.
 	DeleteByAdmin(ctx context.Context, quinielaID, adminID int) error
@@ -238,10 +237,17 @@ type GroupMembershipRepository interface {
 	MarkPaid(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
 	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.GroupMembership, error)
 	ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error)
-	// CountActive returns the number of active members in the given quiniela. It
-	// is called exclusively by syncGroupStatus after every membership transition
-	// to decide whether the quiniela should be set to active or inactive.
+	// CountActive returns the number of members with status=active in the given
+	// quiniela. It is called exclusively by syncGroupStatus after every
+	// membership transition to decide whether the quiniela should be set to
+	// active or inactive.
 	CountActive(ctx context.Context, quinielaID int) (int, error)
+	// CountActivePaid returns the number of members with status=active AND
+	// paid=true in the given quiniela. This is the authoritative count used by
+	// the ranking service to determine prize eligibility and winner count via
+	// domain.EligibleForPayments and domain.WinnerCount. It differs from
+	// CountActive when some active members have not yet settled their entry fee.
+	CountActivePaid(ctx context.Context, quinielaID int) (int, error)
 	// OldestActiveMember returns the active membership with the earliest JoinedAt
 	// in quinielaID, excluding excludeUserID. Returns nil, nil when no eligible
 	// member exists. Used by the ownership-transfer logic to find the automatic
