@@ -59,30 +59,26 @@ const (
 // goalkeeper injury) becomes public in the stadium.
 const PredictionDeadlineOffset = 5 * time.Minute
 
-// DefaultPrizeThreshold is applied by QuinielaService.Create when the caller
-// does not supply a PrizeThreshold. The prize distribution formula is:
-//
-//	winnerCount = max(1, floor(memberCount / PrizeThreshold))
-//
-// With a threshold of 3, a 9-member group has 3 prize winners and a 2-member
-// group always has at least 1. The value must stay consistent with the DEFAULT
-// clause in migration 000023_add_prize_threshold_to_quinielas.up.sql.
-const DefaultPrizeThreshold = 3
-
 // StandingsWinPoints is the number of standing points awarded to the winner of
 // a group-stage match, per the FIFA 3-point rule. Used by TournamentService as
 // the fallback when the tournament.win_points system param is absent.
 const StandingsWinPoints = 3
 
-// MinMembersForActive is the minimum number of active members a quiniela must
-// have for the system to set its status to QuinielaStatusActive. Groups below
-// this threshold are QuinielaStatusInactive: predictions can still be submitted
-// but the group is not eligible for payment processing or prize distribution.
-//
-// The value is 3 - a group of 1 (owner only) or 2 cannot be active. This
-// constant is the single source of truth referenced by GroupMembershipService;
-// changing it here is sufficient to adjust the threshold system-wide.
-const MinMembersForActive = 3
+// MinMembersPerGroup is the minimum number of active paid members a quiniela
+// must reach before it is eligible for payment processing and prize
+// distribution. Groups below this count remain QuinielaStatusInactive.
+// Matches the lowest prize tier threshold in WinnerCount.
+const MinMembersPerGroup = 5
+
+// MinMembersForActive is an alias for MinMembersPerGroup used by
+// GroupMembershipService when reading the runtime system param. The alias
+// preserves the existing param key contract without a migration.
+const MinMembersForActive = MinMembersPerGroup
+
+// MaxMembersPerGroup is the hard platform cap on active members per quiniela.
+// No group may have more than 20 active members; the database trigger
+// trg_enforce_max_members enforces this at write time.
+const MaxMembersPerGroup = 20
 
 // DefaultConflictStaleDays is the fallback staleness threshold used by
 // ConflictService when ParamKeyConflictStaleDays is absent from system_params.
@@ -147,7 +143,6 @@ const (
 	// A value of 5 closes predictions 5 minutes before kick-off.
 	ParamKeyPredictionDeadlineMin = "prediction.deadline_minutes"
 	ParamKeyGroupMinMembers       = "group.min_members_for_active"
-	ParamKeyGroupDefaultPrize     = "group.default_prize_threshold"
 	// ParamKeyGroupInviteCodeLength is the number of characters in a generated
 	// invite code. Defaults to DefaultGroupInviteCodeLength (10).
 	ParamKeyGroupInviteCodeLength = "group.invite_code_length"

@@ -58,19 +58,15 @@ func (s *adminGroupService) RemoveMember(ctx context.Context, membershipID, admi
 	return nil
 }
 
-func (s *adminGroupService) UpdateGroupSettings(ctx context.Context, quinielaID int, maxMembers *int, entryFee, adminID int) (*domain.Quiniela, error) {
-	q, err := s.quinielaRepo.UpdateGroupSettings(ctx, quinielaID, maxMembers, entryFee)
+func (s *adminGroupService) UpdateGroupSettings(ctx context.Context, quinielaID int, entryFee, adminID int) (*domain.Quiniela, error) {
+	q, err := s.quinielaRepo.UpdateGroupSettings(ctx, quinielaID, entryFee)
 	if err != nil {
 		return nil, err
 	}
 
 	resType := "quiniela"
 	role := domain.RoleAdmin
-	meta := map[string]any{"entry_fee": entryFee}
-	if maxMembers != nil {
-		meta["max_members"] = *maxMembers
-	}
-	s.audit.Log(ctx, &adminID, &role, domain.AuditActionGroupSettingsUpdated, &resType, &quinielaID, meta)
+	s.audit.Log(ctx, &adminID, &role, domain.AuditActionGroupSettingsUpdated, &resType, &quinielaID, map[string]any{"entry_fee": entryFee})
 	return q, nil
 }
 

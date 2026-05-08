@@ -25,7 +25,7 @@ func NewPostgresQuinielaRepository(db *pgxpool.Pool) *PostgresQuinielaRepository
 	return &PostgresQuinielaRepository{db: db}
 }
 
-const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold, status, created_at, updated_at, deleted_at"
+const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, status, created_at, updated_at, deleted_at"
 
 const msgQuinielaNotFound = "quiniela not found"
 
@@ -33,7 +33,7 @@ func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	q := &domain.Quiniela{}
 	err := row.Scan(
 		&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
-		&q.EntryFee, &q.Currency, &q.MaxMembers, &q.PrizeThreshold, &q.Status,
+		&q.EntryFee, &q.Currency, &q.Status,
 		&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -65,9 +65,9 @@ func (r *PostgresQuinielaRepository) CreateWithMembership(ctx context.Context, q
 	}()
 
 	qRow := tx.QueryRow(ctx,
-		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+quinielaColumns,
-		q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency, q.MaxMembers, q.PrizeThreshold,
+		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+quinielaColumns,
+		q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency,
 	)
 	qResult, err := scanQuiniela(qRow)
 	if err != nil {
@@ -102,9 +102,9 @@ func (r *PostgresQuinielaRepository) CreateWithMembership(ctx context.Context, q
 
 func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quiniela) error {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, max_members, prize_threshold)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+quinielaColumns,
-		q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency, q.MaxMembers, q.PrizeThreshold,
+		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+quinielaColumns,
+		q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency,
 	)
 	result, err := scanQuiniela(row)
 	if err != nil {
@@ -226,7 +226,7 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 		q := &domain.Quiniela{}
 		if err := rows.Scan(
 			&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
-			&q.EntryFee, &q.Currency, &q.MaxMembers, &q.PrizeThreshold, &q.Status,
+			&q.EntryFee, &q.Currency, &q.Status,
 			&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 		); err != nil {
 			return nil, apperrors.Internal(err)
@@ -239,18 +239,16 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 	return quinielas, nil
 }
 
-// UpdateGroupSettings updates the max_members cap and entry_fee for a quiniela.
-// A nil maxMembers removes the cap (sets the column to NULL). Returns the
+// UpdateGroupSettings updates the entry_fee for a quiniela. Returns the
 // updated quiniela or NotFound when the group does not exist or is soft-deleted.
-func (r *PostgresQuinielaRepository) UpdateGroupSettings(ctx context.Context, quinielaID int, maxMembers *int, entryFee int) (*domain.Quiniela, error) {
+func (r *PostgresQuinielaRepository) UpdateGroupSettings(ctx context.Context, quinielaID int, entryFee int) (*domain.Quiniela, error) {
 	row := r.db.QueryRow(ctx,
 		`UPDATE quinielas
-		    SET max_members = $1,
-		        entry_fee   = $2,
-		        updated_at  = NOW()
-		  WHERE id = $3`+activeOnly+`
+		    SET entry_fee  = $1,
+		        updated_at = NOW()
+		  WHERE id = $2`+activeOnly+`
 		  RETURNING `+quinielaColumns,
-		maxMembers, entryFee, quinielaID,
+		entryFee, quinielaID,
 	)
 	result, err := scanQuiniela(row)
 	if err != nil {

@@ -77,7 +77,7 @@ func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.
 		return nil, nil, err
 	}
 
-	if err := enforceMaxMembers(ctx, tx, q); err != nil {
+	if err := enforceMaxMembers(ctx, tx, q.ID); err != nil {
 		return nil, nil, err
 	}
 
@@ -143,22 +143,19 @@ func validateMembershipStatus(existing *domain.GroupMembership) error {
 	return nil
 }
 
-func enforceMaxMembers(ctx context.Context, tx pgx.Tx, q *domain.Quiniela) error {
-	if q.MaxMembers == nil {
-		return nil
-	}
+func enforceMaxMembers(ctx context.Context, tx pgx.Tx, quinielaID int) error {
 	var count int
 	err := tx.QueryRow(ctx,
 		`SELECT COUNT(*)
 		   FROM group_memberships
 		  WHERE quiniela_id = $1
 		    AND status      = 'active'`,
-		q.ID,
+		quinielaID,
 	).Scan(&count)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
-	if count >= *q.MaxMembers {
+	if count >= domain.MaxMembersPerGroup {
 		return apperrors.Conflict(errMsgMaxMembersReached)
 	}
 	return nil
@@ -255,6 +252,26 @@ func (r *PostgresGroupMembershipRepository) CountActive(ctx context.Context, qui
 	var count int
 	err := r.db.QueryRow(ctx,
 		`SELECT COUNT(*) FROM group_memberships WHERE quiniela_id=$1 AND status='active'`,
+		quinielaID,
+	).Scan(&count)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return count, nil
+}
+
+// CountActivePaid returns the number of members with status='active' AND
+// paid=true in the given quiniela. This is the authoritative input to
+// domain.WinnerCount and domain.EligibleForPayments: only members who are
+// both active and have settled their entry fee are counted for prize purposes.
+func (r *PostgresGroupMembershipRepository) CountActivePaid(ctx context.Context, quinielaID int) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*)
+		   FROM group_memberships
+		  WHERE quiniela_id = $1
+		    AND status      = 'active'
+		    AND paid        = TRUE`,
 		quinielaID,
 	).Scan(&count)
 	if err != nil {

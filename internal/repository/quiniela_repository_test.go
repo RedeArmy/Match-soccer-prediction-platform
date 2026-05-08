@@ -18,7 +18,7 @@ func TestQuinielaRepository_Create_HydratesID(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	q := &domain.Quiniela{Name: "Test Pool", OwnerID: u.ID, PrizeThreshold: domain.DefaultPrizeThreshold}
+	q := &domain.Quiniela{Name: "Test Pool", OwnerID: u.ID}
 	if err := repo.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -129,7 +129,7 @@ func TestQuinielaRepository_Create_HydratesInviteCode(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 	code := nextCode()
-	q := &domain.Quiniela{Name: "Pool A", OwnerID: u.ID, InviteCode: code, Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	q := &domain.Quiniela{Name: "Pool A", OwnerID: u.ID, InviteCode: code, Currency: defaultCurrency}
 
 	if err := repo.Create(context.Background(), q); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -144,11 +144,11 @@ func TestQuinielaRepository_Create_DuplicateName_ReturnsConflict(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	q1 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	q1 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
 	if err := repo.Create(context.Background(), q1); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	q2 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	q2 := &domain.Quiniela{Name: "Same Name", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
 	err := repo.Create(context.Background(), q2)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict error for duplicate name, got %v", err)
@@ -258,7 +258,7 @@ func TestQuinielaRepository_CreateWithMembership_HydratesBothIDs(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	q := &domain.Quiniela{Name: "Atomic Pool", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	q := &domain.Quiniela{Name: "Atomic Pool", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
 	now := time.Now().UTC()
 	m := &domain.GroupMembership{UserID: u.ID, Status: domain.MembershipActive, Paid: false, JoinedAt: &now}
 
@@ -281,7 +281,7 @@ func TestQuinielaRepository_CreateWithMembership_QuinielaVisibleAfterCommit(t *t
 	u := seedUser(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	q := &domain.Quiniela{Name: "Visible Pool", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	q := &domain.Quiniela{Name: "Visible Pool", OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
 	now := time.Now().UTC()
 	m := &domain.GroupMembership{UserID: u.ID, Status: domain.MembershipActive, Paid: false, JoinedAt: &now}
 
@@ -304,14 +304,14 @@ func TestQuinielaRepository_CreateWithMembership_DuplicateName_ReturnsConflict(t
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 	code := nextCode()
 
-	q1 := &domain.Quiniela{Name: "Same Name " + code, OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	q1 := &domain.Quiniela{Name: "Same Name " + code, OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
 	now := time.Now().UTC()
 	m1 := &domain.GroupMembership{UserID: u.ID, Status: domain.MembershipActive, Paid: false, JoinedAt: &now}
 	if err := repo.CreateWithMembership(context.Background(), q1, m1); err != nil {
 		t.Fatalf("first CreateWithMembership: %v", err)
 	}
 
-	q2 := &domain.Quiniela{Name: q1.Name, OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency, PrizeThreshold: domain.DefaultPrizeThreshold}
+	q2 := &domain.Quiniela{Name: q1.Name, OwnerID: u.ID, InviteCode: nextCode(), Currency: defaultCurrency}
 	now2 := time.Now().UTC()
 	m2 := &domain.GroupMembership{UserID: u.ID, Status: domain.MembershipActive, Paid: false, JoinedAt: &now2}
 	err := repo.CreateWithMembership(context.Background(), q2, m2)
@@ -322,37 +322,33 @@ func TestQuinielaRepository_CreateWithMembership_DuplicateName_ReturnsConflict(t
 
 // ── QuinielaRepository extensions ────────────────────────────────────────────
 
-func TestQuinielaRepository_UpdateGroupSettings(t *testing.T) {
+func TestQuinielaRepository_UpdateGroupSettings_UpdatesEntryFee(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
 	q := seedQuiniela(t, u.ID)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	maxM := 10
-	updated, err := repo.UpdateGroupSettings(context.Background(), q.ID, &maxM, 5000)
+	updated, err := repo.UpdateGroupSettings(context.Background(), q.ID, 5000)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
-	}
-	if updated.MaxMembers == nil || *updated.MaxMembers != 10 {
-		t.Errorf("expected MaxMembers 10, got %v", updated.MaxMembers)
 	}
 	if updated.EntryFee != 5000 {
 		t.Errorf("expected EntryFee 5000, got %d", updated.EntryFee)
 	}
 }
 
-func TestQuinielaRepository_UpdateGroupSettings_NilMaxMembersRemovesCap(t *testing.T) {
+func TestQuinielaRepository_UpdateGroupSettings_ZeroEntryFee(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
 	q := seedQuiniela(t, u.ID)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	updated, err := repo.UpdateGroupSettings(context.Background(), q.ID, nil, 0)
+	updated, err := repo.UpdateGroupSettings(context.Background(), q.ID, 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if updated.MaxMembers != nil {
-		t.Errorf("expected nil MaxMembers, got %v", updated.MaxMembers)
+	if updated.EntryFee != 0 {
+		t.Errorf("expected EntryFee 0, got %d", updated.EntryFee)
 	}
 }
 
@@ -360,7 +356,7 @@ func TestQuinielaRepository_UpdateGroupSettings_NotFound(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	_, err := repo.UpdateGroupSettings(context.Background(), 999999, nil, 0)
+	_, err := repo.UpdateGroupSettings(context.Background(), 999999, 0)
 	if !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)
 	}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
 // stubUserRepo implements repository.UserRepository for handler tests.
@@ -154,12 +155,18 @@ type stubRanker struct {
 	err     error
 }
 
-func (s *stubRanker) GetLeaderboard(_ context.Context, _ int) ([]*domain.LeaderboardEntry, error) {
-	return s.entries, s.err
+func (s *stubRanker) GetLeaderboard(_ context.Context, _ int) (*service.LeaderboardResult, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &service.LeaderboardResult{Entries: s.entries}, nil
 }
 
-func (s *stubRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) ([]*domain.LeaderboardEntry, error) {
-	return s.entries, s.err
+func (s *stubRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) (*service.LeaderboardResult, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &service.LeaderboardResult{Entries: s.entries}, nil
 }
 
 // stubUserStatsSvc implements service.MyStatsGetter with configurable returns.

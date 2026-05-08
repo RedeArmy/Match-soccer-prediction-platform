@@ -51,40 +51,43 @@ func (s *CachedRankingService) effectiveTTL() time.Duration {
 	return time.Duration(s.ttlNs.Load())
 }
 
-// GetLeaderboard returns the cached leaderboard for the given quiniela when
-// available, or falls through to the inner Ranker and caches the result.
-func (s *CachedRankingService) GetLeaderboard(ctx context.Context, quinielaID int) ([]*domain.LeaderboardEntry, error) {
+// GetLeaderboard returns the cached LeaderboardResult for the given quiniela
+// when available, or falls through to the inner Ranker and caches the result.
+// The full LeaderboardResult (including prize metadata) is cached so that
+// ActivePaidMembers, WinnerCount, and EligibleForPrizes are consistent with
+// the cached entries and do not require a separate DB round-trip on cache hit.
+func (s *CachedRankingService) GetLeaderboard(ctx context.Context, quinielaID int) (*LeaderboardResult, error) {
 	key := cacheKeyLeaderboard(quinielaID)
-	if cached, ok := cacheGet[[]*domain.LeaderboardEntry](ctx, s.store, key, s.log); ok {
+	if cached, ok := cacheGet[*LeaderboardResult](ctx, s.store, key, s.log); ok {
 		return cached, nil
 	}
-	entries, err := s.inner.GetLeaderboard(ctx, quinielaID)
+	result, err := s.inner.GetLeaderboard(ctx, quinielaID)
 	if err != nil {
 		return nil, err
 	}
-	if len(entries) > 0 {
-		cacheSet(ctx, s.store, key, entries, s.effectiveTTL(), s.log)
+	if result != nil && len(result.Entries) > 0 {
+		cacheSet(ctx, s.store, key, result, s.effectiveTTL(), s.log)
 	}
-	return entries, nil
+	return result, nil
 }
 
-// GetPhaseLeaderboard returns the cached phase leaderboard when available, or
-// falls through to the inner Ranker and caches the result. Cache failures are
-// non-fatal: a miss or a Set error falls through to the inner Ranker so a Redis
-// outage never makes the leaderboard unavailable.
-func (s *CachedRankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) ([]*domain.LeaderboardEntry, error) {
+// GetPhaseLeaderboard returns the cached phase LeaderboardResult when available,
+// or falls through to the inner Ranker and caches the result. Cache failures
+// are non-fatal: a miss or a Set error falls through to the inner Ranker so a
+// Redis outage never makes the leaderboard unavailable.
+func (s *CachedRankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) (*LeaderboardResult, error) {
 	key := cacheKeyPhaseLeaderboard(quinielaID, phase)
-	if cached, ok := cacheGet[[]*domain.LeaderboardEntry](ctx, s.store, key, s.log); ok {
+	if cached, ok := cacheGet[*LeaderboardResult](ctx, s.store, key, s.log); ok {
 		return cached, nil
 	}
-	entries, err := s.inner.GetPhaseLeaderboard(ctx, quinielaID, phase)
+	result, err := s.inner.GetPhaseLeaderboard(ctx, quinielaID, phase)
 	if err != nil {
 		return nil, err
 	}
-	if len(entries) > 0 {
-		cacheSet(ctx, s.store, key, entries, s.effectiveTTL(), s.log)
+	if result != nil && len(result.Entries) > 0 {
+		cacheSet(ctx, s.store, key, result, s.effectiveTTL(), s.log)
 	}
-	return entries, nil
+	return result, nil
 }
 
 // InvalidateLeaderboard evicts all cached leaderboard entries for the given

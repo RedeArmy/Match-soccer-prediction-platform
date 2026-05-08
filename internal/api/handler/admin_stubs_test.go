@@ -89,7 +89,7 @@ type stubAdminGroupSvc struct {
 
 func (s *stubAdminGroupSvc) DeleteGroup(_ context.Context, _, _ int) error  { return s.err }
 func (s *stubAdminGroupSvc) RemoveMember(_ context.Context, _, _ int) error { return s.err }
-func (s *stubAdminGroupSvc) UpdateGroupSettings(_ context.Context, _ int, _ *int, _, _ int) (*domain.Quiniela, error) {
+func (s *stubAdminGroupSvc) UpdateGroupSettings(_ context.Context, _, _, _ int) (*domain.Quiniela, error) {
 	return s.quiniela, s.err
 }
 func (s *stubAdminGroupSvc) TransferOwnership(_ context.Context, _, _, _ int) error { return s.err }

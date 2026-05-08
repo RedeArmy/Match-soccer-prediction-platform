@@ -22,7 +22,7 @@ type paramSpec struct {
 
 // allParams is the authoritative list of every system parameter that must exist
 // in the database. This list is derived from domain/constants.go and must stay
-// synchronized with migration 000049_complete_system_params_with_descriptions.up.sql.
+// synchronized with migration 000051_sync_system_params_canonical.up.sql.
 var allParams = []paramSpec{
 	// Scoring
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring"},
@@ -34,7 +34,6 @@ var allParams = []paramSpec{
 
 	// Group
 	{key: domain.ParamKeyGroupMinMembers, defaultValue: strconv.Itoa(domain.MinMembersForActive), paramType: "int", category: "group"},
-	{key: domain.ParamKeyGroupDefaultPrize, defaultValue: strconv.Itoa(domain.DefaultPrizeThreshold), paramType: "int", category: "group"},
 	{key: domain.ParamKeyGroupInviteCodeLength, defaultValue: strconv.Itoa(domain.DefaultGroupInviteCodeLength), paramType: "int", category: "group"},
 
 	// Conflict
