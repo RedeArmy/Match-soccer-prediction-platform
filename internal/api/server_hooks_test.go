@@ -61,11 +61,11 @@ func (s *hookCacheStore) FlushByPrefix(_ context.Context, prefix string) error {
 // hookRanker is a no-op service.Ranker; leaderboardTTLHook never calls it directly.
 type hookRanker struct{}
 
-func (hookRanker) GetLeaderboard(_ context.Context, _ int) ([]*domain.LeaderboardEntry, error) {
-	return nil, nil
+func (hookRanker) GetLeaderboard(_ context.Context, _ int) (*service.LeaderboardResult, error) {
+	return &service.LeaderboardResult{}, nil
 }
-func (hookRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) ([]*domain.LeaderboardEntry, error) {
-	return nil, nil
+func (hookRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) (*service.LeaderboardResult, error) {
+	return &service.LeaderboardResult{}, nil
 }
 
 // ── leaderboardTTLHook ────────────────────────────────────────────────────────

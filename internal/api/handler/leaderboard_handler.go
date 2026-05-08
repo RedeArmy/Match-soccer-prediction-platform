@@ -26,6 +26,10 @@ func NewLeaderboardHandler(ranker service.Ranker, log *zap.Logger) *LeaderboardH
 // on matches belonging to a specific tournament phase (e.g. "group_stage").
 // Omitting the parameter returns the overall standings across all phases.
 //
+// The response includes prize metadata (active_paid_members, winner_count,
+// eligible_for_prizes) so clients can display prize positions and eligibility
+// status without a separate API call.
+//
 // @Summary      Group leaderboard
 // @Description  Returns the ranked standings for a group. Pass ?phase=<value>
 //
@@ -57,20 +61,25 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var entries []*domain.LeaderboardEntry
+	var result *service.LeaderboardResult
 	if phase == "" {
-		entries, err = h.ranker.GetLeaderboard(r.Context(), id)
+		result, err = h.ranker.GetLeaderboard(r.Context(), id)
 	} else {
-		entries, err = h.ranker.GetPhaseLeaderboard(r.Context(), id, phase)
+		result, err = h.ranker.GetPhaseLeaderboard(r.Context(), id, phase)
 	}
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
 
+	// Normalise nil result (group exists but has no scored predictions yet).
+	if result == nil {
+		result = &service.LeaderboardResult{}
+	}
+
 	// Return an empty array rather than null when there are no entries yet.
-	out := make([]LeaderboardEntryResponse, 0, len(entries))
-	for _, e := range entries {
+	out := make([]LeaderboardEntryResponse, 0, len(result.Entries))
+	for _, e := range result.Entries {
 		out = append(out, LeaderboardEntryResponse{
 			Rank:        e.Rank,
 			UserID:      e.User.ID,
@@ -81,9 +90,12 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 	}
 
 	resp := LeaderboardResponse{
-		QuinielaID: id,
-		Phase:      string(phase),
-		Entries:    out,
+		QuinielaID:        id,
+		Phase:             string(phase),
+		ActivePaidMembers: result.ActivePaidMembers,
+		WinnerCount:       result.WinnerCount,
+		EligibleForPrizes: result.EligibleForPrizes,
+		Entries:           out,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

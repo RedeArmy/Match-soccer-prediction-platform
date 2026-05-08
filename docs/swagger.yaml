@@ -244,17 +244,13 @@ definitions:
         type: string
       invite_code_expires_at:
         type: string
-      max_members:
-        type: integer
       name:
         type: string
       owner_user_id:
         type: integer
-      prize_threshold:
-        type: integer
       status:
         description: |-
-          Status is system-managed: "active" when the group has ≥ 3 active members,
+          Status is system-managed: "active" when the group has ≥ 5 active members,
           "inactive" otherwise. Only active groups are eligible for payment processing
           and prize distribution.
         type: string
@@ -276,6 +272,10 @@ definitions:
     type: object
   internal_api_handler.LeaderboardResponse:
     properties:
+      active_paid_members:
+        type: integer
+      eligible_for_prizes:
+        type: boolean
       entries:
         items:
           $ref: '#/definitions/internal_api_handler.LeaderboardEntryResponse'
@@ -284,6 +284,8 @@ definitions:
         description: empty string omitted for the overall leaderboard
         type: string
       quiniela_id:
+        type: integer
+      winner_count:
         type: integer
     type: object
   internal_api_handler.MatchResponse:
@@ -620,13 +622,8 @@ definitions:
         type: string
       entry_fee:
         type: integer
-      max_members:
-        type: integer
       name:
         type: string
-      prize_threshold:
-        description: optional; defaults to DefaultPrizeThreshold when 0
-        type: integer
     type: object
   internal_api_handler.createMatchRequest:
     properties:
@@ -691,8 +688,6 @@ definitions:
   internal_api_handler.updateGroupSettingsRequest:
     properties:
       entry_fee:
-        type: integer
-      max_members:
         type: integer
     type: object
   internal_api_handler.updatePredictionRequest:
