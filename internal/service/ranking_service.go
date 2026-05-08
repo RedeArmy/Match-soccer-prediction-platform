@@ -90,51 +90,12 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) (*L
 		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
 	}
 
-	// Fetch the authoritative active-paid count independently of the prediction
-	// aggregation. This ensures members who have not submitted any predictions
-	// are still counted for prize-tier purposes.
-	activePaid, err := s.memberRepo.CountActivePaid(ctx, quinielaID)
-	if err != nil {
-		return nil, err
-	}
-
 	pointsByUser, err := s.predRepo.TotalPointsByQuiniela(ctx, quinielaID)
 	if err != nil {
 		return nil, err
 	}
 
-	result := &LeaderboardResult{
-		ActivePaidMembers: activePaid,
-		WinnerCount:       domain.WinnerCount(activePaid),
-		EligibleForPrizes: domain.EligibleForPayments(activePaid),
-	}
-
-	if len(pointsByUser) == 0 {
-		result.Entries = nil
-		return result, nil
-	}
-
-	entries, err := s.buildEntries(ctx, quinielaID, pointsByUser)
-	if err != nil {
-		return nil, err
-	}
-
-	stats, err := s.fetchPredictionStats(ctx, quinielaID)
-	if err != nil {
-		return nil, err
-	}
-
-	userIDs := extractUserIDs(entries)
-	distances, err := s.fetchTiebreakerDistances(ctx, userIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	sortAndRank(entries, stats, distances)
-	assignPrizes(entries, activePaid)
-
-	result.Entries = entries
-	return result, nil
+	return s.buildLeaderboard(ctx, quinielaID, pointsByUser)
 }
 
 // GetPhaseLeaderboard returns standings restricted to predictions on matches in
@@ -155,12 +116,26 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
 	}
 
-	activePaid, err := s.memberRepo.CountActivePaid(ctx, quinielaID)
+	pointsByUser, err := s.predRepo.TotalPointsByQuinielaAndPhase(ctx, quinielaID, phase)
 	if err != nil {
 		return nil, err
 	}
 
-	pointsByUser, err := s.predRepo.TotalPointsByQuinielaAndPhase(ctx, quinielaID, phase)
+	return s.buildLeaderboard(ctx, quinielaID, pointsByUser)
+}
+
+// buildLeaderboard is the shared core of GetLeaderboard and GetPhaseLeaderboard.
+// It fetches the authoritative active-paid count, hydrates entries from
+// pointsByUser, attaches tiebreaker distances and prediction stats, then sorts,
+// ranks, and marks prize winners.
+//
+// pointsByUser may be empty (no scored predictions yet); in that case the
+// result is returned with a nil Entries slice and correct prize metadata.
+func (s *rankingService) buildLeaderboard(ctx context.Context, quinielaID int, pointsByUser map[int]int) (*LeaderboardResult, error) {
+	// Fetch the authoritative active-paid count independently of the prediction
+	// aggregation. This ensures members who have not submitted any predictions
+	// are still counted for prize-tier purposes.
+	activePaid, err := s.memberRepo.CountActivePaid(ctx, quinielaID)
 	if err != nil {
 		return nil, err
 	}
