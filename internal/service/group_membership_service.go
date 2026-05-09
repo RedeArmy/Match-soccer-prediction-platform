@@ -24,10 +24,12 @@ type groupMembershipService struct {
 }
 
 // NewGroupMembershipService constructs a groupMembershipService.
+// GroupAuthz is derived from memberRepo so callers do not need to wire it
+// separately; the same repository is always the source of truth for both
+// data operations and permission checks within this service.
 func NewGroupMembershipService(
 	quinielaRepo repository.QuinielaRepository,
 	memberRepo repository.GroupMembershipRepository,
-	authz GroupAuthz,
 	params SystemParamService,
 	audit AuditLogger,
 	paymentSvc PaymentService,
@@ -37,7 +39,7 @@ func NewGroupMembershipService(
 	return &groupMembershipService{
 		quinielaRepo: quinielaRepo,
 		memberRepo:   memberRepo,
-		authz:        authz,
+		authz:        NewGroupAuthzService(memberRepo),
 		params:       params,
 		audit:        audit,
 		paymentSvc:   paymentSvc,
