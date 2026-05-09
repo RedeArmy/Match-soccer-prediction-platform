@@ -128,10 +128,21 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	systemParamRepo := repository.NewPostgresSystemParamRepository(db)
 	params := service.NewSystemParamService(systemParamRepo, nil, log)
 	messaging.Configure(
-		params.GetInt(ctx, domain.ParamKeyMessagingMaxRetries, 3),
-		int64(params.GetInt(ctx, domain.ParamKeyMessagingStreamMaxLen, 600_000)),
+		params.GetInt(ctx, domain.ParamKeyMessagingMaxRetries, domain.DefaultMessagingMaxRetries),
+		int64(params.GetInt(ctx, domain.ParamKeyMessagingStreamMaxLen, domain.DefaultMessagingStreamMaxLen)),
+		params.GetInt(ctx, domain.ParamKeyMessagingStreamWorkerCount, domain.DefaultMessagingStreamWorkerCount),
+		params.GetInt(ctx, domain.ParamKeyMessagingStreamReadBlockSec, domain.DefaultMessagingStreamReadBlockSec),
 		nil,
 	)
+	service.ConfigureAuditRetry(
+		params.GetInt(ctx, domain.ParamKeyAuditMaxRetries, domain.DefaultAuditMaxRetries),
+		params.GetInt(ctx, domain.ParamKeyAuditRetryDelayMs, domain.DefaultAuditRetryDelayMs),
+	)
+	snapshotConcurrency = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotConcurrency, domain.DefaultWorkerSnapshotConcurrency)
+	snapshotRetryBase = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSnapshotRetryBaseMs, domain.DefaultWorkerSnapshotRetryBaseMs)) * time.Millisecond
+	maxSnapshotAttempts = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotMaxAttempts, domain.DefaultWorkerSnapshotMaxAttempts)
+	dlqMonitorInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerDLQMonitorIntervalSec, domain.DefaultWorkerDLQMonitorIntervalSec)) * time.Second
+	purgeTickInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerPurgeIntervalHours, domain.DefaultWorkerPurgeIntervalHours)) * time.Hour
 	scorer := service.NewScoringService(matchRepo, predRepo, params, log)
 
 	quinielaRepo := repository.NewPostgresQuinielaRepository(db)

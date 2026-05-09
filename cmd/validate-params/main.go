@@ -68,6 +68,24 @@ var allParams = []paramSpec{
 	// Messaging
 	{key: domain.ParamKeyMessagingMaxRetries, defaultValue: strconv.Itoa(domain.DefaultMessagingMaxRetries), paramType: "int", category: "messaging"},
 	{key: domain.ParamKeyMessagingStreamMaxLen, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamMaxLen), paramType: "int", category: "messaging"},
+	{key: domain.ParamKeyMessagingStreamWorkerCount, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamWorkerCount), paramType: "int", category: "messaging"},
+	{key: domain.ParamKeyMessagingStreamReadBlockSec, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamReadBlockSec), paramType: "int", category: "messaging"},
+
+	// Audit retry policy
+	{key: domain.ParamKeyAuditMaxRetries, defaultValue: strconv.Itoa(domain.DefaultAuditMaxRetries), paramType: "int", category: "system"},
+	{key: domain.ParamKeyAuditRetryDelayMs, defaultValue: strconv.Itoa(domain.DefaultAuditRetryDelayMs), paramType: "int", category: "system"},
+
+	// Worker: snapshot generation
+	{key: domain.ParamKeyWorkerSnapshotConcurrency, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotConcurrency), paramType: "int", category: "worker"},
+	{key: domain.ParamKeyWorkerSnapshotRetryBaseMs, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotRetryBaseMs), paramType: "int", category: "worker"},
+	{key: domain.ParamKeyWorkerSnapshotMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotMaxAttempts), paramType: "int", category: "worker"},
+
+	// Worker: background maintenance
+	{key: domain.ParamKeyWorkerDLQMonitorIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerDLQMonitorIntervalSec), paramType: "int", category: "worker"},
+	{key: domain.ParamKeyWorkerPurgeIntervalHours, defaultValue: strconv.Itoa(domain.DefaultWorkerPurgeIntervalHours), paramType: "int", category: "worker"},
+
+	// API request limits
+	{key: domain.ParamKeyAPIBodySizeLimitBytes, defaultValue: strconv.Itoa(domain.DefaultAPIBodySizeLimitBytes), paramType: "int", category: "api"},
 }
 
 type dbParam struct {

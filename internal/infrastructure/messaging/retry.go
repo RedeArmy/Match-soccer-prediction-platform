@@ -21,12 +21,20 @@ var maxHandlerAttempts = 3
 // registered (i.e. before bus.Subscribe is first invoked) to avoid a data race
 // with running consumer goroutines.
 //
-// maxRetries: total handler attempts (messaging.max_retries).
-// streamMax:  Redis Stream MAXLEN cap (messaging.stream_max_len).
-// backoff:    per-attempt sleep durations; nil keeps the current value.
-func Configure(maxRetries int, streamMax int64, backoff []time.Duration) {
+// maxRetries:         total handler attempts (messaging.max_retries).
+// streamMax:          Redis Stream MAXLEN cap (messaging.stream_max_len).
+// streamWorkers:      goroutines per EventType pool (messaging.stream_worker_count); ≤0 keeps current value.
+// streamReadBlockSec: XREADGROUP block timeout in seconds (messaging.stream_read_block_sec); ≤0 keeps current value.
+// backoff:            per-attempt sleep durations; nil keeps the current value.
+func Configure(maxRetries int, streamMax int64, streamWorkers int, streamReadBlockSec int, backoff []time.Duration) {
 	maxHandlerAttempts = maxRetries
 	streamMaxLen = streamMax
+	if streamWorkers > 0 {
+		StreamWorkerCount = streamWorkers
+	}
+	if streamReadBlockSec > 0 {
+		streamReadBlock = time.Duration(streamReadBlockSec) * time.Second
+	}
 	if len(backoff) > 0 {
 		RetryBackoff = backoff
 	}

@@ -120,15 +120,33 @@ const (
 	DefaultDLQReplayDefaultLimit = 10 // dlq.replay_default_limit
 
 	// Messaging / Redis Streams
-	DefaultMessagingMaxRetries   = 3       // messaging.max_retries
-	DefaultMessagingStreamMaxLen = 600_000 // messaging.stream_max_len
+	DefaultMessagingMaxRetries    = 3       // messaging.max_retries
+	DefaultMessagingStreamMaxLen  = 600_000 // messaging.stream_max_len
+	DefaultMessagingStreamWorkerCount  = 8  // messaging.stream_worker_count
+	DefaultMessagingStreamReadBlockSec = 5  // messaging.stream_read_block_sec
 
 	// Infrastructure timeouts (seconds)
 	DefaultAuthValidationTimeoutSeconds = 5 // auth.validation_timeout_seconds
 	DefaultAuditWriteTimeoutSeconds     = 5 // audit.write_timeout_seconds
 
+	// Audit retry policy
+	DefaultAuditMaxRetries   = 2   // audit.max_retries
+	DefaultAuditRetryDelayMs = 250 // audit.retry_delay_ms
+
+	// Worker: leaderboard snapshot generation
+	DefaultWorkerSnapshotConcurrency   = 16  // worker.snapshot_concurrency
+	DefaultWorkerSnapshotRetryBaseMs   = 100 // worker.snapshot_retry_base_ms
+	DefaultWorkerSnapshotMaxAttempts   = 3   // worker.snapshot_max_attempts
+
+	// Worker: background maintenance jobs
+	DefaultWorkerDLQMonitorIntervalSec = 300 // worker.dlq_monitor_interval_sec (5 min)
+	DefaultWorkerPurgeIntervalHours    = 24  // worker.purge_interval_hours
+
 	// Soft-delete retention
 	DefaultPurgeRetentionDays = 30 // system.purge_retention_days
+
+	// API request limits
+	DefaultAPIBodySizeLimitBytes = 65536 // api.body_size_limit_bytes (64 KB)
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -202,12 +220,48 @@ const (
 	ParamKeyMessagingMaxRetries = "messaging.max_retries"
 	// ParamKeyMessagingStreamMaxLen caps Redis Stream length (MAXLEN ~).
 	ParamKeyMessagingStreamMaxLen = "messaging.stream_max_len"
+	// ParamKeyMessagingStreamWorkerCount is the size of the per-EventType goroutine
+	// pool that processes stream messages concurrently. is_runtime=FALSE: restart required.
+	ParamKeyMessagingStreamWorkerCount = "messaging.stream_worker_count"
+	// ParamKeyMessagingStreamReadBlockSec is the XREADGROUP block timeout in seconds.
+	// A smaller value makes the consumer loop react faster to shutdown signals at the
+	// cost of more idle Redis round-trips. is_runtime=FALSE: restart required.
+	ParamKeyMessagingStreamReadBlockSec = "messaging.stream_read_block_sec"
+
 	// ParamKeyAuthValidationTimeout is the JWKS warm-up timeout in seconds.
 	ParamKeyAuthValidationTimeout = "auth.validation_timeout_seconds"
+
+	// Audit retry policy (is_runtime=FALSE: process restart required).
+	// ParamKeyAuditMaxRetries is the number of write attempts before an audit entry
+	// is permanently lost; emits audit_lost=true on exhaustion.
+	ParamKeyAuditMaxRetries = "audit.max_retries"
+	// ParamKeyAuditRetryDelayMs is the delay in milliseconds between audit write
+	// retries to allow transient DB failures to clear.
+	ParamKeyAuditRetryDelayMs = "audit.retry_delay_ms"
+
+	// Worker params (all is_runtime=FALSE: worker restart required).
+	// ParamKeyWorkerSnapshotConcurrency caps concurrent quiniela snapshots per event.
+	ParamKeyWorkerSnapshotConcurrency = "worker.snapshot_concurrency"
+	// ParamKeyWorkerSnapshotRetryBaseMs is the initial snapshot retry backoff in ms;
+	// doubles on each subsequent attempt (exponential).
+	ParamKeyWorkerSnapshotRetryBaseMs = "worker.snapshot_retry_base_ms"
+	// ParamKeyWorkerSnapshotMaxAttempts is the maximum snapshot write attempts per
+	// quiniela per match event.
+	ParamKeyWorkerSnapshotMaxAttempts = "worker.snapshot_max_attempts"
+	// ParamKeyWorkerDLQMonitorIntervalSec is the seconds between DLQ size log events.
+	ParamKeyWorkerDLQMonitorIntervalSec = "worker.dlq_monitor_interval_sec"
+	// ParamKeyWorkerPurgeIntervalHours is the hours between permanent purge runs.
+	ParamKeyWorkerPurgeIntervalHours = "worker.purge_interval_hours"
+
 	// ParamKeyPurgeRetentionDays is the age in days after which soft-deleted
 	// users and quinielas are permanently removed by the worker purge goroutine.
 	// is_runtime = FALSE: changing the value requires a worker restart.
 	ParamKeyPurgeRetentionDays = "system.purge_retention_days"
+
+	// ParamKeyAPIBodySizeLimitBytes is the maximum request body size in bytes.
+	// Requests exceeding this limit are rejected with 413 to prevent DoS.
+	// is_runtime=FALSE: process restart required.
+	ParamKeyAPIBodySizeLimitBytes = "api.body_size_limit_bytes"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather
