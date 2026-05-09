@@ -14,12 +14,14 @@ import (
 func TestMatchRepository_Create_HydratesID(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresMatchRepository(testDB)
+	label := repoGroupLabel
 	m := &domain.Match{
-		HomeTeam:  "France",
-		AwayTeam:  "Germany",
-		Status:    domain.MatchStatusScheduled,
-		Phase:     domain.PhaseGroupStage,
-		KickoffAt: time.Now().Add(48 * time.Hour).UTC(),
+		HomeTeam:   "France",
+		AwayTeam:   "Germany",
+		Status:     domain.MatchStatusScheduled,
+		Phase:      domain.PhaseGroupStage,
+		GroupLabel: &label,
+		KickoffAt:  time.Now().Add(48 * time.Hour).UTC(),
 	}
 
 	if err := repo.Create(context.Background(), m); err != nil {
