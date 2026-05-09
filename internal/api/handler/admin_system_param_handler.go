@@ -11,6 +11,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const msgParamKeyRequired = "param key is required"
+
 // AdminSystemParamHandler handles admin endpoints for system parameter management.
 type AdminSystemParamHandler struct {
 	svc service.SystemParamService
@@ -72,7 +74,7 @@ func (h *AdminSystemParamHandler) ListAll(w http.ResponseWriter, r *http.Request
 func (h *AdminSystemParamHandler) Get(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, r, h.log, apperrors.Validation("param key is required"))
+		writeError(w, r, h.log, apperrors.Validation(msgParamKeyRequired))
 		return
 	}
 
@@ -113,7 +115,7 @@ type setParamRequest struct {
 func (h *AdminSystemParamHandler) Set(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, r, h.log, apperrors.Validation("param key is required"))
+		writeError(w, r, h.log, apperrors.Validation(msgParamKeyRequired))
 		return
 	}
 
@@ -206,7 +208,7 @@ func (h *AdminSystemParamHandler) BulkSet(w http.ResponseWriter, r *http.Request
 func (h *AdminSystemParamHandler) Reset(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, r, h.log, apperrors.Validation("param key is required"))
+		writeError(w, r, h.log, apperrors.Validation(msgParamKeyRequired))
 		return
 	}
 
