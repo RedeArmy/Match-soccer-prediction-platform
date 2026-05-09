@@ -133,9 +133,10 @@ func ValidateQuiniela(q *Quiniela) error {
 // This function encapsulates the group-size business rule so that any future
 // change to the bounds requires only one edit here, rather than scattered
 // comparisons across the service layer. It is intended for use in service
-// methods that receive an explicit member count (e.g. admin bulk operations),
-// not for the hot path of individual join/leave operations where the database
-// trigger is the authoritative guard.
+// methods that receive an explicit member count (e.g. admin bulk operations).
+// For join/leave operations the authoritative check is enforceMaxMembers inside
+// RequestJoinByInviteCode and ApproveMembership, both of which read the runtime
+// limit from system_params via ParamKeyGroupMaxSize.
 func ValidateGroupSize(n int) error {
 	if n < MinMembersPerGroup {
 		return apperrors.Validation(

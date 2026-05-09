@@ -283,7 +283,7 @@ type failOnUpdateMemberRepo struct {
 	updateErr error
 }
 
-func (r *failOnUpdateMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
+func (r *failOnUpdateMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
 	return nil, nil, r.updateErr
 }
 

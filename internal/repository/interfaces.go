@@ -228,7 +228,9 @@ type GroupMembershipRepository interface {
 	// to continue with side effects such as payment-record creation without a
 	// second lookup. Returns NotFound for unknown or expired codes, and Conflict
 	// when the user is already active, already pending, or the group is full.
-	RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID int) (*domain.Quiniela, *domain.GroupMembership, error)
+	// maxMembers is the authoritative cap read from system_params by the caller;
+	// it is applied inside the transaction after the quiniela FOR UPDATE lock.
+	RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID, maxMembers int) (*domain.Quiniela, *domain.GroupMembership, error)
 	// GetByID returns a membership by its primary key. Returns nil, nil when no
 	// matching row exists. Used by ApproveJoin to load the pending request.
 	GetByID(ctx context.Context, membershipID int) (*domain.GroupMembership, error)
@@ -286,7 +288,12 @@ type GroupMembershipRepository interface {
 	// quiniela transitions to active. Returns Conflict when the row is no longer
 	// pending - a concurrent approval committed between the caller's pre-flight
 	// check and this call.
-	ApproveMembership(ctx context.Context, membershipID, quinielaID int, now time.Time, minMembers int) (*domain.GroupMembership, error)
+	// ApproveMembership atomically promotes a pending membership to active and
+	// recalculates the quiniela's status in a single transaction.
+	// maxMembers is the authoritative cap read from system_params by the caller;
+	// it is enforced inside the transaction after a FOR UPDATE lock on the
+	// quiniela row to prevent concurrent approvals from exceeding the limit.
+	ApproveMembership(ctx context.Context, membershipID, quinielaID int, now time.Time, minMembers, maxMembers int) (*domain.GroupMembership, error)
 	// LeaveMembership atomically marks a membership as left and recalculates
 	// the quiniela's status within a single database transaction. Returns
 	// Conflict when the membership is no longer active - e.g. an admin removed
