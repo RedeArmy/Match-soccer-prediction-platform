@@ -21,11 +21,11 @@ func NewPostgresTiebreakerRepository(db *pgxpool.Pool) *PostgresTiebreakerReposi
 	return &PostgresTiebreakerRepository{db: db}
 }
 
-const tiebreakerColumns = "id, user_id, prediction, created_at, updated_at"
+const tiebreakerColumns = "id, user_id, tiebreaker_config_id, prediction, created_at, updated_at"
 
 func scanTiebreaker(row pgx.Row) (*domain.Tiebreaker, error) {
 	tb := &domain.Tiebreaker{}
-	err := row.Scan(&tb.ID, &tb.UserID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt)
+	err := row.Scan(&tb.ID, &tb.UserID, &tb.TiebreakerConfigID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -39,7 +39,7 @@ func collectTiebreakers(rows pgx.Rows) ([]*domain.Tiebreaker, error) {
 	var tbs []*domain.Tiebreaker
 	for rows.Next() {
 		tb := &domain.Tiebreaker{}
-		if err := rows.Scan(&tb.ID, &tb.UserID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt); err != nil {
+		if err := rows.Scan(&tb.ID, &tb.UserID, &tb.TiebreakerConfigID, &tb.Prediction, &tb.CreatedAt, &tb.UpdatedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		tbs = append(tbs, tb)
@@ -51,10 +51,14 @@ func collectTiebreakers(rows pgx.Rows) ([]*domain.Tiebreaker, error) {
 }
 
 func (r *PostgresTiebreakerRepository) Create(ctx context.Context, tb *domain.Tiebreaker) error {
+	configID := tb.TiebreakerConfigID
+	if configID == 0 {
+		configID = 1 // default to global config
+	}
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO tiebreakers (user_id, prediction)
-		 VALUES ($1, $2) RETURNING `+tiebreakerColumns,
-		tb.UserID, tb.Prediction,
+		`INSERT INTO tiebreakers (user_id, prediction, tiebreaker_config_id)
+		 VALUES ($1, $2, $3) RETURNING `+tiebreakerColumns,
+		tb.UserID, tb.Prediction, configID,
 	)
 	result, err := scanTiebreaker(row)
 	if err != nil {
@@ -64,10 +68,15 @@ func (r *PostgresTiebreakerRepository) Create(ctx context.Context, tb *domain.Ti
 	return nil
 }
 
-func (r *PostgresTiebreakerRepository) GetByUser(ctx context.Context, userID int) (*domain.Tiebreaker, error) {
+// GetByUser returns the caller's prediction for the given configID.
+// Returns nil, nil when the user has not yet submitted for that config.
+func (r *PostgresTiebreakerRepository) GetByUser(ctx context.Context, userID, configID int) (*domain.Tiebreaker, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+tiebreakerColumns+` FROM tiebreakers WHERE user_id=$1`,
-		userID,
+		`SELECT `+tiebreakerColumns+`
+		   FROM tiebreakers
+		  WHERE user_id              = $1
+		    AND tiebreaker_config_id = $2`,
+		userID, configID,
 	)
 	return scanTiebreaker(row)
 }
@@ -89,23 +98,30 @@ func (r *PostgresTiebreakerRepository) Update(ctx context.Context, tb *domain.Ti
 	return nil
 }
 
-// ListByUserIDs returns global tiebreaker predictions for the given user IDs.
-// Used by the ranking service to load all relevant entries for a group in a
-// single round-trip. An empty ids slice returns nil, nil without hitting the
-// database.
+// ListByUserIDs returns global tiebreaker predictions (configID = 1) for the
+// given user IDs. Kept for backward compatibility with the ranking service.
+// An empty ids slice returns nil, nil without hitting the database.
 func (r *PostgresTiebreakerRepository) ListByUserIDs(ctx context.Context, userIDs []int) ([]*domain.Tiebreaker, error) {
+	return r.ListByUserIDsForConfig(ctx, userIDs, 1)
+}
+
+// ListByUserIDsForConfig returns predictions scoped to configID for the given
+// user IDs. An empty ids slice returns nil, nil without hitting the database.
+func (r *PostgresTiebreakerRepository) ListByUserIDsForConfig(ctx context.Context, userIDs []int, configID int) ([]*domain.Tiebreaker, error) {
 	if len(userIDs) == 0 {
 		return nil, nil
 	}
 	rows, err := r.db.Query(ctx,
-		`SELECT `+tiebreakerColumns+` FROM tiebreakers WHERE user_id = ANY($1)`,
-		userIDs,
+		`SELECT `+tiebreakerColumns+`
+		   FROM tiebreakers
+		  WHERE user_id              = ANY($1)
+		    AND tiebreaker_config_id = $2`,
+		userIDs, configID,
 	)
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
-
 	return collectTiebreakers(rows)
 }
 

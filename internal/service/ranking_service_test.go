@@ -102,11 +102,14 @@ type stubTiebreakerRepo struct {
 }
 
 func (r *stubTiebreakerRepo) Create(_ context.Context, _ *domain.Tiebreaker) error { return r.err }
-func (r *stubTiebreakerRepo) GetByUser(_ context.Context, _ int) (*domain.Tiebreaker, error) {
+func (r *stubTiebreakerRepo) GetByUser(_ context.Context, _, _ int) (*domain.Tiebreaker, error) {
 	return nil, r.err
 }
 func (r *stubTiebreakerRepo) Update(_ context.Context, _ *domain.Tiebreaker) error { return r.err }
 func (r *stubTiebreakerRepo) ListByUserIDs(_ context.Context, _ []int) ([]*domain.Tiebreaker, error) {
+	return r.tbs, r.err
+}
+func (r *stubTiebreakerRepo) ListByUserIDsForConfig(_ context.Context, _ []int, _ int) ([]*domain.Tiebreaker, error) {
 	return r.tbs, r.err
 }
 func (r *stubTiebreakerRepo) ListAll(_ context.Context, _ repository.Pagination) ([]*domain.Tiebreaker, error) {
@@ -122,10 +125,23 @@ type stubTiebreakerCfgRepo struct {
 func (r *stubTiebreakerCfgRepo) Get(_ context.Context) (*domain.TiebreakerConfig, error) {
 	return r.cfg, r.err
 }
+func (r *stubTiebreakerCfgRepo) GetByPhase(_ context.Context, _ domain.MatchPhase) (*domain.TiebreakerConfig, error) {
+	return nil, r.err
+}
+func (r *stubTiebreakerCfgRepo) GetByQuiniela(_ context.Context, _ int) (*domain.TiebreakerConfig, error) {
+	return nil, r.err
+}
 func (r *stubTiebreakerCfgRepo) Upsert(_ context.Context, _ string) (*domain.TiebreakerConfig, error) {
 	return r.cfg, r.err
 }
-func (r *stubTiebreakerCfgRepo) SetResult(_ context.Context, _ int) error { return r.err }
+func (r *stubTiebreakerCfgRepo) UpsertForPhase(_ context.Context, phase domain.MatchPhase, _ string) (*domain.TiebreakerConfig, error) {
+	return r.cfg, r.err
+}
+func (r *stubTiebreakerCfgRepo) UpsertForQuiniela(_ context.Context, _ int, _ string) (*domain.TiebreakerConfig, error) {
+	return r.cfg, r.err
+}
+func (r *stubTiebreakerCfgRepo) SetResult(_ context.Context, _ int) error        { return r.err }
+func (r *stubTiebreakerCfgRepo) SetResultByID(_ context.Context, _, _ int) error { return r.err }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

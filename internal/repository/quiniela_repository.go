@@ -56,48 +56,38 @@ func isUniqueViolation(err error) bool {
 // inside a single pgx transaction. If either insert fails the transaction is
 // rolled back and neither row appears in the database.
 func (r *PostgresQuinielaRepository) CreateWithMembership(ctx context.Context, q *domain.Quiniela, m *domain.GroupMembership) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-	defer func() {
-		logRollbackFailure(tx.Rollback(ctx), "QuinielaRepository", "CreateWithMembership")
-	}()
-
-	qRow := tx.QueryRow(ctx,
-		`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+quinielaColumns,
-		q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency,
-	)
-	qResult, err := scanQuiniela(qRow)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return apperrors.Conflict(errMsgDuplicateGroupName)
+	return withTx(ctx, r.db, "QuinielaRepository.CreateWithMembership", func(tx pgx.Tx) error {
+		qRow := tx.QueryRow(ctx,
+			`INSERT INTO quinielas (name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency)
+			 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+quinielaColumns,
+			q.Name, q.OwnerID, q.InviteCode, q.InviteCodeExpiresAt, q.EntryFee, q.Currency,
+		)
+		qResult, err := scanQuiniela(qRow)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return apperrors.Conflict(errMsgDuplicateGroupName)
+			}
+			return err
 		}
-		return err
-	}
-	*q = *qResult
+		*q = *qResult
 
-	m.QuinielaID = q.ID
-	mRole := m.Role
-	if mRole == "" {
-		mRole = domain.MembershipRoleMember
-	}
-	mRow := tx.QueryRow(ctx,
-		`INSERT INTO group_memberships (quiniela_id, user_id, status, role, paid, joined_at)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+membershipColumns,
-		m.QuinielaID, m.UserID, m.Status, mRole, m.Paid, m.JoinedAt,
-	)
-	mResult, err := scanMembership(mRow)
-	if err != nil {
-		return err
-	}
-	*m = *mResult
-
-	if err := tx.Commit(ctx); err != nil {
-		return apperrors.Internal(err)
-	}
-	return nil
+		m.QuinielaID = q.ID
+		mRole := m.Role
+		if mRole == "" {
+			mRole = domain.MembershipRoleMember
+		}
+		mRow := tx.QueryRow(ctx,
+			`INSERT INTO group_memberships (quiniela_id, user_id, status, role, paid, joined_at)
+			 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+membershipColumns,
+			m.QuinielaID, m.UserID, m.Status, mRole, m.Paid, m.JoinedAt,
+		)
+		mResult, err := scanMembership(mRow)
+		if err != nil {
+			return err
+		}
+		*m = *mResult
+		return nil
+	})
 }
 
 func (r *PostgresQuinielaRepository) Create(ctx context.Context, q *domain.Quiniela) error {
