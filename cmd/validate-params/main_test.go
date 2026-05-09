@@ -88,7 +88,7 @@ func TestValidateSingleParam_Missing_ReturnsError(t *testing.T) {
 func TestValidateSingleParam_Valid_ReturnsNoErrors(t *testing.T) {
 	spec := paramSpec{key: "a.b", defaultValue: "5", paramType: "int", category: "group"}
 	db := map[string]dbParam{
-		"a.b": {key: "a.b", value: "5", paramType: "int", category: "group", description: "ok"},
+		"a.b": {key: "a.b", value: "5", defaultValue: "5", paramType: "int", category: "group", description: "ok"},
 	}
 	errs := validateSingleParam(spec, db)
 	if len(errs) != 0 {
@@ -99,7 +99,7 @@ func TestValidateSingleParam_Valid_ReturnsNoErrors(t *testing.T) {
 func TestValidateSingleParam_TypeMismatch_ReturnsError(t *testing.T) {
 	spec := paramSpec{key: "a.b", defaultValue: "5", paramType: "int", category: "group"}
 	db := map[string]dbParam{
-		"a.b": {key: "a.b", value: "5", paramType: "string", category: "group", description: "ok"},
+		"a.b": {key: "a.b", value: "5", defaultValue: "5", paramType: "string", category: "group", description: "ok"},
 	}
 	errs := validateSingleParam(spec, db)
 	if len(errs) != 1 {
@@ -110,7 +110,7 @@ func TestValidateSingleParam_TypeMismatch_ReturnsError(t *testing.T) {
 func TestValidateSingleParam_CategoryMismatch_ReturnsError(t *testing.T) {
 	spec := paramSpec{key: "a.b", defaultValue: "5", paramType: "int", category: "group"}
 	db := map[string]dbParam{
-		"a.b": {key: "a.b", value: "5", paramType: "int", category: "system", description: "ok"},
+		"a.b": {key: "a.b", value: "5", defaultValue: "5", paramType: "int", category: "system", description: "ok"},
 	}
 	errs := validateSingleParam(spec, db)
 	if len(errs) != 1 {
@@ -121,8 +121,8 @@ func TestValidateSingleParam_CategoryMismatch_ReturnsError(t *testing.T) {
 func TestValidateSingleParam_MultipleErrors_CollectedTogether(t *testing.T) {
 	spec := paramSpec{key: "a.b", defaultValue: "5", paramType: "int", category: "group"}
 	db := map[string]dbParam{
-		// wrong type, wrong category, empty description — three errors
-		"a.b": {key: "a.b", value: "5", paramType: "bool", category: "system", description: ""},
+		// wrong type, wrong category, empty description — three errors; defaultValue matches to isolate those three
+		"a.b": {key: "a.b", value: "5", defaultValue: "5", paramType: "bool", category: "system", description: ""},
 	}
 	errs := validateSingleParam(spec, db)
 	if len(errs) != 3 {
@@ -137,7 +137,7 @@ func TestValidateAllParams_AllValid_ReturnsNoErrors(t *testing.T) {
 	defer func() { allParams = saved }()
 
 	db := map[string]dbParam{
-		"a.b": {key: "a.b", value: "5", paramType: "int", category: "group", description: "ok"},
+		"a.b": {key: "a.b", value: "5", defaultValue: "5", paramType: "int", category: "group", description: "ok"},
 	}
 	errs := validateAllParams(db)
 	if len(errs) != 0 {
@@ -204,9 +204,21 @@ func TestValidateFromParams_AllValid_ReturnsNil(t *testing.T) {
 	allParams = []paramSpec{{key: "a.b", defaultValue: "5", paramType: "int", category: "group"}}
 	defer func() { allParams = saved }()
 
-	params := []dbParam{{key: "a.b", value: "5", paramType: "int", category: "group", description: "ok"}}
+	params := []dbParam{{key: "a.b", value: "5", defaultValue: "5", paramType: "int", category: "group", description: "ok"}}
 	if err := validateFromParams(params); err != nil {
 		t.Errorf("expected nil, got %v", err)
+	}
+}
+
+func TestValidateSingleParam_DefaultValueMismatch_ReturnsError(t *testing.T) {
+	spec := paramSpec{key: "a.b", defaultValue: "5", paramType: "int", category: "group"}
+	db := map[string]dbParam{
+		// default_value in DB differs from code constant — migration seed out of sync
+		"a.b": {key: "a.b", value: "5", defaultValue: "99", paramType: "int", category: "group", description: "ok"},
+	}
+	errs := validateSingleParam(spec, db)
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error (default value mismatch), got %d: %v", len(errs), errs)
 	}
 }
 
@@ -227,8 +239,8 @@ func TestValidateFromParams_UnexpectedParamInDB_NoPanic(t *testing.T) {
 
 	// DB contains a.b (valid) plus an unknown key — checkUnexpectedParams prints warning, no panic.
 	params := []dbParam{
-		{key: "a.b", value: "5", paramType: "int", category: "group", description: "ok"},
-		{key: "unknown.key", value: "x", paramType: "string", category: "other", description: "?"},
+		{key: "a.b", value: "5", defaultValue: "5", paramType: "int", category: "group", description: "ok"},
+		{key: "unknown.key", value: "x", defaultValue: "x", paramType: "string", category: "other", description: "?"},
 	}
 	if err := validateFromParams(params); err != nil {
 		t.Errorf("unexpected error: %v", err)

@@ -303,6 +303,11 @@ type SystemParamService interface {
 	// Each key-value pair is upserted atomically. actorID is recorded as
 	// the editor for the audit trail.
 	BulkSet(ctx context.Context, params map[string]string, actorID int) error
+	// ResetToDefault restores the operational value of key to the immutable
+	// default_value set by the seeding migration. The cache entry is evicted
+	// and any registered mutation hooks are fired, identical to Set.
+	// Returns ErrNotFound when key does not exist.
+	ResetToDefault(ctx context.Context, key string, actorID int) (*domain.SystemParam, error)
 }
 
 // AuditLogger records significant administrative and system actions to an

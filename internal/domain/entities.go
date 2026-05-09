@@ -483,14 +483,15 @@ const (
 // Category groups related params (e.g. "scoring", "payment", "leaderboard")
 // to simplify admin UI rendering and bulk-fetch patterns.
 type SystemParam struct {
-	Key         string
-	Value       string
-	Type        SystemParamType
-	Category    string
-	IsRuntime   bool
-	Description string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	Key          string
+	Value        string
+	DefaultValue string
+	Type         SystemParamType
+	Category     string
+	IsRuntime    bool
+	Description  string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // AuditLog is an immutable record of a significant administrative or system

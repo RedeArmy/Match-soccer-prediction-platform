@@ -124,6 +124,28 @@ func (s *systemParamService) Set(ctx context.Context, key, value string, actorID
 	return p, nil
 }
 
+// ResetToDefault restores the operational value of key to the immutable
+// default seeded by the initial migration. The cache entry is evicted and
+// mutation hooks are fired so downstream components (e.g. CachedRankingService
+// TTL) pick up the restored value immediately.
+func (s *systemParamService) ResetToDefault(ctx context.Context, key string, actorID int) (*domain.SystemParam, error) {
+	p, err := s.repo.ResetToDefault(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, apperrors.NotFound("system param not found: " + key)
+	}
+	s.evict(key)
+	s.callHooks(ctx, key)
+	if s.audit != nil {
+		resType := "system_param"
+		role := domain.RoleAdmin
+		s.audit.Log(ctx, &actorID, &role, domain.AuditActionParamUpdated, &resType, nil, map[string]any{"key": key, "value": p.Value, "reset_to_default": true})
+	}
+	return p, nil
+}
+
 // validateValueForKey fetches the declared type of key and checks that value
 // can be parsed to that type and satisfies per-key business-rule constraints.
 // It is a no-op when the key does not yet exist (new params have no constraint

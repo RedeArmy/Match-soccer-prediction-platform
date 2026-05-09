@@ -314,6 +314,44 @@ func (r *failOnUpdateRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]i
 	return nil, nil
 }
 
+// TestScoreMatch_Idempotent_ReplayProducesSameScores verifies the DLQ-replay
+// safety guarantee: a second call to ScoreMatch for the same match must produce
+// an identical points map to the first call. The scoring function is pure and
+// deterministic, so UpdateManyPoints is always called with the same values,
+// making the operation safe to replay without compensating transactions.
+func TestScoreMatch_Idempotent_ReplayProducesSameScores(t *testing.T) {
+	home, away := 2, 1
+	match := &domain.Match{
+		ID: 1, Status: domain.MatchStatusFinished,
+		HomeScore: &home, AwayScore: &away,
+	}
+	preds := []*domain.Prediction{
+		{ID: 1, HomeScore: 2, AwayScore: 1}, // exact -> 5
+		{ID: 2, HomeScore: 1, AwayScore: 0}, // correct outcome + margin 1 -> 3
+		{ID: 3, HomeScore: 0, AwayScore: 1}, // wrong outcome -> 0
+	}
+	predRepo := &stubPredRepo{list: preds}
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, &noopSystemParamService{}, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 1); err != nil {
+		t.Fatalf("first ScoreMatch: %v", err)
+	}
+	firstRun := make(map[int]int, len(predRepo.updated))
+	for _, p := range predRepo.updated {
+		firstRun[p.ID] = *p.Points
+	}
+	predRepo.updated = nil
+
+	if err := svc.ScoreMatch(context.Background(), 1); err != nil {
+		t.Fatalf("second ScoreMatch (replay): %v", err)
+	}
+	for _, p := range predRepo.updated {
+		if firstRun[p.ID] != *p.Points {
+			t.Errorf("prediction %d: first run=%d replay=%d (not idempotent)", p.ID, firstRun[p.ID], *p.Points)
+		}
+	}
+}
+
 // ── TestGoalDiff verifies the absolute-value goal-margin helper.
 func TestGoalDiff(t *testing.T) {
 	cases := []struct{ home, away, want int }{

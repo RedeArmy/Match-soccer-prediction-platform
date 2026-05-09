@@ -109,6 +109,9 @@ func (*noopSystemParamService) GetBool(_ context.Context, _ string, d bool) bool
 func (*noopSystemParamService) BulkSet(_ context.Context, _ map[string]string, _ int) error {
 	return nil
 }
+func (*noopSystemParamService) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
+}
 
 func newMatchSvc(match *domain.Match) (MatchService, *stubPublisher) {
 	pub := &stubPublisher{}

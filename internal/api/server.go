@@ -353,6 +353,7 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/system-params", h.adminParam.ListAll)
 			r.Get("/system-params/{key}", h.adminParam.Get)
 			r.Patch("/system-params/{key}", h.adminParam.Set)
+			r.Post("/system-params/{key}/reset", h.adminParam.Reset)
 			r.Post("/system-params/bulk", h.adminParam.BulkSet)
 
 			// Tiebreakers

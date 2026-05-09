@@ -15,6 +15,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/service"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 const (
@@ -545,6 +546,7 @@ func newAdminParamRouter(svc *stubAdminParamSvc) http.Handler {
 	r.Get(adminOtherPathSysParams, h.ListAll)
 	r.Get("/system-params/{key}", h.Get)
 	r.Patch("/system-params/{key}", h.Set)
+	r.Post("/system-params/{key}/reset", h.Reset)
 	r.Post(adminOtherPathSysParamsBulk, h.BulkSet)
 	return r
 }
@@ -657,6 +659,51 @@ func TestAdminParamBulkSet_NoCallerInContext_Returns401(t *testing.T) {
 	w := do(newAdminParamRouter(svc), http.MethodPost, adminOtherPathSysParamsBulk, `{"params":{"k":"v"}}`)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminParamReset_Success_Returns200(t *testing.T) {
+	p := &domain.SystemParam{Key: "scoring.exact", Value: "5", DefaultValue: "5"}
+	svc := &stubAdminParamSvc{param: p}
+	req := withCaller(
+		newAdminRequest(http.MethodPost, "/system-params/scoring.exact/reset", ""),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminParamReset_NoCallerInContext_Returns401(t *testing.T) {
+	svc := &stubAdminParamSvc{}
+	w := do(newAdminParamRouter(svc), http.MethodPost, "/system-params/k/reset", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminParamReset_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminParamSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(
+		newAdminRequest(http.MethodPost, "/system-params/k/reset", ""),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminParamReset_NotFound_Returns404(t *testing.T) {
+	svc := &stubAdminParamSvc{err: apperrors.NotFound("missing.key")}
+	req := withCaller(
+		newAdminRequest(http.MethodPost, "/system-params/missing.key/reset", ""),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
 	}
 }
 
