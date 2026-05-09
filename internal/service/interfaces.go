@@ -40,13 +40,17 @@ type MatchService interface {
 
 // PredictionService defines operations on the Prediction entity.
 //
-// Submit enforces the prediction deadline and relies on the repository's
-// atomic INSERT + unique index handling to reject duplicate predictions
-// without a pre-read race window. Update follows the same deadline rules,
-// requires the caller to own the prediction being modified, and uses
-// optimistic concurrency to prevent silent last-write-wins overwrites.
+// Submit enforces the prediction deadline and delegates persistence to the
+// repository Upsert, which uses ON CONFLICT DO UPDATE to make the operation
+// idempotent. Returns created=true when a new row was inserted, false when
+// the existing prediction for (user_id, match_id) was returned unchanged —
+// enabling the handler to respond 201 for a new submission and 200 for a
+// safe retry without exposing a 409 that the client cannot distinguish from
+// a genuine conflict. Update follows the same deadline rules, requires the
+// caller to own the prediction, and uses optimistic concurrency to prevent
+// silent last-write-wins overwrites.
 type PredictionService interface {
-	Submit(ctx context.Context, prediction *domain.Prediction) error
+	Submit(ctx context.Context, prediction *domain.Prediction) (created bool, err error)
 	Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int) (*domain.Prediction, error)
 	GetByUser(ctx context.Context, userID int) ([]*domain.Prediction, error)
 	// GetByUserAndQuiniela returns all predictions for userID scoped to the
@@ -439,7 +443,13 @@ type AdminUserProfile struct {
 // quiniela. It is called by the scoring worker immediately after ScoreMatch
 // completes so the latest rankings are available without re-computing them.
 type Snapshotter interface {
+	// Snapshot takes an admin/manual snapshot for quinielaID. No idempotency
+	// key is used; each call creates a new row. Used by RecalculateLeaderboard.
 	Snapshot(ctx context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error)
+	// SnapshotForMatch takes a worker-triggered snapshot associating the result
+	// with matchID. Replaying the same (quinielaID, matchID) pair is idempotent:
+	// the existing snapshot row is returned without creating a duplicate.
+	SnapshotForMatch(ctx context.Context, quinielaID, matchID int) (*domain.LeaderboardSnapshot, error)
 }
 
 // AuditReader exposes read-only access to the audit log for admin endpoints.

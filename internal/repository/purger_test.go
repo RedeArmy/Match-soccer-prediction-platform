@@ -331,7 +331,7 @@ func TestPostgresPurger_EraseUserPII_DeletesTiebreakers(t *testing.T) {
 	cfg := seedTiebreakerConfig(t)
 
 	tbRepo := repository.NewPostgresTiebreakerRepository(testDB)
-	if err := tbRepo.Create(ctx, &domain.Tiebreaker{
+	if err := tbRepo.Upsert(ctx, &domain.Tiebreaker{
 		UserID:             u.ID,
 		TiebreakerConfigID: cfg.ID,
 		Prediction:         42,

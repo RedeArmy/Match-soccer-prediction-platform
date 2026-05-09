@@ -22,6 +22,9 @@ type noopSnapshotter struct{}
 func (s *noopSnapshotter) Snapshot(_ context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error) {
 	return &domain.LeaderboardSnapshot{QuinielaID: quinielaID}, nil
 }
+func (s *noopSnapshotter) SnapshotForMatch(_ context.Context, quinielaID, _ int) (*domain.LeaderboardSnapshot, error) {
+	return &domain.LeaderboardSnapshot{QuinielaID: quinielaID}, nil
+}
 
 func newAdminGroupSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) AdminGroupService {
 	return NewAdminGroupService(qr, mr, &noopSnapshotter{}, &noopAuditLogger{}, zap.NewNop())
@@ -207,6 +210,9 @@ func TestAdminGroupService_RecalculateLeaderboard_SnapshotterError_Propagates(t 
 type errSnapshotter struct{}
 
 func (*errSnapshotter) Snapshot(_ context.Context, _ int) (*domain.LeaderboardSnapshot, error) {
+	return nil, errors.New("snapshotter error")
+}
+func (*errSnapshotter) SnapshotForMatch(_ context.Context, _, _ int) (*domain.LeaderboardSnapshot, error) {
 	return nil, errors.New("snapshotter error")
 }
 

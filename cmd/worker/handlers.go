@@ -209,7 +209,7 @@ func retrySnapshot(
 ) {
 	backoff := snapshotRetryBase
 	for attempt := 1; attempt <= maxSnapshotAttempts; attempt++ {
-		if _, err := snapshotter.Snapshot(ctx, quinielaID); err == nil {
+		if _, err := snapshotter.SnapshotForMatch(ctx, quinielaID, matchID); err == nil {
 			log.Sugar().Infof("worker: leaderboard snapshot saved for quiniela %d (match %d)", quinielaID, matchID)
 			return
 		} else if attempt == maxSnapshotAttempts {

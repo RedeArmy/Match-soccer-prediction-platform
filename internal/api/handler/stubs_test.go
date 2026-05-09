@@ -104,7 +104,9 @@ type stubPredSvc struct {
 	updateID       int
 }
 
-func (s *stubPredSvc) Submit(_ context.Context, _ *domain.Prediction) error { return s.err }
+func (s *stubPredSvc) Submit(_ context.Context, _ *domain.Prediction) (bool, error) {
+	return s.err == nil, s.err
+}
 func (s *stubPredSvc) Update(_ context.Context, callerUserID, id, _, _ int) (*domain.Prediction, error) {
 	s.updateCallerID = callerUserID
 	s.updateID = id

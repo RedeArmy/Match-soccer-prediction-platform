@@ -24,7 +24,7 @@ func NewPostgresLeaderboardSnapshotRepository(db *pgxpool.Pool) *PostgresLeaderb
 	return &PostgresLeaderboardSnapshotRepository{db: db}
 }
 
-const snapshotColumns = "id, quiniela_id, taken_at, entries, schema_version, created_at"
+const snapshotColumns = "id, quiniela_id, taken_at, entries, schema_version, created_at, triggered_by_match_id"
 
 // marshalSnapshotEntries serialises entries using the wire format for version.
 // Called by Create so that new snapshots always use the current schema version.
@@ -60,7 +60,7 @@ func unmarshalSnapshotEntries(version int, raw []byte) ([]domain.LeaderboardSnap
 func scanSnapshot(row pgx.Row) (*domain.LeaderboardSnapshot, error) {
 	s := &domain.LeaderboardSnapshot{}
 	var entriesBytes []byte
-	err := row.Scan(&s.ID, &s.QuinielaID, &s.TakenAt, &entriesBytes, &s.SchemaVersion, &s.CreatedAt)
+	err := row.Scan(&s.ID, &s.QuinielaID, &s.TakenAt, &entriesBytes, &s.SchemaVersion, &s.CreatedAt, &s.TriggeredByMatchID)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -80,7 +80,7 @@ func collectSnapshots(rows pgx.Rows) ([]*domain.LeaderboardSnapshot, error) {
 	for rows.Next() {
 		s := &domain.LeaderboardSnapshot{}
 		var entriesBytes []byte
-		if err := rows.Scan(&s.ID, &s.QuinielaID, &s.TakenAt, &entriesBytes, &s.SchemaVersion, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.QuinielaID, &s.TakenAt, &entriesBytes, &s.SchemaVersion, &s.CreatedAt, &s.TriggeredByMatchID); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		entries, err := unmarshalSnapshotEntries(s.SchemaVersion, entriesBytes)
@@ -99,16 +99,25 @@ func collectSnapshots(rows pgx.Rows) ([]*domain.LeaderboardSnapshot, error) {
 // Create persists a new leaderboard snapshot. Entries are marshaled to JSONB
 // using the current schema version. snapshot.ID, snapshot.SchemaVersion, and
 // snapshot.CreatedAt are populated on success.
+//
+// When snapshot.TriggeredByMatchID is non-nil the INSERT uses ON CONFLICT DO
+// UPDATE to become idempotent: replaying the same MatchFinished event for the
+// same quiniela returns the existing snapshot row unchanged rather than
+// inserting a duplicate. Admin-triggered snapshots (nil TriggeredByMatchID)
+// are always inserted as new rows — each manual recalculation is intentional.
 func (r *PostgresLeaderboardSnapshotRepository) Create(ctx context.Context, snapshot *domain.LeaderboardSnapshot) error {
 	entriesJSON, err := marshalSnapshotEntries(domain.SnapshotCurrentSchema, snapshot.Entries)
 	if err != nil {
 		return err
 	}
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO leaderboard_snapshots (quiniela_id, taken_at, entries, schema_version)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO leaderboard_snapshots (quiniela_id, taken_at, entries, schema_version, triggered_by_match_id)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (quiniela_id, triggered_by_match_id)
+		     WHERE triggered_by_match_id IS NOT NULL
+		 DO UPDATE SET taken_at = leaderboard_snapshots.taken_at
 		 RETURNING `+snapshotColumns,
-		snapshot.QuinielaID, snapshot.TakenAt, entriesJSON, domain.SnapshotCurrentSchema,
+		snapshot.QuinielaID, snapshot.TakenAt, entriesJSON, domain.SnapshotCurrentSchema, snapshot.TriggeredByMatchID,
 	)
 	result, err := scanSnapshot(row)
 	if err != nil {

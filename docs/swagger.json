@@ -3144,20 +3144,20 @@
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "OK (idempotent replay — prediction unchanged)",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.PredictionResponse"
+                        }
+                    },
                     "201": {
-                        "description": "Created",
+                        "description": "Created (first submission)",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.PredictionResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Prediction already exists for this match",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }

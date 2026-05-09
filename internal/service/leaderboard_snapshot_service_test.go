@@ -111,3 +111,63 @@ func TestLeaderboardSnapshotService_Snapshot_RepoError_Propagates(t *testing.T) 
 		t.Fatal("expected error from repo, got nil")
 	}
 }
+
+// ── SnapshotForMatch ──────────────────────────────────────────────────────────
+
+func TestLeaderboardSnapshotService_SnapshotForMatch_SetsTriggeredByMatchID(t *testing.T) {
+	entries := []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1}, Rank: 1, TotalPoints: 7},
+	}
+	svc := NewLeaderboardSnapshotService(&stubRankerSnap{entries: entries}, &stubSnapshotRepo{})
+
+	snap, err := svc.SnapshotForMatch(context.Background(), 42, 99)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("expected snapshot, got nil")
+	}
+	if snap.QuinielaID != 42 {
+		t.Errorf("expected quinielaID 42, got %d", snap.QuinielaID)
+	}
+	if snap.TriggeredByMatchID == nil || *snap.TriggeredByMatchID != 99 {
+		t.Errorf("expected TriggeredByMatchID=99, got %v", snap.TriggeredByMatchID)
+	}
+}
+
+func TestLeaderboardSnapshotService_SnapshotForMatch_RankerError_Propagates(t *testing.T) {
+	svc := NewLeaderboardSnapshotService(
+		&stubRankerSnap{err: errors.New("ranker error")},
+		&stubSnapshotRepo{},
+	)
+
+	_, err := svc.SnapshotForMatch(context.Background(), 1, 5)
+	if err == nil {
+		t.Fatal("expected error from ranker, got nil")
+	}
+}
+
+func TestLeaderboardSnapshotService_SnapshotForMatch_RepoError_Propagates(t *testing.T) {
+	entries := []*domain.LeaderboardEntry{{User: &domain.User{ID: 1}, Rank: 1, TotalPoints: 3}}
+	svc := NewLeaderboardSnapshotService(
+		&stubRankerSnap{entries: entries},
+		&stubSnapshotRepo{err: errors.New("db error")},
+	)
+
+	_, err := svc.SnapshotForMatch(context.Background(), 1, 5)
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+}
+
+func TestLeaderboardSnapshotService_Snapshot_TriggeredByMatchID_IsNil(t *testing.T) {
+	svc := NewLeaderboardSnapshotService(&stubRankerSnap{}, &stubSnapshotRepo{})
+
+	snap, err := svc.Snapshot(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if snap.TriggeredByMatchID != nil {
+		t.Errorf("expected TriggeredByMatchID nil for manual Snapshot, got %v", snap.TriggeredByMatchID)
+	}
+}

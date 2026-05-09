@@ -19,7 +19,7 @@ func TestTiebreakerRepository_Create_HydratesID(t *testing.T) {
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
 	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 42}
-	if err := repo.Create(context.Background(), tb); err != nil {
+	if err := repo.Upsert(context.Background(), tb); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if tb.ID == 0 {
@@ -30,13 +30,37 @@ func TestTiebreakerRepository_Create_HydratesID(t *testing.T) {
 	}
 }
 
+func TestTiebreakerRepository_Upsert_IdempotentOnConflict(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
+	repo := repository.NewPostgresTiebreakerRepository(testDB)
+
+	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}
+	if err := repo.Upsert(context.Background(), tb); err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	firstID := tb.ID
+
+	tb2 := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 7}
+	if err := repo.Upsert(context.Background(), tb2); err != nil {
+		t.Fatalf("second upsert: %v", err)
+	}
+	if tb2.ID != firstID {
+		t.Errorf("expected same row ID on upsert, got %d (first) vs %d (second)", firstID, tb2.ID)
+	}
+	if tb2.Prediction != 7 {
+		t.Errorf("expected updated prediction 7, got %d", tb2.Prediction)
+	}
+}
+
 func TestTiebreakerRepository_GetByUser_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
 	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 10}
-	if err := repo.Create(context.Background(), tb); err != nil {
+	if err := repo.Upsert(context.Background(), tb); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
@@ -72,7 +96,7 @@ func TestTiebreakerRepository_Update_Found(t *testing.T) {
 	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 7}
-	if err := repo.Create(context.Background(), tb); err != nil {
+	if err := repo.Upsert(context.Background(), tb); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
@@ -101,7 +125,7 @@ func TestTiebreakerRepository_ListByUserIDs_ReturnsRows(t *testing.T) {
 	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}
-	if err := repo.Create(context.Background(), tb); err != nil {
+	if err := repo.Upsert(context.Background(), tb); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
@@ -217,10 +241,10 @@ func TestTiebreakerRepository_ListAll_ReturnsList(t *testing.T) {
 	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}); err != nil {
+	if err := repo.Upsert(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}); err != nil {
+	if err := repo.Upsert(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
@@ -240,10 +264,10 @@ func TestTiebreakerRepository_ListAll_PaginationLimit(t *testing.T) {
 	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}); err != nil {
+	if err := repo.Upsert(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}); err != nil {
+	if err := repo.Upsert(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
@@ -276,10 +300,10 @@ func TestTiebreakerRepository_ListAll_WithOffset(t *testing.T) {
 	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}); err != nil {
+	if err := repo.Upsert(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}); err != nil {
+	if err := repo.Upsert(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
@@ -299,10 +323,10 @@ func TestTiebreakerRepository_ListByUserIDsForConfig_ReturnsFiltered(t *testing.
 	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 7}); err != nil {
+	if err := repo.Upsert(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 7}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 9}); err != nil {
+	if err := repo.Upsert(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 9}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 

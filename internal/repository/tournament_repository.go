@@ -43,6 +43,9 @@ func (r *PostgresTournamentRepository) CreateSlot(ctx context.Context, label str
 	)
 	slot, err := scanSlot(row)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, apperrors.Conflict("a tournament slot with this label already exists")
+		}
 		return nil, err
 	}
 	return slot, nil
