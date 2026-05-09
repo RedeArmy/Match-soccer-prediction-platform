@@ -309,42 +309,59 @@ type GroupMembershipRepository interface {
 // TiebreakerRepository defines the persistence operations for the Tiebreaker
 // entity.
 //
-// Tiebreaker predictions are global: each user may submit exactly one estimate
-// for the administrator-defined question, and that estimate applies uniformly
-// to every group the user belongs to. The unique index on user_id eliminates
-// the check-then-act race condition in Submit.
+// Each user may submit at most one prediction per TiebreakerConfig.
+// TiebreakerConfigID scopes the prediction to the active question for the
+// caller's group; the unique index on (user_id, tiebreaker_config_id)
+// eliminates the check-then-act race condition in Submit.
 type TiebreakerRepository interface {
 	Create(ctx context.Context, tb *domain.Tiebreaker) error
-	// GetByUser returns the caller's global tiebreaker prediction.
-	// Returns nil, nil when the user has not yet submitted.
-	GetByUser(ctx context.Context, userID int) (*domain.Tiebreaker, error)
+	// GetByUser returns the caller's prediction for the given configID.
+	// Returns nil, nil when the user has not yet submitted for that config.
+	GetByUser(ctx context.Context, userID, configID int) (*domain.Tiebreaker, error)
 	Update(ctx context.Context, tb *domain.Tiebreaker) error
-	// ListByUserIDs returns predictions for the given user IDs in a single
-	// query. Used by the ranking service to load all relevant entries for a
-	// group without N+1 round-trips. An empty slice is returned when no user
-	// in userIDs has submitted. An empty ids slice returns nil, nil.
+	// ListByUserIDs returns global tiebreaker predictions (configID = 1) for the
+	// given user IDs. Kept for backward compatibility with the ranking service,
+	// which still uses the platform-wide config. Use ListByUserIDsForConfig when
+	// multiple configs are active. An empty ids slice returns nil, nil.
 	ListByUserIDs(ctx context.Context, userIDs []int) ([]*domain.Tiebreaker, error)
+	// ListByUserIDsForConfig returns predictions scoped to configID for the given
+	// user IDs. Used when per-phase or per-group configs are active. An empty ids
+	// slice returns nil, nil.
+	ListByUserIDsForConfig(ctx context.Context, userIDs []int, configID int) ([]*domain.Tiebreaker, error)
 	// ListAll returns all tiebreaker submissions with pagination.
 	// Used by the admin panel to inspect all player predictions at once.
 	ListAll(ctx context.Context, p Pagination) ([]*domain.Tiebreaker, error)
 }
 
-// TiebreakerConfigRepository manages the singleton global tiebreaker
-// configuration set by the system administrator.
+// TiebreakerConfigRepository manages tiebreaker question configurations.
 //
-// There is at most one row in the database (id=1). Upsert creates the row
-// on first call and updates question on subsequent calls. SetResult may only
-// be called after a question has been set; it is the service layer's
-// responsibility to enforce this precondition before calling SetResult.
+// Configurations can be global (the original singleton at id=1), scoped to a
+// tournament phase, scoped to a specific quiniela, or both. At most one config
+// exists per scope combination; the database enforces this with partial unique
+// indices. Upsert creates or replaces the global config; the scoped variants
+// (UpsertForPhase, UpsertForQuiniela) create or replace their respective rows.
 type TiebreakerConfigRepository interface {
-	// Get returns the current global configuration.
-	// Returns nil, nil when no question has been set yet.
+	// Get returns the global tiebreaker configuration (phase IS NULL, quiniela_id IS NULL).
+	// Returns nil, nil when no global question has been set yet.
 	Get(ctx context.Context) (*domain.TiebreakerConfig, error)
-	// Upsert sets or replaces the tiebreaker question and returns the updated config.
+	// GetByPhase returns the platform-wide config scoped to phase.
+	// Returns nil, nil when no question has been set for that phase.
+	GetByPhase(ctx context.Context, phase domain.MatchPhase) (*domain.TiebreakerConfig, error)
+	// GetByQuiniela returns the group-specific config for quinielaID.
+	// Returns nil, nil when no group-specific question has been configured.
+	GetByQuiniela(ctx context.Context, quinielaID int) (*domain.TiebreakerConfig, error)
+	// Upsert sets or replaces the global tiebreaker question and returns the updated config.
 	Upsert(ctx context.Context, question string) (*domain.TiebreakerConfig, error)
-	// SetResult records the confirmed numeric outcome. Called once by the
-	// administrator after the tournament concludes.
+	// UpsertForPhase sets or replaces the phase-scoped question (quiniela_id IS NULL).
+	UpsertForPhase(ctx context.Context, phase domain.MatchPhase, question string) (*domain.TiebreakerConfig, error)
+	// UpsertForQuiniela sets or replaces the group-specific question (phase IS NULL).
+	UpsertForQuiniela(ctx context.Context, quinielaID int, question string) (*domain.TiebreakerConfig, error)
+	// SetResult records the confirmed numeric outcome for the global config.
+	// Called once by the administrator after the tournament concludes.
 	SetResult(ctx context.Context, result int) error
+	// SetResultByID records the confirmed numeric outcome for any config by ID.
+	// Returns NotFound when configID does not exist.
+	SetResultByID(ctx context.Context, configID, result int) error
 }
 
 // TournamentRepository manages bracket position slots created and confirmed by

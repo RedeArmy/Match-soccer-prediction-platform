@@ -294,6 +294,19 @@ func seedPaymentRecord(t *testing.T, quinielaID, userID int) *domain.PaymentReco
 	return pr
 }
 
+// seedTiebreakerConfig creates the global tiebreaker config (id=1) so that
+// tests which create domain.Tiebreaker rows can satisfy the foreign key on
+// tiebreaker_config_id. Must be called after cleanTables.
+func seedTiebreakerConfig(t *testing.T) *domain.TiebreakerConfig {
+	t.Helper()
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+	cfg, err := repo.Upsert(context.Background(), "Total goals in the Final")
+	if err != nil {
+		t.Fatalf("seed tiebreaker config: %v", err)
+	}
+	return cfg
+}
+
 func seedSystemParam(t *testing.T, key, value, category string) *domain.SystemParam {
 	t.Helper()
 	var p domain.SystemParam

@@ -49,48 +49,33 @@ func scanMembership(row pgx.Row) (*domain.GroupMembership, error) {
 // RequestJoinByInviteCode serialises invite-code resolution, existing-membership
 // inspection, capacity enforcement, and membership mutation in one transaction.
 func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID, maxMembers int) (*domain.Quiniela, *domain.GroupMembership, error) {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return nil, nil, apperrors.Internal(err)
-	}
-	defer func() {
-		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "RequestJoinByInviteCode")
-	}()
-
-	q, err := findQuinielaByInviteCode(ctx, tx, inviteCode)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	existing, err := findMembershipForLocking(ctx, tx, q.ID, userID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if err := validateMembershipStatus(existing); err != nil {
-		return nil, nil, err
-	}
-
-	if err := enforceMaxMembers(ctx, tx, q.ID, maxMembers); err != nil {
-		return nil, nil, err
-	}
-
-	autoPaid := q.EntryFee == 0
+	var q *domain.Quiniela
 	var m *domain.GroupMembership
-
-	if existing != nil {
-		m, err = reactivateMembership(ctx, tx, existing.ID, autoPaid)
-	} else {
-		m, err = createPendingMembership(ctx, tx, q.ID, userID, autoPaid)
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, nil, apperrors.Internal(err)
-	}
-	return q, m, nil
+	err := withTx(ctx, r.db, "GroupMembershipRepository.RequestJoinByInviteCode", func(tx pgx.Tx) error {
+		var err error
+		q, err = findQuinielaByInviteCode(ctx, tx, inviteCode)
+		if err != nil {
+			return err
+		}
+		existing, err := findMembershipForLocking(ctx, tx, q.ID, userID)
+		if err != nil {
+			return err
+		}
+		if err := validateMembershipStatus(existing); err != nil {
+			return err
+		}
+		if err := enforceMaxMembers(ctx, tx, q.ID, maxMembers); err != nil {
+			return err
+		}
+		autoPaid := q.EntryFee == 0
+		if existing != nil {
+			m, err = reactivateMembership(ctx, tx, existing.ID, autoPaid)
+		} else {
+			m, err = createPendingMembership(ctx, tx, q.ID, userID, autoPaid)
+		}
+		return err
+	})
+	return q, m, err
 }
 
 func findQuinielaByInviteCode(ctx context.Context, tx pgx.Tx, inviteCode string) (*domain.Quiniela, error) {
@@ -489,47 +474,36 @@ func (r *PostgresGroupMembershipRepository) BulkRemoveByAdmin(ctx context.Contex
 // to 'member' and promotes newOwnerMembershipID to 'owner' in one transaction.
 // If either UPDATE fails the transaction rolls back and neither change persists.
 func (r *PostgresGroupMembershipRepository) TransferOwnershipRoles(ctx context.Context, quinielaID, newOwnerMembershipID int) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-	defer func() {
-		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "TransferOwnershipRoles")
-	}()
+	return withTx(ctx, r.db, "GroupMembershipRepository.TransferOwnershipRoles", func(tx pgx.Tx) error {
+		// Demote all current owners. Using quinielaID scope instead of a specific
+		// membership ID handles the edge case where corrupted data left multiple
+		// owners; both are demoted atomically.
+		if _, err := tx.Exec(ctx,
+			`UPDATE group_memberships
+			    SET role = 'member', updated_at = NOW()
+			  WHERE quiniela_id = $1
+			    AND role        = 'owner'
+			    AND status      = 'active'`,
+			quinielaID,
+		); err != nil {
+			return apperrors.Internal(err)
+		}
 
-	// Demote all current owners. Using quinielaID scope instead of a specific
-	// membership ID handles the edge case where corrupted data left multiple
-	// owners; both are demoted atomically.
-	_, err = tx.Exec(ctx,
-		`UPDATE group_memberships
-		    SET role = 'member', updated_at = NOW()
-		  WHERE quiniela_id = $1
-		    AND role        = 'owner'
-		    AND status      = 'active'`,
-		quinielaID,
-	)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-
-	// Promote the new owner.
-	tag, err := tx.Exec(ctx,
-		`UPDATE group_memberships
-		    SET role = 'owner', updated_at = NOW()
-		  WHERE id = $1`,
-		newOwnerMembershipID,
-	)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("new owner membership not found")
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return apperrors.Internal(err)
-	}
-	return nil
+		// Promote the new owner.
+		tag, err := tx.Exec(ctx,
+			`UPDATE group_memberships
+			    SET role = 'owner', updated_at = NOW()
+			  WHERE id = $1`,
+			newOwnerMembershipID,
+		)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if tag.RowsAffected() == 0 {
+			return apperrors.NotFound("new owner membership not found")
+		}
+		return nil
+	})
 }
 
 // syncStatusInTx recomputes the quiniela's active/inactive status inside an
@@ -570,58 +544,47 @@ func (r *PostgresGroupMembershipRepository) ApproveMembership(
 	now time.Time,
 	minMembers, maxMembers int,
 ) (*domain.GroupMembership, error) {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	defer func() {
-		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "ApproveMembership")
-	}()
+	var m *domain.GroupMembership
+	err := withTx(ctx, r.db, "GroupMembershipRepository.ApproveMembership", func(tx pgx.Tx) error {
+		// Lock the quiniela row for the duration of the transaction. This serialises
+		// all concurrent ApproveMembership calls for the same group and ensures the
+		// capacity check below is race-safe.
+		var lockedID int
+		if err := tx.QueryRow(ctx,
+			`SELECT id FROM quinielas WHERE id = $1 FOR UPDATE`,
+			quinielaID,
+		).Scan(&lockedID); err != nil {
+			return apperrors.Internal(err)
+		}
 
-	// Lock the quiniela row for the duration of the transaction. This serialises
-	// all concurrent ApproveMembership calls for the same group and ensures the
-	// capacity check below is race-safe.
-	var lockedID int
-	if err := tx.QueryRow(ctx,
-		`SELECT id FROM quinielas WHERE id = $1 FOR UPDATE`,
-		quinielaID,
-	).Scan(&lockedID); err != nil {
-		return nil, apperrors.Internal(err)
-	}
+		if err := enforceMaxMembers(ctx, tx, quinielaID, maxMembers); err != nil {
+			return err
+		}
 
-	if err := enforceMaxMembers(ctx, tx, quinielaID, maxMembers); err != nil {
-		return nil, err
-	}
-
-	row := tx.QueryRow(ctx,
-		`UPDATE group_memberships
-		    SET status    = 'active',
-		        joined_at = $1,
-		        updated_at = NOW()
-		  WHERE id          = $2
-		    AND quiniela_id = $3
-		    AND status      = 'pending'
-		  RETURNING `+membershipColumns,
-		now, membershipID, quinielaID,
-	)
-	m, err := scanMembership(row)
-	if err != nil {
-		return nil, err
-	}
-	if m == nil {
-		// The service pre-flight confirmed the request was pending; 0 rows means
-		// a concurrent approval committed between that check and this call.
-		return nil, apperrors.Conflict("this join request is no longer pending")
-	}
-
-	if err := syncStatusInTx(ctx, tx, quinielaID, minMembers); err != nil {
-		return nil, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return m, nil
+		row := tx.QueryRow(ctx,
+			`UPDATE group_memberships
+			    SET status    = 'active',
+			        joined_at = $1,
+			        updated_at = NOW()
+			  WHERE id          = $2
+			    AND quiniela_id = $3
+			    AND status      = 'pending'
+			  RETURNING `+membershipColumns,
+			now, membershipID, quinielaID,
+		)
+		var err error
+		m, err = scanMembership(row)
+		if err != nil {
+			return err
+		}
+		if m == nil {
+			// The service pre-flight confirmed the request was pending; 0 rows means
+			// a concurrent approval committed between that check and this call.
+			return apperrors.Conflict("this join request is no longer pending")
+		}
+		return syncStatusInTx(ctx, tx, quinielaID, minMembers)
+	})
+	return m, err
 }
 
 // LeaveMembership atomically transitions a membership to left and recalculates
@@ -632,42 +595,28 @@ func (r *PostgresGroupMembershipRepository) LeaveMembership(
 	now time.Time,
 	minMembers int,
 ) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-	defer func() {
-		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "LeaveMembership")
-	}()
-
-	tag, err := tx.Exec(ctx,
-		`UPDATE group_memberships
-		    SET status     = 'left',
-		        joined_at  = NULL,
-		        removed_at = $1,
-		        removed_by = NULL,
-		        updated_at = NOW()
-		  WHERE quiniela_id = $2
-		    AND user_id     = $3
-		    AND status      = 'active'`,
-		now, quinielaID, userID,
-	)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-	if tag.RowsAffected() == 0 {
-		// Race: the member was removed concurrently before this call committed.
-		return apperrors.Conflict("you are no longer an active member of this group")
-	}
-
-	if err := syncStatusInTx(ctx, tx, quinielaID, minMembers); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return apperrors.Internal(err)
-	}
-	return nil
+	return withTx(ctx, r.db, "GroupMembershipRepository.LeaveMembership", func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx,
+			`UPDATE group_memberships
+			    SET status     = 'left',
+			        joined_at  = NULL,
+			        removed_at = $1,
+			        removed_by = NULL,
+			        updated_at = NOW()
+			  WHERE quiniela_id = $2
+			    AND user_id     = $3
+			    AND status      = 'active'`,
+			now, quinielaID, userID,
+		)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if tag.RowsAffected() == 0 {
+			// Race: the member was removed concurrently before this call committed.
+			return apperrors.Conflict("you are no longer an active member of this group")
+		}
+		return syncStatusInTx(ctx, tx, quinielaID, minMembers)
+	})
 }
 
 // LeaveMembershipAndTransferOwnership atomically hands ownership to an active
@@ -678,71 +627,57 @@ func (r *PostgresGroupMembershipRepository) LeaveMembershipAndTransferOwnership(
 	now time.Time,
 	minMembers int,
 ) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-	defer func() {
-		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "LeaveMembershipAndTransferOwnership")
-	}()
+	return withTx(ctx, r.db, "GroupMembershipRepository.LeaveMembershipAndTransferOwnership", func(tx pgx.Tx) error {
+		// Demote any currently-active owners first so the promotion below is the
+		// only surviving owner role when the transaction commits.
+		if _, err := tx.Exec(ctx,
+			`UPDATE group_memberships
+			    SET role = 'member', updated_at = NOW()
+			  WHERE quiniela_id = $1
+			    AND role        = 'owner'
+			    AND status      = 'active'`,
+			quinielaID,
+		); err != nil {
+			return apperrors.Internal(err)
+		}
 
-	// Demote any currently-active owners first so the promotion below is the
-	// only surviving owner role when the transaction commits.
-	if _, err := tx.Exec(ctx,
-		`UPDATE group_memberships
-		    SET role = 'member', updated_at = NOW()
-		  WHERE quiniela_id = $1
-		    AND role        = 'owner'
-		    AND status      = 'active'`,
-		quinielaID,
-	); err != nil {
-		return apperrors.Internal(err)
-	}
+		tag, err := tx.Exec(ctx,
+			`UPDATE group_memberships
+			    SET role = 'owner', updated_at = NOW()
+			  WHERE id          = $1
+			    AND quiniela_id = $2
+			    AND status      = 'active'
+			    AND user_id    != $3`,
+			successorMembershipID, quinielaID, leavingUserID,
+		)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if tag.RowsAffected() == 0 {
+			return apperrors.NotFound("new owner membership not found")
+		}
 
-	tag, err := tx.Exec(ctx,
-		`UPDATE group_memberships
-		    SET role = 'owner', updated_at = NOW()
-		  WHERE id          = $1
-		    AND quiniela_id = $2
-		    AND status      = 'active'
-		    AND user_id    != $3`,
-		successorMembershipID, quinielaID, leavingUserID,
-	)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("new owner membership not found")
-	}
-
-	tag, err = tx.Exec(ctx,
-		`UPDATE group_memberships
-		    SET status     = 'left',
-		        role       = 'member',
-		        joined_at  = NULL,
-		        removed_at = $1,
-		        removed_by = NULL,
-		        updated_at = NOW()
-		  WHERE quiniela_id = $2
-		    AND user_id     = $3
-		    AND status      = 'active'`,
-		now, quinielaID, leavingUserID,
-	)
-	if err != nil {
-		return apperrors.Internal(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return apperrors.Conflict("you are no longer an active member of this group")
-	}
-
-	if err := syncStatusInTx(ctx, tx, quinielaID, minMembers); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return apperrors.Internal(err)
-	}
-	return nil
+		tag, err = tx.Exec(ctx,
+			`UPDATE group_memberships
+			    SET status     = 'left',
+			        role       = 'member',
+			        joined_at  = NULL,
+			        removed_at = $1,
+			        removed_by = NULL,
+			        updated_at = NOW()
+			  WHERE quiniela_id = $2
+			    AND user_id     = $3
+			    AND status      = 'active'`,
+			now, quinielaID, leavingUserID,
+		)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if tag.RowsAffected() == 0 {
+			return apperrors.Conflict("you are no longer an active member of this group")
+		}
+		return syncStatusInTx(ctx, tx, quinielaID, minMembers)
+	})
 }
 
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)

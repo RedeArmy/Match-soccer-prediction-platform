@@ -38,11 +38,10 @@ func SetDefensiveLogger(log *zap.Logger) {
 // defensive logger. It filters out pgx.ErrTxClosed (the expected error after
 // successful commit) and only logs genuine infrastructure failures.
 //
-// This function is extracted from inline defer blocks to make the defensive
-// logging logic testable via unit tests, since simulating rollback failures
-// in integration tests requires flaky infrastructure failure simulation.
-//
-// Called from deferred cleanup in repository methods that use transactions.
+// This function is kept as a low-level, directly-testable building block.
+// Repository methods must NOT call it directly; they must use withTx (tx.go),
+// which centralises Begin/defer-rollback/Commit and logs failures with a
+// caller tag. logRollbackFailure is tested in isolation by defensive_logger_test.go.
 func logRollbackFailure(err error, repository, method string) {
 	if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
 		defensiveLog.Warn("transaction rollback failed",

@@ -286,12 +286,20 @@ type Quiniela struct {
 //
 // Question must be non-empty before members may submit predictions.
 // Result is nil until the administrator confirms the actual outcome.
+//
+// Phase and QuinielaID narrow the scope of the question:
+//   - both nil  → global (the original platform-wide singleton at id=1)
+//   - Phase only → platform-wide question for that tournament phase
+//   - QuinielaID only → group-specific question for that quiniela
+//   - both set  → question scoped to a specific group and phase
 type TiebreakerConfig struct {
-	ID        int
-	Question  string
-	Result    *int // nil until the administrator confirms the outcome
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID         int
+	Question   string
+	Phase      *MatchPhase // nil = not phase-scoped
+	QuinielaID *int        // nil = platform-wide
+	Result     *int        // nil until the administrator confirms the outcome
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // TiebreakerView is a read-only projection returned by TiebreakerService.GetMine.
@@ -441,16 +449,16 @@ type UserStats struct {
 }
 
 // Tiebreaker is a single user's numeric estimate for the global tiebreaker
-// question. Predictions are global - one per user across all groups - because
-// the question is set once by the system administrator and applies uniformly
-// to every group's leaderboard. The confirmed result lives in TiebreakerConfig,
-// not here.
+// question. A user may submit at most one prediction per TiebreakerConfig;
+// TiebreakerConfigID identifies which config (global, phase-scoped, or
+// group-scoped) this prediction answers.
 type Tiebreaker struct {
-	ID         int
-	UserID     int
-	Prediction int // the player's numeric estimate
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID                 int
+	UserID             int
+	TiebreakerConfigID int // which config this prediction answers
+	Prediction         int // the player's numeric estimate
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // SystemParamType constrains the Value interpretation for a SystemParam row.
@@ -560,12 +568,17 @@ type LeaderboardSnapshotEntry struct {
 // Snapshots are immutable after creation. TakenAt records the logical time
 // the snapshot represents, which may differ slightly from CreatedAt when
 // backfill jobs are used.
+//
+// SchemaVersion identifies the JSONB encoding of Entries (see SnapshotSchemaV1).
+// The repository uses it to select the correct deserialiser when reading
+// historical rows, decoupling struct evolution from backwards compatibility.
 type LeaderboardSnapshot struct {
-	ID         int
-	QuinielaID int
-	TakenAt    time.Time
-	Entries    []LeaderboardSnapshotEntry
-	CreatedAt  time.Time
+	ID            int
+	QuinielaID    int
+	TakenAt       time.Time
+	Entries       []LeaderboardSnapshotEntry
+	SchemaVersion int
+	CreatedAt     time.Time
 }
 
 // GlobalLeaderboardEntry is a read-only projection used by the admin global

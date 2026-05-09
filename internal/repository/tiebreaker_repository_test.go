@@ -15,27 +15,32 @@ import (
 func TestTiebreakerRepository_Create_HydratesID(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	tb := &domain.Tiebreaker{UserID: u.ID, Prediction: 42}
+	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 42}
 	if err := repo.Create(context.Background(), tb); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if tb.ID == 0 {
 		t.Error(msgNonZeroID)
 	}
+	if tb.TiebreakerConfigID != cfg.ID {
+		t.Errorf("config_id: got %d, want %d", tb.TiebreakerConfigID, cfg.ID)
+	}
 }
 
 func TestTiebreakerRepository_GetByUser_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
-	tb := &domain.Tiebreaker{UserID: u.ID, Prediction: 10}
+	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 10}
 	if err := repo.Create(context.Background(), tb); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
-	got, err := repo.GetByUser(context.Background(), u.ID)
+	got, err := repo.GetByUser(context.Background(), u.ID, cfg.ID)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -49,9 +54,10 @@ func TestTiebreakerRepository_GetByUser_Found(t *testing.T) {
 
 func TestTiebreakerRepository_GetByUser_NotFound_ReturnsNil(t *testing.T) {
 	cleanTables(t)
+	seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	got, err := repo.GetByUser(context.Background(), 99999)
+	got, err := repo.GetByUser(context.Background(), 99999, 1)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -63,8 +69,9 @@ func TestTiebreakerRepository_GetByUser_NotFound_ReturnsNil(t *testing.T) {
 func TestTiebreakerRepository_Update_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
-	tb := &domain.Tiebreaker{UserID: u.ID, Prediction: 7}
+	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 7}
 	if err := repo.Create(context.Background(), tb); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
@@ -91,8 +98,9 @@ func TestTiebreakerRepository_Update_NotFound_ReturnsError(t *testing.T) {
 func TestTiebreakerRepository_ListByUserIDs_ReturnsRows(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
-	tb := &domain.Tiebreaker{UserID: u.ID, Prediction: 3}
+	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}
 	if err := repo.Create(context.Background(), tb); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
@@ -206,12 +214,13 @@ func TestTiebreakerRepository_ListAll_ReturnsList(t *testing.T) {
 	cleanTables(t)
 	u1 := seedUser(t)
 	u2 := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, Prediction: 3}); err != nil {
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, Prediction: 5}); err != nil {
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
@@ -228,12 +237,13 @@ func TestTiebreakerRepository_ListAll_PaginationLimit(t *testing.T) {
 	cleanTables(t)
 	u1 := seedUser(t)
 	u2 := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
 	repo := repository.NewPostgresTiebreakerRepository(testDB)
 
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, Prediction: 3}); err != nil {
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
-	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, Prediction: 5}); err != nil {
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 

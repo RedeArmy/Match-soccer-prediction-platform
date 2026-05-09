@@ -25,6 +25,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	paramKeys["ParamKeyScoringGoalDiff"] = ParamKeyScoringGoalDiff
 	paramKeys["ParamKeyPredictionDeadlineMin"] = ParamKeyPredictionDeadlineMin
 	paramKeys["ParamKeyGroupMinMembers"] = ParamKeyGroupMinMembers
+	paramKeys["ParamKeyGroupMaxSize"] = ParamKeyGroupMaxSize
 	paramKeys["ParamKeyGroupInviteCodeLength"] = ParamKeyGroupInviteCodeLength
 	paramKeys["ParamKeyConflictStaleDays"] = ParamKeyConflictStaleDays
 	paramKeys["ParamKeyConflictMaxScan"] = ParamKeyConflictMaxScan
@@ -73,7 +74,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// the count matches what we expect. This is a smoke test - if new
 		// ParamKey constants are added, this test will fail as a reminder
 		// to update the enumeration above.
-		expectedCount := 22 // Update this when adding new ParamKey constants
+		expectedCount := 23 // Update this when adding new ParamKey constants
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Logf("If you added a new ParamKey* constant, update the enumeration in this test")
@@ -125,6 +126,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyScoringGoalDiff", ParamKeyScoringGoalDiff, "scoring"},
 		{"ParamKeyPredictionDeadlineMin", ParamKeyPredictionDeadlineMin, "prediction"},
 		{"ParamKeyGroupMinMembers", ParamKeyGroupMinMembers, "group"},
+		{"ParamKeyGroupMaxSize", ParamKeyGroupMaxSize, "group"},
 		{"ParamKeyGroupInviteCodeLength", ParamKeyGroupInviteCodeLength, "group"},
 		{"ParamKeyConflictStaleDays", ParamKeyConflictStaleDays, "conflict"},
 		{"ParamKeyConflictMaxScan", ParamKeyConflictMaxScan, "conflict"},

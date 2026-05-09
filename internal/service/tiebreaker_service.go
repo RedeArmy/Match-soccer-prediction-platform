@@ -36,6 +36,20 @@ func NewTiebreakerService(
 	}
 }
 
+// resolveConfigForGroup returns the active TiebreakerConfig for quinielaID.
+// It checks for a group-specific config first; if none exists it falls back
+// to the platform-wide global config. Returns nil, nil when neither is set.
+func (s *tiebreakerService) resolveConfigForGroup(ctx context.Context, quinielaID int) (*domain.TiebreakerConfig, error) {
+	cfg, err := s.configRepo.GetByQuiniela(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+	if cfg != nil {
+		return cfg, nil
+	}
+	return s.configRepo.Get(ctx)
+}
+
 // SetQuestion stores or replaces the global tiebreaker question.
 // Returns Validation when question is empty.
 func (s *tiebreakerService) SetQuestion(ctx context.Context, question string) (*domain.TiebreakerConfig, error) {
@@ -54,10 +68,49 @@ func (s *tiebreakerService) SetQuestion(ctx context.Context, question string) (*
 	return cfg, nil
 }
 
-// Submit upserts the caller's global numeric prediction.
-// quinielaID is used only to verify active membership.
+// SetQuestionForPhase stores or replaces the phase-scoped question.
+func (s *tiebreakerService) SetQuestionForPhase(ctx context.Context, phase domain.MatchPhase, question string) (*domain.TiebreakerConfig, error) {
+	if question == "" {
+		return nil, apperrors.Validation("tiebreaker question cannot be empty")
+	}
+	if err := domain.ValidateMatchPhase(phase); err != nil {
+		return nil, err
+	}
+	cfg, err := s.configRepo.UpsertForPhase(ctx, phase, question)
+	if err != nil {
+		return nil, err
+	}
+
+	resType := "tiebreaker_config"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionTiebreakerQuestion, &resType, nil, map[string]any{
+		"phase":    string(phase),
+		"question": question,
+	})
+	return cfg, nil
+}
+
+// SetQuestionForQuiniela stores or replaces the group-specific question.
+func (s *tiebreakerService) SetQuestionForQuiniela(ctx context.Context, quinielaID int, question string) (*domain.TiebreakerConfig, error) {
+	if question == "" {
+		return nil, apperrors.Validation("tiebreaker question cannot be empty")
+	}
+	cfg, err := s.configRepo.UpsertForQuiniela(ctx, quinielaID, question)
+	if err != nil {
+		return nil, err
+	}
+
+	resType := "tiebreaker_config"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionTiebreakerQuestion, &resType, nil, map[string]any{
+		"quiniela_id": quinielaID,
+		"question":    question,
+	})
+	return cfg, nil
+}
+
+// Submit upserts the caller's prediction for the active config of quinielaID.
+// quinielaID is used to verify active membership and resolve the config.
 func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, prediction int) (*domain.Tiebreaker, error) {
-	cfg, err := s.configRepo.Get(ctx)
+	cfg, err := s.resolveConfigForGroup(ctx, quinielaID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +122,7 @@ func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, pr
 		return nil, err
 	}
 
-	existing, err := s.tiebreakerRepo.GetByUser(ctx, callerID)
+	existing, err := s.tiebreakerRepo.GetByUser(ctx, callerID, cfg.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +143,9 @@ func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, pr
 	}
 
 	tb := &domain.Tiebreaker{
-		UserID:     callerID,
-		Prediction: prediction,
+		UserID:             callerID,
+		TiebreakerConfigID: cfg.ID,
+		Prediction:         prediction,
 	}
 	if err := s.tiebreakerRepo.Create(ctx, tb); err != nil {
 		return nil, err
@@ -99,32 +153,31 @@ func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, pr
 	return tb, nil
 }
 
-// GetMine returns the global question and the caller's own prediction.
-// quinielaID is used only to verify active membership.
+// GetMine returns the active question and the caller's own prediction for quinielaID.
 func (s *tiebreakerService) GetMine(ctx context.Context, quinielaID, callerID int) (*domain.TiebreakerView, error) {
 	if err := s.requireActiveMember(ctx, quinielaID, callerID); err != nil {
 		return nil, err
 	}
 
-	cfg, err := s.configRepo.Get(ctx)
+	cfg, err := s.resolveConfigForGroup(ctx, quinielaID)
 	if err != nil {
 		return nil, err
 	}
 
-	tb, err := s.tiebreakerRepo.GetByUser(ctx, callerID)
-	if err != nil {
-		return nil, err
-	}
-
-	view := &domain.TiebreakerView{Entry: tb}
+	view := &domain.TiebreakerView{}
 	if cfg != nil {
 		view.Question = &cfg.Question
+		tb, err := s.tiebreakerRepo.GetByUser(ctx, callerID, cfg.ID)
+		if err != nil {
+			return nil, err
+		}
+		view.Entry = tb
 	}
 	return view, nil
 }
 
-// ConfirmResult records the official numeric result globally.
-// Returns Validation when no question has been configured yet.
+// ConfirmResult records the official numeric result for the global config.
+// Returns Validation when no global question has been configured yet.
 func (s *tiebreakerService) ConfirmResult(ctx context.Context, result int) error {
 	cfg, err := s.configRepo.Get(ctx)
 	if err != nil {
@@ -140,6 +193,21 @@ func (s *tiebreakerService) ConfirmResult(ctx context.Context, result int) error
 	resType := "tiebreaker_config"
 	s.audit.Log(ctx, nil, nil, domain.AuditActionTiebreakerResult, &resType, nil, map[string]any{
 		"result": result,
+	})
+	return nil
+}
+
+// ConfirmResultByID records the official numeric result for any config by ID.
+// Returns NotFound when configID does not exist.
+func (s *tiebreakerService) ConfirmResultByID(ctx context.Context, configID, result int) error {
+	if err := s.configRepo.SetResultByID(ctx, configID, result); err != nil {
+		return err
+	}
+
+	resType := "tiebreaker_config"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionTiebreakerResult, &resType, nil, map[string]any{
+		"config_id": configID,
+		"result":    result,
 	})
 	return nil
 }

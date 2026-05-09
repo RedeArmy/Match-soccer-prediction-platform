@@ -34,6 +34,7 @@ var allParams = []paramSpec{
 
 	// Group
 	{key: domain.ParamKeyGroupMinMembers, defaultValue: strconv.Itoa(domain.MinMembersForActive), paramType: "int", category: "group"},
+	{key: domain.ParamKeyGroupMaxSize, defaultValue: strconv.Itoa(domain.MaxMembersPerGroup), paramType: "int", category: "group"},
 	{key: domain.ParamKeyGroupInviteCodeLength, defaultValue: strconv.Itoa(domain.DefaultGroupInviteCodeLength), paramType: "int", category: "group"},
 
 	// Conflict
@@ -99,10 +100,16 @@ func run() error {
 		return fmt.Errorf("failed to fetch system_params: %w", err)
 	}
 
+	return validateFromParams(dbParams)
+}
+
+// validateFromParams runs the full in-memory validation pipeline against a
+// pre-fetched slice of database params. Extracted from run so it can be unit
+// tested without a live database connection.
+func validateFromParams(dbParams []dbParam) error {
 	dbMap := buildParamMap(dbParams)
 	errors := validateAllParams(dbMap)
 	checkUnexpectedParams(dbParams)
-
 	return reportResults(errors)
 }
 

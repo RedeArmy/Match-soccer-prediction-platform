@@ -29,6 +29,12 @@ type stubTiebreakerConfigRepo struct {
 func (r *stubTiebreakerConfigRepo) Get(_ context.Context) (*domain.TiebreakerConfig, error) {
 	return r.cfg, r.getErr
 }
+func (r *stubTiebreakerConfigRepo) GetByPhase(_ context.Context, _ domain.MatchPhase) (*domain.TiebreakerConfig, error) {
+	return nil, r.getErr
+}
+func (r *stubTiebreakerConfigRepo) GetByQuiniela(_ context.Context, _ int) (*domain.TiebreakerConfig, error) {
+	return nil, r.getErr // nil = no group-specific config; service falls back to global
+}
 func (r *stubTiebreakerConfigRepo) Upsert(_ context.Context, question string) (*domain.TiebreakerConfig, error) {
 	if r.upsertErr != nil {
 		return nil, r.upsertErr
@@ -36,7 +42,22 @@ func (r *stubTiebreakerConfigRepo) Upsert(_ context.Context, question string) (*
 	cfg := &domain.TiebreakerConfig{ID: 1, Question: question}
 	return cfg, nil
 }
+func (r *stubTiebreakerConfigRepo) UpsertForPhase(_ context.Context, phase domain.MatchPhase, question string) (*domain.TiebreakerConfig, error) {
+	if r.upsertErr != nil {
+		return nil, r.upsertErr
+	}
+	return &domain.TiebreakerConfig{ID: 2, Question: question, Phase: &phase}, nil
+}
+func (r *stubTiebreakerConfigRepo) UpsertForQuiniela(_ context.Context, quinielaID int, question string) (*domain.TiebreakerConfig, error) {
+	if r.upsertErr != nil {
+		return nil, r.upsertErr
+	}
+	return &domain.TiebreakerConfig{ID: 3, Question: question, QuinielaID: &quinielaID}, nil
+}
 func (r *stubTiebreakerConfigRepo) SetResult(_ context.Context, _ int) error {
+	return r.setResErr
+}
+func (r *stubTiebreakerConfigRepo) SetResultByID(_ context.Context, _, _ int) error {
 	return r.setResErr
 }
 
@@ -55,13 +76,16 @@ func (r *stubTiebreakerRepoSvc) Create(_ context.Context, tb *domain.Tiebreaker)
 	tb.ID = 99
 	return nil
 }
-func (r *stubTiebreakerRepoSvc) GetByUser(_ context.Context, _ int) (*domain.Tiebreaker, error) {
+func (r *stubTiebreakerRepoSvc) GetByUser(_ context.Context, _, _ int) (*domain.Tiebreaker, error) {
 	return r.existing, r.err
 }
 func (r *stubTiebreakerRepoSvc) Update(_ context.Context, _ *domain.Tiebreaker) error {
 	return r.updateErr
 }
 func (r *stubTiebreakerRepoSvc) ListByUserIDs(_ context.Context, _ []int) ([]*domain.Tiebreaker, error) {
+	return nil, r.err
+}
+func (r *stubTiebreakerRepoSvc) ListByUserIDsForConfig(_ context.Context, _ []int, _ int) ([]*domain.Tiebreaker, error) {
 	return nil, r.err
 }
 func (r *stubTiebreakerRepoSvc) ListAll(_ context.Context, _ repository.Pagination) ([]*domain.Tiebreaker, error) {
