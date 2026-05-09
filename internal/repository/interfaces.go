@@ -92,6 +92,13 @@ type MatchRepository interface {
 // via a unique index on (user_id, match_id) to prevent a race condition
 // between the check and the insert.
 type PredictionRepository interface {
+	// Upsert inserts a new prediction or, when the (user_id, match_id) unique
+	// constraint fires, performs a no-op UPDATE to obtain the existing row via
+	// RETURNING. Returns created=true when a new row was inserted and
+	// created=false when the existing row was returned unchanged. This makes
+	// POST /predictions safe to retry without the client receiving a 409: the
+	// second call returns the original resource with a 200 instead of an error.
+	Upsert(ctx context.Context, prediction *domain.Prediction) (created bool, err error)
 	Create(ctx context.Context, prediction *domain.Prediction) error
 	GetByID(ctx context.Context, id int) (*domain.Prediction, error)
 	Update(ctx context.Context, prediction *domain.Prediction) error
@@ -314,7 +321,11 @@ type GroupMembershipRepository interface {
 // caller's group; the unique index on (user_id, tiebreaker_config_id)
 // eliminates the check-then-act race condition in Submit.
 type TiebreakerRepository interface {
-	Create(ctx context.Context, tb *domain.Tiebreaker) error
+	// Upsert inserts the tiebreaker or updates prediction when the (user_id)
+	// unique constraint fires. Eliminates the read-then-write TOCTOU race in
+	// TiebreakerService.Submit: concurrent identical requests both succeed and
+	// converge to the same prediction value.
+	Upsert(ctx context.Context, tb *domain.Tiebreaker) error
 	// GetByUser returns the caller's prediction for the given configID.
 	// Returns nil, nil when the user has not yet submitted for that config.
 	GetByUser(ctx context.Context, userID, configID int) (*domain.Tiebreaker, error)

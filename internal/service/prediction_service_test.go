@@ -27,14 +27,18 @@ const (
 // to simulate the unique-constraint violation that the database raises on duplicate
 // submissions (the service no longer does a pre-INSERT existence check).
 type stubPredRepo struct {
-	byID        *domain.Prediction
-	byUserMatch *domain.Prediction // returned by GetByUserAndMatch; kept for interface compliance
-	list        []*domain.Prediction
-	err         error
-	updated     []*domain.Prediction
+	byID          *domain.Prediction
+	byUserMatch   *domain.Prediction // returned by GetByUserAndMatch; kept for interface compliance
+	list          []*domain.Prediction
+	err           error
+	updated       []*domain.Prediction
+	upsertCreated bool // controls the created bool returned by Upsert
 }
 
 func (r *stubPredRepo) Create(_ context.Context, _ *domain.Prediction) error { return r.err }
+func (r *stubPredRepo) Upsert(_ context.Context, _ *domain.Prediction) (bool, error) {
+	return r.upsertCreated, r.err
+}
 func (r *stubPredRepo) GetByID(_ context.Context, _ int) (*domain.Prediction, error) {
 	return r.byID, r.err
 }
@@ -99,7 +103,7 @@ func (r *stubPredRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, 
 
 func newPredSvc(match *domain.Match) PredictionService {
 	matchRepo := &stubMatchRepo{match: match}
-	predRepo := &stubPredRepo{}
+	predRepo := &stubPredRepo{upsertCreated: true}
 	return NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 }
 
@@ -116,7 +120,7 @@ func TestSubmit_ValidPrediction_ReturnsNil(t *testing.T) {
 	svc := newPredSvc(openMatch())
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 2, AwayScore: 1}
 
-	if err := svc.Submit(context.Background(), p); err != nil {
+	if _, err := svc.Submit(context.Background(), p); err != nil {
 		t.Errorf(fmtExpectNil, err)
 	}
 }
@@ -125,8 +129,23 @@ func TestSubmit_MatchNotFound_ReturnsNotFound(t *testing.T) {
 	svc := newPredSvc(nil) // matchRepo returns nil, nil
 	p := &domain.Prediction{UserID: 1, MatchID: 99, HomeScore: 1, AwayScore: 0}
 
-	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrNotFound) {
+	if _, err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestSubmit_MatchRepoError_PropagatesFalse(t *testing.T) {
+	matchRepo := &stubMatchRepo{err: errors.New("db down")}
+	predRepo := &stubPredRepo{}
+	svc := NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
+	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
+
+	created, err := svc.Submit(context.Background(), p)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if created {
+		t.Errorf("expected created=false on error, got true")
 	}
 }
 
@@ -138,7 +157,7 @@ func TestSubmit_PastDeadline_ReturnsValidation(t *testing.T) {
 	svc := newPredSvc(match)
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
 
-	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
+	if _, err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for deadline, got %v", err)
 	}
 }
@@ -151,7 +170,7 @@ func TestSubmit_LiveMatch_ReturnsValidation(t *testing.T) {
 	svc := newPredSvc(match)
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
 
-	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
+	if _, err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for live match, got %v", err)
 	}
 }
@@ -164,23 +183,27 @@ func TestSubmit_FinishedMatch_ReturnsValidation(t *testing.T) {
 	svc := newPredSvc(match)
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 0, AwayScore: 0}
 
-	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
+	if _, err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for finished match, got %v", err)
 	}
 }
 
-// TestSubmit_DuplicatePrediction_ReturnsConflict verifies that the Conflict error
-// surfaced by the repository's unique-constraint handler propagates correctly.
-// The service no longer does a pre-INSERT existence check; atomicity is delegated
-// entirely to the database unique index on (user_id, match_id).
-func TestSubmit_DuplicatePrediction_ReturnsConflict(t *testing.T) {
+// TestSubmit_DuplicatePrediction_IsIdempotent verifies that re-submitting a
+// prediction for the same (user, match) pair returns (false, nil) — the upsert
+// converges via ON CONFLICT DO UPDATE and the service surfaces a 200 to the caller
+// rather than a 409, enabling safe client-side retries.
+func TestSubmit_DuplicatePrediction_IsIdempotent(t *testing.T) {
 	matchRepo := &stubMatchRepo{match: openMatch()}
-	predRepo := &stubPredRepo{err: apperrors.Conflict("a prediction for this match has already been submitted")}
+	predRepo := &stubPredRepo{upsertCreated: false} // Upsert returns (false, nil) — idempotent replay
 	svc := NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 	p := &domain.Prediction{UserID: 1, MatchID: 1, HomeScore: 2, AwayScore: 0}
 
-	if err := svc.Submit(context.Background(), p); !errors.Is(err, apperrors.ErrConflict) {
-		t.Errorf("expected conflict error, got %v", err)
+	created, err := svc.Submit(context.Background(), p)
+	if err != nil {
+		t.Fatalf("expected nil error on idempotent submit, got %v", err)
+	}
+	if created {
+		t.Errorf("expected created=false on duplicate submit, got true")
 	}
 }
 
@@ -289,6 +312,34 @@ func TestUpdate_ConcurrentModification_ReturnsConflict(t *testing.T) {
 
 	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict error for concurrent modification, got %v", err)
+	}
+}
+
+func TestUpdate_IdenticalScores_ShortCircuitsWithoutWrite(t *testing.T) {
+	match := openMatch()
+	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: match.ID, HomeScore: 2, AwayScore: 1}
+	predRepo := &stubPredRepo{byID: pred}
+	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
+
+	got, err := svc.Update(context.Background(), 1, 1, 2, 1) // same scores as pred
+	if err != nil {
+		t.Fatalf("expected nil error on identical-score update, got %v", err)
+	}
+	if got.HomeScore != 2 || got.AwayScore != 1 {
+		t.Errorf("expected scores 2-1, got %d-%d", got.HomeScore, got.AwayScore)
+	}
+	if len(predRepo.updated) != 0 {
+		t.Errorf("expected no repo write on short-circuit, got %d writes", len(predRepo.updated))
+	}
+}
+
+func TestUpdate_MatchRepoError_Propagates(t *testing.T) {
+	pred := &domain.Prediction{ID: 1, UserID: 1, MatchID: 1, HomeScore: 1, AwayScore: 0}
+	predRepo := &stubPredRepo{byID: pred}
+	svc := NewPredictionService(predRepo, &stubMatchRepo{err: errors.New("db down")}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
+
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); err == nil {
+		t.Fatal("expected error from match repo, got nil")
 	}
 }
 

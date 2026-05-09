@@ -166,10 +166,24 @@ func (r *PostgresPaymentRecordRepository) reviewPending(ctx context.Context, id,
 	if err != nil {
 		return nil, err
 	}
-	if result == nil {
+	if result != nil {
+		return result, nil
+	}
+
+	// 0 rows updated: check whether the record exists and is already in the
+	// target state (idempotent admin retry) or in a different terminal state
+	// (genuine conflict).
+	existing, err := r.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
 		return nil, apperrors.NotFound(msgPaymentNotFound)
 	}
-	return result, nil
+	if string(existing.Status) == newStatus {
+		return existing, nil // already in target state — idempotent
+	}
+	return nil, apperrors.Conflict(fmt.Sprintf("payment already %s", existing.Status))
 }
 
 // List returns payment records matching the given filters with pagination.

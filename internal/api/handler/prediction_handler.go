@@ -48,9 +48,9 @@ type updatePredictionRequest struct {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        body  body      handler.submitPredictionRequest  true  "Prediction"
-// @Success      201   {object}  handler.PredictionResponse
+// @Success      201   {object}  handler.PredictionResponse  "Created (first submission)"
+// @Success      200   {object}  handler.PredictionResponse  "OK (idempotent replay — prediction unchanged)"
 // @Failure      401   {object}  handler.ErrorResponse
-// @Failure      409   {object}  handler.ErrorResponse  "Prediction already exists for this match"
 // @Failure      422   {object}  handler.ErrorResponse
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/predictions [post]
@@ -73,11 +73,16 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		HomeScore: req.HomeScore,
 		AwayScore: req.AwayScore,
 	}
-	if err := h.svc.Submit(r.Context(), prediction); err != nil {
+	created, err := h.svc.Submit(r.Context(), prediction)
+	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, predToResponse(prediction))
+	status := http.StatusCreated
+	if !created {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, predToResponse(prediction))
 }
 
 // Update handles PATCH /api/v1/predictions/{id}.

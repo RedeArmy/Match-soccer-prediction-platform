@@ -2,11 +2,13 @@ package repository_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── PaymentRecordRepository ───────────────────────────────────────────────────
@@ -187,7 +189,28 @@ func TestPaymentRecordRepository_Validate_NotFound(t *testing.T) {
 	}
 }
 
-func TestPaymentRecordRepository_Reject_AlreadyConfirmedIsNotFound(t *testing.T) {
+func TestPaymentRecordRepository_Validate_IdempotentRetry_Returns200(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	pr := seedPaymentRecord(t, q.ID, u.ID)
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	first, err := repo.Validate(context.Background(), pr.ID, admin.ID, "ok")
+	if err != nil {
+		t.Fatalf("first validate: %v", err)
+	}
+	second, err := repo.Validate(context.Background(), pr.ID, admin.ID, "ok")
+	if err != nil {
+		t.Fatalf("idempotent retry: %v", err)
+	}
+	if second.ID != first.ID || second.Status != domain.PaymentStatusConfirmed {
+		t.Errorf("expected same confirmed record on retry, got %+v", second)
+	}
+}
+
+func TestPaymentRecordRepository_Reject_AlreadyConfirmedIsConflict(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
 	admin := seedUser(t)
@@ -198,8 +221,8 @@ func TestPaymentRecordRepository_Reject_AlreadyConfirmedIsNotFound(t *testing.T)
 	_, _ = repo.Validate(context.Background(), pr.ID, admin.ID, "ok")
 
 	_, err := repo.Reject(context.Background(), pr.ID, admin.ID, "late reject")
-	if !isNotFound(err) {
-		t.Errorf("expected not-found for confirmed payment reject, got %v", err)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict when rejecting an already-confirmed payment, got %v", err)
 	}
 }
 

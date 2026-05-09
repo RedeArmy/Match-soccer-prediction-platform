@@ -111,6 +111,10 @@ func (s *tiebreakerService) SetQuestionForQuiniela(ctx context.Context, quiniela
 
 // Submit upserts the caller's prediction for the active config of quinielaID.
 // quinielaID is used to verify active membership and resolve the config.
+// Concurrent submissions for the same user converge idempotently via the
+// database ON CONFLICT DO UPDATE; the closed-result check is intentionally
+// done before the upsert so that late submissions after result confirmation
+// are rejected.
 func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, prediction int) (*domain.Tiebreaker, error) {
 	cfg, err := s.resolveConfigForGroup(ctx, quinielaID)
 	if err != nil {
@@ -119,37 +123,18 @@ func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, pr
 	if cfg == nil {
 		return nil, apperrors.Validation("no tiebreaker question has been configured yet")
 	}
-
-	if err := s.authz.RequireActiveMember(ctx, quinielaID, callerID); err != nil {
-		return nil, err
-	}
-
-	existing, err := s.tiebreakerRepo.GetByUser(ctx, callerID, cfg.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	if existing != nil {
-		if cfg.Result != nil {
-			return nil, apperrors.Conflict("tiebreaker result has already been confirmed - predictions are closed")
-		}
-		existing.Prediction = prediction
-		if err := s.tiebreakerRepo.Update(ctx, existing); err != nil {
-			return nil, err
-		}
-		return existing, nil
-	}
-
 	if cfg.Result != nil {
 		return nil, apperrors.Conflict("tiebreaker result has already been confirmed - predictions are closed")
 	}
-
+	if err := s.authz.RequireActiveMember(ctx, quinielaID, callerID); err != nil {
+		return nil, err
+	}
 	tb := &domain.Tiebreaker{
 		UserID:             callerID,
 		TiebreakerConfigID: cfg.ID,
 		Prediction:         prediction,
 	}
-	if err := s.tiebreakerRepo.Create(ctx, tb); err != nil {
+	if err := s.tiebreakerRepo.Upsert(ctx, tb); err != nil {
 		return nil, err
 	}
 	return tb, nil

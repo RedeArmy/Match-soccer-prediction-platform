@@ -76,10 +76,18 @@ func TestSubmit_ServiceError_Returns422(t *testing.T) {
 }
 
 func TestSubmit_Success_Returns201(t *testing.T) {
-	svc := &stubPredSvc{pred: &domain.Prediction{ID: 1, UserID: 1, MatchID: 1}}
+	svc := &stubPredSvc{created: true, pred: &domain.Prediction{ID: 1, UserID: 1, MatchID: 1}}
 	w := doPred(newPredRouter(svc, true), http.MethodPost, "/", bodySubmitPrediction)
 	if w.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d", w.Code)
+	}
+}
+
+func TestSubmit_IdempotentReplay_Returns200(t *testing.T) {
+	svc := &stubPredSvc{created: false, pred: &domain.Prediction{ID: 1, UserID: 1, MatchID: 1}}
+	w := doPred(newPredRouter(svc, true), http.MethodPost, "/", bodySubmitPrediction)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 on idempotent replay, got %d", w.Code)
 	}
 }
 
