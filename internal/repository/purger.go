@@ -63,4 +63,41 @@ func (p *PostgresPurger) PurgeOldSnapshots(ctx context.Context, keepLatestN int)
 	return tag.RowsAffected(), nil
 }
 
+// EraseUserPII anonymises or deletes all personal data for userID within a
+// single transaction. It must be called before PurgeDeletedUsers to avoid
+// ON DELETE RESTRICT violations from payment_records.user_id.
+//
+// Operations follow the retention tiers in domain.RetentionTier:
+//
+//	audit_log.actor_id → NULL       (ImmutableAnonymise)
+//	payment_records.user_id → NULL  (ImmutableAnonymise)
+//	predictions rows deleted        (OperationalDelete)
+//	tiebreakers rows deleted        (OperationalDelete)
+func (p *PostgresPurger) EraseUserPII(ctx context.Context, userID int) error {
+	tx, err := p.db.Begin(ctx)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	steps := []struct {
+		query string
+	}{
+		{`UPDATE audit_log SET actor_id = NULL WHERE actor_id = $1`},
+		{`UPDATE payment_records SET user_id = NULL WHERE user_id = $1`},
+		{`DELETE FROM predictions WHERE user_id = $1`},
+		{`DELETE FROM tiebreakers WHERE user_id = $1`},
+	}
+	for _, s := range steps {
+		if _, err := tx.Exec(ctx, s.query, userID); err != nil {
+			return apperrors.Internal(err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
 var _ Purger = (*PostgresPurger)(nil)

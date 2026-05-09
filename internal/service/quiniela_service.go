@@ -14,19 +14,19 @@ import (
 
 // quinielaService is the concrete implementation of QuinielaService.
 type quinielaService struct {
-	repo       repository.QuinielaRepository
-	memberRepo repository.GroupMembershipRepository
-	params     SystemParamService
-	audit      AuditLogger
-	codeGen    codegen.Generator
+	repo    repository.QuinielaRepository
+	authz   GroupAuthz
+	params  SystemParamService
+	audit   AuditLogger
+	codeGen codegen.Generator
 }
 
 // NewQuinielaService constructs a quinielaService with the given dependencies.
-// memberRepo is required to verify group ownership in RenameGroup.
+// authz enforces group ownership in RenameGroup.
 // params is used to read group.invite_code_length at runtime.
 // audit records rename operations in the audit trail.
-func NewQuinielaService(repo repository.QuinielaRepository, memberRepo repository.GroupMembershipRepository, params SystemParamService, audit AuditLogger, codeGen codegen.Generator) QuinielaService {
-	return &quinielaService{repo: repo, memberRepo: memberRepo, params: params, audit: audit, codeGen: codeGen}
+func NewQuinielaService(repo repository.QuinielaRepository, authz GroupAuthz, params SystemParamService, audit AuditLogger, codeGen codegen.Generator) QuinielaService {
+	return &quinielaService{repo: repo, authz: authz, params: params, audit: audit, codeGen: codeGen}
 }
 
 func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela) error {
@@ -69,12 +69,8 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 // RenameGroup changes the name of the group. The caller must hold
 // MembershipRoleCreateOwner in the group; any other caller receives Forbidden.
 func (s *quinielaService) RenameGroup(ctx context.Context, quinielaID, callerUserID int, name string) (*domain.Quiniela, error) {
-	m, err := s.memberRepo.GetByQuinielaAndUser(ctx, quinielaID, callerUserID)
-	if err != nil {
+	if err := s.authz.RequireOwner(ctx, quinielaID, callerUserID); err != nil {
 		return nil, err
-	}
-	if m == nil || m.Role != domain.MembershipRoleCreateOwner {
-		return nil, apperrors.Forbidden("only the group owner can rename the group")
 	}
 
 	name = strings.TrimSpace(name)

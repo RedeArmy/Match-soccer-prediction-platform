@@ -15,6 +15,7 @@ import (
 type groupMembershipService struct {
 	quinielaRepo repository.QuinielaRepository
 	memberRepo   repository.GroupMembershipRepository
+	authz        GroupAuthz
 	params       SystemParamService
 	audit        AuditLogger
 	paymentSvc   PaymentService
@@ -26,6 +27,7 @@ type groupMembershipService struct {
 func NewGroupMembershipService(
 	quinielaRepo repository.QuinielaRepository,
 	memberRepo repository.GroupMembershipRepository,
+	authz GroupAuthz,
 	params SystemParamService,
 	audit AuditLogger,
 	paymentSvc PaymentService,
@@ -35,6 +37,7 @@ func NewGroupMembershipService(
 	return &groupMembershipService{
 		quinielaRepo: quinielaRepo,
 		memberRepo:   memberRepo,
+		authz:        authz,
 		params:       params,
 		audit:        audit,
 		paymentSvc:   paymentSvc,
@@ -78,12 +81,8 @@ func (s *groupMembershipService) createPendingPayment(ctx context.Context, quini
 // no admin-only gate. The membership update and group status recalculation are
 // committed atomically via ApproveMembership.
 func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, membershipID, approverUserID int) (*domain.GroupMembership, error) {
-	approver, err := s.memberRepo.GetByQuinielaAndUser(ctx, quinielaID, approverUserID)
-	if err != nil {
+	if err := s.authz.RequireActiveMember(ctx, quinielaID, approverUserID); err != nil {
 		return nil, err
-	}
-	if approver == nil || approver.Status != domain.MembershipActive {
-		return nil, apperrors.Forbidden("only active members of this group may approve join requests")
 	}
 
 	pending, err := s.memberRepo.GetByID(ctx, membershipID)

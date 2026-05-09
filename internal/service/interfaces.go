@@ -464,6 +464,21 @@ type AuditService interface {
 	InFlight() int64
 }
 
+// GroupAuthz is a focused permission service for group-scoped membership checks.
+// It centralises the two recurring authorisation patterns shared across
+// QuinielaService, GroupMembershipService, and TiebreakerService so that the
+// rule is defined once and the error message never drifts between callers.
+type GroupAuthz interface {
+	// RequireOwner returns Forbidden when callerID does not hold
+	// MembershipRoleCreateOwner in quinielaID. Returns the repository error
+	// unchanged when the membership lookup itself fails.
+	RequireOwner(ctx context.Context, quinielaID, callerID int) error
+	// RequireActiveMember returns Forbidden when callerID is not an active
+	// member of quinielaID. Returns the repository error unchanged when the
+	// membership lookup itself fails.
+	RequireActiveMember(ctx context.Context, quinielaID, callerID int) error
+}
+
 // DLQStat summarises the dead-letter queue for one event type.
 type DLQStat struct {
 	EventType string     `json:"event_type"`

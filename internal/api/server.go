@@ -445,9 +445,10 @@ func (s *Server) buildHandlers(
 	}
 
 	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.Real{}, s.log)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo, repos.member, params, auditSvc, codegen.Crypto{})
+	groupAuthz := service.NewGroupAuthzService(repos.member)
+	quinielaSvc := service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, codegen.Crypto{})
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
-	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, clock.Real{}, s.log)
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, groupAuthz, params, auditSvc, paymentSvc, clock.Real{}, s.log)
 
 	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, repos.member, tiebreakerRepo, tiebreakerConfigRepo, s.log)
 	if s.cache != nil {
@@ -463,7 +464,7 @@ func (s *Server) buildHandlers(
 	}
 
 	userStatsSvc := service.NewUserStatsService(repos.pred)
-	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, repos.member, tiebreakerRepo, auditSvc, s.log)
+	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, groupAuthz, tiebreakerRepo, auditSvc, s.log)
 	tournamentSvc := service.NewTournamentService(repos.match, tournamentRepo, params, auditSvc, s.log)
 	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
 	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, repos.member, snapshotter, auditSvc, s.log)
