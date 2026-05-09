@@ -92,8 +92,8 @@ func (r *PostgresSystemParamRepository) GetByCategory(ctx context.Context, categ
 // service layer - it is accepted here to keep the interface consistent.
 func (r *PostgresSystemParamRepository) Set(ctx context.Context, key, value string, _ int) (*domain.SystemParam, error) {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO system_params (key, value)
-		 VALUES ($1, $2)
+		`INSERT INTO system_params (key, value, default_value)
+		 VALUES ($1, $2, $2)
 		 ON CONFLICT (key) DO UPDATE
 		     SET value = EXCLUDED.value, updated_at = NOW()
 		 RETURNING `+systemParamColumns,
@@ -121,8 +121,8 @@ func (r *PostgresSystemParamRepository) BulkSet(ctx context.Context, params map[
 		vals = append(vals, v)
 	}
 	_, err := r.db.Exec(ctx,
-		`INSERT INTO system_params (key, value)
-		 SELECT k, v FROM UNNEST($1::text[], $2::text[]) AS t(k, v)
+		`INSERT INTO system_params (key, value, default_value)
+		 SELECT k, v, v FROM UNNEST($1::text[], $2::text[]) AS t(k, v)
 		 ON CONFLICT (key) DO UPDATE
 		     SET value = EXCLUDED.value, updated_at = NOW()`,
 		keys, vals,
