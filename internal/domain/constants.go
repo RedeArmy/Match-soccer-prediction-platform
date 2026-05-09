@@ -145,6 +145,14 @@ const (
 	// Soft-delete retention
 	DefaultPurgeRetentionDays = 30 // system.purge_retention_days
 
+	// Leaderboard snapshot retention: number of most-recent snapshots to keep per
+	// quiniela. The daily purge job deletes every snapshot beyond this count,
+	// bounding table growth to (active_quinielas × keep_latest_count) rows.
+	// Five snapshots cover the last five match results — sufficient for trend
+	// display — while staying well below the 6 400-row worst case for 64 matches
+	// across 100 quinielas.
+	DefaultSnapshotKeepLatestCount = 5 // snapshot.keep_latest_count
+
 	// API request limits
 	DefaultAPIBodySizeLimitBytes = 65536 // api.body_size_limit_bytes (64 KB)
 )
@@ -262,6 +270,11 @@ const (
 	// Requests exceeding this limit are rejected with 413 to prevent DoS.
 	// is_runtime=FALSE: process restart required.
 	ParamKeyAPIBodySizeLimitBytes = "api.body_size_limit_bytes"
+
+	// ParamKeySnapshotKeepLatestCount is the number of most-recent leaderboard
+	// snapshots to retain per quiniela. The daily purge job deletes every snapshot
+	// beyond this count. is_runtime=FALSE: worker restart required.
+	ParamKeySnapshotKeepLatestCount = "snapshot.keep_latest_count"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather

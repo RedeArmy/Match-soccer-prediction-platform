@@ -43,8 +43,12 @@ const (
 
 	defaultCurrency = "MXN"
 
-	repoBrazil           = "Brazil"
-	repoArgentina        = "Argentina"
+	repoBrazil    = "Brazil"
+	repoArgentina = "Argentina"
+
+	// repoGroupLabel is the default group label used by seed helpers that create
+	// group_stage matches. The DB CHECK constraint requires a value in A–L.
+	repoGroupLabel       = "A"
 	repoMexico           = "Mexico"
 	repoTotalGoals       = "Total goals"
 	repoScoringExact     = "scoring.exact"
@@ -144,18 +148,7 @@ func seedUser(t *testing.T) *domain.User {
 
 func seedMatch(t *testing.T) *domain.Match {
 	t.Helper()
-	repo := repository.NewPostgresMatchRepository(testDB)
-	m := &domain.Match{
-		HomeTeam:  repoBrazil,
-		AwayTeam:  repoArgentina,
-		Status:    domain.MatchStatusScheduled,
-		Phase:     domain.PhaseGroupStage,
-		KickoffAt: time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
-	}
-	if err := repo.Create(context.Background(), m); err != nil {
-		t.Fatalf("seed match: %v", err)
-	}
-	return m
+	return seedMatchWithPhase(t, domain.PhaseGroupStage)
 }
 
 func seedMatchWithPhase(t *testing.T, phase domain.MatchPhase) *domain.Match {
@@ -167,6 +160,10 @@ func seedMatchWithPhase(t *testing.T, phase domain.MatchPhase) *domain.Match {
 		Status:    domain.MatchStatusScheduled,
 		Phase:     phase,
 		KickoffAt: time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
+	}
+	if phase == domain.PhaseGroupStage {
+		label := repoGroupLabel
+		m.GroupLabel = &label
 	}
 	if err := repo.Create(context.Background(), m); err != nil {
 		t.Fatalf("seed match (phase=%s): %v", phase, err)
@@ -247,14 +244,16 @@ func seedMatchWithStadium(t *testing.T) *domain.Match {
 		t.Fatalf("seed stadium: %v", err)
 	}
 
+	label := repoGroupLabel
 	repo := repository.NewPostgresMatchRepository(testDB)
 	m := &domain.Match{
-		HomeTeam:  repoBrazil,
-		AwayTeam:  repoArgentina,
-		Status:    domain.MatchStatusScheduled,
-		Phase:     domain.PhaseGroupStage,
-		StadiumID: &stadiumID,
-		KickoffAt: time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
+		HomeTeam:   repoBrazil,
+		AwayTeam:   repoArgentina,
+		Status:     domain.MatchStatusScheduled,
+		Phase:      domain.PhaseGroupStage,
+		GroupLabel: &label,
+		StadiumID:  &stadiumID,
+		KickoffAt:  time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
 	}
 	if err := repo.Create(context.Background(), m); err != nil {
 		t.Fatalf("seed match with stadium: %v", err)

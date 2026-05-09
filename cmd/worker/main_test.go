@@ -563,8 +563,10 @@ func TestMonitorDLQ_ElectionWon_ExecutesScan(t *testing.T) {
 type stubPurger struct {
 	userCalled     int
 	quinielaCalled int
+	snapshotCalled int
 	userCount      int64
 	quinielaCount  int64
+	snapshotCount  int64
 	err            error
 }
 
@@ -578,8 +580,13 @@ func (s *stubPurger) PurgeDeletedQuinielas(_ context.Context, _ time.Time) (int6
 	return s.quinielaCount, s.err
 }
 
+func (s *stubPurger) PurgeOldSnapshots(_ context.Context, _ int) (int64, error) {
+	s.snapshotCalled++
+	return s.snapshotCount, s.err
+}
+
 func TestMonitorPurge_NilPurger_ReturnsImmediately(t *testing.T) {
-	monitorPurge(context.Background(), nil, 24*time.Hour, nil, zap.NewNop())
+	monitorPurge(context.Background(), nil, 24*time.Hour, 5, nil, zap.NewNop())
 }
 
 func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
@@ -587,7 +594,7 @@ func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	cancel()
 
 	purger := &stubPurger{}
-	monitorPurge(ctx, purger, 24*time.Hour, nil, zap.NewNop())
+	monitorPurge(ctx, purger, 24*time.Hour, 5, nil, zap.NewNop())
 
 	if purger.userCalled != 0 {
 		t.Errorf("expected no purge calls with cancelled context, got %d", purger.userCalled)
@@ -595,7 +602,7 @@ func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 }
 
 func TestMonitorPurge_OnTick_CallsPurge(t *testing.T) {
-	purger := &stubPurger{userCount: 2, quinielaCount: 1}
+	purger := &stubPurger{userCount: 2, quinielaCount: 1, snapshotCount: 3}
 	tickC := make(chan time.Time, 1)
 	tickC <- time.Now()
 
@@ -604,7 +611,7 @@ func TestMonitorPurge_OnTick_CallsPurge(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorPurge(ctx, purger, 24*time.Hour, tickC, zap.NewNop())
+		monitorPurge(ctx, purger, 24*time.Hour, 5, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -620,6 +627,9 @@ func TestMonitorPurge_OnTick_CallsPurge(t *testing.T) {
 	if purger.quinielaCalled != 1 {
 		t.Errorf("expected PurgeDeletedQuinielas called once, got %d", purger.quinielaCalled)
 	}
+	if purger.snapshotCalled != 1 {
+		t.Errorf("expected PurgeOldSnapshots called once, got %d", purger.snapshotCalled)
+	}
 }
 
 func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
@@ -632,7 +642,7 @@ func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorPurge(ctx, purger, 24*time.Hour, tickC, zap.NewNop())
+		monitorPurge(ctx, purger, 24*time.Hour, 5, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -644,5 +654,8 @@ func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
 
 	if purger.userCalled != 1 {
 		t.Errorf("expected PurgeDeletedUsers called once despite error, got %d", purger.userCalled)
+	}
+	if purger.snapshotCalled != 1 {
+		t.Errorf("expected PurgeOldSnapshots called once despite error, got %d", purger.snapshotCalled)
 	}
 }

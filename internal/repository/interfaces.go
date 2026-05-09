@@ -510,4 +510,9 @@ type Purger interface {
 	// PurgeDeletedQuinielas permanently removes quiniela rows soft-deleted
 	// before olderThan. Returns the number of rows removed.
 	PurgeDeletedQuinielas(ctx context.Context, olderThan time.Time) (int64, error)
+	// PurgeOldSnapshots removes leaderboard_snapshots that fall outside the
+	// most-recent keepLatestN window for each quiniela. The latest snapshot
+	// per quiniela is always preserved regardless of keepLatestN. Returns the
+	// number of rows deleted.
+	PurgeOldSnapshots(ctx context.Context, keepLatestN int) (int64, error)
 }
