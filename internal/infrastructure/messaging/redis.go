@@ -25,13 +25,21 @@ const consumerGroup = "quiniela-workers"
 // messages before returning an empty result. A finite timeout lets the
 // consume loop check for context cancellation (bus shutdown) without relying
 // solely on the Redis connection being closed.
-const streamReadBlock = 5 * time.Second
+// Overridable at startup via Configure (reads messaging.stream_read_block_sec from system_params).
+var streamReadBlock = 5 * time.Second
 
 // streamMaxLen caps the length of each event stream. Older acknowledged
 // entries are trimmed approximately (MAXLEN ~) to keep memory bounded.
 // At ~1 event per second this retains roughly 7 days of history.
 // Overridable at startup via Configure (reads messaging.stream_max_len from system_params).
 var streamMaxLen int64 = 600_000
+
+// StreamWorkerCount is the number of goroutines in the worker pool spawned per
+// EventType subscription. Messages for different events (e.g. two MatchFinished
+// events for different matches) are processed concurrently up to this limit.
+// Raising the value increases burst throughput at the cost of more concurrent
+// DB/Redis connections. Must be set before Subscribe is called.
+var StreamWorkerCount = 8
 
 // dlqKey returns the Redis list key used as the dead-letter queue for the
 // given event type. Failed events are appended with RPUSH so that the oldest
@@ -195,12 +203,22 @@ func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) bool {
 // before the process crashed. Once the pending list is drained it switches to
 // reading new entries (ID ">"). This two-phase approach provides at-least-once
 // delivery: a message is never lost unless it is explicitly acknowledged.
+//
+// Concurrency model — worker pool:
+//
+// A fixed pool of StreamWorkerCount goroutines processes messages concurrently.
+// The read loop dispatches each message to the pool via a buffered work channel
+// that provides backpressure: the loop blocks when all workers are busy, so
+// Redis is never read faster than the handlers can process. Events for
+// different matches run in parallel; the underlying handler (ScoreMatch) is
+// idempotent, so the relaxed delivery order is safe.
+//
+// On shutdown (ctx cancelled), the read loop exits, the work channel is closed,
+// and the pool drains all in-flight messages before consume returns. No
+// acknowledged-pending entries are lost during graceful shutdown.
 func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 	key := streamKey(eventType)
 
-	// Ensure the consumer group exists before attempting to read from it.
-	// If this fails, exit cleanly - retrying in a loop would spam errors and
-	// consume resources without a valid group to read from.
 	if !b.ensureConsumerGroup(eventType) {
 		b.log.Error("redis bus: consumer group setup failed, goroutine exiting",
 			zap.String("stream", key),
@@ -208,8 +226,46 @@ func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 		return
 	}
 
+	// Snapshot the pool size once so a mid-flight change to StreamWorkerCount
+	// (e.g. in tests) cannot cause a mismatch between channel capacity and worker count.
+	workers := StreamWorkerCount
+	if workers < 1 {
+		workers = 1
+	}
+
+	// workCh is the bounded queue between the read loop and the worker pool.
+	// Capacity 2× workers lets the read loop stay one batch ahead without
+	// blocking, while still bounding peak goroutine memory.
+	workCh := make(chan redis.XMessage, workers*2)
+
+	var poolWg sync.WaitGroup
+	for range workers {
+		poolWg.Add(1)
+		go func() {
+			defer poolWg.Done()
+			for msg := range workCh {
+				b.processMessage(ctx, eventType, key, msg)
+			}
+		}()
+	}
+	// Drain the pool before returning so every in-flight message is either
+	// processed+ACKed or left in the Redis PEL for the next startup to recover.
+	defer func() {
+		close(workCh)
+		poolWg.Wait()
+	}()
+
+	// dispatch sends msg to the worker pool, honouring bus shutdown so the
+	// read loop is not stuck blocking on workCh when ctx is cancelled.
+	dispatch := func(msg redis.XMessage) {
+		select {
+		case workCh <- msg:
+		case <-ctx.Done():
+		}
+	}
+
 	// Phase 1: recover unacknowledged messages from a previous run.
-	b.recoverPending(ctx, eventType, key)
+	b.recoverPending(ctx, eventType, key, dispatch)
 
 	// Phase 2: read new messages indefinitely until the bus is closed.
 	for {
@@ -227,7 +283,7 @@ func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 			continue
 		}
 
-		b.processStreamMessages(ctx, eventType, key, msgs)
+		b.processStreamMessages(msgs, dispatch)
 	}
 }
 
@@ -263,19 +319,24 @@ func (b *RedisBus) shouldExitOnError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
-// processStreamMessages processes all messages in the stream result.
-func (b *RedisBus) processStreamMessages(ctx context.Context, eventType events.EventType, key string, msgs []redis.XStream) {
+// processStreamMessages dispatches all messages in the stream result to the
+// worker pool via dispatch. It does not process messages directly; the pool
+// goroutines call processMessage to maintain bounded concurrency.
+func (b *RedisBus) processStreamMessages(msgs []redis.XStream, dispatch func(redis.XMessage)) {
 	for i := range msgs {
 		for _, msg := range msgs[i].Messages {
-			b.processMessage(ctx, eventType, key, msg)
+			dispatch(msg)
 		}
 	}
 }
 
 // recoverPending reads and reprocesses any pending entries (delivered but not
 // yet acknowledged) left over from a previous consumer run. It drains the
-// pending list in batches until no more entries remain.
-func (b *RedisBus) recoverPending(ctx context.Context, eventType events.EventType, key string) {
+// pending list in batches until no more entries remain, dispatching each
+// message to the worker pool via dispatch. startID advances after each
+// dispatch so a restart mid-recovery does not skip entries: unACKed messages
+// remain in the Redis PEL and are recovered again on the next startup.
+func (b *RedisBus) recoverPending(ctx context.Context, eventType events.EventType, key string, dispatch func(redis.XMessage)) {
 	startID := "0"
 	for {
 		msgs, err := b.client.XReadGroup(ctx, &redis.XReadGroupArgs{
@@ -288,7 +349,7 @@ func (b *RedisBus) recoverPending(ctx context.Context, eventType events.EventTyp
 			return
 		}
 		for _, msg := range msgs[0].Messages {
-			b.processMessage(ctx, eventType, key, msg)
+			dispatch(msg)
 			startID = msg.ID
 		}
 	}

@@ -202,8 +202,15 @@ func (s *Server) Routes() http.Handler {
 	messaging.Configure(
 		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingMaxRetries, domain.DefaultMessagingMaxRetries),
 		int64(paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamMaxLen, domain.DefaultMessagingStreamMaxLen)),
+		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamWorkerCount, domain.DefaultMessagingStreamWorkerCount),
+		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamReadBlockSec, domain.DefaultMessagingStreamReadBlockSec),
 		nil, // retain default RetryBackoff (1s, 2s); no array param defined
 	)
+	service.ConfigureAuditRetry(
+		paramSvc.GetInt(infraCtx, domain.ParamKeyAuditMaxRetries, domain.DefaultAuditMaxRetries),
+		paramSvc.GetInt(infraCtx, domain.ParamKeyAuditRetryDelayMs, domain.DefaultAuditRetryDelayMs),
+	)
+	bodySizeLimit := int64(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIBodySizeLimitBytes, domain.DefaultAPIBodySizeLimitBytes))
 	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, domain.DefaultAuthValidationTimeoutSeconds)) * time.Second
 
 	// scorer is constructed once and shared: local event subscribers and the
@@ -225,7 +232,7 @@ func (s *Server) Routes() http.Handler {
 	// Versioned API surface with Clerk JWT authentication.
 	clerkProvider := auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, authWarmup, s.log)
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(middleware.RequestBodyLimit(64 * 1024)) // 64 KB - all API payloads are small JSON objects
+		r.Use(middleware.RequestBodyLimit(bodySizeLimit)) // api.body_size_limit_bytes (default 64 KB)
 		r.Use(middleware.RequireAuth(clerkProvider, s.log))
 
 		// Admin-only match mutations are guarded by RequireRole. Read endpoints
