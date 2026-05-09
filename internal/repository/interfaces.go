@@ -398,6 +398,9 @@ type SystemParamRepository interface {
 	// BulkSet upserts every entry in params atomically. A nil or empty map is a
 	// no-op. actorID is forwarded by the service layer for audit logging.
 	BulkSet(ctx context.Context, params map[string]string, actorID int) error
+	// ResetToDefault restores value to default_value for the given key.
+	// Returns the updated param, or nil if the key does not exist.
+	ResetToDefault(ctx context.Context, key string) (*domain.SystemParam, error)
 }
 
 // AuditLogRepository provides append-only access to the audit_log table.

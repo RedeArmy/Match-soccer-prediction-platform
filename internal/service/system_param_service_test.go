@@ -10,6 +10,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 const (
@@ -42,6 +43,9 @@ func (r *stubSystemParamRepo) Set(_ context.Context, key, value string, _ int) (
 }
 func (r *stubSystemParamRepo) BulkSet(_ context.Context, _ map[string]string, _ int) error {
 	return r.err
+}
+func (r *stubSystemParamRepo) ResetToDefault(_ context.Context, _ string) (*domain.SystemParam, error) {
+	return r.param, r.err
 }
 
 func param(key, value string) *domain.SystemParam {
@@ -540,5 +544,58 @@ func TestSystemParamService_MultipleHooksForSameKey_AllCalled(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("expected 2 hook calls, got %d", count)
+	}
+}
+
+// ── ResetToDefault ────────────────────────────────────────────────────────────
+
+func TestSystemParamService_ResetToDefault_RestoresValueAndEvictsCache(t *testing.T) {
+	original := &domain.SystemParam{Key: "k", Value: "5", DefaultValue: "5"}
+	repo := &stubSystemParamRepo{param: original}
+	svc := newParamSvc(repo)
+
+	// Warm cache with a different value.
+	_, _ = svc.Set(context.Background(), "k", "99", 1)
+
+	got, err := svc.ResetToDefault(context.Background(), "k", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil || got.Value != "5" {
+		t.Errorf("expected restored value '5', got %v", got)
+	}
+}
+
+func TestSystemParamService_ResetToDefault_KeyNotFound_ReturnsNotFound(t *testing.T) {
+	svc := newParamSvc(&stubSystemParamRepo{param: nil})
+
+	_, err := svc.ResetToDefault(context.Background(), "missing.key", 1)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestSystemParamService_ResetToDefault_RepoError_Propagates(t *testing.T) {
+	dbErr := errors.New("connection reset")
+	svc := newParamSvc(&stubSystemParamRepo{err: dbErr})
+
+	_, err := svc.ResetToDefault(context.Background(), "k", 1)
+	if !errors.Is(err, dbErr) {
+		t.Errorf("expected repo error to propagate, got %v", err)
+	}
+}
+
+func TestSystemParamService_ResetToDefault_FiresHook(t *testing.T) {
+	repo := &stubSystemParamRepo{param: &domain.SystemParam{Key: "k", Value: "5", DefaultValue: "5"}}
+	svc := NewSystemParamService(repo, nil, zap.NewNop())
+
+	hookCalled := false
+	svc.(MutationHookRegisterer).RegisterMutationHook("k", func(_ context.Context) { hookCalled = true })
+
+	if _, err := svc.ResetToDefault(context.Background(), "k", 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hookCalled {
+		t.Error("expected hook to fire after ResetToDefault, but it did not")
 	}
 }

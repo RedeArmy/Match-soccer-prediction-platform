@@ -21,11 +21,11 @@ func NewPostgresSystemParamRepository(db *pgxpool.Pool) *PostgresSystemParamRepo
 	return &PostgresSystemParamRepository{db: db}
 }
 
-const systemParamColumns = "key, value, type, category, is_runtime, description, created_at, updated_at"
+const systemParamColumns = "key, value, default_value, type, category, is_runtime, description, created_at, updated_at"
 
 func scanSystemParam(row pgx.Row) (*domain.SystemParam, error) {
 	p := &domain.SystemParam{}
-	err := row.Scan(&p.Key, &p.Value, &p.Type, &p.Category, &p.IsRuntime, &p.Description, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.Key, &p.Value, &p.DefaultValue, &p.Type, &p.Category, &p.IsRuntime, &p.Description, &p.CreatedAt, &p.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -39,7 +39,7 @@ func collectSystemParams(rows pgx.Rows) ([]*domain.SystemParam, error) {
 	var params []*domain.SystemParam
 	for rows.Next() {
 		p := &domain.SystemParam{}
-		if err := rows.Scan(&p.Key, &p.Value, &p.Type, &p.Category, &p.IsRuntime, &p.Description, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.Key, &p.Value, &p.DefaultValue, &p.Type, &p.Category, &p.IsRuntime, &p.Description, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		params = append(params, p)
@@ -131,6 +131,19 @@ func (r *PostgresSystemParamRepository) BulkSet(ctx context.Context, params map[
 		return apperrors.Internal(err)
 	}
 	return nil
+}
+
+// ResetToDefault sets value = default_value for key and returns the updated
+// param. Returns nil, nil when the key does not exist.
+func (r *PostgresSystemParamRepository) ResetToDefault(ctx context.Context, key string) (*domain.SystemParam, error) {
+	row := r.db.QueryRow(ctx,
+		`UPDATE system_params
+		    SET value = default_value, updated_at = NOW()
+		  WHERE key = $1
+		  RETURNING `+systemParamColumns,
+		key,
+	)
+	return scanSystemParam(row)
 }
 
 var _ SystemParamRepository = (*PostgresSystemParamRepository)(nil)

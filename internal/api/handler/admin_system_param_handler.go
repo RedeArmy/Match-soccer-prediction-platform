@@ -182,3 +182,44 @@ func (h *AdminSystemParamHandler) BulkSet(w http.ResponseWriter, r *http.Request
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// Reset handles POST /admin/system-params/{key}/reset.
+//
+// @Summary      Reset a system parameter to its migration default
+// @Description  Restores the operational value of the given parameter to the
+//
+//	immutable default_value set by the seeding migration. Useful for
+//	reverting operator overrides without re-deploying or re-running
+//	migrations. The change takes effect immediately. Requires admin role.
+//
+// @Tags         admin-system-params
+// @Produce      json
+// @Security     BearerAuth
+// @Param        key  path      string  true  "Parameter key"
+// @Success      200  {object}  handler.SystemParamResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      404  {object}  handler.ErrorResponse  "Parameter not found"
+// @Failure      422  {object}  handler.ErrorResponse  "Key is required"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/system-params/{key}/reset [post]
+func (h *AdminSystemParamHandler) Reset(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		writeError(w, r, h.log, apperrors.Validation("param key is required"))
+		return
+	}
+
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	param, err := h.svc.ResetToDefault(r.Context(), key, caller.ID)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, systemParamToResponse(param))
+}

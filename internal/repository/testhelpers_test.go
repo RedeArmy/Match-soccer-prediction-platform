@@ -310,12 +310,12 @@ func seedSystemParam(t *testing.T, key, value, category string) *domain.SystemPa
 	t.Helper()
 	var p domain.SystemParam
 	err := testDB.QueryRow(context.Background(),
-		`INSERT INTO system_params (key, value, category)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO system_params (key, value, default_value, category)
+		 VALUES ($1, $2, $2, $3)
 		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
-		 RETURNING key, value, type, category, is_runtime, description, created_at, updated_at`,
+		 RETURNING key, value, default_value, type, category, is_runtime, description, created_at, updated_at`,
 		key, value, category,
-	).Scan(&p.Key, &p.Value, &p.Type, &p.Category, &p.IsRuntime, &p.Description, &p.CreatedAt, &p.UpdatedAt)
+	).Scan(&p.Key, &p.Value, &p.DefaultValue, &p.Type, &p.Category, &p.IsRuntime, &p.Description, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		t.Fatalf("seed system param: %v", err)
 	}

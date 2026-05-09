@@ -517,6 +517,8 @@ definitions:
     properties:
       category:
         type: string
+      default_value:
+        type: string
       description:
         type: string
       is_runtime:
@@ -1852,6 +1854,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Update a system parameter
+      tags:
+      - admin-system-params
+  /api/v1/admin/system-params/{key}/reset:
+    post:
+      description: Restores the operational value of the given parameter to the
+      parameters:
+      - description: Parameter key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.SystemParamResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Parameter not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Key is required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reset a system parameter to its migration default
       tags:
       - admin-system-params
   /api/v1/admin/system-params/bulk:

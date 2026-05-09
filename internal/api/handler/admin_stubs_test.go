@@ -230,6 +230,9 @@ func (s *stubAdminParamSvc) GetBool(_ context.Context, _ string, d bool) bool { 
 func (s *stubAdminParamSvc) BulkSet(_ context.Context, _ map[string]string, _ int) error {
 	return s.err
 }
+func (s *stubAdminParamSvc) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
+	return s.param, s.err
+}
 
 // ── ConflictService stub ──────────────────────────────────────────────────────
 

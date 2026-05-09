@@ -373,7 +373,14 @@ func TestMigrateFresh_InvalidDSN_ReturnsError(t *testing.T) {
 	}
 	f.Close()
 
-	err = database.MigrateFresh(context.Background(), "postgres://invalid:5432/nodb?sslmode=disable", f.Name(), migrations.FS)
+	// Bound the dial so this test never consumes more than 5 s of the package's
+	// 60 s budget, even when testcontainer-based tests run first and leave only
+	// a thin slice of time. 5 s is enough to exercise at least one retry-plus-
+	// backoff cycle (1 s sleep) before ctx.Done() fires; it is far shorter than
+	// the OS-level TCP SYN-retry window that would otherwise block indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = database.MigrateFresh(ctx, "postgres://invalid:5432/nodb?sslmode=disable", f.Name(), migrations.FS)
 	if err == nil {
 		t.Fatal(fmtExpectedErr)
 	}

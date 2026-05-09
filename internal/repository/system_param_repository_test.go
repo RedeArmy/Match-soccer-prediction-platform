@@ -207,7 +207,10 @@ func assertCanonicalParam(t *testing.T, got *domain.SystemParam, want canonicalP
 		t.Errorf("default value %q is not parseable as int: %v", got.Value, err)
 	}
 	if got.Value != want.defaultVal {
-		t.Errorf("default value: got %q, want %q", got.Value, want.defaultVal)
+		t.Errorf("value: got %q, want %q", got.Value, want.defaultVal)
+	}
+	if got.DefaultValue != want.defaultVal {
+		t.Errorf("default_value: got %q, want %q", got.DefaultValue, want.defaultVal)
 	}
 }
 
@@ -223,10 +226,11 @@ func TestSystemParamRepository_AllDomainConstantsSeeded(t *testing.T) {
 	// called cleanTables beforehand.
 	for _, want := range canonicalSystemParams {
 		_, err := testDB.Exec(ctx,
-			`INSERT INTO system_params (key, value, type, category, is_runtime, description)
-			 VALUES ($1, $2, 'int', $3, $4, $5)
+			`INSERT INTO system_params (key, value, default_value, type, category, is_runtime, description)
+			 VALUES ($1, $2, $2, 'int', $3, $4, $5)
 			 ON CONFLICT (key) DO UPDATE
 			     SET value = EXCLUDED.value,
+			         default_value = EXCLUDED.default_value,
 			         type = EXCLUDED.type,
 			         category = EXCLUDED.category,
 			         is_runtime = EXCLUDED.is_runtime,
@@ -263,5 +267,46 @@ func TestSystemParamRepository_AllDomainConstantsSeeded(t *testing.T) {
 	// Ensure no domain constant was silently omitted from the canonical table.
 	if len(canonicalSystemParams) != 22 {
 		t.Errorf("canonicalSystemParams has %d entries; expected 22 (one per ParamKey* constant)", len(canonicalSystemParams))
+	}
+}
+
+// ── ResetToDefault ────────────────────────────────────────────────────────────
+
+func TestSystemParamRepository_ResetToDefault_RestoresValue(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	seedSystemParam(t, repoScoringExact, "5", repoScoringCategory)
+
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+	// Override the value so it diverges from default_value.
+	if _, err := repo.Set(ctx, repoScoringExact, "99", 0); err != nil {
+		t.Fatalf("Set override: %v", err)
+	}
+
+	got, err := repo.ResetToDefault(ctx, repoScoringExact)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected param after reset, got nil")
+	}
+	if got.Value != "5" {
+		t.Errorf("expected value restored to '5', got %q", got.Value)
+	}
+	if got.DefaultValue != "5" {
+		t.Errorf("expected default_value '5', got %q", got.DefaultValue)
+	}
+}
+
+func TestSystemParamRepository_ResetToDefault_KeyNotFound_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresSystemParamRepository(testDB)
+
+	got, err := repo.ResetToDefault(context.Background(), "does.not.exist")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for missing key, got %+v", got)
 	}
 }
