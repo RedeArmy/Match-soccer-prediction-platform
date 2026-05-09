@@ -599,3 +599,19 @@ func TestSystemParamService_ResetToDefault_FiresHook(t *testing.T) {
 		t.Error("expected hook to fire after ResetToDefault, but it did not")
 	}
 }
+
+func TestSystemParamService_ResetToDefault_WithAudit_CallsAuditLogger(t *testing.T) {
+	repo := &stubSystemParamRepo{param: &domain.SystemParam{Key: "k", Value: "5", DefaultValue: "5"}}
+	audit := &spyAuditLogger{}
+	svc := NewSystemParamService(repo, audit, zap.NewNop())
+
+	if _, err := svc.ResetToDefault(context.Background(), "k", 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !audit.called {
+		t.Fatal("expected audit logger to be called on ResetToDefault")
+	}
+	if audit.action != domain.AuditActionParamUpdated {
+		t.Errorf("expected action %q, got %q", domain.AuditActionParamUpdated, audit.action)
+	}
+}
