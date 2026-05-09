@@ -13,18 +13,16 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
-	"sync"
-	"time"
 
-	"github.com/lestrrat-go/jwx/v2/jwk"
-	"github.com/lestrrat-go/jwx/v2/jwt"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/auth"
 )
 
 // contextKey is an unexported type for context keys defined in this package.
@@ -115,127 +113,46 @@ func resolveRequestUser(w http.ResponseWriter, r *http.Request, userRepo reposit
 	return user, r.WithContext(context.WithValue(r.Context(), contextKeyUser, user)), true
 }
 
-// RequireAuth returns a middleware that validates the Clerk JWT present in
-// the Authorization: Bearer header.
+// RequireAuth returns a middleware that validates the Bearer JWT in the
+// Authorization header using the given IdentityProvider.
 //
-// Clerk signs tokens with RS256 using a rotating key pair. Public keys are
-// fetched from the JWKS endpoint on the first request and cached in memory.
-// The cache refreshes automatically in the background every 15 minutes so
-// that key rotations are picked up without restarting the server.
+// On success, the provider's subject (e.g. Clerk user_id) is stored in the
+// request context and is retrievable via UserIDFromContext.
 //
-// On success the Clerk user ID (the "sub" claim) is stored in the request
-// context and is retrievable via UserIDFromContext. On failure a 401
-// response is written and the next handler is not called.
+// Error mapping:
+//   - auth.ErrProviderUnavailable → 503 Internal (the provider is down, not the
+//     caller's fault; transient outage should not expose credentials issues)
+//   - auth.ErrInvalidToken or any other error → 401 Unauthorised
 //
-// jwksURL is the Clerk JWKS endpoint (WCQ_CLERK_JWKSURL in config). If it
-// is empty the middleware is bypassed and a warning is logged. Startup
-// validation must ensure this only happens in development environments.
-// DefaultJWKSWarmupTimeout is the fallback JWKS warm-up timeout when
-// auth.validation_timeout_seconds is absent from system_params or the DB
-// is not yet available (e.g. the db-unavailable route fallback path).
-const DefaultJWKSWarmupTimeout = 5 * time.Second
-
-// RequireAuth builds a Clerk JWT authentication middleware.
-// warmupTimeout caps the JWKS prefetch at startup; pass defaultJWKSWarmupTimeout
-// (5s) when no system_param override is available.
-func RequireAuth(jwksURL string, warmupTimeout time.Duration, log *zap.Logger) func(http.Handler) http.Handler {
-	if jwksURL == "" {
-		// Fail-closed: an unconfigured JWKS endpoint means we cannot verify any
-		// token. Returning a pass-through handler here would open the entire API
-		// to unauthenticated callers, which is never the correct production
-		// behaviour and can mask misconfiguration in staging environments.
-		log.Error("RequireAuth: WCQ_CLERK_JWKSURL is not set - all requests will be rejected; set WCQ_CLERK_JWKSURL")
-		return func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				WriteError(w, r, log, apperrors.Unauthorised("authentication is not configured"))
-			})
-		}
-	}
-
-	jwkCache := jwk.NewCache(context.Background())
-	if err := jwkCache.Register(jwksURL); err != nil {
-		log.Error("RequireAuth: failed to register JWKS URL", zap.String("url", jwksURL), zap.Error(err))
-	}
-
-	// Eagerly warm the JWKS cache at startup so the first request is never
-	// delayed by a cold fetch. warmupTimeout avoids blocking startup indefinitely
-	// if Clerk is temporarily unreachable; the cache retries on the first request.
-	warmCtx, cancel := context.WithTimeout(context.Background(), warmupTimeout)
-	defer cancel()
-	if _, err := jwkCache.Refresh(warmCtx, jwksURL); err != nil {
-		log.Warn("RequireAuth: JWKS prefetch failed; will retry on first request",
-			zap.String("url", jwksURL), zap.Error(err))
-	}
-
-	// fallbackMu guards fallbackKeySet, which holds the last successfully
-	// fetched JWKS keyset. It is used as a fallback when jwkCache.Get fails so
-	// that a transient Clerk outage does not reject every in-flight request.
-	var fallbackMu sync.RWMutex
-	var fallbackKeySet jwk.Set
-
-	// Populate the fallback from the warm-up fetch if it succeeded.
-	if ks, err := jwkCache.Get(context.Background(), jwksURL); err == nil {
-		fallbackKeySet = ks
-	}
-
+// Swapping identity providers (Clerk → Auth0 → custom) requires only
+// constructing a different IdentityProvider implementation at the wiring
+// layer; this middleware is provider-agnostic.
+func RequireAuth(provider auth.IdentityProvider, log *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		return requireAuthHandler(next, jwkCache, jwksURL, log, &fallbackMu, &fallbackKeySet)
-	}
-}
-
-func requireAuthHandler(
-	next http.Handler,
-	jwkCache *jwk.Cache,
-	jwksURL string,
-	log *zap.Logger,
-	fallbackMu *sync.RWMutex,
-	fallbackKeySet *jwk.Set,
-) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
-			return
-		}
-		tokenBytes := []byte(strings.TrimPrefix(authHeader, "Bearer "))
-
-		keySet, err := jwkCache.Get(r.Context(), jwksURL)
-		if err != nil {
-			// Clerk is unreachable. Attempt to use the last known-good keyset
-			// so that requests with recently-issued, unexpired tokens continue
-			// to work during a transient outage. A stale keyset is better than
-			// a hard failure; key rotations only happen every ~24 hours.
-			fallbackMu.RLock()
-			fk := *fallbackKeySet
-			fallbackMu.RUnlock()
-			if fk != nil {
-				log.Warn("RequireAuth: JWKS fetch failed; using cached keyset fallback",
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.Error(err),
-				)
-				keySet = fk
-			} else {
-				log.Error("RequireAuth: JWKS fetch failed and no fallback available",
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.Error(err),
-				)
-				WriteError(w, r, log, apperrors.Internal(err))
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
 				return
 			}
-		} else {
-			// Successful fetch: update the fallback so it stays fresh.
-			fallbackMu.Lock()
-			*fallbackKeySet = keySet
-			fallbackMu.Unlock()
-		}
+			rawToken := strings.TrimPrefix(authHeader, "Bearer ")
 
-		token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(keySet), jwt.WithValidate(true))
-		if err != nil {
-			WriteError(w, r, log, apperrors.Unauthorised("invalid or expired token"))
-			return
-		}
+			subject, err := provider.ValidateToken(r.Context(), rawToken)
+			if err != nil {
+				if errors.Is(err, auth.ErrProviderUnavailable) {
+					log.Error("RequireAuth: identity provider unavailable",
+						zap.String("request_id", GetRequestID(r.Context())),
+						zap.Error(err),
+					)
+					WriteError(w, r, log, apperrors.Internal(err))
+				} else {
+					WriteError(w, r, log, apperrors.Unauthorised("invalid or expired token"))
+				}
+				return
+			}
 
-		ctx := context.WithValue(r.Context(), contextKeyUserID, token.Subject())
-		next.ServeHTTP(w, r.WithContext(ctx))
+			ctx := context.WithValue(r.Context(), contextKeyUserID, subject)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
 	}
 }

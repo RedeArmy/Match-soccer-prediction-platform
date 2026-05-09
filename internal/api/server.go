@@ -34,6 +34,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/auth"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
 	"github.com/rede/world-cup-quiniela/pkg/codegen"
 	"github.com/rede/world-cup-quiniela/pkg/config"
@@ -172,7 +173,7 @@ func (s *Server) Routes() http.Handler {
 		// because they are registered above and are not part of /api/v1.
 		r.Route("/api/v1", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(64 * 1024))
-			r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, middleware.DefaultJWKSWarmupTimeout, s.log))
+			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log), s.log))
 			dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
 				middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
 			}
@@ -222,9 +223,10 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/webhooks/clerk", webhookHandler.HandleClerkWebhook)
 
 	// Versioned API surface with Clerk JWT authentication.
+	clerkProvider := auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, authWarmup, s.log)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(64 * 1024)) // 64 KB - all API payloads are small JSON objects
-		r.Use(middleware.RequireAuth(s.cfg.Clerk.JWKSURL, authWarmup, s.log))
+		r.Use(middleware.RequireAuth(clerkProvider, s.log))
 
 		// Admin-only match mutations are guarded by RequireRole. Read endpoints
 		// (List, Get) are accessible to all authenticated users.
