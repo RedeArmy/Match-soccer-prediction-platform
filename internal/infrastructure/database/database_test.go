@@ -2,6 +2,10 @@ package database_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +22,30 @@ const (
 	fmtMigrateErr    = "migrate: %v"
 	fmtNewPoolErr    = "new pool: %v"
 )
+
+// ── NewPool ───────────────────────────────────────────────────────────────────
+
+// TestNewPool_ContextCancelledDuringBackoff covers the select case in NewPool
+// where a context is cancelled while waiting in the exponential-backoff loop.
+// Port 1 on 127.0.0.1 is always refused, so Ping fails on the first attempt;
+// a pre-cancelled context causes the backoff select to fire ctx.Done immediately.
+func TestNewPool_ContextCancelledDuringBackoff_ReturnsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := database.NewPool(ctx, database.Config{
+		DSN:             "postgres://u:p@127.0.0.1:1/db",
+		MaxOpenConns:    1,
+		MaxIdleConns:    0,
+		ConnMaxLifetime: time.Minute,
+	})
+	if err == nil {
+		t.Fatal("expected error when context is cancelled, got nil")
+	}
+	if !strings.Contains(err.Error(), "context cancelled during retry") {
+		t.Errorf("expected context cancellation message, got: %v", err)
+	}
+}
 
 // ── Migrate ───────────────────────────────────────────────────────────────────
 
@@ -162,6 +190,192 @@ func TestSeed_MatchesTableMissing_ReturnsError(t *testing.T) {
 	}
 	if err := database.Seed(context.Background(), pool); err == nil {
 		t.Fatal("expected error when matches table is missing, got nil")
+	}
+}
+
+// baselineSQLPath resolves migrations/baseline/schema.sql relative to this
+// source file so tests work regardless of working directory.
+func baselineSQLPath() string {
+	_, selfPath, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(selfPath), "..", "..", "..")
+	return filepath.Join(root, "migrations", "baseline", "schema.sql")
+}
+
+// ── ApplyBaseline ─────────────────────────────────────────────────────────────
+
+func TestApplyBaseline_CreatesSchema(t *testing.T) {
+	dsn := testutil.SetupPostgres(t)
+	pool, err := database.NewPool(context.Background(), database.Config{
+		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf(fmtNewPoolErr, err)
+	}
+	defer pool.Close()
+
+	ddl := `CREATE TABLE IF NOT EXISTS baseline_probe (id SERIAL PRIMARY KEY);`
+	if err := database.ApplyBaseline(context.Background(), pool, ddl); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	var exists bool
+	err = pool.QueryRow(context.Background(),
+		`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'baseline_probe')`).
+		Scan(&exists)
+	if err != nil {
+		t.Fatalf("query table existence: %v", err)
+	}
+	if !exists {
+		t.Error("expected baseline_probe table to exist after ApplyBaseline")
+	}
+}
+
+func TestApplyBaseline_InvalidSQL_ReturnsError(t *testing.T) {
+	dsn := testutil.SetupPostgres(t)
+	pool, err := database.NewPool(context.Background(), database.Config{
+		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf(fmtNewPoolErr, err)
+	}
+	defer pool.Close()
+
+	if err := database.ApplyBaseline(context.Background(), pool, "NOT VALID SQL !!!"); err == nil {
+		t.Fatal(fmtExpectedErr)
+	}
+}
+
+// ── MarkMigrationsApplied ────────────────────────────────────────────────────
+
+func TestMarkMigrationsApplied_InsertsVersionRows(t *testing.T) {
+	dsn := testutil.SetupPostgres(t)
+	pool, err := database.NewPool(context.Background(), database.Config{
+		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf(fmtNewPoolErr, err)
+	}
+	defer pool.Close()
+
+	ctx := context.Background()
+	if err := database.MarkMigrationsApplied(ctx, pool, migrations.FS); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	var count int
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
+		t.Fatalf("count schema_migrations: %v", err)
+	}
+	if count == 0 {
+		t.Error("expected at least one row in schema_migrations after MarkMigrationsApplied")
+	}
+}
+
+func TestMarkMigrationsApplied_Idempotent(t *testing.T) {
+	dsn := testutil.SetupPostgres(t)
+	pool, err := database.NewPool(context.Background(), database.Config{
+		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf(fmtNewPoolErr, err)
+	}
+	defer pool.Close()
+
+	ctx := context.Background()
+	if err := database.MarkMigrationsApplied(ctx, pool, migrations.FS); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if err := database.MarkMigrationsApplied(ctx, pool, migrations.FS); err != nil {
+		t.Fatalf("second call (idempotent): %v", err)
+	}
+}
+
+func TestMarkMigrationsApplied_DirtyFlagFalse(t *testing.T) {
+	dsn := testutil.SetupPostgres(t)
+	pool, err := database.NewPool(context.Background(), database.Config{
+		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf(fmtNewPoolErr, err)
+	}
+	defer pool.Close()
+
+	ctx := context.Background()
+	if err := database.MarkMigrationsApplied(ctx, pool, migrations.FS); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	var dirtyCount int
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE dirty = true").Scan(&dirtyCount); err != nil {
+		t.Fatalf("count dirty rows: %v", err)
+	}
+	if dirtyCount != 0 {
+		t.Errorf("expected 0 dirty rows, got %d", dirtyCount)
+	}
+}
+
+// ── MigrateFresh ─────────────────────────────────────────────────────────────
+
+func TestMigrateFresh_FullBootstrap(t *testing.T) {
+	baselineFile := baselineSQLPath()
+	if _, err := os.Stat(baselineFile); os.IsNotExist(err) {
+		t.Skip("baseline schema.sql not present; run cmd/genschema first")
+	}
+
+	dsn := testutil.SetupPostgres(t)
+	ctx := context.Background()
+
+	if err := database.MigrateFresh(ctx, dsn, baselineFile, migrations.FS); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// Subsequent Migrate must be a no-op (all migrations already marked applied).
+	if err := database.Migrate(dsn, migrations.FS); err != nil {
+		t.Fatalf("Migrate after MigrateFresh should be no-op: %v", err)
+	}
+
+	// Verify a known table from the baseline exists.
+	pool, err := database.NewPool(ctx, database.Config{
+		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf(fmtNewPoolErr, err)
+	}
+	defer pool.Close()
+
+	var exists bool
+	if err := pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'system_params')`).
+		Scan(&exists); err != nil {
+		t.Fatalf("query table existence: %v", err)
+	}
+	if !exists {
+		t.Error("expected system_params table after MigrateFresh")
+	}
+}
+
+func TestMigrateFresh_MissingBaselineFile_ReturnsError(t *testing.T) {
+	dsn := testutil.SetupPostgres(t)
+	err := database.MigrateFresh(context.Background(), dsn, "/nonexistent/schema.sql", migrations.FS)
+	if err == nil {
+		t.Fatal(fmtExpectedErr)
+	}
+}
+
+func TestMigrateFresh_InvalidDSN_ReturnsError(t *testing.T) {
+	// Write a minimal valid SQL to a temp file so we get past the file read step.
+	f, err := os.CreateTemp(t.TempDir(), "schema-*.sql")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	if _, err := f.WriteString("SELECT 1;"); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	f.Close()
+
+	err = database.MigrateFresh(context.Background(), "postgres://invalid:5432/nodb?sslmode=disable", f.Name(), migrations.FS)
+	if err == nil {
+		t.Fatal(fmtExpectedErr)
 	}
 }
 

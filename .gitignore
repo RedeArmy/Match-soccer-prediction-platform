@@ -67,3 +67,4 @@ go.work.sum
 # ignored even though new builds should go to ./bin via the Makefile.
 /api
 /worker
+/genschema
