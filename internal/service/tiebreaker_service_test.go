@@ -98,10 +98,14 @@ func (r *stubTiebreakerRepoSvc) ListAll(_ context.Context, _ repository.Paginati
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+// newTiebreakerSvc builds a TiebreakerService for unit tests. m drives the
+// active-member authz check: non-nil active membership → allowed; otherwise
+// RequireActiveMember returns Forbidden.
 func newTiebreakerSvc(cfg *domain.TiebreakerConfig, m *domain.GroupMembership, tbRepo *stubTiebreakerRepoSvc) TiebreakerService {
+	authz := newGroupAuthz(&stubMemberRepo{membership: m})
 	return NewTiebreakerService(
 		&stubTiebreakerConfigRepo{cfg: cfg},
-		&stubMemberRepo{membership: m},
+		authz,
 		tbRepo,
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -126,7 +130,7 @@ func activeM(userID int) *domain.GroupMembership {
 func TestTiebreakerService_SetQuestion_StoresQuestion(t *testing.T) {
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{},
-		&stubMemberRepo{},
+		newGroupAuthz(&stubMemberRepo{}),
 		&stubTiebreakerRepoSvc{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -289,7 +293,7 @@ func TestTiebreakerService_ConfirmResult_NoQuestion_ReturnsValidation(t *testing
 func TestTiebreakerService_SetQuestionForPhase_StoresQuestion(t *testing.T) {
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{},
-		&stubMemberRepo{},
+		newGroupAuthz(&stubMemberRepo{}),
 		&stubTiebreakerRepoSvc{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -324,7 +328,7 @@ func TestTiebreakerService_SetQuestionForPhase_RepoError_Propagates(t *testing.T
 	repoErr := errors.New("db error")
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{upsertErr: repoErr},
-		&stubMemberRepo{},
+		newGroupAuthz(&stubMemberRepo{}),
 		&stubTiebreakerRepoSvc{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -340,7 +344,7 @@ func TestTiebreakerService_SetQuestionForPhase_RepoError_Propagates(t *testing.T
 func TestTiebreakerService_SetQuestionForQuiniela_StoresQuestion(t *testing.T) {
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{},
-		&stubMemberRepo{},
+		newGroupAuthz(&stubMemberRepo{}),
 		&stubTiebreakerRepoSvc{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -367,7 +371,7 @@ func TestTiebreakerService_SetQuestionForQuiniela_RepoError_Propagates(t *testin
 	repoErr := errors.New("db error")
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{upsertErr: repoErr},
-		&stubMemberRepo{},
+		newGroupAuthz(&stubMemberRepo{}),
 		&stubTiebreakerRepoSvc{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -391,7 +395,7 @@ func TestTiebreakerService_ConfirmResultByID_RepoError_Propagates(t *testing.T) 
 	repoErr := errors.New("db error")
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{setResErr: repoErr},
-		&stubMemberRepo{},
+		newGroupAuthz(&stubMemberRepo{}),
 		&stubTiebreakerRepoSvc{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -407,7 +411,7 @@ func TestTiebreakerService_Submit_GroupConfigTakesPrecedence(t *testing.T) {
 	groupCfg := &domain.TiebreakerConfig{ID: 99, Question: "group question"}
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{quinielaCfg: groupCfg},
-		&stubMemberRepo{membership: activeM(42)},
+		newGroupAuthz(&stubMemberRepo{membership: activeM(42)}),
 		&stubTiebreakerRepoSvc{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -426,7 +430,7 @@ func TestTiebreakerService_Submit_ResolveConfigError_Propagates(t *testing.T) {
 	repoErr := errors.New("db error")
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{getErr: repoErr},
-		&stubMemberRepo{membership: activeM(42)},
+		newGroupAuthz(&stubMemberRepo{membership: activeM(42)}),
 		&stubTiebreakerRepoSvc{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -443,7 +447,7 @@ func TestTiebreakerService_GetMine_GroupConfigTakesPrecedence(t *testing.T) {
 	tb := &domain.Tiebreaker{ID: 1, UserID: 42, TiebreakerConfigID: 99, Prediction: 3}
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{quinielaCfg: groupCfg},
-		&stubMemberRepo{membership: activeM(42)},
+		newGroupAuthz(&stubMemberRepo{membership: activeM(42)}),
 		&stubTiebreakerRepoSvc{existing: tb},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -474,7 +478,7 @@ func TestTiebreakerService_ConfirmResult_RepoError_Propagates(t *testing.T) {
 	cfg := configWithQuestion(tiebreakerQuestion)
 	svc := NewTiebreakerService(
 		&stubTiebreakerConfigRepo{cfg: cfg, setResErr: errors.New("db error")},
-		&stubMemberRepo{},
+		newGroupAuthz(&stubMemberRepo{}),
 		&stubTiebreakerRepoSvc{},
 		&noopAuditLogger{},
 		zap.NewNop(),

@@ -230,10 +230,11 @@ func TestGroupMembershipService_Join_PaidGroup_CreatesPendingPaymentRecord(t *te
 	q.EntryFee = 200
 	q.Currency = "GTQ"
 
+	mr := &stubMemberRepo{joinQuiniela: q}
 	recorder := &recordingPaymentService{}
 	svc := NewGroupMembershipService(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{joinQuiniela: q},
+		mr,
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		recorder,
@@ -256,10 +257,11 @@ func TestGroupMembershipService_Join_PaidGroup_CreatesPendingPaymentRecord(t *te
 func TestGroupMembershipService_Join_PaidGroup_PaymentError_JoinStillSucceeds(t *testing.T) {
 	q := quinielaWithCode(1, "PAIDCODE")
 	q.EntryFee = 100
+	mr := &stubMemberRepo{joinQuiniela: q}
 
 	svc := NewGroupMembershipService(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{joinQuiniela: q},
+		mr,
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		errPaymentService{},
@@ -293,10 +295,11 @@ func TestGroupMembershipService_Join_PaidGroup_Rejoin_CreatesPendingPayment(t *t
 	q.Currency = "GTQ"
 
 	existing := &domain.GroupMembership{ID: 5, QuinielaID: 1, UserID: 42, Status: domain.MembershipLeft}
+	mr2 := &stubMemberRepo{membership: existing, joinQuiniela: q}
 	recorder := &recordingPaymentService{}
 	svc := NewGroupMembershipService(
 		&stubQuinielaRepo{quiniela: q},
-		&stubMemberRepo{membership: existing, joinQuiniela: q},
+		mr2,
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		recorder,
