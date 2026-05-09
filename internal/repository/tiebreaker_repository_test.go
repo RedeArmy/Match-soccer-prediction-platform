@@ -30,6 +30,21 @@ func TestTiebreakerRepository_Create_HydratesID(t *testing.T) {
 	}
 }
 
+func TestTiebreakerRepository_Upsert_ZeroConfigID_DefaultsToGlobalConfig(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	_ = seedTiebreakerConfig(t) // seeds the global config with ID=1
+	repo := repository.NewPostgresTiebreakerRepository(testDB)
+
+	tb := &domain.Tiebreaker{UserID: u.ID, TiebreakerConfigID: 0, Prediction: 3}
+	if err := repo.Upsert(context.Background(), tb); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if tb.TiebreakerConfigID != 1 {
+		t.Errorf("expected TiebreakerConfigID=1 after zero default, got %d", tb.TiebreakerConfigID)
+	}
+}
+
 func TestTiebreakerRepository_Upsert_IdempotentOnConflict(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)

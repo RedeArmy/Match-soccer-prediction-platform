@@ -2,9 +2,11 @@ package repository_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── TournamentRepository ──────────────────────────────────────────────────────
@@ -25,6 +27,20 @@ func TestTournamentRepository_CreateSlot_ReturnsSlot(t *testing.T) {
 	}
 	if slot.Team != nil {
 		t.Errorf("team: want nil on creation, got %v", slot.Team)
+	}
+}
+
+func TestTournamentRepository_CreateSlot_DuplicateLabel_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	if _, err := repo.CreateSlot(context.Background(), "winner_group_b"); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	_, err := repo.CreateSlot(context.Background(), "winner_group_b")
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict for duplicate label, got %v", err)
 	}
 }
 
