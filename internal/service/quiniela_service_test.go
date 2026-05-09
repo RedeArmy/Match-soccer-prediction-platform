@@ -97,7 +97,7 @@ type stubMemberRepo struct {
 }
 
 func (r *stubMemberRepo) Create(_ context.Context, _ *domain.GroupMembership) error { return r.err }
-func (r *stubMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
+func (r *stubMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
 	if r.joinErr != nil {
 		return nil, nil, r.joinErr
 	}
@@ -172,7 +172,7 @@ func (r *stubMemberRepo) BulkRemoveByAdmin(_ context.Context, _ int, ids []int, 
 	return ids, nil
 }
 func (r *stubMemberRepo) TransferOwnershipRoles(_ context.Context, _, _ int) error { return r.err }
-func (r *stubMemberRepo) ApproveMembership(_ context.Context, _, _ int, now time.Time, _ int) (*domain.GroupMembership, error) {
+func (r *stubMemberRepo) ApproveMembership(_ context.Context, _, _ int, now time.Time, _, _ int) (*domain.GroupMembership, error) {
 	if r.approveErr != nil {
 		return nil, r.approveErr
 	}

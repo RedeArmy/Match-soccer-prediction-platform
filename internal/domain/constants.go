@@ -75,9 +75,10 @@ const MinMembersPerGroup = 5
 // preserves the existing param key contract without a migration.
 const MinMembersForActive = MinMembersPerGroup
 
-// MaxMembersPerGroup is the hard platform cap on active members per quiniela.
-// No group may have more than 20 active members; the database trigger
-// trg_enforce_max_members enforces this at write time.
+// MaxMembersPerGroup is the fallback cap on active members per quiniela used
+// when the group.max_size system param is absent or unparseable. The
+// authoritative runtime value is always read from system_params via
+// ParamKeyGroupMaxSize; this constant is the safe default only.
 const MaxMembersPerGroup = 20
 
 // DefaultConflictStaleDays is the fallback staleness threshold used by
@@ -143,6 +144,10 @@ const (
 	// A value of 5 closes predictions 5 minutes before kick-off.
 	ParamKeyPredictionDeadlineMin = "prediction.deadline_minutes"
 	ParamKeyGroupMinMembers       = "group.min_members_for_active"
+	// ParamKeyGroupMaxSize is the maximum number of active members allowed per
+	// quiniela. Enforced by the application layer on join and approval.
+	// Defaults to MaxMembersPerGroup (20).
+	ParamKeyGroupMaxSize = "group.max_size"
 	// ParamKeyGroupInviteCodeLength is the number of characters in a generated
 	// invite code. Defaults to DefaultGroupInviteCodeLength (10).
 	ParamKeyGroupInviteCodeLength = "group.invite_code_length"

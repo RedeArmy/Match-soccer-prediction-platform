@@ -113,14 +113,17 @@ type CORSConfig struct {
 // Two drivers are available:
 //   - "in_memory": synchronous, in-process delivery. Safe for single-replica
 //     deployments and local development. Events are lost on process restart
-//     and cannot cross process boundaries.
-//   - "redis": asynchronous pub/sub via the Redis instance declared in
-//     RedisConfig. Required when running multiple API replicas so that a
-//     MatchFinished event published by one replica triggers scoring on all
-//     replicas (or on the dedicated worker process).
+//     and cannot cross process boundaries. Rejected by config validation
+//     outside development environments.
+//   - "redis": asynchronous delivery via Redis Streams. Required for
+//     multi-replica API deployments and for the separate worker process.
+//     Set WCQ_EVENTBUS_DRIVER=redis in all non-local environments.
 //
-// The default is "in_memory" so that the application starts without a Redis
-// dependency in development environments where Redis is not available.
+// The effective default in production (WCQ_ENVIRONMENT unset or set to
+// anything other than dev/development/test) is "redis" because config
+// validation rejects "in_memory" outside development. Local developers must
+// set WCQ_ENVIRONMENT=dev (already present in .env.example) to use
+// "in_memory" without a Redis dependency.
 type EventBusConfig struct {
 	// Driver must be either "in_memory" or "redis".
 	Driver string `mapstructure:"driver"`

@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/election"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/testutil"
 	"github.com/rede/world-cup-quiniela/pkg/config"
@@ -404,7 +405,7 @@ func TestMonitorDLQ_NilClient_ReturnsImmediately(t *testing.T) {
 	// a Redis connection (e.g. unit tests). Verifies the guard fires correctly.
 	// A nil tickC is safe here because the function returns before reaching the
 	// select loop.
-	monitorDLQ(context.Background(), nil, nil, zap.NewNop())
+	monitorDLQ(context.Background(), nil, nil, nil, zap.NewNop())
 }
 
 func TestMonitorDLQ_NonEmptyQueue_LogsError(t *testing.T) {
@@ -430,7 +431,7 @@ func TestMonitorDLQ_NonEmptyQueue_LogsError(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorDLQ(ctx, rc, tickC, zap.NewNop())
+		monitorDLQ(ctx, rc, nil, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -458,7 +459,7 @@ func TestMonitorDLQ_EmptyQueue_LogsDebug(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorDLQ(ctx, rc, tickC, zap.NewNop())
+		monitorDLQ(ctx, rc, nil, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -480,7 +481,80 @@ func TestMonitorDLQ_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	monitorDLQ(ctx, rc, nil, zap.NewNop())
+	monitorDLQ(ctx, rc, nil, nil, zap.NewNop())
+}
+
+func TestMonitorDLQ_ElectionLost_SkipsTick(t *testing.T) {
+	// When the election is non-nil but TryAcquire returns false (another replica
+	// holds the lock), monitorDLQ must skip the LLEN scan entirely. We verify
+	// this by pre-seeding the DLQ, winning the lock with a separate client, and
+	// confirming that the monitor goroutine exits cleanly after the tick without
+	// logging an error (i.e. the scan was never executed).
+	mr := miniredis.RunT(t)
+
+	// rcHolder acquires the lock so that rcMonitor cannot.
+	rcHolder := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rcHolder.Close() //nolint:errcheck
+	rcMonitor := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rcMonitor.Close() //nolint:errcheck
+
+	// Seed a DLQ entry so a scan would produce a non-empty result.
+	dlqKey := "dlq:" + string(events.EventMatchStarted)
+	if _, err := mr.Lpush(dlqKey, "payload"); err != nil {
+		t.Fatalf("seed DLQ: %v", err)
+	}
+
+	// The holder wins the election lock before the monitor even starts.
+	holder := election.NewRedisLeaderElection(rcHolder, dlqLeaderKey, 5*time.Second, zap.NewNop())
+	if !holder.TryAcquire(context.Background()) {
+		t.Fatal("holder should have acquired the lock")
+	}
+
+	tickC := make(chan time.Time, 1)
+	tickC <- time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	monitor := election.NewRedisLeaderElection(rcMonitor, dlqLeaderKey, 5*time.Second, zap.NewNop())
+	done := make(chan struct{})
+	go func() {
+		monitorDLQ(ctx, rcMonitor, monitor, tickC, zap.NewNop())
+		close(done)
+	}()
+
+	for len(tickC) > 0 {
+		runtime.Gosched()
+	}
+	cancel()
+	<-done
+}
+
+func TestMonitorDLQ_ElectionWon_ExecutesScan(t *testing.T) {
+	// When the election is non-nil and TryAcquire returns true (this replica
+	// wins the lock), monitorDLQ must proceed with the LLEN scan.
+	mr := miniredis.RunT(t)
+	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rc.Close() //nolint:errcheck
+
+	tickC := make(chan time.Time, 1)
+	tickC <- time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	e := election.NewRedisLeaderElection(rc, dlqLeaderKey, 5*time.Second, zap.NewNop())
+	done := make(chan struct{})
+	go func() {
+		monitorDLQ(ctx, rc, e, tickC, zap.NewNop())
+		close(done)
+	}()
+
+	for len(tickC) > 0 {
+		runtime.Gosched()
+	}
+	cancel()
+	<-done
 }
 
 // ── monitorPurge ──────────────────────────────────────────────────────────────

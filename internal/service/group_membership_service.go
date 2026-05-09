@@ -48,7 +48,8 @@ func NewGroupMembershipService(
 // If the user was previously a member but left, they are re-queued as pending
 // for a new approval round.
 func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error) {
-	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID)
+	maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
+	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,8 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 	}
 
 	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
-	m, err := s.memberRepo.ApproveMembership(ctx, membershipID, quinielaID, s.clock.Now(), minMembers)
+	maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
+	m, err := s.memberRepo.ApproveMembership(ctx, membershipID, quinielaID, s.clock.Now(), minMembers, maxMembers)
 	if err != nil {
 		return nil, err
 	}
