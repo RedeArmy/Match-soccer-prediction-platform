@@ -82,13 +82,14 @@ type AuditLogResponse struct {
 
 // SystemParamResponse is the JSON representation of a SystemParam.
 type SystemParamResponse struct {
-	Key         string `json:"key"`
-	Value       string `json:"value"`
-	Type        string `json:"type"`
-	Category    string `json:"category"`
-	IsRuntime   bool   `json:"is_runtime"`
-	Description string `json:"description"`
-	UpdatedAt   string `json:"updated_at"`
+	Key          string `json:"key"`
+	Value        string `json:"value"`
+	DefaultValue string `json:"default_value"`
+	Type         string `json:"type"`
+	Category     string `json:"category"`
+	IsRuntime    bool   `json:"is_runtime"`
+	Description  string `json:"description"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 // TiebreakerSubmissionResponse is the admin view of a tiebreaker prediction.
@@ -261,13 +262,14 @@ func auditLogToResponse(a *domain.AuditLog) AuditLogResponse {
 
 func systemParamToResponse(p *domain.SystemParam) SystemParamResponse {
 	return SystemParamResponse{
-		Key:         p.Key,
-		Value:       p.Value,
-		Type:        string(p.Type),
-		Category:    p.Category,
-		IsRuntime:   p.IsRuntime,
-		Description: p.Description,
-		UpdatedAt:   p.UpdatedAt.Format(timeFormat),
+		Key:          p.Key,
+		Value:        p.Value,
+		DefaultValue: p.DefaultValue,
+		Type:         string(p.Type),
+		Category:     p.Category,
+		IsRuntime:    p.IsRuntime,
+		Description:  p.Description,
+		UpdatedAt:    p.UpdatedAt.Format(timeFormat),
 	}
 }
 

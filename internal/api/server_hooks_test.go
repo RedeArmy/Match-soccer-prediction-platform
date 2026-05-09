@@ -39,6 +39,9 @@ func (s *hookParamSvc) Set(_ context.Context, _, _ string, _ int) (*domain.Syste
 	return nil, nil
 }
 func (s *hookParamSvc) BulkSet(_ context.Context, _ map[string]string, _ int) error { return nil }
+func (s *hookParamSvc) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
+}
 
 // hookCacheStore implements cache.Store and cache.PrefixFlusher. It records
 // whether FlushByPrefix was called and with which prefix so the test can assert

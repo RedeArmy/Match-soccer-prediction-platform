@@ -1859,6 +1859,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/system-params/{key}/reset": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Restores the operational value of the given parameter to the",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-system-params"
+                ],
+                "summary": "Reset a system parameter to its migration default",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Parameter key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.SystemParamResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Parameter not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Key is required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/tiebreaker/submissions": {
             "get": {
                 "security": [
@@ -4144,6 +4208,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "category": {
+                    "type": "string"
+                },
+                "default_value": {
                     "type": "string"
                 },
                 "description": {

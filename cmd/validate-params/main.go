@@ -96,12 +96,13 @@ var allParams = []paramSpec{
 }
 
 type dbParam struct {
-	key         string
-	value       string
-	paramType   string
-	category    string
-	isRuntime   bool
-	description string
+	key          string
+	value        string
+	defaultValue string
+	paramType    string
+	category     string
+	isRuntime    bool
+	description  string
 }
 
 func main() {
@@ -178,11 +179,19 @@ func validateSingleParam(spec paramSpec, dbMap map[string]dbParam) []string {
 	errors = append(errors, validateType(spec, db)...)
 	errors = append(errors, validateCategory(spec, db)...)
 	errors = append(errors, validateDescription(spec, db)...)
+	errors = append(errors, validateDefaultValue(spec, db)...)
 
 	checkValueOverride(spec, db)
 	printValidParam(spec, db)
 
 	return errors
+}
+
+func validateDefaultValue(spec paramSpec, db dbParam) []string {
+	if db.defaultValue != spec.defaultValue {
+		return []string{fmt.Sprintf("❌ DEFAULT VALUE MISMATCH: %s (code: %s, db.default_value: %s) — migration seed may be out of sync with domain constants", spec.key, spec.defaultValue, db.defaultValue)}
+	}
+	return nil
 }
 
 func validateType(spec paramSpec, db dbParam) []string {
@@ -249,7 +258,7 @@ func reportResults(errors []string) error {
 
 func fetchAllParams(ctx context.Context, pool *pgxpool.Pool) ([]dbParam, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT key, value, type, category, is_runtime, COALESCE(description, '') as description
+		SELECT key, value, default_value, type, category, is_runtime, COALESCE(description, '') as description
 		FROM system_params
 		ORDER BY category, key
 	`)
@@ -261,7 +270,7 @@ func fetchAllParams(ctx context.Context, pool *pgxpool.Pool) ([]dbParam, error) 
 	var params []dbParam
 	for rows.Next() {
 		var p dbParam
-		if err := rows.Scan(&p.key, &p.value, &p.paramType, &p.category, &p.isRuntime, &p.description); err != nil {
+		if err := rows.Scan(&p.key, &p.value, &p.defaultValue, &p.paramType, &p.category, &p.isRuntime, &p.description); err != nil {
 			return nil, err
 		}
 		params = append(params, p)
