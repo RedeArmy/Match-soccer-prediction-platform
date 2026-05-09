@@ -13,6 +13,13 @@ import (
 // check is a defence-in-depth layer, not the primary gate.
 var emailRE = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
+// validGroupLabels is the canonical set of FIFA World Cup 2026 group letters
+// (A–L, 12 groups, 48 teams). Stored as a map for O(1) lookup.
+var validGroupLabels = map[string]struct{}{
+	"A": {}, "B": {}, "C": {}, "D": {}, "E": {}, "F": {},
+	"G": {}, "H": {}, "I": {}, "J": {}, "K": {}, "L": {},
+}
+
 // ValidateEmail returns a validation error when email is empty, exceeds the
 // RFC 5321 length limit, or fails the basic structural check. Call this wherever
 // user email data enters the system (webhook handler, user creation endpoints).
@@ -64,6 +71,16 @@ func ValidateMatch(m *Match) error {
 	}
 	if m.KickoffAt.IsZero() {
 		return apperrors.Validation("kick-off time must be set")
+	}
+	if m.Phase == PhaseGroupStage {
+		if m.GroupLabel == nil || *m.GroupLabel == "" {
+			return apperrors.Validation("group_label is required for group_stage matches")
+		}
+		if _, ok := validGroupLabels[*m.GroupLabel]; !ok {
+			return apperrors.Validation("group_label must be a single uppercase letter A–L")
+		}
+	} else if m.GroupLabel != nil {
+		return apperrors.Validation("group_label must be absent for knockout matches")
 	}
 	return nil
 }

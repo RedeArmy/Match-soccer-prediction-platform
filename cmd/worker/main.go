@@ -66,6 +66,12 @@ var dlqMonitorInterval = 5 * time.Minute
 // pre-loaded channel without modifying production code.
 var purgeTickInterval = 24 * time.Hour
 
+// snapshotKeepLatestCount is the number of most-recent leaderboard snapshots
+// to retain per quiniela during each purge run. Overridden at startup from
+// system_params (snapshot.keep_latest_count). Declared as a var so tests can
+// set it without modifying production code.
+var snapshotKeepLatestCount = domain.DefaultSnapshotKeepLatestCount
+
 func main() {
 	cfg, err := config.LoadWorker()
 	if err != nil {
@@ -143,6 +149,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	maxSnapshotAttempts = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotMaxAttempts, domain.DefaultWorkerSnapshotMaxAttempts)
 	dlqMonitorInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerDLQMonitorIntervalSec, domain.DefaultWorkerDLQMonitorIntervalSec)) * time.Second
 	purgeTickInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerPurgeIntervalHours, domain.DefaultWorkerPurgeIntervalHours)) * time.Hour
+	snapshotKeepLatestCount = params.GetInt(ctx, domain.ParamKeySnapshotKeepLatestCount, domain.DefaultSnapshotKeepLatestCount)
 	scorer := service.NewScoringService(matchRepo, predRepo, params, log)
 
 	quinielaRepo := repository.NewPostgresQuinielaRepository(db)
@@ -182,17 +189,18 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	dlqElection := election.NewRedisLeaderElection(rc, dlqLeaderKey, dlqMonitorInterval+30*time.Second, log)
 
 	return startWorker(ctx, workerDeps{
-		cfg:            cfg,
-		bus:            bus,
-		scorer:         scorer,
-		snapshotter:    snapshotter,
-		predRepo:       predRepo,
-		invalidators:   invalidators,
-		purger:         purger,
-		purgeRetention: purgeRetention,
-		rc:             rc,
-		checkers:       buildHealthCheckers(db, rc),
-		dlqElection:    dlqElection,
+		cfg:               cfg,
+		bus:               bus,
+		scorer:            scorer,
+		snapshotter:       snapshotter,
+		predRepo:          predRepo,
+		invalidators:      invalidators,
+		purger:            purger,
+		purgeRetention:    purgeRetention,
+		snapshotKeepCount: snapshotKeepLatestCount,
+		rc:                rc,
+		checkers:          buildHealthCheckers(db, rc),
+		dlqElection:       dlqElection,
 	}, log)
 }
 
@@ -231,17 +239,18 @@ const dlqLeaderKey = "worker:dlq-monitor:leader"
 // parameter list within the 7-param lint limit while remaining easy to
 // extend without changing the function signature.
 type workerDeps struct {
-	cfg            *config.Config
-	bus            events.Bus
-	scorer         service.MatchScorer
-	snapshotter    service.Snapshotter
-	predRepo       repository.PredictionRepository
-	invalidators   []service.PostScoringInvalidator
-	purger         repository.Purger
-	purgeRetention time.Duration
-	rc             *redis.Client
-	checkers       []health.Checker
-	dlqElection    *election.RedisLeaderElection
+	cfg               *config.Config
+	bus               events.Bus
+	scorer            service.MatchScorer
+	snapshotter       service.Snapshotter
+	predRepo          repository.PredictionRepository
+	invalidators      []service.PostScoringInvalidator
+	purger            repository.Purger
+	purgeRetention    time.Duration
+	snapshotKeepCount int
+	rc                *redis.Client
+	checkers          []health.Checker
+	dlqElection       *election.RedisLeaderElection
 }
 
 // All parameters are already constructed so this function has no I/O of its
@@ -292,7 +301,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	go func() {
 		defer purgeDone.Done()
 		defer purgeTicker.Stop()
-		monitorPurge(ctx, deps.purger, deps.purgeRetention, purgeTicker.C, log)
+		monitorPurge(ctx, deps.purger, deps.purgeRetention, deps.snapshotKeepCount, purgeTicker.C, log)
 	}()
 
 	var runErr error
@@ -325,7 +334,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 //
 // If purger is nil (e.g. in unit tests where the database is not available),
 // the function returns immediately.
-func monitorPurge(ctx context.Context, purger repository.Purger, retention time.Duration, tickC <-chan time.Time, log *zap.Logger) {
+func monitorPurge(ctx context.Context, purger repository.Purger, retention time.Duration, snapshotKeepCount int, tickC <-chan time.Time, log *zap.Logger) {
 	if purger == nil {
 		return
 	}
@@ -345,6 +354,11 @@ func monitorPurge(ctx context.Context, purger repository.Purger, retention time.
 				log.Warn("worker: purge deleted quinielas failed", zap.Error(err))
 			} else if n > 0 {
 				log.Info("worker: purged soft-deleted quinielas", zap.Int64("count", n))
+			}
+			if n, err := purger.PurgeOldSnapshots(ctx, snapshotKeepCount); err != nil {
+				log.Warn("worker: purge old snapshots failed", zap.Error(err))
+			} else if n > 0 {
+				log.Info("worker: purged old leaderboard snapshots", zap.Int64("count", n))
 			}
 		}
 	}

@@ -178,10 +178,10 @@ func seedStadiums(ctx context.Context, db *pgxpool.Pool) error {
 func seedMatches(ctx context.Context, db *pgxpool.Pool) error {
 	kickoff := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Hour)
 	_, err := db.Exec(ctx, `
-		INSERT INTO matches (home_team, away_team, status, phase, stadium_id, kickoff_at) VALUES
-			('Brazil',  'Argentina', 'scheduled', 'group_stage', (SELECT id FROM stadiums WHERE name = 'Estadio Azteca'  LIMIT 1), $1),
-			('France',  'Germany',   'scheduled', 'group_stage', (SELECT id FROM stadiums WHERE name = 'MetLife Stadium' LIMIT 1), $2),
-			('Spain',   'England',   'scheduled', 'group_stage', (SELECT id FROM stadiums WHERE name = 'SoFi Stadium'    LIMIT 1), $3)
+		INSERT INTO matches (home_team, away_team, status, phase, group_label, stadium_id, kickoff_at) VALUES
+			('Brazil',  'Argentina', 'scheduled', 'group_stage', 'A', (SELECT id FROM stadiums WHERE name = 'Estadio Azteca'  LIMIT 1), $1),
+			('France',  'Germany',   'scheduled', 'group_stage', 'B', (SELECT id FROM stadiums WHERE name = 'MetLife Stadium' LIMIT 1), $2),
+			('Spain',   'England',   'scheduled', 'group_stage', 'C', (SELECT id FROM stadiums WHERE name = 'SoFi Stadium'    LIMIT 1), $3)
 		ON CONFLICT DO NOTHING
 	`, kickoff, kickoff.Add(2*time.Hour), kickoff.Add(4*time.Hour))
 	return err

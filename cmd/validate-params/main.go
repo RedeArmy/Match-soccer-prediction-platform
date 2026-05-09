@@ -22,7 +22,11 @@ type paramSpec struct {
 
 // allParams is the authoritative list of every system parameter that must exist
 // in the database. This list is derived from domain/constants.go and must stay
-// synchronized with migration 000051_sync_system_params_canonical.up.sql.
+// synchronised with the migrations that seed system_params:
+//   - 000051_sync_system_params_canonical  (22 base params)
+//   - 000055_add_worker_messaging_audit_params (+10)
+//   - 000056_add_snapshot_keep_latest_param (+1)
+//   - 000058_seed_group_max_size_param (+1)
 var allParams = []paramSpec{
 	// Scoring
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring"},
@@ -86,6 +90,9 @@ var allParams = []paramSpec{
 
 	// API request limits
 	{key: domain.ParamKeyAPIBodySizeLimitBytes, defaultValue: strconv.Itoa(domain.DefaultAPIBodySizeLimitBytes), paramType: "int", category: "api"},
+
+	// Snapshot retention
+	{key: domain.ParamKeySnapshotKeepLatestCount, defaultValue: strconv.Itoa(domain.DefaultSnapshotKeepLatestCount), paramType: "int", category: "worker"},
 }
 
 type dbParam struct {

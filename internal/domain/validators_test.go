@@ -64,6 +64,86 @@ func TestValidateMatch_ZeroKickoff_ReturnsValidation(t *testing.T) {
 	}
 }
 
+// ── ValidateMatch – group_label / phase coherence ────────────────────────────
+
+func groupLabel(s string) *string { return &s }
+
+func TestValidateMatch_GroupStageWithValidLabel_ReturnsNil(t *testing.T) {
+	for _, label := range []string{"A", "F", "L"} {
+		m := &domain.Match{
+			HomeTeam:   teamBrazil,
+			AwayTeam:   teamArgentina,
+			Phase:      domain.PhaseGroupStage,
+			GroupLabel: groupLabel(label),
+			KickoffAt:  time.Now().Add(time.Hour),
+		}
+		if err := domain.ValidateMatch(m); err != nil {
+			t.Errorf("label %q: expected nil, got %v", label, err)
+		}
+	}
+}
+
+func TestValidateMatch_GroupStageWithoutLabel_ReturnsValidation(t *testing.T) {
+	m := &domain.Match{
+		HomeTeam:  teamBrazil,
+		AwayTeam:  teamArgentina,
+		Phase:     domain.PhaseGroupStage,
+		KickoffAt: time.Now().Add(time.Hour),
+	}
+	if err := domain.ValidateMatch(m); !isValidation(err) {
+		t.Errorf("expected validation error for missing group_label, got %v", err)
+	}
+}
+
+func TestValidateMatch_GroupStageWithInvalidLabel_ReturnsValidation(t *testing.T) {
+	for _, bad := range []string{"a", "group_a", "Group A", "M", "Z", "1"} {
+		m := &domain.Match{
+			HomeTeam:   teamBrazil,
+			AwayTeam:   teamArgentina,
+			Phase:      domain.PhaseGroupStage,
+			GroupLabel: groupLabel(bad),
+			KickoffAt:  time.Now().Add(time.Hour),
+		}
+		if err := domain.ValidateMatch(m); !isValidation(err) {
+			t.Errorf("label %q: expected validation error, got %v", bad, err)
+		}
+	}
+}
+
+func TestValidateMatch_KnockoutWithLabel_ReturnsValidation(t *testing.T) {
+	for _, phase := range []domain.MatchPhase{
+		domain.PhaseRoundOf32,
+		domain.PhaseRoundOf16,
+		domain.PhaseQuarterFinal,
+		domain.PhaseSemiFinal,
+		domain.PhaseThirdPlace,
+		domain.PhaseFinal,
+	} {
+		m := &domain.Match{
+			HomeTeam:   teamBrazil,
+			AwayTeam:   teamArgentina,
+			Phase:      phase,
+			GroupLabel: groupLabel("A"),
+			KickoffAt:  time.Now().Add(time.Hour),
+		}
+		if err := domain.ValidateMatch(m); !isValidation(err) {
+			t.Errorf("phase %q: expected validation error for unexpected group_label, got %v", phase, err)
+		}
+	}
+}
+
+func TestValidateMatch_KnockoutWithoutLabel_ReturnsNil(t *testing.T) {
+	m := &domain.Match{
+		HomeTeam:  teamBrazil,
+		AwayTeam:  teamArgentina,
+		Phase:     domain.PhaseFinal,
+		KickoffAt: time.Now().Add(time.Hour),
+	}
+	if err := domain.ValidateMatch(m); err != nil {
+		t.Errorf("expected nil for knockout match without label, got %v", err)
+	}
+}
+
 // ── ValidateMatchResult ───────────────────────────────────────────────────────
 
 func TestValidateMatchResult_ValidScores_ReturnsNil(t *testing.T) {
