@@ -34,6 +34,34 @@ func scanPrediction(row pgx.Row) (*domain.Prediction, error) {
 	return p, nil
 }
 
+// Upsert inserts the prediction or, on (user_id, match_id) conflict, executes
+// a no-op UPDATE that allows RETURNING to yield the existing row. The xmax
+// system column distinguishes a true INSERT (xmax = 0) from a conflict-
+// triggered UPDATE (xmax ≠ 0), giving the caller a reliable created flag
+// without a second round-trip.
+func (r *PostgresPredictionRepository) Upsert(ctx context.Context, p *domain.Prediction) (created bool, err error) {
+	var wasInserted bool
+	row := r.db.QueryRow(ctx,
+		`INSERT INTO predictions (user_id, match_id, home_score, away_score)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (user_id, match_id) DO UPDATE
+		     SET updated_at = predictions.updated_at
+		 RETURNING `+predictionColumns+`, (xmax = 0) AS was_inserted`,
+		p.UserID, p.MatchID, p.HomeScore, p.AwayScore,
+	)
+	result := &domain.Prediction{}
+	if scanErr := row.Scan(
+		&result.ID, &result.UserID, &result.MatchID,
+		&result.HomeScore, &result.AwayScore, &result.Points,
+		&result.CreatedAt, &result.UpdatedAt,
+		&wasInserted,
+	); scanErr != nil {
+		return false, apperrors.Internal(scanErr)
+	}
+	*p = *result
+	return wasInserted, nil
+}
+
 func (r *PostgresPredictionRepository) Create(ctx context.Context, p *domain.Prediction) error {
 	row := r.db.QueryRow(ctx,
 		`INSERT INTO predictions (user_id, match_id, home_score, away_score)

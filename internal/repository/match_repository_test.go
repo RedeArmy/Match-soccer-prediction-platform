@@ -2,11 +2,13 @@ package repository_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── MatchRepository ───────────────────────────────────────────────────────────
@@ -29,6 +31,30 @@ func TestMatchRepository_Create_HydratesID(t *testing.T) {
 	}
 	if m.ID == 0 {
 		t.Error(msgNonZeroID)
+	}
+}
+
+func TestMatchRepository_Create_DuplicateTeamsKickoff_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+	label := repoGroupLabel
+	kickoff := time.Now().Add(72 * time.Hour).UTC().Truncate(time.Microsecond)
+	m1 := &domain.Match{
+		HomeTeam: "Spain", AwayTeam: "Portugal",
+		Status: domain.MatchStatusScheduled, Phase: domain.PhaseGroupStage,
+		GroupLabel: &label, KickoffAt: kickoff,
+	}
+	if err := repo.Create(context.Background(), m1); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	m2 := &domain.Match{
+		HomeTeam: "Spain", AwayTeam: "Portugal",
+		Status: domain.MatchStatusScheduled, Phase: domain.PhaseGroupStage,
+		GroupLabel: &label, KickoffAt: kickoff,
+	}
+	if err := repo.Create(context.Background(), m2); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict for duplicate teams/kickoff, got %v", err)
 	}
 }
 

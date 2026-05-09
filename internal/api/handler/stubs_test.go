@@ -100,11 +100,14 @@ type stubPredSvc struct {
 	pred           *domain.Prediction
 	preds          []*domain.Prediction
 	err            error
+	created        bool // returned by Submit; set true to simulate first-time creation
 	updateCallerID int
 	updateID       int
 }
 
-func (s *stubPredSvc) Submit(_ context.Context, _ *domain.Prediction) error { return s.err }
+func (s *stubPredSvc) Submit(_ context.Context, _ *domain.Prediction) (bool, error) {
+	return s.created, s.err
+}
 func (s *stubPredSvc) Update(_ context.Context, callerUserID, id, _, _ int) (*domain.Prediction, error) {
 	s.updateCallerID = callerUserID
 	s.updateID = id

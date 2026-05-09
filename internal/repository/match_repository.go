@@ -115,6 +115,9 @@ func (r *PostgresMatchRepository) Create(ctx context.Context, m *domain.Match) e
 	)
 	result, err := scanMatch(row)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return apperrors.Conflict("a match between these teams at this kickoff time already exists")
+		}
 		return err
 	}
 	*m = *result

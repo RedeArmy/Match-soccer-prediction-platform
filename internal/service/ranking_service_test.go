@@ -101,7 +101,7 @@ type stubTiebreakerRepo struct {
 	err error
 }
 
-func (r *stubTiebreakerRepo) Create(_ context.Context, _ *domain.Tiebreaker) error { return r.err }
+func (r *stubTiebreakerRepo) Upsert(_ context.Context, _ *domain.Tiebreaker) error { return r.err }
 func (r *stubTiebreakerRepo) GetByUser(_ context.Context, _, _ int) (*domain.Tiebreaker, error) {
 	return nil, r.err
 }

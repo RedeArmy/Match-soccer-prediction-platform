@@ -574,12 +574,13 @@ type LeaderboardSnapshotEntry struct {
 // The repository uses it to select the correct deserialiser when reading
 // historical rows, decoupling struct evolution from backwards compatibility.
 type LeaderboardSnapshot struct {
-	ID            int
-	QuinielaID    int
-	TakenAt       time.Time
-	Entries       []LeaderboardSnapshotEntry
-	SchemaVersion int
-	CreatedAt     time.Time
+	ID                 int
+	QuinielaID         int
+	TakenAt            time.Time
+	Entries            []LeaderboardSnapshotEntry
+	SchemaVersion      int
+	CreatedAt          time.Time
+	TriggeredByMatchID *int // non-nil for worker-triggered snapshots; nil for admin/manual
 }
 
 // GlobalLeaderboardEntry is a read-only projection used by the admin global

@@ -50,14 +50,21 @@ func collectTiebreakers(rows pgx.Rows) ([]*domain.Tiebreaker, error) {
 	return tbs, nil
 }
 
-func (r *PostgresTiebreakerRepository) Create(ctx context.Context, tb *domain.Tiebreaker) error {
+// Upsert inserts a tiebreaker prediction or, when the (user_id) unique
+// constraint fires, updates the prediction value in place. This eliminates
+// the TOCTOU race in the service layer: concurrent submissions converge to
+// the same database row without either request receiving a 500.
+func (r *PostgresTiebreakerRepository) Upsert(ctx context.Context, tb *domain.Tiebreaker) error {
 	configID := tb.TiebreakerConfigID
 	if configID == 0 {
-		configID = 1 // default to global config
+		configID = 1
 	}
 	row := r.db.QueryRow(ctx,
 		`INSERT INTO tiebreakers (user_id, prediction, tiebreaker_config_id)
-		 VALUES ($1, $2, $3) RETURNING `+tiebreakerColumns,
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (user_id, tiebreaker_config_id) DO UPDATE
+		     SET prediction = EXCLUDED.prediction, updated_at = NOW()
+		 RETURNING `+tiebreakerColumns,
 		tb.UserID, tb.Prediction, configID,
 	)
 	result, err := scanTiebreaker(row)

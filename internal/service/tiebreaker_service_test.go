@@ -67,24 +67,27 @@ func (r *stubTiebreakerConfigRepo) SetResultByID(_ context.Context, _, _ int) er
 
 // stubTiebreakerRepoSvc implements repository.TiebreakerRepository.
 type stubTiebreakerRepoSvc struct {
-	existing  *domain.Tiebreaker
-	err       error
-	createErr error
-	updateErr error
+	existing *domain.Tiebreaker
+	err      error
+	upsertID int // ID stamped onto the tiebreaker by Upsert; 0 → uses 99
 }
 
-func (r *stubTiebreakerRepoSvc) Create(_ context.Context, tb *domain.Tiebreaker) error {
-	if r.createErr != nil {
-		return r.createErr
+func (r *stubTiebreakerRepoSvc) Upsert(_ context.Context, tb *domain.Tiebreaker) error {
+	if r.err != nil {
+		return r.err
 	}
-	tb.ID = 99
+	id := r.upsertID
+	if id == 0 {
+		id = 99
+	}
+	tb.ID = id
 	return nil
 }
 func (r *stubTiebreakerRepoSvc) GetByUser(_ context.Context, _, _ int) (*domain.Tiebreaker, error) {
 	return r.existing, r.err
 }
 func (r *stubTiebreakerRepoSvc) Update(_ context.Context, _ *domain.Tiebreaker) error {
-	return r.updateErr
+	return r.err
 }
 func (r *stubTiebreakerRepoSvc) ListByUserIDs(_ context.Context, _ []int) ([]*domain.Tiebreaker, error) {
 	return nil, r.err
@@ -169,25 +172,23 @@ func TestTiebreakerService_Submit_NewEntry_CreatesAndReturns(t *testing.T) {
 	}
 }
 
-func TestTiebreakerService_Submit_ExistingEntry_UpdatesAndReturns(t *testing.T) {
+func TestTiebreakerService_Submit_ExistingEntry_UpsertUpdates(t *testing.T) {
 	cfg := configWithQuestion(tiebreakerQuestion)
-	existing := &domain.Tiebreaker{ID: 3, UserID: 42, Prediction: 3}
-	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{existing: existing})
+	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{})
 
 	tb, err := svc.Submit(context.Background(), 1, 42, 7)
 	if err != nil {
 		t.Fatalf(tiebreakerUnexpectedErr, err)
 	}
 	if tb.Prediction != 7 {
-		t.Errorf("expected updated prediction 7, got %d", tb.Prediction)
+		t.Errorf("expected prediction 7, got %d", tb.Prediction)
 	}
 }
 
 func TestTiebreakerService_Submit_ResultAlreadyConfirmed_ReturnsConflict(t *testing.T) {
 	result := 10
 	cfg := &domain.TiebreakerConfig{ID: 1, Question: "Total goals", Result: &result}
-	existing := &domain.Tiebreaker{ID: 3, UserID: 42, Prediction: 8}
-	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{existing: existing})
+	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{})
 
 	_, err := svc.Submit(context.Background(), 1, 42, 9)
 	if !errors.Is(err, apperrors.ErrConflict) {
@@ -211,6 +212,17 @@ func TestTiebreakerService_Submit_NotActiveMember_ReturnsForbidden(t *testing.T)
 	_, err := svc.Submit(context.Background(), 1, 99, 5)
 	if !errors.Is(err, apperrors.ErrForbidden) {
 		t.Errorf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestTiebreakerService_Submit_UpsertError_Propagates(t *testing.T) {
+	cfg := configWithQuestion(tiebreakerQuestion)
+	tbRepo := &stubTiebreakerRepoSvc{err: errors.New("db down")}
+	svc := newTiebreakerSvc(cfg, activeM(42), tbRepo)
+
+	_, err := svc.Submit(context.Background(), 1, 42, 3)
+	if err == nil {
+		t.Fatal("expected error from Upsert, got nil")
 	}
 }
 
@@ -465,12 +477,11 @@ func TestTiebreakerService_GetMine_GroupConfigTakesPrecedence(t *testing.T) {
 func TestTiebreakerService_Submit_NewEntry_ResultConfirmed_ReturnsConflict(t *testing.T) {
 	result := 10
 	cfg := &domain.TiebreakerConfig{ID: 1, Question: "Total goals", Result: &result}
-	// no existing tiebreaker — first submission
-	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{existing: nil})
+	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{})
 
 	_, err := svc.Submit(context.Background(), 1, 42, 9)
 	if !errors.Is(err, apperrors.ErrConflict) {
-		t.Errorf("expected ErrConflict when result already confirmed and no existing entry, got %v", err)
+		t.Errorf("expected ErrConflict when result already confirmed, got %v", err)
 	}
 }
 

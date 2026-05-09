@@ -264,6 +264,9 @@ type failOnUpdateRepo struct {
 }
 
 func (r *failOnUpdateRepo) Create(_ context.Context, _ *domain.Prediction) error { return nil }
+func (r *failOnUpdateRepo) Upsert(_ context.Context, _ *domain.Prediction) (bool, error) {
+	return true, nil
+}
 func (r *failOnUpdateRepo) GetByID(_ context.Context, _ int) (*domain.Prediction, error) {
 	return nil, nil
 }

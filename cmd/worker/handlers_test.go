@@ -247,6 +247,9 @@ type stubSnapshotter struct {
 func (s *stubSnapshotter) Snapshot(_ context.Context, _ int) (*domain.LeaderboardSnapshot, error) {
 	return s.snap, s.err
 }
+func (s *stubSnapshotter) SnapshotForMatch(_ context.Context, _, _ int) (*domain.LeaderboardSnapshot, error) {
+	return s.snap, s.err
+}
 
 // stubWorkerPredRepo implements repository.PredictionRepository.
 // Only ListQuinielaIDsByMatch has meaningful behaviour; all other methods
@@ -257,6 +260,9 @@ type stubWorkerPredRepo struct {
 }
 
 func (r *stubWorkerPredRepo) Create(_ context.Context, _ *domain.Prediction) error { return nil }
+func (r *stubWorkerPredRepo) Upsert(_ context.Context, _ *domain.Prediction) (bool, error) {
+	return true, nil
+}
 func (r *stubWorkerPredRepo) GetByID(_ context.Context, _ int) (*domain.Prediction, error) {
 	return nil, nil
 }
@@ -442,6 +448,13 @@ type countingSnapshotter struct {
 }
 
 func (s *countingSnapshotter) Snapshot(_ context.Context, _ int) (*domain.LeaderboardSnapshot, error) {
+	s.calls++
+	if s.succeedAt > 0 && s.calls >= s.succeedAt {
+		return s.snap, nil
+	}
+	return nil, s.err
+}
+func (s *countingSnapshotter) SnapshotForMatch(_ context.Context, _, _ int) (*domain.LeaderboardSnapshot, error) {
 	s.calls++
 	if s.succeedAt > 0 && s.calls >= s.succeedAt {
 		return s.snap, nil

@@ -59,21 +59,21 @@ func (s *predictionService) deadlineOffset(ctx context.Context) time.Duration {
 // database unique index on (user_id, match_id). A Conflict error is surfaced
 // to the caller when the constraint fires, avoiding the check-then-act race
 // that a pre-INSERT SELECT would introduce.
-func (s *predictionService) Submit(ctx context.Context, prediction *domain.Prediction) error {
+func (s *predictionService) Submit(ctx context.Context, prediction *domain.Prediction) (bool, error) {
 	match, err := s.matchRepo.GetByID(ctx, prediction.MatchID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if match == nil {
-		return apperrors.NotFound(fmt.Sprintf("match %d not found", prediction.MatchID))
+		return false, apperrors.NotFound(fmt.Sprintf("match %d not found", prediction.MatchID))
 	}
 	if match.Status != domain.MatchStatusScheduled {
-		return apperrors.Validation("cannot predict on a match that has already started")
+		return false, apperrors.Validation("cannot predict on a match that has already started")
 	}
 	if err := domain.ValidatePrediction(prediction, match.KickoffAt, s.clock.Now(), s.deadlineOffset(ctx)); err != nil {
-		return err
+		return false, err
 	}
-	return s.predRepo.Create(ctx, prediction)
+	return s.predRepo.Upsert(ctx, prediction)
 }
 
 // Update modifies the scores on an existing prediction subject to the same
@@ -98,6 +98,12 @@ func (s *predictionService) Update(ctx context.Context, callerUserID, id int, ho
 	}
 	if match.Status != domain.MatchStatusScheduled {
 		return nil, apperrors.Validation("cannot modify a prediction for a match that has already started")
+	}
+	// Short-circuit: if the caller is submitting the same scores, the
+	// operation is already complete. Skip UpdateIfUnchanged so that a
+	// network-timeout retry succeeds without hitting the optimistic lock.
+	if pred.HomeScore == homeScore && pred.AwayScore == awayScore {
+		return pred, nil
 	}
 	updated := &domain.Prediction{
 		ID:        pred.ID,

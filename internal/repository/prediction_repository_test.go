@@ -45,6 +45,49 @@ func TestPredictionRepository_Create_Duplicate_ReturnsConflict(t *testing.T) {
 	}
 }
 
+func TestPredictionRepository_Upsert_NewRow_ReturnsCreatedTrue(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	created, err := repo.Upsert(context.Background(), p)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if !created {
+		t.Error("expected created=true for first upsert")
+	}
+	if p.ID == 0 {
+		t.Error(msgNonZeroID)
+	}
+}
+
+func TestPredictionRepository_Upsert_Duplicate_ReturnsCreatedFalse(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	p1 := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if _, err := repo.Upsert(context.Background(), p1); err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+
+	p2 := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	created, err := repo.Upsert(context.Background(), p2)
+	if err != nil {
+		t.Fatalf("idempotent upsert: %v", err)
+	}
+	if created {
+		t.Error("expected created=false for duplicate upsert")
+	}
+	if p2.ID != p1.ID {
+		t.Errorf("expected same row ID on conflict, got %d (first) vs %d (second)", p1.ID, p2.ID)
+	}
+}
+
 func TestPredictionRepository_GetByID_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
