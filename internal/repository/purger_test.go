@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
@@ -239,6 +240,140 @@ func TestPostgresPurger_PurgeOldSnapshots_CancelledContext_ReturnsError(t *testi
 	purger := repository.NewPostgresPurger(testDB)
 	_, err := purger.PurgeOldSnapshots(ctx, 5)
 	if err == nil {
+		t.Error("expected error with cancelled context, got nil")
+	}
+}
+
+// ── EraseUserPII ──────────────────────────────────────────────────────────────
+
+func TestPostgresPurger_EraseUserPII_ClearsAuditLog(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+
+	if _, err := testDB.Exec(ctx,
+		`INSERT INTO audit_log (actor_id, action) VALUES ($1, 'test.action')`, u.ID); err != nil {
+		t.Fatalf("seed audit log: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	if err := purger.EraseUserPII(ctx, u.ID); err != nil {
+		t.Fatalf("EraseUserPII: %v", err)
+	}
+
+	var actorID *int
+	if err := testDB.QueryRow(ctx,
+		`SELECT actor_id FROM audit_log LIMIT 1`).Scan(&actorID); err != nil {
+		t.Fatalf("query audit log: %v", err)
+	}
+	if actorID != nil {
+		t.Errorf("expected actor_id = NULL after erasure, got %d", *actorID)
+	}
+}
+
+func TestPostgresPurger_EraseUserPII_ClearsPaymentRecords(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedPaymentRecord(t, q.ID, u.ID)
+
+	purger := repository.NewPostgresPurger(testDB)
+	if err := purger.EraseUserPII(ctx, u.ID); err != nil {
+		t.Fatalf("EraseUserPII: %v", err)
+	}
+
+	var userID *int
+	if err := testDB.QueryRow(ctx,
+		`SELECT user_id FROM payment_records LIMIT 1`).Scan(&userID); err != nil {
+		t.Fatalf("query payment records: %v", err)
+	}
+	if userID != nil {
+		t.Errorf("expected user_id = NULL after erasure, got %d", *userID)
+	}
+}
+
+func TestPostgresPurger_EraseUserPII_DeletesPredictions(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+	m := seedMatch(t)
+
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	if err := predRepo.Create(ctx, &domain.Prediction{
+		UserID:    u.ID,
+		MatchID:   m.ID,
+		HomeScore: 1,
+		AwayScore: 0,
+	}); err != nil {
+		t.Fatalf("seed prediction: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	if err := purger.EraseUserPII(ctx, u.ID); err != nil {
+		t.Fatalf("EraseUserPII: %v", err)
+	}
+
+	var count int
+	if err := testDB.QueryRow(ctx,
+		`SELECT COUNT(*) FROM predictions WHERE user_id = $1`, u.ID).Scan(&count); err != nil {
+		t.Fatalf("query predictions: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 predictions after erasure, got %d", count)
+	}
+}
+
+func TestPostgresPurger_EraseUserPII_DeletesTiebreakers(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
+
+	tbRepo := repository.NewPostgresTiebreakerRepository(testDB)
+	if err := tbRepo.Create(ctx, &domain.Tiebreaker{
+		UserID:             u.ID,
+		TiebreakerConfigID: cfg.ID,
+		Prediction:         42,
+	}); err != nil {
+		t.Fatalf("seed tiebreaker: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	if err := purger.EraseUserPII(ctx, u.ID); err != nil {
+		t.Fatalf("EraseUserPII: %v", err)
+	}
+
+	var count int
+	if err := testDB.QueryRow(ctx,
+		`SELECT COUNT(*) FROM tiebreakers WHERE user_id = $1`, u.ID).Scan(&count); err != nil {
+		t.Fatalf("query tiebreakers: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 tiebreakers after erasure, got %d", count)
+	}
+}
+
+func TestPostgresPurger_EraseUserPII_IsIdempotent(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+
+	purger := repository.NewPostgresPurger(testDB)
+	if err := purger.EraseUserPII(ctx, u.ID); err != nil {
+		t.Fatalf("first EraseUserPII: %v", err)
+	}
+	if err := purger.EraseUserPII(ctx, u.ID); err != nil {
+		t.Fatalf("second EraseUserPII (idempotent): %v", err)
+	}
+}
+
+func TestPostgresPurger_EraseUserPII_CancelledContext_ReturnsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	purger := repository.NewPostgresPurger(testDB)
+	if err := purger.EraseUserPII(ctx, 1); err == nil {
 		t.Error("expected error with cancelled context, got nil")
 	}
 }

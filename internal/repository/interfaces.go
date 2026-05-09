@@ -515,4 +515,15 @@ type Purger interface {
 	// per quiniela is always preserved regardless of keepLatestN. Returns the
 	// number of rows deleted.
 	PurgeOldSnapshots(ctx context.Context, keepLatestN int) (int64, error)
+	// EraseUserPII anonymises or removes all personal data associated with
+	// userID as required by the platform's data-retention policy. Must be
+	// called before PurgeDeletedUsers so that the hard-delete does not fail
+	// on ON DELETE RESTRICT foreign keys.
+	//
+	// The following operations are executed atomically in a single transaction:
+	//   - audit_log.actor_id → NULL  (ImmutableAnonymise)
+	//   - payment_records.user_id → NULL  (ImmutableAnonymise)
+	//   - predictions rows deleted  (OperationalDelete)
+	//   - tiebreakers rows deleted  (OperationalDelete)
+	EraseUserPII(ctx context.Context, userID int) error
 }

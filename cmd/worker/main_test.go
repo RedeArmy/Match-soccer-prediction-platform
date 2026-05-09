@@ -585,6 +585,10 @@ func (s *stubPurger) PurgeOldSnapshots(_ context.Context, _ int) (int64, error) 
 	return s.snapshotCount, s.err
 }
 
+func (s *stubPurger) EraseUserPII(_ context.Context, _ int) error {
+	return s.err
+}
+
 func TestMonitorPurge_NilPurger_ReturnsImmediately(t *testing.T) {
 	monitorPurge(context.Background(), nil, 24*time.Hour, 5, nil, zap.NewNop())
 }

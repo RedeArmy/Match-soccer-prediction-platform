@@ -15,7 +15,7 @@ const errMsgEmptyTiebreakerQuestion = "tiebreaker question cannot be empty"
 // tiebreakerService is the concrete implementation of TiebreakerService.
 type tiebreakerService struct {
 	configRepo     repository.TiebreakerConfigRepository
-	memberRepo     repository.GroupMembershipRepository
+	authz          GroupAuthz
 	tiebreakerRepo repository.TiebreakerRepository
 	audit          AuditLogger
 	log            *zap.Logger
@@ -24,14 +24,14 @@ type tiebreakerService struct {
 // NewTiebreakerService constructs a tiebreakerService.
 func NewTiebreakerService(
 	configRepo repository.TiebreakerConfigRepository,
-	memberRepo repository.GroupMembershipRepository,
+	authz GroupAuthz,
 	tiebreakerRepo repository.TiebreakerRepository,
 	audit AuditLogger,
 	log *zap.Logger,
 ) TiebreakerService {
 	return &tiebreakerService{
 		configRepo:     configRepo,
-		memberRepo:     memberRepo,
+		authz:          authz,
 		tiebreakerRepo: tiebreakerRepo,
 		audit:          audit,
 		log:            log,
@@ -120,7 +120,7 @@ func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, pr
 		return nil, apperrors.Validation("no tiebreaker question has been configured yet")
 	}
 
-	if err := s.requireActiveMember(ctx, quinielaID, callerID); err != nil {
+	if err := s.authz.RequireActiveMember(ctx, quinielaID, callerID); err != nil {
 		return nil, err
 	}
 
@@ -157,7 +157,7 @@ func (s *tiebreakerService) Submit(ctx context.Context, quinielaID, callerID, pr
 
 // GetMine returns the active question and the caller's own prediction for quinielaID.
 func (s *tiebreakerService) GetMine(ctx context.Context, quinielaID, callerID int) (*domain.TiebreakerView, error) {
-	if err := s.requireActiveMember(ctx, quinielaID, callerID); err != nil {
+	if err := s.authz.RequireActiveMember(ctx, quinielaID, callerID); err != nil {
 		return nil, err
 	}
 
@@ -211,19 +211,6 @@ func (s *tiebreakerService) ConfirmResultByID(ctx context.Context, configID, res
 		"config_id": configID,
 		"result":    result,
 	})
-	return nil
-}
-
-// requireActiveMember returns Forbidden when userID is not an active member of
-// the quiniela.
-func (s *tiebreakerService) requireActiveMember(ctx context.Context, quinielaID, userID int) error {
-	m, err := s.memberRepo.GetByQuinielaAndUser(ctx, quinielaID, userID)
-	if err != nil {
-		return err
-	}
-	if m == nil || m.Status != domain.MembershipActive {
-		return apperrors.Forbidden("caller is not an active member of this group")
-	}
 	return nil
 }
 
