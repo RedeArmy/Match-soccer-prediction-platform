@@ -44,7 +44,13 @@ func run() error {
 	flag.Parse()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
+	return generate(ctx, *out)
+}
 
+// generate is the testable core of run. It starts a temporary PostgreSQL
+// container, runs all migrations, dumps the resulting DDL, and writes the
+// filtered output to outPath.
+func generate(ctx context.Context, outPath string) error {
 	log.Println("genschema: starting PostgreSQL container…")
 	container, err := tcpostgres.Run(ctx, "postgres:17-alpine",
 		tcpostgres.WithDatabase("quiniela_schema"),
@@ -77,17 +83,17 @@ func run() error {
 		return fmt.Errorf("dump schema: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 		return fmt.Errorf("create baseline dir: %w", err)
 	}
 
 	header := schemaHeader()
 	content := header + schema
-	if err := os.WriteFile(*out, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", *out, err)
+	if err := os.WriteFile(outPath, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 
-	log.Printf("genschema: baseline written to %s (%d bytes)", *out, len(content))
+	log.Printf("genschema: baseline written to %s (%d bytes)", outPath, len(content))
 	return nil
 }
 
@@ -121,10 +127,18 @@ func dumpSchema(ctx context.Context, container *tcpostgres.PostgresContainer) (s
 		return "", fmt.Errorf("pg_dump exited %d: %s", exitCode, stderr.String())
 	}
 
-	// Filter out noise lines that pg_dump adds for psql client configuration.
-	raw := stdout.String()
+	return filterDumpLines(stdout.String()), nil
+}
+
+// filterDumpLines removes pg_dump noise lines from raw DDL output.
+// It strips SET ..., SELECT pg_catalog ..., and backslash-prefixed psql
+// meta-commands (e.g. \connect, \restrict) that are not part of the schema DDL.
+func filterDumpLines(raw string) string {
+	if raw == "" {
+		return ""
+	}
 	lines := strings.Split(raw, "\n")
-	var keep []string
+	keep := make([]string, 0, len(lines))
 	for _, l := range lines {
 		trimmed := strings.TrimSpace(l)
 		if strings.HasPrefix(trimmed, "SET ") ||
@@ -134,7 +148,7 @@ func dumpSchema(ctx context.Context, container *tcpostgres.PostgresContainer) (s
 		}
 		keep = append(keep, l)
 	}
-	return strings.Join(keep, "\n"), nil
+	return strings.Join(keep, "\n")
 }
 
 // defaultBaselinePath returns migrations/baseline/schema.sql relative to the

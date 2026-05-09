@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,30 @@ const (
 	fmtMigrateErr    = "migrate: %v"
 	fmtNewPoolErr    = "new pool: %v"
 )
+
+// ── NewPool ───────────────────────────────────────────────────────────────────
+
+// TestNewPool_ContextCancelledDuringBackoff covers the select case in NewPool
+// where a context is cancelled while waiting in the exponential-backoff loop.
+// Port 1 on 127.0.0.1 is always refused, so Ping fails on the first attempt;
+// a pre-cancelled context causes the backoff select to fire ctx.Done immediately.
+func TestNewPool_ContextCancelledDuringBackoff_ReturnsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := database.NewPool(ctx, database.Config{
+		DSN:             "postgres://u:p@127.0.0.1:1/db",
+		MaxOpenConns:    1,
+		MaxIdleConns:    0,
+		ConnMaxLifetime: time.Minute,
+	})
+	if err == nil {
+		t.Fatal("expected error when context is cancelled, got nil")
+	}
+	if !strings.Contains(err.Error(), "context cancelled during retry") {
+		t.Errorf("expected context cancellation message, got: %v", err)
+	}
+}
 
 // ── Migrate ───────────────────────────────────────────────────────────────────
 

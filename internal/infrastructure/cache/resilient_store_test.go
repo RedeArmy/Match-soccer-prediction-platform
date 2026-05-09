@@ -15,13 +15,15 @@ import (
 // ── stub store ────────────────────────────────────────────────────────────────
 
 type stubStore struct {
-	getErr error
-	setErr error
-	delErr error
+	getErr   error
+	setErr   error
+	delErr   error
+	flushErr error
 
-	getCallCount int
-	setCallCount int
-	delCallCount int
+	getCallCount   int
+	setCallCount   int
+	delCallCount   int
+	flushCallCount int
 }
 
 func (s *stubStore) Get(_ context.Context, _ string, dest interface{}) error {
@@ -37,7 +39,8 @@ func (s *stubStore) Delete(_ context.Context, _ ...string) error {
 	return s.delErr
 }
 func (s *stubStore) FlushByPrefix(_ context.Context, _ string) error {
-	return nil
+	s.flushCallCount++
+	return s.flushErr
 }
 
 var errNet = errors.New("connection refused")
@@ -181,6 +184,52 @@ func TestResilientStore_FlushByPrefix_InnerNotPrefixFlusher_ReturnsNil(t *testin
 
 	if err := rs.FlushByPrefix(context.Background(), "lb:"); err != nil {
 		t.Errorf("expected nil when inner is not a PrefixFlusher, got %v", err)
+	}
+}
+
+func TestResilientStore_Delete_ClosedCircuit_DelegatesAndReturnsNil(t *testing.T) {
+	inner := &stubStore{}
+	rs := cache.NewResilientStore(inner, closedBreaker(t), zap.NewNop())
+
+	if err := rs.Delete(context.Background(), "k1"); err != nil {
+		t.Errorf("expected nil on successful Delete, got %v", err)
+	}
+	if inner.delCallCount != 1 {
+		t.Errorf("expected inner.Delete called once, got %d", inner.delCallCount)
+	}
+}
+
+func TestResilientStore_Delete_ClosedCircuit_NetworkError_Propagates(t *testing.T) {
+	inner := &stubStore{delErr: errNet}
+	rs := cache.NewResilientStore(inner, closedBreaker(t), zap.NewNop())
+
+	err := rs.Delete(context.Background(), "k1")
+	if !errors.Is(err, errNet) {
+		t.Errorf("expected errNet propagated from Delete, got %v", err)
+	}
+}
+
+// ── FlushByPrefix ─────────────────────────────────────────────────────────────
+
+func TestResilientStore_FlushByPrefix_ClosedCircuit_DelegatesAndReturnsNil(t *testing.T) {
+	inner := &stubStore{}
+	rs := cache.NewResilientStore(inner, closedBreaker(t), zap.NewNop())
+
+	if err := rs.FlushByPrefix(context.Background(), "lb:"); err != nil {
+		t.Errorf("expected nil on successful FlushByPrefix, got %v", err)
+	}
+	if inner.flushCallCount != 1 {
+		t.Errorf("expected inner.FlushByPrefix called once, got %d", inner.flushCallCount)
+	}
+}
+
+func TestResilientStore_FlushByPrefix_ClosedCircuit_NetworkError_Propagates(t *testing.T) {
+	inner := &stubStore{flushErr: errNet}
+	rs := cache.NewResilientStore(inner, closedBreaker(t), zap.NewNop())
+
+	err := rs.FlushByPrefix(context.Background(), "lb:")
+	if !errors.Is(err, errNet) {
+		t.Errorf("expected errNet propagated from FlushByPrefix, got %v", err)
 	}
 }
 

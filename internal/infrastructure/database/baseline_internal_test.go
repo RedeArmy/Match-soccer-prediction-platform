@@ -1,9 +1,17 @@
 package database
 
 import (
+	"context"
+	"errors"
+	"io/fs"
 	"testing"
 	"testing/fstest"
 )
+
+// errFS is an fs.FS whose Open always returns an error, causing fs.ReadDir to fail.
+type errFS struct{}
+
+func (errFS) Open(_ string) (fs.File, error) { return nil, errors.New("permission denied") }
 
 func TestCollectUpVersions_ReturnsAllVersions(t *testing.T) {
 	fs := fstest.MapFS{
@@ -74,5 +82,30 @@ func TestCollectUpVersions_VersionValuesCorrect(t *testing.T) {
 	}
 	if !got[7] || !got[42] {
 		t.Errorf("expected versions {7, 42}, got %v", versions)
+	}
+}
+
+func TestCollectUpVersions_ReadDirError_ReturnsError(t *testing.T) {
+	_, err := collectUpVersions(errFS{})
+	if err == nil {
+		t.Fatal("expected error from ReadDir failure, got nil")
+	}
+}
+
+// ── MarkMigrationsApplied error paths ────────────────────────────────────────
+
+func TestMarkMigrationsApplied_EmptyFS_ReturnsNil(t *testing.T) {
+	// Empty FS produces zero versions; the function returns early without using the pool.
+	// Passing a nil pool is safe here because pool is not accessed on the early-return path.
+	if err := MarkMigrationsApplied(context.Background(), nil, fstest.MapFS{}); err != nil {
+		t.Errorf("expected nil for empty FS, got %v", err)
+	}
+}
+
+func TestMarkMigrationsApplied_ReadDirError_Propagates(t *testing.T) {
+	// errFS makes ReadDir fail; the error must propagate before the pool is used.
+	err := MarkMigrationsApplied(context.Background(), nil, errFS{})
+	if err == nil {
+		t.Fatal("expected error when ReadDir fails, got nil")
 	}
 }
