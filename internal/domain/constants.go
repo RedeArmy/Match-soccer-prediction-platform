@@ -120,10 +120,10 @@ const (
 	DefaultDLQReplayDefaultLimit = 10 // dlq.replay_default_limit
 
 	// Messaging / Redis Streams
-	DefaultMessagingMaxRetries    = 3       // messaging.max_retries
-	DefaultMessagingStreamMaxLen  = 600_000 // messaging.stream_max_len
-	DefaultMessagingStreamWorkerCount  = 8  // messaging.stream_worker_count
-	DefaultMessagingStreamReadBlockSec = 5  // messaging.stream_read_block_sec
+	DefaultMessagingMaxRetries         = 3       // messaging.max_retries
+	DefaultMessagingStreamMaxLen       = 600_000 // messaging.stream_max_len
+	DefaultMessagingStreamWorkerCount  = 8       // messaging.stream_worker_count
+	DefaultMessagingStreamReadBlockSec = 5       // messaging.stream_read_block_sec
 
 	// Infrastructure timeouts (seconds)
 	DefaultAuthValidationTimeoutSeconds = 5 // auth.validation_timeout_seconds
@@ -134,9 +134,9 @@ const (
 	DefaultAuditRetryDelayMs = 250 // audit.retry_delay_ms
 
 	// Worker: leaderboard snapshot generation
-	DefaultWorkerSnapshotConcurrency   = 16  // worker.snapshot_concurrency
-	DefaultWorkerSnapshotRetryBaseMs   = 100 // worker.snapshot_retry_base_ms
-	DefaultWorkerSnapshotMaxAttempts   = 3   // worker.snapshot_max_attempts
+	DefaultWorkerSnapshotConcurrency = 16  // worker.snapshot_concurrency
+	DefaultWorkerSnapshotRetryBaseMs = 100 // worker.snapshot_retry_base_ms
+	DefaultWorkerSnapshotMaxAttempts = 3   // worker.snapshot_max_attempts
 
 	// Worker: background maintenance jobs
 	DefaultWorkerDLQMonitorIntervalSec = 300 // worker.dlq_monitor_interval_sec (5 min)

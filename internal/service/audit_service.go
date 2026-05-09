@@ -53,7 +53,7 @@ import (
 // Must be set before the first Log call; changing them concurrently with active
 // goroutines is not safe.
 var auditMaxAttempts = 2
-var auditRetryDelay  = 250 * time.Millisecond
+var auditRetryDelay = 250 * time.Millisecond
 
 // ConfigureAuditRetry sets the retry policy for all auditService instances.
 // Must be called before the first Log call (i.e. before the server begins

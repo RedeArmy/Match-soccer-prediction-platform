@@ -295,7 +295,7 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyWorkerSnapshotMaxAttempts:   true,
 		domain.ParamKeyWorkerDLQMonitorIntervalSec: true,
 		domain.ParamKeyWorkerPurgeIntervalHours:    true,
-		domain.ParamKeyAPIBodySizeLimitBytes:        true,
+		domain.ParamKeyAPIBodySizeLimitBytes:       true,
 	}
 
 	for _, spec := range allParams {
