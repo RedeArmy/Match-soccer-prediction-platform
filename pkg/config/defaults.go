@@ -21,7 +21,11 @@ import (
 // strings. The validation step (validation.go) then enforces that they
 // have been supplied at runtime.
 func setDefaults(v *viper.Viper) {
-	v.SetDefault("environment", "dev")
+	// environment defaults to "production" so that an unset WCQ_ENVIRONMENT in
+	// a deployed container is treated as production (strict auth, redis bus
+	// required) rather than silently relaxing all guards. Local developers must
+	// explicitly set WCQ_ENVIRONMENT=dev (already present in .env.example).
+	v.SetDefault("environment", "production")
 
 	v.SetDefault("server.port", "8080")
 	v.SetDefault("server.readTimeout", 10*time.Second)

@@ -44,6 +44,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/election"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -163,6 +164,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	retentionDays := params.GetInt(ctx, domain.ParamKeyPurgeRetentionDays, domain.DefaultPurgeRetentionDays)
 	purgeRetention := time.Duration(retentionDays) * 24 * time.Hour
 
+	// Leader election for the DLQ monitor: the lock TTL is set to
+	// dlqMonitorInterval plus a 30-second buffer. This ensures the lock
+	// expires before the next tick while giving the winner enough headroom
+	// to complete the scan even under transient Redis slowness.
+	dlqElection := election.NewRedisLeaderElection(rc, dlqLeaderKey, dlqMonitorInterval+30*time.Second, log)
+
 	return startWorker(ctx, workerDeps{
 		cfg:            cfg,
 		bus:            bus,
@@ -174,6 +181,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		purgeRetention: purgeRetention,
 		rc:             rc,
 		checkers:       buildHealthCheckers(db, rc),
+		dlqElection:    dlqElection,
 	}, log)
 }
 
@@ -202,6 +210,12 @@ func buildHealthCheckers(db *pgxpool.Pool, rc *redis.Client) []health.Checker {
 	}
 }
 
+// dlqLeaderKey is the Redis key used to elect a single DLQ monitor leader
+// across all worker replicas. The TTL is set to dlqMonitorInterval + a small
+// buffer so the lock expires before the next tick even if the winning replica
+// crashes without releasing it.
+const dlqLeaderKey = "worker:dlq-monitor:leader"
+
 // workerDeps bundles the injected dependencies for startWorker, keeping its
 // parameter list within the 7-param lint limit while remaining easy to
 // extend without changing the function signature.
@@ -216,6 +230,7 @@ type workerDeps struct {
 	purgeRetention time.Duration
 	rc             *redis.Client
 	checkers       []health.Checker
+	dlqElection    *election.RedisLeaderElection
 }
 
 // All parameters are already constructed so this function has no I/O of its
@@ -257,7 +272,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	go func() {
 		defer dlqDone.Done()
 		defer ticker.Stop()
-		monitorDLQ(ctx, deps.rc, ticker.C, log)
+		monitorDLQ(ctx, deps.rc, deps.dlqElection, ticker.C, log)
 	}()
 
 	var purgeDone sync.WaitGroup
@@ -330,13 +345,19 @@ func monitorPurge(ctx context.Context, purger repository.Purger, retention time.
 // manual operator replay. The log line is structured so log-based alerting
 // systems (Datadog, CloudWatch Logs Insights, Loki) can match on "dlq_size".
 //
+// Leader election via e ensures that in a multi-replica deployment only one
+// worker emits DLQ log lines per interval. Each tick is a fresh competition:
+// the replica that wins the Redis SET NX lock performs the scan; the others
+// skip that tick silently. If e is nil the function degrades gracefully and
+// all replicas log (original behaviour — safe for single-replica setups).
+//
 // tickC is injected by the caller so tests can pass a pre-loaded buffered
 // channel without mutating any global state. In production startWorker passes
 // time.NewTicker(dlqMonitorInterval).C.
 //
 // If rc is nil (e.g. in unit tests where Redis is not available), the function
 // returns immediately - DLQ monitoring is best-effort and must not block startup.
-func monitorDLQ(ctx context.Context, rc *redis.Client, tickC <-chan time.Time, log *zap.Logger) {
+func monitorDLQ(ctx context.Context, rc *redis.Client, e *election.RedisLeaderElection, tickC <-chan time.Time, log *zap.Logger) {
 	if rc == nil {
 		return
 	}
@@ -349,6 +370,10 @@ func monitorDLQ(ctx context.Context, rc *redis.Client, tickC <-chan time.Time, l
 		case <-ctx.Done():
 			return
 		case <-tickC:
+			if e != nil && !e.TryAcquire(ctx) {
+				log.Debug("worker: DLQ monitor: not leader this tick, skipping")
+				continue
+			}
 			for _, et := range monitoredEvents {
 				dlqKey := "dlq:" + string(et)
 				n, err := rc.LLen(ctx, dlqKey).Result()

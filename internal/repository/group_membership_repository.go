@@ -2,12 +2,9 @@ package repository
 
 import (
 	"context"
-	"errors"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -15,6 +12,13 @@ import (
 )
 
 const errMsgMaxMembersReached = "this group has reached its maximum number of members"
+
+// querier is satisfied by both pgxpool.Pool and pgx.Tx, allowing
+// enforceMaxMembers to be called with either a pool connection or a live
+// transaction without duplicating the COUNT query.
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // PostgresGroupMembershipRepository is the PostgreSQL-backed implementation of
 // GroupMembershipRepository.
@@ -25,16 +29,6 @@ type PostgresGroupMembershipRepository struct {
 // NewPostgresGroupMembershipRepository constructs a PostgresGroupMembershipRepository.
 func NewPostgresGroupMembershipRepository(db *pgxpool.Pool) *PostgresGroupMembershipRepository {
 	return &PostgresGroupMembershipRepository{db: db}
-}
-
-// isMaxMembersViolation reports whether err originates from the
-// enforce_max_members trigger, which raises EXCEPTION 'max_members_exceeded'
-// (PostgreSQL error code P0001 = raise_exception).
-func isMaxMembersViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) &&
-		pgErr.Code == "P0001" &&
-		strings.Contains(pgErr.Message, "max_members_exceeded")
 }
 
 const (
@@ -54,7 +48,7 @@ func scanMembership(row pgx.Row) (*domain.GroupMembership, error) {
 
 // RequestJoinByInviteCode serialises invite-code resolution, existing-membership
 // inspection, capacity enforcement, and membership mutation in one transaction.
-func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID int) (*domain.Quiniela, *domain.GroupMembership, error) {
+func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID, maxMembers int) (*domain.Quiniela, *domain.GroupMembership, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, nil, apperrors.Internal(err)
@@ -77,7 +71,7 @@ func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.
 		return nil, nil, err
 	}
 
-	if err := enforceMaxMembers(ctx, tx, q.ID); err != nil {
+	if err := enforceMaxMembers(ctx, tx, q.ID, maxMembers); err != nil {
 		return nil, nil, err
 	}
 
@@ -143,9 +137,9 @@ func validateMembershipStatus(existing *domain.GroupMembership) error {
 	return nil
 }
 
-func enforceMaxMembers(ctx context.Context, tx pgx.Tx, quinielaID int) error {
+func enforceMaxMembers(ctx context.Context, q querier, quinielaID, maxMembers int) error {
 	var count int
-	err := tx.QueryRow(ctx,
+	err := q.QueryRow(ctx,
 		`SELECT COUNT(*)
 		   FROM group_memberships
 		  WHERE quiniela_id = $1
@@ -155,7 +149,7 @@ func enforceMaxMembers(ctx context.Context, tx pgx.Tx, quinielaID int) error {
 	if err != nil {
 		return apperrors.Internal(err)
 	}
-	if count >= domain.MaxMembersPerGroup {
+	if count >= maxMembers {
 		return apperrors.Conflict(errMsgMaxMembersReached)
 	}
 	return nil
@@ -177,9 +171,6 @@ func reactivateMembership(ctx context.Context, tx pgx.Tx, membershipID int, auto
 	)
 	m, err := scanMembership(row)
 	if err != nil {
-		if isMaxMembersViolation(err) {
-			return nil, apperrors.Conflict(errMsgMaxMembersReached)
-		}
 		return nil, err
 	}
 	if m == nil {
@@ -197,9 +188,6 @@ func createPendingMembership(ctx context.Context, tx pgx.Tx, quinielaID, userID 
 	)
 	m, err := scanMembership(row)
 	if err != nil {
-		if isMaxMembersViolation(err) {
-			return nil, apperrors.Conflict(errMsgMaxMembersReached)
-		}
 		if isUniqueViolation(err) {
 			return nil, apperrors.Conflict("you already have a membership record for this group")
 		}
@@ -209,6 +197,11 @@ func createPendingMembership(ctx context.Context, tx pgx.Tx, quinielaID, userID 
 }
 
 func (r *PostgresGroupMembershipRepository) Create(ctx context.Context, m *domain.GroupMembership) error {
+	if m.Status == domain.MembershipActive {
+		if err := enforceMaxMembers(ctx, r.db, m.QuinielaID, domain.MaxMembersPerGroup); err != nil {
+			return err
+		}
+	}
 	role := m.Role
 	if role == "" {
 		role = domain.MembershipRoleMember
@@ -220,9 +213,6 @@ func (r *PostgresGroupMembershipRepository) Create(ctx context.Context, m *domai
 	)
 	result, err := scanMembership(row)
 	if err != nil {
-		if isMaxMembersViolation(err) {
-			return apperrors.Conflict(errMsgMaxMembersReached)
-		}
 		return err
 	}
 	*m = *result
@@ -281,6 +271,11 @@ func (r *PostgresGroupMembershipRepository) CountActivePaid(ctx context.Context,
 }
 
 func (r *PostgresGroupMembershipRepository) Update(ctx context.Context, m *domain.GroupMembership) error {
+	if m.Status == domain.MembershipActive {
+		if err := enforceMaxMembers(ctx, r.db, m.QuinielaID, domain.MaxMembersPerGroup); err != nil {
+			return err
+		}
+	}
 	row := r.db.QueryRow(ctx,
 		`UPDATE group_memberships
 		    SET status=$1, paid=$2, joined_at=$3, removed_at=$4, removed_by=$5, updated_at=NOW()
@@ -289,9 +284,6 @@ func (r *PostgresGroupMembershipRepository) Update(ctx context.Context, m *domai
 	)
 	result, err := scanMembership(row)
 	if err != nil {
-		if isMaxMembersViolation(err) {
-			return apperrors.Conflict(errMsgMaxMembersReached)
-		}
 		return err
 	}
 	if result == nil {
@@ -569,13 +561,14 @@ func syncStatusInTx(ctx context.Context, tx pgx.Tx, quinielaID, minMembers int) 
 }
 
 // ApproveMembership atomically promotes a pending membership to active and
-// recalculates the quiniela's status in a single transaction. The enforce_max_members
-// trigger fires on the UPDATE, so a capacity overflow is caught before commit.
+// recalculates the quiniela's status in a single transaction.
+// The quiniela row is locked with FOR UPDATE for the full duration so that
+// concurrent approvals cannot both pass the capacity check and both commit.
 func (r *PostgresGroupMembershipRepository) ApproveMembership(
 	ctx context.Context,
 	membershipID, quinielaID int,
 	now time.Time,
-	minMembers int,
+	minMembers, maxMembers int,
 ) (*domain.GroupMembership, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -584,6 +577,21 @@ func (r *PostgresGroupMembershipRepository) ApproveMembership(
 	defer func() {
 		logRollbackFailure(tx.Rollback(ctx), "GroupMembershipRepository", "ApproveMembership")
 	}()
+
+	// Lock the quiniela row for the duration of the transaction. This serialises
+	// all concurrent ApproveMembership calls for the same group and ensures the
+	// capacity check below is race-safe.
+	var lockedID int
+	if err := tx.QueryRow(ctx,
+		`SELECT id FROM quinielas WHERE id = $1 FOR UPDATE`,
+		quinielaID,
+	).Scan(&lockedID); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+
+	if err := enforceMaxMembers(ctx, tx, quinielaID, maxMembers); err != nil {
+		return nil, err
+	}
 
 	row := tx.QueryRow(ctx,
 		`UPDATE group_memberships
@@ -598,9 +606,6 @@ func (r *PostgresGroupMembershipRepository) ApproveMembership(
 	)
 	m, err := scanMembership(row)
 	if err != nil {
-		if isMaxMembersViolation(err) {
-			return nil, apperrors.Conflict(errMsgMaxMembersReached)
-		}
 		return nil, err
 	}
 	if m == nil {

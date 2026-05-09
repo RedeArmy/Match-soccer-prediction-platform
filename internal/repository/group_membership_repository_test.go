@@ -308,7 +308,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_NewMembershipCreatesP
 	q := seedQuiniela(t, owner.ID)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
 	if err != nil {
 		t.Fatalf("RequestJoinByInviteCode: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_LeftMembershipBecomes
 	existing := seedMembership(t, q.ID, joiner.ID, domain.MembershipLeft, false)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
 	if err != nil {
 		t.Fatalf("RequestJoinByInviteCode: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_InvalidCodeReturnsNot
 	joiner := seedUser(t)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	_, _, err := repo.RequestJoinByInviteCode(context.Background(), "INVALID123", joiner.ID)
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), "INVALID123", joiner.ID, domain.MaxMembersPerGroup)
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
@@ -371,7 +371,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_ActiveMemberReturnsCo
 	seedMembership(t, q.ID, joiner.ID, domain.MembershipActive, true)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict, got %v", err)
 	}
@@ -385,7 +385,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_PendingMemberReturnsC
 	seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict, got %v", err)
 	}
@@ -401,7 +401,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_MaxMembersReachedRetu
 	joiner := seedUser(t)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID)
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict for MaxMembersPerGroup reached, got %v", err)
 	}
@@ -811,7 +811,7 @@ func TestGroupMembershipRepository_ApproveMembership_PromotesToActiveAndSyncsSta
 	pending := seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
 
 	now := time.Now().UTC()
-	m, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, now, domain.MinMembersForActive)
+	m, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, now, domain.MinMembersForActive, domain.MaxMembersPerGroup)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -843,7 +843,7 @@ func TestGroupMembershipRepository_ApproveMembership_BelowThreshold_QuinielaStay
 	joiner := seedUser(t)
 	pending := seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
 
-	_, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive)
+	_, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive, domain.MaxMembersPerGroup)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -866,7 +866,7 @@ func TestGroupMembershipRepository_ApproveMembership_AlreadyApproved_ReturnsConf
 	active := seedActiveMembership(t, q.ID, owner.ID)
 
 	err := func() error {
-		_, e := repo.ApproveMembership(context.Background(), active.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive)
+		_, e := repo.ApproveMembership(context.Background(), active.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive, domain.MaxMembersPerGroup)
 		return e
 	}()
 	if !errors.Is(err, apperrors.ErrConflict) {
@@ -887,7 +887,7 @@ func TestGroupMembershipRepository_ApproveMembership_ExceedsMaxMembers_ReturnsCo
 	joiner := seedUser(t)
 	pending := seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
 
-	_, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive)
+	_, err := repo.ApproveMembership(context.Background(), pending.ID, q.ID, time.Now().UTC(), domain.MinMembersForActive, domain.MaxMembersPerGroup)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict when approving past MaxMembersPerGroup, got %v", err)
 	}
@@ -899,7 +899,7 @@ func TestGroupMembershipRepository_ApproveMembership_CancelledContext_ReturnsErr
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := repo.ApproveMembership(ctx, 1, 1, time.Now().UTC(), domain.MinMembersForActive); err == nil {
+	if _, err := repo.ApproveMembership(ctx, 1, 1, time.Now().UTC(), domain.MinMembersForActive, domain.MaxMembersPerGroup); err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
 	}
 }

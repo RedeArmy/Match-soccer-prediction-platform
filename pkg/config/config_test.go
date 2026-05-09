@@ -38,9 +38,13 @@ const (
 // which Load has no safe default and would otherwise return a validation
 // error. Tests that want to exercise missing or invalid values should call
 // t.Setenv to override individual keys after calling this helper.
+//
+// WCQ_ENVIRONMENT is set to "dev" explicitly so that tests do not depend on
+// the production default and do not need Clerk credentials to pass validation.
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv(envServerPort, "8080")
+	t.Setenv(envEnvironment, "dev")
 }
 
 func TestLoad_ValidConfig_ReturnsNoError(t *testing.T) {
@@ -111,10 +115,9 @@ func TestLoad_EnvVarOverridesDefault(t *testing.T) {
 }
 
 // TestIsDevelopment_EmptyEnvironment tests the method directly on a zero-value
-// Config. Viper resolves its own default ("dev") when WCQ_ENVIRONMENT is absent,
-// so the only way to get Environment=="" at runtime is an explicit blank override.
-// Regardless, the method must treat blank as production to close the misconfigured-
-// container security gap.
+// Config. Viper resolves its default ("production") when WCQ_ENVIRONMENT is
+// absent, so an empty Environment string can only appear via an explicit blank
+// override. The method must treat blank as production regardless.
 func TestIsDevelopment_EmptyEnvironment_IsNotDevelopment(t *testing.T) {
 	cfg := &config.Config{Environment: ""}
 	if cfg.IsDevelopment() {
@@ -140,15 +143,22 @@ func TestIsDevelopment_DevelopmentEnvironments_AreRecognised(t *testing.T) {
 	}
 }
 
-func TestLoad_DefaultEnvironmentIsDev(t *testing.T) {
-	setRequiredEnv(t)
+func TestLoad_DefaultEnvironmentIsProduction(t *testing.T) {
+	// Do NOT call setRequiredEnv here — we are testing the raw viper default
+	// before any env override. Production mode requires Clerk credentials, so
+	// we supply them to avoid a validation error unrelated to the default under
+	// test. server.port has no safe default and must always be provided.
+	t.Setenv(envServerPort, "8080")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_testsecret")
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
 
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
 	}
-	if cfg.Environment != "dev" {
-		t.Errorf("Environment default: expected %q, got %q", "dev", cfg.Environment)
+	if cfg.Environment != "production" {
+		t.Errorf("Environment default: expected %q, got %q", "production", cfg.Environment)
 	}
 }
 
