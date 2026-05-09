@@ -15,6 +15,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v2/jwk"
@@ -151,8 +152,8 @@ func RequireAuth(jwksURL string, warmupTimeout time.Duration, log *zap.Logger) f
 		}
 	}
 
-	cache := jwk.NewCache(context.Background())
-	if err := cache.Register(jwksURL); err != nil {
+	jwkCache := jwk.NewCache(context.Background())
+	if err := jwkCache.Register(jwksURL); err != nil {
 		log.Error("RequireAuth: failed to register JWKS URL", zap.String("url", jwksURL), zap.Error(err))
 	}
 
@@ -161,17 +162,35 @@ func RequireAuth(jwksURL string, warmupTimeout time.Duration, log *zap.Logger) f
 	// if Clerk is temporarily unreachable; the cache retries on the first request.
 	warmCtx, cancel := context.WithTimeout(context.Background(), warmupTimeout)
 	defer cancel()
-	if _, err := cache.Refresh(warmCtx, jwksURL); err != nil {
+	if _, err := jwkCache.Refresh(warmCtx, jwksURL); err != nil {
 		log.Warn("RequireAuth: JWKS prefetch failed; will retry on first request",
 			zap.String("url", jwksURL), zap.Error(err))
 	}
 
+	// fallbackMu guards fallbackKeySet, which holds the last successfully
+	// fetched JWKS keyset. It is used as a fallback when jwkCache.Get fails so
+	// that a transient Clerk outage does not reject every in-flight request.
+	var fallbackMu sync.RWMutex
+	var fallbackKeySet jwk.Set
+
+	// Populate the fallback from the warm-up fetch if it succeeded.
+	if ks, err := jwkCache.Get(context.Background(), jwksURL); err == nil {
+		fallbackKeySet = ks
+	}
+
 	return func(next http.Handler) http.Handler {
-		return requireAuthHandler(next, cache, jwksURL, log)
+		return requireAuthHandler(next, jwkCache, jwksURL, log, &fallbackMu, &fallbackKeySet)
 	}
 }
 
-func requireAuthHandler(next http.Handler, cache *jwk.Cache, jwksURL string, log *zap.Logger) http.HandlerFunc {
+func requireAuthHandler(
+	next http.Handler,
+	jwkCache *jwk.Cache,
+	jwksURL string,
+	log *zap.Logger,
+	fallbackMu *sync.RWMutex,
+	fallbackKeySet *jwk.Set,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {
@@ -180,14 +199,34 @@ func requireAuthHandler(next http.Handler, cache *jwk.Cache, jwksURL string, log
 		}
 		tokenBytes := []byte(strings.TrimPrefix(authHeader, "Bearer "))
 
-		keySet, err := cache.Get(r.Context(), jwksURL)
+		keySet, err := jwkCache.Get(r.Context(), jwksURL)
 		if err != nil {
-			log.Error("RequireAuth: failed to fetch JWKS",
-				zap.String("request_id", GetRequestID(r.Context())),
-				zap.Error(err),
-			)
-			WriteError(w, r, log, apperrors.Internal(err))
-			return
+			// Clerk is unreachable. Attempt to use the last known-good keyset
+			// so that requests with recently-issued, unexpired tokens continue
+			// to work during a transient outage. A stale keyset is better than
+			// a hard failure; key rotations only happen every ~24 hours.
+			fallbackMu.RLock()
+			fk := *fallbackKeySet
+			fallbackMu.RUnlock()
+			if fk != nil {
+				log.Warn("RequireAuth: JWKS fetch failed; using cached keyset fallback",
+					zap.String("request_id", GetRequestID(r.Context())),
+					zap.Error(err),
+				)
+				keySet = fk
+			} else {
+				log.Error("RequireAuth: JWKS fetch failed and no fallback available",
+					zap.String("request_id", GetRequestID(r.Context())),
+					zap.Error(err),
+				)
+				WriteError(w, r, log, apperrors.Internal(err))
+				return
+			}
+		} else {
+			// Successful fetch: update the fallback so it stays fresh.
+			fallbackMu.Lock()
+			*fallbackKeySet = keySet
+			fallbackMu.Unlock()
 		}
 
 		token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(keySet), jwt.WithValidate(true))
