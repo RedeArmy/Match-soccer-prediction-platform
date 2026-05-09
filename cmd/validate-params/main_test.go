@@ -260,7 +260,7 @@ func TestRun_MissingEnvVar_PropagatesError(t *testing.T) {
 // a valid ParamKey constant from domain/constants.go. This catches typos and
 // ensures the validator stays synchronized with the domain package.
 func TestAllParamsHaveConstant(t *testing.T) {
-	// Map of all valid ParamKey constants
+	// Map of all valid ParamKey constants (keep in sync with domain/constants.go)
 	validKeys := map[string]bool{
 		domain.ParamKeyScoringExactScore:        true,
 		domain.ParamKeyScoringCorrectOutcome:    true,
@@ -285,6 +285,17 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyDLQReplayDefaultLimit:    true,
 		domain.ParamKeyMessagingMaxRetries:      true,
 		domain.ParamKeyMessagingStreamMaxLen:    true,
+		// Added by migration 000055
+		domain.ParamKeyMessagingStreamWorkerCount:  true,
+		domain.ParamKeyMessagingStreamReadBlockSec: true,
+		domain.ParamKeyAuditMaxRetries:             true,
+		domain.ParamKeyAuditRetryDelayMs:           true,
+		domain.ParamKeyWorkerSnapshotConcurrency:   true,
+		domain.ParamKeyWorkerSnapshotRetryBaseMs:   true,
+		domain.ParamKeyWorkerSnapshotMaxAttempts:   true,
+		domain.ParamKeyWorkerDLQMonitorIntervalSec: true,
+		domain.ParamKeyWorkerPurgeIntervalHours:    true,
+		domain.ParamKeyAPIBodySizeLimitBytes:       true,
 	}
 
 	for _, spec := range allParams {
@@ -327,6 +338,9 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 		"dlq":        true,
 		"messaging":  true,
 		"auth":       true,
+		// Added by migration 000055
+		"worker": true,
+		"api":    true,
 	}
 
 	for _, spec := range allParams {
@@ -340,7 +354,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 23 // Update when adding new system parameters
+	const expectedCount = 33 // Update when adding new system parameters (was 23; +10 from migration 000055)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

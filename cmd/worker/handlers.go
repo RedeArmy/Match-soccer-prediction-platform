@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -18,7 +19,16 @@ import (
 // to zero to avoid sleeping.
 var snapshotRetryBase = 100 * time.Millisecond
 
-const maxSnapshotAttempts = 3
+// maxSnapshotAttempts is the maximum snapshot write attempts per quiniela per
+// match event. Declared as a var so tests can set it to 1 for deterministic
+// behaviour and so worker/main.go can override it from system_params at startup.
+var maxSnapshotAttempts = 3
+
+// snapshotConcurrency caps the number of quinielas snapshotted in parallel
+// within a single postScoringWork call. Raising the value reduces wall-clock
+// latency for large quiniela counts at the cost of more concurrent DB connections.
+// Declared as a var so tests can set it to 1 for deterministic ordering.
+var snapshotConcurrency = 16
 
 // decodePayload re-encodes env.Payload as JSON and then unmarshals it into T.
 //
@@ -131,9 +141,11 @@ func newMatchFinishedHandler(
 // All steps are best-effort. A failure to fetch quiniela IDs skips both
 // invalidation and snapshots but does not propagate: scoring has committed.
 //
-// When multiple matches finish simultaneously, concurrent calls to Snapshot
-// for the same quiniela produce redundant rows. This is safe: GetLatest always
-// returns the most recent snapshot.
+// Snapshot concurrency: quinielas are snapshotted in parallel with a bounded
+// pool of snapshotConcurrency goroutines. For 500 quinielas with concurrency 16
+// this reduces wall-clock time from O(n×snapshotDuration) to O(⌈n/16⌉×snapshotDuration).
+// Concurrent Snapshot calls for the same quiniela (from two overlapping match
+// events) produce redundant rows; GetLatest always returns the most recent one.
 func postScoringWork(
 	ctx context.Context,
 	matchID int,
@@ -158,6 +170,8 @@ func postScoringWork(
 		return
 	}
 
+	// Invalidation is batched across all quinielas in a single call per
+	// invalidator — no parallelism needed here.
 	for _, inv := range invalidators {
 		inv.InvalidateAfterScoring(ctx, quinielaIDs)
 	}
@@ -165,9 +179,20 @@ func postScoringWork(
 	if snapshotter == nil {
 		return
 	}
+
+	// Fan-out snapshot generation across quinielas with a bounded goroutine
+	// pool. All errors are logged inside retrySnapshot (best-effort semantics);
+	// the errgroup is used only for lifecycle management, not error propagation.
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(snapshotConcurrency)
 	for _, qid := range quinielaIDs {
-		retrySnapshot(ctx, matchID, qid, snapshotter, log)
+		qid := qid
+		g.Go(func() error {
+			retrySnapshot(gctx, matchID, qid, snapshotter, log)
+			return nil
+		})
 	}
+	_ = g.Wait()
 }
 
 // retrySnapshot attempts to take a leaderboard snapshot for quinielaID up to

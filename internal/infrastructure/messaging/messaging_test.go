@@ -467,6 +467,85 @@ func TestRedisBus_ProcessMessage_InvalidJSONPayload_DoesNotPanic(t *testing.T) {
 	}
 }
 
+// TestRedisBus_ConcurrentMessages_ProcessedConcurrently verifies that the
+// worker pool allows multiple messages to be processed at the same time.
+// The test uses a gate channel to hold handlers in-flight simultaneously
+// and confirms that at least N handlers run concurrently (where N > 1).
+func TestRedisBus_ConcurrentMessages_ProcessedConcurrently(t *testing.T) {
+	// Reduce pool size to 4 so we can saturate it with exactly 4 messages
+	// without relying on the default of 8. Restored after the test.
+	orig := messaging.StreamWorkerCount
+	messaging.StreamWorkerCount = 4
+	defer func() { messaging.StreamWorkerCount = orig }()
+
+	_, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	const numMessages = 4
+	gate := make(chan struct{}) // closed to release all in-flight handlers at once
+	done := make(chan struct{}, numMessages)
+
+	var (
+		mu          sync.Mutex
+		maxInFlight int
+		inFlight    int
+	)
+
+	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
+		mu.Lock()
+		inFlight++
+		if inFlight > maxInFlight {
+			maxInFlight = inFlight
+		}
+		mu.Unlock()
+
+		<-gate // hold until all messages have been dispatched to the pool
+
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+
+		done <- struct{}{}
+		return nil
+	})
+	time.Sleep(50 * time.Millisecond) // allow the consume goroutine to start
+
+	for range numMessages {
+		if err := bus.Publish(context.Background(), matchFinishedEnvelope()); err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+	}
+
+	// Wait until all handlers are blocked inside <-gate (maxInFlight reaches numMessages).
+	waitDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(waitDeadline) {
+		mu.Lock()
+		n := maxInFlight
+		mu.Unlock()
+		if n == numMessages {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	mu.Lock()
+	reached := maxInFlight
+	mu.Unlock()
+	if reached < numMessages {
+		t.Fatalf("expected %d concurrent handlers before gate release, got %d — pool may be sequential", numMessages, reached)
+	}
+
+	close(gate) // release all in-flight handlers
+
+	collectDeadline := time.After(2 * time.Second)
+	for range numMessages {
+		select {
+		case <-done:
+		case <-collectDeadline:
+			t.Fatal("not all handlers completed after gate was released")
+		}
+	}
+}
+
 func TestRedisBus_RetriesAndPushesToDLQ_OnHandlerError(t *testing.T) {
 	orig := messaging.RetryBackoff
 	messaging.RetryBackoff = []time.Duration{time.Millisecond, 2 * time.Millisecond}
