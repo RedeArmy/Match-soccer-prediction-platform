@@ -216,3 +216,89 @@ func (r *slowAuditLogRepo) Create(ctx context.Context, entry *domain.AuditLog) e
 	time.Sleep(r.delay)
 	return r.stubAuditLogRepo.Create(ctx, entry)
 }
+
+// ── Panic recovery tests ──────────────────────────────────────────────────────
+
+// panicAuditLogRepo panics on every Create call to exercise the recover() path.
+type panicAuditLogRepo struct{ stubAuditLogRepo }
+
+func (r *panicAuditLogRepo) Create(_ context.Context, _ *domain.AuditLog) error {
+	panic("simulated repository panic")
+}
+
+// TestAuditService_Log_PanicInRepo_DoesNotCrash verifies that a panicking
+// repository does not crash the process and that Drain still returns cleanly.
+// The deferred recover() inside the goroutine must fire before wg.Done.
+func TestAuditService_Log_PanicInRepo_DoesNotCrash(t *testing.T) {
+	repo := &panicAuditLogRepo{}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	// If recover() is missing or placed incorrectly, this call panics the test.
+	svc.Log(context.Background(), nil, nil, "test.panic", nil, nil, nil)
+
+	// Drain must return even though the goroutine panicked; wg.Done is called
+	// by the deferred recover path before re-panicking would occur.
+	done := make(chan struct{})
+	go func() {
+		svc.Drain()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// pass
+	case <-time.After(2 * time.Second):
+		t.Fatal("Drain blocked after goroutine panic — wg.Done was not called")
+	}
+}
+
+// ── InFlight tracking tests ───────────────────────────────────────────────────
+
+// blockingAuditLogRepo blocks Create until the release channel is closed,
+// allowing the test to observe InFlight() while a goroutine is in flight.
+type blockingAuditLogRepo struct {
+	stubAuditLogRepo
+	release chan struct{}
+}
+
+func (r *blockingAuditLogRepo) Create(_ context.Context, _ *domain.AuditLog) error {
+	<-r.release
+	return nil
+}
+
+// TestAuditService_InFlight_TracksGoroutineCount verifies that InFlight()
+// increments while audit goroutines are executing and returns to zero after
+// Drain completes.
+func TestAuditService_InFlight_TracksGoroutineCount(t *testing.T) {
+	release := make(chan struct{})
+	repo := &blockingAuditLogRepo{release: release}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	if got := svc.InFlight(); got != 0 {
+		t.Fatalf("expected InFlight() == 0 before any Log calls, got %d", got)
+	}
+
+	const numLogs = 3
+	for i := 0; i < numLogs; i++ {
+		svc.Log(context.Background(), nil, nil, "test.inflight", nil, nil, nil)
+	}
+
+	// Poll until all goroutines are blocked inside Create.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if svc.InFlight() == numLogs {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := svc.InFlight(); got != numLogs {
+		t.Errorf("expected InFlight() == %d while goroutines are blocked, got %d", numLogs, got)
+	}
+
+	// Unblock all goroutines and wait for them to finish.
+	close(release)
+	svc.Drain()
+
+	if got := svc.InFlight(); got != 0 {
+		t.Errorf("expected InFlight() == 0 after Drain, got %d", got)
+	}
+}

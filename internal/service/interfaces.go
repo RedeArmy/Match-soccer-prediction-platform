@@ -457,6 +457,11 @@ type AuditService interface {
 	// called during graceful shutdown before closing the database connection
 	// pool to prevent losing audit entries that were queued but not yet persisted.
 	Drain()
+	// InFlight returns the number of audit goroutines currently executing.
+	// A sustained non-zero value under low write volume indicates a slow or
+	// failing database; expose this in health checks or metrics to detect
+	// goroutine pile-up before it exhausts memory.
+	InFlight() int64
 }
 
 // DLQStat summarises the dead-letter queue for one event type.

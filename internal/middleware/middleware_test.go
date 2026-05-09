@@ -24,7 +24,19 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/auth"
 )
+
+// stubIdentityProvider is a test double for auth.IdentityProvider. It returns
+// a fixed subject or error, making RequireAuth tests provider-agnostic.
+type stubIdentityProvider struct {
+	subject string
+	err     error
+}
+
+func (p *stubIdentityProvider) ValidateToken(_ context.Context, _ string) (string, error) {
+	return p.subject, p.err
+}
 
 // stubUserRepo implements repository.UserRepository for middleware tests.
 type stubUserRepo struct {
@@ -303,36 +315,11 @@ func TestWriteError_SetsJSONContentType(t *testing.T) {
 
 // ── RequireAuth ───────────────────────────────────────────────────────────────
 
-// TestRequireAuth_EmptyJWKSURL_Returns401 verifies the fail-closed behaviour:
-// when WCQ_CLERK_JWKSURL is not configured, every request is rejected with 401
-// rather than bypassing authentication entirely.
-func TestRequireAuth_EmptyJWKSURL_Returns401(t *testing.T) {
-	log := zaptest.NewLogger(t)
-	reached := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		reached = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	handler := middleware.RequireAuth("", middleware.DefaultJWKSWarmupTimeout, log)(next)
-	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if reached {
-		t.Error("expected next handler NOT to be called when JWKS URL is empty")
-	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
-	}
-}
-
+// TestRequireAuth_MissingAuthHeader_Returns401 verifies the middleware rejects
+// requests that carry no Authorization header before even calling the provider.
 func TestRequireAuth_MissingAuthHeader_Returns401(t *testing.T) {
-	log := zap.NewNop()
-	handler := middleware.RequireAuth("https://example.clerk.accounts.dev/.well-known/jwks.json", middleware.DefaultJWKSWarmupTimeout, log)(
-		http.HandlerFunc(okHandler),
-	)
+	provider := &stubIdentityProvider{subject: "user_ok"}
+	handler := middleware.RequireAuth(provider, zap.NewNop())(http.HandlerFunc(okHandler))
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
 	rec := httptest.NewRecorder()
 
@@ -343,11 +330,11 @@ func TestRequireAuth_MissingAuthHeader_Returns401(t *testing.T) {
 	}
 }
 
+// TestRequireAuth_NonBearerHeader_Returns401 verifies that a non-Bearer scheme
+// (e.g. Basic) is rejected without calling the provider.
 func TestRequireAuth_NonBearerHeader_Returns401(t *testing.T) {
-	log := zap.NewNop()
-	handler := middleware.RequireAuth("https://example.clerk.accounts.dev/.well-known/jwks.json", middleware.DefaultJWKSWarmupTimeout, log)(
-		http.HandlerFunc(okHandler),
-	)
+	provider := &stubIdentityProvider{subject: "user_ok"}
+	handler := middleware.RequireAuth(provider, zap.NewNop())(http.HandlerFunc(okHandler))
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
 	req.Header.Set(headerAuth, "Basic dXNlcjpwYXNz")
 	rec := httptest.NewRecorder()
@@ -359,18 +346,14 @@ func TestRequireAuth_NonBearerHeader_Returns401(t *testing.T) {
 	}
 }
 
-// TestRequireAuth_JWKSFetchError_Returns500 verifies that a JWKS endpoint that
-// returns an error causes RequireAuth to respond 500.
-func TestRequireAuth_JWKSFetchError_Returns500(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	log := zap.NewNop()
-	handler := middleware.RequireAuth(srv.URL, middleware.DefaultJWKSWarmupTimeout, log)(http.HandlerFunc(okHandler))
+// TestRequireAuth_ProviderUnavailable_Returns500 verifies that when the
+// identity provider is temporarily unreachable the middleware responds 500,
+// not 401, so monitoring can distinguish provider outages from bad credentials.
+func TestRequireAuth_ProviderUnavailable_Returns500(t *testing.T) {
+	provider := &stubIdentityProvider{err: auth.ErrProviderUnavailable}
+	handler := middleware.RequireAuth(provider, zap.NewNop())(http.HandlerFunc(okHandler))
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
-	req.Header.Set(headerAuth, "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyXzEifQ.sig")
+	req.Header.Set(headerAuth, "Bearer some.token.value")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -380,19 +363,11 @@ func TestRequireAuth_JWKSFetchError_Returns500(t *testing.T) {
 	}
 }
 
-// TestRequireAuth_InvalidToken_Returns401 verifies that a valid JWKS endpoint
-// paired with a malformed/unsigned JWT causes RequireAuth to respond 401.
+// TestRequireAuth_InvalidToken_Returns401 verifies that an invalid or expired
+// token causes the middleware to respond 401.
 func TestRequireAuth_InvalidToken_Returns401(t *testing.T) {
-	// Serve a minimal valid JWKS (empty key set). The token will fail to parse
-	// because no matching key exists - this exercises the jwt.Parse error branch.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"keys":[]}`))
-	}))
-	defer srv.Close()
-
-	log := zap.NewNop()
-	handler := middleware.RequireAuth(srv.URL, middleware.DefaultJWKSWarmupTimeout, log)(http.HandlerFunc(okHandler))
+	provider := &stubIdentityProvider{err: auth.ErrInvalidToken}
+	handler := middleware.RequireAuth(provider, zap.NewNop())(http.HandlerFunc(okHandler))
 	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
 	req.Header.Set(headerAuth, "Bearer not.a.jwt")
 	rec := httptest.NewRecorder()
@@ -401,6 +376,31 @@ func TestRequireAuth_InvalidToken_Returns401(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf(fmtStatus, http.StatusUnauthorized, rec.Code)
+	}
+}
+
+// TestRequireAuth_Success_StoresSubjectInContext verifies the happy path: the
+// provider's subject is stored in context and the next handler is invoked.
+func TestRequireAuth_Success_StoresSubjectInContext(t *testing.T) {
+	const wantSubject = "user_clerk_123"
+	var gotSubject string
+
+	provider := &stubIdentityProvider{subject: wantSubject}
+	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		gotSubject, _ = middleware.UserIDFromContext(r.Context())
+	})
+	handler := middleware.RequireAuth(provider, zap.NewNop())(next)
+	req := requestWithID(httptest.NewRequest(http.MethodGet, pathMatches, nil))
+	req.Header.Set(headerAuth, "Bearer valid.token.here")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtStatus, http.StatusOK, rec.Code)
+	}
+	if gotSubject != wantSubject {
+		t.Errorf("expected subject %q in context, got %q", wantSubject, gotSubject)
 	}
 }
 
