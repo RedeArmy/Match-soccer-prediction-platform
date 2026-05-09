@@ -165,44 +165,57 @@ type MyStatsGetter interface {
 	GetMyStats(ctx context.Context, userID int) (*domain.UserStats, error)
 }
 
-// TiebreakerService manages the global numeric tiebreaker that resolves
-// ranking ties across all groups when all statistical rules (correct count,
-// total count, exact count) still leave two or more members at the same rank.
+// TiebreakerService manages tiebreaker question configurations and member
+// predictions. A tiebreaker resolves ranking ties when all statistical
+// rules still leave two or more members at the same rank.
 //
-// The lifecycle is:
-//  1. System administrator calls SetQuestion to define the global tiebreaker
-//     prompt (e.g. "total goals in the Final"). Until set, no member may
-//     submit a prediction.
-//  2. Members call Submit (or re-Submit to update) with their numeric estimate.
-//     Predictions are global - one per user, applied to every group they
-//     belong to.
-//  3. After the tournament, the administrator calls ConfirmResult with the
-//     actual value. After confirmation, Submit returns Conflict.
+// Lifecycle:
+//  1. An administrator calls SetQuestion (global), SetQuestionForPhase, or
+//     SetQuestionForQuiniela to define the active question for the relevant
+//     scope. Until set, no member may submit a prediction.
+//  2. Members call Submit with their numeric estimate.
+//     Submit resolves the active config for the caller's group: it checks for
+//     a group-specific config first, then falls back to the global config.
+//  3. After the tournament, the administrator calls ConfirmResult (global) or
+//     ConfirmResultByID (any config). After confirmation, Submit returns Conflict.
 //
-// The admin gate for SetQuestion and ConfirmResult is enforced at the HTTP
-// layer via RequireRole middleware, not inside this service.
+// Admin gates for write operations are enforced at the HTTP layer via
+// RequireRole middleware, not inside this service.
 type TiebreakerService interface {
 	// SetQuestion stores or replaces the global tiebreaker prompt.
 	// Returns Validation when question is empty.
 	SetQuestion(ctx context.Context, question string) (*domain.TiebreakerConfig, error)
 
-	// Submit upserts the caller's global numeric prediction.
-	// quinielaID is used only to verify the caller is an active member of that group.
+	// SetQuestionForPhase stores or replaces the phase-scoped question for the
+	// given tournament phase. Returns Validation when question is empty or phase
+	// is not a recognised FIFA 2026 tournament phase.
+	SetQuestionForPhase(ctx context.Context, phase domain.MatchPhase, question string) (*domain.TiebreakerConfig, error)
+
+	// SetQuestionForQuiniela stores or replaces a group-specific question.
+	// Returns Validation when question is empty.
+	SetQuestionForQuiniela(ctx context.Context, quinielaID int, question string) (*domain.TiebreakerConfig, error)
+
+	// Submit upserts the caller's prediction for the active config of quinielaID.
+	// The active config is resolved as: group-specific config → global fallback.
 	// Returns Conflict when the result has already been confirmed.
 	// Returns Validation when no question has been configured yet.
 	// Returns Forbidden when the caller is not an active member of quinielaID.
 	Submit(ctx context.Context, quinielaID, callerID, prediction int) (*domain.Tiebreaker, error)
 
-	// GetMine returns the global tiebreaker question and the caller's own
-	// numeric prediction. Entry is nil when the caller has not submitted yet.
-	// quinielaID is used only to verify active membership.
+	// GetMine returns the active question and the caller's own prediction for
+	// quinielaID. The active config is resolved the same way as Submit.
+	// Entry is nil when the caller has not submitted yet.
 	// Returns Forbidden when the caller is not an active member of quinielaID.
 	GetMine(ctx context.Context, quinielaID, callerID int) (*domain.TiebreakerView, error)
 
-	// ConfirmResult records the official numeric result globally, activating
-	// tiebreaker ranking for all groups. After confirmation, Submit returns
-	// Conflict. Returns Validation when no question has been configured yet.
+	// ConfirmResult records the official numeric result for the global config.
+	// After confirmation, Submit returns Conflict for the global scope.
+	// Returns Validation when no global question has been configured yet.
 	ConfirmResult(ctx context.Context, result int) error
+
+	// ConfirmResultByID records the official numeric result for any config.
+	// Returns NotFound when configID does not exist.
+	ConfirmResultByID(ctx context.Context, configID, result int) error
 }
 
 // TournamentService manages real-time group standings and bracket slot

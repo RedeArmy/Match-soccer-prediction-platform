@@ -20,14 +20,24 @@ const (
 
 // stubTiebreakerConfigRepo implements repository.TiebreakerConfigRepository.
 type stubTiebreakerConfigRepo struct {
-	cfg       *domain.TiebreakerConfig
-	upsertErr error
-	setResErr error
-	getErr    error
+	cfg         *domain.TiebreakerConfig
+	quinielaCfg *domain.TiebreakerConfig // non-nil → GetByQuiniela returns this
+	upsertErr   error
+	setResErr   error
+	getErr      error
 }
 
 func (r *stubTiebreakerConfigRepo) Get(_ context.Context) (*domain.TiebreakerConfig, error) {
 	return r.cfg, r.getErr
+}
+func (r *stubTiebreakerConfigRepo) GetByPhase(_ context.Context, _ domain.MatchPhase) (*domain.TiebreakerConfig, error) {
+	return nil, r.getErr
+}
+func (r *stubTiebreakerConfigRepo) GetByQuiniela(_ context.Context, _ int) (*domain.TiebreakerConfig, error) {
+	if r.quinielaCfg != nil {
+		return r.quinielaCfg, nil
+	}
+	return nil, r.getErr // nil = no group-specific config; service falls back to global
 }
 func (r *stubTiebreakerConfigRepo) Upsert(_ context.Context, question string) (*domain.TiebreakerConfig, error) {
 	if r.upsertErr != nil {
@@ -36,7 +46,22 @@ func (r *stubTiebreakerConfigRepo) Upsert(_ context.Context, question string) (*
 	cfg := &domain.TiebreakerConfig{ID: 1, Question: question}
 	return cfg, nil
 }
+func (r *stubTiebreakerConfigRepo) UpsertForPhase(_ context.Context, phase domain.MatchPhase, question string) (*domain.TiebreakerConfig, error) {
+	if r.upsertErr != nil {
+		return nil, r.upsertErr
+	}
+	return &domain.TiebreakerConfig{ID: 2, Question: question, Phase: &phase}, nil
+}
+func (r *stubTiebreakerConfigRepo) UpsertForQuiniela(_ context.Context, quinielaID int, question string) (*domain.TiebreakerConfig, error) {
+	if r.upsertErr != nil {
+		return nil, r.upsertErr
+	}
+	return &domain.TiebreakerConfig{ID: 3, Question: question, QuinielaID: &quinielaID}, nil
+}
 func (r *stubTiebreakerConfigRepo) SetResult(_ context.Context, _ int) error {
+	return r.setResErr
+}
+func (r *stubTiebreakerConfigRepo) SetResultByID(_ context.Context, _, _ int) error {
 	return r.setResErr
 }
 
@@ -55,13 +80,16 @@ func (r *stubTiebreakerRepoSvc) Create(_ context.Context, tb *domain.Tiebreaker)
 	tb.ID = 99
 	return nil
 }
-func (r *stubTiebreakerRepoSvc) GetByUser(_ context.Context, _ int) (*domain.Tiebreaker, error) {
+func (r *stubTiebreakerRepoSvc) GetByUser(_ context.Context, _, _ int) (*domain.Tiebreaker, error) {
 	return r.existing, r.err
 }
 func (r *stubTiebreakerRepoSvc) Update(_ context.Context, _ *domain.Tiebreaker) error {
 	return r.updateErr
 }
 func (r *stubTiebreakerRepoSvc) ListByUserIDs(_ context.Context, _ []int) ([]*domain.Tiebreaker, error) {
+	return nil, r.err
+}
+func (r *stubTiebreakerRepoSvc) ListByUserIDsForConfig(_ context.Context, _ []int, _ int) ([]*domain.Tiebreaker, error) {
 	return nil, r.err
 }
 func (r *stubTiebreakerRepoSvc) ListAll(_ context.Context, _ repository.Pagination) ([]*domain.Tiebreaker, error) {
@@ -253,6 +281,192 @@ func TestTiebreakerService_ConfirmResult_NoQuestion_ReturnsValidation(t *testing
 	err := svc.ConfirmResult(context.Background(), 10)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf(tiebreakerValidationFmt, err)
+	}
+}
+
+// ── SetQuestionForPhase ───────────────────────────────────────────────────────
+
+func TestTiebreakerService_SetQuestionForPhase_StoresQuestion(t *testing.T) {
+	svc := NewTiebreakerService(
+		&stubTiebreakerConfigRepo{},
+		&stubMemberRepo{},
+		&stubTiebreakerRepoSvc{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+
+	got, err := svc.SetQuestionForPhase(context.Background(), domain.PhaseGroupStage, "Goals in group stage?")
+	if err != nil {
+		t.Fatalf(tiebreakerUnexpectedErr, err)
+	}
+	if got == nil || got.Question != "Goals in group stage?" {
+		t.Errorf("expected question to be set, got %v", got)
+	}
+}
+
+func TestTiebreakerService_SetQuestionForPhase_EmptyQuestion_ReturnsValidation(t *testing.T) {
+	svc := newTiebreakerSvc(nil, nil, &stubTiebreakerRepoSvc{})
+	_, err := svc.SetQuestionForPhase(context.Background(), domain.PhaseGroupStage, "")
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf(tiebreakerValidationFmt, err)
+	}
+}
+
+func TestTiebreakerService_SetQuestionForPhase_InvalidPhase_ReturnsValidation(t *testing.T) {
+	svc := newTiebreakerSvc(nil, nil, &stubTiebreakerRepoSvc{})
+	_, err := svc.SetQuestionForPhase(context.Background(), "not_a_phase", "Some question?")
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf(tiebreakerValidationFmt, err)
+	}
+}
+
+func TestTiebreakerService_SetQuestionForPhase_RepoError_Propagates(t *testing.T) {
+	repoErr := errors.New("db error")
+	svc := NewTiebreakerService(
+		&stubTiebreakerConfigRepo{upsertErr: repoErr},
+		&stubMemberRepo{},
+		&stubTiebreakerRepoSvc{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+	_, err := svc.SetQuestionForPhase(context.Background(), domain.PhaseGroupStage, "Some question?")
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+}
+
+// ── SetQuestionForQuiniela ────────────────────────────────────────────────────
+
+func TestTiebreakerService_SetQuestionForQuiniela_StoresQuestion(t *testing.T) {
+	svc := NewTiebreakerService(
+		&stubTiebreakerConfigRepo{},
+		&stubMemberRepo{},
+		&stubTiebreakerRepoSvc{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+
+	got, err := svc.SetQuestionForQuiniela(context.Background(), 1, "Group-specific question?")
+	if err != nil {
+		t.Fatalf(tiebreakerUnexpectedErr, err)
+	}
+	if got == nil || got.Question != "Group-specific question?" {
+		t.Errorf("expected question to be set, got %v", got)
+	}
+}
+
+func TestTiebreakerService_SetQuestionForQuiniela_EmptyQuestion_ReturnsValidation(t *testing.T) {
+	svc := newTiebreakerSvc(nil, nil, &stubTiebreakerRepoSvc{})
+	_, err := svc.SetQuestionForQuiniela(context.Background(), 1, "")
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf(tiebreakerValidationFmt, err)
+	}
+}
+
+func TestTiebreakerService_SetQuestionForQuiniela_RepoError_Propagates(t *testing.T) {
+	repoErr := errors.New("db error")
+	svc := NewTiebreakerService(
+		&stubTiebreakerConfigRepo{upsertErr: repoErr},
+		&stubMemberRepo{},
+		&stubTiebreakerRepoSvc{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+	_, err := svc.SetQuestionForQuiniela(context.Background(), 1, "Some question?")
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+}
+
+// ── ConfirmResultByID ─────────────────────────────────────────────────────────
+
+func TestTiebreakerService_ConfirmResultByID_Succeeds(t *testing.T) {
+	svc := newTiebreakerSvc(nil, nil, &stubTiebreakerRepoSvc{})
+	if err := svc.ConfirmResultByID(context.Background(), 2, 42); err != nil {
+		t.Fatalf(tiebreakerUnexpectedErr, err)
+	}
+}
+
+func TestTiebreakerService_ConfirmResultByID_RepoError_Propagates(t *testing.T) {
+	repoErr := errors.New("db error")
+	svc := NewTiebreakerService(
+		&stubTiebreakerConfigRepo{setResErr: repoErr},
+		&stubMemberRepo{},
+		&stubTiebreakerRepoSvc{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+	if err := svc.ConfirmResultByID(context.Background(), 2, 42); err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+}
+
+// ── resolveConfigForGroup ─────────────────────────────────────────────────────
+
+func TestTiebreakerService_Submit_GroupConfigTakesPrecedence(t *testing.T) {
+	groupCfg := &domain.TiebreakerConfig{ID: 99, Question: "group question"}
+	svc := NewTiebreakerService(
+		&stubTiebreakerConfigRepo{quinielaCfg: groupCfg},
+		&stubMemberRepo{membership: activeM(42)},
+		&stubTiebreakerRepoSvc{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+
+	tb, err := svc.Submit(context.Background(), 1, 42, 5)
+	if err != nil {
+		t.Fatalf(tiebreakerUnexpectedErr, err)
+	}
+	if tb.TiebreakerConfigID != groupCfg.ID {
+		t.Errorf("expected config ID %d (group), got %d", groupCfg.ID, tb.TiebreakerConfigID)
+	}
+}
+
+func TestTiebreakerService_Submit_ResolveConfigError_Propagates(t *testing.T) {
+	repoErr := errors.New("db error")
+	svc := NewTiebreakerService(
+		&stubTiebreakerConfigRepo{getErr: repoErr},
+		&stubMemberRepo{membership: activeM(42)},
+		&stubTiebreakerRepoSvc{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+
+	_, err := svc.Submit(context.Background(), 1, 42, 5)
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+}
+
+func TestTiebreakerService_GetMine_GroupConfigTakesPrecedence(t *testing.T) {
+	groupCfg := &domain.TiebreakerConfig{ID: 99, Question: "group question"}
+	tb := &domain.Tiebreaker{ID: 1, UserID: 42, TiebreakerConfigID: 99, Prediction: 3}
+	svc := NewTiebreakerService(
+		&stubTiebreakerConfigRepo{quinielaCfg: groupCfg},
+		&stubMemberRepo{membership: activeM(42)},
+		&stubTiebreakerRepoSvc{existing: tb},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+
+	view, err := svc.GetMine(context.Background(), 1, 42)
+	if err != nil {
+		t.Fatalf(tiebreakerUnexpectedErr, err)
+	}
+	if view.Question == nil || *view.Question != "group question" {
+		t.Errorf("expected group question, got %v", view.Question)
+	}
+}
+
+func TestTiebreakerService_Submit_NewEntry_ResultConfirmed_ReturnsConflict(t *testing.T) {
+	result := 10
+	cfg := &domain.TiebreakerConfig{ID: 1, Question: "Total goals", Result: &result}
+	// no existing tiebreaker — first submission
+	svc := newTiebreakerSvc(cfg, activeM(42), &stubTiebreakerRepoSvc{existing: nil})
+
+	_, err := svc.Submit(context.Background(), 1, 42, 9)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict when result already confirmed and no existing entry, got %v", err)
 	}
 }
 

@@ -239,6 +239,19 @@ const (
 	AuditActionLeaderboardRefreshed = "admin_group.leaderboard_refreshed"
 )
 
+// Snapshot schema versions identify the JSONB encoding format used by
+// LeaderboardSnapshot.Entries. The repository branches on this version when
+// deserialising historical snapshots, allowing the struct layout to evolve
+// without breaking reads of older rows.
+const (
+	// SnapshotSchemaV1 is the original format: Go's default JSON encoding
+	// (PascalCase field names, no explicit struct tags).
+	SnapshotSchemaV1 = 1
+	// SnapshotCurrentSchema is the version written by new snapshots.
+	// Advance this constant when the entry struct or encoding changes.
+	SnapshotCurrentSchema = SnapshotSchemaV1
+)
+
 // AllMatchPhases is the ordered list of every tournament phase defined in the
 // MatchPhase type. It is the single source of truth for any code that must
 // iterate over all phases - for example, cache invalidation, report generation,

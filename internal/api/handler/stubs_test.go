@@ -190,6 +190,12 @@ type stubTiebreakerSvc struct {
 func (s *stubTiebreakerSvc) SetQuestion(_ context.Context, _ string) (*domain.TiebreakerConfig, error) {
 	return s.config, s.err
 }
+func (s *stubTiebreakerSvc) SetQuestionForPhase(_ context.Context, _ domain.MatchPhase, _ string) (*domain.TiebreakerConfig, error) {
+	return s.config, s.err
+}
+func (s *stubTiebreakerSvc) SetQuestionForQuiniela(_ context.Context, _ int, _ string) (*domain.TiebreakerConfig, error) {
+	return s.config, s.err
+}
 func (s *stubTiebreakerSvc) Submit(_ context.Context, _, _, _ int) (*domain.Tiebreaker, error) {
 	return s.tb, s.err
 }
@@ -197,6 +203,9 @@ func (s *stubTiebreakerSvc) GetMine(_ context.Context, _, _ int) (*domain.Tiebre
 	return s.view, s.err
 }
 func (s *stubTiebreakerSvc) ConfirmResult(_ context.Context, _ int) error {
+	return s.err
+}
+func (s *stubTiebreakerSvc) ConfirmResultByID(_ context.Context, _, _ int) error {
 	return s.err
 }
 
