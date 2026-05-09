@@ -448,7 +448,7 @@ func (s *Server) buildHandlers(
 	groupAuthz := service.NewGroupAuthzService(repos.member)
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, codegen.Crypto{})
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
-	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, groupAuthz, params, auditSvc, paymentSvc, clock.Real{}, s.log)
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, clock.Real{}, s.log)
 
 	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, repos.member, tiebreakerRepo, tiebreakerConfigRepo, s.log)
 	if s.cache != nil {
