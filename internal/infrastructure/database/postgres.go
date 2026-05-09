@@ -19,6 +19,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// poolConnectBackoff is the sequence of wait durations between connection
+// attempts in NewPool. A new environment (fresh pod, cold CI runner) may
+// require a few seconds for PostgreSQL to finish its own startup sequence.
+// The total maximum wait is 1 + 2 + 4 + 8 = 15 seconds before the fourth
+// attempt, after which the fifth attempt either succeeds or returns an error.
+var poolConnectBackoff = []time.Duration{
+	1 * time.Second,
+	2 * time.Second,
+	4 * time.Second,
+	8 * time.Second,
+}
+
 // Config holds the parameters required to create and tune the connection
 // pool.
 //
@@ -71,15 +83,33 @@ func NewPool(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 	// The cache is per-connection; pgxpool handles the lifecycle transparently.
 	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
 
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return nil, fmt.Errorf("create pool: %w", err)
+	// Attempt to create the pool and ping the database with exponential
+	// backoff. Fresh environments (new pods, CI containers starting postgres
+	// as a sidecar) may need a few seconds before accepting connections.
+	// The overall budget before returning an error is 1+2+4+8 = 15 seconds
+	// of sleep plus the time for the five individual dial attempts.
+	maxAttempts := len(poolConnectBackoff) + 1
+	var (
+		pool    *pgxpool.Pool
+		lastErr error
+	)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		pool, lastErr = pgxpool.NewWithConfig(ctx, poolCfg)
+		if lastErr == nil {
+			if lastErr = pool.Ping(ctx); lastErr == nil {
+				return pool, nil
+			}
+			pool.Close()
+		}
+		if attempt == maxAttempts {
+			break
+		}
+		wait := poolConnectBackoff[attempt-1]
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("connect database: context cancelled during retry: %w", ctx.Err())
+		case <-time.After(wait):
+		}
 	}
-
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("ping database: %w", err)
-	}
-
-	return pool, nil
+	return nil, fmt.Errorf("connect database: %w (after %d attempts)", lastErr, maxAttempts)
 }
