@@ -10,6 +10,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const errMsgEmptyTiebreakerQuestion = "tiebreaker question cannot be empty"
+
 // tiebreakerService is the concrete implementation of TiebreakerService.
 type tiebreakerService struct {
 	configRepo     repository.TiebreakerConfigRepository
@@ -54,7 +56,7 @@ func (s *tiebreakerService) resolveConfigForGroup(ctx context.Context, quinielaI
 // Returns Validation when question is empty.
 func (s *tiebreakerService) SetQuestion(ctx context.Context, question string) (*domain.TiebreakerConfig, error) {
 	if question == "" {
-		return nil, apperrors.Validation("tiebreaker question cannot be empty")
+		return nil, apperrors.Validation(errMsgEmptyTiebreakerQuestion)
 	}
 	cfg, err := s.configRepo.Upsert(ctx, question)
 	if err != nil {
@@ -71,7 +73,7 @@ func (s *tiebreakerService) SetQuestion(ctx context.Context, question string) (*
 // SetQuestionForPhase stores or replaces the phase-scoped question.
 func (s *tiebreakerService) SetQuestionForPhase(ctx context.Context, phase domain.MatchPhase, question string) (*domain.TiebreakerConfig, error) {
 	if question == "" {
-		return nil, apperrors.Validation("tiebreaker question cannot be empty")
+		return nil, apperrors.Validation(errMsgEmptyTiebreakerQuestion)
 	}
 	if err := domain.ValidateMatchPhase(phase); err != nil {
 		return nil, err
@@ -92,7 +94,7 @@ func (s *tiebreakerService) SetQuestionForPhase(ctx context.Context, phase domai
 // SetQuestionForQuiniela stores or replaces the group-specific question.
 func (s *tiebreakerService) SetQuestionForQuiniela(ctx context.Context, quinielaID int, question string) (*domain.TiebreakerConfig, error) {
 	if question == "" {
-		return nil, apperrors.Validation("tiebreaker question cannot be empty")
+		return nil, apperrors.Validation(errMsgEmptyTiebreakerQuestion)
 	}
 	cfg, err := s.configRepo.UpsertForQuiniela(ctx, quinielaID, question)
 	if err != nil {
