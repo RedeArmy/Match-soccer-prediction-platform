@@ -268,3 +268,213 @@ func TestTiebreakerRepository_ListAll_ZeroLimitReturnsError(t *testing.T) {
 		t.Errorf("expected validation error, got %v", err)
 	}
 }
+
+func TestTiebreakerRepository_ListAll_WithOffset(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
+	repo := repository.NewPostgresTiebreakerRepository(testDB)
+
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 3}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 5}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	results, err := repo.ListAll(context.Background(), repository.Pagination{Limit: 10, Offset: 1})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 tiebreaker with offset=1 from 2 total, got %d", len(results))
+	}
+}
+
+func TestTiebreakerRepository_ListByUserIDsForConfig_ReturnsFiltered(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	cfg := seedTiebreakerConfig(t)
+	repo := repository.NewPostgresTiebreakerRepository(testDB)
+
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u1.ID, TiebreakerConfigID: cfg.ID, Prediction: 7}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.Tiebreaker{UserID: u2.ID, TiebreakerConfigID: cfg.ID, Prediction: 9}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	results, err := repo.ListByUserIDsForConfig(context.Background(), []int{u1.ID}, cfg.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 || results[0].UserID != u1.ID {
+		t.Errorf("expected 1 tiebreaker for u1 only, got %v", results)
+	}
+}
+
+// ── TiebreakerConfigRepository — new multi-config API ────────────────────────
+
+func TestTiebreakerConfigRepository_GetByPhase_ReturnsNilWhenEmpty(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	cfg, err := repo.GetByPhase(context.Background(), domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg != nil {
+		t.Errorf("expected nil before any phase question is set, got %+v", cfg)
+	}
+}
+
+func TestTiebreakerConfigRepository_UpsertForPhase_CreatesAndUpdates(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	cfg, err := repo.UpsertForPhase(context.Background(), domain.PhaseGroupStage, "Goals in group stage?")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config, got nil")
+	}
+	if cfg.Question != "Goals in group stage?" {
+		t.Errorf("question: want 'Goals in group stage?', got %q", cfg.Question)
+	}
+	if cfg.Phase == nil || *cfg.Phase != domain.PhaseGroupStage {
+		t.Errorf("phase: want %q, got %v", domain.PhaseGroupStage, cfg.Phase)
+	}
+	if cfg.QuinielaID != nil {
+		t.Errorf("quiniela_id: want nil, got %v", cfg.QuinielaID)
+	}
+
+	cfg2, err := repo.UpsertForPhase(context.Background(), domain.PhaseGroupStage, "Updated question?")
+	if err != nil {
+		t.Fatalf("upsert update: %v", err)
+	}
+	if cfg2.Question != "Updated question?" {
+		t.Errorf("updated question: got %q", cfg2.Question)
+	}
+}
+
+func TestTiebreakerConfigRepository_GetByPhase_ReturnsAfterUpsert(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	if _, err := repo.UpsertForPhase(context.Background(), domain.PhaseRoundOf16, "Round of 16 goals?"); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	cfg, err := repo.GetByPhase(context.Background(), domain.PhaseRoundOf16)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config after upsert, got nil")
+	}
+	if cfg.Phase == nil || *cfg.Phase != domain.PhaseRoundOf16 {
+		t.Errorf("phase: want %q, got %v", domain.PhaseRoundOf16, cfg.Phase)
+	}
+}
+
+func TestTiebreakerConfigRepository_GetByQuiniela_ReturnsNilWhenEmpty(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	cfg, err := repo.GetByQuiniela(context.Background(), 9999)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg != nil {
+		t.Errorf("expected nil before any group question is set, got %+v", cfg)
+	}
+}
+
+func TestTiebreakerConfigRepository_UpsertForQuiniela_CreatesAndUpdates(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	cfg, err := repo.UpsertForQuiniela(context.Background(), q.ID, "Group-specific question?")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config, got nil")
+	}
+	if cfg.Question != "Group-specific question?" {
+		t.Errorf("question: want 'Group-specific question?', got %q", cfg.Question)
+	}
+	if cfg.QuinielaID == nil || *cfg.QuinielaID != q.ID {
+		t.Errorf("quiniela_id: want %d, got %v", q.ID, cfg.QuinielaID)
+	}
+	if cfg.Phase != nil {
+		t.Errorf("phase: want nil, got %v", cfg.Phase)
+	}
+
+	cfg2, err := repo.UpsertForQuiniela(context.Background(), q.ID, "Updated group question?")
+	if err != nil {
+		t.Fatalf("upsert update: %v", err)
+	}
+	if cfg2.Question != "Updated group question?" {
+		t.Errorf("updated question: got %q", cfg2.Question)
+	}
+}
+
+func TestTiebreakerConfigRepository_GetByQuiniela_ReturnsAfterUpsert(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	if _, err := repo.UpsertForQuiniela(context.Background(), q.ID, "My group question?"); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	cfg, err := repo.GetByQuiniela(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config after upsert, got nil")
+	}
+	if cfg.QuinielaID == nil || *cfg.QuinielaID != q.ID {
+		t.Errorf("quiniela_id: want %d, got %v", q.ID, cfg.QuinielaID)
+	}
+}
+
+func TestTiebreakerConfigRepository_SetResultByID_SetsResult(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	cfg, err := repo.Upsert(context.Background(), repoTotalGoals)
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	if err := repo.SetResultByID(context.Background(), cfg.ID, 77); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.Get(context.Background())
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Result == nil || *got.Result != 77 {
+		t.Errorf("result: want 77, got %v", got.Result)
+	}
+}
+
+func TestTiebreakerConfigRepository_SetResultByID_NotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
+
+	err := repo.SetResultByID(context.Background(), 99999, 10)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}

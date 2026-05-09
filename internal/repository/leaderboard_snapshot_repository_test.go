@@ -88,6 +88,27 @@ func TestLeaderboardSnapshotRepository_GetLatest_NoneExists(t *testing.T) {
 	}
 }
 
+func TestLeaderboardSnapshotRepository_ListByQuiniela_NoLimit_ReturnsAll(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresLeaderboardSnapshotRepository(testDB)
+
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	for i := range 3 {
+		s := &domain.LeaderboardSnapshot{QuinielaID: q.ID, TakenAt: base.Add(time.Duration(i) * time.Minute)}
+		_ = repo.Create(context.Background(), s)
+	}
+
+	results, err := repo.ListByQuiniela(context.Background(), q.ID, 0)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 3 {
+		t.Errorf("expected all 3 snapshots with limit=0, got %d", len(results))
+	}
+}
+
 func TestLeaderboardSnapshotRepository_ListByQuiniela_WithLimit(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
