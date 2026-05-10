@@ -128,7 +128,7 @@ func TestUpdateResult_LiveMatch_ConfirmsResultAndEmitsEvent(t *testing.T) {
 		Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(-time.Hour)}
 	svc, pub := newMatchSvc(match)
 
-	result, err := svc.UpdateResult(context.Background(), 1, 2, 1)
+	result, err := svc.UpdateResult(context.Background(), 1, 2, 1, nil)
 	if err != nil {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
@@ -148,7 +148,7 @@ func TestUpdateResult_ScheduledMatch_ReturnsValidationError(t *testing.T) {
 		Status: domain.MatchStatusScheduled, KickoffAt: time.Now().Add(time.Hour)}
 	svc, _ := newMatchSvc(match)
 
-	_, err := svc.UpdateResult(context.Background(), 1, 1, 0)
+	_, err := svc.UpdateResult(context.Background(), 1, 1, 0, nil)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for scheduled match, got %v", err)
 	}
@@ -164,7 +164,7 @@ func TestUpdateResult_FinishedMatch_ReturnsValidationError(t *testing.T) {
 		KickoffAt: time.Now().Add(-2 * time.Hour)}
 	svc, _ := newMatchSvc(match)
 
-	_, err := svc.UpdateResult(context.Background(), 1, 3, 0)
+	_, err := svc.UpdateResult(context.Background(), 1, 3, 0, nil)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for finished match, got %v", err)
 	}
@@ -181,7 +181,7 @@ func TestUpdateResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) {
 	scorer := &stubScorer{}
 	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
 
-	result, err := svc.UpdateResult(context.Background(), 42, 2, 1)
+	result, err := svc.UpdateResult(context.Background(), 42, 2, 1, nil)
 	if err != nil {
 		t.Fatalf("UpdateResult must succeed even when publish fails: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestUpdateResult_PublishFails_ScorerAlsoFails_StillReturnsResult(t *testing
 	scorer := &stubScorer{err: errors.New("db timeout")}
 	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
 
-	result, err := svc.UpdateResult(context.Background(), 7, 1, 0)
+	result, err := svc.UpdateResult(context.Background(), 7, 1, 0, nil)
 	if err != nil {
 		t.Fatalf("UpdateResult must succeed regardless of scorer failure: %v", err)
 	}

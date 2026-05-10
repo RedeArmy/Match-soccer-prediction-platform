@@ -150,7 +150,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	dlqMonitorInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerDLQMonitorIntervalSec, domain.DefaultWorkerDLQMonitorIntervalSec)) * time.Second
 	purgeTickInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerPurgeIntervalHours, domain.DefaultWorkerPurgeIntervalHours)) * time.Hour
 	snapshotKeepLatestCount = params.GetInt(ctx, domain.ParamKeySnapshotKeepLatestCount, domain.DefaultSnapshotKeepLatestCount)
-	scorer := service.NewScoringService(matchRepo, predRepo, params, log)
+	ruleRepo := repository.NewPostgresScoringRuleRepository(db)
+	scorer := service.NewScoringService(matchRepo, predRepo, ruleRepo, params, log)
 
 	quinielaRepo := repository.NewPostgresQuinielaRepository(db)
 	memberRepo := repository.NewPostgresGroupMembershipRepository(db)

@@ -59,23 +59,24 @@ type coreRepos struct {
 
 // appHandlers groups all route handlers; fields are unexported and used only within Routes.
 type appHandlers struct {
-	match            *handler.MatchHandler
-	prediction       *handler.PredictionHandler
-	group            *handler.GroupHandler
-	leaderboard      *handler.LeaderboardHandler
-	userStats        *handler.UserStatsHandler
-	tiebreaker       *handler.TiebreakerHandler
-	tournament       *handler.TournamentHandler
-	adminUser        *handler.AdminUserHandler
-	adminGroup       *handler.AdminGroupHandler
-	adminPayment     *handler.AdminPaymentHandler
-	adminLeaderboard *handler.AdminLeaderboardHandler
-	adminDLQ         *handler.AdminDLQHandler
-	adminAudit       *handler.AdminAuditHandler
-	adminParam       *handler.AdminSystemParamHandler
-	adminTiebreaker  *handler.AdminTiebreakerHandler
-	adminConflict    *handler.AdminConflictHandler
-	adminStats       *handler.AdminStatsHandler
+	match             *handler.MatchHandler
+	prediction        *handler.PredictionHandler
+	group             *handler.GroupHandler
+	leaderboard       *handler.LeaderboardHandler
+	userStats         *handler.UserStatsHandler
+	tiebreaker        *handler.TiebreakerHandler
+	tournament        *handler.TournamentHandler
+	adminUser         *handler.AdminUserHandler
+	adminGroup        *handler.AdminGroupHandler
+	adminPayment      *handler.AdminPaymentHandler
+	adminLeaderboard  *handler.AdminLeaderboardHandler
+	adminDLQ          *handler.AdminDLQHandler
+	adminAudit        *handler.AdminAuditHandler
+	adminParam        *handler.AdminSystemParamHandler
+	adminTiebreaker   *handler.AdminTiebreakerHandler
+	adminConflict     *handler.AdminConflictHandler
+	adminStats        *handler.AdminStatsHandler
+	adminScoringRules *handler.AdminScoringRuleHandler
 }
 
 // Server holds the shared dependencies made available to all HTTP handlers.
@@ -217,7 +218,8 @@ func (s *Server) Routes() http.Handler {
 	// match service both use the same stateless scoring logic. With the redis
 	// driver, the worker process owns all event consumption; the API server
 	// only publishes, so local subscription is skipped.
-	scorer := service.NewScoringService(repos.match, repos.pred, paramSvc, s.log)
+	ruleRepo := repository.NewPostgresScoringRuleRepository(s.db)
+	scorer := service.NewScoringService(repos.match, repos.pred, ruleRepo, paramSvc, s.log)
 	if s.cfg.EventBus.Driver != "redis" {
 		s.registerLocalSubscribers(scorer)
 	}
@@ -371,6 +373,11 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/groups/bulk-delete", h.adminGroup.BulkDeleteGroups)
 			r.Post("/groups/{id}/members/bulk-remove", h.adminGroup.BulkRemoveMembers)
 			r.Post("/groups/{id}/leaderboard/recalculate", h.adminGroup.RecalculateLeaderboard)
+
+			// Scoring rules
+			r.Get("/scoring-rules", h.adminScoringRules.List)
+			r.Get("/scoring-rules/{phase}", h.adminScoringRules.GetByPhase)
+			r.Patch("/scoring-rules/{phase}", h.adminScoringRules.Update)
 		})
 	})
 
@@ -423,6 +430,7 @@ func (s *Server) buildHandlers(
 	auditLogRepo := repository.NewPostgresAuditLogRepository(s.db)
 	paymentRepo := repository.NewPostgresPaymentRecordRepository(s.db)
 	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(s.db)
+	scoringRuleRepo := repository.NewPostgresScoringRuleRepository(s.db)
 
 	// Read infrastructure params (startup-time, not per-request).
 	// ctx is the shared startup context created once in Routes() and passed here
@@ -479,6 +487,7 @@ func (s *Server) buildHandlers(
 		params, s.log,
 	)
 	conflictSvc := service.NewConflictService(quinielaRepo, repos.member, paymentRepo, params, auditSvc, s.log)
+	scoringRuleSvc := service.NewScoringRuleService(scoringRuleRepo, auditSvc, s.log)
 
 	dlqSvc := s.dlqSvc
 	if dlqSvc == nil {
@@ -486,23 +495,24 @@ func (s *Server) buildHandlers(
 	}
 
 	return appHandlers{
-		match:            handler.NewMatchHandler(matchSvc, s.log),
-		prediction:       handler.NewPredictionHandler(predSvc, s.log),
-		group:            handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
-		leaderboard:      handler.NewLeaderboardHandler(ranker, s.log),
-		userStats:        handler.NewUserStatsHandler(userStatsSvc, s.log),
-		tiebreaker:       handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
-		tournament:       handler.NewTournamentHandler(tournamentSvc, s.log),
-		adminUser:        handler.NewAdminUserHandler(adminUserSvc, s.log),
-		adminGroup:       handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),
-		adminPayment:     handler.NewAdminPaymentHandler(paymentSvc, s.log),
-		adminLeaderboard: handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
-		adminDLQ:         handler.NewAdminDLQHandler(dlqSvc, s.log),
-		adminAudit:       handler.NewAdminAuditHandler(auditSvc, s.log),
-		adminParam:       handler.NewAdminSystemParamHandler(paramSvcWithAudit, s.log),
-		adminTiebreaker:  handler.NewAdminTiebreakerHandler(adminReadSvc, s.log),
-		adminConflict:    handler.NewAdminConflictHandler(conflictSvc, s.log),
-		adminStats:       handler.NewAdminStatsHandler(adminReadSvc, s.log),
+		match:             handler.NewMatchHandler(matchSvc, s.log),
+		prediction:        handler.NewPredictionHandler(predSvc, s.log),
+		group:             handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
+		leaderboard:       handler.NewLeaderboardHandler(ranker, s.log),
+		userStats:         handler.NewUserStatsHandler(userStatsSvc, s.log),
+		tiebreaker:        handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
+		tournament:        handler.NewTournamentHandler(tournamentSvc, s.log),
+		adminUser:         handler.NewAdminUserHandler(adminUserSvc, s.log),
+		adminGroup:        handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),
+		adminPayment:      handler.NewAdminPaymentHandler(paymentSvc, s.log),
+		adminLeaderboard:  handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
+		adminDLQ:          handler.NewAdminDLQHandler(dlqSvc, s.log),
+		adminAudit:        handler.NewAdminAuditHandler(auditSvc, s.log),
+		adminParam:        handler.NewAdminSystemParamHandler(paramSvcWithAudit, s.log),
+		adminTiebreaker:   handler.NewAdminTiebreakerHandler(adminReadSvc, s.log),
+		adminConflict:     handler.NewAdminConflictHandler(conflictSvc, s.log),
+		adminStats:        handler.NewAdminStatsHandler(adminReadSvc, s.log),
+		adminScoringRules: handler.NewAdminScoringRuleHandler(scoringRuleSvc, s.log),
 	}
 }
 

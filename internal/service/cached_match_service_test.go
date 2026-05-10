@@ -96,7 +96,7 @@ func (s *stubInnerMatchSvc) ListMatchesByStatus(_ context.Context, _ domain.Matc
 	return s.matches, s.err
 }
 func (s *stubInnerMatchSvc) CreateMatch(_ context.Context, _ *domain.Match) error { return s.err }
-func (s *stubInnerMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int) (*domain.Match, error) {
+func (s *stubInnerMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod) (*domain.Match, error) {
 	return s.match, s.err
 }
 func (s *stubInnerMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, error) {
@@ -324,7 +324,7 @@ func TestCachedMatchService_UpdateResult_Success_InvalidatesCache(t *testing.T) 
 	inner := &stubInnerMatchSvc{match: m}
 
 	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
-	got, err := svc.UpdateResult(context.Background(), 1, 2, 1)
+	got, err := svc.UpdateResult(context.Background(), 1, 2, 1, nil)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -341,7 +341,7 @@ func TestCachedMatchService_UpdateResult_InnerError_Propagated(t *testing.T) {
 	inner := &stubInnerMatchSvc{err: errors.New("match not live")}
 
 	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
-	_, err := svc.UpdateResult(context.Background(), 1, 2, 1)
+	_, err := svc.UpdateResult(context.Background(), 1, 2, 1, nil)
 	if err == nil {
 		t.Fatal("expected error from inner UpdateResult, got nil")
 	}
@@ -408,7 +408,7 @@ func TestCachedMatchService_InvalidateMatchLists_DeleteError_NonFatal(t *testing
 
 	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
 	// UpdateResult triggers invalidateMatchLists; the delete error must not propagate.
-	_, err := svc.UpdateResult(context.Background(), 1, 2, 1)
+	_, err := svc.UpdateResult(context.Background(), 1, 2, 1, nil)
 	if err != nil {
 		t.Fatalf("delete error must not propagate from invalidateMatchLists, got: %v", err)
 	}

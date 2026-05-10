@@ -24,11 +24,11 @@ func NewPostgresPredictionRepository(db *pgxpool.Pool) *PostgresPredictionReposi
 	return &PostgresPredictionRepository{db: db}
 }
 
-const predictionColumns = "id, user_id, match_id, home_score, away_score, points, created_at, updated_at"
+const predictionColumns = "id, user_id, match_id, home_score, away_score, predicted_win_method, points, created_at, updated_at"
 
 func scanPrediction(row pgx.Row) (*domain.Prediction, error) {
 	p := &domain.Prediction{}
-	if err := row.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.Points, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.Points, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, singleScanErr(err)
 	}
 	return p, nil
@@ -42,17 +42,17 @@ func scanPrediction(row pgx.Row) (*domain.Prediction, error) {
 func (r *PostgresPredictionRepository) Upsert(ctx context.Context, p *domain.Prediction) (created bool, err error) {
 	var wasInserted bool
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO predictions (user_id, match_id, home_score, away_score)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO predictions (user_id, match_id, home_score, away_score, predicted_win_method)
+		 VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (user_id, match_id) DO UPDATE
 		     SET updated_at = predictions.updated_at
 		 RETURNING `+predictionColumns+`, (xmax = 0) AS was_inserted`,
-		p.UserID, p.MatchID, p.HomeScore, p.AwayScore,
+		p.UserID, p.MatchID, p.HomeScore, p.AwayScore, p.PredictedWinMethod,
 	)
 	result := &domain.Prediction{}
 	if scanErr := row.Scan(
 		&result.ID, &result.UserID, &result.MatchID,
-		&result.HomeScore, &result.AwayScore, &result.Points,
+		&result.HomeScore, &result.AwayScore, &result.PredictedWinMethod, &result.Points,
 		&result.CreatedAt, &result.UpdatedAt,
 		&wasInserted,
 	); scanErr != nil {
@@ -64,10 +64,10 @@ func (r *PostgresPredictionRepository) Upsert(ctx context.Context, p *domain.Pre
 
 func (r *PostgresPredictionRepository) Create(ctx context.Context, p *domain.Prediction) error {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO predictions (user_id, match_id, home_score, away_score)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO predictions (user_id, match_id, home_score, away_score, predicted_win_method)
+		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING `+predictionColumns,
-		p.UserID, p.MatchID, p.HomeScore, p.AwayScore,
+		p.UserID, p.MatchID, p.HomeScore, p.AwayScore, p.PredictedWinMethod,
 	)
 	result, err := scanPrediction(row)
 	if err != nil {
@@ -89,9 +89,9 @@ func (r *PostgresPredictionRepository) GetByID(ctx context.Context, id int) (*do
 
 func (r *PostgresPredictionRepository) Update(ctx context.Context, p *domain.Prediction) error {
 	row := r.db.QueryRow(ctx,
-		`UPDATE predictions SET home_score=$1, away_score=$2, points=$3, updated_at=NOW()
-		 WHERE id=$4 RETURNING `+predictionColumns,
-		p.HomeScore, p.AwayScore, p.Points, p.ID,
+		`UPDATE predictions SET home_score=$1, away_score=$2, predicted_win_method=$3, points=$4, updated_at=NOW()
+		 WHERE id=$5 RETURNING `+predictionColumns,
+		p.HomeScore, p.AwayScore, p.PredictedWinMethod, p.Points, p.ID,
 	)
 	result, err := scanPrediction(row)
 	if err != nil {
@@ -107,14 +107,15 @@ func (r *PostgresPredictionRepository) Update(ctx context.Context, p *domain.Pre
 func (r *PostgresPredictionRepository) UpdateIfUnchanged(ctx context.Context, p *domain.Prediction, expectedUpdatedAt time.Time) error {
 	row := r.db.QueryRow(ctx,
 		`UPDATE predictions
-		    SET home_score = $1,
-		        away_score = $2,
-		        points     = $3,
-		        updated_at = NOW()
-		  WHERE id         = $4
-		    AND updated_at = $5
+		    SET home_score          = $1,
+		        away_score          = $2,
+		        predicted_win_method = $3,
+		        points              = $4,
+		        updated_at          = NOW()
+		  WHERE id         = $5
+		    AND updated_at = $6
 		  RETURNING `+predictionColumns,
-		p.HomeScore, p.AwayScore, p.Points, p.ID, expectedUpdatedAt,
+		p.HomeScore, p.AwayScore, p.PredictedWinMethod, p.Points, p.ID, expectedUpdatedAt,
 	)
 	result, err := scanPrediction(row)
 	if err != nil {
@@ -480,13 +481,13 @@ func (r *PostgresPredictionRepository) UpdateManyPoints(ctx context.Context, poi
 func collectPredictions(rows pgx.Rows) ([]*domain.Prediction, error) {
 	return collectRows(rows, func(r pgx.Rows) (*domain.Prediction, error) {
 		p := &domain.Prediction{}
-		return p, r.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.Points, &p.CreatedAt, &p.UpdatedAt)
+		return p, r.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.Points, &p.CreatedAt, &p.UpdatedAt)
 	})
 }
 
 // ListAdmin returns predictions matching the given admin filters with pagination.
 func (r *PostgresPredictionRepository) ListAdmin(ctx context.Context, f PredictionAdminFilters, p Pagination) ([]*domain.Prediction, error) {
-	q := `SELECT id, user_id, match_id, home_score, away_score, points, created_at, updated_at FROM predictions WHERE 1=1`
+	q := `SELECT id, user_id, match_id, home_score, away_score, predicted_win_method, points, created_at, updated_at FROM predictions WHERE 1=1`
 	args := []any{}
 	n := 1
 

@@ -119,7 +119,10 @@ func (s *matchService) StartMatch(ctx context.Context, id int) (*domain.Match, e
 // ensuring the prediction deadline has already closed. Updating a Finished
 // match is rejected to prevent silent overwrites of confirmed results - once
 // the score is confirmed it is permanent.
-func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int) (*domain.Match, error) {
+//
+// winMethod is optional for group-stage matches (pass nil). For knockout phases
+// it should be provided so the scoring engine can apply win-method bonuses.
+func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error) {
 	if err := domain.ValidateMatchResult(&homeScore, &awayScore); err != nil {
 		return nil, err
 	}
@@ -132,16 +135,21 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 	}
 	m.HomeScore = &homeScore
 	m.AwayScore = &awayScore
+	m.WinMethod = winMethod
 	m.Status = domain.MatchStatusFinished
 	if err := s.repo.Update(ctx, m); err != nil {
 		return nil, err
 	}
 
-	resType := "match"
-	s.audit.Log(ctx, nil, nil, domain.AuditActionMatchResultSet, &resType, &id, map[string]any{
+	auditMeta := map[string]any{
 		"home_score": homeScore,
 		"away_score": awayScore,
-	})
+	}
+	if winMethod != nil {
+		auditMeta["win_method"] = string(*winMethod)
+	}
+	resType := "match"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionMatchResultSet, &resType, &id, auditMeta)
 
 	if err := s.pub.Publish(ctx, events.Envelope{
 		Type:       events.EventMatchFinished,

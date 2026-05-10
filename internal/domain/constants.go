@@ -166,6 +166,8 @@ const (
 	ParamKeyScoringExactScore     = "scoring.exact_score"
 	ParamKeyScoringCorrectOutcome = "scoring.correct_outcome"
 	ParamKeyScoringGoalDiff       = "scoring.goal_difference"
+	ParamKeyScoringExtraTimeBonus = "scoring.extra_time_bonus"
+	ParamKeyScoringPenaltiesBonus = "scoring.penalties_bonus"
 	// ParamKeyPredictionDeadlineMin is the prediction deadline offset in minutes.
 	// A value of 5 closes predictions 5 minutes before kick-off.
 	ParamKeyPredictionDeadlineMin = "prediction.deadline_minutes"
@@ -304,6 +306,7 @@ const (
 	AuditActionMemberBulkRemoved    = "admin_group.member_bulk_removed"
 	AuditActionGroupBulkDeleted     = "admin_group.bulk_deleted"
 	AuditActionLeaderboardRefreshed = "admin_group.leaderboard_refreshed"
+	AuditActionScoringRuleUpdated   = "scoring_rule.updated"
 )
 
 // Snapshot schema versions identify the JSONB encoding format used by
@@ -332,4 +335,10 @@ var AllMatchPhases = [...]MatchPhase{
 	PhaseSemiFinal,
 	PhaseThirdPlace,
 	PhaseFinal,
+}
+
+// IsKnockoutPhase reports whether phase is a knockout (single-elimination) round.
+// Win-method bonus points only apply to knockout phases.
+func IsKnockoutPhase(phase MatchPhase) bool {
+	return phase != PhaseGroupStage
 }

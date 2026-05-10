@@ -118,6 +118,52 @@ const (
 	PhaseFinal        MatchPhase = "final"
 )
 
+// WinMethod indicates how the winning team secured the knockout-phase result.
+// It is nil for group-stage matches and for matches still in progress.
+//
+// WinMethodExtraTime means the winner scored a deciding goal during extra time.
+// WinMethodPenalties means the match was level after extra time and the winner
+// prevailed on a penalty shootout.
+type WinMethod string
+
+// Allowed values for WinMethod.
+const (
+	WinMethodNormal    WinMethod = "normal"     // decided within 90 minutes
+	WinMethodExtraTime WinMethod = "extra_time" // decided in extra time (AET)
+	WinMethodPenalties WinMethod = "penalties"  // decided on penalties (PSO)
+)
+
+// ScoringRule defines the point values awarded for each prediction outcome
+// within a specific tournament phase. Knockout rounds carry progressively
+// higher point values than the group stage, rewarding correct predictions
+// on higher-stakes fixtures.
+//
+// ExactScore, CorrectOutcome, and GoalDifference mirror the flat
+// domain.PointsExact*, PointsCorrect*, PointsGoalDiff* constants but are
+// scoped to a single phase row, allowing operators to adjust knockout-stage
+// rewards through the admin API without redeploying the service.
+//
+// ExtraTimeBonus and PenaltiesBonus are additive bonuses applied on top of
+// base points when a user correctly predicts that the winning team will advance
+// via extra time (+ExtraTimeBonus) or penalties (+PenaltiesBonus). These bonuses
+// are only applicable to knockout phases; group-stage rows must keep them at 0.
+//
+// IsActive provides a soft-disable switch: setting a phase to inactive falls
+// back to the global system_params values at scoring time so a misconfigured
+// rule can be rolled back immediately without a migration.
+type ScoringRule struct {
+	ID             int
+	Phase          MatchPhase
+	ExactScore     int
+	CorrectOutcome int
+	GoalDifference int
+	ExtraTimeBonus int
+	PenaltiesBonus int
+	IsActive       bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 // Match represents a single World Cup fixture in the tournament schedule.
 //
 // HomeScore and AwayScore are pointers because a nil value is semantically
@@ -142,7 +188,8 @@ type Match struct {
 	AwayScore  *int
 	Status     MatchStatus
 	Phase      MatchPhase
-	GroupLabel *string // nil for knockout; "A"-"L" for group stage
+	GroupLabel *string    // nil for knockout; "A"-"L" for group stage
+	WinMethod  *WinMethod // nil until match is finished; always nil for group-stage matches
 	StadiumID  *int
 	Stadium    *Stadium
 	KickoffAt  time.Time
@@ -215,14 +262,15 @@ const (
 // predictions are included. Collapsing both cases into the integer 0 would
 // introduce a subtle ranking bug that only manifests after kick-off.
 type Prediction struct {
-	ID        int
-	UserID    int
-	MatchID   int
-	HomeScore int
-	AwayScore int
-	Points    *int
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID                 int
+	UserID             int
+	MatchID            int
+	HomeScore          int
+	AwayScore          int
+	PredictedWinMethod *WinMethod // optional; nil means no win-method prediction was submitted
+	Points             *int
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // QuinielaStatus is the system-managed lifecycle state of a Quiniela.
