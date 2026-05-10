@@ -31,6 +31,8 @@ func scoringRuleFixtureHandler() *domain.ScoringRule {
 		ExactScore:     5,
 		CorrectOutcome: 2,
 		GoalDifference: 1,
+		ExtraTimeBonus: 0,
+		PenaltiesBonus: 0,
 		IsActive:       true,
 		UpdatedAt:      time.Now(),
 	}
@@ -98,7 +100,7 @@ func TestAdminScoringRuleGetByPhase_ServiceError_Returns500(t *testing.T) {
 
 func TestAdminScoringRuleUpdate_Success_Returns200(t *testing.T) {
 	svc := &stubScoringRuleSvc{rule: scoringRuleFixtureHandler()}
-	body := `{"exact_score":10,"correct_outcome":5,"goal_difference":2,"is_active":true}`
+	body := `{"exact_score":10,"correct_outcome":5,"goal_difference":2,"extra_time_bonus":1,"penalties_bonus":2,"is_active":true}`
 	req := withCaller(newAdminRequestJSON(http.MethodPatch, pathScoringRulesGroupStage, body), adminCaller)
 	w := doReq(newScoringRuleRouter(svc), req)
 	if w.Code != http.StatusOK {
@@ -126,7 +128,7 @@ func TestAdminScoringRuleUpdate_InvalidJSON_Returns400(t *testing.T) {
 
 func TestAdminScoringRuleUpdate_ValidationError_Returns422(t *testing.T) {
 	svc := &stubScoringRuleSvc{err: apperrors.Validation("exact_score must be greater than correct_outcome")}
-	body := `{"exact_score":2,"correct_outcome":5,"goal_difference":1,"is_active":true}`
+	body := `{"exact_score":2,"correct_outcome":5,"goal_difference":1,"extra_time_bonus":1,"penalties_bonus":2,"is_active":true}`
 	req := withCaller(newAdminRequestJSON(http.MethodPatch, pathScoringRulesGroupStage, body), adminCaller)
 	w := doReq(newScoringRuleRouter(svc), req)
 	if w.Code != http.StatusUnprocessableEntity {
@@ -136,7 +138,7 @@ func TestAdminScoringRuleUpdate_ValidationError_Returns422(t *testing.T) {
 
 func TestAdminScoringRuleUpdate_PhaseNotFound_Returns404(t *testing.T) {
 	svc := &stubScoringRuleSvc{err: apperrors.NotFound("scoring rule not found for phase")}
-	body := `{"exact_score":10,"correct_outcome":5,"goal_difference":2,"is_active":true}`
+	body := `{"exact_score":10,"correct_outcome":5,"goal_difference":2,"extra_time_bonus":1,"penalties_bonus":2,"is_active":true}`
 	req := withCaller(newAdminRequestJSON(http.MethodPatch, pathScoringRulesGroupStage, body), adminCaller)
 	w := doReq(newScoringRuleRouter(svc), req)
 	if w.Code != http.StatusNotFound {
@@ -150,8 +152,10 @@ func TestAdminScoringRuleUpdate_FinalPhase_Success_Returns200(t *testing.T) {
 	rule.ExactScore = 15
 	rule.CorrectOutcome = 8
 	rule.GoalDifference = 3
+	rule.ExtraTimeBonus = 1
+	rule.PenaltiesBonus = 2
 	svc := &stubScoringRuleSvc{rule: rule}
-	body := `{"exact_score":15,"correct_outcome":8,"goal_difference":3,"is_active":true}`
+	body := `{"exact_score":15,"correct_outcome":8,"goal_difference":3,"extra_time_bonus":1,"penalties_bonus":2,"is_active":true}`
 	req := withCaller(newAdminRequestJSON(http.MethodPatch, pathScoringRulesFinal, body), adminCaller)
 	w := doReq(newScoringRuleRouter(svc), req)
 	if w.Code != http.StatusOK {
@@ -161,7 +165,7 @@ func TestAdminScoringRuleUpdate_FinalPhase_Success_Returns200(t *testing.T) {
 
 func TestAdminScoringRuleUpdate_ServiceError_Returns500(t *testing.T) {
 	svc := &stubScoringRuleSvc{err: apperrors.Internal(nil)}
-	body := `{"exact_score":10,"correct_outcome":5,"goal_difference":2,"is_active":true}`
+	body := `{"exact_score":10,"correct_outcome":5,"goal_difference":2,"extra_time_bonus":1,"penalties_bonus":2,"is_active":true}`
 	req := withCaller(newAdminRequestJSON(http.MethodPatch, pathScoringRulesGroupStage, body), adminCaller)
 	w := doReq(newScoringRuleRouter(svc), req)
 	if w.Code != http.StatusInternalServerError {

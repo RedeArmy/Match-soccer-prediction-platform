@@ -49,9 +49,12 @@ type createMatchRequest struct {
 }
 
 // updateResultRequest is the JSON body accepted by PATCH /api/v1/matches/{id}.
+// WinMethod is optional for group-stage matches. For knockout matches it should
+// be one of: "normal", "extra_time", "penalties".
 type updateResultRequest struct {
-	HomeScore *int `json:"home_score"`
-	AwayScore *int `json:"away_score"`
+	HomeScore *int    `json:"home_score"`
+	AwayScore *int    `json:"away_score"`
+	WinMethod *string `json:"win_method"`
 }
 
 // ListMatches handles GET /api/v1/matches.
@@ -179,7 +182,12 @@ func (h *MatchHandler) UpdateResult(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, apperrors.Validation("request body is missing required fields"))
 		return
 	}
-	match, err := h.svc.UpdateResult(r.Context(), id, *req.HomeScore, *req.AwayScore)
+	var winMethod *domain.WinMethod
+	if req.WinMethod != nil {
+		wm := domain.WinMethod(*req.WinMethod)
+		winMethod = &wm
+	}
+	match, err := h.svc.UpdateResult(r.Context(), id, *req.HomeScore, *req.AwayScore, winMethod)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

@@ -45,11 +45,15 @@ func (s *scoringRuleService) Update(
 	ctx context.Context,
 	phase domain.MatchPhase,
 	exactScore, correctOutcome, goalDifference int,
+	extraTimeBonus, penaltiesBonus int,
 	isActive bool,
 	actorID int,
 ) (*domain.ScoringRule, error) {
 	if exactScore < 0 || correctOutcome < 0 || goalDifference < 0 {
 		return nil, apperrors.Validation("point values must be non-negative")
+	}
+	if extraTimeBonus < 0 || penaltiesBonus < 0 {
+		return nil, apperrors.Validation("bonus values must be non-negative")
 	}
 	if correctOutcome >= exactScore && exactScore > 0 {
 		return nil, apperrors.Validation("exact_score must be greater than correct_outcome to preserve the scoring incentive hierarchy")
@@ -60,6 +64,8 @@ func (s *scoringRuleService) Update(
 		ExactScore:     exactScore,
 		CorrectOutcome: correctOutcome,
 		GoalDifference: goalDifference,
+		ExtraTimeBonus: extraTimeBonus,
+		PenaltiesBonus: penaltiesBonus,
 		IsActive:       isActive,
 	}
 	updated, err := s.repo.Update(ctx, rule)
@@ -72,11 +78,13 @@ func (s *scoringRuleService) Update(
 	s.audit.Log(ctx, &actorID, nil, domain.AuditActionScoringRuleUpdated,
 		&resourceType, &resourceID,
 		map[string]any{
-			"phase":           string(phase),
-			"exact_score":     exactScore,
-			"correct_outcome": correctOutcome,
-			"goal_difference": goalDifference,
-			"is_active":       isActive,
+			"phase":            string(phase),
+			"exact_score":      exactScore,
+			"correct_outcome":  correctOutcome,
+			"goal_difference":  goalDifference,
+			"extra_time_bonus": extraTimeBonus,
+			"penalties_bonus":  penaltiesBonus,
+			"is_active":        isActive,
 		},
 	)
 	s.log.Info("scoring rule updated",
@@ -84,6 +92,8 @@ func (s *scoringRuleService) Update(
 		zap.Int("exact_score", exactScore),
 		zap.Int("correct_outcome", correctOutcome),
 		zap.Int("goal_difference", goalDifference),
+		zap.Int("extra_time_bonus", extraTimeBonus),
+		zap.Int("penalties_bonus", penaltiesBonus),
 		zap.Bool("is_active", isActive),
 		zap.String("actor", fmt.Sprintf("user:%d", actorID)),
 	)

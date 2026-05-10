@@ -45,15 +45,21 @@ type scoringConfig struct {
 	exactScore     int
 	correctOutcome int
 	goalDifference int
+	extraTimeBonus int // bonus points when the correct win method is extra_time
+	penaltiesBonus int // bonus points when the correct win method is penalties
 }
 
 // loadGlobalConfig reads the flat, phase-agnostic scoring parameters from
 // system_params. Used as a fallback when no active phase-specific rule exists.
+// Win-method bonuses default to 0 in the global fallback; the per-phase rule
+// is the canonical source for those values.
 func (s *scoringService) loadGlobalConfig(ctx context.Context) scoringConfig {
 	return scoringConfig{
 		exactScore:     s.params.GetInt(ctx, domain.ParamKeyScoringExactScore, domain.PointsExactScore),
 		correctOutcome: s.params.GetInt(ctx, domain.ParamKeyScoringCorrectOutcome, domain.PointsCorrectOutcome),
 		goalDifference: s.params.GetInt(ctx, domain.ParamKeyScoringGoalDiff, domain.PointsGoalDifference),
+		extraTimeBonus: s.params.GetInt(ctx, domain.ParamKeyScoringExtraTimeBonus, 0),
+		penaltiesBonus: s.params.GetInt(ctx, domain.ParamKeyScoringPenaltiesBonus, 0),
 	}
 }
 
@@ -81,6 +87,8 @@ func (s *scoringService) configForPhase(ctx context.Context, phase domain.MatchP
 		exactScore:     rule.ExactScore,
 		correctOutcome: rule.CorrectOutcome,
 		goalDifference: rule.GoalDifference,
+		extraTimeBonus: rule.ExtraTimeBonus,
+		penaltiesBonus: rule.PenaltiesBonus,
 	}
 }
 
@@ -124,7 +132,7 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 	cfg := s.configForPhase(ctx, match.Phase)
 	points := make(map[int]int, len(predictions))
 	for _, pred := range predictions {
-		points[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore, cfg)
+		points[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore, match.WinMethod, cfg)
 	}
 	return s.predRepo.UpdateManyPoints(ctx, points)
 }
@@ -137,23 +145,42 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 //	Correct outcome (non-draw) + same margin -> cfg.correctOutcome + cfg.goalDifference
 //	Correct outcome only                     -> cfg.correctOutcome
 //	Wrong outcome / no prediction            -> 0
-func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, cfg scoringConfig) int {
+//
+// On top of the base points, a win-method bonus is added when the user
+// predicted the correct win method (extra_time or penalties) and obtained
+// a correct outcome (base points > 0). The bonus is exclusive: at most one
+// of extraTimeBonus or penaltiesBonus is awarded per prediction.
+func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, actualWinMethod *domain.WinMethod, cfg scoringConfig) int {
+	var base int
 	if pred.HomeScore == actualHome && pred.AwayScore == actualAway {
-		return cfg.exactScore
+		base = cfg.exactScore
+	} else {
+		predOutcome := outcome(pred.HomeScore, pred.AwayScore)
+		actualOutcome := outcome(actualHome, actualAway)
+
+		if predOutcome != actualOutcome {
+			return domain.PointsIncorrectResult
+		}
+
+		base = cfg.correctOutcome
+		if actualOutcome != outcomeDraw && goalDiff(pred.HomeScore, pred.AwayScore) == goalDiff(actualHome, actualAway) {
+			base += cfg.goalDifference
+		}
 	}
 
-	predOutcome := outcome(pred.HomeScore, pred.AwayScore)
-	actualOutcome := outcome(actualHome, actualAway)
-
-	if predOutcome != actualOutcome {
-		return domain.PointsIncorrectResult
+	if base > 0 && pred.PredictedWinMethod != nil && actualWinMethod != nil {
+		switch *actualWinMethod {
+		case domain.WinMethodExtraTime:
+			if *pred.PredictedWinMethod == domain.WinMethodExtraTime {
+				base += cfg.extraTimeBonus
+			}
+		case domain.WinMethodPenalties:
+			if *pred.PredictedWinMethod == domain.WinMethodPenalties {
+				base += cfg.penaltiesBonus
+			}
+		}
 	}
-
-	points := cfg.correctOutcome
-	if actualOutcome != outcomeDraw && goalDiff(pred.HomeScore, pred.AwayScore) == goalDiff(actualHome, actualAway) {
-		points += cfg.goalDifference
-	}
-	return points
+	return base
 }
 
 type matchOutcome int

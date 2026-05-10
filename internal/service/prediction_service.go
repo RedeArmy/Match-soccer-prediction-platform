@@ -76,9 +76,10 @@ func (s *predictionService) Submit(ctx context.Context, prediction *domain.Predi
 	return s.predRepo.Upsert(ctx, prediction)
 }
 
-// Update modifies the scores on an existing prediction subject to the same
-// deadline rules as Submit. The caller must own the prediction.
-func (s *predictionService) Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int) (*domain.Prediction, error) {
+// Update modifies the scores and optional win-method prediction on an existing
+// prediction subject to the same deadline rules as Submit. The caller must own
+// the prediction.
+func (s *predictionService) Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int, predictedWinMethod *domain.WinMethod) (*domain.Prediction, error) {
 	pred, err := s.predRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -99,18 +100,21 @@ func (s *predictionService) Update(ctx context.Context, callerUserID, id int, ho
 	if match.Status != domain.MatchStatusScheduled {
 		return nil, apperrors.Validation("cannot modify a prediction for a match that has already started")
 	}
-	// Short-circuit: if the caller is submitting the same scores, the
-	// operation is already complete. Skip UpdateIfUnchanged so that a
-	// network-timeout retry succeeds without hitting the optimistic lock.
-	if pred.HomeScore == homeScore && pred.AwayScore == awayScore {
+	// Short-circuit: if the caller is submitting identical values, return the
+	// existing prediction so that network-timeout retries succeed without hitting
+	// the optimistic lock.
+	winMethodEqual := pred.PredictedWinMethod == predictedWinMethod ||
+		(pred.PredictedWinMethod != nil && predictedWinMethod != nil && *pred.PredictedWinMethod == *predictedWinMethod)
+	if pred.HomeScore == homeScore && pred.AwayScore == awayScore && winMethodEqual {
 		return pred, nil
 	}
 	updated := &domain.Prediction{
-		ID:        pred.ID,
-		UserID:    pred.UserID,
-		MatchID:   pred.MatchID,
-		HomeScore: homeScore,
-		AwayScore: awayScore,
+		ID:                 pred.ID,
+		UserID:             pred.UserID,
+		MatchID:            pred.MatchID,
+		HomeScore:          homeScore,
+		AwayScore:          awayScore,
+		PredictedWinMethod: predictedWinMethod,
 	}
 	if err := domain.ValidatePrediction(updated, match.KickoffAt, s.clock.Now(), s.deadlineOffset(ctx)); err != nil {
 		return nil, err
@@ -118,6 +122,7 @@ func (s *predictionService) Update(ctx context.Context, callerUserID, id int, ho
 	expectedUpdatedAt := pred.UpdatedAt
 	pred.HomeScore = homeScore
 	pred.AwayScore = awayScore
+	pred.PredictedWinMethod = predictedWinMethod
 	if err := s.predRepo.UpdateIfUnchanged(ctx, pred, expectedUpdatedAt); err != nil {
 		return nil, err
 	}

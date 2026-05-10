@@ -23,16 +23,20 @@ func NewPredictionHandler(svc service.PredictionService, log *zap.Logger) *Predi
 }
 
 // submitPredictionRequest is the JSON body accepted by POST /api/v1/predictions.
+// PredictedWinMethod is optional; when provided for a knockout match it must be
+// one of: "normal", "extra_time", "penalties".
 type submitPredictionRequest struct {
-	MatchID   int `json:"match_id"`
-	HomeScore int `json:"home_score"`
-	AwayScore int `json:"away_score"`
+	MatchID            int     `json:"match_id"`
+	HomeScore          int     `json:"home_score"`
+	AwayScore          int     `json:"away_score"`
+	PredictedWinMethod *string `json:"predicted_win_method"`
 }
 
 // updatePredictionRequest is the JSON body accepted by PATCH /api/v1/predictions/{id}.
 type updatePredictionRequest struct {
-	HomeScore int `json:"home_score"`
-	AwayScore int `json:"away_score"`
+	HomeScore          int     `json:"home_score"`
+	AwayScore          int     `json:"away_score"`
+	PredictedWinMethod *string `json:"predicted_win_method"`
 }
 
 // Submit handles POST /api/v1/predictions.
@@ -67,11 +71,17 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var predictedWM *domain.WinMethod
+	if req.PredictedWinMethod != nil {
+		wm := domain.WinMethod(*req.PredictedWinMethod)
+		predictedWM = &wm
+	}
 	prediction := &domain.Prediction{
-		UserID:    caller.ID,
-		MatchID:   req.MatchID,
-		HomeScore: req.HomeScore,
-		AwayScore: req.AwayScore,
+		UserID:             caller.ID,
+		MatchID:            req.MatchID,
+		HomeScore:          req.HomeScore,
+		AwayScore:          req.AwayScore,
+		PredictedWinMethod: predictedWM,
 	}
 	created, err := h.svc.Submit(r.Context(), prediction)
 	if err != nil {
@@ -119,7 +129,12 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, err)
 		return
 	}
-	prediction, err := h.svc.Update(r.Context(), caller.ID, id, req.HomeScore, req.AwayScore)
+	var predictedWM *domain.WinMethod
+	if req.PredictedWinMethod != nil {
+		wm := domain.WinMethod(*req.PredictedWinMethod)
+		predictedWM = &wm
+	}
+	prediction, err := h.svc.Update(r.Context(), caller.ID, id, req.HomeScore, req.AwayScore, predictedWM)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

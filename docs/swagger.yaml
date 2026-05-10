@@ -316,6 +316,8 @@ definitions:
         type: string
       updated_at:
         type: string
+      win_method:
+        type: string
     type: object
   internal_api_handler.MemberResponse:
     properties:
@@ -460,6 +462,8 @@ definitions:
         type: integer
       points:
         type: integer
+      predicted_win_method:
+        type: string
       updated_at:
         type: string
       user_id:
@@ -471,12 +475,16 @@ definitions:
         type: integer
       exact_score:
         type: integer
+      extra_time_bonus:
+        type: integer
       goal_difference:
         type: integer
       id:
         type: integer
       is_active:
         type: boolean
+      penalties_bonus:
+        type: integer
       phase:
         type: string
       updated_at:
@@ -698,6 +706,8 @@ definitions:
         type: integer
       match_id:
         type: integer
+      predicted_win_method:
+        type: string
     type: object
   internal_api_handler.transferOwnershipRequest:
     properties:
@@ -715,6 +725,8 @@ definitions:
         type: integer
       home_score:
         type: integer
+      predicted_win_method:
+        type: string
     type: object
   internal_api_handler.updateResultRequest:
     properties:
@@ -722,6 +734,8 @@ definitions:
         type: integer
       home_score:
         type: integer
+      win_method:
+        type: string
     type: object
   internal_api_handler.updateScoringRuleRequest:
     properties:
@@ -729,10 +743,14 @@ definitions:
         type: integer
       exact_score:
         type: integer
+      extra_time_bonus:
+        type: integer
       goal_difference:
         type: integer
       is_active:
         type: boolean
+      penalties_bonus:
+        type: integer
     type: object
 host: localhost:8080
 info:

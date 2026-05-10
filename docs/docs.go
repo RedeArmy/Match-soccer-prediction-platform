@@ -4083,6 +4083,9 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "win_method": {
+                    "type": "string"
                 }
             }
         },
@@ -4306,6 +4309,9 @@ const docTemplate = `{
                 "points": {
                     "type": "integer"
                 },
+                "predicted_win_method": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -4323,6 +4329,9 @@ const docTemplate = `{
                 "exact_score": {
                     "type": "integer"
                 },
+                "extra_time_bonus": {
+                    "type": "integer"
+                },
                 "goal_difference": {
                     "type": "integer"
                 },
@@ -4331,6 +4340,9 @@ const docTemplate = `{
                 },
                 "is_active": {
                     "type": "boolean"
+                },
+                "penalties_bonus": {
+                    "type": "integer"
                 },
                 "phase": {
                     "type": "string"
@@ -4673,6 +4685,9 @@ const docTemplate = `{
                 },
                 "match_id": {
                     "type": "integer"
+                },
+                "predicted_win_method": {
+                    "type": "string"
                 }
             }
         },
@@ -4700,6 +4715,9 @@ const docTemplate = `{
                 },
                 "home_score": {
                     "type": "integer"
+                },
+                "predicted_win_method": {
+                    "type": "string"
                 }
             }
         },
@@ -4711,6 +4729,9 @@ const docTemplate = `{
                 },
                 "home_score": {
                     "type": "integer"
+                },
+                "win_method": {
+                    "type": "string"
                 }
             }
         },
@@ -4723,11 +4744,17 @@ const docTemplate = `{
                 "exact_score": {
                     "type": "integer"
                 },
+                "extra_time_bonus": {
+                    "type": "integer"
+                },
                 "goal_difference": {
                     "type": "integer"
                 },
                 "is_active": {
                     "type": "boolean"
+                },
+                "penalties_bonus": {
+                    "type": "integer"
                 }
             }
         }

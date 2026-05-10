@@ -148,7 +148,7 @@ func TestCalculatePoints(t *testing.T) {
 				correctOutcome: domain.PointsCorrectOutcome,
 				goalDifference: domain.PointsGoalDifference,
 			}
-			got := calculatePoints(pred, tc.realHome, tc.realAway, cfg)
+			got := calculatePoints(pred, tc.realHome, tc.realAway, nil, cfg)
 			if got != tc.wantPts {
 				t.Errorf(fmtPoints,
 					tc.predHome, tc.predAway,
@@ -157,6 +157,90 @@ func TestCalculatePoints(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+// ── calculatePoints: win-method bonuses ──────────────────────────────────────
+
+func TestCalculatePoints_ExtraTimeBonusApplied(t *testing.T) {
+	et := domain.WinMethodExtraTime
+	// pred 2-0 vs actual 3-1: same outcome (home win), same margin (2) → correctOutcome + goalDifference + extraTimeBonus
+	pred := &domain.Prediction{HomeScore: 2, AwayScore: 0, PredictedWinMethod: &et}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 3, 1, &et, cfg)
+	want := cfg.correctOutcome + cfg.goalDifference + cfg.extraTimeBonus
+	if got != want {
+		t.Errorf("expected %d pts with extra-time bonus, got %d", want, got)
+	}
+}
+
+func TestCalculatePoints_PenaltiesBonusApplied(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	// pred 2-0 vs actual 3-1: same margin → correctOutcome + goalDifference + penaltiesBonus
+	pred := &domain.Prediction{HomeScore: 2, AwayScore: 0, PredictedWinMethod: &pen}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 3, 1, &pen, cfg)
+	want := cfg.correctOutcome + cfg.goalDifference + cfg.penaltiesBonus
+	if got != want {
+		t.Errorf("expected %d pts with penalties bonus, got %d", want, got)
+	}
+}
+
+func TestCalculatePoints_ExactScorePlusPenaltiesBonus(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	pred := &domain.Prediction{HomeScore: 1, AwayScore: 0, PredictedWinMethod: &pen}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 1, 0, &pen, cfg) // exact score + correct win method
+	want := cfg.exactScore + cfg.penaltiesBonus
+	if got != want {
+		t.Errorf("expected %d pts (exact+penalty bonus), got %d", want, got)
+	}
+}
+
+func TestCalculatePoints_WinMethodMismatch_NoBonus(t *testing.T) {
+	et := domain.WinMethodExtraTime
+	pen := domain.WinMethodPenalties
+	// pred 2-0 vs actual 3-1: correct outcome+margin but predicted extra_time, actual penalties
+	pred := &domain.Prediction{HomeScore: 2, AwayScore: 0, PredictedWinMethod: &et}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 3, 1, &pen, cfg)
+	want := cfg.correctOutcome + cfg.goalDifference
+	if got != want {
+		t.Errorf("expected %d pts (no bonus on mismatch), got %d", want, got)
+	}
+}
+
+func TestCalculatePoints_NilPredictedWinMethod_NoBonus(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	// pred 2-0 vs actual 3-1: correct outcome+margin, no predicted win method → no bonus
+	pred := &domain.Prediction{HomeScore: 2, AwayScore: 0, PredictedWinMethod: nil}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 3, 1, &pen, cfg)
+	want := cfg.correctOutcome + cfg.goalDifference
+	if got != want {
+		t.Errorf("expected %d pts (no bonus when predicted method nil), got %d", want, got)
+	}
+}
+
+func TestCalculatePoints_NilActualWinMethod_NoBonus(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	// pred 2-0 vs actual 3-1: correct outcome+margin, actual win method unknown → no bonus
+	pred := &domain.Prediction{HomeScore: 2, AwayScore: 0, PredictedWinMethod: &pen}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 3, 1, nil, cfg)
+	want := cfg.correctOutcome + cfg.goalDifference
+	if got != want {
+		t.Errorf("expected %d pts (no bonus when actual method nil), got %d", want, got)
+	}
+}
+
+func TestCalculatePoints_WrongOutcome_NoBonusEvenWithMatchingWinMethod(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	pred := &domain.Prediction{HomeScore: 0, AwayScore: 2, PredictedWinMethod: &pen} // predicted away win
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 2, 0, &pen, cfg) // actual home win — wrong outcome
+	if got != domain.PointsIncorrectResult {
+		t.Errorf("expected 0 pts on wrong outcome, got %d", got)
 	}
 }
 

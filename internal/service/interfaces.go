@@ -34,7 +34,7 @@ type MatchService interface {
 	ListMatches(ctx context.Context) ([]*domain.Match, error)
 	ListMatchesByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error)
 	ListMatchesByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
-	UpdateResult(ctx context.Context, id int, homeScore, awayScore int) (*domain.Match, error)
+	UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error)
 	StartMatch(ctx context.Context, id int) (*domain.Match, error)
 }
 
@@ -51,7 +51,7 @@ type MatchService interface {
 // silent last-write-wins overwrites.
 type PredictionService interface {
 	Submit(ctx context.Context, prediction *domain.Prediction) (created bool, err error)
-	Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int) (*domain.Prediction, error)
+	Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int, predictedWinMethod *domain.WinMethod) (*domain.Prediction, error)
 	GetByUser(ctx context.Context, userID int) ([]*domain.Prediction, error)
 	// GetByUserAndQuiniela returns all predictions for userID scoped to the
 	// given quiniela. It delegates the membership gate to the repository layer
@@ -82,8 +82,8 @@ type ScoringRuleService interface {
 	GetByPhase(ctx context.Context, phase domain.MatchPhase) (*domain.ScoringRule, error)
 	// Update persists new point values for a phase and records an audit entry.
 	// Returns NotFound when the phase has no seeded row; returns Validation when
-	// any point value is negative.
-	Update(ctx context.Context, phase domain.MatchPhase, exactScore, correctOutcome, goalDifference int, isActive bool, actorID int) (*domain.ScoringRule, error)
+	// any point value is negative or the scoring hierarchy is violated.
+	Update(ctx context.Context, phase domain.MatchPhase, exactScore, correctOutcome, goalDifference, extraTimeBonus, penaltiesBonus int, isActive bool, actorID int) (*domain.ScoringRule, error)
 }
 
 // LeaderboardResult is the value returned by Ranker methods. It bundles the

@@ -32,6 +32,8 @@ type ScoringRuleResponse struct {
 	ExactScore     int    `json:"exact_score"`
 	CorrectOutcome int    `json:"correct_outcome"`
 	GoalDifference int    `json:"goal_difference"`
+	ExtraTimeBonus int    `json:"extra_time_bonus"`
+	PenaltiesBonus int    `json:"penalties_bonus"`
 	IsActive       bool   `json:"is_active"`
 	UpdatedAt      string `json:"updated_at"`
 }
@@ -40,6 +42,8 @@ type updateScoringRuleRequest struct {
 	ExactScore     int  `json:"exact_score"`
 	CorrectOutcome int  `json:"correct_outcome"`
 	GoalDifference int  `json:"goal_difference"`
+	ExtraTimeBonus int  `json:"extra_time_bonus"`
+	PenaltiesBonus int  `json:"penalties_bonus"`
 	IsActive       bool `json:"is_active"`
 }
 
@@ -50,6 +54,8 @@ func scoringRuleToResponse(r *domain.ScoringRule) ScoringRuleResponse {
 		ExactScore:     r.ExactScore,
 		CorrectOutcome: r.CorrectOutcome,
 		GoalDifference: r.GoalDifference,
+		ExtraTimeBonus: r.ExtraTimeBonus,
+		PenaltiesBonus: r.PenaltiesBonus,
 		IsActive:       r.IsActive,
 		UpdatedAt:      r.UpdatedAt.Format(timeFormat),
 	}
@@ -150,6 +156,7 @@ func (h *AdminScoringRuleHandler) Update(w http.ResponseWriter, r *http.Request)
 
 	updated, err := h.svc.Update(r.Context(), phase,
 		req.ExactScore, req.CorrectOutcome, req.GoalDifference,
+		req.ExtraTimeBonus, req.PenaltiesBonus,
 		req.IsActive, caller.ID,
 	)
 	if err != nil {

@@ -21,13 +21,14 @@ func NewPostgresScoringRuleRepository(db *pgxpool.Pool) *PostgresScoringRuleRepo
 	return &PostgresScoringRuleRepository{db: db}
 }
 
-const scoringRuleColumns = "id, phase, exact_score, correct_outcome, goal_difference, is_active, created_at, updated_at"
+const scoringRuleColumns = "id, phase, exact_score, correct_outcome, goal_difference, extra_time_bonus, penalties_bonus, is_active, created_at, updated_at"
 
 func scanScoringRule(row pgx.Row) (*domain.ScoringRule, error) {
 	r := &domain.ScoringRule{}
 	err := row.Scan(
 		&r.ID, &r.Phase, &r.ExactScore, &r.CorrectOutcome,
-		&r.GoalDifference, &r.IsActive, &r.CreatedAt, &r.UpdatedAt,
+		&r.GoalDifference, &r.ExtraTimeBonus, &r.PenaltiesBonus,
+		&r.IsActive, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -65,7 +66,8 @@ func (r *PostgresScoringRuleRepository) List(ctx context.Context) ([]*domain.Sco
 		rule := &domain.ScoringRule{}
 		if err := rows.Scan(
 			&rule.ID, &rule.Phase, &rule.ExactScore, &rule.CorrectOutcome,
-			&rule.GoalDifference, &rule.IsActive, &rule.CreatedAt, &rule.UpdatedAt,
+			&rule.GoalDifference, &rule.ExtraTimeBonus, &rule.PenaltiesBonus,
+			&rule.IsActive, &rule.CreatedAt, &rule.UpdatedAt,
 		); err != nil {
 			return nil, apperrors.Internal(err)
 		}
@@ -92,15 +94,17 @@ func (r *PostgresScoringRuleRepository) GetByPhase(ctx context.Context, phase do
 func (r *PostgresScoringRuleRepository) Update(ctx context.Context, rule *domain.ScoringRule) (*domain.ScoringRule, error) {
 	row := r.db.QueryRow(ctx,
 		`UPDATE scoring_rules
-		    SET exact_score     = $2,
-		        correct_outcome = $3,
-		        goal_difference = $4,
-		        is_active       = $5,
-		        updated_at      = NOW()
+		    SET exact_score      = $2,
+		        correct_outcome  = $3,
+		        goal_difference  = $4,
+		        extra_time_bonus = $5,
+		        penalties_bonus  = $6,
+		        is_active        = $7,
+		        updated_at       = NOW()
 		  WHERE phase = $1
 		  RETURNING `+scoringRuleColumns,
 		string(rule.Phase), rule.ExactScore, rule.CorrectOutcome,
-		rule.GoalDifference, rule.IsActive,
+		rule.GoalDifference, rule.ExtraTimeBonus, rule.PenaltiesBonus, rule.IsActive,
 	)
 	result, err := scanScoringRule(row)
 	if err != nil {

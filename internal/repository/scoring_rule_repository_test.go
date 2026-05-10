@@ -100,6 +100,44 @@ func TestScoringRuleRepository_GetByPhase_FinalSeedValues(t *testing.T) {
 		t.Errorf("final seed: got %d/%d/%d, want 15/8/3",
 			rule.ExactScore, rule.CorrectOutcome, rule.GoalDifference)
 	}
+	if rule.ExtraTimeBonus != 1 || rule.PenaltiesBonus != 2 {
+		t.Errorf("final win-method bonuses: got %d/%d, want 1/2",
+			rule.ExtraTimeBonus, rule.PenaltiesBonus)
+	}
+}
+
+func TestScoringRuleRepository_GetByPhase_GroupStageBonusesAreZero(t *testing.T) {
+	repo := repository.NewPostgresScoringRuleRepository(testDB)
+
+	rule, err := repo.GetByPhase(context.Background(), domain.PhaseGroupStage)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if rule == nil {
+		t.Fatal("expected rule for group_stage, got nil")
+	}
+	if rule.ExtraTimeBonus != 0 || rule.PenaltiesBonus != 0 {
+		t.Errorf("group_stage bonuses must be 0, got extra_time=%d penalties=%d",
+			rule.ExtraTimeBonus, rule.PenaltiesBonus)
+	}
+}
+
+func TestScoringRuleRepository_List_KnockoutPhasesHaveBonuses(t *testing.T) {
+	repo := repository.NewPostgresScoringRuleRepository(testDB)
+
+	rules, err := repo.List(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	for _, r := range rules {
+		if r.Phase == domain.PhaseGroupStage {
+			continue
+		}
+		if r.ExtraTimeBonus != 1 || r.PenaltiesBonus != 2 {
+			t.Errorf("phase %q: expected bonuses 1/2, got %d/%d",
+				r.Phase, r.ExtraTimeBonus, r.PenaltiesBonus)
+		}
+	}
 }
 
 func TestScoringRuleRepository_GetByPhase_UnknownPhaseReturnsNil(t *testing.T) {
@@ -134,6 +172,8 @@ func TestScoringRuleRepository_Update_PersistsNewValues(t *testing.T) {
 		ExactScore:     20,
 		CorrectOutcome: 10,
 		GoalDifference: 4,
+		ExtraTimeBonus: 3,
+		PenaltiesBonus: 5,
 		IsActive:       false,
 	})
 	if err != nil {
@@ -142,6 +182,10 @@ func TestScoringRuleRepository_Update_PersistsNewValues(t *testing.T) {
 	if updated.ExactScore != 20 || updated.CorrectOutcome != 10 || updated.GoalDifference != 4 {
 		t.Errorf("updated values: got %d/%d/%d, want 20/10/4",
 			updated.ExactScore, updated.CorrectOutcome, updated.GoalDifference)
+	}
+	if updated.ExtraTimeBonus != 3 || updated.PenaltiesBonus != 5 {
+		t.Errorf("bonus values: got %d/%d, want 3/5",
+			updated.ExtraTimeBonus, updated.PenaltiesBonus)
 	}
 	if updated.IsActive {
 		t.Error("is_active: expected false after update")
