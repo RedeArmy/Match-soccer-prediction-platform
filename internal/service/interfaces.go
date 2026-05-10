@@ -71,6 +71,21 @@ type MatchScorer interface {
 	ScoreMatch(ctx context.Context, matchID int) error
 }
 
+// ScoringRuleService manages per-phase point configuration exposed through the
+// admin API. Operators can raise knockout-stage point values mid-tournament
+// without a service restart or migration; changes take effect on the next
+// ScoreMatch call.
+type ScoringRuleService interface {
+	// List returns all phase rules ordered by tournament progression.
+	List(ctx context.Context) ([]*domain.ScoringRule, error)
+	// GetByPhase returns the rule for a specific phase.
+	GetByPhase(ctx context.Context, phase domain.MatchPhase) (*domain.ScoringRule, error)
+	// Update persists new point values for a phase and records an audit entry.
+	// Returns NotFound when the phase has no seeded row; returns Validation when
+	// any point value is negative.
+	Update(ctx context.Context, phase domain.MatchPhase, exactScore, correctOutcome, goalDifference int, isActive bool, actorID int) (*domain.ScoringRule, error)
+}
+
 // LeaderboardResult is the value returned by Ranker methods. It bundles the
 // ranked entries with group-level metadata that the handler layer needs to
 // compute prize eligibility and winner count without an additional round-trip.

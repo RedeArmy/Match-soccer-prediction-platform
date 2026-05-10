@@ -118,6 +118,30 @@ const (
 	PhaseFinal        MatchPhase = "final"
 )
 
+// ScoringRule defines the point values awarded for each prediction outcome
+// within a specific tournament phase. Knockout rounds carry progressively
+// higher point values than the group stage, rewarding correct predictions
+// on higher-stakes fixtures.
+//
+// ExactScore, CorrectOutcome, and GoalDifference mirror the flat
+// domain.PointsExact*, PointsCorrect*, PointsGoalDiff* constants but are
+// scoped to a single phase row, allowing operators to adjust knockout-stage
+// rewards through the admin API without redeploying the service.
+//
+// IsActive provides a soft-disable switch: setting a phase to inactive falls
+// back to the global system_params values at scoring time so a misconfigured
+// rule can be rolled back immediately without a migration.
+type ScoringRule struct {
+	ID             int
+	Phase          MatchPhase
+	ExactScore     int
+	CorrectOutcome int
+	GoalDifference int
+	IsActive       bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 // Match represents a single World Cup fixture in the tournament schedule.
 //
 // HomeScore and AwayScore are pointers because a nil value is semantically

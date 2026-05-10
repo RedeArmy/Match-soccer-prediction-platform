@@ -465,6 +465,23 @@ definitions:
       user_id:
         type: integer
     type: object
+  internal_api_handler.ScoringRuleResponse:
+    properties:
+      correct_outcome:
+        type: integer
+      exact_score:
+        type: integer
+      goal_difference:
+        type: integer
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      phase:
+        type: string
+      updated_at:
+        type: string
+    type: object
   internal_api_handler.SnapshotEntryResponse:
     properties:
       prize_winner:
@@ -705,6 +722,17 @@ definitions:
         type: integer
       home_score:
         type: integer
+    type: object
+  internal_api_handler.updateScoringRuleRequest:
+    properties:
+      correct_outcome:
+        type: integer
+      exact_score:
+        type: integer
+      goal_difference:
+        type: integer
+      is_active:
+        type: boolean
     type: object
 host: localhost:8080
 info:
@@ -1684,6 +1712,124 @@ paths:
       summary: List predictions by match
       tags:
       - admin-leaderboard
+  /api/v1/admin/scoring-rules:
+    get:
+      description: Returns the point configuration for all seven tournament phases,
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.ScoringRuleResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List scoring rules
+      tags:
+      - admin-scoring-rules
+  /api/v1/admin/scoring-rules/{phase}:
+    get:
+      description: Returns the point configuration for the requested tournament phase.
+      parameters:
+      - description: Tournament phase (e.g. group_stage, round_of_16, final)
+        in: path
+        name: phase
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.ScoringRuleResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Phase not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get scoring rule for a phase
+      tags:
+      - admin-scoring-rules
+    patch:
+      consumes:
+      - application/json
+      description: Sets new point values for the requested tournament phase. Changes
+      parameters:
+      - description: Tournament phase
+        in: path
+        name: phase
+        required: true
+        type: string
+      - description: New point values
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.updateScoringRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.ScoringRuleResponse'
+        "400":
+          description: Invalid JSON
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Phase not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update scoring rule for a phase
+      tags:
+      - admin-scoring-rules
   /api/v1/admin/stats:
     get:
       description: Returns aggregate counts for groups, users, and payment records.

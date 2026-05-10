@@ -251,3 +251,21 @@ func (s *stubConflictSvc) ConflictSummary(_ context.Context) (*service.ConflictS
 func (s *stubConflictSvc) ResolveConflict(_ context.Context, _ string, _, _ int, _, _ string) error {
 	return s.err
 }
+
+// ── ScoringRuleService stub ───────────────────────────────────────────────────
+
+type stubScoringRuleSvc struct {
+	rule  *domain.ScoringRule
+	rules []*domain.ScoringRule
+	err   error
+}
+
+func (s *stubScoringRuleSvc) List(_ context.Context) ([]*domain.ScoringRule, error) {
+	return s.rules, s.err
+}
+func (s *stubScoringRuleSvc) GetByPhase(_ context.Context, _ domain.MatchPhase) (*domain.ScoringRule, error) {
+	return s.rule, s.err
+}
+func (s *stubScoringRuleSvc) Update(_ context.Context, _ domain.MatchPhase, _, _, _ int, _ bool, _ int) (*domain.ScoringRule, error) {
+	return s.rule, s.err
+}

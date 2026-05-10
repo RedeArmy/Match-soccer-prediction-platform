@@ -1526,6 +1526,190 @@
                 }
             }
         },
+        "/api/v1/admin/scoring-rules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the point configuration for all seven tournament phases,",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-scoring-rules"
+                ],
+                "summary": "List scoring rules",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.ScoringRuleResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/scoring-rules/{phase}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the point configuration for the requested tournament phase.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-scoring-rules"
+                ],
+                "summary": "Get scoring rule for a phase",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tournament phase (e.g. group_stage, round_of_16, final)",
+                        "name": "phase",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ScoringRuleResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Phase not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets new point values for the requested tournament phase. Changes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-scoring-rules"
+                ],
+                "summary": "Update scoring rule for a phase",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tournament phase",
+                        "name": "phase",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New point values",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.updateScoringRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ScoringRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid JSON",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Phase not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/stats": {
             "get": {
                 "security": [
@@ -4124,6 +4308,32 @@
                 }
             }
         },
+        "internal_api_handler.ScoringRuleResponse": {
+            "type": "object",
+            "properties": {
+                "correct_outcome": {
+                    "type": "integer"
+                },
+                "exact_score": {
+                    "type": "integer"
+                },
+                "goal_difference": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.SnapshotEntryResponse": {
             "type": "object",
             "properties": {
@@ -4495,6 +4705,23 @@
                 },
                 "home_score": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.updateScoringRuleRequest": {
+            "type": "object",
+            "properties": {
+                "correct_outcome": {
+                    "type": "integer"
+                },
+                "exact_score": {
+                    "type": "integer"
+                },
+                "goal_difference": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
                 }
             }
         }

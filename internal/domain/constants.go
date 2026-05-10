@@ -304,6 +304,7 @@ const (
 	AuditActionMemberBulkRemoved    = "admin_group.member_bulk_removed"
 	AuditActionGroupBulkDeleted     = "admin_group.bulk_deleted"
 	AuditActionLeaderboardRefreshed = "admin_group.leaderboard_refreshed"
+	AuditActionScoringRuleUpdated   = "scoring_rule.updated"
 )
 
 // Snapshot schema versions identify the JSONB encoding format used by
