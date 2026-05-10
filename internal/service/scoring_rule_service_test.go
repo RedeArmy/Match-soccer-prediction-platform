@@ -96,7 +96,8 @@ func TestScoringRuleService_Update_ValidInput_ReturnsUpdatedRule(t *testing.T) {
 	repo := &stubScoringRuleRepo{rule: rule}
 	svc := NewScoringRuleService(repo, &noopAuditLogger{}, zap.NewNop())
 
-	got, err := svc.Update(context.Background(), domain.PhaseGroupStage, 5, 2, 1, 0, 0, true, 42)
+	got, err := svc.Update(context.Background(), domain.PhaseGroupStage,
+		ScoringRuleInput{ExactScore: 5, CorrectOutcome: 2, GoalDifference: 1, IsActive: true}, 42)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -109,7 +110,8 @@ func TestScoringRuleService_Update_NegativeExactScore_ReturnsValidation(t *testi
 	repo := &stubScoringRuleRepo{}
 	svc := NewScoringRuleService(repo, &noopAuditLogger{}, zap.NewNop())
 
-	_, err := svc.Update(context.Background(), domain.PhaseGroupStage, -1, 2, 1, 0, 0, true, 1)
+	_, err := svc.Update(context.Background(), domain.PhaseGroupStage,
+		ScoringRuleInput{ExactScore: -1, CorrectOutcome: 2, GoalDifference: 1, IsActive: true}, 1)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected ErrValidation for negative exact_score, got %v", err)
 	}
@@ -119,7 +121,8 @@ func TestScoringRuleService_Update_NegativeCorrectOutcome_ReturnsValidation(t *t
 	repo := &stubScoringRuleRepo{}
 	svc := NewScoringRuleService(repo, &noopAuditLogger{}, zap.NewNop())
 
-	_, err := svc.Update(context.Background(), domain.PhaseGroupStage, 5, -1, 1, 0, 0, true, 1)
+	_, err := svc.Update(context.Background(), domain.PhaseGroupStage,
+		ScoringRuleInput{ExactScore: 5, CorrectOutcome: -1, GoalDifference: 1, IsActive: true}, 1)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected ErrValidation for negative correct_outcome, got %v", err)
 	}
@@ -130,7 +133,8 @@ func TestScoringRuleService_Update_CorrectOutcomeEqualExact_ReturnsValidation(t 
 	svc := NewScoringRuleService(repo, &noopAuditLogger{}, zap.NewNop())
 
 	// correctOutcome >= exactScore when exactScore > 0 violates the hierarchy
-	_, err := svc.Update(context.Background(), domain.PhaseGroupStage, 3, 3, 1, 0, 0, true, 1)
+	_, err := svc.Update(context.Background(), domain.PhaseGroupStage,
+		ScoringRuleInput{ExactScore: 3, CorrectOutcome: 3, GoalDifference: 1, IsActive: true}, 1)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected ErrValidation when correct_outcome == exact_score, got %v", err)
 	}
@@ -140,7 +144,8 @@ func TestScoringRuleService_Update_CorrectOutcomeGreaterThanExact_ReturnsValidat
 	repo := &stubScoringRuleRepo{}
 	svc := NewScoringRuleService(repo, &noopAuditLogger{}, zap.NewNop())
 
-	_, err := svc.Update(context.Background(), domain.PhaseGroupStage, 2, 5, 1, 0, 0, true, 1)
+	_, err := svc.Update(context.Background(), domain.PhaseGroupStage,
+		ScoringRuleInput{ExactScore: 2, CorrectOutcome: 5, GoalDifference: 1, IsActive: true}, 1)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected ErrValidation when correct_outcome > exact_score, got %v", err)
 	}
@@ -150,7 +155,8 @@ func TestScoringRuleService_Update_NegativeExtraTimeBonus_ReturnsValidation(t *t
 	repo := &stubScoringRuleRepo{}
 	svc := NewScoringRuleService(repo, &noopAuditLogger{}, zap.NewNop())
 
-	_, err := svc.Update(context.Background(), domain.PhaseRoundOf16, 8, 4, 2, -1, 2, true, 1)
+	_, err := svc.Update(context.Background(), domain.PhaseRoundOf16,
+		ScoringRuleInput{ExactScore: 8, CorrectOutcome: 4, GoalDifference: 2, ExtraTimeBonus: -1, PenaltiesBonus: 2, IsActive: true}, 1)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected ErrValidation for negative extra_time_bonus, got %v", err)
 	}
@@ -160,7 +166,8 @@ func TestScoringRuleService_Update_NegativePenaltiesBonus_ReturnsValidation(t *t
 	repo := &stubScoringRuleRepo{}
 	svc := NewScoringRuleService(repo, &noopAuditLogger{}, zap.NewNop())
 
-	_, err := svc.Update(context.Background(), domain.PhaseRoundOf16, 8, 4, 2, 1, -1, true, 1)
+	_, err := svc.Update(context.Background(), domain.PhaseRoundOf16,
+		ScoringRuleInput{ExactScore: 8, CorrectOutcome: 4, GoalDifference: 2, ExtraTimeBonus: 1, PenaltiesBonus: -1, IsActive: true}, 1)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected ErrValidation for negative penalties_bonus, got %v", err)
 	}
@@ -175,7 +182,8 @@ func TestScoringRuleService_Update_AllZeros_AllowsDisabledRule(t *testing.T) {
 	repo := &stubScoringRuleRepo{rule: rule}
 	svc := NewScoringRuleService(repo, &noopAuditLogger{}, zap.NewNop())
 
-	_, err := svc.Update(context.Background(), domain.PhaseGroupStage, 0, 0, 0, 0, 0, false, 1)
+	_, err := svc.Update(context.Background(), domain.PhaseGroupStage,
+		ScoringRuleInput{ExactScore: 0, CorrectOutcome: 0, GoalDifference: 0, IsActive: false}, 1)
 	if err != nil {
 		t.Errorf("expected nil for all-zero rule, got %v", err)
 	}
@@ -186,7 +194,8 @@ func TestScoringRuleService_Update_PropagatesRepoError(t *testing.T) {
 	repo := &stubScoringRuleRepo{err: repoErr}
 	svc := NewScoringRuleService(repo, &noopAuditLogger{}, zap.NewNop())
 
-	_, err := svc.Update(context.Background(), domain.PhaseGroupStage, 5, 2, 1, 0, 0, true, 1)
+	_, err := svc.Update(context.Background(), domain.PhaseGroupStage,
+		ScoringRuleInput{ExactScore: 5, CorrectOutcome: 2, GoalDifference: 1, IsActive: true}, 1)
 	if !errors.Is(err, repoErr) {
 		t.Errorf("expected repo error, got %v", err)
 	}

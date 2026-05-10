@@ -151,36 +151,47 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 // a correct outcome (base points > 0). The bonus is exclusive: at most one
 // of extraTimeBonus or penaltiesBonus is awarded per prediction.
 func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, actualWinMethod *domain.WinMethod, cfg scoringConfig) int {
-	var base int
-	if pred.HomeScore == actualHome && pred.AwayScore == actualAway {
-		base = cfg.exactScore
-	} else {
-		predOutcome := outcome(pred.HomeScore, pred.AwayScore)
-		actualOutcome := outcome(actualHome, actualAway)
-
-		if predOutcome != actualOutcome {
-			return domain.PointsIncorrectResult
-		}
-
-		base = cfg.correctOutcome
-		if actualOutcome != outcomeDraw && goalDiff(pred.HomeScore, pred.AwayScore) == goalDiff(actualHome, actualAway) {
-			base += cfg.goalDifference
-		}
-	}
-
-	if base > 0 && pred.PredictedWinMethod != nil && actualWinMethod != nil {
-		switch *actualWinMethod {
-		case domain.WinMethodExtraTime:
-			if *pred.PredictedWinMethod == domain.WinMethodExtraTime {
-				base += cfg.extraTimeBonus
-			}
-		case domain.WinMethodPenalties:
-			if *pred.PredictedWinMethod == domain.WinMethodPenalties {
-				base += cfg.penaltiesBonus
-			}
-		}
+	base := basePoints(pred, actualHome, actualAway, cfg)
+	if base > 0 {
+		base += winMethodBonus(pred.PredictedWinMethod, actualWinMethod, cfg)
 	}
 	return base
+}
+
+// basePoints returns the core score for a prediction ignoring win-method bonuses.
+func basePoints(pred *domain.Prediction, actualHome, actualAway int, cfg scoringConfig) int {
+	if pred.HomeScore == actualHome && pred.AwayScore == actualAway {
+		return cfg.exactScore
+	}
+	predOutcome := outcome(pred.HomeScore, pred.AwayScore)
+	actualOutcome := outcome(actualHome, actualAway)
+	if predOutcome != actualOutcome {
+		return domain.PointsIncorrectResult
+	}
+	points := cfg.correctOutcome
+	if actualOutcome != outcomeDraw && goalDiff(pred.HomeScore, pred.AwayScore) == goalDiff(actualHome, actualAway) {
+		points += cfg.goalDifference
+	}
+	return points
+}
+
+// winMethodBonus returns the bonus when the predicted win method matches the actual one.
+// Returns 0 when either side did not declare a win method.
+func winMethodBonus(predicted, actual *domain.WinMethod, cfg scoringConfig) int {
+	if predicted == nil || actual == nil {
+		return 0
+	}
+	switch *actual {
+	case domain.WinMethodExtraTime:
+		if *predicted == domain.WinMethodExtraTime {
+			return cfg.extraTimeBonus
+		}
+	case domain.WinMethodPenalties:
+		if *predicted == domain.WinMethodPenalties {
+			return cfg.penaltiesBonus
+		}
+	}
+	return 0
 }
 
 type matchOutcome int

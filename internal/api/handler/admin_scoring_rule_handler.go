@@ -154,11 +154,14 @@ func (h *AdminScoringRuleHandler) Update(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	updated, err := h.svc.Update(r.Context(), phase,
-		req.ExactScore, req.CorrectOutcome, req.GoalDifference,
-		req.ExtraTimeBonus, req.PenaltiesBonus,
-		req.IsActive, caller.ID,
-	)
+	updated, err := h.svc.Update(r.Context(), phase, service.ScoringRuleInput{
+		ExactScore:     req.ExactScore,
+		CorrectOutcome: req.CorrectOutcome,
+		GoalDifference: req.GoalDifference,
+		ExtraTimeBonus: req.ExtraTimeBonus,
+		PenaltiesBonus: req.PenaltiesBonus,
+		IsActive:       req.IsActive,
+	}, caller.ID)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
