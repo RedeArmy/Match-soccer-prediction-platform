@@ -216,7 +216,7 @@ func TestUpdate_ValidPrediction_ReturnsUpdated(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	got, err := svc.Update(context.Background(), 1, 1, 2, 1)
+	got, err := svc.Update(context.Background(), 1, 1, 2, 1, nil)
 	if err != nil {
 		t.Fatalf(fmtExpectNil, err)
 	}
@@ -230,7 +230,7 @@ func TestUpdate_PredictionNotFound_ReturnsNotFound(t *testing.T) {
 	predRepo := &stubPredRepo{byID: nil}
 	svc := NewPredictionService(predRepo, matchRepo, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 99, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
+	if _, err := svc.Update(context.Background(), 1, 99, 1, 0, nil); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf(fmtNotFoundErr, err)
 	}
 }
@@ -240,7 +240,7 @@ func TestUpdate_MatchNotFound_ReturnsNotFound(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{match: nil}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 1, 1, 0); !errors.Is(err, apperrors.ErrNotFound) {
+	if _, err := svc.Update(context.Background(), 1, 1, 1, 0, nil); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf(fmtNotFoundErr, err)
 	}
 }
@@ -254,7 +254,7 @@ func TestUpdate_PastDeadline_ReturnsValidation(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1, nil); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for deadline, got %v", err)
 	}
 }
@@ -265,7 +265,7 @@ func TestUpdate_OtherUsersPrediction_ReturnsForbidden(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrForbidden) {
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1, nil); !errors.Is(err, apperrors.ErrForbidden) {
 		t.Errorf("expected forbidden error for ownership mismatch, got %v", err)
 	}
 	if len(predRepo.updated) != 0 {
@@ -282,7 +282,7 @@ func TestUpdate_LiveMatch_ReturnsValidation(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1, nil); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for live match, got %v", err)
 	}
 }
@@ -296,7 +296,7 @@ func TestUpdate_FinishedMatch_ReturnsValidation(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrValidation) {
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1, nil); !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for finished match, got %v", err)
 	}
 }
@@ -310,7 +310,7 @@ func TestUpdate_ConcurrentModification_ReturnsConflict(t *testing.T) {
 	}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); !errors.Is(err, apperrors.ErrConflict) {
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1, nil); !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict error for concurrent modification, got %v", err)
 	}
 }
@@ -321,7 +321,7 @@ func TestUpdate_IdenticalScores_ShortCircuitsWithoutWrite(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{match: match}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	got, err := svc.Update(context.Background(), 1, 1, 2, 1) // same scores as pred
+	got, err := svc.Update(context.Background(), 1, 1, 2, 1, nil) // same scores as pred, nil win method
 	if err != nil {
 		t.Fatalf("expected nil error on identical-score update, got %v", err)
 	}
@@ -338,7 +338,7 @@ func TestUpdate_MatchRepoError_Propagates(t *testing.T) {
 	predRepo := &stubPredRepo{byID: pred}
 	svc := NewPredictionService(predRepo, &stubMatchRepo{err: errors.New("db down")}, &noopSystemParamService{}, clock.Real{}, zap.NewNop())
 
-	if _, err := svc.Update(context.Background(), 1, 1, 2, 1); err == nil {
+	if _, err := svc.Update(context.Background(), 1, 1, 2, 1, nil); err == nil {
 		t.Fatal("expected error from match repo, got nil")
 	}
 }

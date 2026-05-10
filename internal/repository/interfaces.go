@@ -541,3 +541,16 @@ type Purger interface {
 	//   - tiebreakers rows deleted  (OperationalDelete)
 	EraseUserPII(ctx context.Context, userID int) error
 }
+
+// ScoringRuleRepository defines persistence operations for per-phase scoring
+// configuration. Implementations must guarantee that every valid MatchPhase
+// has a corresponding row (seeded by migration 000063).
+type ScoringRuleRepository interface {
+	// List returns all scoring rules ordered by phase for admin display.
+	List(ctx context.Context) ([]*domain.ScoringRule, error)
+	// GetByPhase returns the rule for a specific phase, or nil if absent.
+	GetByPhase(ctx context.Context, phase domain.MatchPhase) (*domain.ScoringRule, error)
+	// Update persists new point values and the is_active flag for an existing
+	// phase row. Returns NotFound when the phase has no seeded row.
+	Update(ctx context.Context, rule *domain.ScoringRule) (*domain.ScoringRule, error)
+}

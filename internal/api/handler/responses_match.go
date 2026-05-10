@@ -14,6 +14,7 @@ type MatchResponse struct {
 	Status     string           `json:"status"`
 	Phase      string           `json:"phase"`
 	GroupLabel *string          `json:"group_label,omitempty"`
+	WinMethod  *string          `json:"win_method,omitempty"`
 	StadiumID  *int             `json:"stadium_id"`
 	Stadium    *StadiumResponse `json:"stadium,omitempty"`
 	KickoffAt  string           `json:"kickoff_at"`
@@ -35,6 +36,10 @@ func matchToResponse(m *domain.Match) MatchResponse {
 		KickoffAt:  m.KickoffAt.Format(timeFormat),
 		CreatedAt:  m.CreatedAt.Format(timeFormat),
 		UpdatedAt:  m.UpdatedAt.Format(timeFormat),
+	}
+	if m.WinMethod != nil {
+		wm := string(*m.WinMethod)
+		resp.WinMethod = &wm
 	}
 	if m.Stadium != nil {
 		sr := &StadiumResponse{
