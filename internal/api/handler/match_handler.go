@@ -184,7 +184,11 @@ func (h *MatchHandler) UpdateResult(w http.ResponseWriter, r *http.Request) {
 	}
 	var winMethod *domain.WinMethod
 	if req.WinMethod != nil {
-		wm := domain.WinMethod(*req.WinMethod)
+		wm, err := domain.ParseWinMethod(*req.WinMethod)
+		if err != nil {
+			writeError(w, r, h.log, err)
+			return
+		}
 		winMethod = &wm
 	}
 	match, err := h.svc.UpdateResult(r.Context(), id, *req.HomeScore, *req.AwayScore, winMethod)

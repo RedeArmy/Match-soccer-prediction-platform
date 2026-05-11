@@ -74,19 +74,31 @@ func (e MatchStarted) Validate() error {
 
 // MatchFinished is emitted when a match result is confirmed.
 //
-// HomeScore and AwayScore carry the final scoreline so that consumers
-// (ScoringService) do not need to re-fetch the match from the database
-// for the common case where only the score is needed.
+// HomeScore, AwayScore, and WinMethod carry the full final result so that
+// consumers have a complete picture without a DB round-trip. WinMethod is
+// an empty string for group-stage matches or when the match was decided in
+// normal time; valid non-empty values are "normal", "extra_time", "penalties".
 type MatchFinished struct {
 	MatchID   int
 	HomeTeam  string
 	AwayTeam  string
 	HomeScore int
 	AwayScore int
+	WinMethod string // empty = not applicable (group stage); see domain.WinMethod constants
+}
+
+// validWinMethods is the set of non-empty WinMethod values accepted in a
+// MatchFinished event. Kept local to the events package to avoid importing
+// the parent domain package (which would create a circular dependency).
+var validWinMethods = map[string]struct{}{
+	"normal":     {},
+	"extra_time": {},
+	"penalties":  {},
 }
 
 // Validate enforces the invariants of MatchFinished.
-// MatchID must be positive, team names must be non-empty, and scores must be non-negative.
+// MatchID must be positive, team names must be non-empty, scores must be
+// non-negative, and WinMethod — when non-empty — must be a known value.
 func (e MatchFinished) Validate() error {
 	if e.MatchID <= 0 {
 		return apperrors.Validation("MatchFinished: MatchID must be positive")
@@ -102,6 +114,11 @@ func (e MatchFinished) Validate() error {
 	}
 	if e.AwayScore < 0 {
 		return apperrors.Validation("MatchFinished: AwayScore must not be negative")
+	}
+	if e.WinMethod != "" {
+		if _, ok := validWinMethods[e.WinMethod]; !ok {
+			return apperrors.Validation(`MatchFinished: WinMethod must be one of: "normal", "extra_time", "penalties"`)
+		}
 	}
 	return nil
 }

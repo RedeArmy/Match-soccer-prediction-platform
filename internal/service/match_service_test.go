@@ -140,6 +140,31 @@ func TestUpdateResult_LiveMatch_ConfirmsResultAndEmitsEvent(t *testing.T) {
 	}
 }
 
+// TestUpdateResult_LiveMatch_WithWinMethod_PopulatesEventPayload verifies that
+// WinMethod is propagated into the MatchFinished event payload (covers winMethodString
+// non-nil branch).
+func TestUpdateResult_LiveMatch_WithWinMethod_PopulatesEventPayload(t *testing.T) {
+	match := &domain.Match{ID: 5, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
+		Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(-time.Hour)}
+	svc, pub := newMatchSvc(match)
+
+	wm := domain.WinMethodPenalties
+	_, err := svc.UpdateResult(context.Background(), 5, 3, 2, &wm)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	if len(pub.published) != 1 {
+		t.Fatalf("expected one MatchFinished event, got %d", len(pub.published))
+	}
+	payload, ok := pub.published[0].Payload.(events.MatchFinished)
+	if !ok {
+		t.Fatalf("expected MatchFinished payload, got %T", pub.published[0].Payload)
+	}
+	if payload.WinMethod != string(domain.WinMethodPenalties) {
+		t.Errorf("expected WinMethod %q in event, got %q", domain.WinMethodPenalties, payload.WinMethod)
+	}
+}
+
 // TestUpdateResult_ScheduledMatch_ReturnsValidationError enforces that a result
 // cannot be set before the match is started. The admin must call StartMatch first,
 // which closes the prediction window.

@@ -495,3 +495,56 @@ func TestValidateUserName_EmptyString_Accepted(t *testing.T) {
 		t.Errorf("expected nil for empty user name, got %v", err)
 	}
 }
+
+// ── ParseWinMethod ────────────────────────────────────────────────────────────
+
+func TestParseWinMethod_Normal_ReturnsValue(t *testing.T) {
+	wm, err := domain.ParseWinMethod("normal")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if wm != domain.WinMethodNormal {
+		t.Errorf("expected WinMethodNormal, got %q", wm)
+	}
+}
+
+func TestParseWinMethod_ExtraTime_ReturnsValue(t *testing.T) {
+	wm, err := domain.ParseWinMethod("extra_time")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if wm != domain.WinMethodExtraTime {
+		t.Errorf("expected WinMethodExtraTime, got %q", wm)
+	}
+}
+
+func TestParseWinMethod_Penalties_ReturnsValue(t *testing.T) {
+	wm, err := domain.ParseWinMethod("penalties")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if wm != domain.WinMethodPenalties {
+		t.Errorf("expected WinMethodPenalties, got %q", wm)
+	}
+}
+
+func TestParseWinMethod_UnknownValue_ReturnsValidation(t *testing.T) {
+	_, err := domain.ParseWinMethod("overtime")
+	if !isValidation(err) {
+		t.Errorf("expected validation error for unknown win_method, got %v", err)
+	}
+}
+
+func TestParseWinMethod_EmptyString_ReturnsValidation(t *testing.T) {
+	_, err := domain.ParseWinMethod("")
+	if !isValidation(err) {
+		t.Errorf("expected validation error for empty win_method, got %v", err)
+	}
+}
+
+func TestParseWinMethod_CaseSensitive_ReturnsValidation(t *testing.T) {
+	_, err := domain.ParseWinMethod("Extra_Time")
+	if !isValidation(err) {
+		t.Errorf("expected validation error for wrong-cased win_method, got %v", err)
+	}
+}

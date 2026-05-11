@@ -197,6 +197,23 @@ func TestUpdateResult_ServiceError_Returns422(t *testing.T) {
 	}
 }
 
+func TestUpdateResult_InvalidWinMethod_Returns422(t *testing.T) {
+	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPatch, "/1",
+		`{"home_score":1,"away_score":0,"win_method":"overtime"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestUpdateResult_WithValidWinMethod_Returns200(t *testing.T) {
+	svc := &stubMatchSvc{match: &domain.Match{ID: 1}}
+	w := do(newMatchRouter(svc), http.MethodPatch, "/1",
+		`{"home_score":1,"away_score":0,"win_method":"penalties"}`)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
 // ── StartMatch ────────────────────────────────────────────────────────────────
 
 func TestStartMatch_Success_Returns200(t *testing.T) {
