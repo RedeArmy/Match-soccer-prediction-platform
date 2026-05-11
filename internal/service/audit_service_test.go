@@ -302,3 +302,27 @@ func TestAuditService_InFlight_TracksGoroutineCount(t *testing.T) {
 		t.Errorf("expected InFlight() == 0 after Drain, got %d", got)
 	}
 }
+
+// TestAuditService_Log_CancelledContext_WriteStillCompletes verifies that
+// cancelling the caller's context before Log returns does not abort the audit
+// write. This is the key invariant of the WithoutCancel detach: an operation
+// that already succeeded must produce an audit entry even if the HTTP client
+// disconnected immediately after.
+func TestAuditService_Log_CancelledContext_WriteStillCompletes(t *testing.T) {
+	repo := &stubAuditLogRepo{}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before calling Log — simulates client disconnect
+
+	id := 1
+	svc.Log(ctx, &id, nil, "match.result_set", nil, &id, nil)
+	svc.Drain()
+
+	repo.mu.Lock()
+	n := len(repo.created)
+	repo.mu.Unlock()
+	if n != 1 {
+		t.Errorf("expected 1 audit entry despite cancelled context, got %d", n)
+	}
+}

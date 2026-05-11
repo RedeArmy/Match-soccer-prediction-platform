@@ -134,7 +134,11 @@ const (
 	DefaultAuditRetryDelayMs = 250 // audit.retry_delay_ms
 
 	// Worker: leaderboard snapshot generation
-	DefaultWorkerSnapshotConcurrency = 16  // worker.snapshot_concurrency
+	// 4 concurrent snapshots is sized for a single shared-CPU machine with 256 MB RAM.
+	// Each goroutine holds pgx row buffers while executing ranking queries; 16 goroutines
+	// at peak can exhaust the heap on a memory-constrained instance. Raise via system
+	// param worker.snapshot_concurrency when running on a larger instance.
+	DefaultWorkerSnapshotConcurrency = 4   // worker.snapshot_concurrency
 	DefaultWorkerSnapshotRetryBaseMs = 100 // worker.snapshot_retry_base_ms
 	DefaultWorkerSnapshotMaxAttempts = 3   // worker.snapshot_max_attempts
 

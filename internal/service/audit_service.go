@@ -91,10 +91,13 @@ func NewAuditService(repo repository.AuditLogRepository, writeTimeout time.Durat
 
 // Log persists an audit entry in a detached goroutine (fire-and-forget).
 //
-// The HTTP request context is intentionally NOT forwarded: a cancelled request
-// context would abort the INSERT even though the primary operation already
-// succeeded. Instead, a fresh background context with writeTimeout guarantees
-// the write completes promptly without blocking the caller.
+// ctx is the HTTP request context. Its cancellation signal is intentionally
+// NOT forwarded to the write goroutine: a disconnected client or an expired
+// request deadline must not abort an INSERT that records an operation which
+// already succeeded. context.WithoutCancel strips the cancellation signal
+// while preserving request-scoped values (trace IDs, request IDs) so that
+// audit writes remain observable in distributed tracing without being coupled
+// to the request lifecycle.
 //
 // Resilience guarantees:
 //
@@ -109,7 +112,7 @@ func NewAuditService(repo repository.AuditLogRepository, writeTimeout time.Durat
 // The goroutine is tracked via s.wg so that Drain() blocks during graceful
 // shutdown and via s.inFlight for health checks.
 func (s *auditService) Log(
-	_ context.Context,
+	ctx context.Context,
 	actorID *int,
 	actorRole *domain.UserRole,
 	action string,
@@ -125,6 +128,10 @@ func (s *auditService) Log(
 		ResourceID:   resourceID,
 		Metadata:     metadata,
 	}
+	// Detach cancellation before capturing in the goroutine so that a client
+	// disconnect or request timeout cannot abort the INSERT. WithoutCancel
+	// preserves context values (trace ID, request ID) for observability.
+	detached := context.WithoutCancel(ctx)
 	s.inFlight.Add(1)
 	s.wg.Add(1)
 	go func() {
@@ -141,14 +148,16 @@ func (s *auditService) Log(
 				)
 			}
 		}()
-		s.writeWithRetry(entry, action)
+		s.writeWithRetry(detached, entry, action)
 	}()
 }
 
 // writeWithRetry attempts to persist entry up to auditMaxAttempts times.
 // Between attempts it sleeps auditRetryDelay to allow transient failures to
 // clear. On permanent failure it emits a structured audit_lost event.
-func (s *auditService) writeWithRetry(entry *domain.AuditLog, action string) {
+// baseCtx must be a non-cancellable context (typically from WithoutCancel)
+// so that the write deadline is governed solely by writeTimeout.
+func (s *auditService) writeWithRetry(baseCtx context.Context, entry *domain.AuditLog, action string) {
 	// Snapshot package-level vars once before the loop so that a concurrent
 	// ConfigureAuditRetry call (which should not happen after startup but is
 	// defensively guarded) does not cause a data race mid-retry.
@@ -156,7 +165,7 @@ func (s *auditService) writeWithRetry(entry *domain.AuditLog, action string) {
 	retryDelay := auditRetryDelay
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), s.writeTimeout)
+		ctx, cancel := context.WithTimeout(baseCtx, s.writeTimeout)
 		err := s.repo.Create(ctx, entry)
 		cancel()
 		if err == nil {
