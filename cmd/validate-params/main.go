@@ -27,11 +27,14 @@ type paramSpec struct {
 //   - 000055_add_worker_messaging_audit_params (+10)
 //   - 000056_add_snapshot_keep_latest_param (+1)
 //   - 000058_seed_group_max_size_param (+1)
+//   - 000066_seed_scoring_bonus_params (+2)
 var allParams = []paramSpec{
 	// Scoring
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring"},
 	{key: domain.ParamKeyScoringCorrectOutcome, defaultValue: strconv.Itoa(domain.PointsCorrectOutcome), paramType: "int", category: "scoring"},
 	{key: domain.ParamKeyScoringGoalDiff, defaultValue: strconv.Itoa(domain.PointsGoalDifference), paramType: "int", category: "scoring"},
+	{key: domain.ParamKeyScoringExtraTimeBonus, defaultValue: strconv.Itoa(domain.DefaultScoringExtraTimeBonus), paramType: "int", category: "scoring"},
+	{key: domain.ParamKeyScoringPenaltiesBonus, defaultValue: strconv.Itoa(domain.DefaultScoringPenaltiesBonus), paramType: "int", category: "scoring"},
 
 	// Prediction
 	{key: domain.ParamKeyPredictionDeadlineMin, defaultValue: strconv.Itoa(int(domain.PredictionDeadlineOffset / time.Minute)), paramType: "int", category: "prediction"},

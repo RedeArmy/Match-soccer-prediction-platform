@@ -58,6 +58,7 @@ test-integration:
 ##             not just the one under test, so cross-package helpers such as
 ##             internal/testutil are counted when called from other packages' tests.
 test-cover:
+	rm -f coverage*.out
 	go test -race -count=1 -timeout=60s \
 		-coverprofile=coverage.out \
 		-covermode=atomic \
