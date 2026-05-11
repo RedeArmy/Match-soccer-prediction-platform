@@ -183,11 +183,17 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	retentionDays := params.GetInt(ctx, domain.ParamKeyPurgeRetentionDays, domain.DefaultPurgeRetentionDays)
 	purgeRetention := time.Duration(retentionDays) * 24 * time.Hour
 
-	// Leader election for the DLQ monitor: the lock TTL is set to
-	// dlqMonitorInterval plus a 30-second buffer. This ensures the lock
-	// expires before the next tick while giving the winner enough headroom
-	// to complete the scan even under transient Redis slowness.
-	dlqElection := election.NewRedisLeaderElection(rc, dlqLeaderKey, dlqMonitorInterval+30*time.Second, log)
+	// Leader election for the DLQ monitor via a PostgreSQL session-level
+	// advisory lock. A dedicated context (not the lifecycle ctx) is used for
+	// the connection handshake: the connection lifetime spans the entire process
+	// and must not be tied to the cancellable run context. A 15-second timeout
+	// guards against a hung database at startup.
+	electionCtx, electionCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer electionCancel()
+	dlqElection, err := election.NewPgLeaderElection(electionCtx, cfg.Database.DSN, dlqMonitorLockID, log)
+	if err != nil {
+		return fmt.Errorf("leader election: %w", err)
+	}
 
 	return startWorker(ctx, workerDeps{
 		cfg:               cfg,
@@ -230,11 +236,10 @@ func buildHealthCheckers(db *pgxpool.Pool, rc *redis.Client) []health.Checker {
 	}
 }
 
-// dlqLeaderKey is the Redis key used to elect a single DLQ monitor leader
-// across all worker replicas. The TTL is set to dlqMonitorInterval + a small
-// buffer so the lock expires before the next tick even if the winning replica
-// crashes without releasing it.
-const dlqLeaderKey = "worker:dlq-monitor:leader"
+// dlqMonitorLockID is the PostgreSQL advisory lock identifier for DLQ monitor
+// leader election. Each worker replica calls pg_try_advisory_lock on this ID;
+// only one replica acquires it per session lifetime.
+const dlqMonitorLockID int64 = 1
 
 // workerDeps bundles the injected dependencies for startWorker, keeping its
 // parameter list within the 7-param lint limit while remaining easy to
@@ -251,7 +256,7 @@ type workerDeps struct {
 	snapshotKeepCount int
 	rc                *redis.Client
 	checkers          []health.Checker
-	dlqElection       *election.RedisLeaderElection
+	dlqElection       election.LeaderElection
 }
 
 // All parameters are already constructed so this function has no I/O of its
@@ -323,6 +328,9 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		log.Sugar().Errorf("worker: health server shutdown failed: %v", err)
 	}
 	dlqDone.Wait()
+	if deps.dlqElection != nil {
+		deps.dlqElection.Close(shutdownCtx)
+	}
 	purgeDone.Wait()
 	log.Sugar().Info("worker stopped")
 	return runErr
@@ -383,7 +391,7 @@ func monitorPurge(ctx context.Context, purger repository.Purger, retention time.
 //
 // If rc is nil (e.g. in unit tests where Redis is not available), the function
 // returns immediately - DLQ monitoring is best-effort and must not block startup.
-func monitorDLQ(ctx context.Context, rc *redis.Client, e *election.RedisLeaderElection, tickC <-chan time.Time, log *zap.Logger) {
+func monitorDLQ(ctx context.Context, rc *redis.Client, e election.LeaderElection, tickC <-chan time.Time, log *zap.Logger) {
 	if rc == nil {
 		return
 	}
