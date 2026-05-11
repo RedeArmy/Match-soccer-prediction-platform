@@ -73,7 +73,11 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 
 	var predictedWM *domain.WinMethod
 	if req.PredictedWinMethod != nil {
-		wm := domain.WinMethod(*req.PredictedWinMethod)
+		wm, err := domain.ParseWinMethod(*req.PredictedWinMethod)
+		if err != nil {
+			writeError(w, r, h.log, err)
+			return
+		}
 		predictedWM = &wm
 	}
 	prediction := &domain.Prediction{
@@ -131,7 +135,11 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	var predictedWM *domain.WinMethod
 	if req.PredictedWinMethod != nil {
-		wm := domain.WinMethod(*req.PredictedWinMethod)
+		wm, err := domain.ParseWinMethod(*req.PredictedWinMethod)
+		if err != nil {
+			writeError(w, r, h.log, err)
+			return
+		}
 		predictedWM = &wm
 	}
 	prediction, err := h.svc.Update(r.Context(), caller.ID, id, req.HomeScore, req.AwayScore, predictedWM)

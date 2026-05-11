@@ -168,6 +168,24 @@ func ValidateGroupSize(n int) error {
 	return nil
 }
 
+// validWinMethods is the canonical set of accepted WinMethod string values.
+var validWinMethods = map[WinMethod]struct{}{
+	WinMethodNormal:    {},
+	WinMethodExtraTime: {},
+	WinMethodPenalties: {},
+}
+
+// ParseWinMethod validates s against the three known WinMethod constants and
+// returns the typed value. Returns a validation error for any unrecognised
+// string so callers receive a 422 rather than a raw PostgreSQL CHECK violation.
+func ParseWinMethod(s string) (WinMethod, error) {
+	wm := WinMethod(s)
+	if _, ok := validWinMethods[wm]; !ok {
+		return "", apperrors.Validation(`win_method must be one of: "normal", "extra_time", "penalties"`)
+	}
+	return wm, nil
+}
+
 // validPhases is the set of recognised MatchPhase values. It is used by
 // ValidateMatchPhase to reject arbitrary strings before they reach the DB.
 var validPhases = map[MatchPhase]struct{}{

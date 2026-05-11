@@ -160,6 +160,7 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 			AwayTeam:  m.AwayTeam,
 			HomeScore: homeScore,
 			AwayScore: awayScore,
+			WinMethod: winMethodString(winMethod),
 		},
 	}); err != nil {
 		s.log.Error("failed to publish MatchFinished event; falling back to synchronous scoring",
@@ -170,6 +171,16 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 		}
 	}
 	return m, nil
+}
+
+// winMethodString converts a nullable WinMethod pointer to its string
+// representation for the MatchFinished event. Returns empty string when nil
+// (group-stage matches or normal-time results that were not explicitly tagged).
+func winMethodString(wm *domain.WinMethod) string {
+	if wm == nil {
+		return ""
+	}
+	return string(*wm)
 }
 
 var _ MatchService = (*matchService)(nil)
