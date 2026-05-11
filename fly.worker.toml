@@ -38,6 +38,19 @@ primary_region = 'mia'
     method       = 'GET'
     path         = '/health'
 
+# GOMEMLIMIT is set to 230 MiB (89 % of the 256 MB machine limit) so that the
+# Go runtime triggers aggressive GC before the OS OOM-killer fires. Without
+# this, a burst of concurrent snapshot goroutines can push heap allocation past
+# the 256 MB ceiling and crash the process silently on Fly.io.
+#
+# WCQ_DATABASE_MAXOPENCONNS is reduced from the default 25 to 10 because the
+# worker runs at most 4 concurrent snapshot goroutines (DefaultWorkerSnapshotConcurrency)
+# plus a handful of scoring/event-processing connections. 25 idle connections
+# would hold pgx buffers and connection overhead against the 230 MiB heap budget.
+[env]
+  GOMEMLIMIT                = "230MiB"
+  WCQ_DATABASE_MAXOPENCONNS = "10"
+
 [[vm]]
   memory   = '256mb'
   cpu_kind = 'shared'
