@@ -99,3 +99,13 @@ func TestTryAcquire_TwoInstances_OnlyOneWins(t *testing.T) {
 		t.Fatalf("expected exactly one instance to win the lock, got won1=%v won2=%v", won1, won2)
 	}
 }
+
+func TestClose_RedisLeaderElection_IsNoOp(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rc := newClient(t, mr)
+	e := election.NewRedisLeaderElection(rc, testKey, testTTL, zap.NewNop())
+	// Close on a Redis election is a no-op; must not panic regardless of state.
+	e.Close(context.Background())
+	e.TryAcquire(context.Background())
+	e.Close(context.Background())
+}

@@ -1,20 +1,23 @@
-// Package election provides a Redis-backed leader election primitive.
+// Package election provides leader election primitives for multi-replica
+// worker deployments.
 //
-// In a multi-replica worker deployment each replica runs the same goroutines,
+// In a multi-replica deployment each replica runs the same goroutines,
 // including the DLQ monitor. Without coordination every replica would log DLQ
 // state at the same interval, producing duplicate log lines and making
-// log-based alerting unreliable. RedisLeaderElection solves this by turning
-// each tick into a competition: only the replica that wins a Redis SET NX PX
-// lock executes the guarded section for that interval.
+// log-based alerting unreliable. A LeaderElection implementation ensures that
+// only one replica executes guarded sections per interval.
 //
-// This is a "best-effort" leader, not a strict lease:
-//   - If Redis is unavailable, TryAcquire returns false conservatively, so the
-//     guarded section is skipped rather than run by all replicas.
-//   - Lock TTL is set to slightly longer than the tick interval so the lock
-//     expires before the next tick even if the winner replica crashes without
-//     explicitly releasing it.
-//   - There is no explicit Release: the lock expires naturally, avoiding the
-//     release-under-crash edge case.
+// Two implementations are provided:
+//
+//   - PgLeaderElection: PostgreSQL session-level advisory lock. The lock is
+//     held for the lifetime of the dedicated connection and is released
+//     automatically on crash or restart — no TTL management required. Preferred
+//     for new deployments because it adds no additional infrastructure dependency.
+//
+//   - RedisLeaderElection: Redis SET NX PX lock. Tick-scoped: each call to
+//     TryAcquire competes fresh. Conservative on Redis failure (returns false).
+//     Retained for backwards compatibility with environments where PostgreSQL
+//     session locks are not suitable.
 package election
 
 import (
@@ -24,6 +27,18 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
+
+// LeaderElection is the interface for leader election primitives. Implementations
+// must be safe for concurrent use.
+type LeaderElection interface {
+	// TryAcquire attempts to acquire the leader lock. Returns true when this
+	// instance holds the lock, false when another holder owns it or acquisition
+	// fails.
+	TryAcquire(ctx context.Context) bool
+	// Close releases any held lock and frees associated resources. It is safe
+	// to call Close when the lock was never acquired.
+	Close(ctx context.Context)
+}
 
 // RedisLeaderElection is a single-use, tick-scoped leader lock backed by
 // Redis SET NX PX. Each call to TryAcquire attempts to claim the lock for
@@ -49,6 +64,8 @@ func NewRedisLeaderElection(rc *redis.Client, key string, ttl time.Duration, log
 // already holds it or Redis is unreachable. The conservative false-on-error
 // behaviour prevents split-brain: when Redis is down, no replica runs the
 // guarded section rather than all of them running it simultaneously.
+//
+// TryAcquire satisfies LeaderElection.
 func (e *RedisLeaderElection) TryAcquire(ctx context.Context) bool {
 	// SET key value NX PX ttl — atomically set only when key does not exist.
 	// Returns "OK" when the lock was acquired, redis.Nil when another holder
@@ -65,4 +82,11 @@ func (e *RedisLeaderElection) TryAcquire(ctx context.Context) bool {
 		return false
 	}
 	return val == "OK"
+}
+
+// Close satisfies LeaderElection. Redis locks are not explicitly released.
+func (e *RedisLeaderElection) Close(_ context.Context) {
+	// Intentional no-op: the SET NX PX lock expires via its TTL. Calling DEL
+	// here would introduce a race where a slow winner releases a key already
+	// re-acquired by a new leader on the next tick.
 }

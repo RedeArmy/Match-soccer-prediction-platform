@@ -62,6 +62,11 @@ jobs:
           TESTCONTAINERS_RYUK_DISABLED: "true"
         run: make test
 
+      - name: Integration tests
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+        run: make test-integration
+
   # --------------------------------------------------------------------------
   # Build and push API Docker image to GitHub Container Registry
   # --------------------------------------------------------------------------
