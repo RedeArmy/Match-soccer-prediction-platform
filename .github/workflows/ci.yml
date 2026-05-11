@@ -110,7 +110,7 @@ jobs:
           cache: true
 
       - name: Install swag CLI
-        run: go install github.com/swaggo/swag/cmd/swag@v1.16.4
+        run: go install github.com/swaggo/swag/cmd/swag
 
       # Regenerates docs/ and fails if the committed spec differs from what
       # the annotations produce. Prevents stale docs from reaching main.

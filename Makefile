@@ -148,7 +148,7 @@ validate-params:
 	go run ./cmd/validate-params
 
 ## swagger-gen: Generate OpenAPI spec and Swagger UI assets from handler annotations.
-##              Install the CLI once with: go install github.com/swaggo/swag/cmd/swag@v1.16.4
+##              Install the CLI once with: go install github.com/swaggo/swag/cmd/swag
 swagger-gen:
 	swag init \
 		--generalInfo cmd/api/main.go \
