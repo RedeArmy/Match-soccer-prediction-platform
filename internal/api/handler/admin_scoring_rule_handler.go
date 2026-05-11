@@ -154,7 +154,7 @@ func (h *AdminScoringRuleHandler) Update(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	updated, err := h.svc.Update(r.Context(), phase, service.ScoringRuleInput{
+	updated, err := h.svc.Update(r.Context(), phase, domain.ScoringRuleInput{
 		ExactScore:     req.ExactScore,
 		CorrectOutcome: req.CorrectOutcome,
 		GoalDifference: req.GoalDifference,

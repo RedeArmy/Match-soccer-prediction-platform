@@ -42,7 +42,7 @@ func NewPredictionService(
 // deadlineOffset reads the prediction deadline from system params (in minutes),
 // falling back to the domain constant when the key is absent or unparseable.
 func (s *predictionService) deadlineOffset(ctx context.Context) time.Duration {
-	mins := s.params.GetInt(ctx, domain.ParamKeyPredictionDeadlineMin, int(domain.PredictionDeadlineOffset/time.Minute))
+	mins := s.params.GetInt(ctx, domain.ParamKeyPredictionDeadlineMin, domain.DefaultPredictionDeadlineMin)
 	return time.Duration(mins) * time.Minute
 }
 

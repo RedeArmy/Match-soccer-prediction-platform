@@ -164,6 +164,17 @@ type ScoringRule struct {
 	UpdatedAt      time.Time
 }
 
+// ScoringRuleInput carries the mutable fields for a scoring rule update.
+// Grouping them avoids an excessively long parameter list on Update.
+type ScoringRuleInput struct {
+	ExactScore     int
+	CorrectOutcome int
+	GoalDifference int
+	ExtraTimeBonus int
+	PenaltiesBonus int
+	IsActive       bool
+}
+
 // Match represents a single World Cup fixture in the tournament schedule.
 //
 // HomeScore and AwayScore are pointers because a nil value is semantically
