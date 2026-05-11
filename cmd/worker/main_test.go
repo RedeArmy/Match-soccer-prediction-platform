@@ -28,6 +28,12 @@ const (
 	checkerDB = "db"
 	statusOK  = "ok"
 	statusErr = "error"
+
+	// testDLQLeaderKey is a Redis key used by monitorDLQ unit tests that
+	// exercise leader election via RedisLeaderElection. Production code uses
+	// a PostgreSQL advisory lock (dlqMonitorLockID); tests retain Redis-based
+	// election because it is simpler to exercise without a real database.
+	testDLQLeaderKey = "test:worker:dlq-monitor:leader"
 )
 
 // ── stub health checkers ──────────────────────────────────────────────────────
@@ -505,7 +511,7 @@ func TestMonitorDLQ_ElectionLost_SkipsTick(t *testing.T) {
 	}
 
 	// The holder wins the election lock before the monitor even starts.
-	holder := election.NewRedisLeaderElection(rcHolder, dlqLeaderKey, 5*time.Second, zap.NewNop())
+	holder := election.NewRedisLeaderElection(rcHolder, testDLQLeaderKey, 5*time.Second, zap.NewNop())
 	if !holder.TryAcquire(context.Background()) {
 		t.Fatal("holder should have acquired the lock")
 	}
@@ -516,7 +522,7 @@ func TestMonitorDLQ_ElectionLost_SkipsTick(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	monitor := election.NewRedisLeaderElection(rcMonitor, dlqLeaderKey, 5*time.Second, zap.NewNop())
+	monitor := election.NewRedisLeaderElection(rcMonitor, testDLQLeaderKey, 5*time.Second, zap.NewNop())
 	done := make(chan struct{})
 	go func() {
 		monitorDLQ(ctx, rcMonitor, monitor, tickC, zap.NewNop())
@@ -543,7 +549,7 @@ func TestMonitorDLQ_ElectionWon_ExecutesScan(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	e := election.NewRedisLeaderElection(rc, dlqLeaderKey, 5*time.Second, zap.NewNop())
+	e := election.NewRedisLeaderElection(rc, testDLQLeaderKey, 5*time.Second, zap.NewNop())
 	done := make(chan struct{})
 	go func() {
 		monitorDLQ(ctx, rc, e, tickC, zap.NewNop())

@@ -4,6 +4,7 @@
 #
 # Job graph:
 #   guard  →  lint  →  test
+#                  ↘  test-integration
 #
 # guard: enforces that only the develop branch may open a PR against main.
 #        Any other source branch targeting main causes an immediate failure,
@@ -16,8 +17,13 @@
 #        Depends on lint so that style/error issues are caught before spinning
 #        up testcontainers.
 #
-# Both jobs must be registered as required status checks in Branch Protection
-# Rules for develop and main respectively (see README or docs/branching.md).
+# test-integration: runs E2E tests tagged //go:build integration. These tests
+#        spin up real containers (Postgres, Redis) via testcontainers-go and
+#        exercise the full HTTP stack. Runs in parallel with test to keep
+#        total wall-clock time close to the slower of the two.
+#
+# All four jobs must be registered as required status checks in Branch
+# Protection Rules for develop and main (see README or docs/branching.md).
 
 name: CI
 
@@ -103,8 +109,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Pre-populate the module cache so that swag's internal go list call
+      # (triggered by --parseDependency) finds all packages already downloaded.
+      # Without this, go list runs under -mod=readonly and fails on a cold cache.
+      - name: Download module dependencies
+        run: go mod download
+
       - name: Install swag CLI
-        run: go install github.com/swaggo/swag/cmd/swag@latest
+        run: go install github.com/swaggo/swag/cmd/swag
 
       # Regenerates docs/ and fails if the committed spec differs from what
       # the annotations produce. Prevents stale docs from reaching main.
@@ -131,3 +143,30 @@ jobs:
           args: >
             -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+
+  # --------------------------------------------------------------------------
+  # Integration tests — E2E suite tagged //go:build integration
+  # --------------------------------------------------------------------------
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [guard, lint]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Ryuk is the testcontainers reaper container; it is disabled here because
+      # GitHub Actions runners do not support Docker socket remounting, which
+      # Ryuk requires for container cleanup. Containers are still cleaned up by
+      # the runner when the job exits.
+      - name: Integration tests
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+        run: make test-integration
