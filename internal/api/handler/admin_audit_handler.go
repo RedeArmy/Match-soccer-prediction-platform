@@ -23,14 +23,15 @@ func NewAdminAuditHandler(svc service.AuditReader, log *zap.Logger) *AdminAuditH
 	return &AdminAuditHandler{svc: svc, log: log}
 }
 
-// List handles GET /admin/audit-log with optional filters and pagination.
+// List handles GET /admin/audit-log with optional filters and cursor pagination.
 //
 // @Summary      List audit log entries
-// @Description  Returns a paginated list of audit log entries. Supports filtering
+// @Description  Returns a cursor-paginated list of audit log entries. Supports
 //
-//	by actor, action string, and affected resource. All admin actions
-//	(bans, deletions, ownership transfers, payment reviews) appear in
-//	this log. Requires admin role.
+//	filtering by actor, action string, and affected resource. Pass the
+//	next_cursor value from the previous response as ?cursor= to fetch
+//	the next page. All admin actions (bans, deletions, ownership
+//	transfers, payment reviews) appear in this log. Requires admin role.
 //
 // @Tags         admin-audit-log
 // @Produce      json
@@ -40,14 +41,15 @@ func NewAdminAuditHandler(svc service.AuditReader, log *zap.Logger) *AdminAuditH
 // @Param        resource_type  query     string  false  "Filter by resource type (e.g. membership, payment_record)"
 // @Param        resource_id    query     int     false  "Filter by resource ID"
 // @Param        limit          query     int     false  "Max records per page (default 50, max 200)"
-// @Param        page           query     int     false  "Page number (default 1)"
-// @Success      200            {object}  handler.Paged[handler.AuditLogResponse]
+// @Param        cursor         query     string  false  "Opaque cursor from previous response next_cursor field"
+// @Success      200            {object}  handler.CursorPaged[handler.AuditLogResponse]
 // @Failure      401            {object}  handler.ErrorResponse
 // @Failure      403            {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422            {object}  handler.ErrorResponse  "Invalid cursor token"
 // @Failure      500            {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/audit-log [get]
 func (h *AdminAuditHandler) List(w http.ResponseWriter, r *http.Request) {
-	p := parsePagination(r)
+	p := parseCursorPage(r)
 
 	f := repository.AuditLogFilters{
 		ActorID:    parseOptionalInt(r, "actor_id"),
@@ -60,7 +62,7 @@ func (h *AdminAuditHandler) List(w http.ResponseWriter, r *http.Request) {
 		f.ResourceType = &q
 	}
 
-	entries, err := h.svc.ListAuditLogs(r.Context(), f, p)
+	entries, nextCursor, err := h.svc.ListAuditLogs(r.Context(), f, p)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
@@ -70,32 +72,34 @@ func (h *AdminAuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	for i, e := range entries {
 		data[i] = auditLogToResponse(e)
 	}
-	writeJSON(w, http.StatusOK, Paged[AuditLogResponse]{
-		Data: data,
-		Page: PageMeta{Limit: p.Limit, Offset: p.Offset},
+	writeJSON(w, http.StatusOK, CursorPaged[AuditLogResponse]{
+		Data:       data,
+		NextCursor: nextCursor,
+		HasMore:    nextCursor != "",
 	})
 }
 
 // ListByEntity handles GET /admin/audit-log/entity/{type}/{id}.
 //
 // @Summary      List audit log by entity
-// @Description  Returns paginated audit log entries scoped to a single resource
+// @Description  Returns cursor-paginated audit log entries scoped to a single
 //
-//	(identified by its type and ID). Useful for reviewing the full
-//	history of a specific membership, payment, or user. Requires admin role.
+//	resource (identified by its type and ID). Pass the next_cursor value
+//	from the previous response as ?cursor= to fetch the next page.
+//	Requires admin role.
 //
 // @Tags         admin-audit-log
 // @Produce      json
 // @Security     BearerAuth
-// @Param        type   path      string  true   "Resource type (e.g. membership, payment_record, user)"
-// @Param        id     path      int     true   "Resource ID"
-// @Param        limit  query     int     false  "Max records per page (default 50, max 200)"
-// @Param        page   query     int     false  "Page number (default 1)"
-// @Success      200    {object}  handler.Paged[handler.AuditLogResponse]
-// @Failure      401    {object}  handler.ErrorResponse
-// @Failure      403    {object}  handler.ErrorResponse  "Caller is not an admin"
-// @Failure      422    {object}  handler.ErrorResponse  "Invalid resource ID"
-// @Failure      500    {object}  handler.ErrorResponse
+// @Param        type    path      string  true   "Resource type (e.g. membership, payment_record, user)"
+// @Param        id      path      int     true   "Resource ID"
+// @Param        limit   query     int     false  "Max records per page (default 50, max 200)"
+// @Param        cursor  query     string  false  "Opaque cursor from previous response next_cursor field"
+// @Success      200     {object}  handler.CursorPaged[handler.AuditLogResponse]
+// @Failure      401     {object}  handler.ErrorResponse
+// @Failure      403     {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422     {object}  handler.ErrorResponse  "Invalid resource ID or cursor token"
+// @Failure      500     {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/audit-log/entity/{type}/{id} [get]
 func (h *AdminAuditHandler) ListByEntity(w http.ResponseWriter, r *http.Request) {
 	resourceType := chi.URLParam(r, "type")
@@ -110,9 +114,9 @@ func (h *AdminAuditHandler) ListByEntity(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	p := parsePagination(r)
+	p := parseCursorPage(r)
 
-	entries, err := h.svc.ListAuditLogsByEntity(r.Context(), resourceType, resourceID, p)
+	entries, nextCursor, err := h.svc.ListAuditLogsByEntity(r.Context(), resourceType, resourceID, p)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
@@ -122,8 +126,9 @@ func (h *AdminAuditHandler) ListByEntity(w http.ResponseWriter, r *http.Request)
 	for i, e := range entries {
 		data[i] = auditLogToResponse(e)
 	}
-	writeJSON(w, http.StatusOK, Paged[AuditLogResponse]{
-		Data: data,
-		Page: PageMeta{Limit: p.Limit, Offset: p.Offset},
+	writeJSON(w, http.StatusOK, CursorPaged[AuditLogResponse]{
+		Data:       data,
+		NextCursor: nextCursor,
+		HasMore:    nextCursor != "",
 	})
 }

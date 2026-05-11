@@ -44,8 +44,8 @@ func (r *clerkSyncRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User
 }
 func (r *clerkSyncRepo) Unban(_ context.Context, _ int) error                 { return nil }
 func (r *clerkSyncRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }
-func (r *clerkSyncRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
-	return nil, nil
+func (r *clerkSyncRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.CursorPage) ([]*domain.User, string, error) {
+	return nil, "", nil
 }
 func (r *clerkSyncRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
 	return repository.UserStatusCounts{}, nil

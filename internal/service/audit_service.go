@@ -190,13 +190,15 @@ func (s *auditService) writeWithRetry(baseCtx context.Context, entry *domain.Aud
 	)
 }
 
-// ListAuditLogs returns audit log entries matching the given filters.
-func (s *auditService) ListAuditLogs(ctx context.Context, f repository.AuditLogFilters, p repository.Pagination) ([]*domain.AuditLog, error) {
+// ListAuditLogs returns audit log entries matching the given filters with
+// cursor-based pagination.
+func (s *auditService) ListAuditLogs(ctx context.Context, f repository.AuditLogFilters, p repository.CursorPage) ([]*domain.AuditLog, string, error) {
 	return s.repo.List(ctx, f, p)
 }
 
-// ListAuditLogsByEntity returns audit log entries for a specific resource.
-func (s *auditService) ListAuditLogsByEntity(ctx context.Context, resourceType string, resourceID int, p repository.Pagination) ([]*domain.AuditLog, error) {
+// ListAuditLogsByEntity returns audit log entries for a specific resource with
+// cursor-based pagination.
+func (s *auditService) ListAuditLogsByEntity(ctx context.Context, resourceType string, resourceID int, p repository.CursorPage) ([]*domain.AuditLog, string, error) {
 	return s.repo.ListByEntity(ctx, resourceType, resourceID, p)
 }
 

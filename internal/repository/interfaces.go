@@ -60,8 +60,10 @@ type UserRepository interface {
 	Unban(ctx context.Context, userID int) error
 	// ListBanned returns all active users whose banned_at is not NULL.
 	ListBanned(ctx context.Context) ([]*domain.User, error)
-	// ListFiltered returns users matching the given filters with pagination.
-	ListFiltered(ctx context.Context, f UserFilters, p Pagination) ([]*domain.User, error)
+	// ListFiltered returns users matching the given filters with cursor-based
+	// pagination. The second return value is an opaque cursor token for the next
+	// page; it is empty when the caller has reached the last page.
+	ListFiltered(ctx context.Context, f UserFilters, p CursorPage) ([]*domain.User, string, error)
 	// GetStatusCounts returns user counts grouped by lifecycle status.
 	// Used by the admin dashboard stats endpoint.
 	GetStatusCounts(ctx context.Context) (UserStatusCounts, error)
@@ -417,20 +419,22 @@ type SystemParamRepository interface {
 // AuditLogRepository provides append-only access to the audit_log table.
 //
 // No UPDATE or DELETE is ever issued; rows are immutable once written. The
-// listing methods are read-only projections used exclusively by the admin
-// dashboard and compliance reporting flows.
+// listing methods use cursor-based pagination: they return an opaque next-page
+// token alongside the result slice. The token is empty on the final page.
+// Keyset ordering is by id DESC (primary key), which is equivalent to
+// creation-time ordering and guaranteed stable with no ties.
 type AuditLogRepository interface {
 	// Create inserts an immutable audit entry. entry.ID and entry.CreatedAt
 	// are populated on success.
 	Create(ctx context.Context, entry *domain.AuditLog) error
 	// ListByEntity returns entries for a specific resource type and ID.
-	ListByEntity(ctx context.Context, resourceType string, resourceID int, p Pagination) ([]*domain.AuditLog, error)
+	ListByEntity(ctx context.Context, resourceType string, resourceID int, p CursorPage) ([]*domain.AuditLog, string, error)
 	// ListByActor returns all entries attributed to actorID.
-	ListByActor(ctx context.Context, actorID int, p Pagination) ([]*domain.AuditLog, error)
+	ListByActor(ctx context.Context, actorID int, p CursorPage) ([]*domain.AuditLog, string, error)
 	// ListByAction returns all entries whose action field matches exactly.
-	ListByAction(ctx context.Context, action string, p Pagination) ([]*domain.AuditLog, error)
+	ListByAction(ctx context.Context, action string, p CursorPage) ([]*domain.AuditLog, string, error)
 	// List is the general query method; all non-nil filter fields are AND-ed.
-	List(ctx context.Context, f AuditLogFilters, p Pagination) ([]*domain.AuditLog, error)
+	List(ctx context.Context, f AuditLogFilters, p CursorPage) ([]*domain.AuditLog, string, error)
 }
 
 // PaymentRecordRepository manages entry-fee payment records.

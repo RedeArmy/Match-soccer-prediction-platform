@@ -2,12 +2,10 @@ package repository_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
-	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── AuditLogRepository ────────────────────────────────────────────────────────
@@ -62,7 +60,7 @@ func TestAuditLogRepository_ListByActor(t *testing.T) {
 	otherID := other.ID
 	_ = repo.Create(context.Background(), &domain.AuditLog{ActorID: &otherID, Action: "other_action"})
 
-	results, err := repo.ListByActor(context.Background(), u.ID, repository.Unbounded())
+	results, _, err := repo.ListByActor(context.Background(), u.ID, repository.CursorPage{Limit: 1000})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -84,7 +82,7 @@ func TestAuditLogRepository_ListByEntity(t *testing.T) {
 	otherType := "user"
 	_ = repo.Create(context.Background(), &domain.AuditLog{Action: "ban", ResourceType: &otherType, ResourceID: &resID})
 
-	results, err := repo.ListByEntity(context.Background(), repoResourceQuiniela, 42, repository.Unbounded())
+	results, _, err := repo.ListByEntity(context.Background(), repoResourceQuiniela, 42, repository.CursorPage{Limit: 1000})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -102,7 +100,7 @@ func TestAuditLogRepository_ListByAction(t *testing.T) {
 	}
 	_ = repo.Create(context.Background(), &domain.AuditLog{Action: "payment_reject"})
 
-	results, err := repo.ListByAction(context.Background(), "payment_validate", repository.Unbounded())
+	results, _, err := repo.ListByAction(context.Background(), "payment_validate", repository.CursorPage{Limit: 1000})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -111,7 +109,7 @@ func TestAuditLogRepository_ListByAction(t *testing.T) {
 	}
 }
 
-func TestAuditLogRepository_List_Pagination(t *testing.T) {
+func TestAuditLogRepository_List_CursorPagination(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresAuditLogRepository(testDB)
 
@@ -119,12 +117,28 @@ func TestAuditLogRepository_List_Pagination(t *testing.T) {
 		_ = repo.Create(context.Background(), &domain.AuditLog{Action: "ping"})
 	}
 
-	page, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Pagination{Limit: 2, Offset: 1})
+	// First page: limit=3, no cursor.
+	page1, cursor1, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.CursorPage{Limit: 3})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if len(page) != 2 {
-		t.Errorf("expected 2 entries with limit=2, got %d", len(page))
+	if len(page1) != 3 {
+		t.Fatalf("expected 3 entries on page 1, got %d", len(page1))
+	}
+	if cursor1 == "" {
+		t.Fatal("expected non-empty next_cursor after page 1")
+	}
+
+	// Second page: use cursor from page 1.
+	page2, cursor2, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.CursorPage{Limit: 3, Cursor: cursor1})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(page2) != 2 {
+		t.Errorf("expected 2 entries on page 2 (last), got %d", len(page2))
+	}
+	if cursor2 != "" {
+		t.Errorf("expected empty next_cursor on last page, got %q", cursor2)
 	}
 }
 
@@ -169,7 +183,7 @@ func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 
-	results, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Unbounded())
+	results, _, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.CursorPage{Limit: 1000})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -185,15 +199,13 @@ func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
 	}
 }
 
-func TestAuditLogRepository_List_ZeroLimitReturnsError(t *testing.T) {
-	cleanTables(t)
+func TestAuditLogRepository_List_ZeroLimitPanics(t *testing.T) {
 	repo := repository.NewPostgresAuditLogRepository(testDB)
 
-	_, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.Pagination{Limit: 0})
-	if err == nil {
-		t.Fatal("expected validation error for zero limit, got nil")
-	}
-	if !errors.Is(err, apperrors.ErrValidation) {
-		t.Errorf("expected validation error, got %v", err)
-	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for zero CursorPage.Limit, got none")
+		}
+	}()
+	_, _, _ = repo.List(context.Background(), repository.AuditLogFilters{}, repository.CursorPage{Limit: 0})
 }

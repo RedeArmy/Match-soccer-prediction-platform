@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of audit log entries. Supports filtering",
+                "description": "Returns a cursor-paginated list of audit log entries. Supports",
                 "produces": [
                     "application/json"
                 ],
@@ -62,9 +62,9 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "integer",
-                        "description": "Page number (default 1)",
-                        "name": "page",
+                        "type": "string",
+                        "description": "Opaque cursor from previous response next_cursor field",
+                        "name": "cursor",
                         "in": "query"
                     }
                 ],
@@ -72,7 +72,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_AuditLogResponse"
+                            "$ref": "#/definitions/internal_api_handler.CursorPaged-internal_api_handler_AuditLogResponse"
                         }
                     },
                     "401": {
@@ -83,6 +83,12 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid cursor token",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -103,7 +109,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns paginated audit log entries scoped to a single resource",
+                "description": "Returns cursor-paginated audit log entries scoped to a single",
                 "produces": [
                     "application/json"
                 ],
@@ -133,9 +139,9 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "integer",
-                        "description": "Page number (default 1)",
-                        "name": "page",
+                        "type": "string",
+                        "description": "Opaque cursor from previous response next_cursor field",
+                        "name": "cursor",
                         "in": "query"
                     }
                 ],
@@ -143,7 +149,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_AuditLogResponse"
+                            "$ref": "#/definitions/internal_api_handler.CursorPaged-internal_api_handler_AuditLogResponse"
                         }
                     },
                     "401": {
@@ -159,7 +165,7 @@ const docTemplate = `{
                         }
                     },
                     "422": {
-                        "description": "Invalid resource ID",
+                        "description": "Invalid resource ID or cursor token",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -2171,7 +2177,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of all user accounts. Supports optional",
+                "description": "Returns a cursor-paginated list of all user accounts. Supports",
                 "produces": [
                     "application/json"
                 ],
@@ -2205,9 +2211,9 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "integer",
-                        "description": "Page number (default 1)",
-                        "name": "page",
+                        "type": "string",
+                        "description": "Opaque cursor from previous response next_cursor field",
+                        "name": "cursor",
                         "in": "query"
                     }
                 ],
@@ -2215,7 +2221,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_AdminUserResponse"
+                            "$ref": "#/definitions/internal_api_handler.CursorPaged-internal_api_handler_AdminUserResponse"
                         }
                     },
                     "401": {
@@ -2226,6 +2232,12 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid cursor token",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -3903,6 +3915,40 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.CursorPaged-internal_api_handler_AdminUserResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.AdminUserResponse"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.CursorPaged-internal_api_handler_AuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.AuditLogResponse"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.DashboardStatsResponse": {
             "type": "object",
             "properties": {
@@ -4129,34 +4175,6 @@ const docTemplate = `{
                 },
                 "offset": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api_handler.Paged-internal_api_handler_AdminUserResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api_handler.AdminUserResponse"
-                    }
-                },
-                "page": {
-                    "$ref": "#/definitions/internal_api_handler.PageMeta"
-                }
-            }
-        },
-        "internal_api_handler.Paged-internal_api_handler_AuditLogResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api_handler.AuditLogResponse"
-                    }
-                },
-                "page": {
-                    "$ref": "#/definitions/internal_api_handler.PageMeta"
                 }
             }
         },

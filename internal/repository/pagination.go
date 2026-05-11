@@ -72,3 +72,20 @@ type PredictionAdminFilters struct {
 	MatchID    *int
 	QuinielaID *int
 }
+
+// CursorPage carries parameters for keyset-based (cursor) listing.
+//
+// Keyset pagination eliminates the O(OFFSET) full-table scan of LIMIT/OFFSET
+// by seeking directly to the row after the previous page's last ID. This makes
+// large-page traversal O(1) in the seek and O(page_size) in the fetch,
+// regardless of total table size.
+//
+// The Cursor field is opaque: clients receive it from the previous response's
+// next_cursor field and pass it back unchanged. An empty Cursor means "start
+// from the first page". Limit must be positive; zero panics (same invariant as
+// Pagination.Limit), preventing accidental full-table scans from zero-value
+// structs.
+type CursorPage struct {
+	Limit  int    // must be > 0
+	Cursor string // opaque token from prior response; empty = first page
+}

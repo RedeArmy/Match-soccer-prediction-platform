@@ -194,6 +194,28 @@ definitions:
       name:
         type: string
     type: object
+  internal_api_handler.CursorPaged-internal_api_handler_AdminUserResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api_handler.AdminUserResponse'
+        type: array
+      has_more:
+        type: boolean
+      next_cursor:
+        type: string
+    type: object
+  internal_api_handler.CursorPaged-internal_api_handler_AuditLogResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api_handler.AuditLogResponse'
+        type: array
+      has_more:
+        type: boolean
+      next_cursor:
+        type: string
+    type: object
   internal_api_handler.DashboardStatsResponse:
     properties:
       groups:
@@ -346,24 +368,6 @@ definitions:
         type: integer
       offset:
         type: integer
-    type: object
-  internal_api_handler.Paged-internal_api_handler_AdminUserResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/internal_api_handler.AdminUserResponse'
-        type: array
-      page:
-        $ref: '#/definitions/internal_api_handler.PageMeta'
-    type: object
-  internal_api_handler.Paged-internal_api_handler_AuditLogResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/internal_api_handler.AuditLogResponse'
-        type: array
-      page:
-        $ref: '#/definitions/internal_api_handler.PageMeta'
     type: object
   internal_api_handler.Paged-internal_api_handler_ConflictResponse:
     properties:
@@ -762,7 +766,7 @@ info:
 paths:
   /api/v1/admin/audit-log:
     get:
-      description: Returns a paginated list of audit log entries. Supports filtering
+      description: Returns a cursor-paginated list of audit log entries. Supports
       parameters:
       - description: Filter by actor (admin) user ID
         in: query
@@ -784,23 +788,27 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Page number (default 1)
+      - description: Opaque cursor from previous response next_cursor field
         in: query
-        name: page
-        type: integer
+        name: cursor
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_AuditLogResponse'
+            $ref: '#/definitions/internal_api_handler.CursorPaged-internal_api_handler_AuditLogResponse'
         "401":
           description: Unauthorized
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "403":
           description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid cursor token
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "500":
@@ -814,7 +822,7 @@ paths:
       - admin-audit-log
   /api/v1/admin/audit-log/entity/{type}/{id}:
     get:
-      description: Returns paginated audit log entries scoped to a single resource
+      description: Returns cursor-paginated audit log entries scoped to a single
       parameters:
       - description: Resource type (e.g. membership, payment_record, user)
         in: path
@@ -830,17 +838,17 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Page number (default 1)
+      - description: Opaque cursor from previous response next_cursor field
         in: query
-        name: page
-        type: integer
+        name: cursor
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_AuditLogResponse'
+            $ref: '#/definitions/internal_api_handler.CursorPaged-internal_api_handler_AuditLogResponse'
         "401":
           description: Unauthorized
           schema:
@@ -850,7 +858,7 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "422":
-          description: Invalid resource ID
+          description: Invalid resource ID or cursor token
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "500":
@@ -2135,7 +2143,7 @@ paths:
       - admin-tiebreaker
   /api/v1/admin/users:
     get:
-      description: Returns a paginated list of all user accounts. Supports optional
+      description: Returns a cursor-paginated list of all user accounts. Supports
       parameters:
       - description: Filter by ban status (true = banned only, false = active only)
         in: query
@@ -2153,23 +2161,27 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Page number (default 1)
+      - description: Opaque cursor from previous response next_cursor field
         in: query
-        name: page
-        type: integer
+        name: cursor
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api_handler.Paged-internal_api_handler_AdminUserResponse'
+            $ref: '#/definitions/internal_api_handler.CursorPaged-internal_api_handler_AdminUserResponse'
         "401":
           description: Unauthorized
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "403":
           description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid cursor token
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "500":

@@ -3,8 +3,6 @@ package repository
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -107,77 +105,77 @@ func (r *PostgresAuditLogRepository) Create(ctx context.Context, entry *domain.A
 	return nil
 }
 
-// ListByEntity returns audit entries for a specific resource, ordered newest
-// first.
-func (r *PostgresAuditLogRepository) ListByEntity(ctx context.Context, resourceType string, resourceID int, p Pagination) ([]*domain.AuditLog, error) {
+// ListByEntity returns audit entries for a specific resource, ordered newest first.
+func (r *PostgresAuditLogRepository) ListByEntity(ctx context.Context, resourceType string, resourceID int, p CursorPage) ([]*domain.AuditLog, string, error) {
 	return r.List(ctx, AuditLogFilters{ResourceType: &resourceType, ResourceID: &resourceID}, p)
 }
 
 // ListByActor returns all actions performed by actorID, ordered newest first.
-func (r *PostgresAuditLogRepository) ListByActor(ctx context.Context, actorID int, p Pagination) ([]*domain.AuditLog, error) {
+func (r *PostgresAuditLogRepository) ListByActor(ctx context.Context, actorID int, p CursorPage) ([]*domain.AuditLog, string, error) {
 	return r.List(ctx, AuditLogFilters{ActorID: &actorID}, p)
 }
 
-// ListByAction returns all entries whose action field equals action, ordered
-// newest first.
-func (r *PostgresAuditLogRepository) ListByAction(ctx context.Context, action string, p Pagination) ([]*domain.AuditLog, error) {
+// ListByAction returns all entries whose action field equals action, ordered newest first.
+func (r *PostgresAuditLogRepository) ListByAction(ctx context.Context, action string, p CursorPage) ([]*domain.AuditLog, string, error) {
 	return r.List(ctx, AuditLogFilters{Action: &action}, p)
 }
 
-// List is the general-purpose query method. Non-nil filter fields are combined
-// with AND. Pagination.Limit must be positive or unbounded (via Unbounded()).
-// Zero-value Pagination{} is rejected to prevent accidental unbounded queries.
-func (r *PostgresAuditLogRepository) List(ctx context.Context, f AuditLogFilters, p Pagination) ([]*domain.AuditLog, error) {
-	if p.Limit == 0 {
-		return nil, apperrors.Validation("pagination limit must be positive or use Unbounded()")
+// List is the general-purpose query method. Non-nil filter fields are AND-ed.
+// Ordering is by id DESC (primary key), which is insertion-time order with no
+// ties. Fetches p.Limit+1 rows to detect whether a next page exists; the extra
+// row is stripped before returning. The returned cursor is empty on the last page.
+func (r *PostgresAuditLogRepository) List(ctx context.Context, f AuditLogFilters, p CursorPage) ([]*domain.AuditLog, string, error) {
+	if p.Limit <= 0 {
+		panic("repository: CursorPage.Limit must be positive")
 	}
 
-	q := `SELECT ` + auditLogColumns + ` FROM audit_log`
-	var args []any
-	argIdx := 1
+	wb := newWhereBuilder()
 
-	var conds []string
+	if p.Cursor != "" {
+		afterID, err := decodeCursor(p.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		wb.add("id < $%d", afterID)
+	}
 	if f.ActorID != nil {
-		conds = append(conds, fmt.Sprintf("actor_id = $%d", argIdx))
-		args = append(args, *f.ActorID)
-		argIdx++
+		wb.add("actor_id = $%d", *f.ActorID)
 	}
 	if f.Action != nil {
-		conds = append(conds, fmt.Sprintf("action = $%d", argIdx))
-		args = append(args, *f.Action)
-		argIdx++
+		wb.add("action = $%d", *f.Action)
 	}
 	if f.ResourceType != nil {
-		conds = append(conds, fmt.Sprintf("resource_type = $%d", argIdx))
-		args = append(args, *f.ResourceType)
-		argIdx++
+		wb.add("resource_type = $%d", *f.ResourceType)
 	}
 	if f.ResourceID != nil {
-		conds = append(conds, fmt.Sprintf("resource_id = $%d", argIdx))
-		args = append(args, *f.ResourceID)
-		argIdx++
+		wb.add("resource_id = $%d", *f.ResourceID)
 	}
-	if len(conds) > 0 {
-		q += " WHERE " + strings.Join(conds, " AND ")
-	}
-	q += " ORDER BY created_at DESC"
-	if p.Limit > 0 {
-		args = append(args, p.Limit)
-		q += fmt.Sprintf(" LIMIT $%d", argIdx)
-		argIdx++
-	}
-	// p.IsUnbounded() case: no LIMIT clause, query returns all matching rows
-	if p.Offset > 0 {
-		args = append(args, p.Offset)
-		q += fmt.Sprintf(" OFFSET $%d", argIdx)
-	}
+
+	args := wb.args
+	n := wb.next()
+	args = append(args, p.Limit+1)
+
+	q := `SELECT ` + auditLogColumns + ` FROM audit_log` + wb.clause() +
+		` ORDER BY id DESC LIMIT $` + itoa(n)
 
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
-		return nil, apperrors.Internal(err)
+		return nil, "", apperrors.Internal(err)
 	}
 	defer rows.Close()
-	return collectAuditLogs(rows)
+
+	entries, err := collectAuditLogs(rows)
+	if err != nil {
+		return nil, "", err
+	}
+
+	var nextCursor string
+	if len(entries) > p.Limit {
+		entries = entries[:p.Limit]
+		nextCursor = encodeCursor(entries[len(entries)-1].ID)
+	}
+
+	return entries, nextCursor, nil
 }
 
 var _ AuditLogRepository = (*PostgresAuditLogRepository)(nil)
