@@ -2,7 +2,9 @@ package repository
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -85,7 +87,42 @@ func applyPagination(q string, args []any, n int, p Pagination) (string, []any, 
 }
 
 // itoa converts a non-negative int to its decimal string representation.
-// Used to build $N positional-argument placeholders without importing fmt.
+// Used to build $N positional-argument placeholders.
 func itoa(n int) string {
 	return strconv.Itoa(n)
+}
+
+// whereBuilder accumulates SQL predicate fragments and their positional
+// arguments. It eliminates the WHERE 1=1 anti-pattern: call clause() to get
+// a proper WHERE clause (empty string when no predicates were added).
+type whereBuilder struct {
+	conds  []string
+	args   []any
+	argIdx int
+}
+
+// newWhereBuilder returns a builder whose positional arguments start at $1.
+func newWhereBuilder() *whereBuilder {
+	return &whereBuilder{argIdx: 1}
+}
+
+// add appends one predicate. expr must contain a single %d verb for the
+// positional placeholder, e.g. "user_id = $%d".
+func (w *whereBuilder) add(expr string, val any) {
+	w.conds = append(w.conds, fmt.Sprintf(expr, w.argIdx))
+	w.args = append(w.args, val)
+	w.argIdx++
+}
+
+// clause returns " WHERE cond1 AND cond2 ..." or "" when no predicates exist.
+func (w *whereBuilder) clause() string {
+	if len(w.conds) == 0 {
+		return ""
+	}
+	return " WHERE " + strings.Join(w.conds, " AND ")
+}
+
+// next returns the next positional argument index for passing to applyPagination.
+func (w *whereBuilder) next() int {
+	return w.argIdx
 }

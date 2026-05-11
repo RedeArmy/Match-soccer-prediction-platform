@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -487,30 +486,21 @@ func collectPredictions(rows pgx.Rows) ([]*domain.Prediction, error) {
 
 // ListAdmin returns predictions matching the given admin filters with pagination.
 func (r *PostgresPredictionRepository) ListAdmin(ctx context.Context, f PredictionAdminFilters, p Pagination) ([]*domain.Prediction, error) {
-	q := `SELECT id, user_id, match_id, home_score, away_score, predicted_win_method, points, created_at, updated_at FROM predictions WHERE 1=1`
-	args := []any{}
-	n := 1
-
+	wb := newWhereBuilder()
 	if f.UserID != nil {
-		q += fmt.Sprintf(` AND user_id = $%d`, n)
-		args = append(args, *f.UserID)
-		n++
+		wb.add("user_id = $%d", *f.UserID)
 	}
 	if f.MatchID != nil {
-		q += fmt.Sprintf(` AND match_id = $%d`, n)
-		args = append(args, *f.MatchID)
-		n++
+		wb.add("match_id = $%d", *f.MatchID)
 	}
 	if f.QuinielaID != nil {
-		q += fmt.Sprintf(` AND user_id IN (SELECT user_id FROM group_memberships WHERE quiniela_id = $%d AND status = 'active')`, n)
-		args = append(args, *f.QuinielaID)
-		n++
+		wb.add("user_id IN (SELECT user_id FROM group_memberships WHERE quiniela_id = $%d AND status = 'active')", *f.QuinielaID)
 	}
 
-	q += ` ORDER BY created_at DESC`
-	q, args, _ = applyPagination(q, args, n, p)
+	q := `SELECT ` + predictionColumns + ` FROM predictions` + wb.clause() + ` ORDER BY created_at DESC`
+	q, pagedArgs, _ := applyPagination(q, wb.args, wb.next(), p)
 
-	rows, err := r.db.Query(ctx, q, args...)
+	rows, err := r.db.Query(ctx, q, pagedArgs...)
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
