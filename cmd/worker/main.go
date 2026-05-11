@@ -184,11 +184,10 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	purgeRetention := time.Duration(retentionDays) * 24 * time.Hour
 
 	// Leader election for the DLQ monitor via a PostgreSQL session-level
-	// advisory lock. A dedicated context (not the lifecycle ctx) is used for
-	// the connection handshake: the connection lifetime spans the entire process
-	// and must not be tied to the cancellable run context. A 15-second timeout
-	// guards against a hung database at startup.
-	electionCtx, electionCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// advisory lock. A 15-second timeout is added to ctx to bound the
+	// connection handshake without preventing the lifecycle context from
+	// cancelling the attempt if a shutdown signal arrives during startup.
+	electionCtx, electionCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer electionCancel()
 	dlqElection, err := election.NewPgLeaderElection(electionCtx, cfg.Database.DSN, dlqMonitorLockID, log)
 	if err != nil {
