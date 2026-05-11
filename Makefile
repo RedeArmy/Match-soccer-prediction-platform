@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run run-worker test test-cover lint clean docker-up docker-down docker-logs migrate dev hooks swagger-gen swagger-clean validate-params help
+.PHONY: build run run-worker test test-integration test-cover lint clean docker-up docker-down docker-logs migrate dev hooks swagger-gen swagger-clean validate-params help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -42,6 +42,13 @@ run-worker:
 ##       The -count=1 flag disables the test cache, ensuring each run is fresh.
 test:
 	go test -race -count=1 -timeout=60s ./...
+
+## test-integration: Run end-to-end tests that require a live Docker daemon.
+##                   These tests are excluded from the standard test / test-cover
+##                   targets to avoid adding Docker pull latency to the unit-test
+##                   budget. Requires Docker to be running locally.
+test-integration:
+	go test -race -count=1 -timeout=120s -tags integration ./internal/api/...
 
 ## test-cover: Run the full test suite and emit a coverage profile for SonarCloud
 ##             Output: coverage.out (Go native format, read directly by SonarCloud)

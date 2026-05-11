@@ -188,29 +188,20 @@ func (r *PostgresPaymentRecordRepository) reviewPending(ctx context.Context, id,
 
 // List returns payment records matching the given filters with pagination.
 func (r *PostgresPaymentRecordRepository) List(ctx context.Context, f PaymentFilters, p Pagination) ([]*domain.PaymentRecord, error) {
-	q := `SELECT ` + paymentColumns + ` FROM payment_records WHERE 1=1`
-	args := []any{}
-	n := 1
-
+	wb := newWhereBuilder()
 	if f.Status != nil {
-		q += fmt.Sprintf(` AND status = $%d`, n)
-		args = append(args, string(*f.Status))
-		n++
+		wb.add("status = $%d", string(*f.Status))
 	}
 	if f.QuinielaID != nil {
-		q += fmt.Sprintf(` AND quiniela_id = $%d`, n)
-		args = append(args, *f.QuinielaID)
-		n++
+		wb.add("quiniela_id = $%d", *f.QuinielaID)
 	}
 	if f.UserID != nil {
-		q += fmt.Sprintf(` AND user_id = $%d`, n)
-		args = append(args, *f.UserID)
-		n++
+		wb.add("user_id = $%d", *f.UserID)
 	}
 
-	q += ` ORDER BY created_at DESC`
-	q, args, _ = applyPagination(q, args, n, p)
-	return r.queryPaymentRecords(ctx, q, args...)
+	q := `SELECT ` + paymentColumns + ` FROM payment_records` + wb.clause() + ` ORDER BY created_at DESC`
+	q, pagedArgs, _ := applyPagination(q, wb.args, wb.next(), p)
+	return r.queryPaymentRecords(ctx, q, pagedArgs...)
 }
 
 // ListStale returns pending payment records older than olderThan.
