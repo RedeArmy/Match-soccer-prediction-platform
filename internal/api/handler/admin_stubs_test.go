@@ -266,6 +266,6 @@ func (s *stubScoringRuleSvc) List(_ context.Context) ([]*domain.ScoringRule, err
 func (s *stubScoringRuleSvc) GetByPhase(_ context.Context, _ domain.MatchPhase) (*domain.ScoringRule, error) {
 	return s.rule, s.err
 }
-func (s *stubScoringRuleSvc) Update(_ context.Context, _ domain.MatchPhase, _ service.ScoringRuleInput, _ int) (*domain.ScoringRule, error) {
+func (s *stubScoringRuleSvc) Update(_ context.Context, _ domain.MatchPhase, _ domain.ScoringRuleInput, _ int) (*domain.ScoringRule, error) {
 	return s.rule, s.err
 }
