@@ -109,6 +109,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Pre-populate the module cache so that swag's internal go list call
+      # (triggered by --parseDependency) finds all packages already downloaded.
+      # Without this, go list runs under -mod=readonly and fails on a cold cache.
+      - name: Download module dependencies
+        run: go mod download
+
       - name: Install swag CLI
         run: go install github.com/swaggo/swag/cmd/swag
 
