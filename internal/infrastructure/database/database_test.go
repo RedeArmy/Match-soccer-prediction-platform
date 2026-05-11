@@ -355,8 +355,10 @@ func TestMigrateFresh_FullBootstrap(t *testing.T) {
 }
 
 func TestMigrateFresh_MissingBaselineFile_ReturnsError(t *testing.T) {
-	dsn := testutil.SetupPostgres(t)
-	err := database.MigrateFresh(context.Background(), dsn, "/nonexistent/schema.sql", migrations.FS)
+	// MigrateFresh reads the baseline file before dialling the database, so no
+	// real connection is needed here. The DSN is never used; the function returns
+	// on the os.ReadFile error before NewPool is ever called.
+	err := database.MigrateFresh(context.Background(), "postgres://127.0.0.1:1/nodb", "/nonexistent/schema.sql", migrations.FS)
 	if err == nil {
 		t.Fatal(fmtExpectedErr)
 	}

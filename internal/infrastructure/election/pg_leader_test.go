@@ -167,7 +167,7 @@ func TestNewPgLeaderElection_ValidDSN_Connects(t *testing.T) {
 }
 
 func TestNewPgLeaderElection_InvalidDSN_ReturnsError(t *testing.T) {
-	_, err := NewPgLeaderElection(context.Background(), "postgres://invalid:5432/nodb?sslmode=disable", 999, zap.NewNop())
+	_, err := NewPgLeaderElection(context.Background(), "postgres://127.0.0.1:1/nodb", 999, zap.NewNop())
 	if err == nil {
 		t.Fatal("expected error for unreachable DSN, got nil")
 	}
