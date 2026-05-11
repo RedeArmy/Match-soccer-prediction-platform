@@ -1200,6 +1200,53 @@ func TestPredictionRepository_ListAdmin_FilterByUserID(t *testing.T) {
 	}
 }
 
+func TestPredictionRepository_ListAdmin_FilterByMatchID(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m1 := seedMatch(t)
+	m2 := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u.ID, MatchID: m1.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u.ID, MatchID: m2.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	results, err := repo.ListAdmin(context.Background(), repository.PredictionAdminFilters{MatchID: &m1.ID}, repository.Unbounded())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 || results[0].MatchID != m1.ID {
+		t.Errorf("expected 1 prediction for match %d, got %d", m1.ID, len(results))
+	}
+}
+
+func TestPredictionRepository_ListAdmin_FilterByQuinielaID(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t) // member of the quiniela
+	u2 := seedUser(t) // not a member
+	m := seedMatch(t)
+	q := seedQuiniela(t, u1.ID)
+	seedActiveMembership(t, q.ID, u1.ID)
+
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u1.ID, MatchID: m.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.Prediction{UserID: u2.ID, MatchID: m.ID}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	results, err := repo.ListAdmin(context.Background(), repository.PredictionAdminFilters{QuinielaID: &q.ID}, repository.Unbounded())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 || results[0].UserID != u1.ID {
+		t.Errorf("expected 1 prediction for quiniela member (user %d), got %d", u1.ID, len(results))
+	}
+}
+
 func TestPredictionRepository_ListAdmin_PaginationLimit(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
