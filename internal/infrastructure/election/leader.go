@@ -84,9 +84,9 @@ func (e *RedisLeaderElection) TryAcquire(ctx context.Context) bool {
 	return val == "OK"
 }
 
-// Close is intentionally empty for RedisLeaderElection. The SET NX PX lock
-// expires naturally when its TTL elapses, so no explicit release call is
-// needed. Attempting to DEL the key here would introduce a race: a slow
-// winner could release a lock already re-acquired by a new leader on the
-// next tick. Close exists solely to satisfy the LeaderElection interface.
-func (e *RedisLeaderElection) Close(_ context.Context) {}
+// Close satisfies LeaderElection. Redis locks are not explicitly released.
+func (e *RedisLeaderElection) Close(_ context.Context) {
+	// Intentional no-op: the SET NX PX lock expires via its TTL. Calling DEL
+	// here would introduce a race where a slow winner releases a key already
+	// re-acquired by a new leader on the next tick.
+}
