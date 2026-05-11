@@ -190,26 +190,75 @@ type paramIntRange struct{ min, max int }
 // codes need at least 6 chars to resist brute-force). Keys absent from the map
 // accept any parseable integer.
 var paramIntConstraints = map[string]paramIntRange{
-	domain.ParamKeyScoringExactScore:        {1, 100},
-	domain.ParamKeyScoringCorrectOutcome:    {0, 100},
-	domain.ParamKeyScoringGoalDiff:          {0, 100},
-	domain.ParamKeyPredictionDeadlineMin:    {0, 1440}, // 0 = no deadline; max 24 h
-	domain.ParamKeyGroupMinMembers:          {2, 1000},
-	domain.ParamKeyGroupInviteCodeLength:    {6, 64},
-	domain.ParamKeyConflictStaleDays:        {1, 365},
-	domain.ParamKeyPaginationDefaultLimit:   {1, 1_000},
-	domain.ParamKeyPaginationMaxLimit:       {1, 10_000},
-	domain.ParamKeyTournamentWinPoints:      {1, 10},
-	domain.ParamKeyAdminBulkMaxItems:        {1, 10_000},
-	domain.ParamKeyCacheMatchTTL:            {0, 86_400}, // 0 = disable cache
+	// Scoring — runtime, re-read on every ScoreMatch call
+	domain.ParamKeyScoringExactScore:     {1, 100},
+	domain.ParamKeyScoringCorrectOutcome: {0, 100},
+	domain.ParamKeyScoringGoalDiff:       {0, 100},
+	domain.ParamKeyScoringExtraTimeBonus: {0, 100}, // 0 = no global bonus
+	domain.ParamKeyScoringPenaltiesBonus: {0, 100}, // 0 = no global bonus
+
+	// Prediction
+	domain.ParamKeyPredictionDeadlineMin: {0, 1440}, // 0 = no deadline; max 24 h
+
+	// Group lifecycle
+	domain.ParamKeyGroupMinMembers:       {2, 1_000},
+	domain.ParamKeyGroupMaxSize:          {2, 1_000},
+	domain.ParamKeyGroupInviteCodeLength: {6, 64},
+
+	// Conflict detection
+	domain.ParamKeyConflictStaleDays: {1, 365},
+	domain.ParamKeyConflictMaxScan:   {100, 100_000},
+
+	// Pagination
+	domain.ParamKeyPaginationDefaultLimit: {1, 1_000},
+	domain.ParamKeyPaginationMaxLimit:     {1, 10_000},
+
+	// Tournament
+	domain.ParamKeyTournamentWinPoints: {1, 10},
+
+	// Admin bulk operations
+	domain.ParamKeyAdminBulkMaxItems: {1, 10_000},
+
+	// Cache TTLs — 0 = disable cache
+	domain.ParamKeyCacheMatchTTL:            {0, 86_400},
 	domain.ParamKeyCacheLeaderboardTTL:      {0, 86_400},
 	domain.ParamKeyCacheDashboardTTLSeconds: {0, 86_400},
-	domain.ParamKeyAuditWriteTimeout:        {1, 60},
-	domain.ParamKeyDLQSampleSize:            {1, 100},
-	domain.ParamKeyDLQReplayDefaultLimit:    {1, 1_000},
-	domain.ParamKeyMessagingMaxRetries:      {1, 20},
-	domain.ParamKeyMessagingStreamMaxLen:    {10_000, 10_000_000},
-	domain.ParamKeyAuthValidationTimeout:    {1, 60},
+
+	// Infrastructure timeouts (restart required)
+	domain.ParamKeyAuditWriteTimeout:     {1, 60},
+	domain.ParamKeyAuthValidationTimeout: {1, 60},
+
+	// Audit retry policy
+	domain.ParamKeyAuditMaxRetries:   {1, 10},
+	domain.ParamKeyAuditRetryDelayMs: {10, 10_000},
+
+	// DLQ
+	domain.ParamKeyDLQSampleSize:         {1, 100},
+	domain.ParamKeyDLQReplayDefaultLimit: {1, 1_000},
+
+	// Messaging / Redis Streams
+	domain.ParamKeyMessagingMaxRetries:         {1, 20},
+	domain.ParamKeyMessagingStreamMaxLen:       {10_000, 10_000_000},
+	domain.ParamKeyMessagingStreamWorkerCount:  {1, 64},
+	domain.ParamKeyMessagingStreamReadBlockSec: {1, 60},
+
+	// Worker: snapshot generation
+	domain.ParamKeyWorkerSnapshotConcurrency: {1, 256},
+	domain.ParamKeyWorkerSnapshotRetryBaseMs: {10, 10_000},
+	domain.ParamKeyWorkerSnapshotMaxAttempts: {1, 10},
+
+	// Worker: background maintenance
+	domain.ParamKeyWorkerDLQMonitorIntervalSec: {10, 86_400},
+	domain.ParamKeyWorkerPurgeIntervalHours:    {1, 720}, // 1 h – 30 days
+
+	// System
+	domain.ParamKeyPurgeRetentionDays: {1, 365},
+
+	// API
+	domain.ParamKeyAPIBodySizeLimitBytes: {1_024, 10_485_760}, // 1 KB – 10 MB
+
+	// Snapshot retention
+	domain.ParamKeySnapshotKeepLatestCount: {1, 1_000},
 }
 
 // validateParamConstraints enforces per-key business-rule bounds for int params.

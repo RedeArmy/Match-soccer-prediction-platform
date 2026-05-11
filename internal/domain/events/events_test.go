@@ -186,6 +186,43 @@ func TestMatchFinished_NegativeAwayScore_ReturnsValidation(t *testing.T) {
 	}
 }
 
+func TestMatchFinished_EmptyWinMethod_ReturnsNil(t *testing.T) {
+	// Empty string is the zero value and means "not applicable" (group stage or normal time).
+	e := events.MatchFinished{MatchID: 1, HomeTeam: teamBrazil, AwayTeam: teamArgentina}
+	if err := e.Validate(); err != nil {
+		t.Errorf("expected nil for empty WinMethod, got %v", err)
+	}
+}
+
+func TestMatchFinished_AllValidWinMethods_ReturnNil(t *testing.T) {
+	for _, wm := range []string{"normal", "extra_time", "penalties"} {
+		e := events.MatchFinished{
+			MatchID:   1,
+			HomeTeam:  teamBrazil,
+			AwayTeam:  teamArgentina,
+			HomeScore: 1,
+			WinMethod: wm,
+		}
+		if err := e.Validate(); err != nil {
+			t.Errorf("WinMethod %q: expected nil, got %v", wm, err)
+		}
+	}
+}
+
+func TestMatchFinished_InvalidWinMethod_ReturnsValidation(t *testing.T) {
+	for _, bad := range []string{"overtime", "shootout", "Normal", "PENALTIES", "extra time"} {
+		e := events.MatchFinished{
+			MatchID:   1,
+			HomeTeam:  teamBrazil,
+			AwayTeam:  teamArgentina,
+			WinMethod: bad,
+		}
+		if !isValidation(e.Validate()) {
+			t.Errorf("WinMethod %q: expected validation error, got nil", bad)
+		}
+	}
+}
+
 // ── PredictionMade ────────────────────────────────────────────────────────────
 
 func TestPredictionMade_Valid_ReturnsNil(t *testing.T) {

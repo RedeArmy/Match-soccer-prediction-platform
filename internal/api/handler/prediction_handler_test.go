@@ -125,6 +125,22 @@ func TestPredUpdate_InvalidJSON_Returns422(t *testing.T) {
 	}
 }
 
+func TestSubmit_InvalidPredictedWinMethod_Returns422(t *testing.T) {
+	w := doPred(newPredRouter(&stubPredSvc{}, true), http.MethodPost, "/",
+		`{"match_id":1,"home_score":2,"away_score":1,"predicted_win_method":"overtime"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestPredUpdate_InvalidPredictedWinMethod_Returns422(t *testing.T) {
+	w := doPred(newPredRouter(&stubPredSvc{}, true), http.MethodPatch, pathPredictionID1,
+		`{"home_score":2,"away_score":1,"predicted_win_method":"shootout"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
 func TestPredUpdate_ServiceError_Returns404(t *testing.T) {
 	svc := &stubPredSvc{err: apperrors.NotFound("prediction not found")}
 	w := doPred(newPredRouter(svc, true), http.MethodPatch, pathPredictionID1, bodyUpdatePrediction)
