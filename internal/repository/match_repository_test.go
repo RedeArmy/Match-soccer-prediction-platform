@@ -235,3 +235,54 @@ func TestMatchRepository_List_HydratesStadiumLocation(t *testing.T) {
 		t.Fatal("expected country to be hydrated in list result")
 	}
 }
+
+// ── WinMethod persistence ─────────────────────────────────────────────────────
+
+func TestMatchRepository_Update_PersistsWinMethod(t *testing.T) {
+	cleanTables(t)
+	m := seedMatchWithPhase(t, domain.PhaseRoundOf16)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	home, away := 2, 1
+	wm := domain.WinMethodPenalties
+	m.Status = domain.MatchStatusFinished
+	m.HomeScore = &home
+	m.AwayScore = &away
+	m.WinMethod = &wm
+	if err := repo.Update(context.Background(), m); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.WinMethod == nil {
+		t.Fatal("expected WinMethod to be non-nil after update")
+	}
+	if *got.WinMethod != domain.WinMethodPenalties {
+		t.Errorf("WinMethod: got %q, want %q", *got.WinMethod, domain.WinMethodPenalties)
+	}
+}
+
+func TestMatchRepository_Update_NilWinMethod_RemainsNil(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t) // group_stage — WinMethod must stay nil
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	home, away := 1, 0
+	m.Status = domain.MatchStatusFinished
+	m.HomeScore = &home
+	m.AwayScore = &away
+	if err := repo.Update(context.Background(), m); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.WinMethod != nil {
+		t.Errorf("expected nil WinMethod for group-stage match, got %q", *got.WinMethod)
+	}
+}

@@ -155,6 +155,13 @@ const (
 
 	// API request limits
 	DefaultAPIBodySizeLimitBytes = 65536 // api.body_size_limit_bytes (64 KB)
+
+	// Prediction window
+	DefaultPredictionDeadlineMin = 5 // prediction.deadline_minutes — closes predictions 5 min before kick-off
+
+	// Scoring win-method bonuses: 0 = no global bonus; per-phase scoring_rules override this.
+	DefaultScoringExtraTimeBonus = 0 // scoring.extra_time_bonus
+	DefaultScoringPenaltiesBonus = 0 // scoring.penalties_bonus
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable

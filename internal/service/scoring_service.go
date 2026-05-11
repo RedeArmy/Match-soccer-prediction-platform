@@ -58,8 +58,8 @@ func (s *scoringService) loadGlobalConfig(ctx context.Context) scoringConfig {
 		exactScore:     s.params.GetInt(ctx, domain.ParamKeyScoringExactScore, domain.PointsExactScore),
 		correctOutcome: s.params.GetInt(ctx, domain.ParamKeyScoringCorrectOutcome, domain.PointsCorrectOutcome),
 		goalDifference: s.params.GetInt(ctx, domain.ParamKeyScoringGoalDiff, domain.PointsGoalDifference),
-		extraTimeBonus: s.params.GetInt(ctx, domain.ParamKeyScoringExtraTimeBonus, 0),
-		penaltiesBonus: s.params.GetInt(ctx, domain.ParamKeyScoringPenaltiesBonus, 0),
+		extraTimeBonus: s.params.GetInt(ctx, domain.ParamKeyScoringExtraTimeBonus, domain.DefaultScoringExtraTimeBonus),
+		penaltiesBonus: s.params.GetInt(ctx, domain.ParamKeyScoringPenaltiesBonus, domain.DefaultScoringPenaltiesBonus),
 	}
 }
 

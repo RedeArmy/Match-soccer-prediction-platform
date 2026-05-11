@@ -44,7 +44,7 @@ func (s *scoringRuleService) GetByPhase(ctx context.Context, phase domain.MatchP
 func (s *scoringRuleService) Update(
 	ctx context.Context,
 	phase domain.MatchPhase,
-	input ScoringRuleInput,
+	input domain.ScoringRuleInput,
 	actorID int,
 ) (*domain.ScoringRule, error) {
 	if input.ExactScore < 0 || input.CorrectOutcome < 0 || input.GoalDifference < 0 {

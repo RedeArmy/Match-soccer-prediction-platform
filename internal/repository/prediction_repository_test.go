@@ -1349,3 +1349,81 @@ func TestPredictionRepository_ListQuinielaIDsByMatch_NoPredictions_ReturnsEmpty(
 		t.Errorf("expected empty slice, got %v", ids)
 	}
 }
+
+// ── PredictedWinMethod persistence ───────────────────────────────────────────
+
+func TestPredictionRepository_Upsert_PredictedWinMethod_Persists(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatchWithPhase(t, domain.PhaseRoundOf16)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	wm := domain.WinMethodNormal
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0, PredictedWinMethod: &wm}
+	if _, err := repo.Upsert(context.Background(), p); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.GetByUserAndMatch(context.Background(), u.ID, m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.PredictedWinMethod == nil {
+		t.Fatal("expected PredictedWinMethod to be non-nil after upsert")
+	}
+	if *got.PredictedWinMethod != domain.WinMethodNormal {
+		t.Errorf("PredictedWinMethod: got %q, want %q", *got.PredictedWinMethod, domain.WinMethodNormal)
+	}
+}
+
+func TestPredictionRepository_Update_UpdatesPredictedWinMethod(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatchWithPhase(t, domain.PhaseRoundOf16)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	wm1 := domain.WinMethodNormal
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0, PredictedWinMethod: &wm1}
+	if err := repo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	wm2 := domain.WinMethodPenalties
+	p.PredictedWinMethod = &wm2
+	p.HomeScore = 2
+	p.AwayScore = 1
+	if err := repo.Update(context.Background(), p); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err := repo.GetByUserAndMatch(context.Background(), u.ID, m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.PredictedWinMethod == nil {
+		t.Fatal("expected PredictedWinMethod to be non-nil after update")
+	}
+	if *got.PredictedWinMethod != domain.WinMethodPenalties {
+		t.Errorf("PredictedWinMethod after update: got %q, want %q", *got.PredictedWinMethod, domain.WinMethodPenalties)
+	}
+}
+
+func TestPredictionRepository_Upsert_NilPredictedWinMethod_RemainsNil(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t) // group_stage — PredictedWinMethod must stay nil
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 2}
+	if _, err := repo.Upsert(context.Background(), p); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.GetByUserAndMatch(context.Background(), u.ID, m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.PredictedWinMethod != nil {
+		t.Errorf("expected nil PredictedWinMethod for group-stage prediction, got %q", *got.PredictedWinMethod)
+	}
+}

@@ -71,17 +71,6 @@ type MatchScorer interface {
 	ScoreMatch(ctx context.Context, matchID int) error
 }
 
-// ScoringRuleInput carries the mutable fields for a scoring rule update.
-// Grouping them avoids an excessively long parameter list on Update.
-type ScoringRuleInput struct {
-	ExactScore     int
-	CorrectOutcome int
-	GoalDifference int
-	ExtraTimeBonus int
-	PenaltiesBonus int
-	IsActive       bool
-}
-
 // ScoringRuleService manages per-phase point configuration exposed through the
 // admin API. Operators can raise knockout-stage point values mid-tournament
 // without a service restart or migration; changes take effect on the next
@@ -94,7 +83,7 @@ type ScoringRuleService interface {
 	// Update persists new point values for a phase and records an audit entry.
 	// Returns NotFound when the phase has no seeded row; returns Validation when
 	// any point value is negative or the scoring hierarchy is violated.
-	Update(ctx context.Context, phase domain.MatchPhase, input ScoringRuleInput, actorID int) (*domain.ScoringRule, error)
+	Update(ctx context.Context, phase domain.MatchPhase, input domain.ScoringRuleInput, actorID int) (*domain.ScoringRule, error)
 }
 
 // LeaderboardResult is the value returned by Ranker methods. It bundles the
