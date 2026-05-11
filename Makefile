@@ -40,8 +40,11 @@ run-worker:
 
 ## test: Run the full test suite with race detection enabled
 ##       The -count=1 flag disables the test cache, ensuring each run is fresh.
+##       The 90s timeout accommodates internal/infrastructure/database, which
+##       starts multiple testcontainer instances sequentially (one per test)
+##       and can legitimately require ~70s on a warm CI runner.
 test:
-	go test -race -count=1 -timeout=60s ./...
+	go test -race -count=1 -timeout=90s ./...
 
 ## test-integration: Run end-to-end tests that require a live Docker daemon.
 ##                   These tests are excluded from the standard test / test-cover
@@ -59,7 +62,7 @@ test-integration:
 ##             internal/testutil are counted when called from other packages' tests.
 test-cover:
 	rm -f coverage*.out
-	go test -race -count=1 -timeout=60s \
+	go test -race -count=1 -timeout=90s \
 		-coverprofile=coverage.out \
 		-covermode=atomic \
 		-coverpkg=./... \
