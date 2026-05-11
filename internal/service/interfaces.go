@@ -438,9 +438,10 @@ type AdminUserService interface {
 	// remaining bans. Per-user failures are reported in BulkBanResult.Failed;
 	// the outer error is reserved for unexpected, request-level failures.
 	BulkBan(ctx context.Context, userIDs []int, adminID int, reason string) (BulkBanResult, error)
-	// ListFiltered returns users matching the given filters with pagination.
-	// Supersedes ListUsers for the admin panel where filters and paging are needed.
-	ListFiltered(ctx context.Context, f repository.UserFilters, p repository.Pagination) ([]*domain.User, error)
+	// ListFiltered returns users matching the given filters with cursor-based
+	// pagination. The second return value is an opaque next-page cursor; empty
+	// on the last page.
+	ListFiltered(ctx context.Context, f repository.UserFilters, p repository.CursorPage) ([]*domain.User, string, error)
 	// GetProfile returns the full admin view of a user: base profile, active
 	// group memberships, and payment records.
 	GetProfile(ctx context.Context, userID int) (*AdminUserProfile, error)
@@ -471,9 +472,11 @@ type Snapshotter interface {
 // It is implemented by the same concrete type as AuditLogger but is kept
 // separate to apply the Interface Segregation Principle: callers that only
 // write audits receive AuditLogger; those that need reads receive AuditReader.
+// Both methods use cursor-based pagination; the second return value is an
+// opaque next-page token, empty on the last page.
 type AuditReader interface {
-	ListAuditLogs(ctx context.Context, f repository.AuditLogFilters, p repository.Pagination) ([]*domain.AuditLog, error)
-	ListAuditLogsByEntity(ctx context.Context, resourceType string, resourceID int, p repository.Pagination) ([]*domain.AuditLog, error)
+	ListAuditLogs(ctx context.Context, f repository.AuditLogFilters, p repository.CursorPage) ([]*domain.AuditLog, string, error)
+	ListAuditLogsByEntity(ctx context.Context, resourceType string, resourceID int, p repository.CursorPage) ([]*domain.AuditLog, string, error)
 }
 
 // AuditService is the combined interface for callers that need both write and

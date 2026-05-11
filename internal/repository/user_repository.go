@@ -229,40 +229,64 @@ func (r *PostgresUserRepository) ListBanned(ctx context.Context) ([]*domain.User
 	return collectUsers(rows)
 }
 
-// ListFiltered returns users matching the given filters with pagination.
-// Filters are applied with AND semantics; nil fields are ignored.
-func (r *PostgresUserRepository) ListFiltered(ctx context.Context, f UserFilters, p Pagination) ([]*domain.User, error) {
-	q := `SELECT ` + userColumns + ` FROM users WHERE deleted_at IS NULL`
-	args := []any{}
-	n := 1
+// ListFiltered returns users matching the given filters with cursor-based
+// (keyset) pagination. Ordering is by id DESC, which is registration order
+// with no ties. The second return value is an opaque next-page cursor; it is
+// empty when the caller is on the last page.
+func (r *PostgresUserRepository) ListFiltered(ctx context.Context, f UserFilters, p CursorPage) ([]*domain.User, string, error) {
+	if p.Limit <= 0 {
+		panic("repository: CursorPage.Limit must be positive")
+	}
 
+	wb := newWhereBuilder()
+	wb.addCond("deleted_at IS NULL")
+
+	if p.Cursor != "" {
+		afterID, err := decodeCursor(p.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		wb.add("id < $%d", afterID)
+	}
 	if f.Banned != nil {
 		if *f.Banned {
-			q += ` AND banned_at IS NOT NULL`
+			wb.addCond("banned_at IS NOT NULL")
 		} else {
-			q += ` AND banned_at IS NULL`
+			wb.addCond("banned_at IS NULL")
 		}
 	}
 	if f.Role != nil {
-		q += ` AND role = $` + itoa(n)
-		args = append(args, string(*f.Role))
-		n++
+		wb.add("role = $%d", string(*f.Role))
 	}
 	if f.Search != nil && *f.Search != "" {
-		q += ` AND (name ILIKE $` + itoa(n) + ` OR email ILIKE $` + itoa(n) + `)`
-		args = append(args, "%"+*f.Search+"%")
-		n++
+		wb.addDual("(name ILIKE $%d OR email ILIKE $%d)", "%"+*f.Search+"%")
 	}
 
-	q += ` ORDER BY created_at DESC`
-	q, args, _ = applyPagination(q, args, n, p)
+	args := wb.args
+	n := wb.next()
+	args = append(args, p.Limit+1)
+
+	q := `SELECT ` + userColumns + ` FROM users` + wb.clause() +
+		` ORDER BY id DESC LIMIT $` + itoa(n)
 
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
-		return nil, apperrors.Internal(err)
+		return nil, "", apperrors.Internal(err)
 	}
 	defer rows.Close()
-	return collectUsers(rows)
+
+	users, err := collectUsers(rows)
+	if err != nil {
+		return nil, "", err
+	}
+
+	var nextCursor string
+	if len(users) > p.Limit {
+		users = users[:p.Limit]
+		nextCursor = encodeCursor(users[len(users)-1].ID)
+	}
+
+	return users, nextCursor, nil
 }
 
 // GetStatusCounts returns a single-row summary of user counts grouped by

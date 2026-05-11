@@ -72,6 +72,23 @@ func parseIntParam(s string) (int, error) {
 	return n, nil
 }
 
+// parseCursorPage reads ?limit and ?cursor from the request and returns a
+// CursorPage value. Defaults: limit=50, max 200. An absent cursor means "first
+// page". Clients receive the cursor from the previous response's next_cursor
+// field and pass it back verbatim; they must not interpret its contents.
+func parseCursorPage(r *http.Request) repository.CursorPage {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = domain.DefaultPaginationDefaultLimit
+	} else if limit > domain.DefaultPaginationMaxLimit {
+		limit = domain.DefaultPaginationMaxLimit
+	}
+	return repository.CursorPage{
+		Limit:  limit,
+		Cursor: r.URL.Query().Get("cursor"),
+	}
+}
+
 // parsePagination reads ?limit and ?page from the request and returns a
 // Pagination value. Defaults: limit=50, page=1. Max limit is capped at 200.
 func parsePagination(r *http.Request) repository.Pagination {

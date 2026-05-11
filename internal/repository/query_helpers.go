@@ -122,6 +122,23 @@ func (w *whereBuilder) clause() string {
 	return " WHERE " + strings.Join(w.conds, " AND ")
 }
 
+// addCond appends a predicate that has no positional arguments — e.g. a NULL
+// check or a literal boolean expression.
+func (w *whereBuilder) addCond(expr string) {
+	w.conds = append(w.conds, expr)
+}
+
+// addDual appends a predicate that references the same value in two positions.
+// expr must contain exactly two %d verbs that will both receive the same
+// positional argument index. Use for ILIKE patterns applied across two columns:
+//
+//	wb.addDual("(name ILIKE $%d OR email ILIKE $%d)", "%query%")
+func (w *whereBuilder) addDual(expr string, val any) {
+	w.conds = append(w.conds, fmt.Sprintf(expr, w.argIdx, w.argIdx))
+	w.args = append(w.args, val)
+	w.argIdx++
+}
+
 // next returns the next positional argument index for passing to applyPagination.
 func (w *whereBuilder) next() int {
 	return w.argIdx
