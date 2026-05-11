@@ -131,8 +131,8 @@ func (s *adminUserService) doTransfer(ctx context.Context, quinielaID, excludeUs
 	return s.memberRepo.SetRole(ctx, successor.ID, domain.MembershipRoleCreateOwner)
 }
 
-// ListFiltered returns users matching the given filters with pagination.
-func (s *adminUserService) ListFiltered(ctx context.Context, f repository.UserFilters, p repository.Pagination) ([]*domain.User, error) {
+// ListFiltered returns users matching the given filters with cursor-based pagination.
+func (s *adminUserService) ListFiltered(ctx context.Context, f repository.UserFilters, p repository.CursorPage) ([]*domain.User, string, error) {
 	return s.userRepo.ListFiltered(ctx, f, p)
 }
 

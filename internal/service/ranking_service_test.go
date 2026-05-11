@@ -48,8 +48,8 @@ func (r *stubUserRepo) Ban(_ context.Context, _, _ int, _ string) (*domain.User,
 }
 func (r *stubUserRepo) Unban(_ context.Context, _ int) error                 { return r.err }
 func (r *stubUserRepo) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, r.err }
-func (r *stubUserRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
-	return r.users, r.err
+func (r *stubUserRepo) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.CursorPage) ([]*domain.User, string, error) {
+	return r.users, "", r.err
 }
 func (r *stubUserRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
 	return repository.UserStatusCounts{}, r.err

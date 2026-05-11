@@ -308,7 +308,7 @@ func TestUserRepository_ListFiltered_NoFilter_ReturnsAll(t *testing.T) {
 	seedUser(t)
 	repo := repository.NewPostgresUserRepository(testDB)
 
-	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.Unbounded())
+	results, _, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.CursorPage{Limit: 1000})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -326,7 +326,7 @@ func TestUserRepository_ListFiltered_FilterByBanned(t *testing.T) {
 	_, _ = repo.Ban(context.Background(), u1.ID, admin.ID, "test")
 
 	banned := true
-	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Banned: &banned}, repository.Unbounded())
+	results, _, err := repo.ListFiltered(context.Background(), repository.UserFilters{Banned: &banned}, repository.CursorPage{Limit: 1000})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -345,7 +345,7 @@ func TestUserRepository_ListFiltered_FilterByRole(t *testing.T) {
 	seedUser(t) // role = player
 
 	role := domain.RoleAdmin
-	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Role: &role}, repository.Unbounded())
+	results, _, err := repo.ListFiltered(context.Background(), repository.UserFilters{Role: &role}, repository.CursorPage{Limit: 1000})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -365,7 +365,7 @@ func TestUserRepository_ListFiltered_FilterBySearch(t *testing.T) {
 	}
 
 	search := "alic"
-	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{Search: &search}, repository.Unbounded())
+	results, _, err := repo.ListFiltered(context.Background(), repository.UserFilters{Search: &search}, repository.CursorPage{Limit: 1000})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -374,19 +374,40 @@ func TestUserRepository_ListFiltered_FilterBySearch(t *testing.T) {
 	}
 }
 
-func TestUserRepository_ListFiltered_PaginationOffset(t *testing.T) {
+func TestUserRepository_ListFiltered_CursorPagination(t *testing.T) {
 	cleanTables(t)
 	seedUser(t)
 	seedUser(t)
 	seedUser(t)
 	repo := repository.NewPostgresUserRepository(testDB)
 
-	results, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.Pagination{Limit: 2, Offset: 1})
+	// First page: limit=2, no cursor.
+	page1, cursor1, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.CursorPage{Limit: 2})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if len(results) != 2 {
-		t.Errorf("expected 2 users with limit=2 offset=1, got %d", len(results))
+	if len(page1) != 2 {
+		t.Fatalf("expected 2 users on page 1, got %d", len(page1))
+	}
+	if cursor1 == "" {
+		t.Fatal("expected non-empty next_cursor after page 1")
+	}
+
+	// Second page: use cursor from page 1.
+	page2, cursor2, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.CursorPage{Limit: 2, Cursor: cursor1})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(page2) != 1 {
+		t.Errorf("expected 1 user on page 2, got %d", len(page2))
+	}
+	if cursor2 != "" {
+		t.Errorf("expected empty next_cursor on last page, got %q", cursor2)
+	}
+
+	// Pages must not overlap.
+	if page1[0].ID == page2[0].ID || page1[1].ID == page2[0].ID {
+		t.Error("pages share a user: cursor pagination overlapped")
 	}
 }
 

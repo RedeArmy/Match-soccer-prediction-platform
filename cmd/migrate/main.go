@@ -1,15 +1,17 @@
 // Command migrate applies pending database schema migrations.
 //
 // This binary is the explicit migration runner for CI/CD pipelines,
-// rollback operations, and future Supabase schema synchronisation.
+// rollback operations, and new-environment bootstrapping.
 // It uses the same embedded SQL files as the API server, so schema and
 // binary are always in sync regardless of which process runs the migrations.
 //
 // Usage:
 //
-//	migrate              - apply pending migrations
-//	migrate --seed       - apply migrations then insert development fixtures
-//	migrate --down N     - roll back the last N migrations
+//	migrate                        - apply pending migrations (normal path)
+//	migrate --seed                 - apply migrations then insert development fixtures
+//	migrate --fresh                - bootstrap from baseline (new environments only)
+//	migrate --fresh --seed         - baseline + development fixtures
+//	migrate --fresh --baseline=PATH - use a custom baseline file
 package main
 
 import (
@@ -24,19 +26,33 @@ import (
 	"github.com/rede/world-cup-quiniela/migrations"
 )
 
+const defaultBaselinePath = "migrations/baseline/schema.sql"
+
 // run applies pending migrations and, if seed is true, inserts development
-// fixtures. It returns an error instead of calling os.Exit so it can be
-// exercised by tests without killing the test process.
-func run(dsn string, seed bool) error {
+// fixtures. When fresh is true it applies the consolidated baseline DDL and
+// marks all versioned migrations as applied, bypassing sequential execution.
+// It returns an error instead of calling os.Exit so it can be exercised by
+// tests without killing the test process.
+func run(dsn string, seed, fresh bool, baselinePath string) error {
 	if dsn == "" {
 		return fmt.Errorf("WCQ_DATABASE_DSN environment variable is required")
 	}
 
-	log.Println("migrate: applying migrations...")
-	if err := database.Migrate(dsn, migrations.FS); err != nil {
-		return fmt.Errorf("migrate: %w", err)
+	if fresh {
+		log.Printf("migrate: applying baseline from %s ...", baselinePath)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := database.MigrateFresh(ctx, dsn, baselinePath, migrations.FS); err != nil {
+			return fmt.Errorf("migrate fresh: %w", err)
+		}
+		log.Println("migrate: baseline applied; all migrations marked as applied")
+	} else {
+		log.Println("migrate: applying pending migrations...")
+		if err := database.Migrate(dsn, migrations.FS); err != nil {
+			return fmt.Errorf("migrate: %w", err)
+		}
+		log.Println("migrate: schema is up to date")
 	}
-	log.Println("migrate: schema is up to date")
 
 	if seed {
 		log.Println("migrate: seeding development fixtures...")
@@ -63,12 +79,18 @@ func run(dsn string, seed bool) error {
 	return nil
 }
 
+// osExit is a package-level variable so tests can replace it with a function
+// that records the exit code instead of terminating the process.
+var osExit = os.Exit
+
 func main() {
 	seed := flag.Bool("seed", false, "seed development fixtures after migrating (never use in production)")
+	fresh := flag.Bool("fresh", false, "bootstrap from consolidated baseline DDL (new environments only — skips running all 67+ migrations sequentially)")
+	baseline := flag.String("baseline", defaultBaselinePath, "path to baseline SQL file (used only with --fresh)")
 	flag.Parse()
 
-	if err := run(os.Getenv("WCQ_DATABASE_DSN"), *seed); err != nil {
+	if err := run(os.Getenv("WCQ_DATABASE_DSN"), *seed, *fresh, *baseline); err != nil {
 		fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
-		os.Exit(1)
+		osExit(1)
 	}
 }

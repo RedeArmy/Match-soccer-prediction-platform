@@ -73,8 +73,8 @@ func (s *stubAdminUserSvc) BulkBan(_ context.Context, _ []int, _ int, _ string) 
 	}
 	return s.bulkResult, nil
 }
-func (s *stubAdminUserSvc) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.Pagination) ([]*domain.User, error) {
-	return s.users, s.err
+func (s *stubAdminUserSvc) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.CursorPage) ([]*domain.User, string, error) {
+	return s.users, "", s.err
 }
 func (s *stubAdminUserSvc) GetProfile(_ context.Context, _ int) (*service.AdminUserProfile, error) {
 	return s.profile, s.err
@@ -194,11 +194,11 @@ type stubAuditReader struct {
 	err  error
 }
 
-func (s *stubAuditReader) ListAuditLogs(_ context.Context, _ repository.AuditLogFilters, _ repository.Pagination) ([]*domain.AuditLog, error) {
-	return s.logs, s.err
+func (s *stubAuditReader) ListAuditLogs(_ context.Context, _ repository.AuditLogFilters, _ repository.CursorPage) ([]*domain.AuditLog, string, error) {
+	return s.logs, "", s.err
 }
-func (s *stubAuditReader) ListAuditLogsByEntity(_ context.Context, _ string, _ int, _ repository.Pagination) ([]*domain.AuditLog, error) {
-	return s.logs, s.err
+func (s *stubAuditReader) ListAuditLogsByEntity(_ context.Context, _ string, _ int, _ repository.CursorPage) ([]*domain.AuditLog, string, error) {
+	return s.logs, "", s.err
 }
 
 // ── SystemParamService stub (admin-scoped) ────────────────────────────────────

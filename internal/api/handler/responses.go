@@ -23,3 +23,12 @@ type PageMeta struct {
 	Limit  int `json:"limit"`
 	Offset int `json:"offset"`
 }
+
+// CursorPaged wraps a cursor-paginated list with navigation metadata.
+// NextCursor is an opaque token that clients pass as ?cursor= on the next
+// request. It is absent when HasMore is false (the caller is on the last page).
+type CursorPaged[T any] struct {
+	Data       []T    `json:"data"`
+	NextCursor string `json:"next_cursor,omitempty"`
+	HasMore    bool   `json:"has_more"`
+}

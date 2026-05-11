@@ -27,12 +27,14 @@ func NewAdminUserHandler(svc service.AdminUserService, log *zap.Logger) *AdminUs
 	return &AdminUserHandler{svc: svc, log: log}
 }
 
-// ListUsers handles GET /admin/users - paginated user list with optional filters.
+// ListUsers handles GET /admin/users - cursor-paginated user list with optional filters.
 //
 // @Summary      List users
-// @Description  Returns a paginated list of all user accounts. Supports optional
+// @Description  Returns a cursor-paginated list of all user accounts. Supports
 //
-//	filtering by ban status, role, and name/email search. Requires admin role.
+//	optional filtering by ban status, role, and name/email search. Pass
+//	the next_cursor value from the previous response as ?cursor= to
+//	fetch the next page. Requires admin role.
 //
 // @Tags         admin-users
 // @Produce      json
@@ -41,14 +43,15 @@ func NewAdminUserHandler(svc service.AdminUserService, log *zap.Logger) *AdminUs
 // @Param        role    query     string  false  "Filter by role (admin, user)"
 // @Param        search  query     string  false  "Search by name or email (partial match)"
 // @Param        limit   query     int     false  "Max records per page (default 50, max 200)"
-// @Param        page    query     int     false  "Page number (default 1)"
-// @Success      200     {object}  handler.Paged[handler.AdminUserResponse]
+// @Param        cursor  query     string  false  "Opaque cursor from previous response next_cursor field"
+// @Success      200     {object}  handler.CursorPaged[handler.AdminUserResponse]
 // @Failure      401     {object}  handler.ErrorResponse
 // @Failure      403     {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422     {object}  handler.ErrorResponse  "Invalid cursor token"
 // @Failure      500     {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/users [get]
 func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	p := parsePagination(r)
+	p := parseCursorPage(r)
 
 	f := repository.UserFilters{}
 	if q := r.URL.Query().Get("banned"); q != "" {
@@ -63,7 +66,7 @@ func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		f.Search = &q
 	}
 
-	users, err := h.svc.ListFiltered(r.Context(), f, p)
+	users, nextCursor, err := h.svc.ListFiltered(r.Context(), f, p)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
@@ -73,9 +76,10 @@ func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	for i, u := range users {
 		data[i] = adminUserToResponse(u)
 	}
-	writeJSON(w, http.StatusOK, Paged[AdminUserResponse]{
-		Data: data,
-		Page: PageMeta{Limit: p.Limit, Offset: p.Offset},
+	writeJSON(w, http.StatusOK, CursorPaged[AdminUserResponse]{
+		Data:       data,
+		NextCursor: nextCursor,
+		HasMore:    nextCursor != "",
 	})
 }
 

@@ -29,17 +29,17 @@ func (r *stubAuditLogRepo) Create(_ context.Context, entry *domain.AuditLog) err
 	r.mu.Unlock()
 	return nil
 }
-func (r *stubAuditLogRepo) ListByEntity(_ context.Context, _ string, _ int, _ repository.Pagination) ([]*domain.AuditLog, error) {
-	return nil, nil
+func (r *stubAuditLogRepo) ListByEntity(_ context.Context, _ string, _ int, _ repository.CursorPage) ([]*domain.AuditLog, string, error) {
+	return nil, "", nil
 }
-func (r *stubAuditLogRepo) ListByActor(_ context.Context, _ int, _ repository.Pagination) ([]*domain.AuditLog, error) {
-	return nil, nil
+func (r *stubAuditLogRepo) ListByActor(_ context.Context, _ int, _ repository.CursorPage) ([]*domain.AuditLog, string, error) {
+	return nil, "", nil
 }
-func (r *stubAuditLogRepo) ListByAction(_ context.Context, _ string, _ repository.Pagination) ([]*domain.AuditLog, error) {
-	return nil, nil
+func (r *stubAuditLogRepo) ListByAction(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.AuditLog, string, error) {
+	return nil, "", nil
 }
-func (r *stubAuditLogRepo) List(_ context.Context, _ repository.AuditLogFilters, _ repository.Pagination) ([]*domain.AuditLog, error) {
-	return nil, nil
+func (r *stubAuditLogRepo) List(_ context.Context, _ repository.AuditLogFilters, _ repository.CursorPage) ([]*domain.AuditLog, string, error) {
+	return nil, "", nil
 }
 
 func TestAuditService_Log_PersistsEntry(t *testing.T) {
