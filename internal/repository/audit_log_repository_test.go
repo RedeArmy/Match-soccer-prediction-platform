@@ -203,7 +203,7 @@ func TestAuditLogRepository_List_ZeroLimitPanics(t *testing.T) {
 	repo := repository.NewPostgresAuditLogRepository(testDB)
 
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Error("expected panic for zero CursorPage.Limit, got none")
 		}
 	}()
