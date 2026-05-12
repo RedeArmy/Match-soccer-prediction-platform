@@ -16,10 +16,17 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
+
+// ErrPaymentIntentAlreadyCaptured is returned by PaymentIntentRepository.CaptureAndCredit
+// when the intent was previously captured by the same captureID. The caller
+// should treat this as a successful no-op (idempotent webhook re-delivery)
+// and respond HTTP 204 without crediting the balance a second time.
+var ErrPaymentIntentAlreadyCaptured = errors.New("payment intent already captured")
 
 // UserRepository defines the persistence operations for the User entity.
 //
@@ -651,4 +658,24 @@ type WithdrawalRequestRepository interface {
 	// and reserved_cents) AND inserts a ledger row.  Returns NotFound when the
 	// request does not exist or is not in approved status.
 	MarkProcessedAndCommit(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
+}
+
+// PaymentIntentRepository manages server-generated payment intent records used
+// as opaque PayPal custom_id values.  The single-use token prevents a user
+// from substituting another user's ID in the PayPal order metadata.
+type PaymentIntentRepository interface {
+	// Create persists a new pending intent. intent.ID and intent.CreatedAt are
+	// populated on success.
+	Create(ctx context.Context, intent *domain.PaymentIntent) error
+	// CaptureAndCredit atomically transitions a pending, non-expired intent to
+	// captured, stores captureID, and credits the intent's amount_cents to the
+	// user's balance in a single database transaction.
+	//
+	// Returns ErrPaymentIntentAlreadyCaptured when the same captureID has
+	// already been applied to this intent — the caller should treat this as a
+	// successful no-op (idempotent webhook re-delivery).
+	// Returns apperrors.Conflict when the intent is captured by a different
+	// captureID (duplicate capture from a different PayPal transaction).
+	// Returns apperrors.NotFound when no pending, non-expired intent matches token.
+	CaptureAndCredit(ctx context.Context, token, captureID string) (*domain.PaymentIntent, error)
 }

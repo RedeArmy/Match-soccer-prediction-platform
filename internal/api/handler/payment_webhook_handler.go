@@ -2,10 +2,8 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 
 	"go.uber.org/zap"
 
@@ -91,21 +89,17 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// paypalAmount holds the monetary value from a PayPal capture resource.
-type paypalAmount struct {
-	Value    string `json:"value"`
-	Currency string `json:"currency_code"`
-}
-
 // paypalWebhookPayload is the minimal set of fields we extract from a PayPal
 // PAYMENT.CAPTURE.COMPLETED event.
 type paypalWebhookPayload struct {
 	EventType string `json:"event_type"`
 	Resource  struct {
-		ID     string       `json:"id"`
-		Amount paypalAmount `json:"amount"`
-		// CustomID is set by the frontend when creating the PayPal order.
-		// We embed "user_id:<n>" so we can resolve the user without a lookup table.
+		// ID is the PayPal capture ID — used as the idempotency key.
+		ID string `json:"id"`
+		// CustomID is the server-generated payment intent token. It is set by
+		// the frontend when creating the PayPal order using the token returned
+		// by POST /api/v1/payment-intents. The token is unguessable and binds
+		// the order to a specific user — it cannot be substituted.
 		CustomID string `json:"custom_id"`
 	} `json:"resource"`
 }
@@ -140,23 +134,21 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	userID, err := strconv.Atoi(payload.Resource.CustomID)
-	if err != nil || userID <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid or missing user_id in PayPal custom_id"))
+	intentToken := payload.Resource.CustomID
+	captureID := payload.Resource.ID
+	if intentToken == "" {
+		writeError(w, r, h.log, apperrors.Validation("missing intent token in PayPal custom_id"))
+		return
+	}
+	if captureID == "" {
+		writeError(w, r, h.log, apperrors.Validation("missing capture ID in PayPal resource"))
 		return
 	}
 
-	// PayPal amounts are decimal strings (e.g. "50.00"); convert to minor units.
-	amountCents := paypalAmountToCents(payload.Resource.Amount.Value)
-	if amountCents <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid amount in PayPal webhook"))
-		return
-	}
-
-	if err := h.svc.CreditFromPayPal(r.Context(), userID, amountCents, payload.Resource.Amount.Currency, payload.Resource.ID); err != nil {
-		h.log.Error("paypal webhook: failed to credit balance",
-			zap.String("capture_id", payload.Resource.ID),
-			zap.Int("user_id", userID),
+	if err := h.svc.ResolveAndCreditPayPalIntent(r.Context(), intentToken, captureID); err != nil {
+		h.log.Error("paypal webhook: failed to resolve intent and credit balance",
+			zap.String("capture_id", captureID),
+			zap.String("intent_token", intentToken),
 			zap.Error(err),
 		)
 		writeError(w, r, h.log, err)
@@ -164,15 +156,4 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// paypalAmountToCents converts a PayPal decimal amount string (e.g. "50.00")
-// to integer minor currency units (5000). Returns 0 on parse error.
-func paypalAmountToCents(s string) int {
-	var whole, frac int
-	n, _ := fmt.Sscanf(s, "%d.%d", &whole, &frac)
-	if n == 0 {
-		return 0
-	}
-	return whole*100 + frac
 }

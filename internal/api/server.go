@@ -70,6 +70,7 @@ type appHandlers struct {
 	balance           *handler.BalanceHandler
 	bankTransfer      *handler.BankTransferHandler
 	withdrawal        *handler.WithdrawalHandler
+	paymentIntent     *handler.PaymentIntentHandler
 	paymentWebhook    *handler.PaymentWebhookHandler
 	adminUser         *handler.AdminUserHandler
 	adminGroup        *handler.AdminGroupHandler
@@ -326,6 +327,11 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/me/balance/ledger", h.balance.GetLedger)
 		})
 
+		r.Route("/payment-intents", func(r chi.Router) {
+			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Post("/", h.paymentIntent.Create)
+		})
+
 		r.Route("/bank-transfers", func(r chi.Router) {
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Post("/", h.bankTransfer.Upload)
@@ -474,6 +480,7 @@ func (s *Server) buildHandlers(
 	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(s.db)
 	proofRepo := repository.NewPostgresBankTransferProofRepository(s.db)
 	withdrawalRepo := repository.NewPostgresWithdrawalRequestRepository(s.db)
+	intentRepo := repository.NewPostgresPaymentIntentRepository(s.db)
 
 	// Read infrastructure params (startup-time, not per-request).
 	// ctx is the shared startup context created once in Routes() and passed here
@@ -545,13 +552,14 @@ func (s *Server) buildHandlers(
 		s.log.Warn("storage: falling back to local driver", zap.Error(err))
 		fileStore, _ = storage.New(storage.Config{Driver: "local", LocalDir: "uploads"})
 	}
-	maxUploadBytes    := int64(params.GetInt(ctx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
-	minTransferCents  := params.GetInt(ctx, domain.ParamKeyBankTransferMinAmountCents, domain.DefaultBankTransferMinAmountCents)
-	maxTransferCents  := params.GetInt(ctx, domain.ParamKeyBankTransferMaxAmountCents, domain.DefaultBankTransferMaxAmountCents)
+	maxUploadBytes := int64(params.GetInt(ctx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
+	minTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMinAmountCents, domain.DefaultBankTransferMinAmountCents)
+	maxTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMaxAmountCents, domain.DefaultBankTransferMaxAmountCents)
 
 	balanceSvc := service.NewBalanceService(repos.user, ledgerRepo, s.log)
 	bankTransferSvc := service.NewBankTransferService(proofRepo, auditSvc, s.log)
-	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, auditSvc, s.log)
+	paymentIntentSvc := service.NewPaymentIntentService(intentRepo, params, s.log)
+	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, intentRepo, auditSvc, s.log)
 	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, auditSvc, s.log)
 
 	return appHandlers{
@@ -565,6 +573,7 @@ func (s *Server) buildHandlers(
 		balance:           handler.NewBalanceHandler(balanceSvc, s.log),
 		bankTransfer:      handler.NewBankTransferHandler(bankTransferSvc, fileStore, maxUploadBytes, minTransferCents, maxTransferCents, s.log),
 		withdrawal:        handler.NewWithdrawalHandler(withdrawalSvc, s.log),
+		paymentIntent:     handler.NewPaymentIntentHandler(paymentIntentSvc, s.log),
 		paymentWebhook:    handler.NewPaymentWebhookHandler(webhookPaymentSvc, s.log),
 		adminUser:         handler.NewAdminUserHandler(adminUserSvc, s.log),
 		adminGroup:        handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),

@@ -4,20 +4,24 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type webhookLedgerRepoStub struct {
-	creditErr error
+	capturedKind domain.BalanceLedgerKind
+	creditErr    error
 }
 
-func (r *webhookLedgerRepoStub) Credit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
+func (r *webhookLedgerRepoStub) Credit(_ context.Context, _ int, _ int, kind domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
+	r.capturedKind = kind
 	return r.creditErr
 }
 func (r *webhookLedgerRepoStub) Debit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
@@ -36,138 +40,126 @@ func (r *webhookLedgerRepoStub) ListByUser(_ context.Context, _ int, _ repositor
 	return nil, nil
 }
 
-func newWebhookPaymentSvc(ledger *webhookLedgerRepoStub) WebhookPaymentService {
-	return NewWebhookPaymentService(ledger, &noopAuditLogger{}, zap.NewNop())
+// webhookIntentRepoStub is the PaymentIntentRepository stub for service tests.
+type webhookIntentRepoStub struct {
+	intent     *domain.PaymentIntent
+	captureErr error
+}
+
+func (r *webhookIntentRepoStub) Create(_ context.Context, intent *domain.PaymentIntent) error {
+	intent.ID = 99
+	intent.CreatedAt = time.Now()
+	intent.UpdatedAt = time.Now()
+	return nil
+}
+
+func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, _, _ string) (*domain.PaymentIntent, error) {
+	return r.intent, r.captureErr
+}
+
+func newWebhookPaymentSvc(ledger *webhookLedgerRepoStub, intent *webhookIntentRepoStub) WebhookPaymentService {
+	if intent == nil {
+		intent = &webhookIntentRepoStub{}
+	}
+	return NewWebhookPaymentService(ledger, intent, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── CreditFromRecurrente ──────────────────────────────────────────────────────
 
 func TestWebhookPaymentService_CreditFromRecurrente_HappyPath(t *testing.T) {
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{})
-
-	err := svc.CreditFromRecurrente(context.Background(), 5, 5000, "GTQ", "REF-001")
-	if err != nil {
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, nil)
+	if err := svc.CreditFromRecurrente(context.Background(), 5, 5000, "GTQ", "REF-001"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestWebhookPaymentService_CreditFromRecurrente_ZeroAmountReturnsValidation(t *testing.T) {
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{})
-
-	err := svc.CreditFromRecurrente(context.Background(), 5, 0, "GTQ", "REF-001")
-	if err == nil {
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, nil)
+	if err := svc.CreditFromRecurrente(context.Background(), 5, 0, "GTQ", "REF"); err == nil {
 		t.Fatal("expected validation error for zero amount, got nil")
 	}
 }
 
 func TestWebhookPaymentService_CreditFromRecurrente_NegativeAmountReturnsValidation(t *testing.T) {
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{})
-
-	err := svc.CreditFromRecurrente(context.Background(), 5, -100, "GTQ", "REF-001")
-	if err == nil {
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, nil)
+	if err := svc.CreditFromRecurrente(context.Background(), 5, -1, "GTQ", "REF"); err == nil {
 		t.Fatal("expected validation error for negative amount, got nil")
 	}
 }
 
 func TestWebhookPaymentService_CreditFromRecurrente_EmptyReferenceReturnsValidation(t *testing.T) {
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{})
-
-	err := svc.CreditFromRecurrente(context.Background(), 5, 1000, "GTQ", "")
-	if err == nil {
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, nil)
+	if err := svc.CreditFromRecurrente(context.Background(), 5, 1000, "GTQ", ""); err == nil {
 		t.Fatal("expected validation error for empty reference, got nil")
 	}
 }
 
 func TestWebhookPaymentService_CreditFromRecurrente_RepoErrorPropagates(t *testing.T) {
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{creditErr: errors.New("db error")})
-
-	err := svc.CreditFromRecurrente(context.Background(), 5, 1000, "GTQ", "REF-X")
-	if err == nil {
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{creditErr: errors.New("db error")}, nil)
+	if err := svc.CreditFromRecurrente(context.Background(), 5, 1000, "GTQ", "REF-X"); err == nil {
 		t.Fatal("expected error from repo, got nil")
 	}
 }
 
-// ── CreditFromPayPal ──────────────────────────────────────────────────────────
+func TestWebhookPaymentService_CreditFromRecurrente_UsesRecurrenteKind(t *testing.T) {
+	ledger := &webhookLedgerRepoStub{}
+	svc := newWebhookPaymentSvc(ledger, nil)
+	_ = svc.CreditFromRecurrente(context.Background(), 1, 1000, "GTQ", "REF")
+	if ledger.capturedKind != domain.LedgerKindWebhookRecurrente {
+		t.Errorf("kind: got %q, want %q", ledger.capturedKind, domain.LedgerKindWebhookRecurrente)
+	}
+}
 
-func TestWebhookPaymentService_CreditFromPayPal_HappyPath(t *testing.T) {
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{})
+// ── ResolveAndCreditPayPalIntent ──────────────────────────────────────────────
 
-	err := svc.CreditFromPayPal(context.Background(), 7, 2500, "USD", "CAPTURE-ABC")
-	if err != nil {
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_HappyPath(t *testing.T) {
+	intent := &domain.PaymentIntent{ID: 1, UserID: 7, AmountCents: 2500, Currency: "USD"}
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{intent: intent})
+
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-ABC"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestWebhookPaymentService_CreditFromPayPal_ZeroAmountReturnsValidation(t *testing.T) {
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{})
-
-	err := svc.CreditFromPayPal(context.Background(), 7, 0, "USD", "CAPTURE-ABC")
-	if err == nil {
-		t.Fatal("expected validation error for zero amount, got nil")
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_EmptyTokenReturnsValidation(t *testing.T) {
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, nil)
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "", "CAP"); err == nil {
+		t.Fatal("expected validation error for empty token, got nil")
 	}
 }
 
-func TestWebhookPaymentService_CreditFromPayPal_EmptyReferenceReturnsValidation(t *testing.T) {
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{})
-
-	err := svc.CreditFromPayPal(context.Background(), 7, 1000, "USD", "")
-	if err == nil {
-		t.Fatal("expected validation error for empty reference, got nil")
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_EmptyCaptureIDReturnsValidation(t *testing.T) {
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, nil)
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", ""); err == nil {
+		t.Fatal("expected validation error for empty captureID, got nil")
 	}
 }
 
-func TestWebhookPaymentService_CreditFromPayPal_RepoErrorPropagates(t *testing.T) {
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{creditErr: errors.New("conflict")})
-
-	err := svc.CreditFromPayPal(context.Background(), 7, 5000, "USD", "CAPTURE-Y")
-	if err == nil {
-		t.Fatal("expected error from repo, got nil")
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_IdempotentReplayReturnsNil(t *testing.T) {
+	intent := &domain.PaymentIntent{ID: 1, UserID: 7, AmountCents: 2500, Currency: "USD"}
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{
+		intent:     intent,
+		captureErr: repository.ErrPaymentIntentAlreadyCaptured,
+	})
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP"); err != nil {
+		t.Fatalf("idempotent replay must return nil, got %v", err)
 	}
 }
 
-// ── ledger kind routing ────────────────────────────────────────────────────────
-
-// capturedKindLedgerRepo records the kind passed to Credit to verify routing.
-type capturedKindLedgerRepo struct {
-	capturedKind domain.BalanceLedgerKind
-}
-
-func (r *capturedKindLedgerRepo) Credit(_ context.Context, _ int, _ int, kind domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
-	r.capturedKind = kind
-	return nil
-}
-func (r *capturedKindLedgerRepo) Debit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
-	return nil
-}
-func (r *capturedKindLedgerRepo) Reserve(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return nil
-}
-func (r *capturedKindLedgerRepo) ReleaseReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return nil
-}
-func (r *capturedKindLedgerRepo) CommitReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return nil
-}
-func (r *capturedKindLedgerRepo) ListByUser(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
-	return nil, nil
-}
-
-func TestWebhookPaymentService_CreditFromRecurrente_UsesRecurrenteKind(t *testing.T) {
-	repo := &capturedKindLedgerRepo{}
-	svc := NewWebhookPaymentService(repo, &noopAuditLogger{}, zap.NewNop())
-
-	_ = svc.CreditFromRecurrente(context.Background(), 1, 1000, "GTQ", "REF")
-	if repo.capturedKind != domain.LedgerKindWebhookRecurrente {
-		t.Errorf("kind: got %q, want %q", repo.capturedKind, domain.LedgerKindWebhookRecurrente)
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_NotFoundPropagates(t *testing.T) {
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{
+		captureErr: apperrors.NotFound("payment intent not found"),
+	})
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP"); err == nil {
+		t.Fatal("expected NotFound error to propagate, got nil")
 	}
 }
 
-func TestWebhookPaymentService_CreditFromPayPal_UsesPayPalKind(t *testing.T) {
-	repo := &capturedKindLedgerRepo{}
-	svc := NewWebhookPaymentService(repo, &noopAuditLogger{}, zap.NewNop())
-
-	_ = svc.CreditFromPayPal(context.Background(), 1, 1000, "USD", "CAP")
-	if repo.capturedKind != domain.LedgerKindWebhookPayPal {
-		t.Errorf("kind: got %q, want %q", repo.capturedKind, domain.LedgerKindWebhookPayPal)
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_ConflictPropagates(t *testing.T) {
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{
+		captureErr: apperrors.Conflict("already captured by different transaction"),
+	})
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP"); err == nil {
+		t.Fatal("expected Conflict error to propagate, got nil")
 	}
 }
