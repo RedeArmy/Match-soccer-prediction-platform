@@ -115,8 +115,7 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 			return apperrors.Internal(reserveErr)
 		}
 
-		if err := insertLedgerTx(ctx, tx, w.UserID, -w.AmountCents, domain.LedgerKindWithdrawalReserve,
-			balanceAfter, w.ID, "withdrawal_request", 0); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: -w.AmountCents, Kind: domain.LedgerKindWithdrawalReserve, BalanceAfter: balanceAfter, RefID: w.ID, RefType: "withdrawal_request"}); err != nil {
 			return err
 		}
 
@@ -220,8 +219,7 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 			return apperrors.Internal(releaseErr)
 		}
 
-		if err := insertLedgerTx(ctx, tx, w.UserID, w.AmountCents, domain.LedgerKindWithdrawalRelease,
-			balanceAfter, w.ID, "withdrawal_request", reviewerID); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: w.AmountCents, Kind: domain.LedgerKindWithdrawalRelease, BalanceAfter: balanceAfter, RefID: w.ID, RefType: "withdrawal_request", CreatorID: reviewerID}); err != nil {
 			return err
 		}
 
@@ -283,8 +281,7 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 			return apperrors.Internal(commitErr)
 		}
 
-		if err := insertLedgerTx(ctx, tx, w.UserID, -w.AmountCents, domain.LedgerKindWithdrawalDeduct,
-			balanceAfter, w.ID, "withdrawal_request", 0); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: -w.AmountCents, Kind: domain.LedgerKindWithdrawalDeduct, BalanceAfter: balanceAfter, RefID: w.ID, RefType: "withdrawal_request"}); err != nil {
 			return err
 		}
 

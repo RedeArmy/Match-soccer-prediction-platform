@@ -703,9 +703,7 @@ func (r *PostgresGroupMembershipRepository) DebitBalanceAndMarkPaid(ctx context.
 			return apperrors.Internal(err)
 		}
 
-		refType := "group_membership"
-		if err := insertLedgerTx(ctx, tx, userID, -amountCents, domain.LedgerKindEntryFee,
-			balanceAfter, int64(quinielaID), refType, 0); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: -amountCents, Kind: domain.LedgerKindEntryFee, BalanceAfter: balanceAfter, RefID: int64(quinielaID), RefType: "group_membership"}); err != nil {
 			return err
 		}
 

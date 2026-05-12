@@ -90,16 +90,19 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// paypalAmount holds the monetary value from a PayPal capture resource.
+type paypalAmount struct {
+	Value    string `json:"value"`
+	Currency string `json:"currency_code"`
+}
+
 // paypalWebhookPayload is the minimal set of fields we extract from a PayPal
 // PAYMENT.CAPTURE.COMPLETED event.
 type paypalWebhookPayload struct {
 	EventType string `json:"event_type"`
 	Resource  struct {
-		ID     string `json:"id"`
-		Amount struct {
-			Value    string `json:"value"`
-			Currency string `json:"currency_code"`
-		} `json:"amount"`
+		ID     string      `json:"id"`
+		Amount paypalAmount `json:"amount"`
 		// CustomID is set by the frontend when creating the PayPal order.
 		// We embed "user_id:<n>" so we can resolve the user without a lookup table.
 		CustomID string `json:"custom_id"`

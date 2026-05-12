@@ -155,7 +155,7 @@ type reviewWithdrawalRequest struct {
 func (h *WithdrawalHandler) AdminApprove(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid withdrawal id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidWithdrawalID))
 		return
 	}
 	caller, ok := middleware.UserFromContext(r.Context())
@@ -192,7 +192,7 @@ func (h *WithdrawalHandler) AdminApprove(w http.ResponseWriter, r *http.Request)
 func (h *WithdrawalHandler) AdminReject(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid withdrawal id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidWithdrawalID))
 		return
 	}
 	caller, ok := middleware.UserFromContext(r.Context())
@@ -234,7 +234,7 @@ func (h *WithdrawalHandler) AdminReject(w http.ResponseWriter, r *http.Request) 
 func (h *WithdrawalHandler) AdminProcess(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid withdrawal id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidWithdrawalID))
 		return
 	}
 	caller, ok := middleware.UserFromContext(r.Context())

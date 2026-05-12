@@ -39,7 +39,7 @@ func (r *PostgresBalanceLedgerRepository) Credit(ctx context.Context, userID, de
 		if err != nil {
 			return apperrors.Internal(err)
 		}
-		return insertLedgerTx(ctx, tx, userID, deltaCents, kind, balanceAfter, refID, refType, creatorID)
+		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: deltaCents, Kind: kind, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: creatorID})
 	})
 }
 
@@ -63,7 +63,7 @@ func (r *PostgresBalanceLedgerRepository) Debit(ctx context.Context, userID, del
 		if err != nil {
 			return apperrors.Internal(err)
 		}
-		return insertLedgerTx(ctx, tx, userID, -deltaCents, kind, balanceAfter, refID, refType, creatorID)
+		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: -deltaCents, Kind: kind, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: creatorID})
 	})
 }
 
@@ -86,7 +86,7 @@ func (r *PostgresBalanceLedgerRepository) Reserve(ctx context.Context, userID, a
 		if err != nil {
 			return apperrors.Internal(err)
 		}
-		return insertLedgerTx(ctx, tx, userID, -amountCents, domain.LedgerKindWithdrawalReserve, balanceAfter, refID, refType, creatorID)
+		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: -amountCents, Kind: domain.LedgerKindWithdrawalReserve, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: creatorID})
 	})
 }
 
@@ -109,7 +109,7 @@ func (r *PostgresBalanceLedgerRepository) ReleaseReservation(ctx context.Context
 		if err != nil {
 			return apperrors.Internal(err)
 		}
-		return insertLedgerTx(ctx, tx, userID, amountCents, domain.LedgerKindWithdrawalRelease, balanceAfter, refID, refType, creatorID)
+		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: amountCents, Kind: domain.LedgerKindWithdrawalRelease, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: creatorID})
 	})
 }
 
@@ -133,7 +133,7 @@ func (r *PostgresBalanceLedgerRepository) CommitReservation(ctx context.Context,
 		if err != nil {
 			return apperrors.Internal(err)
 		}
-		return insertLedgerTx(ctx, tx, userID, -amountCents, domain.LedgerKindWithdrawalDeduct, balanceAfter, refID, refType, creatorID)
+		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: -amountCents, Kind: domain.LedgerKindWithdrawalDeduct, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: creatorID})
 	})
 }
 
@@ -149,26 +149,38 @@ func (r *PostgresBalanceLedgerRepository) ListByUser(ctx context.Context, userID
 	return collectRows(rows, scanBalanceLedger)
 }
 
+// ledgerRow holds the payload for a single balance_ledger INSERT.
+// Grouping these fields avoids exceeding the per-function parameter limit and
+// makes call sites self-documenting via named fields.
+type ledgerRow struct {
+	UserID       int
+	DeltaCents   int
+	Kind         domain.BalanceLedgerKind
+	BalanceAfter int
+	RefID        int64  // 0 → stored as NULL
+	RefType      string // "" → stored as NULL
+	CreatorID    int    // 0 → stored as NULL (system/webhook origin)
+}
+
 // insertLedgerTx inserts one immutable balance_ledger row inside tx.
-// creatorID == 0 is stored as NULL (system/webhook origin).
-func insertLedgerTx(ctx context.Context, tx pgx.Tx, userID, deltaCents int, kind domain.BalanceLedgerKind, balanceAfter int, refID int64, refType string, creatorID int) error {
+func insertLedgerTx(ctx context.Context, tx pgx.Tx, e ledgerRow) error {
 	var creator *int
-	if creatorID != 0 {
-		creator = &creatorID
+	if e.CreatorID != 0 {
+		creator = &e.CreatorID
 	}
 	var rid *int64
-	if refID != 0 {
-		rid = &refID
+	if e.RefID != 0 {
+		rid = &e.RefID
 	}
 	var rtype *string
-	if refType != "" {
-		rtype = &refType
+	if e.RefType != "" {
+		rtype = &e.RefType
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO balance_ledger
 		      (user_id, delta_cents, kind, balance_after, ref_id, ref_type, created_by)
 		VALUES ($1,     $2,          $3,   $4,            $5,     $6,       $7)
-	`, userID, deltaCents, kind, balanceAfter, rid, rtype, creator)
+	`, e.UserID, e.DeltaCents, e.Kind, e.BalanceAfter, rid, rtype, creator)
 	if err != nil {
 		return apperrors.Internal(err)
 	}

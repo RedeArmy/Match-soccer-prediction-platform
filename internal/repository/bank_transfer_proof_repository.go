@@ -150,8 +150,7 @@ func (r *PostgresBankTransferProofRepository) ApproveAndCredit(ctx context.Conte
 
 		refID := p.ID
 		refType := "bank_transfer_proof"
-		return insertLedgerTx(ctx, tx, userID, amountCents, domain.LedgerKindBankTransfer,
-			balanceAfter, refID, refType, reviewerID)
+		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: amountCents, Kind: domain.LedgerKindBankTransfer, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: reviewerID})
 	})
 	if err != nil {
 		return nil, err
