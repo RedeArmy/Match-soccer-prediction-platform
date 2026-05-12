@@ -70,6 +70,7 @@ type appHandlers struct {
 	balance           *handler.BalanceHandler
 	bankTransfer      *handler.BankTransferHandler
 	withdrawal        *handler.WithdrawalHandler
+	paymentIntent     *handler.PaymentIntentHandler
 	paymentWebhook    *handler.PaymentWebhookHandler
 	adminUser         *handler.AdminUserHandler
 	adminGroup        *handler.AdminGroupHandler
@@ -143,9 +144,10 @@ func New(db *pgxpool.Pool, cfg *config.Config, log *zap.Logger, bus events.Bus, 
 //     They are consumed by load balancers and monitoring systems and must
 //     not be versioned or gated behind authentication.
 //
-//  2. Webhook endpoints (/webhooks/clerk) are mounted at the root without
-//     JWT authentication. They are authenticated via Svix HMAC-SHA256
-//     signature validation instead.
+//  2. Webhook endpoints are mounted at the root without JWT authentication.
+//     Each provider authenticates via its own signature scheme:
+//     Clerk uses Svix HMAC-SHA256; Recurrente uses HMAC-SHA256; PayPal uses
+//     RSA certificate-based verification. See middleware/webhook_*.go.
 //
 //  3. Business endpoints are mounted under /api/v1. The sub-router is the
 //     correct place to attach RequireAuth so it applies to all business
@@ -230,13 +232,19 @@ func (s *Server) Routes() http.Handler {
 	}
 	h := s.buildHandlers(infraCtx, repos, paramSvc, scorer)
 
-	// Webhook endpoints - authenticated via provider-specific signatures, not Clerk JWT.
+	// Webhook endpoints — authenticated via provider-specific signatures, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so they receive no auth middleware.
+	// Each provider uses its own signature scheme:
+	//   clerk:      Svix HMAC-SHA256 (verified inside WebhookHandler)
+	//   recurrente: HMAC-SHA256 via RecurrenteWebhookAuth middleware
+	//   paypal:     RSA certificate verification via PayPalWebhookAuth middleware
 	clerkSyncer := service.NewClerkUserSyncService(repos.user, s.log)
 	webhookHandler := handler.NewWebhookHandler(clerkSyncer, s.cfg.Clerk.WebhookSecret, s.log)
 	r.Post("/webhooks/clerk", webhookHandler.HandleClerkWebhook)
-	r.Post("/webhooks/recurrente", h.paymentWebhook.HandleRecurrente)
-	r.Post("/webhooks/paypal", h.paymentWebhook.HandlePayPal)
+	r.With(middleware.RecurrenteWebhookAuth(s.cfg.Payment.RecurrenteWebhookSecret, s.log)).
+		Post("/webhooks/recurrente", h.paymentWebhook.HandleRecurrente)
+	r.With(middleware.PayPalWebhookAuth(s.cfg.Payment.PayPalWebhookID, middleware.DefaultPayPalCertFetcher(), s.log)).
+		Post("/webhooks/paypal", h.paymentWebhook.HandlePayPal)
 
 	// Versioned API surface with Clerk JWT authentication.
 	clerkProvider := auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, authWarmup, s.log)
@@ -317,6 +325,11 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/me/stats", h.userStats.GetMyStats)
 			r.Get("/me/balance", h.balance.GetBalance)
 			r.Get("/me/balance/ledger", h.balance.GetLedger)
+		})
+
+		r.Route("/payment-intents", func(r chi.Router) {
+			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Post("/", h.paymentIntent.Create)
 		})
 
 		r.Route("/bank-transfers", func(r chi.Router) {
@@ -467,6 +480,7 @@ func (s *Server) buildHandlers(
 	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(s.db)
 	proofRepo := repository.NewPostgresBankTransferProofRepository(s.db)
 	withdrawalRepo := repository.NewPostgresWithdrawalRequestRepository(s.db)
+	intentRepo := repository.NewPostgresPaymentIntentRepository(s.db)
 
 	// Read infrastructure params (startup-time, not per-request).
 	// ctx is the shared startup context created once in Routes() and passed here
@@ -539,10 +553,13 @@ func (s *Server) buildHandlers(
 		fileStore, _ = storage.New(storage.Config{Driver: "local", LocalDir: "uploads"})
 	}
 	maxUploadBytes := int64(params.GetInt(ctx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
+	minTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMinAmountCents, domain.DefaultBankTransferMinAmountCents)
+	maxTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMaxAmountCents, domain.DefaultBankTransferMaxAmountCents)
 
 	balanceSvc := service.NewBalanceService(repos.user, ledgerRepo, s.log)
 	bankTransferSvc := service.NewBankTransferService(proofRepo, auditSvc, s.log)
-	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, auditSvc, s.log)
+	paymentIntentSvc := service.NewPaymentIntentService(intentRepo, params, s.log)
+	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, intentRepo, auditSvc, s.log)
 	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, auditSvc, s.log)
 
 	return appHandlers{
@@ -554,8 +571,9 @@ func (s *Server) buildHandlers(
 		tiebreaker:        handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
 		tournament:        handler.NewTournamentHandler(tournamentSvc, s.log),
 		balance:           handler.NewBalanceHandler(balanceSvc, s.log),
-		bankTransfer:      handler.NewBankTransferHandler(bankTransferSvc, fileStore, maxUploadBytes, s.log),
+		bankTransfer:      handler.NewBankTransferHandler(bankTransferSvc, fileStore, maxUploadBytes, minTransferCents, maxTransferCents, s.log),
 		withdrawal:        handler.NewWithdrawalHandler(withdrawalSvc, s.log),
+		paymentIntent:     handler.NewPaymentIntentHandler(paymentIntentSvc, s.log),
 		paymentWebhook:    handler.NewPaymentWebhookHandler(webhookPaymentSvc, s.log),
 		adminUser:         handler.NewAdminUserHandler(adminUserSvc, s.log),
 		adminGroup:        handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),

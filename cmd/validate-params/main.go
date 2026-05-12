@@ -29,6 +29,8 @@ type paramSpec struct {
 //   - 000058_seed_group_max_size_param (+1)
 //   - 000066_seed_scoring_bonus_params (+2)
 //   - 000073_add_payment_webhook_secrets_params (+3)
+//   - 000074_add_bank_transfer_amount_params (+2)
+//   - 000076_seed_payment_intent_ttl_param (+1)
 var allParams = []paramSpec{
 	// Scoring
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring"},
@@ -102,6 +104,11 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyPaymentMaxUploadBytes, defaultValue: strconv.Itoa(domain.DefaultPaymentMaxUploadBytes), paramType: "int", category: "payment"},
 	{key: domain.ParamKeyWithdrawalMinCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMinCents), paramType: "int", category: "payment"},
 	{key: domain.ParamKeyWithdrawalMaxCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMaxCents), paramType: "int", category: "payment"},
+	// Added by migration 000074
+	{key: domain.ParamKeyBankTransferMinAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMinAmountCents), paramType: "int", category: "payment"},
+	{key: domain.ParamKeyBankTransferMaxAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMaxAmountCents), paramType: "int", category: "payment"},
+	// Added by migration 000076
+	{key: domain.ParamKeyPaymentIntentTTLMinutes, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentTTLMinutes), paramType: "int", category: "payment"},
 }
 
 type dbParam struct {

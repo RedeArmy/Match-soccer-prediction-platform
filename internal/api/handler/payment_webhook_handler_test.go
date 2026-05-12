@@ -91,14 +91,15 @@ func TestWebhookHandler_Recurrente_ServiceError_Returns500(t *testing.T) {
 
 // ── PayPal ────────────────────────────────────────────────────────────────────
 
+const testIntentToken = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+
 func TestWebhookHandler_PayPal_CaptureCompleted_Returns204(t *testing.T) {
 	router := webhookRouter(t, &stubWebhookPaymentSvc{})
 	payload := map[string]any{
 		"event_type": "PAYMENT.CAPTURE.COMPLETED",
 		"resource": map[string]any{
 			"id":        "CAPTURE123",
-			"amount":    map[string]any{"value": "50.00", "currency_code": "USD"},
-			"custom_id": "42",
+			"custom_id": testIntentToken,
 		},
 	}
 	rec := postJSON(t, router, "/webhooks/paypal", payload)
@@ -116,35 +117,33 @@ func TestWebhookHandler_PayPal_IgnoresOtherEvents(t *testing.T) {
 	}
 }
 
-func TestWebhookHandler_PayPal_InvalidCustomID_Returns422(t *testing.T) {
+func TestWebhookHandler_PayPal_EmptyCustomID_Returns422(t *testing.T) {
 	router := webhookRouter(t, &stubWebhookPaymentSvc{})
 	payload := map[string]any{
 		"event_type": "PAYMENT.CAPTURE.COMPLETED",
 		"resource": map[string]any{
-			"id":        "X",
-			"amount":    map[string]any{"value": "10.00", "currency_code": "USD"},
-			"custom_id": "not-a-number",
+			"id":        "CAP-X",
+			"custom_id": "",
 		},
 	}
 	rec := postJSON(t, router, "/webhooks/paypal", payload)
 	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422 for invalid custom_id, got %d", rec.Code)
+		t.Errorf("expected 422 for empty custom_id, got %d", rec.Code)
 	}
 }
 
-func TestWebhookHandler_PayPal_InvalidAmount_Returns422(t *testing.T) {
+func TestWebhookHandler_PayPal_EmptyCaptureID_Returns422(t *testing.T) {
 	router := webhookRouter(t, &stubWebhookPaymentSvc{})
 	payload := map[string]any{
 		"event_type": "PAYMENT.CAPTURE.COMPLETED",
 		"resource": map[string]any{
-			"id":        "X",
-			"amount":    map[string]any{"value": "0.00", "currency_code": "USD"},
-			"custom_id": "5",
+			"id":        "",
+			"custom_id": testIntentToken,
 		},
 	}
 	rec := postJSON(t, router, "/webhooks/paypal", payload)
 	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422 for zero amount, got %d", rec.Code)
+		t.Errorf("expected 422 for empty capture ID, got %d", rec.Code)
 	}
 }
 
@@ -154,32 +153,11 @@ func TestWebhookHandler_PayPal_ServiceError_Returns500(t *testing.T) {
 		"event_type": "PAYMENT.CAPTURE.COMPLETED",
 		"resource": map[string]any{
 			"id":        "CAP999",
-			"amount":    map[string]any{"value": "25.00", "currency_code": "USD"},
-			"custom_id": "7",
+			"custom_id": testIntentToken,
 		},
 	}
 	rec := postJSON(t, router, "/webhooks/paypal", payload)
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 on service error, got %d", rec.Code)
-	}
-}
-
-// ── paypalAmountToCents ───────────────────────────────────────────────────────
-
-func TestPaypalAmountToCents_ValidDecimal(t *testing.T) {
-	// indirectly tested via HandlePayPal; verify the helper via integration
-	router := webhookRouter(t, &stubWebhookPaymentSvc{})
-	// "50.25" → 5025 cents (non-zero → 204)
-	payload := map[string]any{
-		"event_type": "PAYMENT.CAPTURE.COMPLETED",
-		"resource": map[string]any{
-			"id":        "CAP1",
-			"amount":    map[string]any{"value": "50.25", "currency_code": "USD"},
-			"custom_id": "1",
-		},
-	}
-	rec := postJSON(t, router, "/webhooks/paypal", payload)
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("expected 204, got %d", rec.Code)
 	}
 }
