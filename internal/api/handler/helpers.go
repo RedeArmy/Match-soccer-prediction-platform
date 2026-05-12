@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	msgAuthRequired       = "authentication required"
-	msgUserNotFound       = "user account not found; please try again shortly"
+	msgAuthRequired        = "authentication required"
+	msgUserNotFound        = "user account not found; please try again shortly"
 	msgInvalidWithdrawalID = "invalid withdrawal id"
 )
 

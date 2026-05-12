@@ -101,7 +101,7 @@ type paypalAmount struct {
 type paypalWebhookPayload struct {
 	EventType string `json:"event_type"`
 	Resource  struct {
-		ID     string      `json:"id"`
+		ID     string       `json:"id"`
 		Amount paypalAmount `json:"amount"`
 		// CustomID is set by the frontend when creating the PayPal order.
 		// We embed "user_id:<n>" so we can resolve the user without a lookup table.
