@@ -78,6 +78,33 @@ func (s *groupMembershipService) createPendingPayment(ctx context.Context, quini
 	}
 }
 
+// JoinWithBalance joins the quiniela and immediately pays the entry fee from
+// the user's balance. The balance deduction and paid=true flag are set
+// atomically. The membership remains pending until an existing member approves.
+func (s *groupMembershipService) JoinWithBalance(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error) {
+	maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
+	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers)
+	if err != nil {
+		return nil, err
+	}
+	if quiniela.EntryFee <= 0 {
+		return nil, apperrors.Conflict("this quiniela has no entry fee — use the standard join endpoint")
+	}
+
+	m2, err := s.memberRepo.DebitBalanceAndMarkPaid(ctx, quiniela.ID, userID, quiniela.EntryFee)
+	if err != nil {
+		return nil, err
+	}
+
+	resType := "membership"
+	s.audit.Log(ctx, &userID, nil, domain.AuditActionBalanceDebited, &resType, &m2.ID, map[string]any{
+		"quiniela_id":  quiniela.ID,
+		"amount_cents": quiniela.EntryFee,
+		"currency":     quiniela.Currency,
+	})
+	return m, nil
+}
+
 // ApproveJoin promotes a pending membership to active. The approverUserID must
 // be an active member of the same quiniela - any member may approve; there is
 // no admin-only gate. The membership update and group status recalculation are

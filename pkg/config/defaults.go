@@ -57,4 +57,9 @@ func setDefaults(v *viper.Viper) {
 	// worker.healthPort defaults to 8081 so the worker's health endpoints do
 	// not collide with the API server (8080) when both run on the same host.
 	v.SetDefault("worker.healthPort", "8081")
+
+	// storage.driver defaults to "local" so development environments work
+	// without an external object storage service.
+	v.SetDefault("storage.driver", "local")
+	v.SetDefault("storage.localDir", "uploads")
 }

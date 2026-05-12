@@ -67,6 +67,10 @@ type UserRepository interface {
 	// GetStatusCounts returns user counts grouped by lifecycle status.
 	// Used by the admin dashboard stats endpoint.
 	GetStatusCounts(ctx context.Context) (UserStatusCounts, error)
+	// GetBalance returns the current balance_cents and reserved_cents for
+	// userID without fetching the full user row. Returns NotFound for unknown
+	// or soft-deleted users.
+	GetBalance(ctx context.Context, userID int) (balanceCents, reservedCents int, err error)
 }
 
 // MatchRepository defines the persistence operations for the Match entity.
@@ -284,6 +288,11 @@ type GroupMembershipRepository interface {
 	// Returns the IDs that were successfully removed. Already-inactive IDs are
 	// silently skipped and do not appear in the result.
 	BulkRemoveByAdmin(ctx context.Context, quinielaID int, ids []int, adminID int) ([]int, error)
+	// DebitBalanceAndMarkPaid atomically deducts amountCents from the user's
+	// available balance (balance_cents - reserved_cents), marks the membership
+	// paid, and inserts a balance_ledger row in a single transaction.
+	// Returns Conflict when the available balance is insufficient.
+	DebitBalanceAndMarkPaid(ctx context.Context, quinielaID, userID, amountCents int) (*domain.GroupMembership, error)
 	// TransferOwnershipRoles atomically demotes every current owner of quinielaID
 	// to MembershipRoleMember and promotes newOwnerMembershipID to
 	// MembershipRoleCreateOwner within a single database transaction. If either
@@ -458,6 +467,10 @@ type PaymentRecordRepository interface {
 	// Validate transitions a pending payment to confirmed. Returns NotFound
 	// when the record does not exist or is not in pending state.
 	Validate(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error)
+	// ValidateAndMarkPaid atomically transitions a pending payment to confirmed
+	// AND flips group_memberships.paid=true for the corresponding member.
+	// Returns NotFound when the record does not exist or is not pending.
+	ValidateAndMarkPaid(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error)
 	// Reject transitions a pending payment to rejected. Returns NotFound when
 	// the record does not exist or is not in pending state.
 	Reject(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error)
@@ -557,4 +570,85 @@ type ScoringRuleRepository interface {
 	// Update persists new point values and the is_active flag for an existing
 	// phase row. Returns NotFound when the phase has no seeded row.
 	Update(ctx context.Context, rule *domain.ScoringRule) (*domain.ScoringRule, error)
+}
+
+// BalanceLedgerRepository owns all balance mutations for the users table and
+// the corresponding immutable balance_ledger audit rows.  Every method
+// executes atomically: it updates users.balance_cents / users.reserved_cents
+// AND inserts a balance_ledger row inside a single database transaction.
+//
+// creatorID is the internal user ID of the admin or system actor responsible
+// for the mutation; 0 is stored as NULL (system/webhook origin).
+//
+// Methods return apperrors.Conflict when a conditional UPDATE matches zero
+// rows (e.g. insufficient available balance).
+type BalanceLedgerRepository interface {
+	// Credit adds deltaCents to balance_cents.  kind identifies the originating
+	// operation (e.g. LedgerKindBankTransfer, LedgerKindWebhookRecurrente).
+	Credit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error
+	// Debit subtracts deltaCents from available balance
+	// (balance_cents - reserved_cents).  Returns Conflict when insufficient.
+	Debit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error
+	// Reserve moves amountCents from available to reserved_cents.  Used when a
+	// withdrawal request is created.  Returns Conflict when insufficient.
+	Reserve(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error
+	// ReleaseReservation decrements reserved_cents.  Used when a withdrawal is
+	// rejected.  Returns Conflict when reserved_cents < amountCents.
+	ReleaseReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error
+	// CommitReservation decrements both balance_cents and reserved_cents.  Used
+	// when a withdrawal is processed.  Returns Conflict when reserved_cents < amountCents.
+	CommitReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error
+	// ListByUser returns ledger entries for userID ordered by created_at DESC.
+	ListByUser(ctx context.Context, userID int, p Pagination) ([]*domain.BalanceLedger, error)
+}
+
+// BankTransferProofRepository manages bank transfer proof records and their
+// admin review lifecycle.  Approve atomically credits the user's balance so
+// there is no window in which the proof is approved but the funds are absent.
+type BankTransferProofRepository interface {
+	// Create inserts a new proof in pending status.  proof.ID and proof.CreatedAt
+	// are populated on success.
+	Create(ctx context.Context, proof *domain.BankTransferProof) error
+	// GetByID returns the proof or nil, nil when not found.
+	GetByID(ctx context.Context, id int) (*domain.BankTransferProof, error)
+	// ListByUser returns all proofs for a user ordered by created_at DESC.
+	ListByUser(ctx context.Context, userID int) ([]*domain.BankTransferProof, error)
+	// ListPending returns all pending proofs ordered by created_at ASC.
+	ListPending(ctx context.Context) ([]*domain.BankTransferProof, error)
+	// ApproveAndCredit atomically transitions a pending proof to approved AND
+	// credits proof.AmountCents to the user's balance AND inserts a ledger row.
+	// Returns NotFound when the proof does not exist or is not pending.
+	ApproveAndCredit(ctx context.Context, id, reviewerID int, notes string) (*domain.BankTransferProof, error)
+	// Reject transitions a pending proof to rejected.  Returns NotFound when
+	// the proof does not exist or is not in pending status.
+	Reject(ctx context.Context, id, reviewerID int, notes string) (*domain.BankTransferProof, error)
+}
+
+// WithdrawalRequestRepository manages withdrawal lifecycle.  Operations that
+// change the user's balance reservation are atomic: they update both the
+// withdrawal_requests status and the users.reserved_cents column in one tx,
+// then insert a balance_ledger row, eliminating partial-state windows.
+type WithdrawalRequestRepository interface {
+	// CreateAndReserve atomically inserts a new withdrawal request AND moves
+	// amountCents from available balance to reserved_cents AND inserts a
+	// ledger row.  Returns Conflict when available balance is insufficient.
+	CreateAndReserve(ctx context.Context, req *domain.WithdrawalRequest) error
+	// GetByID returns the request or nil, nil when not found.
+	GetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
+	// ListByUser returns all requests for a user ordered by created_at DESC.
+	ListByUser(ctx context.Context, userID int) ([]*domain.WithdrawalRequest, error)
+	// ListPending returns all pending requests ordered by created_at ASC.
+	ListPending(ctx context.Context) ([]*domain.WithdrawalRequest, error)
+	// Approve transitions a pending request to approved (status change only —
+	// no balance mutation at this step).  Returns NotFound when not pending.
+	Approve(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error)
+	// RejectAndRelease atomically transitions a pending request to rejected AND
+	// releases reserved_cents back to available AND inserts a ledger row.
+	// Returns NotFound when the request does not exist or is not pending.
+	RejectAndRelease(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error)
+	// MarkProcessedAndCommit atomically transitions an approved request to
+	// processed AND commits the reserved amount (decrements both balance_cents
+	// and reserved_cents) AND inserts a ledger row.  Returns NotFound when the
+	// request does not exist or is not in approved status.
+	MarkProcessedAndCommit(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
 }

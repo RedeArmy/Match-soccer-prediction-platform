@@ -74,6 +74,9 @@ func (r *stubPaymentRepo) ListStale(_ context.Context, _ time.Time) ([]*domain.P
 func (r *stubPaymentRepo) GetStatusCounts(_ context.Context) (repository.PaymentStatusCounts, error) {
 	return r.statusCounts, r.err
 }
+func (r *stubPaymentRepo) ValidateAndMarkPaid(_ context.Context, _, _ int, _ string) (*domain.PaymentRecord, error) {
+	return r.record, r.err
+}
 
 func newPaymentSvc(repo *stubPaymentRepo) PaymentService {
 	return NewPaymentService(repo, &noopAuditLogger{}, zap.NewNop())

@@ -50,6 +50,7 @@ func (r *clerkSyncRepo) ListFiltered(_ context.Context, _ repository.UserFilters
 func (r *clerkSyncRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
 	return repository.UserStatusCounts{}, nil
 }
+func (r *clerkSyncRepo) GetBalance(_ context.Context, _ int) (int, int, error) { return 0, 0, nil }
 
 func newClerkSyncer(repo *clerkSyncRepo) ClerkUserSyncer {
 	return NewClerkUserSyncService(repo, zap.NewNop())

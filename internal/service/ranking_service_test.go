@@ -54,6 +54,9 @@ func (r *stubUserRepo) ListFiltered(_ context.Context, _ repository.UserFilters,
 func (r *stubUserRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
 	return repository.UserStatusCounts{}, r.err
 }
+func (r *stubUserRepo) GetBalance(_ context.Context, _ int) (int, int, error) {
+	return 0, 0, r.err
+}
 
 // stubTotalPointsPredRepo extends stubPredRepo with configurable
 // TotalPointsByQuiniela, TotalPointsByQuinielaAndPhase, and
