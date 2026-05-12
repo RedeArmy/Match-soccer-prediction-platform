@@ -724,6 +724,8 @@ type PaymentDashboardStats struct {
 // to multiple source tables.
 type BalanceLedgerKind string
 
+// Balance ledger kind constants enumerate every operation that can produce a
+// balance_ledger row.
 const (
 	LedgerKindWebhookRecurrente BalanceLedgerKind = "webhook_recurrente"
 	LedgerKindWebhookPayPal     BalanceLedgerKind = "webhook_paypal"
@@ -740,12 +742,12 @@ const (
 type BalanceLedger struct {
 	ID           int64
 	UserID       int
-	DeltaCents   int    // positive = credit, negative = debit/reserve
+	DeltaCents   int // positive = credit, negative = debit/reserve
 	Kind         BalanceLedgerKind
-	BalanceAfter int    // users.balance_cents after the mutation
-	RefID        *int64 // primary key of the originating record
+	BalanceAfter int     // users.balance_cents after the mutation
+	RefID        *int64  // primary key of the originating record
 	RefType      *string // "payment_record" | "bank_transfer_proof" | "withdrawal_request"
-	CreatedBy    *int   // nil = system / webhook
+	CreatedBy    *int    // nil = system / webhook
 	CreatedAt    time.Time
 }
 
@@ -754,6 +756,7 @@ type BalanceLedger struct {
 // BankTransferStatus is the lifecycle state of a bank transfer proof.
 type BankTransferStatus string
 
+// Bank transfer proof lifecycle states.
 const (
 	BankTransferPending  BankTransferStatus = "pending"
 	BankTransferApproved BankTransferStatus = "approved"
@@ -787,6 +790,7 @@ type BankTransferProof struct {
 // WithdrawalMethod specifies the channel through which funds are paid out.
 type WithdrawalMethod string
 
+// Supported payout channels for withdrawal requests.
 const (
 	WithdrawalMethodBankGT WithdrawalMethod = "bank_gt" // Guatemalan bank account
 	WithdrawalMethodPayPal WithdrawalMethod = "paypal"  // international PayPal
@@ -795,6 +799,7 @@ const (
 // WithdrawalStatus is the lifecycle state of a withdrawal request.
 type WithdrawalStatus string
 
+// Withdrawal request lifecycle states.
 const (
 	WithdrawalPending   WithdrawalStatus = "pending"
 	WithdrawalApproved  WithdrawalStatus = "approved"
