@@ -190,6 +190,9 @@ func (r *stubMemberRepo) LeaveMembership(_ context.Context, _, _ int, _ time.Tim
 func (r *stubMemberRepo) LeaveMembershipAndTransferOwnership(_ context.Context, _, _, _ int, _ time.Time, _ int) error {
 	return r.leaveTransferErr
 }
+func (r *stubMemberRepo) DebitBalanceAndMarkPaid(_ context.Context, _, _, _ int) (*domain.GroupMembership, error) {
+	return r.membership, r.err
+}
 
 // stubGroupAuthz implements GroupAuthz with configurable per-method errors.
 type stubGroupAuthz struct {

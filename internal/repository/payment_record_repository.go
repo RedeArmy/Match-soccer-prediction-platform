@@ -229,4 +229,64 @@ func (r *PostgresPaymentRecordRepository) GetStatusCounts(ctx context.Context) (
 	return c, nil
 }
 
+// ValidateAndMarkPaid atomically confirms a pending payment AND marks the
+// corresponding group membership as paid in a single transaction.
+func (r *PostgresPaymentRecordRepository) ValidateAndMarkPaid(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error) {
+	var record *domain.PaymentRecord
+	err := withTx(ctx, r.db, "PaymentRecordRepository.ValidateAndMarkPaid", func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx,
+			`UPDATE payment_records
+			    SET status       = 'confirmed',
+			        confirmed_at = NOW(),
+			        reviewed_by  = $2,
+			        notes        = $3,
+			        updated_at   = NOW()
+			  WHERE id = $1 AND status = 'pending'
+			  RETURNING `+paymentColumns,
+			id, adminID, notes,
+		)
+		p := &domain.PaymentRecord{}
+		err := row.Scan(
+			&p.ID, &p.QuinielaID, &p.UserID, &p.Amount, &p.Currency, &p.Status,
+			&p.Reference, &p.ReviewedBy, &p.Notes, &p.ConfirmedAt,
+			&p.CreatedAt, &p.UpdatedAt,
+		)
+		if err == pgx.ErrNoRows {
+			return nil // handled outside tx
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+
+		_, err = tx.Exec(ctx,
+			`UPDATE group_memberships SET paid=TRUE, updated_at=NOW()
+			 WHERE quiniela_id=$1 AND user_id=$2`,
+			p.QuinielaID, p.UserID,
+		)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+
+		record = p
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
+		existing, err := r.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if existing == nil {
+			return nil, apperrors.NotFound(msgPaymentNotFound)
+		}
+		if existing.Status == domain.PaymentStatusConfirmed {
+			return existing, nil
+		}
+		return nil, apperrors.Conflict(fmt.Sprintf("payment already %s", existing.Status))
+	}
+	return record, nil
+}
+
 var _ PaymentRecordRepository = (*PostgresPaymentRecordRepository)(nil)

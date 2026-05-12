@@ -311,6 +311,10 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyWorkerPurgeIntervalHours:    true,
 		domain.ParamKeyAPIBodySizeLimitBytes:       true,
 		domain.ParamKeySnapshotKeepLatestCount:     true,
+		// Added by migration 000073
+		domain.ParamKeyPaymentMaxUploadBytes: true,
+		domain.ParamKeyWithdrawalMinCents:    true,
+		domain.ParamKeyWithdrawalMaxCents:    true,
 	}
 
 	for _, spec := range allParams {
@@ -356,6 +360,8 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 		// Added by migration 000055
 		"worker": true,
 		"api":    true,
+		// Added by migration 000073
+		"payment": true,
 	}
 
 	for _, spec := range allParams {
@@ -369,7 +375,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 36 // Update when adding new system parameters (was 34; +2 scoring bonus params from migration 000066)
+	const expectedCount = 39 // Update when adding new system parameters (was 36; +3 payment params from migration 000073)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}
@@ -393,5 +399,32 @@ func TestNoDuplicateKeys(t *testing.T) {
 			t.Errorf("duplicate key in allParams: %s", spec.key)
 		}
 		seen[spec.key] = true
+	}
+}
+
+// TestValidateFromParams_FullSnapshot_ReturnsNil is the end-to-end correctness
+// test for the entire allParams catalog. It builds a synthetic database snapshot
+// where every param exists with its canonical default value, matching type,
+// matching category, and a placeholder description, then asserts that
+// validateFromParams returns nil.
+//
+// This test fails when any entry in allParams has inconsistent fields (e.g. a
+// defaultValue that does not match what would be seeded by the migration), or
+// when a new param is added without keeping its spec self-consistent.
+func TestValidateFromParams_FullSnapshot_ReturnsNil(t *testing.T) {
+	params := make([]dbParam, len(allParams))
+	for i, spec := range allParams {
+		params[i] = dbParam{
+			key:          spec.key,
+			value:        spec.defaultValue,
+			defaultValue: spec.defaultValue,
+			paramType:    spec.paramType,
+			category:     spec.category,
+			isRuntime:    true,
+			description:  "canonical default — synthetic test snapshot",
+		}
+	}
+	if err := validateFromParams(params); err != nil {
+		t.Errorf("full-snapshot validation failed: %v", err)
 	}
 }

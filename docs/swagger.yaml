@@ -102,6 +102,44 @@ definitions:
       resource_type:
         type: string
     type: object
+  internal_api_handler.BalanceResponse:
+    properties:
+      available_cents:
+        type: integer
+      balance_cents:
+        type: integer
+      reserved_cents:
+        type: integer
+    type: object
+  internal_api_handler.BankTransferResponse:
+    properties:
+      amount_cents:
+        type: integer
+      approved_at:
+        type: string
+      content_type:
+        type: string
+      created_at:
+        type: string
+      currency:
+        type: string
+      file_size:
+        type: integer
+      id:
+        type: integer
+      notes:
+        type: string
+      reviewed_by:
+        type: integer
+      status:
+        type: string
+      storage_key:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
   internal_api_handler.BulkBanErrorResponse:
     properties:
       message:
@@ -309,6 +347,23 @@ definitions:
         type: integer
       winner_count:
         type: integer
+    type: object
+  internal_api_handler.LedgerEntryResponse:
+    properties:
+      balance_after:
+        type: integer
+      created_at:
+        type: string
+      delta_cents:
+        type: integer
+      id:
+        type: integer
+      kind:
+        type: string
+      ref_id:
+        type: integer
+      ref_type:
+        type: string
     type: object
   internal_api_handler.MatchResponse:
     properties:
@@ -612,6 +667,35 @@ definitions:
       total_predictions:
         type: integer
     type: object
+  internal_api_handler.WithdrawalResponse:
+    properties:
+      amount_cents:
+        type: integer
+      created_at:
+        type: string
+      currency:
+        type: string
+      id:
+        type: integer
+      method:
+        type: string
+      notes:
+        type: string
+      payout_details:
+        additionalProperties:
+          type: string
+        type: object
+      processed_at:
+        type: string
+      reviewed_by:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
   internal_api_handler.banRequest:
     properties:
       reason:
@@ -669,6 +753,19 @@ definitions:
       phase:
         type: string
     type: object
+  internal_api_handler.createWithdrawalRequest:
+    properties:
+      amount_cents:
+        type: integer
+      currency:
+        type: string
+      method:
+        type: string
+      payout_details:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
   internal_api_handler.joinGroupRequest:
     properties:
       invite_code:
@@ -692,7 +789,17 @@ definitions:
       note:
         type: string
     type: object
+  internal_api_handler.reviewBankTransferRequest:
+    properties:
+      notes:
+        type: string
+    type: object
   internal_api_handler.reviewPaymentRequest:
+    properties:
+      notes:
+        type: string
+    type: object
+  internal_api_handler.reviewWithdrawalRequest:
     properties:
       notes:
         type: string
@@ -870,6 +977,114 @@ paths:
       summary: List audit log by entity
       tags:
       - admin-audit-log
+  /api/v1/admin/bank-transfers/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      description: Approves a pending bank transfer proof and credits the user's balance.
+        Requires admin role.
+      parameters:
+      - description: Proof ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Optional notes
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api_handler.reviewBankTransferRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.BankTransferResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Approve bank transfer
+      tags:
+      - admin-payments
+  /api/v1/admin/bank-transfers/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      description: Rejects a pending bank transfer proof. Requires admin role.
+      parameters:
+      - description: Proof ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Rejection notes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.reviewBankTransferRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.BankTransferResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reject bank transfer
+      tags:
+      - admin-payments
+  /api/v1/admin/bank-transfers/pending:
+    get:
+      description: Returns all bank transfer proofs awaiting admin review. Requires
+        admin role.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.BankTransferResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List pending bank transfers
+      tags:
+      - admin-payments
   /api/v1/admin/conflicts:
     get:
       description: Returns currently detected operational inconsistencies that
@@ -2371,6 +2586,219 @@ paths:
       summary: Bulk-ban users
       tags:
       - admin-users
+  /api/v1/admin/withdrawals/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      description: Advances a pending withdrawal to approved status. Requires admin
+        role.
+      parameters:
+      - description: Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Optional notes
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api_handler.reviewWithdrawalRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.WithdrawalResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Approve withdrawal
+      tags:
+      - admin-payments
+  /api/v1/admin/withdrawals/{id}/process:
+    post:
+      description: Marks an approved withdrawal as processed and commits the balance
+        deduction. Requires admin role.
+      parameters:
+      - description: Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.WithdrawalResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Process withdrawal
+      tags:
+      - admin-payments
+  /api/v1/admin/withdrawals/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      description: Rejects a pending withdrawal and releases the reserved balance.
+        Requires admin role.
+      parameters:
+      - description: Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Rejection notes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.reviewWithdrawalRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.WithdrawalResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reject withdrawal
+      tags:
+      - admin-payments
+  /api/v1/admin/withdrawals/pending:
+    get:
+      description: Returns all withdrawal requests awaiting review. Requires admin
+        role.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.WithdrawalResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List pending withdrawals
+      tags:
+      - admin-payments
+  /api/v1/bank-transfers:
+    get:
+      description: Returns all bank transfer proofs submitted by the authenticated
+        user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.BankTransferResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my bank transfers
+      tags:
+      - balance
+    post:
+      consumes:
+      - multipart/form-data
+      description: Accepts a multipart/form-data upload containing the payment screenshot
+        or PDF.
+      parameters:
+      - description: Declared amount in minor currency units
+        in: formData
+        name: amount_cents
+        required: true
+        type: integer
+      - description: Currency code (default GTQ)
+        in: formData
+        name: currency
+        type: string
+      - description: Proof image or PDF
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api_handler.BankTransferResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "413":
+          description: File too large
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload bank transfer proof
+      tags:
+      - balance
   /api/v1/groups:
     post:
       consumes:
@@ -2689,6 +3117,47 @@ paths:
       summary: Join a group
       tags:
       - groups
+  /api/v1/groups/join-with-balance:
+    post:
+      consumes:
+      - application/json
+      description: Joins the group identified by the invite code and immediately deducts
+        the entry fee from the caller's available balance.
+      parameters:
+      - description: Invite code
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.joinGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.MemberResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Invite code not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Insufficient balance or already a member
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Join group and pay entry fee from balance
+      tags:
+      - groups
   /api/v1/groups/me:
     get:
       description: Returns all groups the authenticated user belongs to.
@@ -2996,6 +3465,57 @@ paths:
       summary: List my predictions
       tags:
       - predictions
+  /api/v1/users/me/balance:
+    get:
+      description: Returns the authenticated user's current balance, reserved amount,
+        and available balance.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.BalanceResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get balance
+      tags:
+      - balance
+  /api/v1/users/me/balance/ledger:
+    get:
+      description: Returns the authenticated user's balance transaction history, ordered
+        by most recent first.
+      parameters:
+      - description: Max records per page (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.LedgerEntryResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get balance ledger
+      tags:
+      - balance
   /api/v1/users/me/stats:
     get:
       description: 'Returns aggregated prediction stats for the authenticated user:'
@@ -3019,6 +3539,68 @@ paths:
       summary: My prediction statistics
       tags:
       - users
+  /api/v1/withdrawals:
+    get:
+      description: Returns all withdrawal requests submitted by the authenticated
+        user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.WithdrawalResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my withdrawals
+      tags:
+      - balance
+    post:
+      consumes:
+      - application/json
+      description: Creates a withdrawal request and reserves the amount from the user's
+        available balance.
+      parameters:
+      - description: Withdrawal details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.createWithdrawalRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api_handler.WithdrawalResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Insufficient balance
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Request withdrawal
+      tags:
+      - balance
   /health:
     get:
       description: Liveness probe for load balancers and container orchestrators.
@@ -3071,6 +3653,50 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
       summary: Clerk webhook receiver
+      tags:
+      - webhooks
+  /webhooks/paypal:
+    post:
+      consumes:
+      - application/json
+      description: Receives PAYMENT.CAPTURE.COMPLETED events from PayPal. Credits
+        the user's balance.
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Event processed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      summary: PayPal payment webhook
+      tags:
+      - webhooks
+  /webhooks/recurrente:
+    post:
+      consumes:
+      - application/json
+      description: Receives payment confirmation events from Recurrente. Credits the
+        user's balance on confirmed events.
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Event processed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      summary: Recurrente payment webhook
       tags:
       - webhooks
 securityDefinitions:

@@ -158,6 +158,46 @@ func (h *GroupHandler) Join(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, memberToResponse(membership))
 }
 
+// JoinWithBalance handles POST /api/v1/groups/join-with-balance.
+//
+// @Summary      Join group and pay entry fee from balance
+// @Description  Joins the group identified by the invite code and immediately deducts the entry fee from the caller's available balance.
+// @Tags         groups
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      handler.joinGroupRequest  true  "Invite code"
+// @Success      200   {object}  handler.MemberResponse
+// @Failure      401   {object}  handler.ErrorResponse
+// @Failure      404   {object}  handler.ErrorResponse  "Invite code not found"
+// @Failure      409   {object}  handler.ErrorResponse  "Insufficient balance or already a member"
+// @Failure      422   {object}  handler.ErrorResponse
+// @Router       /api/v1/groups/join-with-balance [post]
+func (h *GroupHandler) JoinWithBalance(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	req, err := decodeJSON[joinGroupRequest](r)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if req.InviteCode == "" {
+		writeError(w, r, h.log, apperrors.Validation("invite_code is required"))
+		return
+	}
+
+	membership, err := h.memberSvc.JoinWithBalance(r.Context(), req.InviteCode, caller.ID)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memberToResponse(membership))
+}
+
 // ListMembers handles GET /api/v1/groups/{id}/members.
 //
 // @Summary      List group members

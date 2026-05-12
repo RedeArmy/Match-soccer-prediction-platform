@@ -25,6 +25,19 @@ type Config struct {
 	CORS        CORSConfig     `mapstructure:"cors"`
 	Clerk       ClerkConfig    `mapstructure:"clerk"`
 	Worker      WorkerConfig   `mapstructure:"worker"`
+	Storage     StorageConfig  `mapstructure:"storage"`
+}
+
+// StorageConfig configures the object storage backend used for binary assets
+// such as bank transfer proof images.
+type StorageConfig struct {
+	// Driver selects the backing implementation.  Accepted values: "local".
+	// Defaults to "local" so development environments work without any object
+	// storage service.
+	Driver string `mapstructure:"driver"`
+	// LocalDir is the filesystem root used by the "local" driver.
+	// Ignored when Driver is not "local".
+	LocalDir string `mapstructure:"localDir"`
 }
 
 // IsDevelopment reports whether the application is running in a relaxed local

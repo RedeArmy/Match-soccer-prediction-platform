@@ -30,6 +30,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -66,6 +67,10 @@ type appHandlers struct {
 	userStats         *handler.UserStatsHandler
 	tiebreaker        *handler.TiebreakerHandler
 	tournament        *handler.TournamentHandler
+	balance           *handler.BalanceHandler
+	bankTransfer      *handler.BankTransferHandler
+	withdrawal        *handler.WithdrawalHandler
+	paymentWebhook    *handler.PaymentWebhookHandler
 	adminUser         *handler.AdminUserHandler
 	adminGroup        *handler.AdminGroupHandler
 	adminPayment      *handler.AdminPaymentHandler
@@ -225,11 +230,13 @@ func (s *Server) Routes() http.Handler {
 	}
 	h := s.buildHandlers(infraCtx, repos, paramSvc, scorer)
 
-	// Webhook endpoint - authenticated via Svix signature, not Clerk JWT.
-	// Must be registered before the /api/v1 subrouter so it receives no auth middleware.
+	// Webhook endpoints - authenticated via provider-specific signatures, not Clerk JWT.
+	// Must be registered before the /api/v1 subrouter so they receive no auth middleware.
 	clerkSyncer := service.NewClerkUserSyncService(repos.user, s.log)
 	webhookHandler := handler.NewWebhookHandler(clerkSyncer, s.cfg.Clerk.WebhookSecret, s.log)
 	r.Post("/webhooks/clerk", webhookHandler.HandleClerkWebhook)
+	r.Post("/webhooks/recurrente", h.paymentWebhook.HandleRecurrente)
+	r.Post("/webhooks/paypal", h.paymentWebhook.HandlePayPal)
 
 	// Versioned API surface with Clerk JWT authentication.
 	clerkProvider := auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, authWarmup, s.log)
@@ -264,6 +271,7 @@ func (s *Server) Routes() http.Handler {
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Post("/", h.group.Create)
 			r.Post("/join", h.group.Join)
+			r.Post("/join-with-balance", h.group.JoinWithBalance)
 			r.Get("/me", h.group.ListMyGroups)
 			r.Get("/{id}", h.group.GetByID)
 			// Only the CreateOwner (MembershipRoleCreateOwner) may rename the group.
@@ -307,6 +315,20 @@ func (s *Server) Routes() http.Handler {
 		r.Route(routeUsers, func(r chi.Router) {
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Get("/me/stats", h.userStats.GetMyStats)
+			r.Get("/me/balance", h.balance.GetBalance)
+			r.Get("/me/balance/ledger", h.balance.GetLedger)
+		})
+
+		r.Route("/bank-transfers", func(r chi.Router) {
+			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Post("/", h.bankTransfer.Upload)
+			r.Get("/", h.bankTransfer.ListMine)
+		})
+
+		r.Route("/withdrawals", func(r chi.Router) {
+			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Post("/", h.withdrawal.Create)
+			r.Get("/", h.withdrawal.ListMine)
 		})
 
 		// Admin panel - all routes require RoleAdmin. RequireRole now stores the
@@ -336,6 +358,17 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/payments", h.adminPayment.List)
 			r.Post("/payments/{id}/validate", h.adminPayment.ValidateDeposit)
 			r.Post("/payments/{id}/reject", h.adminPayment.RejectDeposit)
+
+			// Bank transfers
+			r.Get("/bank-transfers/pending", h.bankTransfer.AdminListPending)
+			r.Post("/bank-transfers/{id}/approve", h.bankTransfer.AdminApprove)
+			r.Post("/bank-transfers/{id}/reject", h.bankTransfer.AdminReject)
+
+			// Withdrawals
+			r.Get("/withdrawals/pending", h.withdrawal.AdminListPending)
+			r.Post("/withdrawals/{id}/approve", h.withdrawal.AdminApprove)
+			r.Post("/withdrawals/{id}/reject", h.withdrawal.AdminReject)
+			r.Post("/withdrawals/{id}/process", h.withdrawal.AdminProcess)
 
 			// Leaderboard & Predictions
 			r.Get("/leaderboard", h.adminLeaderboard.GlobalLeaderboard)
@@ -431,6 +464,9 @@ func (s *Server) buildHandlers(
 	paymentRepo := repository.NewPostgresPaymentRecordRepository(s.db)
 	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(s.db)
 	scoringRuleRepo := repository.NewPostgresScoringRuleRepository(s.db)
+	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(s.db)
+	proofRepo := repository.NewPostgresBankTransferProofRepository(s.db)
+	withdrawalRepo := repository.NewPostgresWithdrawalRequestRepository(s.db)
 
 	// Read infrastructure params (startup-time, not per-request).
 	// ctx is the shared startup context created once in Routes() and passed here
@@ -494,6 +530,21 @@ func (s *Server) buildHandlers(
 		dlqSvc = service.NoopDLQService{}
 	}
 
+	fileStore, err := storage.New(storage.Config{
+		Driver:   s.cfg.Storage.Driver,
+		LocalDir: s.cfg.Storage.LocalDir,
+	})
+	if err != nil {
+		s.log.Warn("storage: falling back to local driver", zap.Error(err))
+		fileStore, _ = storage.New(storage.Config{Driver: "local", LocalDir: "uploads"})
+	}
+	maxUploadBytes := int64(params.GetInt(ctx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
+
+	balanceSvc := service.NewBalanceService(repos.user, ledgerRepo, s.log)
+	bankTransferSvc := service.NewBankTransferService(proofRepo, auditSvc, s.log)
+	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, auditSvc, s.log)
+	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, auditSvc, s.log)
+
 	return appHandlers{
 		match:             handler.NewMatchHandler(matchSvc, s.log),
 		prediction:        handler.NewPredictionHandler(predSvc, s.log),
@@ -502,6 +553,10 @@ func (s *Server) buildHandlers(
 		userStats:         handler.NewUserStatsHandler(userStatsSvc, s.log),
 		tiebreaker:        handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
 		tournament:        handler.NewTournamentHandler(tournamentSvc, s.log),
+		balance:           handler.NewBalanceHandler(balanceSvc, s.log),
+		bankTransfer:      handler.NewBankTransferHandler(bankTransferSvc, fileStore, maxUploadBytes, s.log),
+		withdrawal:        handler.NewWithdrawalHandler(withdrawalSvc, s.log),
+		paymentWebhook:    handler.NewPaymentWebhookHandler(webhookPaymentSvc, s.log),
 		adminUser:         handler.NewAdminUserHandler(adminUserSvc, s.log),
 		adminGroup:        handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),
 		adminPayment:      handler.NewAdminPaymentHandler(paymentSvc, s.log),

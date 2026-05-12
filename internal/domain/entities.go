@@ -29,17 +29,19 @@ import "time"
 // operations. BannedBy is the ID of the admin who issued the ban; BanReason
 // is a human-readable explanation stored for audit purposes.
 type User struct {
-	ID           int
-	Name         string
-	Email        string
-	Role         UserRole
-	ClerkSubject string // opaque Clerk user ID, e.g. "user_2abc…"; empty for legacy rows
-	BannedAt     *time.Time
-	BannedBy     *int
-	BanReason    string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    *time.Time // nil for active users; set when the record is soft-deleted
+	ID            int
+	Name          string
+	Email         string
+	Role          UserRole
+	ClerkSubject  string // opaque Clerk user ID, e.g. "user_2abc…"; empty for legacy rows
+	BannedAt      *time.Time
+	BannedBy      *int
+	BanReason     string
+	BalanceCents  int // spendable funds in minor currency units; never negative
+	ReservedCents int // funds locked for pending withdrawal requests
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	DeletedAt     *time.Time // nil for active users; set when the record is soft-deleted
 }
 
 // UserRole is a typed string that constrains the roles a User may hold.
@@ -712,4 +714,119 @@ type PaymentDashboardStats struct {
 	Confirmed      int
 	Rejected       int
 	TotalCollected int
+}
+
+// ── Balance ledger ────────────────────────────────────────────────────────────
+
+// BalanceLedgerKind identifies the business operation that caused a balance
+// mutation. Each row in balance_ledger carries exactly one kind so that the
+// full history of an account can be audited and categorised without joining
+// to multiple source tables.
+type BalanceLedgerKind string
+
+// Balance ledger kind constants enumerate every operation that can produce a
+// balance_ledger row.
+const (
+	LedgerKindWebhookRecurrente BalanceLedgerKind = "webhook_recurrente"
+	LedgerKindWebhookPayPal     BalanceLedgerKind = "webhook_paypal"
+	LedgerKindBankTransfer      BalanceLedgerKind = "bank_transfer"
+	LedgerKindEntryFee          BalanceLedgerKind = "entry_fee"
+	LedgerKindPrize             BalanceLedgerKind = "prize"
+	LedgerKindWithdrawalReserve BalanceLedgerKind = "withdrawal_reserve"
+	LedgerKindWithdrawalRelease BalanceLedgerKind = "withdrawal_release"
+	LedgerKindWithdrawalDeduct  BalanceLedgerKind = "withdrawal_deduct"
+)
+
+// BalanceLedger is a single, immutable row recording one atomic balance change.
+// Rows are append-only; they are never updated or deleted.
+type BalanceLedger struct {
+	ID           int64
+	UserID       int
+	DeltaCents   int // positive = credit, negative = debit/reserve
+	Kind         BalanceLedgerKind
+	BalanceAfter int     // users.balance_cents after the mutation
+	RefID        *int64  // primary key of the originating record
+	RefType      *string // "payment_record" | "bank_transfer_proof" | "withdrawal_request"
+	CreatedBy    *int    // nil = system / webhook
+	CreatedAt    time.Time
+}
+
+// ── Bank transfer proofs ──────────────────────────────────────────────────────
+
+// BankTransferStatus is the lifecycle state of a bank transfer proof.
+type BankTransferStatus string
+
+// Bank transfer proof lifecycle states.
+const (
+	BankTransferPending  BankTransferStatus = "pending"
+	BankTransferApproved BankTransferStatus = "approved"
+	BankTransferRejected BankTransferStatus = "rejected"
+)
+
+// BankTransferProof records a user-uploaded payment receipt for a Guatemalan
+// bank transfer. An admin reviews the proof, verifies the declared amount, and
+// either approves (crediting the user's balance) or rejects it.
+//
+// StorageKey is an opaque reference to the file inside the configured FileStore;
+// raw file bytes are never stored in the database.
+type BankTransferProof struct {
+	ID          int64
+	UserID      int
+	AmountCents int
+	Currency    string
+	StorageKey  string
+	ContentType string
+	FileSize    int
+	Status      BankTransferStatus
+	ReviewedBy  *int
+	Notes       string
+	ApprovedAt  *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// ── Withdrawal requests ───────────────────────────────────────────────────────
+
+// WithdrawalMethod specifies the channel through which funds are paid out.
+type WithdrawalMethod string
+
+// Supported payout channels for withdrawal requests.
+const (
+	WithdrawalMethodBankGT WithdrawalMethod = "bank_gt" // Guatemalan bank account
+	WithdrawalMethodPayPal WithdrawalMethod = "paypal"  // international PayPal
+)
+
+// WithdrawalStatus is the lifecycle state of a withdrawal request.
+type WithdrawalStatus string
+
+// Withdrawal request lifecycle states.
+const (
+	WithdrawalPending   WithdrawalStatus = "pending"
+	WithdrawalApproved  WithdrawalStatus = "approved"
+	WithdrawalRejected  WithdrawalStatus = "rejected"
+	WithdrawalProcessed WithdrawalStatus = "processed"
+)
+
+// WithdrawalRequest is a user-initiated payout request.
+//
+// On creation: AmountCents is moved from balance_cents to reserved_cents.
+// On approval: reserved_cents is committed (balance_cents permanently reduced).
+// On rejection: reserved_cents is released back to available balance.
+//
+// PayoutDetails holds method-specific fields:
+//   - bank_gt : {"account_number":"…","bank_name":"…"}
+//   - paypal  : {"paypal_email":"…"}
+type WithdrawalRequest struct {
+	ID            int64
+	UserID        int
+	AmountCents   int
+	Currency      string
+	Method        WithdrawalMethod
+	PayoutDetails map[string]string
+	Status        WithdrawalStatus
+	ReviewedBy    *int
+	Notes         string
+	ProcessedAt   *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
