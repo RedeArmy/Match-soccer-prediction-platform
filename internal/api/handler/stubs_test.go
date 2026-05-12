@@ -2,8 +2,10 @@ package handler_test
 
 import (
 	"context"
+	"io"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
@@ -39,6 +41,9 @@ func (r *stubUserRepo) ListFiltered(_ context.Context, _ repository.UserFilters,
 }
 func (r *stubUserRepo) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
 	return repository.UserStatusCounts{}, r.err
+}
+func (r *stubUserRepo) GetBalance(_ context.Context, _ int) (int, int, error) {
+	return 0, 0, r.err
 }
 
 const (
@@ -260,3 +265,106 @@ func (s *stubMemberSvc) ListByQuiniela(_ context.Context, _ int) ([]*domain.Grou
 func (s *stubMemberSvc) ListByUser(_ context.Context, _ int) ([]*domain.GroupMembership, error) {
 	return s.memberships, s.err
 }
+func (s *stubMemberSvc) JoinWithBalance(_ context.Context, _ string, _ int) (*domain.GroupMembership, error) {
+	return s.membership, s.err
+}
+
+// ── stubBalanceSvc ────────────────────────────────────────────────────────────
+
+type stubBalanceSvc struct {
+	balanceCents  int
+	reservedCents int
+	entries       []*domain.BalanceLedger
+	err           error
+}
+
+func (s *stubBalanceSvc) GetBalance(_ context.Context, _ int) (int, int, error) {
+	return s.balanceCents, s.reservedCents, s.err
+}
+func (s *stubBalanceSvc) GetLedger(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
+	return s.entries, s.err
+}
+
+// ── stubBankTransferSvc ───────────────────────────────────────────────────────
+
+type stubBankTransferSvc struct {
+	proof  *domain.BankTransferProof
+	proofs []*domain.BankTransferProof
+	err    error
+}
+
+func (s *stubBankTransferSvc) Upload(_ context.Context, _, _ int, _, _, _ string, _ int) (*domain.BankTransferProof, error) {
+	return s.proof, s.err
+}
+func (s *stubBankTransferSvc) GetByID(_ context.Context, _ int) (*domain.BankTransferProof, error) {
+	return s.proof, s.err
+}
+func (s *stubBankTransferSvc) ListByUser(_ context.Context, _ int) ([]*domain.BankTransferProof, error) {
+	return s.proofs, s.err
+}
+func (s *stubBankTransferSvc) ListPending(_ context.Context) ([]*domain.BankTransferProof, error) {
+	return s.proofs, s.err
+}
+func (s *stubBankTransferSvc) ApproveTransfer(_ context.Context, _, _ int, _ string) (*domain.BankTransferProof, error) {
+	return s.proof, s.err
+}
+func (s *stubBankTransferSvc) RejectTransfer(_ context.Context, _, _ int, _ string) (*domain.BankTransferProof, error) {
+	return s.proof, s.err
+}
+
+// ── stubWithdrawalSvc ─────────────────────────────────────────────────────────
+
+type stubWithdrawalSvc struct {
+	req  *domain.WithdrawalRequest
+	reqs []*domain.WithdrawalRequest
+	err  error
+}
+
+func (s *stubWithdrawalSvc) Create(_ context.Context, _, _ int, _ string, _ domain.WithdrawalMethod, _ map[string]string) (*domain.WithdrawalRequest, error) {
+	return s.req, s.err
+}
+func (s *stubWithdrawalSvc) GetByID(_ context.Context, _ int) (*domain.WithdrawalRequest, error) {
+	return s.req, s.err
+}
+func (s *stubWithdrawalSvc) ListByUser(_ context.Context, _ int) ([]*domain.WithdrawalRequest, error) {
+	return s.reqs, s.err
+}
+func (s *stubWithdrawalSvc) ListPending(_ context.Context) ([]*domain.WithdrawalRequest, error) {
+	return s.reqs, s.err
+}
+func (s *stubWithdrawalSvc) ApproveRequest(_ context.Context, _, _ int, _ string) (*domain.WithdrawalRequest, error) {
+	return s.req, s.err
+}
+func (s *stubWithdrawalSvc) RejectRequest(_ context.Context, _, _ int, _ string) (*domain.WithdrawalRequest, error) {
+	return s.req, s.err
+}
+func (s *stubWithdrawalSvc) ProcessWithdrawal(_ context.Context, _, _ int) (*domain.WithdrawalRequest, error) {
+	return s.req, s.err
+}
+
+// ── stubWebhookPaymentSvc ─────────────────────────────────────────────────────
+
+type stubWebhookPaymentSvc struct {
+	err error
+}
+
+func (s *stubWebhookPaymentSvc) CreditFromRecurrente(_ context.Context, _ int, _ int, _, _ string) error {
+	return s.err
+}
+func (s *stubWebhookPaymentSvc) CreditFromPayPal(_ context.Context, _ int, _ int, _, _ string) error {
+	return s.err
+}
+
+// ── stubFileStore ─────────────────────────────────────────────────────────────
+
+type stubFileStore struct {
+	putErr error
+}
+
+func (s *stubFileStore) Put(_ context.Context, _, _ string, _ io.Reader, _ int64) error {
+	return s.putErr
+}
+func (s *stubFileStore) Get(_ context.Context, _ string) (io.ReadCloser, string, error) {
+	return nil, "", storage.ErrNotFound
+}
+func (s *stubFileStore) Delete(_ context.Context, _ string) error { return nil }

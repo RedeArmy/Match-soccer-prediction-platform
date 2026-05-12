@@ -166,6 +166,11 @@ const (
 	// Scoring win-method bonuses: 0 = no global bonus; per-phase scoring_rules override this.
 	DefaultScoringExtraTimeBonus = 0 // scoring.extra_time_bonus
 	DefaultScoringPenaltiesBonus = 0 // scoring.penalties_bonus
+
+	// Payment / balance params
+	DefaultPaymentMaxUploadBytes = 5_242_880 // payment.max_upload_bytes (5 MB)
+	DefaultWithdrawalMinCents    = 5_000     // payment.withdrawal_min_cents (50 GTQ)
+	DefaultWithdrawalMaxCents    = 500_000   // payment.withdrawal_max_cents (5 000 GTQ)
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -279,6 +284,14 @@ const (
 	// is_runtime = FALSE: changing the value requires a worker restart.
 	ParamKeyPurgeRetentionDays = "system.purge_retention_days"
 
+	// ParamKeyPaymentMaxUploadBytes is the maximum size in bytes for bank transfer
+	// proof uploads.
+	ParamKeyPaymentMaxUploadBytes = "payment.max_upload_bytes"
+	// ParamKeyWithdrawalMinCents is the minimum withdrawal amount in minor units.
+	ParamKeyWithdrawalMinCents = "payment.withdrawal_min_cents"
+	// ParamKeyWithdrawalMaxCents is the maximum withdrawal amount in minor units.
+	ParamKeyWithdrawalMaxCents = "payment.withdrawal_max_cents"
+
 	// ParamKeyAPIBodySizeLimitBytes is the maximum request body size in bytes.
 	// Requests exceeding this limit are rejected with 413 to prevent DoS.
 	// is_runtime=FALSE: process restart required.
@@ -318,6 +331,17 @@ const (
 	AuditActionGroupBulkDeleted     = "admin_group.bulk_deleted"
 	AuditActionLeaderboardRefreshed = "admin_group.leaderboard_refreshed"
 	AuditActionScoringRuleUpdated   = "scoring_rule.updated"
+
+	// Balance and payment actions.
+	AuditActionBankTransferUploaded = "bank_transfer.uploaded"
+	AuditActionBankTransferApproved = "bank_transfer.approved"
+	AuditActionBankTransferRejected = "bank_transfer.rejected"
+	AuditActionBalanceCredited      = "balance.credited"
+	AuditActionBalanceDebited       = "balance.debited"
+	AuditActionWithdrawalRequested  = "withdrawal.requested"
+	AuditActionWithdrawalApproved   = "withdrawal.approved"
+	AuditActionWithdrawalRejected   = "withdrawal.rejected"
+	AuditActionWebhookPaymentCredit = "webhook.payment_credited"
 )
 
 // Snapshot schema versions identify the JSONB encoding format used by

@@ -28,6 +28,7 @@ type paramSpec struct {
 //   - 000056_add_snapshot_keep_latest_param (+1)
 //   - 000058_seed_group_max_size_param (+1)
 //   - 000066_seed_scoring_bonus_params (+2)
+//   - 000073_add_payment_webhook_secrets_params (+3)
 var allParams = []paramSpec{
 	// Scoring
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring"},
@@ -96,6 +97,11 @@ var allParams = []paramSpec{
 
 	// Snapshot retention
 	{key: domain.ParamKeySnapshotKeepLatestCount, defaultValue: strconv.Itoa(domain.DefaultSnapshotKeepLatestCount), paramType: "int", category: "worker"},
+
+	// Payment / balance
+	{key: domain.ParamKeyPaymentMaxUploadBytes, defaultValue: strconv.Itoa(domain.DefaultPaymentMaxUploadBytes), paramType: "int", category: "payment"},
+	{key: domain.ParamKeyWithdrawalMinCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMinCents), paramType: "int", category: "payment"},
+	{key: domain.ParamKeyWithdrawalMaxCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMaxCents), paramType: "int", category: "payment"},
 }
 
 type dbParam struct {

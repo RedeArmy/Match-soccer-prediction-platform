@@ -47,7 +47,10 @@ func (s *paymentService) CreateRecord(ctx context.Context, quinielaID, userID, a
 }
 
 func (s *paymentService) ValidateDeposit(ctx context.Context, paymentID, adminID int, notes string) (*domain.PaymentRecord, error) {
-	record, err := s.paymentRepo.Validate(ctx, paymentID, adminID, notes)
+	// ValidateAndMarkPaid atomically confirms the payment and flips
+	// group_memberships.paid=true in one transaction, eliminating the window
+	// where the payment is confirmed but the member is still marked unpaid.
+	record, err := s.paymentRepo.ValidateAndMarkPaid(ctx, paymentID, adminID, notes)
 	if err != nil {
 		return nil, err
 	}

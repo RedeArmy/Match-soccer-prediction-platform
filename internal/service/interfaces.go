@@ -167,6 +167,11 @@ type QuinielaService interface {
 // true automatically at join time and this method is never invoked.
 type GroupMembershipService interface {
 	Join(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error)
+	// JoinWithBalance joins the quiniela and immediately deducts the entry fee
+	// from the user's balance, marking the membership as paid in one atomic
+	// step.  Returns Conflict when the user has insufficient available balance
+	// or when the quiniela has no entry fee.
+	JoinWithBalance(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error)
 	ApproveJoin(ctx context.Context, quinielaID, membershipID, approverUserID int) (*domain.GroupMembership, error)
 	Leave(ctx context.Context, quinielaID, callerUserID int) error
 	MarkPaid(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
@@ -609,4 +614,63 @@ type ConflictService interface {
 	// be "ack" (acknowledgement only) or "auto_fix" (attempt automatic remediation
 	// - transfers ownership, rejects stale payments, or removes stale memberships).
 	ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, action, note string) error
+}
+
+// BalanceService exposes read-only balance information to users.
+//
+// All balance mutations go through BankTransferService and WithdrawalService
+// so that every change is paired with a ledger row atomically.
+type BalanceService interface {
+	// GetBalance returns the current balance_cents and reserved_cents for the
+	// given user.  Returns NotFound for unknown or deleted users.
+	GetBalance(ctx context.Context, userID int) (balanceCents, reservedCents int, err error)
+	// GetLedger returns ledger entries for userID ordered by created_at DESC.
+	GetLedger(ctx context.Context, userID int, p repository.Pagination) ([]*domain.BalanceLedger, error)
+}
+
+// BankTransferService manages the upload-and-review lifecycle for Guatemalan
+// bank transfer proofs.
+//
+// Upload stores the file metadata in the database (the caller has already
+// written the bytes to the FileStore).  ApproveTransfer atomically marks the
+// proof as approved and credits the user's balance.
+type BankTransferService interface {
+	// Upload creates a pending proof record.
+	Upload(ctx context.Context, userID, amountCents int, currency, storageKey, contentType string, fileSize int) (*domain.BankTransferProof, error)
+	// GetByID returns the proof or nil when not found.
+	GetByID(ctx context.Context, id int) (*domain.BankTransferProof, error)
+	// ListByUser returns all proofs for a user.
+	ListByUser(ctx context.Context, userID int) ([]*domain.BankTransferProof, error)
+	// ListPending returns all pending proofs for admin review.
+	ListPending(ctx context.Context) ([]*domain.BankTransferProof, error)
+	// ApproveTransfer atomically approves the proof and credits the user's balance.
+	ApproveTransfer(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error)
+	// RejectTransfer transitions a pending proof to rejected.
+	RejectTransfer(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error)
+}
+
+// WithdrawalService manages the full payout request lifecycle.
+//
+// Create reserves the requested amount from the user's available balance.
+// Approve advances the status without a balance change.
+// RejectRequest releases the reserved balance back to available.
+// ProcessWithdrawal commits the reserved amount as permanently paid out.
+type WithdrawalService interface {
+	// Create creates a withdrawal request and reserves the balance.
+	// Returns Conflict when available balance is insufficient.
+	Create(ctx context.Context, userID, amountCents int, currency string, method domain.WithdrawalMethod, payoutDetails map[string]string) (*domain.WithdrawalRequest, error)
+	// GetByID returns the request or nil when not found.
+	GetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
+	// ListByUser returns all requests for a user.
+	ListByUser(ctx context.Context, userID int) ([]*domain.WithdrawalRequest, error)
+	// ListPending returns all pending requests for admin review.
+	ListPending(ctx context.Context) ([]*domain.WithdrawalRequest, error)
+	// ApproveRequest transitions the request to approved (admin queue step).
+	ApproveRequest(ctx context.Context, requestID, adminID int, notes string) (*domain.WithdrawalRequest, error)
+	// RejectRequest transitions the request to rejected and releases the
+	// reserved balance.
+	RejectRequest(ctx context.Context, requestID, adminID int, notes string) (*domain.WithdrawalRequest, error)
+	// ProcessWithdrawal transitions an approved request to processed and
+	// commits the reserved amount as paid out.
+	ProcessWithdrawal(ctx context.Context, requestID, adminID int) (*domain.WithdrawalRequest, error)
 }

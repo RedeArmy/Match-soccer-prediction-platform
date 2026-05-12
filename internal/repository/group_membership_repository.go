@@ -680,4 +680,52 @@ func (r *PostgresGroupMembershipRepository) LeaveMembershipAndTransferOwnership(
 	})
 }
 
+// DebitBalanceAndMarkPaid atomically deducts amountCents from the user's
+// available balance, marks the membership as paid, and writes a balance_ledger
+// row — all in a single transaction.
+func (r *PostgresGroupMembershipRepository) DebitBalanceAndMarkPaid(ctx context.Context, quinielaID, userID, amountCents int) (*domain.GroupMembership, error) {
+	var membership *domain.GroupMembership
+	err := withTx(ctx, r.db, "GroupMembershipRepository.DebitBalanceAndMarkPaid", func(tx pgx.Tx) error {
+		var balanceAfter int
+		err := tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents = balance_cents - $2,
+			       updated_at    = NOW()
+			 WHERE id = $1
+			   AND deleted_at IS NULL
+			   AND (balance_cents - reserved_cents) >= $2
+			 RETURNING balance_cents
+		`, userID, amountCents).Scan(&balanceAfter)
+		if err == pgx.ErrNoRows {
+			return insufficientOrNotFound(ctx, tx, userID)
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+
+		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: -amountCents, Kind: domain.LedgerKindEntryFee, BalanceAfter: balanceAfter, RefID: int64(quinielaID), RefType: "group_membership"}); err != nil {
+			return err
+		}
+
+		row := tx.QueryRow(ctx,
+			`UPDATE group_memberships SET paid=TRUE, updated_at=NOW()
+			 WHERE quiniela_id=$1 AND user_id=$2 RETURNING `+membershipColumns,
+			quinielaID, userID,
+		)
+		m, scanErr := scanMembership(row)
+		if scanErr != nil {
+			return scanErr
+		}
+		if m == nil {
+			return apperrors.NotFound(errMembershipNotFound)
+		}
+		membership = m
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return membership, nil
+}
+
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)
