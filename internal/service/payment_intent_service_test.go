@@ -31,7 +31,7 @@ func (r *stubIntentRepo) CaptureAndCredit(_ context.Context, _, _ string) (*doma
 	return nil, nil
 }
 
-func newIntentSvc(repo *stubIntentRepo) PaymentIntentService {
+func newIntentSvc(repo *stubIntentRepo) PaymentIntentCreator {
 	return NewPaymentIntentService(repo, &noopSystemParamService{}, zap.NewNop())
 }
 

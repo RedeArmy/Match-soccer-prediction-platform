@@ -192,3 +192,23 @@ func TestPaymentIntentRepository_CaptureAndCredit_ExpiredIntentReturnsNotFound(t
 		t.Errorf("expected AppError (not found/expired), got %T: %v", err, err)
 	}
 }
+
+func TestPaymentIntentRepository_CaptureAndCredit_SoftDeletedUserReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	intent := seedPaymentIntent(t, u.ID, 2000)
+	repo := repository.NewPostgresPaymentIntentRepository(testDB)
+
+	// Soft-delete the user so that the UPDATE users … WHERE deleted_at IS NULL
+	// inside creditUserTx matches 0 rows and returns ErrNoRows → NotFound.
+	if _, err := testDB.Exec(context.Background(),
+		`UPDATE users SET deleted_at = NOW() WHERE id = $1`, u.ID,
+	); err != nil {
+		t.Fatalf("soft-delete user: %v", err)
+	}
+
+	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-SOFTDEL")
+	if !errors.As(err, new(*apperrors.AppError)) {
+		t.Errorf("expected AppError (user not found), got %T: %v", err, err)
+	}
+}

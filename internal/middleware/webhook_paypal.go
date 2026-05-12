@@ -129,74 +129,80 @@ func PayPalWebhookAuth(webhookID string, fetcher CertFetcher, log *zap.Logger) f
 			// Restore the body so the downstream handler can re-read it.
 			r.Body = io.NopCloser(bytes.NewReader(body))
 
-			transmissionID := r.Header.Get(paypalTransmissionIDHeader)
-			transmissionTime := r.Header.Get(paypalTransmissionTimeHeader)
-			certURL := r.Header.Get(paypalCertURLHeader)
-			authAlgo := r.Header.Get(paypalAuthAlgoHeader)
-			transmissionSig := r.Header.Get(paypalTransmissionSigHeader)
-
-			if transmissionID == "" || transmissionTime == "" || certURL == "" || authAlgo == "" || transmissionSig == "" {
-				log.Warn("paypal webhook: missing required signature headers",
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.Bool("has_transmission_id", transmissionID != ""),
-					zap.Bool("has_transmission_time", transmissionTime != ""),
-					zap.Bool("has_cert_url", certURL != ""),
-					zap.Bool("has_auth_algo", authAlgo != ""),
-					zap.Bool("has_transmission_sig", transmissionSig != ""),
-				)
-				WriteError(w, r, log, apperrors.Unauthorised("missing PayPal signature headers"))
-				return
-			}
-
-			// Guard against SSRF: only accept cert URLs from paypal.com.
-			if err := validatePayPalCertURL(certURL); err != nil {
-				log.Warn("paypal webhook: rejected cert URL",
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.String("cert_url", certURL),
-					zap.Error(err),
-				)
-				WriteError(w, r, log, apperrors.Unauthorised("invalid cert URL"))
-				return
-			}
-
-			cert, err := fetcher(r.Context(), certURL)
-			if err != nil {
-				log.Error("paypal webhook: failed to fetch signing cert",
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.String("cert_url", certURL),
-					zap.Error(err),
-				)
-				WriteError(w, r, log, apperrors.Internal(err))
-				return
-			}
-
-			// Build the signed message per PayPal's spec.
-			bodyCRC := crc32.ChecksumIEEE(body)
-			message := fmt.Sprintf("%s|%s|%s|%d", transmissionID, transmissionTime, webhookID, bodyCRC)
-
-			sigBytes, err := base64.StdEncoding.DecodeString(transmissionSig)
-			if err != nil {
-				log.Warn("paypal webhook: cannot base64-decode signature",
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.Error(err),
-				)
-				WriteError(w, r, log, apperrors.Unauthorised("malformed webhook signature"))
-				return
-			}
-
-			if err := verifyPayPalSig(cert, authAlgo, []byte(message), sigBytes); err != nil {
-				log.Warn("paypal webhook: signature verification failed",
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.String("auth_algo", authAlgo),
-					zap.Error(err),
-				)
-				WriteError(w, r, log, apperrors.Unauthorised("invalid webhook signature"))
+			if err := checkPayPalWebhook(r.Context(), webhookID, fetcher, log, r.Header, body); err != nil {
+				WriteError(w, r, log, err)
 				return
 			}
 
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// checkPayPalWebhook validates all PayPal signature headers and verifies the
+// RSA signature over the request body. It returns an apperrors sentinel on
+// any failure so the caller can write the appropriate HTTP response.
+func checkPayPalWebhook(ctx context.Context, webhookID string, fetcher CertFetcher, log *zap.Logger, headers http.Header, body []byte) error {
+	transmissionID := headers.Get(paypalTransmissionIDHeader)
+	transmissionTime := headers.Get(paypalTransmissionTimeHeader)
+	certURL := headers.Get(paypalCertURLHeader)
+	authAlgo := headers.Get(paypalAuthAlgoHeader)
+	transmissionSig := headers.Get(paypalTransmissionSigHeader)
+
+	if transmissionID == "" || transmissionTime == "" || certURL == "" || authAlgo == "" || transmissionSig == "" {
+		log.Warn("paypal webhook: missing required signature headers",
+			zap.String("request_id", GetRequestID(ctx)),
+			zap.Bool("has_transmission_id", transmissionID != ""),
+			zap.Bool("has_transmission_time", transmissionTime != ""),
+			zap.Bool("has_cert_url", certURL != ""),
+			zap.Bool("has_auth_algo", authAlgo != ""),
+			zap.Bool("has_transmission_sig", transmissionSig != ""),
+		)
+		return apperrors.Unauthorised("missing PayPal signature headers")
+	}
+
+	// Guard against SSRF: only accept cert URLs from paypal.com.
+	if err := validatePayPalCertURL(certURL); err != nil {
+		log.Warn("paypal webhook: rejected cert URL",
+			zap.String("request_id", GetRequestID(ctx)),
+			zap.String("cert_url", certURL),
+			zap.Error(err),
+		)
+		return apperrors.Unauthorised("invalid cert URL")
+	}
+
+	cert, err := fetcher(ctx, certURL)
+	if err != nil {
+		log.Error("paypal webhook: failed to fetch signing cert",
+			zap.String("request_id", GetRequestID(ctx)),
+			zap.String("cert_url", certURL),
+			zap.Error(err),
+		)
+		return apperrors.Internal(err)
+	}
+
+	// Build the signed message per PayPal's spec.
+	bodyCRC := crc32.ChecksumIEEE(body)
+	message := fmt.Sprintf("%s|%s|%s|%d", transmissionID, transmissionTime, webhookID, bodyCRC)
+
+	sigBytes, err := base64.StdEncoding.DecodeString(transmissionSig)
+	if err != nil {
+		log.Warn("paypal webhook: cannot base64-decode signature",
+			zap.String("request_id", GetRequestID(ctx)),
+			zap.Error(err),
+		)
+		return apperrors.Unauthorised("malformed webhook signature")
+	}
+
+	if err := verifyPayPalSig(cert, authAlgo, []byte(message), sigBytes); err != nil {
+		log.Warn("paypal webhook: signature verification failed",
+			zap.String("request_id", GetRequestID(ctx)),
+			zap.String("auth_algo", authAlgo),
+			zap.Error(err),
+		)
+		return apperrors.Unauthorised("invalid webhook signature")
+	}
+	return nil
 }
 
 // validatePayPalCertURL ensures the cert URL is HTTPS and from paypal.com.
@@ -242,5 +248,5 @@ func verifyPayPalSig(cert *x509.Certificate, authAlgo string, message, sig []byt
 	}
 
 	_, _ = h.Write(message)
-	return rsa.VerifyPKCS1v15(rsaKey, hashID, h.Sum(nil), sig)
+	return rsa.VerifyPKCS1v15(rsaKey, hashID, h.Sum(nil), sig) // NOSONAR: PKCS#1 v1.5 is mandated by PayPal's webhook verification protocol
 }

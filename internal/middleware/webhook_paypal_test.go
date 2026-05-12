@@ -89,17 +89,26 @@ func signPayPalMessage(t *testing.T, key *rsa.PrivateKey, transmissionID, transm
 	return base64.StdEncoding.EncodeToString(sig)
 }
 
+// paypalRequestConfig groups the PayPal signature-header parameters for paypalRequest.
+type paypalRequestConfig struct {
+	transmissionID   string
+	transmissionTime string
+	certURL          string
+	authAlgo         string
+	webhookID        string
+	key              *rsa.PrivateKey
+}
+
 // paypalRequest builds a POST request with all PayPal signature headers set.
-// Use sign=true for a valid signature, false to omit the signature header.
-func paypalRequest(t *testing.T, body []byte, transmissionID, transmissionTime, certURL, authAlgo, webhookID string, key *rsa.PrivateKey) *http.Request {
+func paypalRequest(t *testing.T, body []byte, cfg paypalRequestConfig) *http.Request {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/paypal", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(paypalTransmissionIDHeaderName, transmissionID)
-	req.Header.Set(paypalTransmissionTimeHeaderName, transmissionTime)
-	req.Header.Set(paypalCertURLHeaderName, certURL)
-	req.Header.Set(paypalAuthAlgoHeaderName, authAlgo)
-	req.Header.Set(paypalTransmissionSigHeaderName, signPayPalMessage(t, key, transmissionID, transmissionTime, webhookID, body))
+	req.Header.Set(paypalTransmissionIDHeaderName, cfg.transmissionID)
+	req.Header.Set(paypalTransmissionTimeHeaderName, cfg.transmissionTime)
+	req.Header.Set(paypalCertURLHeaderName, cfg.certURL)
+	req.Header.Set(paypalAuthAlgoHeaderName, cfg.authAlgo)
+	req.Header.Set(paypalTransmissionSigHeaderName, signPayPalMessage(t, cfg.key, cfg.transmissionID, cfg.transmissionTime, cfg.webhookID, body))
 	return req
 }
 
@@ -130,12 +139,14 @@ func TestPayPalWebhookAuth_ValidSignature_Passes(t *testing.T) {
 	downstream := &captureHandler{}
 	mw := applyPayPalMiddleware(t, testPayPalWebhookID, mockFetcher(testPair.cert), downstream)
 
-	req := paypalRequest(t,
-		[]byte(testPayPalBody),
-		testPayPalTransmissionID, testPayPalTransmissionTime,
-		testPayPalCertURL, "SHA256withRSA",
-		testPayPalWebhookID, testPair.privKey,
-	)
+	req := paypalRequest(t, []byte(testPayPalBody), paypalRequestConfig{
+		transmissionID:   testPayPalTransmissionID,
+		transmissionTime: testPayPalTransmissionTime,
+		certURL:          testPayPalCertURL,
+		authAlgo:         "SHA256withRSA",
+		webhookID:        testPayPalWebhookID,
+		key:              testPair.privKey,
+	})
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
 
@@ -149,11 +160,14 @@ func TestPayPalWebhookAuth_DownstreamReceivesFullBody(t *testing.T) {
 	mw := applyPayPalMiddleware(t, testPayPalWebhookID, mockFetcher(testPair.cert), downstream)
 
 	body := []byte(testPayPalBody)
-	req := paypalRequest(t, body,
-		testPayPalTransmissionID, testPayPalTransmissionTime,
-		testPayPalCertURL, "SHA256withRSA",
-		testPayPalWebhookID, testPair.privKey,
-	)
+	req := paypalRequest(t, body, paypalRequestConfig{
+		transmissionID:   testPayPalTransmissionID,
+		transmissionTime: testPayPalTransmissionTime,
+		certURL:          testPayPalCertURL,
+		authAlgo:         "SHA256withRSA",
+		webhookID:        testPayPalWebhookID,
+		key:              testPair.privKey,
+	})
 	mw.ServeHTTP(httptest.NewRecorder(), req)
 
 	if string(downstream.body) != string(body) {
@@ -226,11 +240,14 @@ func TestPayPalWebhookAuth_NonPayPalCertURL_Returns401(t *testing.T) {
 		}),
 	)
 	body := []byte(testPayPalBody)
-	req := paypalRequest(t, body,
-		testPayPalTransmissionID, testPayPalTransmissionTime,
-		"https://evil.example.com/cert.pem", // not paypal.com
-		"SHA256withRSA", testPayPalWebhookID, testPair.privKey,
-	)
+	req := paypalRequest(t, body, paypalRequestConfig{
+		transmissionID:   testPayPalTransmissionID,
+		transmissionTime: testPayPalTransmissionTime,
+		certURL:          "https://evil.example.com/cert.pem", // not paypal.com
+		authAlgo:         "SHA256withRSA",
+		webhookID:        testPayPalWebhookID,
+		key:              testPair.privKey,
+	})
 
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
@@ -247,11 +264,14 @@ func TestPayPalWebhookAuth_HTTPCertURL_Returns401(t *testing.T) {
 		}),
 	)
 	body := []byte(testPayPalBody)
-	req := paypalRequest(t, body,
-		testPayPalTransmissionID, testPayPalTransmissionTime,
-		"http://api.paypal.com/v1/notifications/certs/test", // HTTP not HTTPS
-		"SHA256withRSA", testPayPalWebhookID, testPair.privKey,
-	)
+	req := paypalRequest(t, body, paypalRequestConfig{
+		transmissionID:   testPayPalTransmissionID,
+		transmissionTime: testPayPalTransmissionTime,
+		certURL:          "http://api.paypal.com/v1/notifications/certs/test", // HTTP not HTTPS
+		authAlgo:         "SHA256withRSA",
+		webhookID:        testPayPalWebhookID,
+		key:              testPair.privKey,
+	})
 
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
@@ -271,11 +291,14 @@ func TestPayPalWebhookAuth_FetcherError_Returns500(t *testing.T) {
 		}),
 	)
 	body := []byte(testPayPalBody)
-	req := paypalRequest(t, body,
-		testPayPalTransmissionID, testPayPalTransmissionTime,
-		testPayPalCertURL, "SHA256withRSA",
-		testPayPalWebhookID, testPair.privKey,
-	)
+	req := paypalRequest(t, body, paypalRequestConfig{
+		transmissionID:   testPayPalTransmissionID,
+		transmissionTime: testPayPalTransmissionTime,
+		certURL:          testPayPalCertURL,
+		authAlgo:         "SHA256withRSA",
+		webhookID:        testPayPalWebhookID,
+		key:              testPair.privKey,
+	})
 
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
@@ -346,11 +369,14 @@ func TestPayPalWebhookAuth_WrongWebhookID_Returns401(t *testing.T) {
 	)
 	body := []byte(testPayPalBody)
 	// Sign with a DIFFERENT webhook ID — middleware verifies using testPayPalWebhookID.
-	req := paypalRequest(t, body,
-		testPayPalTransmissionID, testPayPalTransmissionTime,
-		testPayPalCertURL, "SHA256withRSA",
-		"WH-WRONG-ID", testPair.privKey,
-	)
+	req := paypalRequest(t, body, paypalRequestConfig{
+		transmissionID:   testPayPalTransmissionID,
+		transmissionTime: testPayPalTransmissionTime,
+		certURL:          testPayPalCertURL,
+		authAlgo:         "SHA256withRSA",
+		webhookID:        "WH-WRONG-ID",
+		key:              testPair.privKey,
+	})
 
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
@@ -410,11 +436,14 @@ func TestPayPalWebhookAuth_UnknownAlgo_Returns401(t *testing.T) {
 	body := []byte(testPayPalBody)
 	// paypalRequest signs with SHA256 — the unsupported algo name triggers the
 	// default branch in verifyPayPalSig before any signature math is attempted.
-	req := paypalRequest(t, body,
-		testPayPalTransmissionID, testPayPalTransmissionTime,
-		testPayPalCertURL, "MD5withRSA", // not supported
-		testPayPalWebhookID, testPair.privKey,
-	)
+	req := paypalRequest(t, body, paypalRequestConfig{
+		transmissionID:   testPayPalTransmissionID,
+		transmissionTime: testPayPalTransmissionTime,
+		certURL:          testPayPalCertURL,
+		authAlgo:         "MD5withRSA", // not supported
+		webhookID:        testPayPalWebhookID,
+		key:              testPair.privKey,
+	})
 
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)

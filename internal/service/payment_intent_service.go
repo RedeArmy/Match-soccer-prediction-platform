@@ -13,11 +13,11 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
-// PaymentIntentService manages server-generated payment intents used as
+// PaymentIntentCreator manages server-generated payment intents used as
 // opaque PayPal custom_id values. Creating an intent before the PayPal order
 // is created ensures the webhook can only credit the user who initiated the
 // session — the token is unguessable and single-use.
-type PaymentIntentService interface {
+type PaymentIntentCreator interface {
 	// Create generates a new pending payment intent for userID. The returned
 	// intent's Token must be passed as custom_id when the frontend creates the
 	// PayPal order. The intent expires after DefaultPaymentIntentTTL.
@@ -30,8 +30,8 @@ type paymentIntentService struct {
 	log        *zap.Logger
 }
 
-// NewPaymentIntentService constructs a PaymentIntentService.
-func NewPaymentIntentService(intentRepo repository.PaymentIntentRepository, params SystemParamService, log *zap.Logger) PaymentIntentService {
+// NewPaymentIntentService constructs a PaymentIntentCreator.
+func NewPaymentIntentService(intentRepo repository.PaymentIntentRepository, params SystemParamService, log *zap.Logger) PaymentIntentCreator {
 	return &paymentIntentService{intentRepo: intentRepo, params: params, log: log}
 }
 
@@ -80,4 +80,4 @@ func generateIntentToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-var _ PaymentIntentService = (*paymentIntentService)(nil)
+var _ PaymentIntentCreator = (*paymentIntentService)(nil)

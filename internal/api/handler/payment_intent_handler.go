@@ -15,12 +15,12 @@ import (
 // as opaque PayPal custom_id values. The token prevents user-ID substitution:
 // only the server that generated the token can resolve it to a user.
 type PaymentIntentHandler struct {
-	svc service.PaymentIntentService
+	svc service.PaymentIntentCreator
 	log *zap.Logger
 }
 
 // NewPaymentIntentHandler constructs a PaymentIntentHandler.
-func NewPaymentIntentHandler(svc service.PaymentIntentService, log *zap.Logger) *PaymentIntentHandler {
+func NewPaymentIntentHandler(svc service.PaymentIntentCreator, log *zap.Logger) *PaymentIntentHandler {
 	return &PaymentIntentHandler{svc: svc, log: log}
 }
 
