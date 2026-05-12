@@ -171,6 +171,13 @@ const (
 	DefaultPaymentMaxUploadBytes = 5_242_880 // payment.max_upload_bytes (5 MB)
 	DefaultWithdrawalMinCents    = 5_000     // payment.withdrawal_min_cents (50 GTQ)
 	DefaultWithdrawalMaxCents    = 500_000   // payment.withdrawal_max_cents (5 000 GTQ)
+
+	// Bank transfer amount bounds. These mirror the withdrawal limits: the
+	// declared amount on a bank transfer proof is validated against these
+	// before the proof is accepted for admin review. Prevents claims of
+	// unreasonably small or arbitrarily large transfers.
+	DefaultBankTransferMinAmountCents = 1_000      // payment.bank_transfer_min_amount_cents (10 GTQ)
+	DefaultBankTransferMaxAmountCents = 10_000_000 // payment.bank_transfer_max_amount_cents (100 000 GTQ)
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -291,6 +298,14 @@ const (
 	ParamKeyWithdrawalMinCents = "payment.withdrawal_min_cents"
 	// ParamKeyWithdrawalMaxCents is the maximum withdrawal amount in minor units.
 	ParamKeyWithdrawalMaxCents = "payment.withdrawal_max_cents"
+	// ParamKeyBankTransferMinAmountCents is the minimum declared amount in minor
+	// units for a bank transfer proof submission.
+	// Defaults to DefaultBankTransferMinAmountCents (1 000 = 10 GTQ).
+	ParamKeyBankTransferMinAmountCents = "payment.bank_transfer_min_amount_cents"
+	// ParamKeyBankTransferMaxAmountCents is the maximum declared amount in minor
+	// units for a bank transfer proof submission.
+	// Defaults to DefaultBankTransferMaxAmountCents (10 000 000 = 100 000 GTQ).
+	ParamKeyBankTransferMaxAmountCents = "payment.bank_transfer_max_amount_cents"
 
 	// ParamKeyAPIBodySizeLimitBytes is the maximum request body size in bytes.
 	// Requests exceeding this limit are rejected with 413 to prevent DoS.

@@ -14,8 +14,9 @@ import (
 )
 
 // PaymentWebhookHandler handles incoming payment confirmation webhooks from
-// Recurrente and PayPal.  Signature verification is intentionally left as a
-// middleware concern so this handler only performs business logic.
+// Recurrente and PayPal. Signature verification is performed by upstream
+// middleware (middleware.RecurrenteWebhookAuth, middleware.PayPalWebhookAuth)
+// before requests reach this handler. This handler performs business logic only.
 type PaymentWebhookHandler struct {
 	svc service.WebhookPaymentService
 	log *zap.Logger

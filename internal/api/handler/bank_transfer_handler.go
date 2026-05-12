@@ -35,15 +35,39 @@ type BankTransferHandler struct {
 	svc       service.BankTransferService
 	fileStore storage.FileStore
 	maxUpload int64 // bytes; read from system_params at construction
+	minAmount int   // cents; payment.bank_transfer_min_amount_cents
+	maxAmount int   // cents; payment.bank_transfer_max_amount_cents
 	log       *zap.Logger
 }
 
 // NewBankTransferHandler constructs a BankTransferHandler.
-func NewBankTransferHandler(svc service.BankTransferService, fileStore storage.FileStore, maxUploadBytes int64, log *zap.Logger) *BankTransferHandler {
+// minAmountCents and maxAmountCents bound the declared transfer amount;
+// both are read from system_params at startup and fall back to domain defaults
+// when zero or negative.
+func NewBankTransferHandler(
+	svc service.BankTransferService,
+	fileStore storage.FileStore,
+	maxUploadBytes int64,
+	minAmountCents, maxAmountCents int,
+	log *zap.Logger,
+) *BankTransferHandler {
 	if maxUploadBytes <= 0 {
 		maxUploadBytes = int64(domain.DefaultPaymentMaxUploadBytes)
 	}
-	return &BankTransferHandler{svc: svc, fileStore: fileStore, maxUpload: maxUploadBytes, log: log}
+	if minAmountCents <= 0 {
+		minAmountCents = domain.DefaultBankTransferMinAmountCents
+	}
+	if maxAmountCents <= 0 {
+		maxAmountCents = domain.DefaultBankTransferMaxAmountCents
+	}
+	return &BankTransferHandler{
+		svc:       svc,
+		fileStore: fileStore,
+		maxUpload: maxUploadBytes,
+		minAmount: minAmountCents,
+		maxAmount: maxAmountCents,
+		log:       log,
+	}
 }
 
 // Upload handles POST /api/v1/bank-transfers.
@@ -81,6 +105,18 @@ func (h *BankTransferHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	amountCents, err := strconv.Atoi(r.FormValue("amount_cents"))
 	if err != nil || amountCents <= 0 {
 		writeError(w, r, h.log, apperrors.Validation("amount_cents must be a positive integer"))
+		return
+	}
+	if amountCents < h.minAmount {
+		writeError(w, r, h.log, apperrors.Validation(
+			fmt.Sprintf("amount_cents must be at least %d", h.minAmount),
+		))
+		return
+	}
+	if amountCents > h.maxAmount {
+		writeError(w, r, h.log, apperrors.Validation(
+			fmt.Sprintf("amount_cents must be at most %d", h.maxAmount),
+		))
 		return
 	}
 	currency := r.FormValue("currency")

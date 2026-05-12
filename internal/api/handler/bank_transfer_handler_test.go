@@ -24,7 +24,7 @@ func bankTransferRouter(t *testing.T, svc *stubBankTransferSvc, fs *stubFileStor
 	if fs == nil {
 		fs = &stubFileStore{}
 	}
-	h := handler.NewBankTransferHandler(svc, fs, 1<<20, zaptest.NewLogger(t))
+	h := handler.NewBankTransferHandler(svc, fs, 1<<20, 0, 0, zaptest.NewLogger(t))
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -42,7 +42,7 @@ func bankTransferRouter(t *testing.T, svc *stubBankTransferSvc, fs *stubFileStor
 
 func bankTransferRouterNoUser(t *testing.T, svc *stubBankTransferSvc) http.Handler {
 	t.Helper()
-	h := handler.NewBankTransferHandler(svc, &stubFileStore{}, 1<<20, zaptest.NewLogger(t))
+	h := handler.NewBankTransferHandler(svc, &stubFileStore{}, 1<<20, 0, 0, zaptest.NewLogger(t))
 	r := chi.NewRouter()
 	r.Post("/bank-transfers", h.Upload)
 	r.Get("/bank-transfers", h.ListMine)
@@ -101,7 +101,7 @@ func buildUploadRequest(t *testing.T, amountCents int, currency, fileContentType
 
 func TestBankTransferHandler_Upload_OK(t *testing.T) {
 	svc := &stubBankTransferSvc{proof: fixedProof()}
-	h := handler.NewBankTransferHandler(svc, &stubFileStore{}, 1<<20, zaptest.NewLogger(t))
+	h := handler.NewBankTransferHandler(svc, &stubFileStore{}, 1<<20, 0, 0, zaptest.NewLogger(t))
 
 	rec := httptest.NewRecorder()
 	req := buildUploadRequest(t, 5000, "GTQ", "image/jpeg", []byte("fake-data"))
@@ -154,7 +154,7 @@ func TestBankTransferHandler_Upload_InvalidAmountCents(t *testing.T) {
 func TestBankTransferHandler_Upload_FileStorePutError(t *testing.T) {
 	svc := &stubBankTransferSvc{}
 	fs := &stubFileStore{putErr: errors.New("s3 down")}
-	h := handler.NewBankTransferHandler(svc, fs, 1<<20, zaptest.NewLogger(t))
+	h := handler.NewBankTransferHandler(svc, fs, 1<<20, 0, 0, zaptest.NewLogger(t))
 
 	rec := httptest.NewRecorder()
 	req := buildUploadRequest(t, 5000, "GTQ", "image/jpeg", []byte("fake-data"))
@@ -260,6 +260,54 @@ func TestBankTransferHandler_AdminReject_MissingNotes(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422 for empty notes, got %d", rec.Code)
+	}
+}
+
+// ── Amount bounds ─────────────────────────────────────────────────────────────
+
+func TestBankTransferHandler_Upload_BelowMinAmount(t *testing.T) {
+	const minCents = 1_000
+	h := handler.NewBankTransferHandler(&stubBankTransferSvc{}, &stubFileStore{}, 1<<20, minCents, 10_000_000, zaptest.NewLogger(t))
+
+	rec := httptest.NewRecorder()
+	req := buildUploadRequest(t, minCents-1, "GTQ", "image/jpeg", []byte("fake-data"))
+	ctx := middleware.ContextWithUser(req.Context(), &domain.User{ID: 10})
+	req = req.WithContext(ctx)
+	h.Upload(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for amount below minimum, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBankTransferHandler_Upload_AboveMaxAmount(t *testing.T) {
+	const maxCents = 10_000_000
+	h := handler.NewBankTransferHandler(&stubBankTransferSvc{}, &stubFileStore{}, 1<<20, 1_000, maxCents, zaptest.NewLogger(t))
+
+	rec := httptest.NewRecorder()
+	req := buildUploadRequest(t, maxCents+1, "GTQ", "image/jpeg", []byte("fake-data"))
+	ctx := middleware.ContextWithUser(req.Context(), &domain.User{ID: 10})
+	req = req.WithContext(ctx)
+	h.Upload(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for amount above maximum, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBankTransferHandler_Upload_AtMinAmount_OK(t *testing.T) {
+	const minCents = 1_000
+	svc := &stubBankTransferSvc{proof: fixedProof()}
+	h := handler.NewBankTransferHandler(svc, &stubFileStore{}, 1<<20, minCents, 10_000_000, zaptest.NewLogger(t))
+
+	rec := httptest.NewRecorder()
+	req := buildUploadRequest(t, minCents, "GTQ", "image/jpeg", []byte("fake-data"))
+	ctx := middleware.ContextWithUser(req.Context(), &domain.User{ID: 10})
+	req = req.WithContext(ctx)
+	h.Upload(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected 201 for amount exactly at minimum, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
