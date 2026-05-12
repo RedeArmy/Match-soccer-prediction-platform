@@ -24,6 +24,7 @@ type Config struct {
 	Logger      LoggerConfig   `mapstructure:"logger"`
 	CORS        CORSConfig     `mapstructure:"cors"`
 	Clerk       ClerkConfig    `mapstructure:"clerk"`
+	Payment     PaymentConfig  `mapstructure:"payment"`
 	Worker      WorkerConfig   `mapstructure:"worker"`
 	Storage     StorageConfig  `mapstructure:"storage"`
 }
@@ -168,4 +169,20 @@ type ClerkConfig struct {
 	// warning is logged - acceptable for local development only. Startup
 	// validation must reject this configuration outside development.
 	WebhookSecret string `mapstructure:"webhookSecret"`
+}
+
+// PaymentConfig holds configuration for payment provider webhook integrations.
+//
+// Both secrets are required in non-development environments. The middleware
+// layer (middleware.RecurrenteWebhookAuth, middleware.PayPalWebhookAuth)
+// enforces the respective verification algorithms at request time.
+type PaymentConfig struct {
+	// RecurrenteWebhookSecret is the HMAC-SHA256 signing secret configured in
+	// the Recurrente webhook dashboard. Requests are verified against the
+	// X-Recurrente-Hmac-Sha256 header. Set via WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET.
+	RecurrenteWebhookSecret string `mapstructure:"recurrenteWebhookSecret"`
+	// PayPalWebhookID is the webhook ID from the PayPal developer dashboard.
+	// It is embedded in the signed message during RSA certificate verification.
+	// Set via WCQ_PAYMENT_PAYPALWEBHOOKID.
+	PayPalWebhookID string `mapstructure:"paypalWebhookID"`
 }

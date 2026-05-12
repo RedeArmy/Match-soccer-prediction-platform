@@ -47,6 +47,16 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv(envEnvironment, "dev")
 }
 
+// setProductionPaymentEnv sets the payment webhook secrets required in
+// non-development environments. Tests that check unrelated production
+// validations must call this to avoid the payment secret checks running
+// before the error they intend to observe.
+func setProductionPaymentEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
+}
+
 func TestLoad_ValidConfig_ReturnsNoError(t *testing.T) {
 	setRequiredEnv(t)
 
@@ -151,6 +161,7 @@ func TestLoad_DefaultEnvironmentIsProduction(t *testing.T) {
 	t.Setenv(envServerPort, "8080")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_testsecret")
+	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
 
 	cfg, err := config.Load()
@@ -208,10 +219,47 @@ func TestLoad_ProductionWithClerkSettings_ReturnsNoError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
 
 	if _, err := config.Load(); err != nil {
 		t.Fatalf("expected no error for complete production config, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithoutRecurrenteSecret_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	// WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET intentionally not set.
+	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing Recurrente webhook secret in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET") {
+		t.Errorf("expected error to reference WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithoutPayPalWebhookID_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	// WCQ_PAYMENT_PAYPALWEBHOOKID intentionally not set.
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing PayPal webhook ID in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_PAYMENT_PAYPALWEBHOOKID") {
+		t.Errorf("expected error to reference WCQ_PAYMENT_PAYPALWEBHOOKID, got: %v", err)
 	}
 }
 
@@ -220,6 +268,7 @@ func TestLoad_ProductionWithInMemoryBus_ReturnsError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "in_memory")
 
 	_, err := config.Load()
@@ -239,6 +288,7 @@ func TestLoad_ProductionWithDefaultInMemoryBus_ReturnsError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	setProductionPaymentEnv(t)
 	// Explicitly NOT setting WCQ_EVENTBUS_DRIVER so it defaults to in_memory
 
 	_, err := config.Load()
@@ -255,6 +305,7 @@ func TestLoad_StagingWithInMemoryBus_ReturnsError(t *testing.T) {
 	t.Setenv(envEnvironment, "staging")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	setProductionPaymentEnv(t)
 	// in_memory is the default
 
 	_, err := config.Load()

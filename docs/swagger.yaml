@@ -480,6 +480,17 @@ definitions:
       total_collected:
         type: integer
     type: object
+  internal_api_handler.PaymentIntentResponse:
+    properties:
+      amount_cents:
+        type: integer
+      currency:
+        type: string
+      expires_at:
+        type: string
+      token:
+        type: string
+    type: object
   internal_api_handler.PaymentResponse:
     properties:
       amount:
@@ -751,6 +762,13 @@ definitions:
       kickoff_at:
         type: string
       phase:
+        type: string
+    type: object
+  internal_api_handler.createPaymentIntentRequest:
+    properties:
+      amount_cents:
+        type: integer
+      currency:
         type: string
     type: object
   internal_api_handler.createWithdrawalRequest:
@@ -3344,6 +3362,43 @@ paths:
       summary: Start a match
       tags:
       - matches
+  /api/v1/payment-intents:
+    post:
+      consumes:
+      - application/json
+      description: Generates an opaque single-use payment intent token to be passed
+        as
+      parameters:
+      - description: Amount and currency
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.createPaymentIntentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api_handler.PaymentIntentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create payment intent
+      tags:
+      - payments
   /api/v1/predictions:
     post:
       consumes:

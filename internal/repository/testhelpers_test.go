@@ -123,7 +123,7 @@ func cleanTables(t *testing.T) {
 	_, err := testDB.Exec(context.Background(),
 		`TRUNCATE leaderboard_snapshots, payment_records, audit_log, system_params,
 		         tournament_slots, tiebreaker_config, group_memberships, tiebreakers,
-		         predictions, quinielas, matches, stadiums, users RESTART IDENTITY CASCADE`)
+		         predictions, quinielas, payment_intents, matches, stadiums, users RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("clean tables: %v", err)
 	}

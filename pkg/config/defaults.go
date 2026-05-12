@@ -54,6 +54,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("clerk.jwksUrl", "")
 	v.SetDefault("clerk.webhookSecret", "")
 
+	// payment secrets default to empty; validation.go enforces non-empty values
+	// in non-development environments.
+	v.SetDefault("payment.recurrenteWebhookSecret", "")
+	v.SetDefault("payment.paypalWebhookID", "")
+
 	// worker.healthPort defaults to 8081 so the worker's health endpoints do
 	// not collide with the API server (8080) when both run on the same host.
 	v.SetDefault("worker.healthPort", "8081")

@@ -171,6 +171,20 @@ const (
 	DefaultPaymentMaxUploadBytes = 5_242_880 // payment.max_upload_bytes (5 MB)
 	DefaultWithdrawalMinCents    = 5_000     // payment.withdrawal_min_cents (50 GTQ)
 	DefaultWithdrawalMaxCents    = 500_000   // payment.withdrawal_max_cents (5 000 GTQ)
+
+	// Bank transfer amount bounds. These mirror the withdrawal limits: the
+	// declared amount on a bank transfer proof is validated against these
+	// before the proof is accepted for admin review. Prevents claims of
+	// unreasonably small or arbitrarily large transfers.
+	DefaultBankTransferMinAmountCents = 1_000      // payment.bank_transfer_min_amount_cents (10 GTQ)
+	DefaultBankTransferMaxAmountCents = 10_000_000 // payment.bank_transfer_max_amount_cents (100 000 GTQ)
+
+	// DefaultPaymentIntentTTLMinutes is the number of minutes a pending PayPal
+	// payment intent remains valid. After this window expires the intent cannot
+	// be captured, so the customer must start the checkout flow again. 60 minutes
+	// is long enough for a typical PayPal checkout session while being short
+	// enough to limit the window for stale captures.
+	DefaultPaymentIntentTTLMinutes = 60 // payment.intent_ttl_minutes
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -291,6 +305,19 @@ const (
 	ParamKeyWithdrawalMinCents = "payment.withdrawal_min_cents"
 	// ParamKeyWithdrawalMaxCents is the maximum withdrawal amount in minor units.
 	ParamKeyWithdrawalMaxCents = "payment.withdrawal_max_cents"
+	// ParamKeyBankTransferMinAmountCents is the minimum declared amount in minor
+	// units for a bank transfer proof submission.
+	// Defaults to DefaultBankTransferMinAmountCents (1 000 = 10 GTQ).
+	ParamKeyBankTransferMinAmountCents = "payment.bank_transfer_min_amount_cents"
+	// ParamKeyBankTransferMaxAmountCents is the maximum declared amount in minor
+	// units for a bank transfer proof submission.
+	// Defaults to DefaultBankTransferMaxAmountCents (10 000 000 = 100 000 GTQ).
+	ParamKeyBankTransferMaxAmountCents = "payment.bank_transfer_max_amount_cents"
+	// ParamKeyPaymentIntentTTLMinutes is the number of minutes a pending PayPal
+	// payment intent remains valid. After expiry the webhook returns NotFound and
+	// the customer must restart checkout. is_runtime=TRUE: tunable without restart.
+	// Defaults to DefaultPaymentIntentTTLMinutes (60).
+	ParamKeyPaymentIntentTTLMinutes = "payment.intent_ttl_minutes"
 
 	// ParamKeyAPIBodySizeLimitBytes is the maximum request body size in bytes.
 	// Requests exceeding this limit are rejected with 413 to prevent DoS.
