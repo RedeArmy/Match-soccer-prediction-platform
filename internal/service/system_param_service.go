@@ -259,6 +259,14 @@ var paramIntConstraints = map[string]paramIntRange{
 
 	// Snapshot retention
 	domain.ParamKeySnapshotKeepLatestCount: {1, 1_000},
+
+	// Payment / balance (is_runtime = TRUE; changes take effect within cache window)
+	domain.ParamKeyPaymentMaxUploadBytes:      {102_400, 52_428_800}, // 100 KB – 50 MB
+	domain.ParamKeyWithdrawalMinCents:         {100, 1_000_000},      // 1 GTQ – 10 000 GTQ
+	domain.ParamKeyWithdrawalMaxCents:         {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
+	domain.ParamKeyBankTransferMinAmountCents: {100, 1_000_000},      // 1 GTQ – 10 000 GTQ
+	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
+	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 10_080},           // 5 min – 1 week
 }
 
 // validateParamConstraints enforces per-key business-rule bounds for int params.

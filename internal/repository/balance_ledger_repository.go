@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -159,6 +160,7 @@ type ledgerRow struct {
 	BalanceAfter int
 	RefID        int64  // 0 → stored as NULL
 	RefType      string // "" → stored as NULL
+	Reference    string // "" → stored as NULL; non-empty values are unique (webhook idempotency key)
 	CreatorID    int    // 0 → stored as NULL (system/webhook origin)
 }
 
@@ -176,15 +178,90 @@ func insertLedgerTx(ctx context.Context, tx pgx.Tx, e ledgerRow) error {
 	if e.RefType != "" {
 		rtype = &e.RefType
 	}
+	var ref *string
+	if e.Reference != "" {
+		ref = &e.Reference
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO balance_ledger
-		      (user_id, delta_cents, kind, balance_after, ref_id, ref_type, created_by)
-		VALUES ($1,     $2,          $3,   $4,            $5,     $6,       $7)
-	`, e.UserID, e.DeltaCents, e.Kind, e.BalanceAfter, rid, rtype, creator)
+		      (user_id, delta_cents, kind, balance_after, ref_id, ref_type, reference, created_by)
+		VALUES ($1,     $2,          $3,   $4,            $5,     $6,       $7,        $8)
+	`, e.UserID, e.DeltaCents, e.Kind, e.BalanceAfter, rid, rtype, ref, creator)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
 	return nil
+}
+
+// CreditIdempotent credits deltaCents to userID and records the ledger row,
+// exactly like Credit, but is safe for webhook re-delivery: a duplicate
+// reference silently no-ops instead of double-crediting the user.
+//
+// The DB-level partial unique index on balance_ledger.reference ensures that
+// at most one concurrent caller succeeds for a given reference value, making
+// the idempotency check atomic without any application-layer SELECT-then-INSERT
+// race condition.
+//
+// Returns (true, nil) when the credit was applied, (false, nil) when reference
+// was already processed, or (false, err) on failure.
+func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, reference string) (bool, error) {
+	if reference == "" {
+		return false, apperrors.Validation("reference is required for idempotent credit")
+	}
+	var credited bool
+	err := withTx(ctx, r.db, "BalanceLedgerRepository.CreditIdempotent", func(tx pgx.Tx) error {
+		// Step 1: Race-free idempotency gate. The partial unique index on
+		// (reference WHERE reference IS NOT NULL) ensures only one concurrent
+		// caller inserts a row for this reference; the other gets ErrNoRows.
+		var insertedID int64
+		err := tx.QueryRow(ctx, `
+			INSERT INTO balance_ledger (user_id, delta_cents, kind, balance_after, reference)
+			VALUES ($1, $2, $3, 0, $4)
+			ON CONFLICT (reference) WHERE reference IS NOT NULL DO NOTHING
+			RETURNING id
+		`, userID, deltaCents, kind, reference).Scan(&insertedID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Duplicate reference — idempotent no-op.
+			return nil
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			// FK violation: user_id does not exist in users table.
+			return apperrors.NotFound("user not found")
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+
+		// Step 2: Credit the user. Only reached when step 1 won the race.
+		var balanceAfter int
+		err = tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents = balance_cents + $2,
+			       updated_at    = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING balance_cents
+		`, userID, deltaCents).Scan(&balanceAfter)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperrors.NotFound("user not found")
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+
+		// Step 3: Backfill balance_after now that the post-credit value is known.
+		// The placeholder 0 inserted in step 1 is never committed if this UPDATE
+		// fails — the transaction rolls back atomically.
+		if _, err := tx.Exec(ctx, `
+			UPDATE balance_ledger SET balance_after = $2 WHERE id = $1
+		`, insertedID, balanceAfter); err != nil {
+			return apperrors.Internal(err)
+		}
+
+		credited = true
+		return nil
+	})
+	return credited, err
 }
 
 // insufficientOrNotFound checks whether the UPDATE matched 0 rows because the

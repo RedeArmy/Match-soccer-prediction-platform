@@ -57,6 +57,17 @@ func setProductionPaymentEnv(t *testing.T) {
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
 }
 
+// setProductionStorageEnv sets the S3 storage variables required in
+// non-development environments. The local driver is rejected at startup
+// in production; tests that verify other production validations after the
+// storage check must call this to prevent an unrelated validation error.
+func setProductionStorageEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("WCQ_STORAGE_DRIVER", "s3")
+	t.Setenv("WCQ_STORAGE_S3BUCKET", "test-bucket")
+	t.Setenv("WCQ_STORAGE_S3REGION", "us-east-1")
+}
+
 func TestLoad_ValidConfig_ReturnsNoError(t *testing.T) {
 	setRequiredEnv(t)
 
@@ -163,6 +174,7 @@ func TestLoad_DefaultEnvironmentIsProduction(t *testing.T) {
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_testsecret")
 	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	setProductionStorageEnv(t)
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -221,6 +233,7 @@ func TestLoad_ProductionWithClerkSettings_ReturnsNoError(t *testing.T) {
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
 	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	setProductionStorageEnv(t)
 
 	if _, err := config.Load(); err != nil {
 		t.Fatalf("expected no error for complete production config, got: %v", err)
@@ -405,5 +418,85 @@ func TestLoad_CORSMultipleOrigins_ParsedFromEnv(t *testing.T) {
 		if cfg.CORS.AllowedOrigins[i] != origin {
 			t.Errorf("CORS.AllowedOrigins[%d]: expected %q, got %q", i, origin, cfg.CORS.AllowedOrigins[i])
 		}
+	}
+}
+
+// ── Storage driver validation ─────────────────────────────────────────────────
+
+// setProductionBaseEnv configures all production requirements except storage,
+// so storage-driver tests can add only the storage vars they need.
+func setProductionBaseEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv(envServerPort, "8080")
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	setProductionPaymentEnv(t)
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+}
+
+func TestLoad_ProductionWithLocalStorage_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	// WCQ_STORAGE_DRIVER defaults to "local" — must be rejected in production.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for local storage in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "storage.driver=local") {
+		t.Errorf("expected error to reference storage.driver=local, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithOneDriveStorage_MissingTenantID_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "onedrive")
+	t.Setenv("WCQ_STORAGE_ONEDRIVECLIENTID", "client-id")
+	t.Setenv("WCQ_STORAGE_ONEDRIVECLIENTSECRET", "secret")
+	t.Setenv("WCQ_STORAGE_ONEDRIVEDRIVEID", "drive-id")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing OneDrive tenant ID in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_STORAGE_ONEDRIVETENANTID") {
+		t.Errorf("expected error to reference WCQ_STORAGE_ONEDRIVETENANTID, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithOneDriveStorage_AllFields_ReturnsNoError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "onedrive")
+	t.Setenv("WCQ_STORAGE_ONEDRIVETENANTID", "tenant-id")
+	t.Setenv("WCQ_STORAGE_ONEDRIVECLIENTID", "client-id")
+	t.Setenv("WCQ_STORAGE_ONEDRIVECLIENTSECRET", "secret")
+	t.Setenv("WCQ_STORAGE_ONEDRIVEDRIVEID", "drive-id")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for complete OneDrive production config, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithGDriveStorage_MissingFolderID_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "gdrive")
+	// WCQ_STORAGE_GDRIVEFOLDERID intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing GDrive folder ID in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_STORAGE_GDRIVEFOLDERID") {
+		t.Errorf("expected error to reference WCQ_STORAGE_GDRIVEFOLDERID, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithGDriveStorage_WithFolderID_ReturnsNoError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "gdrive")
+	t.Setenv("WCQ_STORAGE_GDRIVEFOLDERID", "folder-id")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for complete GDrive production config, got: %v", err)
 	}
 }

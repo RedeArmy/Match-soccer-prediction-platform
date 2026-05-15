@@ -34,11 +34,17 @@ type FileStore interface {
 var ErrNotFound = fmt.Errorf("storage: object not found")
 
 // New constructs the FileStore selected by cfg.Driver.
-// Recognised drivers: "local".
+// Recognised drivers: "local", "s3", "onedrive", "gdrive".
 func New(cfg Config) (FileStore, error) {
 	switch cfg.Driver {
 	case "local":
 		return NewLocalFileStore(cfg.LocalDir)
+	case "s3":
+		return NewS3FileStore(cfg)
+	case "onedrive":
+		return NewOneDriveFileStore(cfg)
+	case "gdrive":
+		return NewGDriveFileStore(cfg)
 	default:
 		return nil, fmt.Errorf("storage: unknown driver %q", cfg.Driver)
 	}

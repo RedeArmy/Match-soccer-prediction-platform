@@ -71,8 +71,16 @@ func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amount
 		return apperrors.Validation("reference is required for webhook payments")
 	}
 
-	if err := s.ledgerRepo.Credit(ctx, userID, amountCents, kind, 0, reference, 0); err != nil {
+	credited, err := s.ledgerRepo.CreditIdempotent(ctx, userID, amountCents, kind, reference)
+	if err != nil {
 		return err
+	}
+	if !credited {
+		s.log.Debug("webhook payment: idempotent re-delivery ignored",
+			zap.String("reference", reference),
+			zap.String("kind", string(kind)),
+		)
+		return nil
 	}
 
 	resType := "user"

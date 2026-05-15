@@ -547,6 +547,20 @@ func (s *Server) buildHandlers(
 	fileStore, err := storage.New(storage.Config{
 		Driver:   s.cfg.Storage.Driver,
 		LocalDir: s.cfg.Storage.LocalDir,
+		// s3
+		S3Bucket:      s.cfg.Storage.S3Bucket,
+		S3Endpoint:    s.cfg.Storage.S3Endpoint,
+		S3Region:      s.cfg.Storage.S3Region,
+		S3AccessKeyID: s.cfg.Storage.S3AccessKeyID,
+		S3SecretKey:   s.cfg.Storage.S3SecretKey,
+		// onedrive
+		OneDriveTenantID:     s.cfg.Storage.OneDriveTenantID,
+		OneDriveClientID:     s.cfg.Storage.OneDriveClientID,
+		OneDriveClientSecret: s.cfg.Storage.OneDriveClientSecret,
+		OneDriveDriveID:      s.cfg.Storage.OneDriveDriveID,
+		// gdrive
+		GDriveCredentialsJSON: s.cfg.Storage.GDriveCredentialsJSON,
+		GDriveFolderID:        s.cfg.Storage.GDriveFolderID,
 	})
 	if err != nil {
 		s.log.Warn("storage: falling back to local driver", zap.Error(err))

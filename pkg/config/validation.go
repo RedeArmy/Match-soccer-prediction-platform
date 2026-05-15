@@ -68,6 +68,40 @@ func validate(cfg *Config) error {
 				cfg.Environment,
 			)
 		}
+		if cfg.Storage.Driver == "local" {
+			return errors.New(
+				"storage.driver=local is not permitted in production; files stored on disk are " +
+					"lost on pod restart and cannot be shared across replicas. " +
+					"Set WCQ_STORAGE_DRIVER to one of: s3, onedrive, gdrive",
+			)
+		}
+		if cfg.Storage.Driver == "s3" {
+			if cfg.Storage.S3Bucket == "" {
+				return errors.New("storage.s3Bucket must not be empty when storage.driver=s3 (WCQ_STORAGE_S3BUCKET)")
+			}
+			if cfg.Storage.S3Region == "" {
+				return errors.New("storage.s3Region must not be empty when storage.driver=s3 (WCQ_STORAGE_S3REGION)")
+			}
+		}
+		if cfg.Storage.Driver == "onedrive" {
+			if cfg.Storage.OneDriveTenantID == "" {
+				return errors.New("storage.onedriveTenantID must not be empty when storage.driver=onedrive (WCQ_STORAGE_ONEDRIVETENANTID)")
+			}
+			if cfg.Storage.OneDriveClientID == "" {
+				return errors.New("storage.onedriveClientID must not be empty when storage.driver=onedrive (WCQ_STORAGE_ONEDRIVECLIENTID)")
+			}
+			if cfg.Storage.OneDriveClientSecret == "" {
+				return errors.New("storage.onedriveClientSecret must not be empty when storage.driver=onedrive (WCQ_STORAGE_ONEDRIVECLIENTSECRET)")
+			}
+			if cfg.Storage.OneDriveDriveID == "" {
+				return errors.New("storage.onedriveDriveID must not be empty when storage.driver=onedrive (WCQ_STORAGE_ONEDRIVEDRIVEID)")
+			}
+		}
+		if cfg.Storage.Driver == "gdrive" {
+			if cfg.Storage.GDriveFolderID == "" {
+				return errors.New("storage.gdriveFolderID must not be empty when storage.driver=gdrive (WCQ_STORAGE_GDRIVEFOLDERID)")
+			}
+		}
 	}
 	if _, ok := knownLogLevels[cfg.Logger.Level]; !ok {
 		return fmt.Errorf(
