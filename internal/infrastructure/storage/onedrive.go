@@ -25,6 +25,7 @@ const graphBaseURL = "https://graph.microsoft.com/v1.0"
 type OneDriveFileStore struct {
 	client  *http.Client
 	driveID string
+	baseURL string // Graph API root; overridable in tests
 }
 
 // NewOneDriveFileStore constructs an OneDriveFileStore from cfg.
@@ -58,6 +59,7 @@ func NewOneDriveFileStore(cfg Config) (*OneDriveFileStore, error) {
 	return &OneDriveFileStore{
 		client:  cc.Client(context.Background()),
 		driveID: cfg.OneDriveDriveID,
+		baseURL: graphBaseURL,
 	}, nil
 }
 
@@ -66,7 +68,7 @@ func NewOneDriveFileStore(cfg Config) (*OneDriveFileStore, error) {
 // require upload sessions (not yet supported — bank-transfer proofs are well
 // under this limit).
 func (s *OneDriveFileStore) Put(ctx context.Context, key, contentType string, r io.Reader, size int64) error {
-	u := fmt.Sprintf("%s/drives/%s/root:/%s:/content", graphBaseURL, s.driveID, oneDrivePath(key))
+	u := fmt.Sprintf("%s/drives/%s/root:/%s:/content", s.baseURL, s.driveID, oneDrivePath(key))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u, r)
 	if err != nil {
@@ -95,7 +97,7 @@ func (s *OneDriveFileStore) Put(ctx context.Context, key, contentType string, r 
 // The Graph API may return a 302 redirect to a preauthenticated CDN URL;
 // the underlying http.Client follows it transparently.
 func (s *OneDriveFileStore) Get(ctx context.Context, key string) (io.ReadCloser, string, error) {
-	u := fmt.Sprintf("%s/drives/%s/root:/%s:/content", graphBaseURL, s.driveID, oneDrivePath(key))
+	u := fmt.Sprintf("%s/drives/%s/root:/%s:/content", s.baseURL, s.driveID, oneDrivePath(key))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
@@ -134,7 +136,7 @@ func (s *OneDriveFileStore) Delete(ctx context.Context, key string) error {
 		return nil // item not found — match idempotent semantics of other drivers
 	}
 
-	u := fmt.Sprintf("%s/drives/%s/items/%s", graphBaseURL, s.driveID, url.PathEscape(itemID))
+	u := fmt.Sprintf("%s/drives/%s/items/%s", s.baseURL, s.driveID, url.PathEscape(itemID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
 	if err != nil {
 		return fmt.Errorf("storage: onedrive delete %q: %w", key, err)
@@ -155,7 +157,7 @@ func (s *OneDriveFileStore) Delete(ctx context.Context, key string) error {
 // resolveItemID fetches the Graph item ID for a key. Returns ("", nil) when
 // the item does not exist.
 func (s *OneDriveFileStore) resolveItemID(ctx context.Context, key string) (string, error) {
-	u := fmt.Sprintf("%s/drives/%s/root:/%s", graphBaseURL, s.driveID, oneDrivePath(key))
+	u := fmt.Sprintf("%s/drives/%s/root:/%s", s.baseURL, s.driveID, oneDrivePath(key))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

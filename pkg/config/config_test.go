@@ -500,3 +500,84 @@ func TestLoad_ProductionWithGDriveStorage_WithFolderID_ReturnsNoError(t *testing
 		t.Fatalf("expected no error for complete GDrive production config, got: %v", err)
 	}
 }
+
+func TestLoad_ProductionWithS3Storage_MissingBucket_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "s3")
+	t.Setenv("WCQ_STORAGE_S3REGION", "us-east-1")
+	// WCQ_STORAGE_S3BUCKET intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing S3 bucket in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_STORAGE_S3BUCKET") {
+		t.Errorf("expected error to reference WCQ_STORAGE_S3BUCKET, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithS3Storage_MissingRegion_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "s3")
+	t.Setenv("WCQ_STORAGE_S3BUCKET", "test-bucket")
+	// WCQ_STORAGE_S3REGION intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing S3 region in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_STORAGE_S3REGION") {
+		t.Errorf("expected error to reference WCQ_STORAGE_S3REGION, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithOneDriveStorage_MissingClientID_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "onedrive")
+	t.Setenv("WCQ_STORAGE_ONEDRIVETENANTID", "tenant-id")
+	t.Setenv("WCQ_STORAGE_ONEDRIVECLIENTSECRET", "secret")
+	t.Setenv("WCQ_STORAGE_ONEDRIVEDRIVEID", "drive-id")
+	// WCQ_STORAGE_ONEDRIVECLIENTID intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing OneDrive client ID in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_STORAGE_ONEDRIVECLIENTID") {
+		t.Errorf("expected error to reference WCQ_STORAGE_ONEDRIVECLIENTID, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithOneDriveStorage_MissingClientSecret_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "onedrive")
+	t.Setenv("WCQ_STORAGE_ONEDRIVETENANTID", "tenant-id")
+	t.Setenv("WCQ_STORAGE_ONEDRIVECLIENTID", "client-id")
+	t.Setenv("WCQ_STORAGE_ONEDRIVEDRIVEID", "drive-id")
+	// WCQ_STORAGE_ONEDRIVECLIENTSECRET intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing OneDrive client secret in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_STORAGE_ONEDRIVECLIENTSECRET") {
+		t.Errorf("expected error to reference WCQ_STORAGE_ONEDRIVECLIENTSECRET, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithOneDriveStorage_MissingDriveID_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "onedrive")
+	t.Setenv("WCQ_STORAGE_ONEDRIVETENANTID", "tenant-id")
+	t.Setenv("WCQ_STORAGE_ONEDRIVECLIENTID", "client-id")
+	t.Setenv("WCQ_STORAGE_ONEDRIVECLIENTSECRET", "secret")
+	// WCQ_STORAGE_ONEDRIVEDRIVEID intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing OneDrive drive ID in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_STORAGE_ONEDRIVEDRIVEID") {
+		t.Errorf("expected error to reference WCQ_STORAGE_ONEDRIVEDRIVEID, got: %v", err)
+	}
+}
