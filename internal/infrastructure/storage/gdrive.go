@@ -44,10 +44,10 @@ func NewGDriveFileStore(cfg Config) (*GDriveFileStore, error) {
 
 	var opts []option.ClientOption
 	if cfg.GDriveCredentialsJSON != "" {
-		creds, err := google.CredentialsFromJSON(
+		creds, err := google.CredentialsFromJSONWithParams(
 			ctx,
 			[]byte(cfg.GDriveCredentialsJSON),
-			drive.DriveScope,
+			google.CredentialsParams{Scopes: []string{drive.DriveScope}},
 		)
 		if err != nil {
 			return nil, fmt.Errorf("storage: gdrive credentials: %w", err)

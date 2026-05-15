@@ -81,7 +81,7 @@ func (s *OneDriveFileStore) Put(ctx context.Context, key, contentType string, r 
 	if err != nil {
 		return fmt.Errorf("storage: onedrive put %q: %w", key, err)
 	}
-	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("storage: onedrive put %q: unexpected status %d", key, resp.StatusCode)
@@ -144,7 +144,7 @@ func (s *OneDriveFileStore) Delete(ctx context.Context, key string) error {
 	if err != nil {
 		return fmt.Errorf("storage: onedrive delete %q: %w", key, err)
 	}
-	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("storage: onedrive delete %q: unexpected status %d", key, resp.StatusCode)
@@ -167,7 +167,7 @@ func (s *OneDriveFileStore) resolveItemID(ctx context.Context, key string) (stri
 	if err != nil {
 		return "", fmt.Errorf("storage: onedrive resolve %q: %w", key, err)
 	}
-	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return "", nil
