@@ -74,6 +74,9 @@ func (r *balanceLedgerRepoStub) CommitReservation(_ context.Context, _ int, _ in
 func (r *balanceLedgerRepoStub) ListByUser(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
 	return r.entries, r.err
 }
+func (r *balanceLedgerRepoStub) CreditIdempotent(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ string) (bool, error) {
+	return true, nil
+}
 
 func newBalanceSvc(ur *balanceSvcUserRepo, lr *balanceLedgerRepoStub) BalanceService {
 	return NewBalanceService(ur, lr, zap.NewNop())

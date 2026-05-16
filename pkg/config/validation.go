@@ -50,23 +50,8 @@ func validate(cfg *Config) error {
 		return errors.New("server.port must not be empty (WCQ_SERVER_PORT)")
 	}
 	if !cfg.IsDevelopment() {
-		if cfg.Clerk.JWKSURL == "" {
-			return errors.New("clerk.jwksUrl must not be empty outside development (WCQ_CLERK_JWKSURL)")
-		}
-		if cfg.Clerk.WebhookSecret == "" {
-			return errors.New("clerk.webhookSecret must not be empty outside development (WCQ_CLERK_WEBHOOKSECRET)")
-		}
-		if cfg.Payment.RecurrenteWebhookSecret == "" {
-			return errors.New("payment.recurrenteWebhookSecret must not be empty outside development (WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
-		}
-		if cfg.Payment.PayPalWebhookID == "" {
-			return errors.New("payment.paypalWebhookID must not be empty outside development (WCQ_PAYMENT_PAYPALWEBHOOKID)")
-		}
-		if cfg.EventBus.Driver == "in_memory" {
-			return fmt.Errorf(
-				"eventBus.driver=in_memory is not permitted in production (environment=%q); the in-memory bus cannot deliver events across process boundaries (API → worker). Set WCQ_EVENTBUS_DRIVER=redis",
-				cfg.Environment,
-			)
+		if err := validateProductionConfig(cfg); err != nil {
+			return err
 		}
 	}
 	if _, ok := knownLogLevels[cfg.Logger.Level]; !ok {
@@ -74,6 +59,85 @@ func validate(cfg *Config) error {
 			"logger.level %q is not valid (WCQ_LOGGER_LEVEL); accepted values: debug, info, warn, error, dpanic, panic, fatal",
 			cfg.Logger.Level,
 		)
+	}
+	return nil
+}
+
+// validateProductionConfig enforces invariants that only apply outside
+// the development environment (production, staging, etc.).
+func validateProductionConfig(cfg *Config) error {
+	if cfg.Clerk.JWKSURL == "" {
+		return errors.New("clerk.jwksUrl must not be empty outside development (WCQ_CLERK_JWKSURL)")
+	}
+	if cfg.Clerk.WebhookSecret == "" {
+		return errors.New("clerk.webhookSecret must not be empty outside development (WCQ_CLERK_WEBHOOKSECRET)")
+	}
+	if cfg.Payment.RecurrenteWebhookSecret == "" {
+		return errors.New("payment.recurrenteWebhookSecret must not be empty outside development (WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
+	}
+	if cfg.Payment.PayPalWebhookID == "" {
+		return errors.New("payment.paypalWebhookID must not be empty outside development (WCQ_PAYMENT_PAYPALWEBHOOKID)")
+	}
+	if cfg.EventBus.Driver == "in_memory" {
+		return fmt.Errorf(
+			"eventBus.driver=in_memory is not permitted in production (environment=%q); the in-memory bus cannot deliver events across process boundaries (API → worker). Set WCQ_EVENTBUS_DRIVER=redis",
+			cfg.Environment,
+		)
+	}
+	return validateStorageDriver(cfg.Storage)
+}
+
+// validateStorageDriver rejects the local driver in production and delegates
+// per-driver field validation to the appropriate helper.
+func validateStorageDriver(s StorageConfig) error {
+	if s.Driver == "local" {
+		return errors.New(
+			"storage.driver=local is not permitted in production; files stored on disk are " +
+				"lost on pod restart and cannot be shared across replicas. " +
+				"Set WCQ_STORAGE_DRIVER to one of: s3, onedrive, gdrive",
+		)
+	}
+	if s.Driver == "s3" {
+		return validateS3Config(s)
+	}
+	if s.Driver == "onedrive" {
+		return validateOneDriveConfig(s)
+	}
+	if s.Driver == "gdrive" {
+		return validateGDriveConfig(s)
+	}
+	return nil
+}
+
+func validateS3Config(s StorageConfig) error {
+	if s.S3Bucket == "" {
+		return errors.New("storage.s3Bucket must not be empty when storage.driver=s3 (WCQ_STORAGE_S3BUCKET)")
+	}
+	if s.S3Region == "" {
+		return errors.New("storage.s3Region must not be empty when storage.driver=s3 (WCQ_STORAGE_S3REGION)")
+	}
+	return nil
+}
+
+func validateOneDriveConfig(s StorageConfig) error {
+	if s.OneDriveTenantID == "" {
+		return errors.New("storage.onedriveTenantID must not be empty when storage.driver=onedrive (WCQ_STORAGE_ONEDRIVETENANTID)")
+	}
+	if s.OneDriveClientID == "" {
+		return errors.New("storage.onedriveClientID must not be empty when storage.driver=onedrive (WCQ_STORAGE_ONEDRIVECLIENTID)")
+	}
+	if s.OneDriveClientSecret == "" {
+		return errors.New("storage.onedriveClientSecret must not be empty when storage.driver=onedrive (WCQ_STORAGE_ONEDRIVECLIENTSECRET)")
+	}
+	if s.OneDriveDriveID == "" {
+		return errors.New("storage.onedriveDriveID must not be empty when storage.driver=onedrive (WCQ_STORAGE_ONEDRIVEDRIVEID)")
+	}
+	return nil
+}
+
+func validateGDriveConfig(s StorageConfig) error {
+	if s.GDriveFolderID == "" {
+		return errors.New("storage.gdriveFolderID must not be empty when storage.driver=gdrive (WCQ_STORAGE_GDRIVEFOLDERID)")
 	}
 	return nil
 }

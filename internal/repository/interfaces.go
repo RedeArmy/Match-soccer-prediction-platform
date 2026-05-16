@@ -593,6 +593,12 @@ type BalanceLedgerRepository interface {
 	// Credit adds deltaCents to balance_cents.  kind identifies the originating
 	// operation (e.g. LedgerKindBankTransfer, LedgerKindWebhookRecurrente).
 	Credit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error
+	// CreditIdempotent is like Credit but safe for webhook re-delivery: a
+	// duplicate reference silently no-ops at the database level instead of
+	// double-crediting the user.  Returns (true, nil) on a fresh credit,
+	// (false, nil) for a duplicate reference, or (false, err) on failure.
+	// reference must be non-empty.
+	CreditIdempotent(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, reference string) (bool, error)
 	// Debit subtracts deltaCents from available balance
 	// (balance_cents - reserved_cents).  Returns Conflict when insufficient.
 	Debit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error

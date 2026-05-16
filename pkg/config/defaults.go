@@ -67,4 +67,18 @@ func setDefaults(v *viper.Viper) {
 	// without an external object storage service.
 	v.SetDefault("storage.driver", "local")
 	v.SetDefault("storage.localDir", "uploads")
+	// s3
+	v.SetDefault("storage.s3Bucket", "")
+	v.SetDefault("storage.s3Endpoint", "")
+	v.SetDefault("storage.s3Region", "")
+	v.SetDefault("storage.s3AccessKeyID", "")
+	v.SetDefault("storage.s3SecretKey", "")
+	// onedrive
+	v.SetDefault("storage.onedriveTenantID", "")
+	v.SetDefault("storage.onedriveClientID", "")
+	v.SetDefault("storage.onedriveClientSecret", "")
+	v.SetDefault("storage.onedriveDriveID", "")
+	// gdrive
+	v.SetDefault("storage.gdriveCredentialsJSON", "")
+	v.SetDefault("storage.gdriveFolderID", "")
 }
