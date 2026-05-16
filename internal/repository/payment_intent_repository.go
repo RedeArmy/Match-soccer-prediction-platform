@@ -117,6 +117,10 @@ func creditUserTx(ctx context.Context, tx pgx.Tx, intent *domain.PaymentIntent) 
 	if err != nil {
 		return apperrors.Internal(err)
 	}
+	captureID := ""
+	if intent.CaptureID != nil {
+		captureID = *intent.CaptureID
+	}
 	return insertLedgerTx(ctx, tx, ledgerRow{
 		UserID:       intent.UserID,
 		DeltaCents:   intent.AmountCents,
@@ -124,6 +128,7 @@ func creditUserTx(ctx context.Context, tx pgx.Tx, intent *domain.PaymentIntent) 
 		BalanceAfter: balanceAfter,
 		RefID:        intent.ID,
 		RefType:      "payment_intent",
+		Reference:    captureID,
 	})
 }
 

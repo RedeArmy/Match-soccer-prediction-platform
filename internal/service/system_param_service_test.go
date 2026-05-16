@@ -615,3 +615,83 @@ func TestSystemParamService_ResetToDefault_WithAudit_CallsAuditLogger(t *testing
 		t.Errorf("expected action %q, got %q", domain.AuditActionParamUpdated, audit.action)
 	}
 }
+
+// ── paramIntConstraints structural validation ──────────────────────────────────
+
+// TestParamIntConstraints_AllRangesAreValid ensures every entry in the
+// paramIntConstraints map has a logically valid range: min ≤ max and min ≥ 0.
+// A negative min or an inverted range would silently reject all valid values.
+func TestParamIntConstraints_AllRangesAreValid(t *testing.T) {
+	for key, c := range paramIntConstraints {
+		if c.min < 0 {
+			t.Errorf("param %q: min=%d is negative", key, c.min)
+		}
+		if c.min > c.max {
+			t.Errorf("param %q: min=%d > max=%d (inverted range)", key, c.min, c.max)
+		}
+	}
+}
+
+// TestValidateParamConstraints_PaymentParams validates the range enforcement for
+// all six payment-related parameters added to paramIntConstraints. Each sub-test
+// checks that values below the minimum and above the maximum are rejected, and
+// that the configured default is accepted.
+func TestValidateParamConstraints_PaymentParams(t *testing.T) {
+	cases := []struct {
+		key          string
+		belowMin     string // must be rejected
+		aboveMax     string // must be rejected
+		validDefault string // must be accepted
+	}{
+		{
+			key:          domain.ParamKeyPaymentMaxUploadBytes,
+			belowMin:     "1024",      // 1 KB — below 100 KB minimum
+			aboveMax:     "104857600", // 100 MB — above 50 MB maximum
+			validDefault: "5242880",   // 5 MB default
+		},
+		{
+			key:          domain.ParamKeyWithdrawalMinCents,
+			belowMin:     "50",      // 0.50 GTQ — below 1 GTQ minimum
+			aboveMax:     "2000000", // 20 000 GTQ — above 10 000 GTQ maximum
+			validDefault: "5000",    // 50 GTQ default
+		},
+		{
+			key:          domain.ParamKeyWithdrawalMaxCents,
+			belowMin:     "500",       // 5 GTQ — below 10 GTQ minimum
+			aboveMax:     "200000000", // 2 000 000 GTQ — above 1 000 000 GTQ maximum
+			validDefault: "500000",    // 5 000 GTQ default
+		},
+		{
+			key:          domain.ParamKeyBankTransferMinAmountCents,
+			belowMin:     "50",      // 0.50 GTQ — below 1 GTQ minimum
+			aboveMax:     "2000000", // 20 000 GTQ — above 10 000 GTQ maximum
+			validDefault: "1000",    // 10 GTQ default
+		},
+		{
+			key:          domain.ParamKeyBankTransferMaxAmountCents,
+			belowMin:     "500",       // 5 GTQ — below 10 GTQ minimum
+			aboveMax:     "200000000", // 2 000 000 GTQ — above 1 000 000 GTQ maximum
+			validDefault: "10000000",  // 100 000 GTQ default
+		},
+		{
+			key:          domain.ParamKeyPaymentIntentTTLMinutes,
+			belowMin:     "1",     // 1 min — below 5 min minimum
+			aboveMax:     "20000", // ~14 days — above 1 week maximum
+			validDefault: "60",    // 60 min default
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			if err := validateParamConstraints(tc.key, tc.belowMin, domain.SystemParamTypeInt); err == nil {
+				t.Errorf("value %s should be rejected (below min), got nil", tc.belowMin)
+			}
+			if err := validateParamConstraints(tc.key, tc.aboveMax, domain.SystemParamTypeInt); err == nil {
+				t.Errorf("value %s should be rejected (above max), got nil", tc.aboveMax)
+			}
+			if err := validateParamConstraints(tc.key, tc.validDefault, domain.SystemParamTypeInt); err != nil {
+				t.Errorf("default value %s should be accepted, got: %v", tc.validDefault, err)
+			}
+		})
+	}
+}

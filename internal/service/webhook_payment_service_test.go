@@ -16,13 +16,23 @@ import (
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type webhookLedgerRepoStub struct {
-	capturedKind domain.BalanceLedgerKind
-	creditErr    error
+	capturedKind      domain.BalanceLedgerKind
+	capturedReference string
+	creditErr         error
+	// skipCredit simulates a duplicate reference: CreditIdempotent returns (false, nil).
+	skipCredit bool
 }
 
-func (r *webhookLedgerRepoStub) Credit(_ context.Context, _ int, _ int, kind domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
+func (r *webhookLedgerRepoStub) Credit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
+	return nil
+}
+func (r *webhookLedgerRepoStub) CreditIdempotent(_ context.Context, _ int, _ int, kind domain.BalanceLedgerKind, reference string) (bool, error) {
 	r.capturedKind = kind
-	return r.creditErr
+	r.capturedReference = reference
+	if r.creditErr != nil {
+		return false, r.creditErr
+	}
+	return !r.skipCredit, nil
 }
 func (r *webhookLedgerRepoStub) Debit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
 	return nil
@@ -107,6 +117,23 @@ func TestWebhookPaymentService_CreditFromRecurrente_UsesRecurrenteKind(t *testin
 	_ = svc.CreditFromRecurrente(context.Background(), 1, 1000, "GTQ", "REF")
 	if ledger.capturedKind != domain.LedgerKindWebhookRecurrente {
 		t.Errorf("kind: got %q, want %q", ledger.capturedKind, domain.LedgerKindWebhookRecurrente)
+	}
+}
+
+func TestWebhookPaymentService_CreditFromRecurrente_PassesReferenceToRepo(t *testing.T) {
+	ledger := &webhookLedgerRepoStub{}
+	svc := newWebhookPaymentSvc(ledger, nil)
+	_ = svc.CreditFromRecurrente(context.Background(), 1, 1000, "GTQ", "TXN-XYZ")
+	if ledger.capturedReference != "TXN-XYZ" {
+		t.Errorf("reference: got %q, want %q", ledger.capturedReference, "TXN-XYZ")
+	}
+}
+
+func TestWebhookPaymentService_CreditFromRecurrente_DuplicateReferenceIsNoop(t *testing.T) {
+	ledger := &webhookLedgerRepoStub{skipCredit: true}
+	svc := newWebhookPaymentSvc(ledger, nil)
+	if err := svc.CreditFromRecurrente(context.Background(), 1, 1000, "GTQ", "TXN-DUP"); err != nil {
+		t.Fatalf("duplicate reference must return nil, got %v", err)
 	}
 }
 

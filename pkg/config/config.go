@@ -31,14 +31,69 @@ type Config struct {
 
 // StorageConfig configures the object storage backend used for binary assets
 // such as bank transfer proof images.
+//
+// Four drivers are available:
+//   - "local"    — filesystem, development only. Lost on pod restart.
+//   - "s3"       — AWS S3, Cloudflare R2, or any S3-compatible service.
+//   - "onedrive" — Microsoft OneDrive / SharePoint via the Graph API.
+//   - "gdrive"   — Google Drive via a service account or ADC.
+//
+// Only the fields relevant to the selected driver need to be set; all others
+// are silently ignored.
 type StorageConfig struct {
-	// Driver selects the backing implementation.  Accepted values: "local".
-	// Defaults to "local" so development environments work without any object
-	// storage service.
+	// Driver selects the backing implementation.
+	// Defaults to "local". Production deployments must use one of: s3, onedrive, gdrive.
 	Driver string `mapstructure:"driver"`
+
+	// ── local ────────────────────────────────────────────────────────────────
+
 	// LocalDir is the filesystem root used by the "local" driver.
 	// Ignored when Driver is not "local".
 	LocalDir string `mapstructure:"localDir"`
+
+	// ── s3 ───────────────────────────────────────────────────────────────────
+
+	// S3Bucket is the bucket name. Required when Driver is "s3".
+	// Set via WCQ_STORAGE_S3BUCKET.
+	S3Bucket string `mapstructure:"s3Bucket"`
+	// S3Endpoint overrides the default AWS endpoint (Cloudflare R2, MinIO).
+	// Set via WCQ_STORAGE_S3ENDPOINT.
+	S3Endpoint string `mapstructure:"s3Endpoint"`
+	// S3Region is the AWS region or "auto" for Cloudflare R2. Required when
+	// Driver is "s3". Set via WCQ_STORAGE_S3REGION.
+	S3Region string `mapstructure:"s3Region"`
+	// S3AccessKeyID and S3SecretKey provide static credentials. When both are
+	// empty the SDK falls back to the standard credential chain.
+	// Set via WCQ_STORAGE_S3ACCESSKEYID and WCQ_STORAGE_S3SECRETKEY.
+	S3AccessKeyID string `mapstructure:"s3AccessKeyID"`
+	S3SecretKey   string `mapstructure:"s3SecretKey"`
+
+	// ── onedrive ─────────────────────────────────────────────────────────────
+
+	// OneDriveTenantID is the Azure AD tenant ID (GUID or verified domain).
+	// Required when Driver is "onedrive". Set via WCQ_STORAGE_ONEDRIVETENANTID.
+	OneDriveTenantID string `mapstructure:"onedriveTenantID"`
+	// OneDriveClientID is the Azure application (client) ID.
+	// Required when Driver is "onedrive". Set via WCQ_STORAGE_ONEDRIVECLIENTID.
+	OneDriveClientID string `mapstructure:"onedriveClientID"`
+	// OneDriveClientSecret is the Azure application client secret.
+	// Required when Driver is "onedrive". Set via WCQ_STORAGE_ONEDRIVECLIENTSECRET.
+	OneDriveClientSecret string `mapstructure:"onedriveClientSecret"`
+	// OneDriveDriveID is the Microsoft Graph drive ID (e.g. a SharePoint drive
+	// or the value from GET /me/drive).
+	// Required when Driver is "onedrive". Set via WCQ_STORAGE_ONEDRIVEDRIVEID.
+	OneDriveDriveID string `mapstructure:"onedriveDriveID"`
+
+	// ── gdrive ───────────────────────────────────────────────────────────────
+
+	// GDriveCredentialsJSON is the raw JSON of a Google service-account key.
+	// When empty, Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS
+	// or GCE metadata) are used instead.
+	// Set via WCQ_STORAGE_GDRIVECREDENTIALSJSON.
+	GDriveCredentialsJSON string `mapstructure:"gdriveCredentialsJSON"`
+	// GDriveFolderID is the Google Drive folder that acts as the storage root.
+	// Required when Driver is "gdrive". Set via WCQ_STORAGE_GDRIVEFOLDERID.
+	GDriveFolderID string `mapstructure:"gdriveFolderID"`
 }
 
 // IsDevelopment reports whether the application is running in a relaxed local
