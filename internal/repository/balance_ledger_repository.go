@@ -12,6 +12,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const errMsgUserNotFound = "user not found"
+
 // PostgresBalanceLedgerRepository is the PostgreSQL-backed implementation of
 // BalanceLedgerRepository.
 type PostgresBalanceLedgerRepository struct {
@@ -35,7 +37,7 @@ func (r *PostgresBalanceLedgerRepository) Credit(ctx context.Context, userID, de
 			 RETURNING balance_cents
 		`, userID, deltaCents).Scan(&balanceAfter)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperrors.NotFound("user not found")
+			return apperrors.NotFound(errMsgUserNotFound)
 		}
 		if err != nil {
 			return apperrors.Internal(err)
@@ -227,7 +229,7 @@ func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, 
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
 			// FK violation: user_id does not exist in users table.
-			return apperrors.NotFound("user not found")
+			return apperrors.NotFound(errMsgUserNotFound)
 		}
 		if err != nil {
 			return apperrors.Internal(err)
@@ -243,7 +245,7 @@ func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, 
 			 RETURNING balance_cents
 		`, userID, deltaCents).Scan(&balanceAfter)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperrors.NotFound("user not found")
+			return apperrors.NotFound(errMsgUserNotFound)
 		}
 		if err != nil {
 			return apperrors.Internal(err)
@@ -278,7 +280,7 @@ func insufficientOrNotFound(ctx context.Context, tx pgx.Tx, userID int) error {
 		return apperrors.Internal(err)
 	}
 	if !exists {
-		return apperrors.NotFound("user not found")
+		return apperrors.NotFound(errMsgUserNotFound)
 	}
 	return apperrors.Conflict("insufficient available balance")
 }

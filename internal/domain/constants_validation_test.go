@@ -361,53 +361,59 @@ func TestZeroValuedDefaultsAreIntentional(t *testing.T) {
 //  6. Add its range bounds to paramIntConstraints in service/system_param_service.go
 //  7. Update the expectedCount smoke-test values in TestSystemParamConstants_AllPaired
 func TestConstantsDocumentation(t *testing.T) {
-	t.Run("scoring_constants", func(t *testing.T) {
-		scoring := map[string]int{
-			"PointsExactScore":      PointsExactScore,
-			"PointsCorrectOutcome":  PointsCorrectOutcome,
-			"PointsGoalDifference":  PointsGoalDifference,
-			"PointsIncorrectResult": PointsIncorrectResult,
-		}
-		for name, value := range scoring {
-			if value < 0 {
-				t.Errorf("%s = %d: scoring points should not be negative", name, value)
-			}
-		}
-		if PointsExactScore <= PointsCorrectOutcome {
-			t.Error("PointsExactScore should be greater than PointsCorrectOutcome")
-		}
-		if PointsCorrectOutcome <= PointsGoalDifference {
-			t.Error("PointsCorrectOutcome should be greater than PointsGoalDifference")
-		}
-	})
+	t.Run("scoring_constants", testScoringConstants)
+	t.Run("business_rule_constants", testBusinessRuleConstants)
+	t.Run("payment_constants_ordering", testPaymentConstantsOrdering)
+}
 
-	t.Run("business_rule_constants", func(t *testing.T) {
-		if MinMembersForActive < 2 {
-			t.Errorf("MinMembersForActive = %d: should be at least 2", MinMembersForActive)
+func testScoringConstants(t *testing.T) {
+	t.Helper()
+	scoring := map[string]int{
+		"PointsExactScore":      PointsExactScore,
+		"PointsCorrectOutcome":  PointsCorrectOutcome,
+		"PointsGoalDifference":  PointsGoalDifference,
+		"PointsIncorrectResult": PointsIncorrectResult,
+	}
+	for name, value := range scoring {
+		if value < 0 {
+			t.Errorf("%s = %d: scoring points should not be negative", name, value)
 		}
-		if MaxMembersPerGroup < MinMembersPerGroup {
-			t.Errorf("MaxMembersPerGroup (%d) must be >= MinMembersPerGroup (%d)", MaxMembersPerGroup, MinMembersPerGroup)
-		}
-		if StandingsWinPoints < 1 {
-			t.Errorf("StandingsWinPoints = %d: should be at least 1", StandingsWinPoints)
-		}
-	})
+	}
+	if PointsExactScore <= PointsCorrectOutcome {
+		t.Error("PointsExactScore should be greater than PointsCorrectOutcome")
+	}
+	if PointsCorrectOutcome <= PointsGoalDifference {
+		t.Error("PointsCorrectOutcome should be greater than PointsGoalDifference")
+	}
+}
 
-	t.Run("payment_constants_ordering", func(t *testing.T) {
-		// Withdrawal and bank transfer bounds must be logically ordered.
-		if DefaultWithdrawalMinCents >= DefaultWithdrawalMaxCents {
-			t.Errorf(
-				"DefaultWithdrawalMinCents (%d) must be less than DefaultWithdrawalMaxCents (%d)",
-				DefaultWithdrawalMinCents, DefaultWithdrawalMaxCents,
-			)
-		}
-		if DefaultBankTransferMinAmountCents >= DefaultBankTransferMaxAmountCents {
-			t.Errorf(
-				"DefaultBankTransferMinAmountCents (%d) must be less than DefaultBankTransferMaxAmountCents (%d)",
-				DefaultBankTransferMinAmountCents, DefaultBankTransferMaxAmountCents,
-			)
-		}
-	})
+func testBusinessRuleConstants(t *testing.T) {
+	t.Helper()
+	if MinMembersForActive < 2 {
+		t.Errorf("MinMembersForActive = %d: should be at least 2", MinMembersForActive)
+	}
+	if MaxMembersPerGroup < MinMembersPerGroup {
+		t.Errorf("MaxMembersPerGroup (%d) must be >= MinMembersPerGroup (%d)", MaxMembersPerGroup, MinMembersPerGroup)
+	}
+	if StandingsWinPoints < 1 {
+		t.Errorf("StandingsWinPoints = %d: should be at least 1", StandingsWinPoints)
+	}
+}
+
+func testPaymentConstantsOrdering(t *testing.T) {
+	t.Helper()
+	if DefaultWithdrawalMinCents >= DefaultWithdrawalMaxCents {
+		t.Errorf(
+			"DefaultWithdrawalMinCents (%d) must be less than DefaultWithdrawalMaxCents (%d)",
+			DefaultWithdrawalMinCents, DefaultWithdrawalMaxCents,
+		)
+	}
+	if DefaultBankTransferMinAmountCents >= DefaultBankTransferMaxAmountCents {
+		t.Errorf(
+			"DefaultBankTransferMinAmountCents (%d) must be less than DefaultBankTransferMaxAmountCents (%d)",
+			DefaultBankTransferMinAmountCents, DefaultBankTransferMaxAmountCents,
+		)
+	}
 }
 
 // Helper function kept for potential future use.
