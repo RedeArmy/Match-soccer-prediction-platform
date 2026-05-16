@@ -31,13 +31,6 @@ const (
 	msgUserNotFound = "user not found"
 )
 
-// rowScanner is satisfied by both pgx.Row (single-row query) and pgx.Rows
-// (multi-row iteration). Accepting this interface lets scanUserFields serve
-// both callers without duplicating the Scan call and clerkSubject unwrap.
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
 // scanUserFields populates a domain.User from any rowScanner. It returns the
 // filled struct and a raw scan error (not wrapped). Callers are responsible for
 // interpreting sentinel errors such as pgx.ErrNoRows.

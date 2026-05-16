@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run run-worker test test-integration test-cover lint clean docker-up docker-down docker-logs migrate migrate-fresh migrate-fresh-seed schema-dump dev hooks swagger-gen swagger-clean validate-params help
+.PHONY: build run run-worker test test-integration test-cover test-migrate-roundtrip lint clean docker-up docker-down docker-logs migrate migrate-fresh migrate-fresh-seed schema-dump dev hooks swagger-gen swagger-clean validate-params help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -52,6 +52,15 @@ test:
 ##                   budget. Requires Docker to be running locally.
 test-integration:
 	go test -race -count=1 -timeout=120s -tags integration ./internal/api/...
+
+## test-migrate-roundtrip: Validate every down migration by running the full
+##                         up → down → up cycle against a real Postgres container.
+##                         Fails if any .down.sql file is syntactically broken,
+##                         references a non-existent object, or leaves the schema
+##                         in a state that prevents re-migration. Requires Docker.
+test-migrate-roundtrip:
+	go test -v -count=1 -timeout=5m -run TestMigrateRoundtrip \
+		./internal/infrastructure/database/...
 
 ## test-cover: Run the full test suite and emit a coverage profile for SonarCloud
 ##             Output: coverage.out (Go native format, read directly by SonarCloud)

@@ -39,11 +39,23 @@ var poolConnectBackoff = []time.Duration{
 // config package allows them to be used in CLI tools, migration runners,
 // and integration tests that construct their own configuration without
 // loading the full application config graph.
+//
+// ConnMaxIdleTime caps how long a connection may sit idle before pgxpool
+// evicts it. A non-zero value prevents the pool from holding connections
+// open indefinitely during traffic lulls, which keeps the server-side
+// connection count predictable.
+//
+// ConnMaxLifetimeJitter adds random noise (up to the specified duration)
+// to each connection's max-lifetime deadline, spreading eviction events
+// across time and avoiding a thundering-herd reconnect storm when many
+// connections reach their lifetime simultaneously.
 type Config struct {
-	DSN             string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime time.Duration
+	DSN                   string
+	MaxOpenConns          int
+	MaxIdleConns          int
+	ConnMaxLifetime       time.Duration
+	ConnMaxIdleTime       time.Duration
+	ConnMaxLifetimeJitter time.Duration
 }
 
 // NewPool constructs a *pgxpool.Pool and verifies connectivity before
@@ -74,6 +86,8 @@ func NewPool(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 	poolCfg.MaxConns = int32(cfg.MaxOpenConns)
 	poolCfg.MinConns = int32(cfg.MaxIdleConns)
 	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
+	poolCfg.MaxConnIdleTime = cfg.ConnMaxIdleTime
+	poolCfg.MaxConnLifetimeJitter = cfg.ConnMaxLifetimeJitter
 
 	// QueryExecModeCacheStatement instructs pgx to prepare each unique query
 	// string the first time it is executed on a connection and reuse the cached

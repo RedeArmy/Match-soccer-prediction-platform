@@ -25,9 +25,14 @@ type ErrorResponse struct {
 }
 
 // ErrorDetail carries the machine-readable error code and human-readable message.
+//
+// SchemaVersion matches apperrors.ErrorAPIVersion. Clients can gate on this
+// field to detect breaking changes in the error envelope without re-parsing
+// other fields. It is always present and positive.
 type ErrorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	SchemaVersion int    `json:"schema_version"`
+	Code          string `json:"code"`
+	Message       string `json:"message"`
 }
 
 // unexported aliases keep the internal helper callsites unchanged.
@@ -56,8 +61,9 @@ func WriteError(w http.ResponseWriter, r *http.Request, log *zap.Logger, err err
 		}
 		writeJSON(w, appErr.HTTPStatus, errorResponse{
 			Error: errorDetail{
-				Code:    string(appErr.Code),
-				Message: appErr.Message,
+				SchemaVersion: apperrors.ErrorAPIVersion,
+				Code:          string(appErr.Code),
+				Message:       appErr.Message,
 			},
 		})
 		return
@@ -69,8 +75,9 @@ func WriteError(w http.ResponseWriter, r *http.Request, log *zap.Logger, err err
 	)
 	writeJSON(w, http.StatusInternalServerError, errorResponse{
 		Error: errorDetail{
-			Code:    string(apperrors.CodeInternal),
-			Message: apperrors.MsgInternal,
+			SchemaVersion: apperrors.ErrorAPIVersion,
+			Code:          string(apperrors.CodeInternal),
+			Message:       apperrors.MsgInternal,
 		},
 	})
 }

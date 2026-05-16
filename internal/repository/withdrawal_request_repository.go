@@ -28,32 +28,13 @@ const (
 	msgWithdrawalNotFound = "withdrawal request not found"
 )
 
-func scanWithdrawal(row pgx.Row) (*domain.WithdrawalRequest, error) {
+// scanWithdrawalFields populates a WithdrawalRequest from any rowScanner,
+// including the JSON unmarshal of payout_details. Returns a raw scan/decode
+// error; callers interpret sentinel values such as pgx.ErrNoRows.
+func scanWithdrawalFields(s rowScanner) (*domain.WithdrawalRequest, error) {
 	w := &domain.WithdrawalRequest{}
 	var payoutJSON []byte
-	err := row.Scan(
-		&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
-		&payoutJSON, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
-		&w.CreatedAt, &w.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	if len(payoutJSON) > 0 {
-		if err := json.Unmarshal(payoutJSON, &w.PayoutDetails); err != nil {
-			return nil, apperrors.Internal(err)
-		}
-	}
-	return w, nil
-}
-
-func scanWithdrawalRows(rows pgx.Rows) (*domain.WithdrawalRequest, error) {
-	w := &domain.WithdrawalRequest{}
-	var payoutJSON []byte
-	if err := rows.Scan(
+	if err := s.Scan(
 		&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
 		&payoutJSON, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
 		&w.CreatedAt, &w.UpdatedAt,
@@ -64,6 +45,17 @@ func scanWithdrawalRows(rows pgx.Rows) (*domain.WithdrawalRequest, error) {
 		if err := json.Unmarshal(payoutJSON, &w.PayoutDetails); err != nil {
 			return nil, err
 		}
+	}
+	return w, nil
+}
+
+// scanWithdrawal wraps scanWithdrawalFields for single-row queries.
+// pgx.ErrNoRows is translated to (nil, nil) so callers can distinguish
+// "not found" from a real database error.
+func scanWithdrawal(row pgx.Row) (*domain.WithdrawalRequest, error) {
+	w, err := scanWithdrawalFields(row)
+	if err != nil {
+		return nil, singleScanErr(err)
 	}
 	return w, nil
 }
@@ -140,7 +132,9 @@ func (r *PostgresWithdrawalRequestRepository) ListByUser(ctx context.Context, us
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	return collectRows(rows, scanWithdrawalRows)
+	return collectRows(rows, func(r pgx.Rows) (*domain.WithdrawalRequest, error) {
+		return scanWithdrawalFields(r)
+	})
 }
 
 // ListPending returns all pending requests ordered by created_at ASC.
@@ -151,7 +145,9 @@ func (r *PostgresWithdrawalRequestRepository) ListPending(ctx context.Context) (
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	return collectRows(rows, scanWithdrawalRows)
+	return collectRows(rows, func(r pgx.Rows) (*domain.WithdrawalRequest, error) {
+		return scanWithdrawalFields(r)
+	})
 }
 
 // Approve transitions a pending request to approved (status change only).

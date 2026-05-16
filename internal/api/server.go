@@ -180,7 +180,7 @@ func (s *Server) Routes() http.Handler {
 		// here. Infrastructure endpoints (/health, /swagger) remain reachable
 		// because they are registered above and are not part of /api/v1.
 		r.Route("/api/v1", func(r chi.Router) {
-			r.Use(middleware.RequestBodyLimit(64 * 1024))
+			r.Use(middleware.RequestBodyLimit(domain.DefaultAPIBodySizeLimitBytes))
 			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log), s.log))
 			dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
 				middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
@@ -219,6 +219,7 @@ func (s *Server) Routes() http.Handler {
 		paramSvc.GetInt(infraCtx, domain.ParamKeyAuditRetryDelayMs, domain.DefaultAuditRetryDelayMs),
 	)
 	bodySizeLimit := int64(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIBodySizeLimitBytes, domain.DefaultAPIBodySizeLimitBytes))
+	uploadSizeLimit := int64(paramSvc.GetInt(infraCtx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
 	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, domain.DefaultAuthValidationTimeoutSeconds)) * time.Second
 
 	// scorer is constructed once and shared: local event subscribers and the
@@ -249,12 +250,12 @@ func (s *Server) Routes() http.Handler {
 	// Versioned API surface with Clerk JWT authentication.
 	clerkProvider := auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, authWarmup, s.log)
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(middleware.RequestBodyLimit(bodySizeLimit)) // api.body_size_limit_bytes (default 64 KB)
 		r.Use(middleware.RequireAuth(clerkProvider, s.log))
 
 		// Admin-only match mutations are guarded by RequireRole. Read endpoints
 		// (List, Get) are accessible to all authenticated users.
 		r.Route("/matches", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Get("/", h.match.ListMatches)
 			r.Get("/{id}", h.match.GetMatch)
 			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Post("/", h.match.CreateMatch)
@@ -269,6 +270,7 @@ func (s *Server) Routes() http.Handler {
 		// indexed lookup (clerk_subject) is negligible compared to the handler
 		// work that follows.
 		r.Route(routePredictions, func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Post("/", h.prediction.Submit)
 			r.Get("/me", h.prediction.GetMine)
@@ -276,6 +278,7 @@ func (s *Server) Routes() http.Handler {
 		})
 
 		r.Route("/groups", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Post("/", h.group.Create)
 			r.Post("/join", h.group.Join)
@@ -303,6 +306,7 @@ func (s *Server) Routes() http.Handler {
 		// and stores the resolved user in context, so no separate ResolveUser
 		// middleware is needed on this subrouter.
 		r.Route("/tiebreaker", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Patch("/question", h.tiebreaker.SetQuestion)
 			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Patch("/result", h.tiebreaker.ConfirmResult)
 		})
@@ -313,6 +317,7 @@ func (s *Server) Routes() http.Handler {
 		// the resolved user in context so ConfirmSlot can read caller.ID without
 		// an extra database query.
 		r.Route("/tournament", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Get("/standings", h.tournament.GetAllStandings)
 			r.Get("/standings/{group}", h.tournament.GetGroupStanding)
 			r.Get("/slots", h.tournament.ListSlots)
@@ -321,6 +326,7 @@ func (s *Server) Routes() http.Handler {
 		})
 
 		r.Route(routeUsers, func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Get("/me/stats", h.userStats.GetMyStats)
 			r.Get("/me/balance", h.balance.GetBalance)
@@ -328,17 +334,22 @@ func (s *Server) Routes() http.Handler {
 		})
 
 		r.Route("/payment-intents", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Post("/", h.paymentIntent.Create)
 		})
 
 		r.Route("/bank-transfers", func(r chi.Router) {
 			r.Use(middleware.ResolveUser(repos.user, s.log))
-			r.Post("/", h.bankTransfer.Upload)
-			r.Get("/", h.bankTransfer.ListMine)
+			// POST receives a multipart upload (up to uploadSizeLimit); GET has no
+			// body. Per-route limits avoid the MaxBytesReader stacking problem where
+			// an outer smaller limit silently blocks the inner larger one.
+			r.With(middleware.RequestBodyLimit(uploadSizeLimit)).Post("/", h.bankTransfer.Upload)
+			r.With(middleware.RequestBodyLimit(bodySizeLimit)).Get("/", h.bankTransfer.ListMine)
 		})
 
 		r.Route("/withdrawals", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Post("/", h.withdrawal.Create)
 			r.Get("/", h.withdrawal.ListMine)
@@ -349,6 +360,7 @@ func (s *Server) Routes() http.Handler {
 		// call UserFromContext (for audit trail adminID) without a second database
 		// round-trip. No separate ResolveUser middleware is needed.
 		r.Route("/admin", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin))
 
 			// Users

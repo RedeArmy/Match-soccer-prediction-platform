@@ -11,6 +11,14 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// rowScanner is satisfied by both pgx.Row (single-row query) and pgx.Rows
+// (multi-row iteration). Accepting this interface in scanFooFields lets a
+// single function serve both callers without duplicating the Scan call and any
+// post-scan field transformations (JSON unmarshal, nil-pointer unwrap, etc.).
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
 // singleScanErr maps the error from a single-row QueryRow().Scan() call to the
 // repository's not-found convention: pgx.ErrNoRows becomes nil (the caller then
 // returns (nil, nil), signalling "not found"). Any other error is wrapped in

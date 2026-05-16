@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -27,31 +28,27 @@ const (
 	msgBankTransferNotFound = "bank transfer proof not found"
 )
 
-func scanBankTransferProof(row pgx.Row) (*domain.BankTransferProof, error) {
+// scanBankTransferProofFields populates a BankTransferProof from any rowScanner.
+// Returns the struct and a raw scan error; callers interpret sentinel values.
+func scanBankTransferProofFields(s rowScanner) (*domain.BankTransferProof, error) {
 	p := &domain.BankTransferProof{}
-	err := row.Scan(
+	return p, s.Scan(
 		&p.ID, &p.UserID, &p.AmountCents, &p.Currency,
 		&p.StorageKey, &p.ContentType, &p.FileSize,
 		&p.Status, &p.ReviewedBy, &p.Notes, &p.ApprovedAt,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return p, nil
 }
 
-func scanBankTransferProofRows(rows pgx.Rows) (*domain.BankTransferProof, error) {
-	p := &domain.BankTransferProof{}
-	return p, rows.Scan(
-		&p.ID, &p.UserID, &p.AmountCents, &p.Currency,
-		&p.StorageKey, &p.ContentType, &p.FileSize,
-		&p.Status, &p.ReviewedBy, &p.Notes, &p.ApprovedAt,
-		&p.CreatedAt, &p.UpdatedAt,
-	)
+// scanBankTransferProof wraps scanBankTransferProofFields for single-row queries.
+// pgx.ErrNoRows is translated to (nil, nil) so callers can distinguish
+// "not found" from a real database error.
+func scanBankTransferProof(row pgx.Row) (*domain.BankTransferProof, error) {
+	p, err := scanBankTransferProofFields(row)
+	if err != nil {
+		return nil, singleScanErr(err)
+	}
+	return p, nil
 }
 
 // Create inserts a new proof in pending status.
@@ -88,7 +85,9 @@ func (r *PostgresBankTransferProofRepository) ListByUser(ctx context.Context, us
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	return collectRows(rows, scanBankTransferProofRows)
+	return collectRows(rows, func(r pgx.Rows) (*domain.BankTransferProof, error) {
+		return scanBankTransferProofFields(r)
+	})
 }
 
 // ListPending returns all pending proofs ordered by created_at ASC.
@@ -99,7 +98,9 @@ func (r *PostgresBankTransferProofRepository) ListPending(ctx context.Context) (
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	return collectRows(rows, scanBankTransferProofRows)
+	return collectRows(rows, func(r pgx.Rows) (*domain.BankTransferProof, error) {
+		return scanBankTransferProofFields(r)
+	})
 }
 
 // ApproveAndCredit atomically approves the proof and credits the user's balance.
@@ -119,14 +120,8 @@ func (r *PostgresBankTransferProofRepository) ApproveAndCredit(ctx context.Conte
 			 RETURNING `+bankTransferColumns,
 			id, reviewerID, notes,
 		)
-		p := &domain.BankTransferProof{}
-		scanErr := row.Scan(
-			&p.ID, &p.UserID, &p.AmountCents, &p.Currency,
-			&p.StorageKey, &p.ContentType, &p.FileSize,
-			&p.Status, &p.ReviewedBy, &p.Notes, &p.ApprovedAt,
-			&p.CreatedAt, &p.UpdatedAt,
-		)
-		if scanErr == pgx.ErrNoRows {
+		p, scanErr := scanBankTransferProofFields(row)
+		if errors.Is(scanErr, pgx.ErrNoRows) {
 			return nil // handled below via notFoundOrConflictBankTransfer
 		}
 		if scanErr != nil {

@@ -134,11 +134,22 @@ type ServerConfig struct {
 // MaxIdleConns controls how many connections are retained between traffic
 // bursts. Setting MaxIdleConns too high wastes server-side memory; setting
 // it too low causes unnecessary connection churn under variable load.
+//
+// ConnMaxIdleTime evicts connections that have been idle longer than the
+// specified duration. Zero disables idle eviction (pgxpool holds them until
+// ConnMaxLifetime expires or the server closes them). A non-zero value
+// is recommended for services that see bursty traffic.
+//
+// ConnMaxLifetimeJitter adds a random offset (0..jitter) to each
+// connection's max-lifetime, preventing the pool from recycling all
+// connections at the same instant after a deployment.
 type DatabaseConfig struct {
-	DSN             string        `mapstructure:"dsn"`
-	MaxOpenConns    int           `mapstructure:"maxOpenConns"`
-	MaxIdleConns    int           `mapstructure:"maxIdleConns"`
-	ConnMaxLifetime time.Duration `mapstructure:"connMaxLifetime"`
+	DSN                   string        `mapstructure:"dsn"`
+	MaxOpenConns          int           `mapstructure:"maxOpenConns"`
+	MaxIdleConns          int           `mapstructure:"maxIdleConns"`
+	ConnMaxLifetime       time.Duration `mapstructure:"connMaxLifetime"`
+	ConnMaxIdleTime       time.Duration `mapstructure:"connMaxIdleTime"`
+	ConnMaxLifetimeJitter time.Duration `mapstructure:"connMaxLifetimeJitter"`
 }
 
 // RedisConfig carries the address and credentials for the Redis instance

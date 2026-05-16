@@ -316,6 +316,35 @@ func TestWriteError_SetsJSONContentType(t *testing.T) {
 	}
 }
 
+func TestWriteError_AppError_IncludesSchemaVersion(t *testing.T) {
+	log := zaptest.NewLogger(t)
+	req := requestWithID(httptest.NewRequest(http.MethodGet, "/", nil))
+	rec := httptest.NewRecorder()
+
+	middleware.WriteError(rec, req, log, apperrors.NotFound(msgMatchNotFound))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"schema_version"`) {
+		t.Errorf("expected body to contain schema_version field, got: %s", body)
+	}
+	if !strings.Contains(body, `"schema_version":1`) {
+		t.Errorf("expected schema_version to be 1, got: %s", body)
+	}
+}
+
+func TestWriteError_UnexpectedError_IncludesSchemaVersion(t *testing.T) {
+	log := zaptest.NewLogger(t)
+	req := requestWithID(httptest.NewRequest(http.MethodGet, "/", nil))
+	rec := httptest.NewRecorder()
+
+	middleware.WriteError(rec, req, log, errors.New("unexpected failure"))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"schema_version":1`) {
+		t.Errorf("expected schema_version:1 in unexpected-error response, got: %s", body)
+	}
+}
+
 // ── RequireAuth ───────────────────────────────────────────────────────────────
 
 // TestRequireAuth_MissingAuthHeader_Returns401 verifies the middleware rejects
