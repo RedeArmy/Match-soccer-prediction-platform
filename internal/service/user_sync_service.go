@@ -21,10 +21,14 @@ type ClerkEmail struct {
 
 // ClerkUserSyncer handles user synchronisation from Clerk webhook events.
 // The implementation is responsible for email resolution, name normalisation,
-// and idempotent DB persistence (create-or-update). The handler is responsible
-// only for signature verification and JSON parsing.
+// and idempotent DB persistence (create-or-update, soft-delete). The handler
+// is responsible only for signature verification and JSON parsing.
 type ClerkUserSyncer interface {
 	Upsert(ctx context.Context, subject, firstName, lastName, primaryEmailID string, emails []ClerkEmail) error
+	// SoftDelete marks the internal user row as deleted when Clerk fires a
+	// user.deleted event. The call is idempotent: if no matching active row
+	// exists (already deleted or never synced) the call is a no-op.
+	SoftDelete(ctx context.Context, subject string) error
 }
 
 type clerkUserSyncService struct {
@@ -117,6 +121,34 @@ func (s *clerkUserSyncService) resolvePrimaryEmail(emails []ClerkEmail, primaryE
 		return emails[0].Address
 	}
 	return ""
+}
+
+// SoftDelete marks the internal user row as deleted in response to a Clerk
+// user.deleted webhook event. The call is idempotent: GetByClerkSubject uses
+// activeOnly, so it returns nil for already-deleted subjects, and the function
+// returns nil without calling Delete again.
+//
+// Errors from the underlying repository are propagated so the webhook handler
+// can return a non-2xx status and allow Clerk to retry the delivery.
+func (s *clerkUserSyncService) SoftDelete(ctx context.Context, subject string) error {
+	user, err := s.userRepo.GetByClerkSubject(ctx, subject)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if user == nil {
+		s.log.Info("clerk sync: user.deleted received for unknown or already-deleted subject — no-op",
+			zap.String("clerk_subject", subject),
+		)
+		return nil
+	}
+	if err := s.userRepo.Delete(ctx, user.ID); err != nil {
+		return err
+	}
+	s.log.Info("clerk sync: soft-deleted user on Clerk account deletion",
+		zap.Int("user_id", user.ID),
+		zap.String("clerk_subject", subject),
+	)
+	return nil
 }
 
 var _ ClerkUserSyncer = (*clerkUserSyncService)(nil)

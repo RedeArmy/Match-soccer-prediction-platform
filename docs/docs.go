@@ -2731,6 +2731,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -2794,6 +2800,24 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
+                    },
+                    "409": {
+                        "description": "Withdrawal is not in pending status",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid withdrawal ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -2843,6 +2867,24 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Withdrawal not approved or insufficient reserved balance",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid withdrawal ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -2907,6 +2949,24 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Withdrawal is not in pending status",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid withdrawal ID or notes required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -4145,6 +4205,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -4167,14 +4233,14 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Max records per page (default 50)",
+                        "description": "Max records per page (default 50, max 200)",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Offset for pagination",
-                        "name": "offset",
+                        "description": "Page number (default 1)",
+                        "name": "page",
                         "in": "query"
                     }
                 ],
@@ -4190,6 +4256,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -4264,6 +4336,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
                     }
                 }
             },
@@ -4325,6 +4403,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -4380,7 +4464,7 @@ const docTemplate = `{
         },
         "/webhooks/clerk": {
             "post": {
-                "description": "Receives and processes Clerk user lifecycle events (user.created, user.updated).",
+                "description": "Receives and processes Clerk user lifecycle events:",
                 "consumes": [
                     "application/json"
                 ],
@@ -4525,6 +4609,23 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_rede_world-cup-quiniela_pkg_health.MemStatsSnapshot": {
+            "type": "object",
+            "properties": {
+                "gc_cpu_fraction": {
+                    "type": "number"
+                },
+                "heap_inuse_bytes": {
+                    "type": "integer"
+                },
+                "heap_sys_bytes": {
+                    "type": "integer"
+                },
+                "num_gc": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_rede_world-cup-quiniela_pkg_health.Response": {
             "type": "object",
             "properties": {
@@ -4533,6 +4634,9 @@ const docTemplate = `{
                     "additionalProperties": {
                         "$ref": "#/definitions/github_com_rede_world-cup-quiniela_pkg_health.Result"
                     }
+                },
+                "mem_stats": {
+                    "$ref": "#/definitions/github_com_rede_world-cup-quiniela_pkg_health.MemStatsSnapshot"
                 },
                 "status": {
                     "type": "string"

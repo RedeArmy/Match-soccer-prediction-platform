@@ -35,6 +35,11 @@ type createWithdrawalRequest struct {
 //
 // @Summary      Request withdrawal
 // @Description  Creates a withdrawal request and reserves the amount from the user's available balance.
+//
+//	method must be one of: bank_gt (Guatemalan bank transfer), paypal.
+//	currency defaults to GTQ when omitted.
+//	All monetary values are in minor currency units (e.g. centavos for GTQ).
+//
 // @Tags         balance
 // @Accept       json
 // @Produce      json
@@ -45,6 +50,7 @@ type createWithdrawalRequest struct {
 // @Failure      401  {object}  handler.ErrorResponse
 // @Failure      409  {object}  handler.ErrorResponse  "Insufficient balance"
 // @Failure      422  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/withdrawals [post]
 func (h *WithdrawalHandler) Create(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
@@ -90,6 +96,7 @@ func (h *WithdrawalHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Success      200  {array}   handler.WithdrawalResponse
 // @Failure      401  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/withdrawals [get]
 func (h *WithdrawalHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
@@ -119,6 +126,7 @@ func (h *WithdrawalHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {array}   handler.WithdrawalResponse
 // @Failure      401  {object}  handler.ErrorResponse
 // @Failure      403  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/withdrawals/pending [get]
 func (h *WithdrawalHandler) AdminListPending(w http.ResponseWriter, r *http.Request) {
 	requests, err := h.svc.ListPending(r.Context())
@@ -151,6 +159,9 @@ type reviewWithdrawalRequest struct {
 // @Failure      401  {object}  handler.ErrorResponse
 // @Failure      403  {object}  handler.ErrorResponse
 // @Failure      404  {object}  handler.ErrorResponse
+// @Failure      409  {object}  handler.ErrorResponse  "Withdrawal is not in pending status"
+// @Failure      422  {object}  handler.ErrorResponse  "Invalid withdrawal ID"
+// @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/withdrawals/{id}/approve [post]
 func (h *WithdrawalHandler) AdminApprove(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
@@ -188,6 +199,9 @@ func (h *WithdrawalHandler) AdminApprove(w http.ResponseWriter, r *http.Request)
 // @Failure      401  {object}  handler.ErrorResponse
 // @Failure      403  {object}  handler.ErrorResponse
 // @Failure      404  {object}  handler.ErrorResponse
+// @Failure      409  {object}  handler.ErrorResponse  "Withdrawal is not in pending status"
+// @Failure      422  {object}  handler.ErrorResponse  "Invalid withdrawal ID or notes required"
+// @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/withdrawals/{id}/reject [post]
 func (h *WithdrawalHandler) AdminReject(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
@@ -230,6 +244,9 @@ func (h *WithdrawalHandler) AdminReject(w http.ResponseWriter, r *http.Request) 
 // @Failure      401  {object}  handler.ErrorResponse
 // @Failure      403  {object}  handler.ErrorResponse
 // @Failure      404  {object}  handler.ErrorResponse
+// @Failure      409  {object}  handler.ErrorResponse  "Withdrawal not approved or insufficient reserved balance"
+// @Failure      422  {object}  handler.ErrorResponse  "Invalid withdrawal ID"
+// @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/withdrawals/{id}/process [post]
 func (h *WithdrawalHandler) AdminProcess(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))

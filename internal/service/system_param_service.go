@@ -256,6 +256,11 @@ var paramIntConstraints = map[string]paramIntRange{
 
 	// API
 	domain.ParamKeyAPIBodySizeLimitBytes: {1_024, 10_485_760}, // 1 KB – 10 MB
+	// Rate limiter params are is_runtime=FALSE (LimiterStore built at startup); a
+	// restart is required to apply changes. Bounds prevent nonsensical values from
+	// being accepted via the admin API.
+	domain.ParamKeyAPIRateLimitRatePerSec: {1, 1_000}, // 1 token/s – 1 000 token/s
+	domain.ParamKeyAPIRateLimitBurst:      {1, 1_000}, // min 1; 1 000 burst is already very generous
 
 	// Snapshot retention
 	domain.ParamKeySnapshotKeepLatestCount: {1, 1_000},
