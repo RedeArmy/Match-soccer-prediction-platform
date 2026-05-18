@@ -36,10 +36,12 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/auth"
+	"github.com/rede/world-cup-quiniela/pkg/breaker"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
 	"github.com/rede/world-cup-quiniela/pkg/codegen"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
+	"github.com/rede/world-cup-quiniela/pkg/idempotency"
 )
 
 const (
@@ -228,6 +230,11 @@ func (s *Server) Routes() http.Handler {
 		paramSvc.GetInt(infraCtx, domain.ParamKeyAuditMaxRetries, domain.DefaultAuditMaxRetries),
 		paramSvc.GetInt(infraCtx, domain.ParamKeyAuditRetryDelayMs, domain.DefaultAuditRetryDelayMs),
 	)
+	repository.InitRetryPolicy(
+		paramSvc.GetInt(infraCtx, domain.ParamKeyTxRetryMaxAttempts, domain.DefaultTxRetryMaxAttempts),
+		paramSvc.GetInt(infraCtx, domain.ParamKeyTxRetryBaseDelayMs, domain.DefaultTxRetryBaseDelayMs),
+		paramSvc.GetInt(infraCtx, domain.ParamKeyTxRetryMaxDelayMs, domain.DefaultTxRetryMaxDelayMs),
+	)
 	bodySizeLimit := int64(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIBodySizeLimitBytes, domain.DefaultAPIBodySizeLimitBytes))
 	uploadSizeLimit := int64(paramSvc.GetInt(infraCtx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
 	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, domain.DefaultAuthValidationTimeoutSeconds)) * time.Second
@@ -254,8 +261,27 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/webhooks/clerk", webhookHandler.HandleClerkWebhook)
 	r.With(middleware.RecurrenteWebhookAuth(s.cfg.Payment.RecurrenteWebhookSecret, s.log)).
 		Post("/webhooks/recurrente", h.paymentWebhook.HandleRecurrente)
-	r.With(middleware.PayPalWebhookAuth(s.cfg.Payment.PayPalWebhookID, middleware.DefaultPayPalCertFetcher(), s.log)).
+	// Wrap the PayPal cert fetcher with a circuit breaker. If PayPal's certificate
+	// endpoint is repeatedly unavailable, the breaker opens and subsequent webhook
+	// deliveries return 500 immediately (no network timeout wait), prompting PayPal
+	// to retry the delivery later when the endpoint has recovered.
+	paypalCertBreaker := breaker.New(
+		"paypal-cert",
+		paramSvc.GetInt(infraCtx, domain.ParamKeyBreakerPaypalCertMaxFails, domain.DefaultBreakerPaypalCertMaxFails),
+		time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyBreakerPaypalCertCooldownSec, domain.DefaultBreakerPaypalCertCooldownSec))*time.Second,
+	)
+	certFetcher := middleware.BreakerCertFetcher(middleware.DefaultPayPalCertFetcher(), paypalCertBreaker, s.log)
+	r.With(middleware.PayPalWebhookAuth(s.cfg.Payment.PayPalWebhookID, certFetcher, s.log)).
 		Post("/webhooks/paypal", h.paymentWebhook.HandlePayPal)
+
+	// Idempotency store for payment write endpoints. The in-memory store is
+	// correct for single-process deployments; replace with a Redis-backed store
+	// for multi-replica deployments where reservations must be visible across
+	// all instances.
+	idemTTL := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
+	idemKeyMaxLen := paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
+	idemStore := idempotency.NewMemoryStore()
+	idem := middleware.Idempotency(idemStore, s.log, idemTTL, idemKeyMaxLen)
 
 	// Versioned API surface with Clerk JWT authentication.
 	// Rate limit params are read once at startup (is_runtime=FALSE); a process
@@ -356,7 +382,7 @@ func (s *Server) Routes() http.Handler {
 		r.Route("/payment-intents", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
-			r.Post("/", h.paymentIntent.Create)
+			r.With(idem).Post("/", h.paymentIntent.Create)
 		})
 
 		r.Route("/bank-transfers", func(r chi.Router) {
@@ -364,14 +390,14 @@ func (s *Server) Routes() http.Handler {
 			// POST receives a multipart upload (up to uploadSizeLimit); GET has no
 			// body. Per-route limits avoid the MaxBytesReader stacking problem where
 			// an outer smaller limit silently blocks the inner larger one.
-			r.With(middleware.RequestBodyLimit(uploadSizeLimit)).Post("/", h.bankTransfer.Upload)
+			r.With(middleware.RequestBodyLimit(uploadSizeLimit), idem).Post("/", h.bankTransfer.Upload)
 			r.With(middleware.RequestBodyLimit(bodySizeLimit)).Get("/", h.bankTransfer.ListMine)
 		})
 
 		r.Route("/withdrawals", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
-			r.Post("/", h.withdrawal.Create)
+			r.With(idem).Post("/", h.withdrawal.Create)
 			r.Get("/", h.withdrawal.ListMine)
 		})
 
@@ -598,6 +624,17 @@ func (s *Server) buildHandlers(
 		s.log.Warn("storage: falling back to local driver", zap.Error(err))
 		fileStore, _ = storage.New(storage.Config{Driver: "local", LocalDir: "uploads"})
 	}
+	// Wrap the file store with a circuit breaker. Failure threshold and cooldown
+	// are read from system_params at startup (is_runtime=FALSE: restart required).
+	fileStore = storage.NewResilientFileStore(
+		fileStore,
+		breaker.New(
+			"file-store",
+			params.GetInt(ctx, domain.ParamKeyBreakerFileStoreMaxFails, domain.DefaultBreakerFileStoreMaxFails),
+			time.Duration(params.GetInt(ctx, domain.ParamKeyBreakerFileStoreCooldownSec, domain.DefaultBreakerFileStoreCooldownSec))*time.Second,
+		),
+		s.log,
+	)
 	maxUploadBytes := int64(params.GetInt(ctx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
 	minTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMinAmountCents, domain.DefaultBankTransferMinAmountCents)
 	maxTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMaxAmountCents, domain.DefaultBankTransferMaxAmountCents)

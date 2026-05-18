@@ -30,10 +30,13 @@ type WebhookPaymentService interface {
 	CreditFromRecurrente(ctx context.Context, userID, amountCents int, currency, reference string) error
 	// ResolveAndCreditPayPalIntent resolves intentToken to a pending, non-expired
 	// payment intent, atomically captures it, and credits the user's balance.
+	// webhookAmountCents is the amount declared in the PayPal payload; if > 0 and
+	// it differs from the server-authoritative intent amount, a warning is logged
+	// (the intent amount is always used for the actual credit).
 	// Returns nil for idempotent duplicate webhook deliveries (same captureID).
 	// Returns apperrors.NotFound when the token is unknown or expired.
 	// Returns apperrors.Conflict when the intent is captured by a different captureID.
-	ResolveAndCreditPayPalIntent(ctx context.Context, intentToken, captureID string) error
+	ResolveAndCreditPayPalIntent(ctx context.Context, intentToken, captureID string, webhookAmountCents int) error
 }
 
 type webhookPaymentService struct {
@@ -71,13 +74,16 @@ func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amount
 		return apperrors.Validation("reference is required for webhook payments")
 	}
 
-	credited, err := s.ledgerRepo.CreditIdempotent(ctx, userID, amountCents, kind, reference)
+	// Prefix the reference with the provider kind so that identical transaction
+	// IDs from different providers cannot collide in the unique DB index.
+	scopedRef := string(kind) + ":" + reference
+	credited, err := s.ledgerRepo.CreditIdempotent(ctx, userID, amountCents, kind, scopedRef)
 	if err != nil {
 		return err
 	}
 	if !credited {
 		s.log.Debug("webhook payment: idempotent re-delivery ignored",
-			zap.String("reference", reference),
+			zap.String("reference", scopedRef),
 			zap.String("kind", string(kind)),
 		)
 		return nil
@@ -87,13 +93,13 @@ func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amount
 	s.audit.Log(ctx, nil, nil, action, &resType, &userID, map[string]any{
 		"amount_cents": amountCents,
 		"currency":     currency,
-		"reference":    reference,
+		"reference":    scopedRef,
 		"kind":         string(kind),
 	})
 	return nil
 }
 
-func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context, intentToken, captureID string) error {
+func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context, intentToken, captureID string, webhookAmountCents int) error {
 	if intentToken == "" {
 		return apperrors.Validation("intent token is required")
 	}
@@ -111,6 +117,19 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 	}
 	if err != nil {
 		return err
+	}
+
+	// Cross-check the webhook-declared amount against the server-authoritative
+	// intent amount. A mismatch is logged as a warning but does not block the
+	// credit: the intent amount is always used and the signature has already
+	// been verified by the upstream middleware.
+	if webhookAmountCents > 0 && webhookAmountCents != intent.AmountCents {
+		s.log.Warn("paypal webhook: declared amount differs from intent amount",
+			zap.Int("webhook_amount_cents", webhookAmountCents),
+			zap.Int("intent_amount_cents", intent.AmountCents),
+			zap.String("intent_token", intentToken),
+			zap.String("capture_id", captureID),
+		)
 	}
 
 	resType := "payment_intent"

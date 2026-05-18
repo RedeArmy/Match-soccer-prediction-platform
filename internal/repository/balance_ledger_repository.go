@@ -29,7 +29,7 @@ func NewPostgresBalanceLedgerRepository(db *pgxpool.Pool) *PostgresBalanceLedger
 func (r *PostgresBalanceLedgerRepository) Credit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
-	return withTx(ctx, r.db, "BalanceLedgerRepository.Credit", func(tx pgx.Tx) error {
+	return withRetryTx(ctx, r.db, "BalanceLedgerRepository.Credit", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
 			UPDATE users
@@ -78,7 +78,7 @@ func (r *PostgresBalanceLedgerRepository) Debit(ctx context.Context, userID, del
 func (r *PostgresBalanceLedgerRepository) Reserve(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
-	return withTx(ctx, r.db, "BalanceLedgerRepository.Reserve", func(tx pgx.Tx) error {
+	return withRetryTx(ctx, r.db, "BalanceLedgerRepository.Reserve", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
 			UPDATE users
@@ -227,7 +227,7 @@ func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, 
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 	var credited bool
-	err := withTx(ctx, r.db, "BalanceLedgerRepository.CreditIdempotent", func(tx pgx.Tx) error {
+	err := withRetryTx(ctx, r.db, "BalanceLedgerRepository.CreditIdempotent", func(tx pgx.Tx) error {
 		// Step 1: Race-free idempotency gate. The partial unique index on
 		// (reference WHERE reference IS NOT NULL) ensures only one concurrent
 		// caller inserts a row for this reference; the other gets ErrNoRows.
