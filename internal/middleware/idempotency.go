@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -38,96 +39,114 @@ const idempotencyHeader = "Idempotency-Key"
 func Idempotency(store idempotency.Store, log *zap.Logger, ttl time.Duration, keyMaxLen int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			clientKey := r.Header.Get(idempotencyHeader)
-			if clientKey == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if len(clientKey) > keyMaxLen {
-				WriteError(w, r, log, apperrors.Validation(
-					fmt.Sprintf("Idempotency-Key must be at most %d characters", keyMaxLen),
-				))
-				return
-			}
-
-			// Scope per-user so two different users cannot share a key slot.
-			// UserIDFromContext returns the Clerk subject; always set by RequireAuth.
-			subject, _ := UserIDFromContext(r.Context())
-			scopedKey := "idem:" + subject + ":" + clientKey
-
-			entry, found, err := store.Load(r.Context(), scopedKey)
-			if err != nil {
-				log.Warn("idempotency: store load error, degrading to pass-through",
-					zap.String("key", clientKey),
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.Error(err),
-				)
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			if found {
-				switch entry.State {
-				case idempotency.InFlight:
-					WriteError(w, r, log, apperrors.Conflict(
-						"a request with this Idempotency-Key is already in progress; retry after it completes",
-					))
-					return
-				case idempotency.Committed:
-					replayResponse(w, clientKey, entry)
-					return
-				}
-			}
-
-			// Reserve: atomically claim the key as in-flight.
-			reserved, err := store.Reserve(r.Context(), scopedKey, ttl)
-			if err != nil {
-				log.Warn("idempotency: reserve error, degrading to pass-through",
-					zap.String("key", clientKey),
-					zap.String("request_id", GetRequestID(r.Context())),
-					zap.Error(err),
-				)
-				next.ServeHTTP(w, r)
-				return
-			}
-			if !reserved {
-				// Concurrent request won the race between Load and Reserve.
-				WriteError(w, r, log, apperrors.Conflict(
-					"a request with this Idempotency-Key is already in progress; retry after it completes",
-				))
-				return
-			}
-
-			// Execute the handler with a capturing writer so the response can be
-			// committed to the store and simultaneously written to the real wire.
-			cw := newCaptureWriter(w)
-			next.ServeHTTP(cw, r)
-
-			// Only commit successful responses. Error responses release the
-			// reservation so the client can retry after fixing the problem.
-			if cw.statusCode >= 200 && cw.statusCode < 300 {
-				committed := idempotency.Entry{
-					State:      idempotency.Committed,
-					StatusCode: cw.statusCode,
-					Headers:    cw.capturedHeaders,
-					Body:       cw.buf.Bytes(),
-				}
-				if commitErr := store.Commit(r.Context(), scopedKey, committed, ttl); commitErr != nil {
-					log.Warn("idempotency: commit error — response was already sent",
-						zap.String("key", clientKey),
-						zap.String("request_id", GetRequestID(r.Context())),
-						zap.Error(commitErr),
-					)
-				}
-			} else {
-				if releaseErr := store.Release(r.Context(), scopedKey); releaseErr != nil {
-					log.Warn("idempotency: release error after non-2xx response",
-						zap.String("key", clientKey),
-						zap.Error(releaseErr),
-					)
-				}
-			}
+			serveIdempotent(w, r, next, store, log, ttl, keyMaxLen)
 		})
+	}
+}
+
+// serveIdempotent contains the per-request idempotency logic, extracted from
+// the closure in Idempotency to keep each function within the cognitive
+// complexity budget.
+func serveIdempotent(w http.ResponseWriter, r *http.Request, next http.Handler,
+	store idempotency.Store, log *zap.Logger, ttl time.Duration, keyMaxLen int,
+) {
+	clientKey := r.Header.Get(idempotencyHeader)
+	if clientKey == "" {
+		next.ServeHTTP(w, r)
+		return
+	}
+	if len(clientKey) > keyMaxLen {
+		WriteError(w, r, log, apperrors.Validation(
+			fmt.Sprintf("Idempotency-Key must be at most %d characters", keyMaxLen),
+		))
+		return
+	}
+
+	// Scope per-user so two different users cannot share a key slot.
+	// UserIDFromContext returns the Clerk subject; always set by RequireAuth.
+	subject, _ := UserIDFromContext(r.Context())
+	scopedKey := "idem:" + subject + ":" + clientKey
+
+	entry, found, err := store.Load(r.Context(), scopedKey)
+	if err != nil {
+		log.Warn("idempotency: store load error, degrading to pass-through",
+			zap.String("key", clientKey),
+			zap.String("request_id", GetRequestID(r.Context())),
+			zap.Error(err),
+		)
+		next.ServeHTTP(w, r)
+		return
+	}
+	if found {
+		handleExistingEntry(w, r, log, clientKey, entry)
+		return
+	}
+
+	// Reserve: atomically claim the key as in-flight.
+	reserved, err := store.Reserve(r.Context(), scopedKey, ttl)
+	if err != nil {
+		log.Warn("idempotency: reserve error, degrading to pass-through",
+			zap.String("key", clientKey),
+			zap.String("request_id", GetRequestID(r.Context())),
+			zap.Error(err),
+		)
+		next.ServeHTTP(w, r)
+		return
+	}
+	if !reserved {
+		// Concurrent request won the race between Load and Reserve.
+		WriteError(w, r, log, apperrors.Conflict(
+			"a request with this Idempotency-Key is already in progress; retry after it completes",
+		))
+		return
+	}
+
+	// Execute the handler with a capturing writer so the response can be
+	// committed to the store and simultaneously written to the real wire.
+	cw := newCaptureWriter(w)
+	next.ServeHTTP(cw, r)
+	commitOrRelease(r.Context(), store, log, scopedKey, clientKey, ttl, cw)
+}
+
+// handleExistingEntry dispatches a found store entry: replays a committed
+// response or rejects a concurrent in-flight duplicate with 409.
+func handleExistingEntry(w http.ResponseWriter, r *http.Request, log *zap.Logger, clientKey string, entry idempotency.Entry) {
+	switch entry.State {
+	case idempotency.InFlight:
+		WriteError(w, r, log, apperrors.Conflict(
+			"a request with this Idempotency-Key is already in progress; retry after it completes",
+		))
+	case idempotency.Committed:
+		replayResponse(w, clientKey, entry)
+	}
+}
+
+// commitOrRelease persists a successful response to the store, or releases the
+// reservation so the client may retry after an error response.
+func commitOrRelease(ctx context.Context, store idempotency.Store, log *zap.Logger,
+	scopedKey, clientKey string, ttl time.Duration, cw *captureWriter,
+) {
+	if cw.statusCode >= 200 && cw.statusCode < 300 {
+		committed := idempotency.Entry{
+			State:      idempotency.Committed,
+			StatusCode: cw.statusCode,
+			Headers:    cw.capturedHeaders,
+			Body:       cw.buf.Bytes(),
+		}
+		if err := store.Commit(ctx, scopedKey, committed, ttl); err != nil {
+			log.Warn("idempotency: commit error — response was already sent",
+				zap.String("key", clientKey),
+				zap.String("request_id", GetRequestID(ctx)),
+				zap.Error(err),
+			)
+		}
+		return
+	}
+	if err := store.Release(ctx, scopedKey); err != nil {
+		log.Warn("idempotency: release error after non-2xx response",
+			zap.String("key", clientKey),
+			zap.Error(err),
+		)
 	}
 }
 

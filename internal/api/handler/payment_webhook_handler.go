@@ -31,19 +31,21 @@ func NewPaymentWebhookHandler(svc service.WebhookPaymentService, log *zap.Logger
 	return &PaymentWebhookHandler{svc: svc, log: log}
 }
 
+// recurrentePaymentData holds the payment object nested inside a Recurrente event.
+type recurrentePaymentData struct {
+	Reference   string `json:"reference"`
+	AmountCents int    `json:"amount_cents"`
+	Currency    string `json:"currency"`
+	// UserID is the metadata field we embed when creating the payment.
+	UserID int `json:"user_id"`
+}
+
 // recurrenteWebhookPayload is the minimal set of fields we extract from a
 // Recurrente payment-confirmed event.
 type recurrenteWebhookPayload struct {
 	// EventType should be "payment.confirmed" for us to credit the balance.
-	EventType string `json:"event_type"`
-	// Data contains the payment object.
-	Data struct {
-		Reference   string `json:"reference"`
-		AmountCents int    `json:"amount_cents"`
-		Currency    string `json:"currency"`
-		// UserID is the metadata field we embed when creating the payment.
-		UserID int `json:"user_id"`
-	} `json:"data"`
+	EventType string                `json:"event_type"`
+	Data      recurrentePaymentData `json:"data"`
 }
 
 // HandleRecurrente handles POST /webhooks/recurrente.
@@ -96,24 +98,31 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// paypalCaptureAmount holds the monetary amount declared on a PayPal capture event.
+// Used for defence-in-depth cross-checking against the server-authoritative intent amount.
+type paypalCaptureAmount struct {
+	Value        string `json:"value"`
+	CurrencyCode string `json:"currency_code"`
+}
+
+// paypalCaptureResource is the resource object embedded in a PayPal
+// PAYMENT.CAPTURE.COMPLETED event.
+type paypalCaptureResource struct {
+	// ID is the PayPal capture ID — used as the idempotency key.
+	ID string `json:"id"`
+	// CustomID is the server-generated payment intent token. It is set by
+	// the frontend when creating the PayPal order using the token returned
+	// by POST /api/v1/payment-intents. The token is unguessable and binds
+	// the order to a specific user — it cannot be substituted.
+	CustomID string              `json:"custom_id"`
+	Amount   paypalCaptureAmount `json:"amount"`
+}
+
 // paypalWebhookPayload is the minimal set of fields we extract from a PayPal
 // PAYMENT.CAPTURE.COMPLETED event.
 type paypalWebhookPayload struct {
-	EventType string `json:"event_type"`
-	Resource  struct {
-		// ID is the PayPal capture ID — used as the idempotency key.
-		ID string `json:"id"`
-		// CustomID is the server-generated payment intent token. It is set by
-		// the frontend when creating the PayPal order using the token returned
-		// by POST /api/v1/payment-intents. The token is unguessable and binds
-		// the order to a specific user — it cannot be substituted.
-		CustomID string `json:"custom_id"`
-		// Amount carries the declared capture amount for defence-in-depth cross-checking.
-		Amount struct {
-			Value        string `json:"value"`
-			CurrencyCode string `json:"currency_code"`
-		} `json:"amount"`
-	} `json:"resource"`
+	EventType string                `json:"event_type"`
+	Resource  paypalCaptureResource `json:"resource"`
 }
 
 // HandlePayPal handles POST /webhooks/paypal.
