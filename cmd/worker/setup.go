@@ -34,10 +34,12 @@ func setupDB(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool
 	}
 
 	pool, err := database.NewPool(ctx, database.Config{
-		DSN:             cfg.Database.DSN,
-		MaxOpenConns:    cfg.Database.MaxOpenConns,
-		MaxIdleConns:    cfg.Database.MaxIdleConns,
-		ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
+		DSN:                   cfg.Database.DSN,
+		MaxOpenConns:          cfg.Database.MaxOpenConns,
+		MaxIdleConns:          cfg.Database.MaxIdleConns,
+		ConnMaxLifetime:       cfg.Database.ConnMaxLifetime,
+		ConnMaxIdleTime:       cfg.Database.ConnMaxIdleTime,
+		ConnMaxLifetimeJitter: cfg.Database.ConnMaxLifetimeJitter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("database unavailable: %w", err)

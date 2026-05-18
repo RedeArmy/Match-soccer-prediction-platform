@@ -75,6 +75,63 @@ func TestMigrate_InvalidDSN_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestMigrateRoundtrip_UpDownUp is the migration rollback CI gate.
+//
+// It exercises the full migrate-up → migrate-down → migrate-up cycle against a
+// real PostgreSQL container. The primary goal is to catch broken .down.sql files
+// before they become a production incident: any syntax error, missing DROP, or
+// constraint violation in a rollback script will fail phase 2 below and block
+// the PR.
+//
+// Phase 1 — up:      all migrations apply cleanly, users table is created.
+// Phase 2 — down:    all rollbacks execute, users table is dropped.
+// Phase 3 — up again: schema is fully restorable from a clean state.
+func TestMigrateRoundtrip_UpDownUp(t *testing.T) {
+	dsn := testutil.SetupPostgres(t)
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	defer pool.Close()
+
+	tableExists := func(name string) bool {
+		var ok bool
+		_ = pool.QueryRow(ctx,
+			`SELECT EXISTS (
+				SELECT 1 FROM information_schema.tables
+				 WHERE table_schema = 'public' AND table_name = $1
+			)`, name,
+		).Scan(&ok)
+		return ok
+	}
+
+	// Phase 1: all up — every migration must apply cleanly.
+	if err := database.Migrate(dsn, migrations.FS); err != nil {
+		t.Fatalf("phase 1 (up): %v", err)
+	}
+	if !tableExists("users") {
+		t.Fatal("phase 1: expected users table to exist after migrate up")
+	}
+
+	// Phase 2: all down — every rollback script must execute without error.
+	if err := database.MigrateDown(dsn, migrations.FS); err != nil {
+		t.Fatalf("phase 2 (down): %v", err)
+	}
+	if tableExists("users") {
+		t.Fatal("phase 2: expected users table to not exist after migrate down")
+	}
+
+	// Phase 3: all up again — schema must be fully restorable from a clean state.
+	if err := database.Migrate(dsn, migrations.FS); err != nil {
+		t.Fatalf("phase 3 (up again): %v", err)
+	}
+	if !tableExists("users") {
+		t.Fatal("phase 3: expected users table to exist after second migrate up")
+	}
+}
+
 // ── Seed ─────────────────────────────────────────────────────────────────────
 
 func TestSeed_InsertsFixtures(t *testing.T) {

@@ -10,13 +10,15 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/testutil"
 )
 
-// mockLockDB records queryBool calls and returns pre-configured results.
-// Index i consults queryErrors[i] first; if non-nil, returns the error.
-// Otherwise returns queryResults[i] (false if out of bounds).
+// mockLockDB records queryBool and ping calls and returns pre-configured results.
+// Index i for queryBool consults queryErrors[i] first; if non-nil, returns the
+// error. Otherwise returns queryResults[i] (false if out of bounds).
 type mockLockDB struct {
 	queryResults []bool
 	queryErrors  []error
 	queryIdx     int
+	pingErr      error
+	pingCalled   int
 	closeErr     error
 	closeCalled  bool
 }
@@ -33,13 +35,23 @@ func (m *mockLockDB) queryBool(_ context.Context, _ string, _ ...any) (bool, err
 	return false, nil
 }
 
+func (m *mockLockDB) ping(_ context.Context) error {
+	m.pingCalled++
+	return m.pingErr
+}
+
 func (m *mockLockDB) close(_ context.Context) error {
 	m.closeCalled = true
 	return m.closeErr
 }
 
 func newMockElection(db *mockLockDB) *PgLeaderElection {
-	return &PgLeaderElection{db: db, lockID: 1, log: zap.NewNop()}
+	return &PgLeaderElection{
+		db:     db,
+		dial:   func(_ context.Context) (lockDB, error) { return db, nil },
+		lockID: 1,
+		log:    zap.NewNop(),
+	}
 }
 
 func TestPgLeaderElection_TryAcquire_WhenLockFree_ReturnsTrue(t *testing.T) {
@@ -58,13 +70,16 @@ func TestPgLeaderElection_TryAcquire_WhenLockHeld_ReturnsFalse(t *testing.T) {
 	}
 }
 
-func TestPgLeaderElection_TryAcquire_Idempotent_DoesNotRequery(t *testing.T) {
+func TestPgLeaderElection_TryAcquire_Idempotent_PingsInsteadOfRequery(t *testing.T) {
 	db := &mockLockDB{queryResults: []bool{true}}
 	e := newMockElection(db)
 	e.TryAcquire(context.Background())
 	e.TryAcquire(context.Background())
 	if db.queryIdx != 1 {
 		t.Errorf("expected exactly 1 DB query after lock is held, got %d", db.queryIdx)
+	}
+	if db.pingCalled != 1 {
+		t.Errorf("expected exactly 1 ping on second TryAcquire, got %d", db.pingCalled)
 	}
 }
 
@@ -128,6 +143,63 @@ func TestPgLeaderElection_Close_UnlockError_StillClosesConn(t *testing.T) {
 
 	if !db.closeCalled {
 		t.Error("expected connection closed even when pg_advisory_unlock returned an error")
+	}
+}
+
+// ── Connection-drop / split-brain tests ──────────────────────────────────────
+
+func TestPgLeaderElection_TryAcquire_ConnectionDropped_ReconnectSucceeds_ReacquiresLock(t *testing.T) {
+	// Call 1: acquire (queryResults[0]=true).
+	// Call 2: ping fails → reconnect via dial (same db) → re-acquire (queryResults[1]=true).
+	db := &mockLockDB{queryResults: []bool{true, true}, pingErr: errors.New("connection reset")}
+	e := newMockElection(db)
+
+	if !e.TryAcquire(context.Background()) {
+		t.Fatal("expected first TryAcquire to return true")
+	}
+	// Simulate ping failure on second call by keeping pingErr set.
+	if !e.TryAcquire(context.Background()) {
+		t.Fatal("expected second TryAcquire to return true after reconnect + re-acquire")
+	}
+	if db.pingCalled != 1 {
+		t.Errorf("expected 1 ping, got %d", db.pingCalled)
+	}
+	if db.queryIdx != 2 {
+		t.Errorf("expected 2 DB queries (acquire + re-acquire), got %d", db.queryIdx)
+	}
+}
+
+func TestPgLeaderElection_TryAcquire_ConnectionDropped_LockLost_ReturnsFalse(t *testing.T) {
+	// Call 1: acquire (queryResults[0]=true).
+	// Call 2: ping fails → reconnect → re-acquire returns false (another leader won).
+	db := &mockLockDB{queryResults: []bool{true, false}, pingErr: errors.New("connection reset")}
+	e := newMockElection(db)
+
+	e.TryAcquire(context.Background())
+	if e.TryAcquire(context.Background()) {
+		t.Fatal("expected false when lock cannot be re-acquired after reconnect")
+	}
+	if e.held {
+		t.Error("expected held=false after failing to re-acquire")
+	}
+}
+
+func TestPgLeaderElection_TryAcquire_ConnectionDropped_ReconnectFails_ReturnsFalse(t *testing.T) {
+	// Call 1: acquire.
+	// Call 2: ping fails → dial fails → returns false without querying.
+	db := &mockLockDB{queryResults: []bool{true}, pingErr: errors.New("connection reset")}
+	e := newMockElection(db)
+	e.dial = func(_ context.Context) (lockDB, error) { return nil, errors.New("dial failed") }
+
+	e.TryAcquire(context.Background())
+	if e.TryAcquire(context.Background()) {
+		t.Fatal("expected false when reconnect fails")
+	}
+	if e.held {
+		t.Error("expected held=false after failed reconnect")
+	}
+	if db.queryIdx != 1 {
+		t.Errorf("expected no re-acquire query when reconnect fails, got queryIdx=%d", db.queryIdx)
 	}
 }
 

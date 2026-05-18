@@ -36,6 +36,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.maxOpenConns", 25)
 	v.SetDefault("database.maxIdleConns", 5)
 	v.SetDefault("database.connMaxLifetime", 5*time.Minute)
+	// connMaxIdleTime evicts idle connections after 10 minutes. This prevents
+	// the pool from hoarding server-side connections during traffic lulls without
+	// causing excessive churn under steady load.
+	v.SetDefault("database.connMaxIdleTime", 10*time.Minute)
+	// connMaxLifetimeJitter spreads reconnect events across 30 seconds so that a
+	// full pool refresh does not produce a thundering-herd reconnect at startup
+	// or after a rolling deployment.
+	v.SetDefault("database.connMaxLifetimeJitter", 30*time.Second)
 
 	v.SetDefault("redis.addr", "localhost:6379")
 	v.SetDefault("redis.password", "")

@@ -96,6 +96,8 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 		{"Database.MaxOpenConns", cfg.Database.MaxOpenConns, 25},
 		{"Database.MaxIdleConns", cfg.Database.MaxIdleConns, 5},
 		{"Database.ConnMaxLifetime", cfg.Database.ConnMaxLifetime, 5 * time.Minute},
+		{"Database.ConnMaxIdleTime", cfg.Database.ConnMaxIdleTime, 10 * time.Minute},
+		{"Database.ConnMaxLifetimeJitter", cfg.Database.ConnMaxLifetimeJitter, 30 * time.Second},
 		{"Redis.Addr", cfg.Redis.Addr, "localhost:6379"},
 		{"Redis.DB", cfg.Redis.DB, 0},
 		{"Logger.Level", cfg.Logger.Level, "info"},
@@ -579,5 +581,73 @@ func TestLoad_ProductionWithOneDriveStorage_MissingDriveID_ReturnsError(t *testi
 	}
 	if !strings.Contains(err.Error(), "WCQ_STORAGE_ONEDRIVEDRIVEID") {
 		t.Errorf("expected error to reference WCQ_STORAGE_ONEDRIVEDRIVEID, got: %v", err)
+	}
+}
+
+// ── Database pool validation ───────────────────────────────────────────────────
+
+func TestLoad_DatabaseMaxOpenConnsZero_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WCQ_DATABASE_MAXOPENCONNS", "0")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for maxOpenConns=0, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_DATABASE_MAXOPENCONNS") {
+		t.Errorf("expected error to reference WCQ_DATABASE_MAXOPENCONNS, got: %v", err)
+	}
+}
+
+func TestLoad_DatabaseMaxIdleConnsExceedsMaxOpenConns_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WCQ_DATABASE_MAXOPENCONNS", "5")
+	t.Setenv("WCQ_DATABASE_MAXIDLECONNS", "10")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error when maxIdleConns > maxOpenConns, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_DATABASE_MAXIDLECONNS") {
+		t.Errorf("expected error to reference WCQ_DATABASE_MAXIDLECONNS, got: %v", err)
+	}
+}
+
+func TestLoad_DatabaseMaxIdleConnsNegative_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WCQ_DATABASE_MAXIDLECONNS", "-1")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for negative maxIdleConns, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_DATABASE_MAXIDLECONNS") {
+		t.Errorf("expected error to reference WCQ_DATABASE_MAXIDLECONNS, got: %v", err)
+	}
+}
+
+func TestLoad_DatabasePoolOverride_ConnMaxIdleTime(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WCQ_DATABASE_CONNMAXIDLETIME", "5m")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if cfg.Database.ConnMaxIdleTime != 5*time.Minute {
+		t.Errorf("Database.ConnMaxIdleTime: expected 5m, got %v", cfg.Database.ConnMaxIdleTime)
+	}
+}
+
+func TestLoad_DatabasePoolOverride_ConnMaxLifetimeJitter(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WCQ_DATABASE_CONNMAXLIFETIMEJITTER", "1m")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if cfg.Database.ConnMaxLifetimeJitter != time.Minute {
+		t.Errorf("Database.ConnMaxLifetimeJitter: expected 1m, got %v", cfg.Database.ConnMaxLifetimeJitter)
 	}
 }
