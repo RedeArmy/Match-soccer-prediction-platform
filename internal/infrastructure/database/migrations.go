@@ -43,6 +43,31 @@ func Migrate(dsn string, sqlFS fs.FS) error {
 	return nil
 }
 
+// MigrateDown reverts all applied migrations in reverse order using the
+// .down.sql files from sqlFS. It is the counterpart of Migrate and is intended
+// for CI roundtrip validation (up → test → down → up) to catch broken rollback
+// scripts before they cause problems during an incident.
+//
+// A "no change" result is treated as success so callers can invoke MigrateDown
+// unconditionally without needing to know the current schema version.
+func MigrateDown(dsn string, sqlFS fs.FS) error {
+	source, err := iofs.New(sqlFS, ".")
+	if err != nil {
+		return fmt.Errorf("migrate: load source: %w", err)
+	}
+
+	m, err := migrate.NewWithSourceInstance("iofs", source, toPGX5DSN(dsn))
+	if err != nil {
+		return fmt.Errorf("migrate: initialise: %w", err)
+	}
+	defer func() { _, _ = m.Close() }()
+
+	if err := m.Down(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("migrate: down: %w", err)
+	}
+	return nil
+}
+
 // toPGX5DSN rewrites a standard PostgreSQL DSN to use the pgx5:// scheme
 // expected by the golang-migrate pgx/v5 driver.
 func toPGX5DSN(dsn string) string {

@@ -149,7 +149,9 @@ func (r *PostgresBalanceLedgerRepository) ListByUser(ctx context.Context, userID
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	return collectRows(rows, scanBalanceLedger)
+	return collectRows(rows, func(r pgx.Rows) (*domain.BalanceLedger, error) {
+		return scanBalanceLedgerFields(r)
+	})
 }
 
 // ledgerRow holds the payload for a single balance_ledger INSERT.
@@ -285,15 +287,12 @@ func insufficientOrNotFound(ctx context.Context, tx pgx.Tx, userID int) error {
 	return apperrors.Conflict("insufficient available balance")
 }
 
-func scanBalanceLedger(rows pgx.Rows) (*domain.BalanceLedger, error) {
+func scanBalanceLedgerFields(s rowScanner) (*domain.BalanceLedger, error) {
 	l := &domain.BalanceLedger{}
-	if err := rows.Scan(
+	return l, s.Scan(
 		&l.ID, &l.UserID, &l.DeltaCents, &l.Kind, &l.BalanceAfter,
 		&l.RefID, &l.RefType, &l.CreatedBy, &l.CreatedAt,
-	); err != nil {
-		return nil, err
-	}
-	return l, nil
+	)
 }
 
 var _ BalanceLedgerRepository = (*PostgresBalanceLedgerRepository)(nil)

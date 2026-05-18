@@ -1,5 +1,23 @@
 package apperrors
 
+// ErrorAPIVersion is the version number embedded in every error response body
+// as the schema_version field. Clients may gate on this value to detect
+// breaking changes in the error envelope without re-parsing the response.
+//
+// Stability contract:
+//   - The integer value and the set of Code constants below are part of the
+//     public API surface. Changing a Code's string value or removing a Code
+//     is a breaking change that requires bumping ErrorAPIVersion.
+//   - Adding a new Code constant is backward-compatible and does NOT require
+//     a version bump.
+//   - The wire format of a Code is always its string literal, not its constant
+//     name. Renaming the Go constant while keeping the string value unchanged
+//     is safe. Changing the string value is a breaking change.
+//
+// TestCodes_WireValuesAreLocked in codes_test.go asserts the exact string
+// value of every Code to prevent accidental renames from reaching clients.
+const ErrorAPIVersion = 1
+
 // Code is a machine-readable string that identifies the category of an
 // application error. Handlers use this value to select the appropriate
 // HTTP status code; clients may use it to display localised error messages

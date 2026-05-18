@@ -4478,6 +4478,9 @@
                 },
                 "message": {
                     "type": "string"
+                },
+                "schema_version": {
+                    "type": "integer"
                 }
             }
         },

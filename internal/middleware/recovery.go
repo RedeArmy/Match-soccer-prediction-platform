@@ -35,8 +35,9 @@ func Recover(log *zap.Logger) func(http.Handler) http.Handler {
 					)
 					writeJSON(w, http.StatusInternalServerError, errorResponse{
 						Error: errorDetail{
-							Code:    string(apperrors.CodeInternal),
-							Message: apperrors.MsgInternal,
+							SchemaVersion: apperrors.ErrorAPIVersion,
+							Code:          string(apperrors.CodeInternal),
+							Message:       apperrors.MsgInternal,
 						},
 					})
 				}

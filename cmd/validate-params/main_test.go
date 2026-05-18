@@ -210,6 +210,62 @@ func TestValidateFromParams_AllValid_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestValidateIsRuntime_Match_ReturnsNoErrors(t *testing.T) {
+	spec := paramSpec{key: "a.b", isRuntime: true}
+	db := dbParam{key: "a.b", isRuntime: true}
+	errs := validateIsRuntime(spec, db)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestValidateIsRuntime_FalseFalse_ReturnsNoErrors(t *testing.T) {
+	spec := paramSpec{key: "a.b", isRuntime: false}
+	db := dbParam{key: "a.b", isRuntime: false}
+	errs := validateIsRuntime(spec, db)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for matching false/false, got %v", errs)
+	}
+}
+
+func TestValidateIsRuntime_Mismatch_TrueExpectedFalseGot_ReturnsError(t *testing.T) {
+	spec := paramSpec{key: "a.b", isRuntime: true}
+	db := dbParam{key: "a.b", isRuntime: false}
+	errs := validateIsRuntime(spec, db)
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error for true/false mismatch, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateIsRuntime_Mismatch_FalseExpectedTrueGot_ReturnsError(t *testing.T) {
+	spec := paramSpec{key: "a.b", isRuntime: false}
+	db := dbParam{key: "a.b", isRuntime: true}
+	errs := validateIsRuntime(spec, db)
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error for false/true mismatch, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestAllParamsIsRuntimeCoverage verifies that the allParams catalog contains
+// at least one runtime and one non-runtime param. A catalog where all params
+// share the same flag is a sign that isRuntime was forgotten during a bulk-add.
+func TestAllParamsIsRuntimeCoverage(t *testing.T) {
+	var hasRuntime, hasNonRuntime bool
+	for _, spec := range allParams {
+		if spec.isRuntime {
+			hasRuntime = true
+		} else {
+			hasNonRuntime = true
+		}
+	}
+	if !hasRuntime {
+		t.Error("allParams has no runtime params (isRuntime=true) — check that isRuntime is populated")
+	}
+	if !hasNonRuntime {
+		t.Error("allParams has no non-runtime params (isRuntime=false) — check that isRuntime is populated")
+	}
+}
+
 func TestValidateSingleParam_DefaultValueMismatch_ReturnsError(t *testing.T) {
 	spec := paramSpec{key: "a.b", defaultValue: "5", paramType: "int", category: "group"}
 	db := map[string]dbParam{
@@ -425,7 +481,7 @@ func TestValidateFromParams_FullSnapshot_ReturnsNil(t *testing.T) {
 			defaultValue: spec.defaultValue,
 			paramType:    spec.paramType,
 			category:     spec.category,
-			isRuntime:    true,
+			isRuntime:    spec.isRuntime, // must mirror the spec to pass validateIsRuntime
 			description:  "canonical default — synthetic test snapshot",
 		}
 	}

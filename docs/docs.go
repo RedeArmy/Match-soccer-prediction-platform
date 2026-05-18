@@ -4484,6 +4484,9 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string"
+                },
+                "schema_version": {
+                    "type": "integer"
                 }
             }
         },

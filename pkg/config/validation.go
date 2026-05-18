@@ -30,7 +30,7 @@ func validateWorker(cfg *Config) error {
 			cfg.Logger.Level,
 		)
 	}
-	return nil
+	return validateDatabaseConfig(cfg.Database)
 }
 
 // validate enforces the subset of configuration invariants that cannot be
@@ -58,6 +58,36 @@ func validate(cfg *Config) error {
 		return fmt.Errorf(
 			"logger.level %q is not valid (WCQ_LOGGER_LEVEL); accepted values: debug, info, warn, error, dpanic, panic, fatal",
 			cfg.Logger.Level,
+		)
+	}
+	return validateDatabaseConfig(cfg.Database)
+}
+
+// validateDatabaseConfig enforces pool-sizing invariants that cannot be
+// expressed as defaults. It is intentionally separate from the rest of
+// validate so it can be called by both validate and validateWorker without
+// duplicating logic.
+//
+// ConnMaxLifetime, ConnMaxIdleTime, and ConnMaxLifetimeJitter are NOT checked
+// here because their zero values are meaningful (0 == disabled in pgxpool).
+func validateDatabaseConfig(db DatabaseConfig) error {
+	if db.MaxOpenConns <= 0 {
+		return fmt.Errorf(
+			"database.maxOpenConns must be > 0 (WCQ_DATABASE_MAXOPENCONNS); got %d",
+			db.MaxOpenConns,
+		)
+	}
+	if db.MaxIdleConns < 0 {
+		return fmt.Errorf(
+			"database.maxIdleConns must be >= 0 (WCQ_DATABASE_MAXIDLECONNS); got %d",
+			db.MaxIdleConns,
+		)
+	}
+	if db.MaxIdleConns > db.MaxOpenConns {
+		return fmt.Errorf(
+			"database.maxIdleConns (%d) must not exceed database.maxOpenConns (%d); "+
+				"set WCQ_DATABASE_MAXIDLECONNS <= WCQ_DATABASE_MAXOPENCONNS",
+			db.MaxIdleConns, db.MaxOpenConns,
 		)
 	}
 	return nil

@@ -13,102 +13,111 @@ import (
 )
 
 // paramSpec defines the expected metadata for a system parameter.
+//
+// isRuntime controls the service's cache TTL for this key:
+//   - true  → 30 s runtime TTL; changes propagate within one window, no restart required.
+//   - false → 5 min infrastructure TTL; a process restart is required to guarantee the
+//     new value takes effect. The longer TTL also reflects that these params are
+//     read once at startup and cached for the life of the process.
 type paramSpec struct {
 	key          string
 	defaultValue string
 	paramType    string
 	category     string
+	isRuntime    bool
 }
 
 // allParams is the authoritative list of every system parameter that must exist
 // in the database. This list is derived from domain/constants.go and must stay
 // synchronised with the migrations that seed system_params:
-//   - 000051_sync_system_params_canonical  (22 base params)
+//   - 000051_sync_system_params_canonical      (22 base params)
 //   - 000055_add_worker_messaging_audit_params (+10)
-//   - 000056_add_snapshot_keep_latest_param (+1)
-//   - 000058_seed_group_max_size_param (+1)
-//   - 000066_seed_scoring_bonus_params (+2)
+//   - 000056_add_snapshot_keep_latest_param    (+1)
+//   - 000058_seed_group_max_size_param         (+1)
+//   - 000066_seed_scoring_bonus_params         (+2)
 //   - 000073_add_payment_webhook_secrets_params (+3)
-//   - 000074_add_bank_transfer_amount_params (+2)
-//   - 000076_seed_payment_intent_ttl_param (+1)
+//   - 000074_add_bank_transfer_amount_params   (+2)
+//   - 000076_seed_payment_intent_ttl_param     (+1)
+//   - 000078_sync_system_params_is_runtime     (canonical is_runtime sync)
 var allParams = []paramSpec{
-	// Scoring
-	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring"},
-	{key: domain.ParamKeyScoringCorrectOutcome, defaultValue: strconv.Itoa(domain.PointsCorrectOutcome), paramType: "int", category: "scoring"},
-	{key: domain.ParamKeyScoringGoalDiff, defaultValue: strconv.Itoa(domain.PointsGoalDifference), paramType: "int", category: "scoring"},
-	{key: domain.ParamKeyScoringExtraTimeBonus, defaultValue: strconv.Itoa(domain.DefaultScoringExtraTimeBonus), paramType: "int", category: "scoring"},
-	{key: domain.ParamKeyScoringPenaltiesBonus, defaultValue: strconv.Itoa(domain.DefaultScoringPenaltiesBonus), paramType: "int", category: "scoring"},
+	// Scoring — runtime: re-read on every ScoreMatch call.
+	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
+	{key: domain.ParamKeyScoringCorrectOutcome, defaultValue: strconv.Itoa(domain.PointsCorrectOutcome), paramType: "int", category: "scoring", isRuntime: true},
+	{key: domain.ParamKeyScoringGoalDiff, defaultValue: strconv.Itoa(domain.PointsGoalDifference), paramType: "int", category: "scoring", isRuntime: true},
+	{key: domain.ParamKeyScoringExtraTimeBonus, defaultValue: strconv.Itoa(domain.DefaultScoringExtraTimeBonus), paramType: "int", category: "scoring", isRuntime: true},
+	{key: domain.ParamKeyScoringPenaltiesBonus, defaultValue: strconv.Itoa(domain.DefaultScoringPenaltiesBonus), paramType: "int", category: "scoring", isRuntime: true},
 
-	// Prediction
-	{key: domain.ParamKeyPredictionDeadlineMin, defaultValue: strconv.Itoa(int(domain.PredictionDeadlineOffset / time.Minute)), paramType: "int", category: "prediction"},
+	// Prediction — runtime: re-read on every prediction submit/update call.
+	{key: domain.ParamKeyPredictionDeadlineMin, defaultValue: strconv.Itoa(int(domain.PredictionDeadlineOffset / time.Minute)), paramType: "int", category: "prediction", isRuntime: true},
 
-	// Group
-	{key: domain.ParamKeyGroupMinMembers, defaultValue: strconv.Itoa(domain.MinMembersForActive), paramType: "int", category: "group"},
-	{key: domain.ParamKeyGroupMaxSize, defaultValue: strconv.Itoa(domain.MaxMembersPerGroup), paramType: "int", category: "group"},
-	{key: domain.ParamKeyGroupInviteCodeLength, defaultValue: strconv.Itoa(domain.DefaultGroupInviteCodeLength), paramType: "int", category: "group"},
+	// Group — runtime: enforced at request time; tunable without restart.
+	{key: domain.ParamKeyGroupMinMembers, defaultValue: strconv.Itoa(domain.MinMembersForActive), paramType: "int", category: "group", isRuntime: true},
+	{key: domain.ParamKeyGroupMaxSize, defaultValue: strconv.Itoa(domain.MaxMembersPerGroup), paramType: "int", category: "group", isRuntime: true},
+	{key: domain.ParamKeyGroupInviteCodeLength, defaultValue: strconv.Itoa(domain.DefaultGroupInviteCodeLength), paramType: "int", category: "group", isRuntime: true},
 
-	// Conflict
-	{key: domain.ParamKeyConflictStaleDays, defaultValue: strconv.Itoa(domain.DefaultConflictStaleDays), paramType: "int", category: "conflict"},
-	{key: domain.ParamKeyConflictMaxScan, defaultValue: strconv.Itoa(domain.DefaultConflictMaxScan), paramType: "int", category: "conflict"},
+	// Conflict — runtime: conflict detection is read per-request.
+	{key: domain.ParamKeyConflictStaleDays, defaultValue: strconv.Itoa(domain.DefaultConflictStaleDays), paramType: "int", category: "conflict", isRuntime: true},
+	{key: domain.ParamKeyConflictMaxScan, defaultValue: strconv.Itoa(domain.DefaultConflictMaxScan), paramType: "int", category: "conflict", isRuntime: true},
 
-	// Pagination
-	{key: domain.ParamKeyPaginationDefaultLimit, defaultValue: strconv.Itoa(domain.DefaultPaginationDefaultLimit), paramType: "int", category: "pagination"},
-	{key: domain.ParamKeyPaginationMaxLimit, defaultValue: strconv.Itoa(domain.DefaultPaginationMaxLimit), paramType: "int", category: "pagination"},
+	// Pagination — runtime: read on every paginated request.
+	{key: domain.ParamKeyPaginationDefaultLimit, defaultValue: strconv.Itoa(domain.DefaultPaginationDefaultLimit), paramType: "int", category: "pagination", isRuntime: true},
+	{key: domain.ParamKeyPaginationMaxLimit, defaultValue: strconv.Itoa(domain.DefaultPaginationMaxLimit), paramType: "int", category: "pagination", isRuntime: true},
 
-	// Tournament
-	{key: domain.ParamKeyTournamentWinPoints, defaultValue: strconv.Itoa(domain.StandingsWinPoints), paramType: "int", category: "tournament"},
+	// Tournament — runtime.
+	{key: domain.ParamKeyTournamentWinPoints, defaultValue: strconv.Itoa(domain.StandingsWinPoints), paramType: "int", category: "tournament", isRuntime: true},
 
-	// Admin
-	{key: domain.ParamKeyAdminBulkMaxItems, defaultValue: strconv.Itoa(domain.DefaultAdminBulkMaxItems), paramType: "int", category: "admin"},
+	// Admin — runtime: tunable during high-load periods without restart.
+	{key: domain.ParamKeyAdminBulkMaxItems, defaultValue: strconv.Itoa(domain.DefaultAdminBulkMaxItems), paramType: "int", category: "admin", isRuntime: true},
 
-	// Cache
-	{key: domain.ParamKeyCacheMatchTTL, defaultValue: strconv.Itoa(domain.DefaultCacheMatchTTLSeconds), paramType: "int", category: "cache"},
-	{key: domain.ParamKeyCacheLeaderboardTTL, defaultValue: strconv.Itoa(domain.DefaultCacheLeaderboardTTLSeconds), paramType: "int", category: "cache"},
-	{key: domain.ParamKeyCacheDashboardTTLSeconds, defaultValue: strconv.Itoa(domain.DefaultCacheDashboardTTLSeconds), paramType: "int", category: "cache"},
+	// Cache TTLs.
+	// match_ttl_seconds is not runtime: no mutation hook wired; restart required.
+	// leaderboard_ttl_seconds is runtime: CachedRankingService.UpdateTTL hook.
+	// dashboard_ttl_seconds is runtime: CachedAdminReadService hook.
+	{key: domain.ParamKeyCacheMatchTTL, defaultValue: strconv.Itoa(domain.DefaultCacheMatchTTLSeconds), paramType: "int", category: "cache", isRuntime: false},
+	{key: domain.ParamKeyCacheLeaderboardTTL, defaultValue: strconv.Itoa(domain.DefaultCacheLeaderboardTTLSeconds), paramType: "int", category: "cache", isRuntime: true},
+	{key: domain.ParamKeyCacheDashboardTTLSeconds, defaultValue: strconv.Itoa(domain.DefaultCacheDashboardTTLSeconds), paramType: "int", category: "cache", isRuntime: true},
 
-	// System
-	{key: domain.ParamKeyAuditWriteTimeout, defaultValue: strconv.Itoa(domain.DefaultAuditWriteTimeoutSeconds), paramType: "int", category: "system"},
-	{key: domain.ParamKeyAuthValidationTimeout, defaultValue: strconv.Itoa(domain.DefaultAuthValidationTimeoutSeconds), paramType: "int", category: "system"},
-	{key: domain.ParamKeyPurgeRetentionDays, defaultValue: strconv.Itoa(domain.DefaultPurgeRetentionDays), paramType: "int", category: "system"},
+	// Infrastructure timeouts — not runtime: read once at process startup; restart required.
+	{key: domain.ParamKeyAuditWriteTimeout, defaultValue: strconv.Itoa(domain.DefaultAuditWriteTimeoutSeconds), paramType: "int", category: "system", isRuntime: false},
+	{key: domain.ParamKeyAuthValidationTimeout, defaultValue: strconv.Itoa(domain.DefaultAuthValidationTimeoutSeconds), paramType: "int", category: "system", isRuntime: false},
+	{key: domain.ParamKeyPurgeRetentionDays, defaultValue: strconv.Itoa(domain.DefaultPurgeRetentionDays), paramType: "int", category: "system", isRuntime: false},
 
-	// DLQ
-	{key: domain.ParamKeyDLQSampleSize, defaultValue: strconv.Itoa(domain.DefaultDLQSampleSize), paramType: "int", category: "dlq"},
-	{key: domain.ParamKeyDLQReplayDefaultLimit, defaultValue: strconv.Itoa(domain.DefaultDLQReplayDefaultLimit), paramType: "int", category: "dlq"},
+	// DLQ — not runtime: restart required.
+	{key: domain.ParamKeyDLQSampleSize, defaultValue: strconv.Itoa(domain.DefaultDLQSampleSize), paramType: "int", category: "dlq", isRuntime: false},
+	{key: domain.ParamKeyDLQReplayDefaultLimit, defaultValue: strconv.Itoa(domain.DefaultDLQReplayDefaultLimit), paramType: "int", category: "dlq", isRuntime: false},
 
-	// Messaging
-	{key: domain.ParamKeyMessagingMaxRetries, defaultValue: strconv.Itoa(domain.DefaultMessagingMaxRetries), paramType: "int", category: "messaging"},
-	{key: domain.ParamKeyMessagingStreamMaxLen, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamMaxLen), paramType: "int", category: "messaging"},
-	{key: domain.ParamKeyMessagingStreamWorkerCount, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamWorkerCount), paramType: "int", category: "messaging"},
-	{key: domain.ParamKeyMessagingStreamReadBlockSec, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamReadBlockSec), paramType: "int", category: "messaging"},
+	// Messaging / Redis Streams — not runtime: restart required.
+	{key: domain.ParamKeyMessagingMaxRetries, defaultValue: strconv.Itoa(domain.DefaultMessagingMaxRetries), paramType: "int", category: "messaging", isRuntime: false},
+	{key: domain.ParamKeyMessagingStreamMaxLen, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamMaxLen), paramType: "int", category: "messaging", isRuntime: false},
+	{key: domain.ParamKeyMessagingStreamWorkerCount, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamWorkerCount), paramType: "int", category: "messaging", isRuntime: false},
+	{key: domain.ParamKeyMessagingStreamReadBlockSec, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamReadBlockSec), paramType: "int", category: "messaging", isRuntime: false},
 
-	// Audit retry policy
-	{key: domain.ParamKeyAuditMaxRetries, defaultValue: strconv.Itoa(domain.DefaultAuditMaxRetries), paramType: "int", category: "system"},
-	{key: domain.ParamKeyAuditRetryDelayMs, defaultValue: strconv.Itoa(domain.DefaultAuditRetryDelayMs), paramType: "int", category: "system"},
+	// Audit retry policy — not runtime: restart required.
+	{key: domain.ParamKeyAuditMaxRetries, defaultValue: strconv.Itoa(domain.DefaultAuditMaxRetries), paramType: "int", category: "system", isRuntime: false},
+	{key: domain.ParamKeyAuditRetryDelayMs, defaultValue: strconv.Itoa(domain.DefaultAuditRetryDelayMs), paramType: "int", category: "system", isRuntime: false},
 
-	// Worker: snapshot generation
-	{key: domain.ParamKeyWorkerSnapshotConcurrency, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotConcurrency), paramType: "int", category: "worker"},
-	{key: domain.ParamKeyWorkerSnapshotRetryBaseMs, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotRetryBaseMs), paramType: "int", category: "worker"},
-	{key: domain.ParamKeyWorkerSnapshotMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotMaxAttempts), paramType: "int", category: "worker"},
+	// Worker: snapshot generation — not runtime: worker restart required.
+	{key: domain.ParamKeyWorkerSnapshotConcurrency, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotConcurrency), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerSnapshotRetryBaseMs, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotRetryBaseMs), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerSnapshotMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotMaxAttempts), paramType: "int", category: "worker", isRuntime: false},
 
-	// Worker: background maintenance
-	{key: domain.ParamKeyWorkerDLQMonitorIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerDLQMonitorIntervalSec), paramType: "int", category: "worker"},
-	{key: domain.ParamKeyWorkerPurgeIntervalHours, defaultValue: strconv.Itoa(domain.DefaultWorkerPurgeIntervalHours), paramType: "int", category: "worker"},
+	// Worker: background maintenance — not runtime: worker restart required.
+	{key: domain.ParamKeyWorkerDLQMonitorIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerDLQMonitorIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerPurgeIntervalHours, defaultValue: strconv.Itoa(domain.DefaultWorkerPurgeIntervalHours), paramType: "int", category: "worker", isRuntime: false},
 
-	// API request limits
-	{key: domain.ParamKeyAPIBodySizeLimitBytes, defaultValue: strconv.Itoa(domain.DefaultAPIBodySizeLimitBytes), paramType: "int", category: "api"},
+	// API request limits — not runtime: restart required.
+	{key: domain.ParamKeyAPIBodySizeLimitBytes, defaultValue: strconv.Itoa(domain.DefaultAPIBodySizeLimitBytes), paramType: "int", category: "api", isRuntime: false},
 
-	// Snapshot retention
-	{key: domain.ParamKeySnapshotKeepLatestCount, defaultValue: strconv.Itoa(domain.DefaultSnapshotKeepLatestCount), paramType: "int", category: "worker"},
+	// Snapshot retention — not runtime: worker restart required.
+	{key: domain.ParamKeySnapshotKeepLatestCount, defaultValue: strconv.Itoa(domain.DefaultSnapshotKeepLatestCount), paramType: "int", category: "worker", isRuntime: false},
 
-	// Payment / balance
-	{key: domain.ParamKeyPaymentMaxUploadBytes, defaultValue: strconv.Itoa(domain.DefaultPaymentMaxUploadBytes), paramType: "int", category: "payment"},
-	{key: domain.ParamKeyWithdrawalMinCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMinCents), paramType: "int", category: "payment"},
-	{key: domain.ParamKeyWithdrawalMaxCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMaxCents), paramType: "int", category: "payment"},
-	// Added by migration 000074
-	{key: domain.ParamKeyBankTransferMinAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMinAmountCents), paramType: "int", category: "payment"},
-	{key: domain.ParamKeyBankTransferMaxAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMaxAmountCents), paramType: "int", category: "payment"},
-	// Added by migration 000076
-	{key: domain.ParamKeyPaymentIntentTTLMinutes, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentTTLMinutes), paramType: "int", category: "payment"},
+	// Payment / balance — runtime: changes take effect within the 30 s cache window.
+	{key: domain.ParamKeyPaymentMaxUploadBytes, defaultValue: strconv.Itoa(domain.DefaultPaymentMaxUploadBytes), paramType: "int", category: "payment", isRuntime: true},
+	{key: domain.ParamKeyWithdrawalMinCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMinCents), paramType: "int", category: "payment", isRuntime: true},
+	{key: domain.ParamKeyWithdrawalMaxCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMaxCents), paramType: "int", category: "payment", isRuntime: true},
+	{key: domain.ParamKeyBankTransferMinAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMinAmountCents), paramType: "int", category: "payment", isRuntime: true},
+	{key: domain.ParamKeyBankTransferMaxAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMaxAmountCents), paramType: "int", category: "payment", isRuntime: true},
+	{key: domain.ParamKeyPaymentIntentTTLMinutes, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentTTLMinutes), paramType: "int", category: "payment", isRuntime: true},
 }
 
 type dbParam struct {
@@ -194,6 +203,7 @@ func validateSingleParam(spec paramSpec, dbMap map[string]dbParam) []string {
 	var errors []string
 	errors = append(errors, validateType(spec, db)...)
 	errors = append(errors, validateCategory(spec, db)...)
+	errors = append(errors, validateIsRuntime(spec, db)...)
 	errors = append(errors, validateDescription(spec, db)...)
 	errors = append(errors, validateDefaultValue(spec, db)...)
 
@@ -220,6 +230,17 @@ func validateType(spec paramSpec, db dbParam) []string {
 func validateCategory(spec paramSpec, db dbParam) []string {
 	if db.category != spec.category {
 		return []string{fmt.Sprintf("❌ CATEGORY MISMATCH: %s (expected: %s, got: %s)", spec.key, spec.category, db.category)}
+	}
+	return nil
+}
+
+func validateIsRuntime(spec paramSpec, db dbParam) []string {
+	if db.isRuntime != spec.isRuntime {
+		return []string{fmt.Sprintf(
+			"❌ IS_RUNTIME MISMATCH: %s (expected: %v, got: %v) — "+
+				"migration 000078 should have corrected this; re-run migrations",
+			spec.key, spec.isRuntime, db.isRuntime,
+		)}
 	}
 	return nil
 }
