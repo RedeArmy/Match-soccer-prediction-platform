@@ -15,4 +15,5 @@ const (
 	MsgForbidden           = "you do not have permission to perform this action"
 	MsgRequestBodyTooLarge = "request body exceeds the maximum allowed size"
 	MsgInternal            = "an unexpected error occurred; please try again later"
+	MsgRateLimited         = "too many requests; please slow down and try again later"
 )
