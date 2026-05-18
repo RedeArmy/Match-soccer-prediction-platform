@@ -77,6 +77,8 @@ func (r *PostgresPaymentRecordRepository) queryPaymentRecords(ctx context.Contex
 // operation safe to retry on webhook re-delivery or client retries.
 // record is populated with the inserted or existing row on success.
 func (r *PostgresPaymentRecordRepository) Create(ctx context.Context, record *domain.PaymentRecord) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	row := r.db.QueryRow(ctx,
 		`INSERT INTO payment_records (quiniela_id, user_id, amount, currency, reference)
 		 VALUES ($1, $2, $3, $4, $5)
@@ -96,6 +98,8 @@ func (r *PostgresPaymentRecordRepository) Create(ctx context.Context, record *do
 // GetByID returns a payment record by primary key. Returns nil, nil when not
 // found.
 func (r *PostgresPaymentRecordRepository) GetByID(ctx context.Context, id int) (*domain.PaymentRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	row := r.db.QueryRow(ctx,
 		`SELECT `+paymentColumns+` FROM payment_records WHERE id = $1`, id,
 	)
@@ -105,6 +109,8 @@ func (r *PostgresPaymentRecordRepository) GetByID(ctx context.Context, id int) (
 // ListByQuiniela returns all payment records for a quiniela, optionally
 // filtered by status. Results are ordered by created_at descending.
 func (r *PostgresPaymentRecordRepository) ListByQuiniela(ctx context.Context, quinielaID int, f PaymentFilters) ([]*domain.PaymentRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	q := `SELECT ` + paymentColumns + ` FROM payment_records WHERE quiniela_id = $1`
 	args := []any{quinielaID}
 	if f.Status != nil {
@@ -118,6 +124,8 @@ func (r *PostgresPaymentRecordRepository) ListByQuiniela(ctx context.Context, qu
 // ListByUser returns all payment records for a user across all quinielas,
 // ordered by created_at descending.
 func (r *PostgresPaymentRecordRepository) ListByUser(ctx context.Context, userID int) ([]*domain.PaymentRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	return r.queryPaymentRecords(ctx,
 		`SELECT `+paymentColumns+` FROM payment_records WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
@@ -127,6 +135,8 @@ func (r *PostgresPaymentRecordRepository) ListByUser(ctx context.Context, userID
 // ListPending returns all payment records in pending state, ordered oldest
 // first to process by arrival order.
 func (r *PostgresPaymentRecordRepository) ListPending(ctx context.Context) ([]*domain.PaymentRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	return r.queryPaymentRecords(ctx,
 		`SELECT `+paymentColumns+` FROM payment_records WHERE status = 'pending' ORDER BY created_at ASC`,
 	)
@@ -136,6 +146,8 @@ func (r *PostgresPaymentRecordRepository) ListPending(ctx context.Context) ([]*d
 // approved it and any approval notes. Returns NotFound when the payment does
 // not exist or is not in pending state.
 func (r *PostgresPaymentRecordRepository) Validate(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	return r.reviewPending(ctx, id, adminID, notes, "confirmed", true)
 }
 
@@ -143,6 +155,8 @@ func (r *PostgresPaymentRecordRepository) Validate(ctx context.Context, id, admi
 // admin and reason. Returns NotFound when the payment does not exist or is
 // not in pending state.
 func (r *PostgresPaymentRecordRepository) Reject(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	return r.reviewPending(ctx, id, adminID, notes, "rejected", false)
 }
 
@@ -188,6 +202,8 @@ func (r *PostgresPaymentRecordRepository) reviewPending(ctx context.Context, id,
 
 // List returns payment records matching the given filters with pagination.
 func (r *PostgresPaymentRecordRepository) List(ctx context.Context, f PaymentFilters, p Pagination) ([]*domain.PaymentRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	wb := newWhereBuilder()
 	if f.Status != nil {
 		wb.add("status = $%d", string(*f.Status))
@@ -206,6 +222,8 @@ func (r *PostgresPaymentRecordRepository) List(ctx context.Context, f PaymentFil
 
 // ListStale returns pending payment records older than olderThan.
 func (r *PostgresPaymentRecordRepository) ListStale(ctx context.Context, olderThan time.Time) ([]*domain.PaymentRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	return r.queryPaymentRecords(ctx,
 		`SELECT `+paymentColumns+` FROM payment_records WHERE status = 'pending' AND created_at < $1 ORDER BY created_at ASC`,
 		olderThan,
@@ -215,6 +233,8 @@ func (r *PostgresPaymentRecordRepository) ListStale(ctx context.Context, olderTh
 // GetStatusCounts returns a single-row summary of payment record counts and
 // the total collected amount (sum of confirmed amounts) in one query.
 func (r *PostgresPaymentRecordRepository) GetStatusCounts(ctx context.Context) (PaymentStatusCounts, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	var c PaymentStatusCounts
 	err := r.db.QueryRow(ctx, `
 		SELECT
@@ -232,6 +252,8 @@ func (r *PostgresPaymentRecordRepository) GetStatusCounts(ctx context.Context) (
 // ValidateAndMarkPaid atomically confirms a pending payment AND marks the
 // corresponding group membership as paid in a single transaction.
 func (r *PostgresPaymentRecordRepository) ValidateAndMarkPaid(ctx context.Context, id, adminID int, notes string) (*domain.PaymentRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	var record *domain.PaymentRecord
 	err := withTx(ctx, r.db, "PaymentRecordRepository.ValidateAndMarkPaid", func(tx pgx.Tx) error {
 		row := tx.QueryRow(ctx,

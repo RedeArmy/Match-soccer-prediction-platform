@@ -42,6 +42,17 @@ func serviceAccountJSON(t *testing.T) string {
 	return string(raw)
 }
 
+func TestNewGDriveFileStore_InvalidCredentialsJSON_ReturnsError(t *testing.T) {
+	_, err := storage.NewGDriveFileStore(storage.Config{
+		Driver:                "gdrive",
+		GDriveCredentialsJSON: "not valid json",
+		GDriveFolderID:        "folder-id",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid credentials JSON, got nil")
+	}
+}
+
 func TestNewGDriveFileStore_MissingFolderID(t *testing.T) {
 	_, err := storage.NewGDriveFileStore(storage.Config{
 		Driver:                "gdrive",

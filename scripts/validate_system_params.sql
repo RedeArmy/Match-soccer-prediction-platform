@@ -1,7 +1,7 @@
 -- Validation script for system_params table.
 --
 -- Verifies that:
---   1. All 36 expected param keys are present (as of migration 000066)
+--   1. All 44 expected param keys are present (as of migration 000079)
 --   2. No deprecated keys remain (e.g. group.default_prize_threshold)
 --   3. All rows have non-empty descriptions
 --   4. Types and categories are consistent with constants.go
@@ -14,16 +14,20 @@
 --   000056  +1         (snapshot.keep_latest_count)
 --   000058  +1         (group.max_size)
 --   000066  +2         (scoring.extra_time_bonus, scoring.penalties_bonus)
---   TOTAL   36 params
+--   000073  +3         (payment.max_upload_bytes, payment.withdrawal_min_cents, payment.withdrawal_max_cents)
+--   000074  +2         (payment.bank_transfer_min_amount_cents, payment.bank_transfer_max_amount_cents)
+--   000076  +1         (payment.intent_ttl_minutes)
+--   000079  +2         (api.rate_limit_rate_per_sec, api.rate_limit_burst)
+--   TOTAL   44 params
 
 \echo '=== System Parameters Validation Report ==='
 \echo ''
 
 -- 1. Total count
-\echo '1. Checking total parameter count (expected: 36)...'
+\echo '1. Checking total parameter count (expected: 44)...'
 SELECT COUNT(*)            AS total_params,
-       36                  AS expected_params,
-       CASE WHEN COUNT(*) = 36 THEN '✓ PASS' ELSE '✗ FAIL' END AS status
+       44                  AS expected_params,
+       CASE WHEN COUNT(*) = 44 THEN '✓ PASS' ELSE '✗ FAIL' END AS status
 FROM system_params;
 
 \echo ''
@@ -119,14 +123,24 @@ WITH current_keys AS (
         'messaging.stream_max_len',
         'messaging.stream_read_block_sec',
         'messaging.stream_worker_count',
-        -- worker (000055 + 000056)
+        -- worker / api / snapshot (000055 + 000056)
         'api.body_size_limit_bytes',
         'snapshot.keep_latest_count',
         'worker.dlq_monitor_interval_sec',
         'worker.purge_interval_hours',
         'worker.snapshot_concurrency',
         'worker.snapshot_max_attempts',
-        'worker.snapshot_retry_base_ms'
+        'worker.snapshot_retry_base_ms',
+        -- payment (000073 + 000074 + 000076)
+        'payment.max_upload_bytes',
+        'payment.withdrawal_min_cents',
+        'payment.withdrawal_max_cents',
+        'payment.bank_transfer_min_amount_cents',
+        'payment.bank_transfer_max_amount_cents',
+        'payment.intent_ttl_minutes',
+        -- api rate limiting (000079)
+        'api.rate_limit_rate_per_sec',
+        'api.rate_limit_burst'
     ]) AS expected_key
 )
 SELECT sp.key   AS unexpected_key,
@@ -179,14 +193,22 @@ WHERE NOT EXISTS (
             'worker.purge_interval_hours',
             'worker.snapshot_concurrency',
             'worker.snapshot_max_attempts',
-            'worker.snapshot_retry_base_ms'
+            'worker.snapshot_retry_base_ms',
+            'payment.max_upload_bytes',
+            'payment.withdrawal_min_cents',
+            'payment.withdrawal_max_cents',
+            'payment.bank_transfer_min_amount_cents',
+            'payment.bank_transfer_max_amount_cents',
+            'payment.intent_ttl_minutes',
+            'api.rate_limit_rate_per_sec',
+            'api.rate_limit_burst'
         ]) AS k
     ) current_keys
     WHERE current_keys.k = sp.key
 );
 
 \echo ''
-\echo '7. Expected parameters checklist (all 36 must be ✓ Present)...'
+\echo '7. Expected parameters checklist (all 44 must be ✓ Present)...'
 WITH expected_params AS (
     SELECT unnest(ARRAY[
         -- scoring
@@ -236,7 +258,17 @@ WITH expected_params AS (
         'worker.purge_interval_hours',
         'worker.snapshot_concurrency',
         'worker.snapshot_max_attempts',
-        'worker.snapshot_retry_base_ms'
+        'worker.snapshot_retry_base_ms',
+        -- payment (000073 + 000074 + 000076)
+        'payment.max_upload_bytes',
+        'payment.withdrawal_min_cents',
+        'payment.withdrawal_max_cents',
+        'payment.bank_transfer_min_amount_cents',
+        'payment.bank_transfer_max_amount_cents',
+        'payment.intent_ttl_minutes',
+        -- api rate limiting (000079)
+        'api.rate_limit_rate_per_sec',
+        'api.rate_limit_burst'
     ]) AS expected_key
 )
 SELECT ep.expected_key,

@@ -236,3 +236,134 @@ func TestGDriveFileStore_Put_Update(t *testing.T) {
 		t.Fatalf("Put (update): unexpected error: %v", err)
 	}
 }
+
+func TestGDriveFileStore_Put_FindByNameError(t *testing.T) {
+	store, _ := newTestGDriveStore(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	err := store.Put(context.Background(), "proof.jpg", "image/jpeg", strings.NewReader("data"), 4)
+	if err == nil {
+		t.Fatal("Put: expected error when findByName fails, got nil")
+	}
+}
+
+func TestGDriveFileStore_Put_UpdateError(t *testing.T) {
+	store, _ := newTestGDriveStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"files":[{"id":"existing-id"}]}`)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+
+	err := store.Put(context.Background(), "proof.jpg", "image/jpeg", strings.NewReader("data"), 4)
+	if err == nil {
+		t.Fatal("Put: expected error when update fails, got nil")
+	}
+}
+
+func TestGDriveFileStore_Put_CreateError(t *testing.T) {
+	store, _ := newTestGDriveStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"files":[]}`)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+
+	err := store.Put(context.Background(), "proof.jpg", "image/jpeg", strings.NewReader("data"), 4)
+	if err == nil {
+		t.Fatal("Put: expected error when create fails, got nil")
+	}
+}
+
+// ── Get error paths ───────────────────────────────────────────────────────────
+
+func TestGDriveFileStore_Get_FindByNameError(t *testing.T) {
+	store, _ := newTestGDriveStore(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	_, _, err := store.Get(context.Background(), "proof.jpg")
+	if err == nil {
+		t.Fatal("Get: expected error when findByName fails, got nil")
+	}
+}
+
+func TestGDriveFileStore_Get_MetadataError(t *testing.T) {
+	store, _ := newTestGDriveStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && !strings.Contains(r.URL.Path, "/files/") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"files":[{"id":"file-abc"}]}`)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	_, _, err := store.Get(context.Background(), "proof.jpg")
+	if err == nil {
+		t.Fatal("Get: expected error for metadata failure, got nil")
+	}
+}
+
+func TestGDriveFileStore_Get_DownloadError(t *testing.T) {
+	store, _ := newTestGDriveStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && !strings.Contains(r.URL.Path, "/files/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"files":[{"id":"file-abc"}]}`)
+		case r.URL.Query().Get("alt") == "media":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"mimeType":"image/jpeg","id":"file-abc"}`)
+		}
+	}))
+
+	_, _, err := store.Get(context.Background(), "proof.jpg")
+	if err == nil {
+		t.Fatal("Get: expected error for download failure, got nil")
+	}
+}
+
+// ── Delete error paths ────────────────────────────────────────────────────────
+
+func TestGDriveFileStore_Delete_FindByNameError(t *testing.T) {
+	store, _ := newTestGDriveStore(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	err := store.Delete(context.Background(), "proof.jpg")
+	if err == nil {
+		t.Fatal("Delete: expected error when findByName fails, got nil")
+	}
+}
+
+func TestGDriveFileStore_Delete_DeleteError(t *testing.T) {
+	store, _ := newTestGDriveStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"files":[{"id":"file-xyz"}]}`)
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+		}
+	}))
+
+	err := store.Delete(context.Background(), "proof.jpg")
+	if err == nil {
+		t.Fatal("Delete: expected error for delete failure, got nil")
+	}
+}

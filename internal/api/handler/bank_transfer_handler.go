@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -24,10 +25,16 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
-// decodeJSONOptional decodes the request body into v, silently ignoring errors.
-// Use for request bodies that are entirely optional (e.g. review notes).
-func decodeJSONOptional(r *http.Request, v any) {
-	_ = json.NewDecoder(r.Body).Decode(v)
+// decodeJSONOptional decodes the request body into v, silently ignoring JSON
+// parse errors. Returns a non-nil error only when the body exceeds the reader
+// limit set by MaxBytesReader — callers must propagate that as 413.
+func decodeJSONOptional(r *http.Request, v any) error {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		if errors.As(err, new(*http.MaxBytesError)) {
+			return apperrors.RequestBodyTooLarge()
+		}
+	}
+	return nil
 }
 
 // BankTransferHandler handles bank transfer proof upload and admin review.
@@ -242,8 +249,12 @@ func (h *BankTransferHandler) AdminApprove(w http.ResponseWriter, r *http.Reques
 		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, moneyJSONBodyLimit)
 	var req reviewBankTransferRequest
-	decodeJSONOptional(r, &req)
+	if err := decodeJSONOptional(r, &req); err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
 
 	proof, err := h.svc.ApproveTransfer(r.Context(), id, caller.ID, req.Notes)
 	if err != nil {
@@ -279,6 +290,7 @@ func (h *BankTransferHandler) AdminReject(w http.ResponseWriter, r *http.Request
 		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, moneyJSONBodyLimit)
 	req, err := decodeJSON[reviewBankTransferRequest](r)
 	if err != nil {
 		writeError(w, r, h.log, err)

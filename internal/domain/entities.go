@@ -817,7 +817,7 @@ const (
 //   - bank_gt : {"account_number":"…","bank_name":"…"}
 //   - paypal  : {"paypal_email":"…"}
 type WithdrawalRequest struct {
-	ID            int64
+	ID            int
 	UserID        int
 	AmountCents   int
 	Currency      string

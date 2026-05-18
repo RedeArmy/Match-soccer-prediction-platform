@@ -20,6 +20,12 @@ const (
 	msgInvalidWithdrawalID = "invalid withdrawal id"
 )
 
+// moneyJSONBodyLimit is the per-handler body cap applied to all JSON money
+// endpoints (withdrawals, bank-transfer reviews). 4 KB is far larger than any
+// legitimate payload for these endpoints; the limit provides defense-in-depth
+// on top of the global RequestBodyLimit middleware.
+const moneyJSONBodyLimit int64 = 4 * 1024
+
 // writeJSON delegates to middleware.WriteJSON, the single canonical implementation
 // shared across the entire API surface.
 func writeJSON(w http.ResponseWriter, status int, v any) { middleware.WriteJSON(w, status, v) }
@@ -126,19 +132,19 @@ func parseOptionalInt(r *http.Request, name string) *int {
 }
 
 // parsePaginationParams reads optional ?limit and ?offset query parameters.
-// When limit is absent or zero, returns 0 (treated as unbounded by the caller).
-// When limit is positive, it is capped at DefaultPaginationMaxLimit to prevent
-// excessively large response payloads. When offset is absent, defaults to 0.
-// This is used for endpoints that historically returned unbounded results and
-// are being migrated to support optional pagination for consistency.
+// When limit is absent or non-positive, it defaults to DefaultPaginationDefaultLimit.
+// When limit exceeds DefaultPaginationMaxLimit it is capped to that value.
+// When offset is absent or negative, it defaults to 0.
 func parsePaginationParams(r *http.Request) (limit, offset int) {
 	limit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ = strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit < 0 {
-		limit = 0
-	}
-	if limit > domain.DefaultPaginationMaxLimit {
+	if limit <= 0 {
+		limit = domain.DefaultPaginationDefaultLimit
+	} else if limit > domain.DefaultPaginationMaxLimit {
 		limit = domain.DefaultPaginationMaxLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	return limit, offset
 }

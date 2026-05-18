@@ -60,7 +60,7 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 	}
 
 	resType := "withdrawal_request"
-	reqID := int(req.ID)
+	reqID := req.ID
 	s.audit.Log(ctx, &userID, nil, domain.AuditActionWithdrawalRequested, &resType, &reqID, map[string]any{
 		"amount_cents": amountCents,
 		"currency":     currency,
