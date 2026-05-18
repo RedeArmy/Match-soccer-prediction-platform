@@ -124,8 +124,10 @@ func TestWebhookPaymentService_CreditFromRecurrente_PassesReferenceToRepo(t *tes
 	ledger := &webhookLedgerRepoStub{}
 	svc := newWebhookPaymentSvc(ledger, nil)
 	_ = svc.CreditFromRecurrente(context.Background(), 1, 1000, "GTQ", "TXN-XYZ")
-	if ledger.capturedReference != "TXN-XYZ" {
-		t.Errorf("reference: got %q, want %q", ledger.capturedReference, "TXN-XYZ")
+	// Reference is scoped with the provider kind to prevent cross-provider collision.
+	want := "webhook_recurrente:TXN-XYZ"
+	if ledger.capturedReference != want {
+		t.Errorf("reference: got %q, want %q", ledger.capturedReference, want)
 	}
 }
 
@@ -143,21 +145,21 @@ func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_HappyPath(t *testing
 	intent := &domain.PaymentIntent{ID: 1, UserID: 7, AmountCents: 2500, Currency: "USD"}
 	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{intent: intent})
 
-	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-ABC"); err != nil {
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-ABC", 2500); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_EmptyTokenReturnsValidation(t *testing.T) {
 	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, nil)
-	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "", "CAP"); err == nil {
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "", "CAP", 0); err == nil {
 		t.Fatal("expected validation error for empty token, got nil")
 	}
 }
 
 func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_EmptyCaptureIDReturnsValidation(t *testing.T) {
 	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, nil)
-	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", ""); err == nil {
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "", 0); err == nil {
 		t.Fatal("expected validation error for empty captureID, got nil")
 	}
 }
@@ -168,7 +170,7 @@ func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_IdempotentReplayRetu
 		intent:     intent,
 		captureErr: repository.ErrPaymentIntentAlreadyCaptured,
 	})
-	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP"); err != nil {
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP", 0); err != nil {
 		t.Fatalf("idempotent replay must return nil, got %v", err)
 	}
 }
@@ -177,7 +179,7 @@ func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_NotFoundPropagates(t
 	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{
 		captureErr: apperrors.NotFound("payment intent not found"),
 	})
-	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP"); err == nil {
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP", 0); err == nil {
 		t.Fatal("expected NotFound error to propagate, got nil")
 	}
 }
@@ -186,7 +188,17 @@ func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_ConflictPropagates(t
 	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{
 		captureErr: apperrors.Conflict("already captured by different transaction"),
 	})
-	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP"); err == nil {
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP", 0); err == nil {
 		t.Fatal("expected Conflict error to propagate, got nil")
+	}
+}
+
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_AmountMismatchDoesNotError(t *testing.T) {
+	// Webhook declares 2000 cents but intent has 2500 — mismatch is warned but
+	// must not block the credit (server-authoritative amount wins).
+	intent := &domain.PaymentIntent{ID: 1, UserID: 7, AmountCents: 2500, Currency: "USD"}
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{intent: intent})
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-MISMATCH", 2000); err != nil {
+		t.Fatalf("amount mismatch must not return an error, got %v", err)
 	}
 }
