@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -23,6 +24,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/breaker"
 )
 
 const (
@@ -116,11 +118,6 @@ func PayPalWebhookAuth(webhookID string, fetcher CertFetcher, log *zap.Logger) f
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if webhookID == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-
 			body, err := io.ReadAll(io.LimitReader(r.Body, webhookBodyLimit))
 			if err != nil {
 				WriteError(w, r, log, apperrors.Internal(err))
@@ -129,11 +126,20 @@ func PayPalWebhookAuth(webhookID string, fetcher CertFetcher, log *zap.Logger) f
 			// Restore the body so the downstream handler can re-read it.
 			r.Body = io.NopCloser(bytes.NewReader(body))
 
+			if webhookID == "" {
+				// Bypass mode (dev only): skip RSA check but still stamp the
+				// verified-body sentinel so the handler contract is satisfied.
+				r = r.WithContext(SetWebhookVerifiedBody(r.Context(), body))
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			if err := checkPayPalWebhook(r.Context(), webhookID, fetcher, log, r.Header, body); err != nil {
 				WriteError(w, r, log, err)
 				return
 			}
 
+			r = r.WithContext(SetWebhookVerifiedBody(r.Context(), body))
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -249,4 +255,30 @@ func verifyPayPalSig(cert *x509.Certificate, authAlgo string, message, sig []byt
 
 	_, _ = h.Write(message)
 	return rsa.VerifyPKCS1v15(rsaKey, hashID, h.Sum(nil), sig) // NOSONAR: PKCS#1 v1.5 is mandated by PayPal's webhook verification protocol
+}
+
+// BreakerCertFetcher wraps inner with a circuit breaker so that repeated
+// failures to reach PayPal's certificate endpoint open the circuit and
+// short-circuit subsequent calls without waiting for a network timeout.
+//
+// When the circuit is open, cert verification fails and the middleware returns
+// 500. PayPal will retry the webhook delivery; by the time the circuit
+// half-opens the cert endpoint should have recovered.
+func BreakerCertFetcher(inner CertFetcher, b *breaker.Breaker, log *zap.Logger) CertFetcher {
+	return func(ctx context.Context, certURL string) (*x509.Certificate, error) {
+		var cert *x509.Certificate
+		err := b.Call(func() error {
+			var fetchErr error
+			cert, fetchErr = inner(ctx, certURL)
+			return fetchErr
+		})
+		if errors.Is(err, breaker.ErrOpen) {
+			log.Warn("paypal cert fetcher: circuit open — rejecting webhook",
+				zap.String("cert_url", certURL),
+				zap.String("breaker", b.Name()),
+			)
+			return nil, apperrors.Internal(fmt.Errorf("payment provider certificate service temporarily unavailable"))
+		}
+		return cert, err
+	}
 }

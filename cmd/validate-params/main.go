@@ -30,16 +30,17 @@ type paramSpec struct {
 // allParams is the authoritative list of every system parameter that must exist
 // in the database. This list is derived from domain/constants.go and must stay
 // synchronised with the migrations that seed system_params:
-//   - 000051_sync_system_params_canonical      (22 base params)
-//   - 000055_add_worker_messaging_audit_params (+10)
-//   - 000056_add_snapshot_keep_latest_param    (+1)
-//   - 000058_seed_group_max_size_param         (+1)
-//   - 000066_seed_scoring_bonus_params         (+2)
-//   - 000073_add_payment_webhook_secrets_params (+3)
-//   - 000074_add_bank_transfer_amount_params   (+2)
-//   - 000076_seed_payment_intent_ttl_param     (+1)
-//   - 000078_sync_system_params_is_runtime     (canonical is_runtime sync)
-//   - 000079_seed_rate_limit_params            (+2)
+//   - 000051_sync_system_params_canonical        (22 base params)
+//   - 000055_add_worker_messaging_audit_params   (+10)
+//   - 000056_add_snapshot_keep_latest_param      (+1)
+//   - 000058_seed_group_max_size_param           (+1)
+//   - 000066_seed_scoring_bonus_params           (+2)
+//   - 000073_add_payment_webhook_secrets_params  (+3)
+//   - 000074_add_bank_transfer_amount_params     (+2)
+//   - 000076_seed_payment_intent_ttl_param       (+1)
+//   - 000078_sync_system_params_is_runtime       (canonical is_runtime sync)
+//   - 000079_seed_rate_limit_params              (+2)
+//   - 000080_seed_reliability_params             (+9)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -113,8 +114,25 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyAPIRateLimitRatePerSec, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitRatePerSec), paramType: "int", category: "api", isRuntime: false},
 	{key: domain.ParamKeyAPIRateLimitBurst, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitBurst), paramType: "int", category: "api", isRuntime: false},
 
+	// Idempotency middleware — not runtime: TTL and key limit are fixed at server startup.
+	{key: domain.ParamKeyAPIIdempotencyTTLHours, defaultValue: strconv.Itoa(domain.DefaultAPIIdempotencyTTLHours), paramType: "int", category: "api", isRuntime: false},
+	{key: domain.ParamKeyAPIIdempotencyKeyMaxLen, defaultValue: strconv.Itoa(domain.DefaultAPIIdempotencyKeyMaxLen), paramType: "int", category: "api", isRuntime: false},
+
 	// Snapshot retention — not runtime: worker restart required.
 	{key: domain.ParamKeySnapshotKeepLatestCount, defaultValue: strconv.Itoa(domain.DefaultSnapshotKeepLatestCount), paramType: "int", category: "worker", isRuntime: false},
+
+	// Circuit breaker: PayPal cert fetcher — not runtime: restart required.
+	{key: domain.ParamKeyBreakerPaypalCertMaxFails, defaultValue: strconv.Itoa(domain.DefaultBreakerPaypalCertMaxFails), paramType: "int", category: "breaker", isRuntime: false},
+	{key: domain.ParamKeyBreakerPaypalCertCooldownSec, defaultValue: strconv.Itoa(domain.DefaultBreakerPaypalCertCooldownSec), paramType: "int", category: "breaker", isRuntime: false},
+
+	// Circuit breaker: file store — not runtime: restart required.
+	{key: domain.ParamKeyBreakerFileStoreMaxFails, defaultValue: strconv.Itoa(domain.DefaultBreakerFileStoreMaxFails), paramType: "int", category: "breaker", isRuntime: false},
+	{key: domain.ParamKeyBreakerFileStoreCooldownSec, defaultValue: strconv.Itoa(domain.DefaultBreakerFileStoreCooldownSec), paramType: "int", category: "breaker", isRuntime: false},
+
+	// DB transaction retry policy — not runtime: restart required.
+	{key: domain.ParamKeyTxRetryMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultTxRetryMaxAttempts), paramType: "int", category: "repository", isRuntime: false},
+	{key: domain.ParamKeyTxRetryBaseDelayMs, defaultValue: strconv.Itoa(domain.DefaultTxRetryBaseDelayMs), paramType: "int", category: "repository", isRuntime: false},
+	{key: domain.ParamKeyTxRetryMaxDelayMs, defaultValue: strconv.Itoa(domain.DefaultTxRetryMaxDelayMs), paramType: "int", category: "repository", isRuntime: false},
 
 	// Payment / balance — runtime: changes take effect within the 30 s cache window.
 	{key: domain.ParamKeyPaymentMaxUploadBytes, defaultValue: strconv.Itoa(domain.DefaultPaymentMaxUploadBytes), paramType: "int", category: "payment", isRuntime: true},

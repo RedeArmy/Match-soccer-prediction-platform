@@ -38,11 +38,6 @@ func RecurrenteWebhookAuth(secret string, log *zap.Logger) func(http.Handler) ht
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if secret == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-
 			body, err := io.ReadAll(io.LimitReader(r.Body, webhookBodyLimit))
 			if err != nil {
 				WriteError(w, r, log, apperrors.Internal(err))
@@ -50,6 +45,14 @@ func RecurrenteWebhookAuth(secret string, log *zap.Logger) func(http.Handler) ht
 			}
 			// Restore the body so the downstream handler can re-read it.
 			r.Body = io.NopCloser(bytes.NewReader(body))
+
+			if secret == "" {
+				// Bypass mode (dev only): skip HMAC check but still stamp the
+				// verified-body sentinel so the handler contract is satisfied.
+				r = r.WithContext(SetWebhookVerifiedBody(r.Context(), body))
+				next.ServeHTTP(w, r)
+				return
+			}
 
 			sig := r.Header.Get(recurrenteSigHeader)
 			if sig == "" {
@@ -73,6 +76,7 @@ func RecurrenteWebhookAuth(secret string, log *zap.Logger) func(http.Handler) ht
 				return
 			}
 
+			r = r.WithContext(SetWebhookVerifiedBody(r.Context(), body))
 			next.ServeHTTP(w, r)
 		})
 	}

@@ -50,7 +50,7 @@ func (r *PostgresPaymentIntentRepository) CaptureAndCredit(ctx context.Context, 
 
 	var captured *domain.PaymentIntent
 
-	err := withTx(ctx, r.db, "PaymentIntentRepository.CaptureAndCredit", func(tx pgx.Tx) error {
+	err := withRetryTx(ctx, r.db, "PaymentIntentRepository.CaptureAndCredit", func(tx pgx.Tx) error {
 		intent, err := captureIntentTx(ctx, tx, token, captureID)
 		if err != nil {
 			return err

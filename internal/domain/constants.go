@@ -193,6 +193,30 @@ const (
 	// is long enough for a typical PayPal checkout session while being short
 	// enough to limit the window for stale captures.
 	DefaultPaymentIntentTTLMinutes = 60 // payment.intent_ttl_minutes
+
+	// Idempotency middleware: applied to payment write endpoints.
+	// TTL of 24 h gives clients a generous window for safe retry; key length
+	// of 255 bytes fits a UUID, hash, or arbitrary client-generated string.
+	DefaultAPIIdempotencyTTLHours  = 24  // api.idempotency_ttl_hours
+	DefaultAPIIdempotencyKeyMaxLen = 255 // api.idempotency_key_max_len
+
+	// Circuit breaker: PayPal certificate fetcher.
+	// Opens after 3 consecutive cert-download failures; stays open for 60 s.
+	// PayPal will retry webhook delivery while the circuit is open.
+	DefaultBreakerPaypalCertMaxFails    = 3  // breaker.paypal_cert_max_fails
+	DefaultBreakerPaypalCertCooldownSec = 60 // breaker.paypal_cert_cooldown_sec
+
+	// Circuit breaker: file store (S3/GDrive/OneDrive).
+	// Opens after 5 consecutive storage errors; stays open for 30 s.
+	// Handlers return 500 immediately rather than waiting for a network timeout.
+	DefaultBreakerFileStoreMaxFails    = 5  // breaker.file_store_max_fails
+	DefaultBreakerFileStoreCooldownSec = 30 // breaker.file_store_cooldown_sec
+
+	// DB transaction retry policy for transient serialization / deadlock errors.
+	// Equal-jitter backoff: attempt 1 → 25–50 ms, attempt 2 → 50–100 ms.
+	DefaultTxRetryMaxAttempts = 3    // repository.tx_retry_max_attempts
+	DefaultTxRetryBaseDelayMs = 50   // repository.tx_retry_base_delay_ms  (milliseconds)
+	DefaultTxRetryMaxDelayMs  = 1000 // repository.tx_retry_max_delay_ms   (milliseconds)
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -343,10 +367,48 @@ const (
 	// steady-state rate takes effect. is_runtime=FALSE: restart required.
 	ParamKeyAPIRateLimitBurst = "api.rate_limit_burst"
 
+	// ParamKeyAPIIdempotencyTTLHours is the number of hours a committed
+	// idempotency entry is retained in the store. Clients may safely retry
+	// with the same Idempotency-Key for this duration after the original request.
+	// is_runtime=FALSE: the TTL is passed to the store at server startup.
+	ParamKeyAPIIdempotencyTTLHours = "api.idempotency_ttl_hours"
+
+	// ParamKeyAPIIdempotencyKeyMaxLen is the maximum byte length of a client-
+	// supplied Idempotency-Key header value. Keys exceeding this limit are
+	// rejected with 422. is_runtime=FALSE: restart required.
+	ParamKeyAPIIdempotencyKeyMaxLen = "api.idempotency_key_max_len"
+
 	// ParamKeySnapshotKeepLatestCount is the number of most-recent leaderboard
 	// snapshots to retain per quiniela. The daily purge job deletes every snapshot
 	// beyond this count. is_runtime=FALSE: worker restart required.
 	ParamKeySnapshotKeepLatestCount = "snapshot.keep_latest_count"
+
+	// Circuit breaker: PayPal certificate fetcher (is_runtime=FALSE: restart required).
+	// ParamKeyBreakerPaypalCertMaxFails is the number of consecutive cert-fetch
+	// failures before the circuit opens.
+	ParamKeyBreakerPaypalCertMaxFails = "breaker.paypal_cert_max_fails"
+	// ParamKeyBreakerPaypalCertCooldownSec is the seconds the circuit stays open
+	// before allowing a single trial request.
+	ParamKeyBreakerPaypalCertCooldownSec = "breaker.paypal_cert_cooldown_sec"
+
+	// Circuit breaker: file store (S3/GDrive/OneDrive) (is_runtime=FALSE: restart required).
+	// ParamKeyBreakerFileStoreMaxFails is the number of consecutive storage errors
+	// before the file-store circuit opens.
+	ParamKeyBreakerFileStoreMaxFails = "breaker.file_store_max_fails"
+	// ParamKeyBreakerFileStoreCooldownSec is the seconds the file-store circuit
+	// stays open before allowing a single trial request.
+	ParamKeyBreakerFileStoreCooldownSec = "breaker.file_store_cooldown_sec"
+
+	// DB transaction retry policy (is_runtime=FALSE: restart required).
+	// ParamKeyTxRetryMaxAttempts is the total number of transaction attempts
+	// (including the initial one) before a transient error is returned to the caller.
+	ParamKeyTxRetryMaxAttempts = "repository.tx_retry_max_attempts"
+	// ParamKeyTxRetryBaseDelayMs is the base backoff delay in milliseconds between
+	// retry attempts (equal-jitter: actual delay is base/2 + rand[0, base/2]).
+	ParamKeyTxRetryBaseDelayMs = "repository.tx_retry_base_delay_ms"
+	// ParamKeyTxRetryMaxDelayMs is the maximum backoff delay cap in milliseconds
+	// so that very high attempt counts do not wait unreasonably long.
+	ParamKeyTxRetryMaxDelayMs = "repository.tx_retry_max_delay_ms"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather
