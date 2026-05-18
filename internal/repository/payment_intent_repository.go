@@ -25,6 +25,8 @@ func NewPostgresPaymentIntentRepository(db *pgxpool.Pool) *PostgresPaymentIntent
 // Create inserts a new pending payment intent and populates intent.ID and
 // intent.CreatedAt on success.
 func (r *PostgresPaymentIntentRepository) Create(ctx context.Context, intent *domain.PaymentIntent) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	return r.db.QueryRow(ctx, `
 		INSERT INTO payment_intents (token, user_id, amount_cents, currency, status, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
@@ -43,6 +45,9 @@ func (r *PostgresPaymentIntentRepository) Create(ctx context.Context, intent *do
 //  2. If 1 row updated: UPDATE users balance + INSERT balance_ledger row.
 //  3. If 0 rows updated: check why and return the appropriate sentinel.
 func (r *PostgresPaymentIntentRepository) CaptureAndCredit(ctx context.Context, token, captureID string) (*domain.PaymentIntent, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+
 	var captured *domain.PaymentIntent
 
 	err := withTx(ctx, r.db, "PaymentIntentRepository.CaptureAndCredit", func(tx pgx.Tx) error {

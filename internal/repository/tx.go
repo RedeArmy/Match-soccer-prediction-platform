@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -10,6 +11,17 @@ import (
 
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
+
+// dbWriteTimeout bounds the wall-clock time of any mutating DB operation
+// (transaction or single-row write). 10 s is sufficient for multi-query
+// transactions on local/RDS Postgres while protecting against a hung
+// connection stalling an HTTP handler indefinitely.
+const dbWriteTimeout = 10 * time.Second
+
+// dbReadTimeout bounds read-only queries. Single-row and small set reads
+// are expected to complete in milliseconds; 5 s is a generous allowance for
+// index-scanned paginated lists before treating the connection as stuck.
+const dbReadTimeout = 5 * time.Second
 
 // withTx executes fn inside a single pgx transaction. The transaction is
 // committed when fn returns nil; it is rolled back on any error returned by fn.

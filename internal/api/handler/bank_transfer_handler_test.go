@@ -236,6 +236,31 @@ func TestBankTransferHandler_AdminApprove_InvalidID(t *testing.T) {
 	}
 }
 
+func TestBankTransferHandler_AdminApprove_NoBody_OK(t *testing.T) {
+	proof := fixedProof()
+	proof.Status = domain.BankTransferApproved
+	svc := &stubBankTransferSvc{proof: proof}
+	router := bankTransferRouter(t, svc, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/bank-transfers/1/approve", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 with no body, got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_AdminApprove_BodyTooLarge_Returns413(t *testing.T) {
+	router := bankTransferRouter(t, &stubBankTransferSvc{}, nil)
+	rec := httptest.NewRecorder()
+	padded := `{"notes":"` + string(bytes.Repeat([]byte("x"), 5000)) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/bank-transfers/1/approve", bytes.NewReader([]byte(padded)))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 for oversized approve body, got %d", rec.Code)
+	}
+}
+
 // ── AdminReject ───────────────────────────────────────────────────────────────
 
 func TestBankTransferHandler_AdminReject_OK(t *testing.T) {

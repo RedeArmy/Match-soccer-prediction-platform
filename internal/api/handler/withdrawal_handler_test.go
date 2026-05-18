@@ -151,6 +151,20 @@ func TestWithdrawalHandler_Create_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestWithdrawalHandler_Create_BodyTooLarge_Returns413(t *testing.T) {
+	router := withdrawalRouter(t, &stubWithdrawalSvc{})
+	rec := httptest.NewRecorder()
+	// Valid JSON with a large payout_details value that pushes the body over 4 KB.
+	padded := `{"amount_cents":5000,"method":"bank_gt","payout_details":{"note":"` +
+		string(bytes.Repeat([]byte("x"), 5000)) + `"}}`
+	req := httptest.NewRequest(http.MethodPost, "/withdrawals", bytes.NewReader([]byte(padded)))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 for oversized body, got %d", rec.Code)
+	}
+}
+
 func TestWithdrawalHandler_Create_ServiceError(t *testing.T) {
 	svc := &stubWithdrawalSvc{err: errors.New("insufficient balance")}
 	router := withdrawalRouter(t, svc)
@@ -283,6 +297,18 @@ func TestWithdrawalHandler_AdminApprove_ServiceError(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code < 400 {
 		t.Errorf("expected error status, got %d", rec.Code)
+	}
+}
+
+func TestWithdrawalHandler_AdminApprove_BodyTooLarge_Returns413(t *testing.T) {
+	router := withdrawalRouter(t, &stubWithdrawalSvc{})
+	rec := httptest.NewRecorder()
+	padded := `{"notes":"` + string(bytes.Repeat([]byte("x"), 5000)) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/withdrawals/1/approve", bytes.NewReader([]byte(padded)))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 for oversized approve body, got %d", rec.Code)
 	}
 }
 

@@ -104,6 +104,20 @@ func TestS3FileStore_Get_EmptyContentTypeFallsBack(t *testing.T) {
 	}
 }
 
+func TestS3FileStore_Get_ServerError(t *testing.T) {
+	store, _ := newTestS3Store(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	_, _, err := store.Get(context.Background(), "uploads/proof.jpg")
+	if err == nil {
+		t.Fatal("Get: expected error for server 500, got nil")
+	}
+	if errors.Is(err, storage.ErrNotFound) {
+		t.Fatal("Get: expected non-ErrNotFound error for server 500, got ErrNotFound")
+	}
+}
+
 func TestS3FileStore_Get_NotFound(t *testing.T) {
 	noSuchKeyXML := []byte(`<?xml version="1.0" encoding="UTF-8"?>` +
 		`<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>`)

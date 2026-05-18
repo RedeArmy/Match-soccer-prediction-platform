@@ -59,6 +59,7 @@ func (h *WithdrawalHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, moneyJSONBodyLimit)
 	req, err := decodeJSON[createWithdrawalRequest](r)
 	if err != nil {
 		writeError(w, r, h.log, err)
@@ -174,8 +175,12 @@ func (h *WithdrawalHandler) AdminApprove(w http.ResponseWriter, r *http.Request)
 		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, moneyJSONBodyLimit)
 	var req reviewWithdrawalRequest
-	decodeJSONOptional(r, &req)
+	if err := decodeJSONOptional(r, &req); err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
 
 	result, err := h.svc.ApproveRequest(r.Context(), id, caller.ID, req.Notes)
 	if err != nil {
@@ -214,6 +219,7 @@ func (h *WithdrawalHandler) AdminReject(w http.ResponseWriter, r *http.Request) 
 		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, moneyJSONBodyLimit)
 	req, err := decodeJSON[reviewWithdrawalRequest](r)
 	if err != nil {
 		writeError(w, r, h.log, err)

@@ -62,6 +62,8 @@ func scanWithdrawal(row pgx.Row) (*domain.WithdrawalRequest, error) {
 
 // CreateAndReserve atomically inserts the request and reserves the balance.
 func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Context, req *domain.WithdrawalRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	payoutJSON, err := json.Marshal(req.PayoutDetails)
 	if err != nil {
 		return apperrors.Internal(fmt.Errorf("marshal payout_details: %w", err))
@@ -107,7 +109,7 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 			return apperrors.Internal(reserveErr)
 		}
 
-		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: -w.AmountCents, Kind: domain.LedgerKindWithdrawalReserve, BalanceAfter: balanceAfter, RefID: w.ID, RefType: "withdrawal_request"}); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: -w.AmountCents, Kind: domain.LedgerKindWithdrawalReserve, BalanceAfter: balanceAfter, RefID: int64(w.ID), RefType: "withdrawal_request"}); err != nil {
 			return err
 		}
 
@@ -118,6 +120,8 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 
 // GetByID returns the request or nil, nil when not found.
 func (r *PostgresWithdrawalRequestRepository) GetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	return scanWithdrawal(r.db.QueryRow(ctx,
 		`SELECT `+withdrawalColumns+` FROM withdrawal_requests WHERE id = $1`, id,
 	))
@@ -125,6 +129,8 @@ func (r *PostgresWithdrawalRequestRepository) GetByID(ctx context.Context, id in
 
 // ListByUser returns all requests for a user ordered by created_at DESC.
 func (r *PostgresWithdrawalRequestRepository) ListByUser(ctx context.Context, userID int) ([]*domain.WithdrawalRequest, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	rows, err := r.db.Query(ctx,
 		`SELECT `+withdrawalColumns+` FROM withdrawal_requests WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
@@ -139,6 +145,8 @@ func (r *PostgresWithdrawalRequestRepository) ListByUser(ctx context.Context, us
 
 // ListPending returns all pending requests ordered by created_at ASC.
 func (r *PostgresWithdrawalRequestRepository) ListPending(ctx context.Context) ([]*domain.WithdrawalRequest, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	rows, err := r.db.Query(ctx,
 		`SELECT `+withdrawalColumns+` FROM withdrawal_requests WHERE status = 'pending' ORDER BY created_at ASC`,
 	)
@@ -152,6 +160,8 @@ func (r *PostgresWithdrawalRequestRepository) ListPending(ctx context.Context) (
 
 // Approve transitions a pending request to approved (status change only).
 func (r *PostgresWithdrawalRequestRepository) Approve(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	row := r.db.QueryRow(ctx, `
 		UPDATE withdrawal_requests
 		   SET status      = 'approved',
@@ -174,6 +184,8 @@ func (r *PostgresWithdrawalRequestRepository) Approve(ctx context.Context, id, r
 
 // RejectAndRelease atomically rejects the request and releases the balance reservation.
 func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	var result *domain.WithdrawalRequest
 	err := withTx(ctx, r.db, "WithdrawalRequestRepository.RejectAndRelease", func(tx pgx.Tx) error {
 		row := tx.QueryRow(ctx, `
@@ -215,7 +227,7 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 			return apperrors.Internal(releaseErr)
 		}
 
-		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: w.AmountCents, Kind: domain.LedgerKindWithdrawalRelease, BalanceAfter: balanceAfter, RefID: w.ID, RefType: "withdrawal_request", CreatorID: reviewerID}); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: w.AmountCents, Kind: domain.LedgerKindWithdrawalRelease, BalanceAfter: balanceAfter, RefID: int64(w.ID), RefType: "withdrawal_request", CreatorID: reviewerID}); err != nil {
 			return err
 		}
 
@@ -233,6 +245,8 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 
 // MarkProcessedAndCommit atomically marks the request as processed and commits the reservation.
 func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context.Context, id int) (*domain.WithdrawalRequest, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	var result *domain.WithdrawalRequest
 	err := withTx(ctx, r.db, "WithdrawalRequestRepository.MarkProcessedAndCommit", func(tx pgx.Tx) error {
 		row := tx.QueryRow(ctx, `
@@ -277,7 +291,7 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 			return apperrors.Internal(commitErr)
 		}
 
-		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: -w.AmountCents, Kind: domain.LedgerKindWithdrawalDeduct, BalanceAfter: balanceAfter, RefID: w.ID, RefType: "withdrawal_request"}); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: -w.AmountCents, Kind: domain.LedgerKindWithdrawalDeduct, BalanceAfter: balanceAfter, RefID: int64(w.ID), RefType: "withdrawal_request"}); err != nil {
 			return err
 		}
 
