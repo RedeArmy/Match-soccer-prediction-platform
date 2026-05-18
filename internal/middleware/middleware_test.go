@@ -9,10 +9,12 @@ package middleware_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -343,6 +345,63 @@ func TestWriteError_UnexpectedError_IncludesSchemaVersion(t *testing.T) {
 	if !strings.Contains(body, `"schema_version":1`) {
 		t.Errorf("expected schema_version:1 in unexpected-error response, got: %s", body)
 	}
+}
+
+// ── WriteJSON ─────────────────────────────────────────────────────────────────
+
+// TestWriteJSON_SetsStatusAndBody verifies the basic contract: status code and
+// JSON-encoded body are written correctly.
+func TestWriteJSON_SetsStatusAndBody(t *testing.T) {
+	rec := httptest.NewRecorder()
+	middleware.WriteJSON(rec, http.StatusCreated, map[string]string{"key": "value"})
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected status 201, got %d", rec.Code)
+	}
+	ct := rec.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Errorf("expected Content-Type application/json, got %q", ct)
+	}
+	var got map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if got["key"] != "value" {
+		t.Errorf("expected key=value, got %q", got["key"])
+	}
+}
+
+// TestWriteJSON_Concurrent_NoBodiesCorrupted fires 50 concurrent goroutines
+// each writing a distinct payload through WriteJSON and asserts that no response
+// body is empty or contains another goroutine's payload. This exercises the
+// sync.Pool buffer-recycling path under contention.
+func TestWriteJSON_Concurrent_NoBodiesCorrupted(t *testing.T) {
+	const workers = 50
+
+	type payload struct {
+		ID int `json:"id"`
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := range workers {
+		i := i
+		go func() {
+			defer wg.Done()
+			rec := httptest.NewRecorder()
+			middleware.WriteJSON(rec, http.StatusOK, payload{ID: i})
+
+			var got payload
+			if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+				t.Errorf("goroutine %d: decode: %v", i, err)
+				return
+			}
+			if got.ID != i {
+				t.Errorf("goroutine %d: body corruption: expected id=%d, got id=%d", i, i, got.ID)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // ── RequireAuth ───────────────────────────────────────────────────────────────

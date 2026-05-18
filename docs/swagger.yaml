@@ -32,12 +32,25 @@ definitions:
           $ref: '#/definitions/github_com_rede_world-cup-quiniela_internal_service.DLQEntry'
         type: array
     type: object
+  github_com_rede_world-cup-quiniela_pkg_health.MemStatsSnapshot:
+    properties:
+      gc_cpu_fraction:
+        type: number
+      heap_inuse_bytes:
+        type: integer
+      heap_sys_bytes:
+        type: integer
+      num_gc:
+        type: integer
+    type: object
   github_com_rede_world-cup-quiniela_pkg_health.Response:
     properties:
       checks:
         additionalProperties:
           $ref: '#/definitions/github_com_rede_world-cup-quiniela_pkg_health.Result'
         type: object
+      mem_stats:
+        $ref: '#/definitions/github_com_rede_world-cup-quiniela_pkg_health.MemStatsSnapshot'
       status:
         type: string
     type: object
@@ -2642,6 +2655,18 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Withdrawal is not in pending status
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid withdrawal ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Approve withdrawal
@@ -2674,6 +2699,18 @@ paths:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Withdrawal not approved or insufficient reserved balance
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid withdrawal ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
       security:
@@ -2718,6 +2755,18 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Withdrawal is not in pending status
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid withdrawal ID or notes required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Reject withdrawal
@@ -2742,6 +2791,10 @@ paths:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "403":
           description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
       security:
@@ -3537,6 +3590,10 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get balance
@@ -3547,13 +3604,13 @@ paths:
       description: Returns the authenticated user's balance transaction history, ordered
         by most recent first.
       parameters:
-      - description: Max records per page (default 50)
+      - description: Max records per page (default 50, max 200)
         in: query
         name: limit
         type: integer
-      - description: Offset for pagination
+      - description: Page number (default 1)
         in: query
-        name: offset
+        name: page
         type: integer
       produces:
       - application/json
@@ -3566,6 +3623,10 @@ paths:
             type: array
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
       security:
@@ -3613,6 +3674,10 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List my withdrawals
@@ -3651,6 +3716,10 @@ paths:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "422":
           description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
       security:
@@ -3694,8 +3763,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Receives and processes Clerk user lifecycle events (user.created,
-        user.updated).
+      description: 'Receives and processes Clerk user lifecycle events:'
       produces:
       - application/json
       responses:

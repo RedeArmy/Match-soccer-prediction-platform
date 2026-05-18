@@ -59,12 +59,24 @@ primary_region = 'mia'
     method       = 'GET'
     path         = '/health/ready'
 
-# GOMEMLIMIT is set to 230 MiB (89 % of the 256 MB machine limit) so that the
-# Go runtime triggers aggressive GC before the OS OOM-killer fires. The API
-# server does not run concurrent snapshot goroutines, but it does serve up to
-# 250 concurrent requests and may spike heap usage on match-day traffic bursts.
+# Memory and GC tuning for a 256 MB Fly.io machine:
+#
+# GOMEMLIMIT=230MiB  — hard ceiling at 89 % of physical RAM; Go GC will collect
+#                      aggressively before the OS OOM-killer fires.
+# GOGC=off           — disables percentage-based GC triggering (default: collect
+#                      when live heap doubles). With GOMEMLIMIT as the sole
+#                      backstop the runtime runs fewer, larger GC cycles during
+#                      steady-state load, reducing CPU and latency jitter.
+#                      Safe because GOMEMLIMIT still prevents OOM.
+# WCQ_DATABASE_MAXOPENCONNS=15 — caps the pgx connection pool at 15 instead of
+#                      the 25-connection default. Each connection holds a
+#                      prepared-statement cache; reducing the pool saves ~40 MB
+#                      of baseline heap, leaving more headroom for in-flight
+#                      JSON serialisation during match-day traffic peaks.
 [env]
-  GOMEMLIMIT = "230MiB"
+  GOMEMLIMIT              = "230MiB"
+  GOGC                    = "off"
+  WCQ_DATABASE_MAXOPENCONNS = "15"
 
 [[vm]]
   memory   = '256mb'

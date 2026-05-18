@@ -1,14 +1,26 @@
 package middleware
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
+
+// jsonPool recycles bytes.Buffer instances used by WriteJSON so that the GC
+// does not need to collect a new buffer on every API response. Buffers grow to
+// the size of the largest payload they have encoded and are then reused,
+// amortising the heap allocation cost under concurrent traffic.
+var jsonPool = sync.Pool{New: func() any {
+	b := new(bytes.Buffer)
+	b.Grow(512)
+	return b
+}}
 
 // ErrorResponse is the JSON envelope written for all error responses.
 //
@@ -87,10 +99,20 @@ func WriteError(w http.ResponseWriter, r *http.Request, log *zap.Logger, err err
 // so the status code cannot change and appending an error message would corrupt
 // the response body. Callers that need to detect encode failures should
 // pre-validate before calling this function.
+//
+// A bytes.Buffer is borrowed from jsonPool to avoid allocating a new
+// intermediate buffer on every call. Under concurrent load the pool keeps
+// previously-grown buffers alive, reducing GC pressure on the heap.
 func WriteJSON(w http.ResponseWriter, status int, v any) {
+	buf := jsonPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jsonPool.Put(buf)
+
+	_ = json.NewEncoder(buf).Encode(v)
+
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(buf.Bytes())
 }
 
 // writeJSON is the package-internal alias so existing call sites within the

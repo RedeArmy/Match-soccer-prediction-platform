@@ -59,6 +59,13 @@ type clerkUserPayload struct {
 	PrimaryEmailID string              `json:"primary_email_address_id"`
 }
 
+// clerkUserDeletedPayload is the data object Clerk sends for user.deleted events.
+// The payload is minimal: only the subject ID and a deleted flag are present.
+type clerkUserDeletedPayload struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+}
+
 // clerkWebhookEvent is the top-level envelope for Clerk webhook payloads.
 type clerkWebhookEvent struct {
 	Type string          `json:"type"`
@@ -68,10 +75,13 @@ type clerkWebhookEvent struct {
 // HandleClerkWebhook handles POST /webhooks/clerk.
 //
 // @Summary      Clerk webhook receiver
-// @Description  Receives and processes Clerk user lifecycle events (user.created, user.updated).
+// @Description  Receives and processes Clerk user lifecycle events:
 //
-//	Requests are authenticated via Svix signature validation using the webhook
-//	secret configured in WCQ_CLERK_WEBHOOKSECRET.
+//	user.created and user.updated upsert the internal user row;
+//	user.deleted soft-deletes it so the account is immediately
+//	inaccessible via the API even before the JWT expires.
+//	Requests are authenticated via Svix signature validation using
+//	the webhook secret configured in WCQ_CLERK_WEBHOOKSECRET.
 //
 // @Tags         webhooks
 // @Accept       json
@@ -112,6 +122,11 @@ func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Reque
 			writeError(w, r, h.log, err)
 			return
 		}
+	case "user.deleted":
+		if err := h.deleteUser(r, event.Data); err != nil {
+			writeError(w, r, h.log, err)
+			return
+		}
 	default:
 		// Unknown event types are acknowledged without processing so Clerk
 		// does not retry them indefinitely.
@@ -119,6 +134,20 @@ func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteUser parses the user.deleted payload and delegates soft-deletion to
+// the ClerkUserSyncer. The call is idempotent: re-delivery of the same event
+// is handled gracefully by the service layer.
+func (h *WebhookHandler) deleteUser(r *http.Request, data json.RawMessage) error {
+	var payload clerkUserDeletedPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return apperrors.Validation("could not parse deleted user data in webhook payload")
+	}
+	if payload.ID == "" {
+		return apperrors.Validation("user.deleted payload is missing the subject ID")
+	}
+	return h.syncer.SoftDelete(r.Context(), payload.ID)
 }
 
 // syncUser parses the Clerk user payload and delegates persistence to the

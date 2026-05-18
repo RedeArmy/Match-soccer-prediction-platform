@@ -63,11 +63,19 @@ const userCreatedBody = `{"type":"user.created","data":{"id":"user_abc123","firs
 const userUpdatedBody = `{"type":"user.updated","data":{"id":"user_abc123","first_name":"Alice","last_name":"Updated","email_addresses":[{"email_address":"alice2@example.com"}]}}`
 
 // stubClerkUserSyncer is a test double for service.ClerkUserSyncer.
-// err controls the value returned by Upsert.
-type stubClerkUserSyncer struct{ err error }
+// err controls the value returned by Upsert; softDeleteErr controls SoftDelete.
+// Zero values mean success, which keeps existing tests unchanged.
+type stubClerkUserSyncer struct {
+	err           error
+	softDeleteErr error
+}
 
 func (s *stubClerkUserSyncer) Upsert(_ context.Context, _, _, _, _ string, _ []service.ClerkEmail) error {
 	return s.err
+}
+
+func (s *stubClerkUserSyncer) SoftDelete(_ context.Context, _ string) error {
+	return s.softDeleteErr
 }
 
 // ── no signature verification ─────────────────────────────────────────────────
@@ -202,5 +210,49 @@ func TestWebhook_WithSecret_InvalidTimestampFormat_Returns400(t *testing.T) {
 	h.HandleClerkWebhook(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for non-numeric timestamp, got %d", w.Code)
+	}
+}
+
+// ── user.deleted ──────────────────────────────────────────────────────────────
+
+const userDeletedBody = `{"type":"user.deleted","data":{"id":"user_del123","deleted":true}}`
+
+// TestWebhook_NoSecret_UserDeleted_Returns204 verifies the happy path: a
+// well-formed user.deleted event triggers SoftDelete and returns 204.
+func TestWebhook_NoSecret_UserDeleted_Returns204(t *testing.T) {
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
+	if w := doWebhook(h, userDeletedBody); w.Code != http.StatusNoContent {
+		t.Errorf(fmtExpect204, w.Code)
+	}
+}
+
+// TestWebhook_NoSecret_UserDeleted_InvalidData_Returns422 verifies that a
+// malformed data object (not JSON) is rejected with 422.
+func TestWebhook_NoSecret_UserDeleted_InvalidData_Returns422(t *testing.T) {
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
+	body := `{"type":"user.deleted","data":"not-an-object"}`
+	if w := doWebhook(h, body); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+// TestWebhook_NoSecret_UserDeleted_MissingID_Returns422 verifies that a
+// user.deleted payload without a subject ID is rejected rather than silently
+// ignored, preventing a no-op that would leave the row active.
+func TestWebhook_NoSecret_UserDeleted_MissingID_Returns422(t *testing.T) {
+	h := handler.NewWebhookHandler(&stubClerkUserSyncer{}, "", zap.NewNop())
+	body := `{"type":"user.deleted","data":{"deleted":true}}`
+	if w := doWebhook(h, body); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+// TestWebhook_NoSecret_UserDeleted_SoftDeleteError_Returns500 verifies that
+// a service error during soft-deletion is surfaced as 500 so Clerk retries.
+func TestWebhook_NoSecret_UserDeleted_SoftDeleteError_Returns500(t *testing.T) {
+	stub := &stubClerkUserSyncer{softDeleteErr: errors.New("db unavailable")}
+	h := handler.NewWebhookHandler(stub, "", zap.NewNop())
+	if w := doWebhook(h, userDeletedBody); w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
 	}
 }

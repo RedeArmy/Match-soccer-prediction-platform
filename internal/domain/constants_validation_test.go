@@ -11,7 +11,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (42 total) ──────────────────────────────────────
+	// ── ParamKey* enumeration (44 total) ──────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":     ParamKeyScoringExactScore,
@@ -62,7 +62,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// System
 		"ParamKeyPurgeRetentionDays": ParamKeyPurgeRetentionDays,
 		// API
-		"ParamKeyAPIBodySizeLimitBytes": ParamKeyAPIBodySizeLimitBytes,
+		"ParamKeyAPIBodySizeLimitBytes":  ParamKeyAPIBodySizeLimitBytes,
+		"ParamKeyAPIRateLimitRatePerSec": ParamKeyAPIRateLimitRatePerSec,
+		"ParamKeyAPIRateLimitBurst":      ParamKeyAPIRateLimitBurst,
 		// Snapshot
 		"ParamKeySnapshotKeepLatestCount": ParamKeySnapshotKeepLatestCount,
 		// Payment
@@ -124,7 +126,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// System
 		"DefaultPurgeRetentionDays": DefaultPurgeRetentionDays,
 		// API
-		"DefaultAPIBodySizeLimitBytes": DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIBodySizeLimitBytes":  DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIRateLimitRatePerSec": DefaultAPIRateLimitRatePerSec,
+		"DefaultAPIRateLimitBurst":      DefaultAPIRateLimitBurst,
 		// Snapshot
 		"DefaultSnapshotKeepLatestCount": DefaultSnapshotKeepLatestCount,
 		// Payment
@@ -137,7 +141,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 42 // update when adding a new ParamKey* constant
+		const expectedCount = 44 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -145,7 +149,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 36 // update when adding a new Default* constant
+		const expectedCount = 38 // update when adding a new Default* constant
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -233,6 +237,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyPurgeRetentionDays", ParamKeyPurgeRetentionDays, "system"},
 		// API
 		{"ParamKeyAPIBodySizeLimitBytes", ParamKeyAPIBodySizeLimitBytes, "api"},
+		{"ParamKeyAPIRateLimitRatePerSec", ParamKeyAPIRateLimitRatePerSec, "api"},
+		{"ParamKeyAPIRateLimitBurst", ParamKeyAPIRateLimitBurst, "api"},
 		// Snapshot
 		{"ParamKeySnapshotKeepLatestCount", ParamKeySnapshotKeepLatestCount, "snapshot"},
 		// Payment
@@ -308,7 +314,9 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		// System
 		"DefaultPurgeRetentionDays": DefaultPurgeRetentionDays,
 		// API
-		"DefaultAPIBodySizeLimitBytes": DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIBodySizeLimitBytes":  DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIRateLimitRatePerSec": DefaultAPIRateLimitRatePerSec,
+		"DefaultAPIRateLimitBurst":      DefaultAPIRateLimitBurst,
 		// Snapshot
 		"DefaultSnapshotKeepLatestCount": DefaultSnapshotKeepLatestCount,
 		// Payment
