@@ -81,6 +81,7 @@ var (
 	ErrRequestBodyTooLarge = &AppError{Code: CodeRequestBodyTooLarge}
 	ErrBadRequest          = &AppError{Code: CodeBadRequest}
 	ErrInternal            = &AppError{Code: CodeInternal}
+	ErrRateLimited         = &AppError{Code: CodeRateLimited}
 )
 
 // Error implements the error interface. It returns the user-facing message.
@@ -197,5 +198,16 @@ func Internal(cause error) *AppError {
 		Message:    MsgInternal,
 		HTTPStatus: http.StatusInternalServerError,
 		Cause:      cause,
+	}
+}
+
+// RateLimited returns an AppError indicating that the caller has exceeded
+// its request quota. The middleware that produces this error is responsible
+// for setting the Retry-After response header before calling WriteError.
+func RateLimited(message string) *AppError {
+	return &AppError{
+		Code:       CodeRateLimited,
+		Message:    message,
+		HTTPStatus: http.StatusTooManyRequests,
 	}
 }

@@ -76,4 +76,10 @@ const (
 	// sensitive infrastructure details (database errors, stack traces, etc.).
 	// Maps to HTTP 500 Internal Server Error.
 	CodeInternal Code = "INTERNAL"
+
+	// CodeRateLimited indicates that the client has exceeded its request quota.
+	// The response includes a Retry-After header with the number of seconds to
+	// wait before the next request will be accepted.
+	// Maps to HTTP 429 Too Many Requests.
+	CodeRateLimited Code = "RATE_LIMITED"
 )

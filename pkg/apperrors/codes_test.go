@@ -26,6 +26,7 @@ func TestCodes_WireValuesAreLocked(t *testing.T) {
 		{apperrors.CodeRequestBodyTooLarge, "REQUEST_BODY_TOO_LARGE"},
 		{apperrors.CodeBadRequest, "BAD_REQUEST"},
 		{apperrors.CodeInternal, "INTERNAL"},
+		{apperrors.CodeRateLimited, "RATE_LIMITED"},
 	}
 
 	for _, tc := range cases {
