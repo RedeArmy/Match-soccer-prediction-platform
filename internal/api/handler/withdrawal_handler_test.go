@@ -323,6 +323,45 @@ func TestWithdrawalHandler_AdminReject_InvalidID(t *testing.T) {
 	}
 }
 
+func TestWithdrawalHandler_AdminReject_Unauthenticated(t *testing.T) {
+	h := handler.NewWithdrawalHandler(&stubWithdrawalSvc{}, zaptest.NewLogger(t))
+	r := chi.NewRouter()
+	r.Post("/withdrawals/{id}/reject", h.AdminReject)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/withdrawals/1/reject",
+		bytes.NewReader([]byte(`{"notes":"test"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, rec.Code)
+	}
+}
+
+func TestWithdrawalHandler_AdminReject_BadJSON(t *testing.T) {
+	router := withdrawalRouter(t, &stubWithdrawalSvc{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/withdrawals/1/reject",
+		bytes.NewReader([]byte(`not json`)))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestWithdrawalHandler_AdminReject_ServiceError(t *testing.T) {
+	svc := &stubWithdrawalSvc{err: errors.New("conflict")}
+	router := withdrawalRouter(t, svc)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/withdrawals/1/reject",
+		bytes.NewReader([]byte(`{"notes":"duplicate"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code < 400 {
+		t.Errorf("expected error status, got %d", rec.Code)
+	}
+}
+
 // ── AdminProcess ──────────────────────────────────────────────────────────────
 
 func TestWithdrawalHandler_AdminProcess_OK(t *testing.T) {

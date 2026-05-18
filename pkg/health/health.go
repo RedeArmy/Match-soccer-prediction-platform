@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"runtime"
 	"time"
 )
 
@@ -37,11 +38,25 @@ type Result struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// MemStatsSnapshot captures a point-in-time view of the Go heap so that
+// operators can observe memory pressure on the /health/ready endpoint without
+// needing a pprof port or an external metrics agent. All byte values are raw
+// (not MiB-converted) so dashboards can compute their own units.
+type MemStatsSnapshot struct {
+	HeapInuseBytes uint64  `json:"heap_inuse_bytes"`
+	HeapSysBytes   uint64  `json:"heap_sys_bytes"`
+	NumGC          uint32  `json:"num_gc"`
+	GCCPUFraction  float64 `json:"gc_cpu_fraction"`
+}
+
 // Response is the JSON body returned by GET /health/ready.
 // Status is "ok" when every Checks entry is "ok", otherwise "error".
+// MemStats is always populated so operators can correlate heap usage with
+// check failures without a separate profiling endpoint.
 type Response struct {
-	Status string            `json:"status"`
-	Checks map[string]Result `json:"checks"`
+	Status   string            `json:"status"`
+	Checks   map[string]Result `json:"checks"`
+	MemStats *MemStatsSnapshot `json:"mem_stats,omitempty"`
 }
 
 // ReadinessHandler returns an http.HandlerFunc that runs all registered
@@ -56,9 +71,18 @@ func ReadinessHandler(checkers []Checker) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+
 		resp := Response{
 			Status: "ok",
 			Checks: make(map[string]Result, len(checkers)),
+			MemStats: &MemStatsSnapshot{
+				HeapInuseBytes: ms.HeapInuse,
+				HeapSysBytes:   ms.HeapSys,
+				NumGC:          ms.NumGC,
+				GCCPUFraction:  ms.GCCPUFraction,
+			},
 		}
 
 		type item struct {

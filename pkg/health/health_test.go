@@ -87,6 +87,29 @@ func TestReadinessHandler_NoCheckers_Returns200(t *testing.T) {
 	}
 }
 
+// TestReadinessHandler_MemStatsPresent verifies that the readiness response
+// always carries a populated mem_stats object so operators can observe heap
+// pressure without a separate profiling endpoint.
+func TestReadinessHandler_MemStatsPresent(t *testing.T) {
+	handler := health.ReadinessHandler(nil)
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	var resp struct {
+		MemStats *health.MemStatsSnapshot `json:"mem_stats"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if resp.MemStats == nil {
+		t.Fatal("expected mem_stats to be present in response, got nil")
+	}
+	if resp.MemStats.HeapSysBytes == 0 {
+		t.Error("expected heap_sys_bytes > 0")
+	}
+}
+
 // ── DBChecker ─────────────────────────────────────────────────────────────────
 
 func TestDBChecker_Name(t *testing.T) {
