@@ -27,6 +27,8 @@ func NewPostgresBalanceLedgerRepository(db *pgxpool.Pool) *PostgresBalanceLedger
 
 // Credit adds deltaCents to balance_cents and inserts a ledger row atomically.
 func (r *PostgresBalanceLedgerRepository) Credit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	return withTx(ctx, r.db, "BalanceLedgerRepository.Credit", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
@@ -49,6 +51,8 @@ func (r *PostgresBalanceLedgerRepository) Credit(ctx context.Context, userID, de
 // Debit subtracts deltaCents from the available balance
 // (balance_cents - reserved_cents). Returns Conflict when insufficient.
 func (r *PostgresBalanceLedgerRepository) Debit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	return withTx(ctx, r.db, "BalanceLedgerRepository.Debit", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
@@ -72,6 +76,8 @@ func (r *PostgresBalanceLedgerRepository) Debit(ctx context.Context, userID, del
 
 // Reserve moves amountCents from available to reserved_cents.
 func (r *PostgresBalanceLedgerRepository) Reserve(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	return withTx(ctx, r.db, "BalanceLedgerRepository.Reserve", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
@@ -95,6 +101,8 @@ func (r *PostgresBalanceLedgerRepository) Reserve(ctx context.Context, userID, a
 
 // ReleaseReservation decrements reserved_cents, returning the hold to available.
 func (r *PostgresBalanceLedgerRepository) ReleaseReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	return withTx(ctx, r.db, "BalanceLedgerRepository.ReleaseReservation", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
@@ -118,6 +126,8 @@ func (r *PostgresBalanceLedgerRepository) ReleaseReservation(ctx context.Context
 
 // CommitReservation permanently deducts both balance_cents and reserved_cents.
 func (r *PostgresBalanceLedgerRepository) CommitReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	return withTx(ctx, r.db, "BalanceLedgerRepository.CommitReservation", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
@@ -142,6 +152,8 @@ func (r *PostgresBalanceLedgerRepository) CommitReservation(ctx context.Context,
 
 // ListByUser returns ledger entries for userID ordered by created_at DESC.
 func (r *PostgresBalanceLedgerRepository) ListByUser(ctx context.Context, userID int, p Pagination) ([]*domain.BalanceLedger, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
 	q := `SELECT id, user_id, delta_cents, kind, balance_after, ref_id, ref_type, created_by, created_at
 		  FROM balance_ledger WHERE user_id = $1 ORDER BY created_at DESC`
 	q, args, _ := applyPagination(q, []any{userID}, 2, p)
@@ -212,6 +224,8 @@ func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, 
 	if reference == "" {
 		return false, apperrors.Validation("reference is required for idempotent credit")
 	}
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
 	var credited bool
 	err := withTx(ctx, r.db, "BalanceLedgerRepository.CreditIdempotent", func(tx pgx.Tx) error {
 		// Step 1: Race-free idempotency gate. The partial unique index on

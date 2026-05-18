@@ -41,7 +41,7 @@ type BankTransferResponse struct {
 
 // WithdrawalResponse is returned by withdrawal request endpoints.
 type WithdrawalResponse struct {
-	ID            int64             `json:"id"`
+	ID            int               `json:"id"`
 	UserID        int               `json:"user_id"`
 	AmountCents   int               `json:"amount_cents"`
 	Currency      string            `json:"currency"`
