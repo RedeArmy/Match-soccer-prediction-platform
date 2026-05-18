@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -66,7 +66,7 @@ func withRetryTx(ctx context.Context, db *pgxpool.Pool, caller string, fn func(p
 		// Equal-jitter backoff: delay = half_fixed + rand[0, half_fixed]
 		full := min(retryBaseDelay*(1<<attempt), retryMaxDelay)
 		half := full / 2
-		delay := half + time.Duration(rand.Int63n(int64(half)+1))
+		delay := half + time.Duration(rand.Int64N(int64(half)+1))
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():
