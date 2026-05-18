@@ -160,6 +160,14 @@ const (
 	// API request limits
 	DefaultAPIBodySizeLimitBytes = 65536 // api.body_size_limit_bytes (64 KB)
 
+	// API rate limiting: per-user token bucket applied at the /api/v1 subrouter.
+	// 10 tokens/second with a burst of 30 allows short activity spikes (e.g.
+	// loading a dashboard that issues several parallel requests) while preventing
+	// sustained high-frequency polling. Both values are read once at process
+	// startup (is_runtime=FALSE); a restart is required to change them.
+	DefaultAPIRateLimitRatePerSec = 10 // api.rate_limit_rate_per_sec (tokens/second)
+	DefaultAPIRateLimitBurst      = 30 // api.rate_limit_burst (max burst size)
+
 	// Prediction window
 	DefaultPredictionDeadlineMin = 5 // prediction.deadline_minutes — closes predictions 5 min before kick-off
 
@@ -323,6 +331,17 @@ const (
 	// Requests exceeding this limit are rejected with 413 to prevent DoS.
 	// is_runtime=FALSE: process restart required.
 	ParamKeyAPIBodySizeLimitBytes = "api.body_size_limit_bytes"
+
+	// ParamKeyAPIRateLimitRatePerSec is the token-bucket refill rate in tokens per
+	// second applied to each authenticated user on the /api/v1 subrouter.
+	// is_runtime=FALSE: the LimiterStore is constructed once at startup; a process
+	// restart is required to apply a new rate.
+	ParamKeyAPIRateLimitRatePerSec = "api.rate_limit_rate_per_sec"
+
+	// ParamKeyAPIRateLimitBurst is the maximum burst size of the per-user token
+	// bucket. A burst of 30 allows up to 30 back-to-back requests before the
+	// steady-state rate takes effect. is_runtime=FALSE: restart required.
+	ParamKeyAPIRateLimitBurst = "api.rate_limit_burst"
 
 	// ParamKeySnapshotKeepLatestCount is the number of most-recent leaderboard
 	// snapshots to retain per quiniela. The daily purge job deletes every snapshot

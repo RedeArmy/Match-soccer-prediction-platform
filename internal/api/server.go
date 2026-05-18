@@ -106,11 +106,21 @@ type Server struct {
 	// auditSvc is set by Routes() after constructing the service; exposed to main.go
 	// so the shutdown path can call Drain() to wait for in-flight audit writes.
 	auditSvc service.AuditService
+	// limiterStore overrides the default per-user rate limiter when non-nil.
+	// Typically set in tests via SetLimiterStore to bypass throttling when
+	// exercising the full middleware chain with many requests for the same user.
+	limiterStore *middleware.LimiterStore
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
 // Call this after New() when the Redis event bus driver is active.
 func (s *Server) SetDLQService(dlq service.DLQService) { s.dlqSvc = dlq }
+
+// SetLimiterStore overrides the per-user rate limiter constructed by Routes().
+// Intended for tests that need to exercise the full middleware chain for many
+// requests with the same user ID without triggering 429 responses; pass
+// middleware.NewUnlimitedLimiterStore() to disable rate limiting for the test.
+func (s *Server) SetLimiterStore(store *middleware.LimiterStore) { s.limiterStore = store }
 
 // DrainAudit blocks until all in-flight audit log writes complete. Must be
 // called during graceful shutdown before closing the database connection pool
@@ -248,9 +258,19 @@ func (s *Server) Routes() http.Handler {
 		Post("/webhooks/paypal", h.paymentWebhook.HandlePayPal)
 
 	// Versioned API surface with Clerk JWT authentication.
+	// Rate limit params are read once at startup (is_runtime=FALSE); a process
+	// restart is required to change the rate or burst.
 	clerkProvider := auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, authWarmup, s.log)
+	userRateStore := s.limiterStore
+	if userRateStore == nil {
+		userRateStore = middleware.NewLimiterStore(
+			float64(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec)),
+			paramSvc.GetInt(infraCtx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst),
+		)
+	}
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(clerkProvider, s.log))
+		r.Use(middleware.RateLimitByUserID(userRateStore, s.log))
 
 		// Admin-only match mutations are guarded by RequireRole. Read endpoints
 		// (List, Get) are accessible to all authenticated users.

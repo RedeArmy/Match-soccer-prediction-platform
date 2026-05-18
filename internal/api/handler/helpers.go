@@ -127,14 +127,19 @@ func parseOptionalInt(r *http.Request, name string) *int {
 
 // parsePaginationParams reads optional ?limit and ?offset query parameters.
 // When limit is absent or zero, returns 0 (treated as unbounded by the caller).
-// When offset is absent, defaults to 0.
+// When limit is positive, it is capped at DefaultPaginationMaxLimit to prevent
+// excessively large response payloads. When offset is absent, defaults to 0.
 // This is used for endpoints that historically returned unbounded results and
 // are being migrated to support optional pagination for consistency.
 func parsePaginationParams(r *http.Request) (limit, offset int) {
 	limit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ = strconv.Atoi(r.URL.Query().Get("offset"))
-	// Negative values are treated as 0 by Atoi's error case (already handled).
-	// limit=0 is valid and means "return all results".
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > domain.DefaultPaginationMaxLimit {
+		limit = domain.DefaultPaginationMaxLimit
+	}
 	return limit, offset
 }
 

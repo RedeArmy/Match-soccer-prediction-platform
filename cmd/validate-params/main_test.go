@@ -376,6 +376,9 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyBankTransferMaxAmountCents: true,
 		// Added by migration 000076
 		domain.ParamKeyPaymentIntentTTLMinutes: true,
+		// Added by migration 000079
+		domain.ParamKeyAPIRateLimitRatePerSec: true,
+		domain.ParamKeyAPIRateLimitBurst:      true,
 	}
 
 	for _, spec := range allParams {
@@ -436,7 +439,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 42 // Update when adding new system parameters (was 41; +1 payment.intent_ttl_minutes from migration 000076)
+	const expectedCount = 44 // Update when adding new system parameters (was 42; +2 api.rate_limit_* from migration 000079)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

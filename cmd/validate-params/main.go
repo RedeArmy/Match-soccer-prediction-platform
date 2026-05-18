@@ -39,6 +39,7 @@ type paramSpec struct {
 //   - 000074_add_bank_transfer_amount_params   (+2)
 //   - 000076_seed_payment_intent_ttl_param     (+1)
 //   - 000078_sync_system_params_is_runtime     (canonical is_runtime sync)
+//   - 000079_seed_rate_limit_params            (+2)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -107,6 +108,10 @@ var allParams = []paramSpec{
 
 	// API request limits — not runtime: restart required.
 	{key: domain.ParamKeyAPIBodySizeLimitBytes, defaultValue: strconv.Itoa(domain.DefaultAPIBodySizeLimitBytes), paramType: "int", category: "api", isRuntime: false},
+
+	// API rate limiting — not runtime: LimiterStore is constructed once at startup; restart required.
+	{key: domain.ParamKeyAPIRateLimitRatePerSec, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitRatePerSec), paramType: "int", category: "api", isRuntime: false},
+	{key: domain.ParamKeyAPIRateLimitBurst, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitBurst), paramType: "int", category: "api", isRuntime: false},
 
 	// Snapshot retention — not runtime: worker restart required.
 	{key: domain.ParamKeySnapshotKeepLatestCount, defaultValue: strconv.Itoa(domain.DefaultSnapshotKeepLatestCount), paramType: "int", category: "worker", isRuntime: false},

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+
+	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
 func TestParsePaginationParams_BothAbsent_ReturnsZeros(t *testing.T) {
@@ -48,6 +50,33 @@ func TestParsePaginationParams_InvalidLimit_ReturnsZero(t *testing.T) {
 
 	if limit != 0 {
 		t.Errorf("limit for invalid input: expected 0, got %d", limit)
+	}
+}
+
+func TestParsePaginationParams_NegativeLimit_ReturnsZero(t *testing.T) {
+	req := &http.Request{URL: &url.URL{RawQuery: "limit=-5"}}
+	limit, _ := parsePaginationParams(req)
+
+	if limit != 0 {
+		t.Errorf("negative limit: expected 0, got %d", limit)
+	}
+}
+
+func TestParsePaginationParams_ExceedsMaxLimit_CapsAtMax(t *testing.T) {
+	req := &http.Request{URL: &url.URL{RawQuery: "limit=99999"}}
+	limit, _ := parsePaginationParams(req)
+
+	if limit != domain.DefaultPaginationMaxLimit {
+		t.Errorf("over-max limit: expected %d, got %d", domain.DefaultPaginationMaxLimit, limit)
+	}
+}
+
+func TestParsePaginationParams_ZeroLimit_ReturnsUnbounded(t *testing.T) {
+	req := &http.Request{URL: &url.URL{RawQuery: "limit=0"}}
+	limit, _ := parsePaginationParams(req)
+
+	if limit != 0 {
+		t.Errorf("zero limit (unbounded): expected 0, got %d", limit)
 	}
 }
 
