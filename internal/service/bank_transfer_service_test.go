@@ -42,7 +42,7 @@ func (r *bankTransferProofRepoStub) Reject(_ context.Context, _ int, _ int, _ st
 }
 
 func newBankTransferSvc(repo *bankTransferProofRepoStub) BankTransferService {
-	return NewBankTransferService(repo, &noopAuditLogger{}, zap.NewNop())
+	return NewBankTransferService(repo, nil, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────

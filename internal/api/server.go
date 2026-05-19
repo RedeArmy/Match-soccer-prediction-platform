@@ -33,6 +33,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -645,11 +646,13 @@ func (s *Server) buildHandlers(
 	minTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMinAmountCents, domain.DefaultBankTransferMinAmountCents)
 	maxTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMaxAmountCents, domain.DefaultBankTransferMaxAmountCents)
 
+	outboxWriter := outbox.NewWriter(s.db)
+
 	balanceSvc := service.NewBalanceService(repos.user, ledgerRepo, s.log)
-	bankTransferSvc := service.NewBankTransferService(proofRepo, auditSvc, s.log)
+	bankTransferSvc := service.NewBankTransferService(proofRepo, outboxWriter, auditSvc, s.log)
 	paymentIntentSvc := service.NewPaymentIntentService(intentRepo, params, s.log)
 	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, intentRepo, auditSvc, s.log)
-	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, auditSvc, s.log)
+	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, outboxWriter, auditSvc, s.log)
 
 	return appHandlers{
 		match:             handler.NewMatchHandler(matchSvc, s.log),

@@ -781,3 +781,71 @@ func TestValidateParamConstraints_ReliabilityParams(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateParamConstraints_NotifyParams validates the range enforcement for
+// the seven integer notification parameters seeded by migration 000087.
+func TestValidateParamConstraints_NotifyParams(t *testing.T) {
+	cases := []struct {
+		key          string
+		belowMin     string
+		aboveMax     string
+		validDefault string
+	}{
+		{
+			key:          domain.ParamKeyNotifyBankTransferStaleSec,
+			belowMin:     "3599",   // just below 1 h minimum
+			aboveMax:     "172801", // just above 48 h maximum
+			validDefault: "43200",  // 12 h default
+		},
+		{
+			key:          domain.ParamKeyNotifyWithdrawalStaleSec,
+			belowMin:     "3599",   // just below 1 h minimum
+			aboveMax:     "259201", // just above 72 h maximum
+			validDefault: "86400",  // 24 h default
+		},
+		{
+			key:          domain.ParamKeyNotifyHighValueWithdrawalCents,
+			belowMin:     "99999",     // below Q1 000 minimum
+			aboveMax:     "100000001", // above Q1 000 000 maximum
+			validDefault: "1000000",   // Q10 000 default
+		},
+		{
+			key:          domain.ParamKeyNotifyPendingReminderIntervalSec,
+			belowMin:     "1799",  // just below 30 min minimum
+			aboveMax:     "86401", // just above 24 h maximum
+			validDefault: "14400", // 4 h default
+		},
+		{
+			key:          domain.ParamKeyNotifyPredictionDeadlineLeadMin1,
+			belowMin:     "4",   // below 5 min minimum
+			aboveMax:     "121", // above 120 min maximum
+			validDefault: "60",  // 60 min default
+		},
+		{
+			key:          domain.ParamKeyNotifyPredictionDeadlineLeadMin2,
+			belowMin:     "4",  // below 5 min minimum
+			aboveMax:     "61", // above 60 min maximum
+			validDefault: "15", // 15 min default
+		},
+		{
+			key:          domain.ParamKeyNotifyPredictionMissingLeadMin,
+			belowMin:     "14",  // below 15 min minimum
+			aboveMax:     "241", // above 240 min maximum
+			validDefault: "120", // 120 min default
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			if err := validateParamConstraints(tc.key, tc.belowMin, domain.SystemParamTypeInt); err == nil {
+				t.Errorf("value %s should be rejected (below min), got nil", tc.belowMin)
+			}
+			if err := validateParamConstraints(tc.key, tc.aboveMax, domain.SystemParamTypeInt); err == nil {
+				t.Errorf("value %s should be rejected (above max), got nil", tc.aboveMax)
+			}
+			if err := validateParamConstraints(tc.key, tc.validDefault, domain.SystemParamTypeInt); err != nil {
+				t.Errorf("default value %s should be accepted, got: %v", tc.validDefault, err)
+			}
+		})
+	}
+}
