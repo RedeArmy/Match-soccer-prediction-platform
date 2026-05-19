@@ -27,6 +27,7 @@ type Config struct {
 	Payment     PaymentConfig  `mapstructure:"payment"`
 	Worker      WorkerConfig   `mapstructure:"worker"`
 	Storage     StorageConfig  `mapstructure:"storage"`
+	Tracing     TracingConfig  `mapstructure:"tracing"`
 }
 
 // StorageConfig configures the object storage backend used for binary assets
@@ -251,4 +252,30 @@ type PaymentConfig struct {
 	// It is embedded in the signed message during RSA certificate verification.
 	// Set via WCQ_PAYMENT_PAYPALWEBHOOKID.
 	PayPalWebhookID string `mapstructure:"paypalWebhookID"`
+}
+
+// TracingConfig controls distributed tracing via OpenTelemetry.
+//
+// When Enabled is false (the default) a no-op TracerProvider is registered:
+// all OTel API calls compile and run correctly but produce no spans and make
+// no network connections. This is appropriate for local development.
+//
+// For production, set WCQ_TRACING_ENABLED=true and point
+// WCQ_TRACING_OTLPENDPOINT at your OTel Collector or backend (Grafana Tempo,
+// Jaeger, DataDog Agent). The endpoint must expose the OTLP HTTP receiver on
+// port 4318 by default.
+type TracingConfig struct {
+	// Enabled controls whether spans are collected and exported.
+	// Default: false. Set WCQ_TRACING_ENABLED=true in production.
+	Enabled bool `mapstructure:"enabled"`
+	// OTLPEndpoint is the base URL of the OTLP HTTP receiver.
+	// Example: "http://tempo:4318". Required when Enabled is true.
+	OTLPEndpoint string `mapstructure:"otlpEndpoint"`
+	// ServiceName is stamped on every span. Defaults to "world-cup-quiniela".
+	ServiceName string `mapstructure:"serviceName"`
+	// ServiceVersion is stamped on every span. Defaults to "1.0.0".
+	ServiceVersion string `mapstructure:"serviceVersion"`
+	// SampleRate is the fraction of traces to record (0.0–1.0).
+	// Default: 1.0 (record every trace). Reduce for high-traffic production.
+	SampleRate float64 `mapstructure:"sampleRate"`
 }

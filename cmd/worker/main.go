@@ -107,6 +107,18 @@ func main() {
 // Redis is opened before the database: an unreachable event bus makes the worker
 // useless regardless of DB state, so failing fast on it produces the clearer error.
 func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
+	shutdownTracing, err := setupTracing(ctx, cfg, log)
+	if err != nil {
+		return fmt.Errorf("tracing: %w", err)
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(flushCtx); err != nil {
+			log.Sugar().Warnf("tracing flush: %v", err)
+		}
+	}()
+
 	// Validate the event bus driver before establishing any connections.
 	// Failing here surfaces a misconfiguration error without incurring the
 	// latency of any dial that would ultimately be useless.

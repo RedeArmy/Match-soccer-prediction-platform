@@ -50,27 +50,61 @@ import (
 	"time"
 )
 
+// VersionHeader returns middleware that stamps every response with an
+// API-Version header. Clients that inspect this header can detect the active
+// version without parsing the URL path, which is useful for logging,
+// contract negotiation, and automated compatibility checks.
+//
+// Mount this middleware on each versioned subrouter so that every business
+// endpoint carries the header automatically:
+//
+//	r.Route("/api/v1", func(r chi.Router) {
+//	    r.Use(api.VersionHeader("v1"))
+//	    ...
+//	})
+func VersionHeader(version string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("API-Version", version)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Deprecated returns middleware that marks an endpoint as deprecated per
 // RFC 8594. Every response from the wrapped handler carries:
 //
 //   - Deprecation: true — signals that the endpoint is officially deprecated
 //   - Sunset: <HTTP-date> — the date/time after which the endpoint is removed
+//   - Link: <successorURL>; rel="successor-version" — when successorURL is
+//     non-empty, points clients to the replacement endpoint or version.
 //
 // The middleware is advisory: it does not reject requests. Clients, API
 // gateways, and monitoring tools that understand these headers surface warnings
 // before the endpoint disappears.
 //
-// Usage — mark a single route as deprecated with a 90-day sunset:
+// Usage — mark a route deprecated with a 90-day sunset and a successor link:
 //
-//	r.With(api.Deprecated(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))).
-//	    Get("/v1/old-resource", oldHandler)
-func Deprecated(sunset time.Time) func(http.Handler) http.Handler {
+//	r.With(api.Deprecated(
+//	    time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+//	    "/api/v2/resource",
+//	)).Get("/api/v1/resource", oldHandler)
+//
+// Pass an empty string for successorURL when no replacement exists yet.
+func Deprecated(sunset time.Time, successorURL string) func(http.Handler) http.Handler {
 	// Format once at construction time to avoid repeated allocation per request.
 	sunsetVal := sunset.UTC().Format(http.TimeFormat)
+	linkVal := ""
+	if successorURL != "" {
+		linkVal = `<` + successorURL + `>; rel="successor-version"`
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Deprecation", "true")
 			w.Header().Set("Sunset", sunsetVal)
+			if linkVal != "" {
+				w.Header().Add("Link", linkVal)
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

@@ -22,6 +22,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 
 	_ "github.com/rede/world-cup-quiniela/docs" // registers the Swagger spec at init time
@@ -200,7 +201,9 @@ func (s *Server) Routes() http.Handler {
 			r.HandleFunc("/*", dbUnavailable)
 			r.HandleFunc("/", dbUnavailable)
 		})
-		return r
+		return otelhttp.NewHandler(r, "world-cup-quiniela.api",
+			otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
+		)
 	}
 
 	// Construct repository instances once and share them across the event bus,
@@ -295,6 +298,7 @@ func (s *Server) Routes() http.Handler {
 		)
 	}
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(VersionHeader("v1"))
 		r.Use(middleware.RequireAuth(clerkProvider, s.log))
 		r.Use(middleware.RateLimitByUserID(userRateStore, s.log))
 
@@ -485,7 +489,9 @@ func (s *Server) Routes() http.Handler {
 		})
 	})
 
-	return r
+	return otelhttp.NewHandler(r, "world-cup-quiniela.api",
+		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
+	)
 }
 
 // registerLocalSubscribers wires domain event handlers onto the in-process bus.

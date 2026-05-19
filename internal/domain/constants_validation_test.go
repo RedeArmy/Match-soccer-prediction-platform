@@ -11,7 +11,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (44 total) ──────────────────────────────────────
+	// ── ParamKey* enumeration (53 total) ──────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":     ParamKeyScoringExactScore,
@@ -62,11 +62,22 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// System
 		"ParamKeyPurgeRetentionDays": ParamKeyPurgeRetentionDays,
 		// API
-		"ParamKeyAPIBodySizeLimitBytes":  ParamKeyAPIBodySizeLimitBytes,
-		"ParamKeyAPIRateLimitRatePerSec": ParamKeyAPIRateLimitRatePerSec,
-		"ParamKeyAPIRateLimitBurst":      ParamKeyAPIRateLimitBurst,
+		"ParamKeyAPIBodySizeLimitBytes":   ParamKeyAPIBodySizeLimitBytes,
+		"ParamKeyAPIRateLimitRatePerSec":  ParamKeyAPIRateLimitRatePerSec,
+		"ParamKeyAPIRateLimitBurst":       ParamKeyAPIRateLimitBurst,
+		"ParamKeyAPIIdempotencyTTLHours":  ParamKeyAPIIdempotencyTTLHours,
+		"ParamKeyAPIIdempotencyKeyMaxLen": ParamKeyAPIIdempotencyKeyMaxLen,
 		// Snapshot
 		"ParamKeySnapshotKeepLatestCount": ParamKeySnapshotKeepLatestCount,
+		// Circuit breaker
+		"ParamKeyBreakerPaypalCertMaxFails":    ParamKeyBreakerPaypalCertMaxFails,
+		"ParamKeyBreakerPaypalCertCooldownSec": ParamKeyBreakerPaypalCertCooldownSec,
+		"ParamKeyBreakerFileStoreMaxFails":     ParamKeyBreakerFileStoreMaxFails,
+		"ParamKeyBreakerFileStoreCooldownSec":  ParamKeyBreakerFileStoreCooldownSec,
+		// Repository / TX retry
+		"ParamKeyTxRetryMaxAttempts": ParamKeyTxRetryMaxAttempts,
+		"ParamKeyTxRetryBaseDelayMs": ParamKeyTxRetryBaseDelayMs,
+		"ParamKeyTxRetryMaxDelayMs":  ParamKeyTxRetryMaxDelayMs,
 		// Payment
 		"ParamKeyPaymentMaxUploadBytes":      ParamKeyPaymentMaxUploadBytes,
 		"ParamKeyWithdrawalMinCents":         ParamKeyWithdrawalMinCents,
@@ -138,10 +149,22 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultBankTransferMinAmountCents": DefaultBankTransferMinAmountCents,
 		"DefaultBankTransferMaxAmountCents": DefaultBankTransferMaxAmountCents,
 		"DefaultPaymentIntentTTLMinutes":    DefaultPaymentIntentTTLMinutes,
+		// API (idempotency)
+		"DefaultAPIIdempotencyTTLHours":  DefaultAPIIdempotencyTTLHours,
+		"DefaultAPIIdempotencyKeyMaxLen": DefaultAPIIdempotencyKeyMaxLen,
+		// Circuit breaker
+		"DefaultBreakerPaypalCertMaxFails":    DefaultBreakerPaypalCertMaxFails,
+		"DefaultBreakerPaypalCertCooldownSec": DefaultBreakerPaypalCertCooldownSec,
+		"DefaultBreakerFileStoreMaxFails":     DefaultBreakerFileStoreMaxFails,
+		"DefaultBreakerFileStoreCooldownSec":  DefaultBreakerFileStoreCooldownSec,
+		// Repository / TX retry
+		"DefaultTxRetryMaxAttempts": DefaultTxRetryMaxAttempts,
+		"DefaultTxRetryBaseDelayMs": DefaultTxRetryBaseDelayMs,
+		"DefaultTxRetryMaxDelayMs":  DefaultTxRetryMaxDelayMs,
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 44 // update when adding a new ParamKey* constant
+		const expectedCount = 53 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -149,7 +172,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 38 // update when adding a new Default* constant
+		const expectedCount = 47 // update when adding a new Default* constant
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -239,8 +262,19 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyAPIBodySizeLimitBytes", ParamKeyAPIBodySizeLimitBytes, "api"},
 		{"ParamKeyAPIRateLimitRatePerSec", ParamKeyAPIRateLimitRatePerSec, "api"},
 		{"ParamKeyAPIRateLimitBurst", ParamKeyAPIRateLimitBurst, "api"},
+		{"ParamKeyAPIIdempotencyTTLHours", ParamKeyAPIIdempotencyTTLHours, "api"},
+		{"ParamKeyAPIIdempotencyKeyMaxLen", ParamKeyAPIIdempotencyKeyMaxLen, "api"},
 		// Snapshot
 		{"ParamKeySnapshotKeepLatestCount", ParamKeySnapshotKeepLatestCount, "snapshot"},
+		// Circuit breaker
+		{"ParamKeyBreakerPaypalCertMaxFails", ParamKeyBreakerPaypalCertMaxFails, "breaker"},
+		{"ParamKeyBreakerPaypalCertCooldownSec", ParamKeyBreakerPaypalCertCooldownSec, "breaker"},
+		{"ParamKeyBreakerFileStoreMaxFails", ParamKeyBreakerFileStoreMaxFails, "breaker"},
+		{"ParamKeyBreakerFileStoreCooldownSec", ParamKeyBreakerFileStoreCooldownSec, "breaker"},
+		// Repository / TX retry
+		{"ParamKeyTxRetryMaxAttempts", ParamKeyTxRetryMaxAttempts, "repository"},
+		{"ParamKeyTxRetryBaseDelayMs", ParamKeyTxRetryBaseDelayMs, "repository"},
+		{"ParamKeyTxRetryMaxDelayMs", ParamKeyTxRetryMaxDelayMs, "repository"},
 		// Payment
 		{"ParamKeyPaymentMaxUploadBytes", ParamKeyPaymentMaxUploadBytes, "payment"},
 		{"ParamKeyWithdrawalMinCents", ParamKeyWithdrawalMinCents, "payment"},
@@ -314,9 +348,11 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		// System
 		"DefaultPurgeRetentionDays": DefaultPurgeRetentionDays,
 		// API
-		"DefaultAPIBodySizeLimitBytes":  DefaultAPIBodySizeLimitBytes,
-		"DefaultAPIRateLimitRatePerSec": DefaultAPIRateLimitRatePerSec,
-		"DefaultAPIRateLimitBurst":      DefaultAPIRateLimitBurst,
+		"DefaultAPIBodySizeLimitBytes":   DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIRateLimitRatePerSec":  DefaultAPIRateLimitRatePerSec,
+		"DefaultAPIRateLimitBurst":       DefaultAPIRateLimitBurst,
+		"DefaultAPIIdempotencyTTLHours":  DefaultAPIIdempotencyTTLHours,
+		"DefaultAPIIdempotencyKeyMaxLen": DefaultAPIIdempotencyKeyMaxLen,
 		// Snapshot
 		"DefaultSnapshotKeepLatestCount": DefaultSnapshotKeepLatestCount,
 		// Payment
@@ -326,6 +362,15 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultBankTransferMinAmountCents": DefaultBankTransferMinAmountCents,
 		"DefaultBankTransferMaxAmountCents": DefaultBankTransferMaxAmountCents,
 		"DefaultPaymentIntentTTLMinutes":    DefaultPaymentIntentTTLMinutes,
+		// Circuit breaker
+		"DefaultBreakerPaypalCertMaxFails":    DefaultBreakerPaypalCertMaxFails,
+		"DefaultBreakerPaypalCertCooldownSec": DefaultBreakerPaypalCertCooldownSec,
+		"DefaultBreakerFileStoreMaxFails":     DefaultBreakerFileStoreMaxFails,
+		"DefaultBreakerFileStoreCooldownSec":  DefaultBreakerFileStoreCooldownSec,
+		// Repository / TX retry
+		"DefaultTxRetryMaxAttempts": DefaultTxRetryMaxAttempts,
+		"DefaultTxRetryBaseDelayMs": DefaultTxRetryBaseDelayMs,
+		"DefaultTxRetryMaxDelayMs":  DefaultTxRetryMaxDelayMs,
 	}
 
 	for name, value := range defaults {
