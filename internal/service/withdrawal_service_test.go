@@ -81,7 +81,7 @@ func newWithdrawalSvc(wr *withdrawalReqRepoStub, pr *withdrawalParamRepo) Withdr
 	if pr == nil {
 		pr = &withdrawalParamRepo{}
 	}
-	return NewWithdrawalService(wr, pr, &noopAuditLogger{}, zap.NewNop())
+	return NewWithdrawalService(wr, pr, nil, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────

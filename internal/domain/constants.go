@@ -217,6 +217,26 @@ const (
 	DefaultTxRetryMaxAttempts = 3    // repository.tx_retry_max_attempts
 	DefaultTxRetryBaseDelayMs = 50   // repository.tx_retry_base_delay_ms  (milliseconds)
 	DefaultTxRetryMaxDelayMs  = 1000 // repository.tx_retry_max_delay_ms   (milliseconds)
+
+	// Notification subsystem thresholds (is_runtime=TRUE; changes propagate within cache window).
+	// Stale-alert timers: outbox-worker or background job flags a pending operation as stale
+	// once it has waited longer than these thresholds without an admin action.
+	DefaultNotifyBankTransferStaleSec = 43200 // notify.bank_transfer_stale_sec  — 12 hours
+	DefaultNotifyWithdrawalStaleSec   = 86400 // notify.withdrawal_stale_sec     — 24 hours
+
+	// High-value withdrawal: amount in cents above which EventAdminHighValueWithdrawal
+	// is also emitted alongside the regular EventAdminWithdrawalPending.
+	DefaultNotifyHighValueWithdrawalCents = 1_000_000 // notify.high_value_withdrawal_cents — Q10 000
+
+	// Periodic reminder: interval in seconds between repeated admin "pending" alerts
+	// while an approval is still outstanding.
+	DefaultNotifyPendingReminderIntervalSec = 14400 // notify.pending_reminder_interval_sec — 4 hours
+
+	// Prediction deadline push alerts: how many minutes before kick-off each
+	// reminder fires. Two independent lead times allow a 60-min and 15-min nudge.
+	DefaultNotifyPredictionDeadlineLeadMin1 = 60  // notify.prediction_deadline_lead_min_1
+	DefaultNotifyPredictionDeadlineLeadMin2 = 15  // notify.prediction_deadline_lead_min_2
+	DefaultNotifyPredictionMissingLeadMin   = 120 // notify.prediction_missing_lead_min   — 2 hours
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -409,6 +429,45 @@ const (
 	// ParamKeyTxRetryMaxDelayMs is the maximum backoff delay cap in milliseconds
 	// so that very high attempt counts do not wait unreasonably long.
 	ParamKeyTxRetryMaxDelayMs = "repository.tx_retry_max_delay_ms"
+
+	// Notification subsystem parameters (is_runtime=TRUE unless noted).
+
+	// ParamKeyNotifyBankTransferStaleSec is the seconds after which an unreviewed
+	// bank-transfer proof triggers EventAdminBankTransferStale.
+	ParamKeyNotifyBankTransferStaleSec = "notify.bank_transfer_stale_sec"
+	// ParamKeyNotifyWithdrawalStaleSec is the seconds after which an unreviewed
+	// withdrawal request triggers EventAdminWithdrawalStale.
+	ParamKeyNotifyWithdrawalStaleSec = "notify.withdrawal_stale_sec"
+	// ParamKeyNotifyHighValueWithdrawalCents is the threshold in cents above which
+	// a withdrawal also triggers EventAdminHighValueWithdrawal.
+	ParamKeyNotifyHighValueWithdrawalCents = "notify.high_value_withdrawal_cents"
+	// ParamKeyNotifyPendingReminderIntervalSec is the seconds between repeated
+	// "pending action required" admin alerts while an operation is still waiting.
+	ParamKeyNotifyPendingReminderIntervalSec = "notify.pending_reminder_interval_sec"
+	// ParamKeyNotifyPredictionDeadlineLeadMin1 is the first (earlier) push-alert
+	// lead time in minutes before prediction deadline closes.
+	ParamKeyNotifyPredictionDeadlineLeadMin1 = "notify.prediction_deadline_lead_min_1"
+	// ParamKeyNotifyPredictionDeadlineLeadMin2 is the second (later, closer) push-alert
+	// lead time in minutes before prediction deadline closes.
+	ParamKeyNotifyPredictionDeadlineLeadMin2 = "notify.prediction_deadline_lead_min_2"
+	// ParamKeyNotifyPredictionMissingLeadMin is the lead time in minutes before
+	// kick-off at which a missing-prediction reminder is sent.
+	ParamKeyNotifyPredictionMissingLeadMin = "notify.prediction_missing_lead_min"
+
+	// String params — no integer Default* constant because the value is free-form.
+
+	// ParamKeyNotifyAdminEmails is a comma-separated list of email addresses that
+	// receive all admin.* and system.* notification events.
+	ParamKeyNotifyAdminEmails = "notify.admin_emails"
+	// ParamKeyNotifyWebPushVAPIDPublicKey is the VAPID public key used to sign
+	// Web Push subscription requests (RFC 8292). Must be a base64url-encoded P-256 point.
+	ParamKeyNotifyWebPushVAPIDPublicKey = "notify.web_push_vapid_public_key"
+	// ParamKeyNotifyWebPushVAPIDPrivateKey is the VAPID private key (secret).
+	// Keep this value out of source control; inject via environment variable or secrets manager.
+	ParamKeyNotifyWebPushVAPIDPrivateKey = "notify.web_push_vapid_private_key"
+	// ParamKeyNotifyWebPushVAPIDSubject is the VAPID subject claim — an HTTPS URL
+	// or mailto: address that identifies the application server to push services.
+	ParamKeyNotifyWebPushVAPIDSubject = "notify.web_push_vapid_subject"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather

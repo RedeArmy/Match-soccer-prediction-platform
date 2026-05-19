@@ -7,6 +7,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -14,6 +16,7 @@ import (
 type withdrawalService struct {
 	withdrawalRepo repository.WithdrawalRequestRepository
 	paramRepo      repository.SystemParamRepository
+	outboxWriter   *outbox.Writer
 	audit          AuditLogger
 	log            *zap.Logger
 }
@@ -22,12 +25,14 @@ type withdrawalService struct {
 func NewWithdrawalService(
 	withdrawalRepo repository.WithdrawalRequestRepository,
 	paramRepo repository.SystemParamRepository,
+	outboxWriter *outbox.Writer,
 	audit AuditLogger,
 	log *zap.Logger,
 ) WithdrawalService {
 	return &withdrawalService{
 		withdrawalRepo: withdrawalRepo,
 		paramRepo:      paramRepo,
+		outboxWriter:   outboxWriter,
 		audit:          audit,
 		log:            log,
 	}
@@ -66,6 +71,15 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 		"currency":     currency,
 		"method":       string(method),
 	})
+
+	s.writeOutbox(ctx, notification.EventAdminWithdrawalPending,
+		"withdrawal_request", strconv.Itoa(req.ID),
+		notification.AdminWithdrawalPayload{
+			RequestID:   req.ID,
+			UserID:      userID,
+			AmountCents: amountCents,
+			Currency:    currency,
+		})
 	return req, nil
 }
 
@@ -92,6 +106,17 @@ func (s *withdrawalService) ApproveRequest(ctx context.Context, requestID, admin
 	s.audit.Log(ctx, &adminID, &role, domain.AuditActionWithdrawalApproved, &resType, &requestID, map[string]any{
 		"notes": notes,
 	})
+
+	s.writeOutbox(ctx, notification.EventWithdrawalApproved,
+		"withdrawal_request", strconv.Itoa(requestID),
+		notification.WithdrawalPayload{
+			UserID:      req.UserID,
+			RequestID:   requestID,
+			AmountCents: req.AmountCents,
+			Currency:    req.Currency,
+			AdminID:     &adminID,
+			Notes:       notes,
+		})
 	return req, nil
 }
 
@@ -106,6 +131,17 @@ func (s *withdrawalService) RejectRequest(ctx context.Context, requestID, adminI
 	s.audit.Log(ctx, &adminID, &role, domain.AuditActionWithdrawalRejected, &resType, &requestID, map[string]any{
 		"notes": notes,
 	})
+
+	s.writeOutbox(ctx, notification.EventWithdrawalRejected,
+		"withdrawal_request", strconv.Itoa(requestID),
+		notification.WithdrawalPayload{
+			UserID:      req.UserID,
+			RequestID:   requestID,
+			AmountCents: req.AmountCents,
+			Currency:    req.Currency,
+			AdminID:     &adminID,
+			Notes:       notes,
+		})
 	return req, nil
 }
 
@@ -118,7 +154,39 @@ func (s *withdrawalService) ProcessWithdrawal(ctx context.Context, requestID, ad
 	resType := "withdrawal_request"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role, domain.AuditActionWithdrawalRejected, &resType, &requestID, nil)
+
+	s.writeOutbox(ctx, notification.EventWithdrawalCompleted,
+		"withdrawal_request", strconv.Itoa(requestID),
+		notification.WithdrawalPayload{
+			UserID:      req.UserID,
+			RequestID:   requestID,
+			AmountCents: req.AmountCents,
+			Currency:    req.Currency,
+			AdminID:     &adminID,
+		})
 	return req, nil
+}
+
+// writeOutbox is a fire-and-forget helper that writes an outbox event using a
+// pool-level connection (best-effort path).  Errors are logged and swallowed so
+// that a transient outbox failure never rolls back or fails the primary domain
+// operation that already committed.
+func (s *withdrawalService) writeOutbox(
+	ctx context.Context,
+	eventType notification.EventType,
+	aggregateType, aggregateID string,
+	payload any,
+) {
+	if s.outboxWriter == nil {
+		return
+	}
+	if err := s.outboxWriter.Write(ctx, eventType, aggregateType, aggregateID, payload); err != nil {
+		s.log.Warn("outbox write failed (best-effort)",
+			zap.String("event_type", string(eventType)),
+			zap.String("aggregate_id", aggregateID),
+			zap.Error(err),
+		)
+	}
 }
 
 func (s *withdrawalService) withdrawalLimits(ctx context.Context) (minCents, maxCents int, err error) {
