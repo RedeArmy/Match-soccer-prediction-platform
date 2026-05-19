@@ -2,27 +2,37 @@ package service
 
 import (
 	"context"
+	"strconv"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 type bankTransferService struct {
-	proofRepo repository.BankTransferProofRepository
-	audit     AuditLogger
-	log       *zap.Logger
+	proofRepo    repository.BankTransferProofRepository
+	outboxWriter *outbox.Writer
+	audit        AuditLogger
+	log          *zap.Logger
 }
 
 // NewBankTransferService constructs a BankTransferService.
 func NewBankTransferService(
 	proofRepo repository.BankTransferProofRepository,
+	outboxWriter *outbox.Writer,
 	audit AuditLogger,
 	log *zap.Logger,
 ) BankTransferService {
-	return &bankTransferService{proofRepo: proofRepo, audit: audit, log: log}
+	return &bankTransferService{
+		proofRepo:    proofRepo,
+		outboxWriter: outboxWriter,
+		audit:        audit,
+		log:          log,
+	}
 }
 
 func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents int, currency, storageKey, contentType string, fileSize int) (*domain.BankTransferProof, error) {
@@ -56,6 +66,15 @@ func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents in
 		"currency":     proof.Currency,
 		"file_size":    fileSize,
 	})
+
+	s.writeOutbox(ctx, notification.EventAdminBankTransferPending,
+		"bank_transfer_proof", strconv.FormatInt(proof.ID, 10),
+		notification.AdminBankTransferPayload{
+			ProofID:     proof.ID,
+			UserID:      userID,
+			AmountCents: amountCents,
+			Currency:    proof.Currency,
+		})
 	return proof, nil
 }
 
@@ -84,6 +103,17 @@ func (s *bankTransferService) ApproveTransfer(ctx context.Context, proofID, admi
 		"user_id":      proof.UserID,
 		"amount_cents": proof.AmountCents,
 	})
+
+	s.writeOutbox(ctx, notification.EventPaymentBankTransferApproved,
+		"bank_transfer_proof", strconv.Itoa(proofID),
+		notification.BankTransferPayload{
+			UserID:      proof.UserID,
+			ProofID:     proof.ID,
+			AmountCents: proof.AmountCents,
+			Currency:    proof.Currency,
+			AdminID:     &adminID,
+			Notes:       notes,
+		})
 	return proof, nil
 }
 
@@ -98,7 +128,40 @@ func (s *bankTransferService) RejectTransfer(ctx context.Context, proofID, admin
 	s.audit.Log(ctx, &adminID, &role, domain.AuditActionBankTransferRejected, &resType, &proofID, map[string]any{
 		"notes": notes,
 	})
+
+	s.writeOutbox(ctx, notification.EventPaymentBankTransferRejected,
+		"bank_transfer_proof", strconv.Itoa(proofID),
+		notification.BankTransferPayload{
+			UserID:      proof.UserID,
+			ProofID:     proof.ID,
+			AmountCents: proof.AmountCents,
+			Currency:    proof.Currency,
+			AdminID:     &adminID,
+			Notes:       notes,
+		})
 	return proof, nil
+}
+
+// writeOutbox is a fire-and-forget helper that writes an outbox event using a
+// pool-level connection (best-effort path).  Errors are logged and swallowed so
+// that a transient outbox failure never rolls back or fails the primary domain
+// operation that already committed.
+func (s *bankTransferService) writeOutbox(
+	ctx context.Context,
+	eventType notification.EventType,
+	aggregateType, aggregateID string,
+	payload any,
+) {
+	if s.outboxWriter == nil {
+		return
+	}
+	if err := s.outboxWriter.Write(ctx, eventType, aggregateType, aggregateID, payload); err != nil {
+		s.log.Warn("outbox write failed (best-effort)",
+			zap.String("event_type", string(eventType)),
+			zap.String("aggregate_id", aggregateID),
+			zap.Error(err),
+		)
+	}
 }
 
 var _ BankTransferService = (*bankTransferService)(nil)

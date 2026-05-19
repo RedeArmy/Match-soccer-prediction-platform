@@ -11,7 +11,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (53 total) ──────────────────────────────────────
+	// ── ParamKey* enumeration (64 total) ──────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":     ParamKeyScoringExactScore,
@@ -85,6 +85,18 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyBankTransferMinAmountCents": ParamKeyBankTransferMinAmountCents,
 		"ParamKeyBankTransferMaxAmountCents": ParamKeyBankTransferMaxAmountCents,
 		"ParamKeyPaymentIntentTTLMinutes":    ParamKeyPaymentIntentTTLMinutes,
+		// Notification subsystem
+		"ParamKeyNotifyBankTransferStaleSec":       ParamKeyNotifyBankTransferStaleSec,
+		"ParamKeyNotifyWithdrawalStaleSec":         ParamKeyNotifyWithdrawalStaleSec,
+		"ParamKeyNotifyHighValueWithdrawalCents":   ParamKeyNotifyHighValueWithdrawalCents,
+		"ParamKeyNotifyPendingReminderIntervalSec": ParamKeyNotifyPendingReminderIntervalSec,
+		"ParamKeyNotifyPredictionDeadlineLeadMin1": ParamKeyNotifyPredictionDeadlineLeadMin1,
+		"ParamKeyNotifyPredictionDeadlineLeadMin2": ParamKeyNotifyPredictionDeadlineLeadMin2,
+		"ParamKeyNotifyPredictionMissingLeadMin":   ParamKeyNotifyPredictionMissingLeadMin,
+		"ParamKeyNotifyAdminEmails":                ParamKeyNotifyAdminEmails,
+		"ParamKeyNotifyWebPushVAPIDPublicKey":      ParamKeyNotifyWebPushVAPIDPublicKey,
+		"ParamKeyNotifyWebPushVAPIDPrivateKey":     ParamKeyNotifyWebPushVAPIDPrivateKey,
+		"ParamKeyNotifyWebPushVAPIDSubject":        ParamKeyNotifyWebPushVAPIDSubject,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -161,10 +173,18 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultTxRetryMaxAttempts": DefaultTxRetryMaxAttempts,
 		"DefaultTxRetryBaseDelayMs": DefaultTxRetryBaseDelayMs,
 		"DefaultTxRetryMaxDelayMs":  DefaultTxRetryMaxDelayMs,
+		// Notification subsystem
+		"DefaultNotifyBankTransferStaleSec":       DefaultNotifyBankTransferStaleSec,
+		"DefaultNotifyWithdrawalStaleSec":         DefaultNotifyWithdrawalStaleSec,
+		"DefaultNotifyHighValueWithdrawalCents":   DefaultNotifyHighValueWithdrawalCents,
+		"DefaultNotifyPendingReminderIntervalSec": DefaultNotifyPendingReminderIntervalSec,
+		"DefaultNotifyPredictionDeadlineLeadMin1": DefaultNotifyPredictionDeadlineLeadMin1,
+		"DefaultNotifyPredictionDeadlineLeadMin2": DefaultNotifyPredictionDeadlineLeadMin2,
+		"DefaultNotifyPredictionMissingLeadMin":   DefaultNotifyPredictionMissingLeadMin,
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 53 // update when adding a new ParamKey* constant
+		const expectedCount = 64 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -172,7 +192,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 47 // update when adding a new Default* constant
+		const expectedCount = 54 // update when adding a new Default* constant
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -282,6 +302,18 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyBankTransferMinAmountCents", ParamKeyBankTransferMinAmountCents, "payment"},
 		{"ParamKeyBankTransferMaxAmountCents", ParamKeyBankTransferMaxAmountCents, "payment"},
 		{"ParamKeyPaymentIntentTTLMinutes", ParamKeyPaymentIntentTTLMinutes, "payment"},
+		// Notification subsystem
+		{"ParamKeyNotifyBankTransferStaleSec", ParamKeyNotifyBankTransferStaleSec, "notify"},
+		{"ParamKeyNotifyWithdrawalStaleSec", ParamKeyNotifyWithdrawalStaleSec, "notify"},
+		{"ParamKeyNotifyHighValueWithdrawalCents", ParamKeyNotifyHighValueWithdrawalCents, "notify"},
+		{"ParamKeyNotifyPendingReminderIntervalSec", ParamKeyNotifyPendingReminderIntervalSec, "notify"},
+		{"ParamKeyNotifyPredictionDeadlineLeadMin1", ParamKeyNotifyPredictionDeadlineLeadMin1, "notify"},
+		{"ParamKeyNotifyPredictionDeadlineLeadMin2", ParamKeyNotifyPredictionDeadlineLeadMin2, "notify"},
+		{"ParamKeyNotifyPredictionMissingLeadMin", ParamKeyNotifyPredictionMissingLeadMin, "notify"},
+		{"ParamKeyNotifyAdminEmails", ParamKeyNotifyAdminEmails, "notify"},
+		{"ParamKeyNotifyWebPushVAPIDPublicKey", ParamKeyNotifyWebPushVAPIDPublicKey, "notify"},
+		{"ParamKeyNotifyWebPushVAPIDPrivateKey", ParamKeyNotifyWebPushVAPIDPrivateKey, "notify"},
+		{"ParamKeyNotifyWebPushVAPIDSubject", ParamKeyNotifyWebPushVAPIDSubject, "notify"},
 	}
 
 	for _, tc := range paramKeys {
@@ -371,6 +403,14 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultTxRetryMaxAttempts": DefaultTxRetryMaxAttempts,
 		"DefaultTxRetryBaseDelayMs": DefaultTxRetryBaseDelayMs,
 		"DefaultTxRetryMaxDelayMs":  DefaultTxRetryMaxDelayMs,
+		// Notification subsystem
+		"DefaultNotifyBankTransferStaleSec":       DefaultNotifyBankTransferStaleSec,
+		"DefaultNotifyWithdrawalStaleSec":         DefaultNotifyWithdrawalStaleSec,
+		"DefaultNotifyHighValueWithdrawalCents":   DefaultNotifyHighValueWithdrawalCents,
+		"DefaultNotifyPendingReminderIntervalSec": DefaultNotifyPendingReminderIntervalSec,
+		"DefaultNotifyPredictionDeadlineLeadMin1": DefaultNotifyPredictionDeadlineLeadMin1,
+		"DefaultNotifyPredictionDeadlineLeadMin2": DefaultNotifyPredictionDeadlineLeadMin2,
+		"DefaultNotifyPredictionMissingLeadMin":   DefaultNotifyPredictionMissingLeadMin,
 	}
 
 	for name, value := range defaults {
