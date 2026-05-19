@@ -47,6 +47,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/election"
 	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	infrapush "github.com/rede/world-cup-quiniela/internal/infrastructure/webpush"
 	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
 	"github.com/rede/world-cup-quiniela/internal/notification/escalation"
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
@@ -56,6 +57,16 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/health"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
+
+// pgPoolNotifier implements dispatcher.PgNotifier using a pgx connection pool.
+// It issues a SELECT pg_notify($1, $2) so the API server's LISTEN bridge
+// receives the payload and broadcasts to connected SSE clients.
+type pgPoolNotifier struct{ pool *pgxpool.Pool }
+
+func (n *pgPoolNotifier) Notify(ctx context.Context, channel, payload string) error {
+	_, err := n.pool.Exec(ctx, "SELECT pg_notify($1, $2)", channel, payload)
+	return err
+}
 
 // dlqMonitorInterval controls how often the DLQ monitoring goroutine logs
 // the dead-letter queue state. Five minutes is frequent enough to surface a
@@ -210,7 +221,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		return fmt.Errorf("leader election: %w", err)
 	}
 
-	// ── Notification subsystem (Phase 1 — admin email critical path) ──────────
+	// ── Notification subsystem ────────────────────────────────────────────────
 
 	outboxRepo := outbox.NewPostgresRepository(db)
 	outboxWriter := outbox.NewWriter(db)
@@ -236,6 +247,40 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		Log:      log,
 	})
 
+	// Phase 2: User-facing in-app dispatcher with SSE/push/email channels.
+	notifRepo := repository.NewPostgresUserNotificationRepository(db)
+	prefRepo := repository.NewPostgresNotificationPreferenceRepository(db)
+	pushRepo := repository.NewPostgresPushSubscriptionRepository(db)
+
+	vapidPublicKey := params.GetString(ctx, domain.ParamKeyNotifyWebPushVAPIDPublicKey, "")
+	vapidPrivateKey := params.GetString(ctx, domain.ParamKeyNotifyWebPushVAPIDPrivateKey, "")
+	vapidSubject := params.GetString(ctx, domain.ParamKeyNotifyWebPushVAPIDSubject, "")
+
+	var pusher infrapush.Sender
+	if vapidPublicKey != "" && vapidPrivateKey != "" {
+		pusher = infrapush.NewVAPIDClient(vapidPublicKey, vapidPrivateKey, vapidSubject)
+		log.Info("web push: VAPID client active")
+	} else {
+		pusher = infrapush.NoopSender{}
+		log.Warn("web push: VAPID keys not configured — push notifications disabled (NoopSender)")
+	}
+
+	userDispatcher := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:  notifRepo,
+		PrefRepo:   prefRepo,
+		PushRepo:   pushRepo,
+		DLQRepo:    dlqRepo,
+		Hub:        nil, // hub lives in the API server; cross-process delivery via pg_notify
+		Pusher:     pusher,
+		Mailer:     mailer,
+		FromAddr:   cfg.Email.FromAddress,
+		PgNotifier: &pgPoolNotifier{pool: db},
+		Params:     params,
+		Log:        log,
+	})
+
+	compositeDispatcher := dispatcher.NewCompositeDispatcher(adminDispatcher, userDispatcher)
+
 	transferRepo := repository.NewPostgresBankTransferProofRepository(db)
 	withdrawRepo := repository.NewPostgresWithdrawalRequestRepository(db)
 
@@ -258,7 +303,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		checkers:            buildHealthCheckers(db, rc),
 		dlqElection:         dlqElection,
 		outboxRepo:          outboxRepo,
-		outboxDispatcher:    adminDispatcher,
+		outboxDispatcher:    compositeDispatcher,
 		escalationScheduler: escalationScheduler,
 	}, log)
 }

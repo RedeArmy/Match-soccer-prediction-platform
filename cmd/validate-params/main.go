@@ -42,6 +42,7 @@ type paramSpec struct {
 //   - 000079_seed_rate_limit_params              (+2)
 //   - 000080_seed_reliability_params             (+9)
 //   - 000087_seed_notify_params                  (+11)
+//   - 000088_seed_notify_sse_push_params         (+2)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -151,6 +152,9 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyNotifyPredictionDeadlineLeadMin1, defaultValue: strconv.Itoa(domain.DefaultNotifyPredictionDeadlineLeadMin1), paramType: "int", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyPredictionDeadlineLeadMin2, defaultValue: strconv.Itoa(domain.DefaultNotifyPredictionDeadlineLeadMin2), paramType: "int", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyPredictionMissingLeadMin, defaultValue: strconv.Itoa(domain.DefaultNotifyPredictionMissingLeadMin), paramType: "int", category: "notify", isRuntime: true},
+	// SSE and Web Push delivery tuning (Phase 2).
+	{key: domain.ParamKeyNotifySSEHeartbeatIntervalSec, defaultValue: strconv.Itoa(domain.DefaultNotifySSEHeartbeatIntervalSec), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyWebPushTTLSec, defaultValue: strconv.Itoa(domain.DefaultNotifyWebPushTTLSec), paramType: "int", category: "notify", isRuntime: true},
 	// String params — empty default is intentional: must be set by the operator before enabling notifications.
 	{key: domain.ParamKeyNotifyAdminEmails, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyWebPushVAPIDPublicKey, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},

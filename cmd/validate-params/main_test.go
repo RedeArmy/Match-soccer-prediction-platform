@@ -401,6 +401,9 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyNotifyWebPushVAPIDPublicKey:      true,
 		domain.ParamKeyNotifyWebPushVAPIDPrivateKey:     true,
 		domain.ParamKeyNotifyWebPushVAPIDSubject:        true,
+		// Added by migration 000088
+		domain.ParamKeyNotifySSEHeartbeatIntervalSec: true,
+		domain.ParamKeyNotifyWebPushTTLSec:           true,
 	}
 
 	for _, spec := range allParams {
@@ -466,7 +469,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 64 // Update when adding new system parameters (was 53; +11 notify params from migration 000087)
+	const expectedCount = 66 // Update when adding new system parameters (was 64; +2 notify SSE/push params from migration 000088)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

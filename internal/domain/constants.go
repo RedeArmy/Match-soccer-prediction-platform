@@ -237,6 +237,17 @@ const (
 	DefaultNotifyPredictionDeadlineLeadMin1 = 60  // notify.prediction_deadline_lead_min_1
 	DefaultNotifyPredictionDeadlineLeadMin2 = 15  // notify.prediction_deadline_lead_min_2
 	DefaultNotifyPredictionMissingLeadMin   = 120 // notify.prediction_missing_lead_min   — 2 hours
+
+	// SSE delivery parameters (Phase 2).
+	// DefaultNotifySSEHeartbeatIntervalSec is the interval in seconds between
+	// keep-alive heartbeat frames sent on an open SSE connection.  A shorter
+	// interval detects proxy timeouts faster; a longer one reduces server load.
+	DefaultNotifySSEHeartbeatIntervalSec = 30 // notify.sse_heartbeat_interval_sec
+
+	// Web Push delivery TTL: how long (in seconds) the push service should
+	// retain an undelivered message.  After this window the message is discarded
+	// rather than delivered to a reconnected device.
+	DefaultNotifyWebPushTTLSec = 86400 // notify.web_push_ttl_sec — 24 hours
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -468,6 +479,14 @@ const (
 	// ParamKeyNotifyWebPushVAPIDSubject is the VAPID subject claim — an HTTPS URL
 	// or mailto: address that identifies the application server to push services.
 	ParamKeyNotifyWebPushVAPIDSubject = "notify.web_push_vapid_subject"
+
+	// ParamKeyNotifySSEHeartbeatIntervalSec is the interval in seconds between
+	// keep-alive heartbeat frames on an open SSE connection.
+	// Shorter values detect proxy timeouts faster; longer values reduce server load.
+	ParamKeyNotifySSEHeartbeatIntervalSec = "notify.sse_heartbeat_interval_sec"
+	// ParamKeyNotifyWebPushTTLSec is the Web Push message time-to-live in seconds.
+	// The push service discards undelivered messages after this window expires.
+	ParamKeyNotifyWebPushTTLSec = "notify.web_push_ttl_sec"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather

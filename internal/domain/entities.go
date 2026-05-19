@@ -870,3 +870,52 @@ type NotificationDLQEntry struct {
 	ErrorDetail string
 	CreatedAt   time.Time
 }
+
+// ── User notifications ────────────────────────────────────────────────────────
+
+// UserNotification is a persisted inbox entry for a single user.
+// The idempotency_key prevents duplicate rows when the outbox worker retries.
+type UserNotification struct {
+	ID             int64
+	UserID         int
+	EventType      string
+	Title          string
+	Body           string
+	ActionURL      string
+	Metadata       map[string]any
+	IdempotencyKey string
+	ReadAt         *time.Time
+	CreatedAt      time.Time
+}
+
+// IsRead reports whether the notification has been acknowledged by the user.
+func (n *UserNotification) IsRead() bool { return n.ReadAt != nil }
+
+// ── Notification preferences ──────────────────────────────────────────────────
+
+// NotificationPreference controls per-user, per-event-type channel opt-in.
+// Missing rows default to all channels enabled (opt-out model).
+type NotificationPreference struct {
+	UserID        int
+	EventType     string
+	ChannelEmail  bool
+	ChannelPush   bool
+	ChannelInApp  bool
+	UpdatedAt     time.Time
+}
+
+// ── Push subscriptions ────────────────────────────────────────────────────────
+
+// PushSubscription is a Web Push (VAPID) subscription registered by a browser
+// or device.  A user may have multiple active subscriptions.
+type PushSubscription struct {
+	ID         int64
+	UserID     int
+	Endpoint   string
+	P256dhKey  string
+	AuthKey    string
+	UserAgent  string
+	Active     bool
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+}
