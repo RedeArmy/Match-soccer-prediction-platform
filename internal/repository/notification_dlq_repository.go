@@ -14,8 +14,8 @@ type postgresNotificationDLQRepository struct {
 }
 
 // NewPostgresNotificationDLQRepository constructs a PostgreSQL-backed
-// NotificationDLQRepository.
-func NewPostgresNotificationDLQRepository(pool *pgxpool.Pool) NotificationDLQRepository {
+// NotificationDLQEntryCreator.
+func NewPostgresNotificationDLQRepository(pool *pgxpool.Pool) NotificationDLQEntryCreator {
 	return &postgresNotificationDLQRepository{pool: pool}
 }
 
@@ -39,4 +39,4 @@ RETURNING id, created_at
 	return nil
 }
 
-var _ NotificationDLQRepository = (*postgresNotificationDLQRepository)(nil)
+var _ NotificationDLQEntryCreator = (*postgresNotificationDLQRepository)(nil)

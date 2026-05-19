@@ -42,9 +42,9 @@ type ParamReader interface {
 //  7. For system.* events: fires the optional n8n webhook (best-effort).
 type AdminDispatcher struct {
 	params     ParamReader
-	logRepo    repository.AdminNotificationLogRepository
-	dlqRepo    repository.NotificationDLQRepository
-	mailer     infraemail.Client
+	logRepo    repository.AdminNotificationLogCreator
+	dlqRepo    repository.NotificationDLQEntryCreator
+	mailer     infraemail.Sender
 	fromAddr   string
 	n8nURL     string // empty disables webhook
 	httpClient *http.Client
@@ -54,9 +54,9 @@ type AdminDispatcher struct {
 // Config bundles the constructor arguments for AdminDispatcher.
 type Config struct {
 	Params   ParamReader
-	LogRepo  repository.AdminNotificationLogRepository
-	DLQRepo  repository.NotificationDLQRepository
-	Mailer   infraemail.Client
+	LogRepo  repository.AdminNotificationLogCreator
+	DLQRepo  repository.NotificationDLQEntryCreator
+	Mailer   infraemail.Sender
 	FromAddr string // e.g. "Quiniela <noreply@example.com>"
 	N8nURL   string // optional; empty disables the n8n webhook
 	Log      *zap.Logger

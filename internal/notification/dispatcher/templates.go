@@ -9,6 +9,12 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
 
+// Detail-table key constants used across multiple email templates.
+const (
+	detailKeyUserID    = "User ID"
+	detailKeyRequestID = "Request ID"
+)
+
 // emailData is the bag of values injected into every admin email template.
 type emailData struct {
 	EventType   string
@@ -93,10 +99,10 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Headline:  "New bank transfer proof submitted",
 			Body:      "A user has submitted a bank transfer proof that requires your review before the balance is credited.",
 			Details: map[string]string{
-				"Proof ID":  fmt.Sprintf("%d", p.ProofID),
-				"User ID":   fmt.Sprintf("%d", p.UserID),
-				"Amount":    formatCents(p.AmountCents, p.Currency),
-				"Submitted": now,
+				"Proof ID":      fmt.Sprintf("%d", p.ProofID),
+				detailKeyUserID: fmt.Sprintf("%d", p.UserID),
+				"Amount":        formatCents(p.AmountCents, p.Currency),
+				"Submitted":     now,
 			},
 			GeneratedAt: now,
 		}
@@ -111,7 +117,7 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Body:      "A bank transfer proof has exceeded the stale threshold without admin review. Immediate action is required.",
 			Details: map[string]string{
 				"Proof ID":      fmt.Sprintf("%d", p.ProofID),
-				"User ID":       fmt.Sprintf("%d", p.UserID),
+				detailKeyUserID: fmt.Sprintf("%d", p.UserID),
 				"Amount":        formatCents(p.AmountCents, p.Currency),
 				"Pending Since": p.PendingSince,
 			},
@@ -143,10 +149,10 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Headline:  "New withdrawal request submitted",
 			Body:      "A user has submitted a withdrawal request that requires admin approval.",
 			Details: map[string]string{
-				"Request ID": fmt.Sprintf("%d", p.RequestID),
-				"User ID":    fmt.Sprintf("%d", p.UserID),
-				"Amount":     formatCents(p.AmountCents, p.Currency),
-				"Submitted":  now,
+				detailKeyRequestID: fmt.Sprintf("%d", p.RequestID),
+				detailKeyUserID:    fmt.Sprintf("%d", p.UserID),
+				"Amount":           formatCents(p.AmountCents, p.Currency),
+				"Submitted":        now,
 			},
 			GeneratedAt: now,
 		}
@@ -160,10 +166,10 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Headline:  "Withdrawal request has been waiting too long",
 			Body:      "A withdrawal request has exceeded the stale threshold without admin action. Immediate review is required.",
 			Details: map[string]string{
-				"Request ID":    fmt.Sprintf("%d", p.RequestID),
-				"User ID":       fmt.Sprintf("%d", p.UserID),
-				"Amount":        formatCents(p.AmountCents, p.Currency),
-				"Pending Since": p.PendingSince,
+				detailKeyRequestID: fmt.Sprintf("%d", p.RequestID),
+				detailKeyUserID:    fmt.Sprintf("%d", p.UserID),
+				"Amount":           formatCents(p.AmountCents, p.Currency),
+				"Pending Since":    p.PendingSince,
 			},
 			GeneratedAt: now,
 		}
@@ -177,9 +183,9 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Headline:  "High-value withdrawal detected",
 			Body:      "A withdrawal request above the high-value threshold has been submitted. This event requires heightened scrutiny before approval.",
 			Details: map[string]string{
-				"Request ID": fmt.Sprintf("%d", p.RequestID),
-				"User ID":    fmt.Sprintf("%d", p.UserID),
-				"Amount":     formatCents(p.AmountCents, p.Currency),
+				detailKeyRequestID: fmt.Sprintf("%d", p.RequestID),
+				detailKeyUserID:    fmt.Sprintf("%d", p.UserID),
+				"Amount":           formatCents(p.AmountCents, p.Currency),
 			},
 			GeneratedAt: now,
 		}

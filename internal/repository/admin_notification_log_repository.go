@@ -13,8 +13,8 @@ type postgresAdminNotificationLogRepository struct {
 }
 
 // NewPostgresAdminNotificationLogRepository constructs a PostgreSQL-backed
-// AdminNotificationLogRepository.
-func NewPostgresAdminNotificationLogRepository(pool *pgxpool.Pool) AdminNotificationLogRepository {
+// AdminNotificationLogCreator.
+func NewPostgresAdminNotificationLogRepository(pool *pgxpool.Pool) AdminNotificationLogCreator {
 	return &postgresAdminNotificationLogRepository{pool: pool}
 }
 
@@ -44,4 +44,4 @@ RETURNING id, created_at
 	).Scan(&entry.ID, &entry.CreatedAt)
 }
 
-var _ AdminNotificationLogRepository = (*postgresAdminNotificationLogRepository)(nil)
+var _ AdminNotificationLogCreator = (*postgresAdminNotificationLogRepository)(nil)

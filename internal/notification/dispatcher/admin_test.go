@@ -41,7 +41,7 @@ func (r *recordingLogRepo) Create(_ context.Context, e *domain.AdminNotification
 	return nil
 }
 
-var _ repository.AdminNotificationLogRepository = (*recordingLogRepo)(nil)
+var _ repository.AdminNotificationLogCreator = (*recordingLogRepo)(nil)
 
 type recordingDLQRepo struct {
 	entries []*domain.NotificationDLQEntry
@@ -52,7 +52,7 @@ func (r *recordingDLQRepo) CreateEntry(_ context.Context, e *domain.Notification
 	return nil
 }
 
-var _ repository.NotificationDLQRepository = (*recordingDLQRepo)(nil)
+var _ repository.NotificationDLQEntryCreator = (*recordingDLQRepo)(nil)
 
 type stubMailer struct {
 	sendErr error
@@ -80,9 +80,9 @@ func makeEntry(t *testing.T, et notification.EventType, payload any) *notificati
 func newDispatcher(
 	log *zap.Logger,
 	emails string,
-	mailer infraemail.Client,
-	logRepo repository.AdminNotificationLogRepository,
-	dlqRepo repository.NotificationDLQRepository,
+	mailer infraemail.Sender,
+	logRepo repository.AdminNotificationLogCreator,
+	dlqRepo repository.NotificationDLQEntryCreator,
 	n8nURL string,
 ) *dispatcher.AdminDispatcher {
 	return dispatcher.NewAdminDispatcher(dispatcher.Config{
@@ -215,7 +215,7 @@ func TestAdminDispatcher_MultipleRecipients(t *testing.T) {
 	log := zaptest.NewLogger(t)
 	var lastMsg infraemail.Message
 	mailer := &struct {
-		infraemail.Client
+		infraemail.Sender
 		stubMailer
 	}{}
 	captureMailer := &capturingMailer{}
@@ -383,7 +383,7 @@ func (r *errorLogRepo) Create(_ context.Context, _ *domain.AdminNotificationLog)
 	return errors.New("log repo: simulated write failure")
 }
 
-var _ repository.AdminNotificationLogRepository = (*errorLogRepo)(nil)
+var _ repository.AdminNotificationLogCreator = (*errorLogRepo)(nil)
 
 type errorDLQRepo struct{}
 
@@ -391,7 +391,7 @@ func (r *errorDLQRepo) CreateEntry(_ context.Context, _ *domain.NotificationDLQE
 	return errors.New("dlq repo: simulated write failure")
 }
 
-var _ repository.NotificationDLQRepository = (*errorDLQRepo)(nil)
+var _ repository.NotificationDLQEntryCreator = (*errorDLQRepo)(nil)
 
 type capturingMailer struct{ last infraemail.Message }
 

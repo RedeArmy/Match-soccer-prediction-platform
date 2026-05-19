@@ -218,7 +218,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	adminLogRepo := repository.NewPostgresAdminNotificationLogRepository(db)
 	dlqRepo := repository.NewPostgresNotificationDLQRepository(db)
 
-	var mailer infraemail.Client
+	var mailer infraemail.Sender
 	if cfg.Email.ResendAPIKey != "" {
 		mailer = infraemail.NewResendClient(cfg.Email.ResendAPIKey)
 	} else {

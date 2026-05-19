@@ -1,7 +1,7 @@
 // Package email defines the transactional email client contract and provides
 // the Resend implementation used in production.
 //
-// The Client interface is the only symbol that application code outside this
+// The Sender interface is the only symbol that application code outside this
 // package should reference, making it straightforward to swap providers or
 // inject a stub in tests.
 package email
@@ -16,9 +16,9 @@ type Message struct {
 	HTML    string
 }
 
-// Client is the minimal contract for transactional email delivery.
+// Sender is the minimal contract for transactional email delivery.
 // Implementations must be safe for concurrent use.
-type Client interface {
+type Sender interface {
 	// Send delivers msg and returns the provider's message ID on success.
 	// Callers should treat a non-empty msgID as confirmation that the provider
 	// accepted the message; actual delivery is best-effort on the provider side.
