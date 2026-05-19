@@ -695,3 +695,89 @@ func TestValidateParamConstraints_PaymentParams(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateParamConstraints_ReliabilityParams validates the range enforcement
+// for the nine reliability parameters added by migration 000080: idempotency
+// middleware, circuit-breaker thresholds (PayPal cert + file store), and DB
+// transaction retry policy.
+func TestValidateParamConstraints_ReliabilityParams(t *testing.T) {
+	cases := []struct {
+		key          string
+		belowMin     string
+		aboveMax     string
+		validDefault string
+	}{
+		// Idempotency middleware
+		{
+			key:          domain.ParamKeyAPIIdempotencyTTLHours,
+			belowMin:     "0",   // 0 h — below 1 h minimum
+			aboveMax:     "721", // 30 days + 1 h — above 720 h maximum
+			validDefault: "24",  // 24 h default
+		},
+		{
+			key:          domain.ParamKeyAPIIdempotencyKeyMaxLen,
+			belowMin:     "15",   // below 16-byte minimum
+			aboveMax:     "4097", // above 4 096-byte maximum
+			validDefault: "255",  // 255-byte default
+		},
+		// Circuit breaker: PayPal certificate fetcher
+		{
+			key:          domain.ParamKeyBreakerPaypalCertMaxFails,
+			belowMin:     "0",   // 0 failures — circuit would never open
+			aboveMax:     "101", // above 100 maximum
+			validDefault: "3",   // 3 failures default
+		},
+		{
+			key:          domain.ParamKeyBreakerPaypalCertCooldownSec,
+			belowMin:     "0",    // 0 s — no cooldown
+			aboveMax:     "3601", // above 1 h maximum
+			validDefault: "60",   // 60 s default
+		},
+		// Circuit breaker: file store
+		{
+			key:          domain.ParamKeyBreakerFileStoreMaxFails,
+			belowMin:     "0",   // 0 failures — circuit would never open
+			aboveMax:     "101", // above 100 maximum
+			validDefault: "5",   // 5 failures default
+		},
+		{
+			key:          domain.ParamKeyBreakerFileStoreCooldownSec,
+			belowMin:     "0",    // 0 s — no cooldown
+			aboveMax:     "3601", // above 1 h maximum
+			validDefault: "30",   // 30 s default
+		},
+		// DB transaction retry policy
+		{
+			key:          domain.ParamKeyTxRetryMaxAttempts,
+			belowMin:     "0",  // 0 attempts — would never try
+			aboveMax:     "21", // above 20 maximum
+			validDefault: "3",  // 3 attempts default
+		},
+		{
+			key:          domain.ParamKeyTxRetryBaseDelayMs,
+			belowMin:     "0",     // 0 ms — no delay
+			aboveMax:     "10001", // above 10 000 ms maximum
+			validDefault: "50",    // 50 ms default
+		},
+		{
+			key:          domain.ParamKeyTxRetryMaxDelayMs,
+			belowMin:     "0",     // 0 ms — no cap
+			aboveMax:     "60001", // above 60 000 ms maximum
+			validDefault: "1000",  // 1 000 ms default
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			if err := validateParamConstraints(tc.key, tc.belowMin, domain.SystemParamTypeInt); err == nil {
+				t.Errorf("value %s should be rejected (below min), got nil", tc.belowMin)
+			}
+			if err := validateParamConstraints(tc.key, tc.aboveMax, domain.SystemParamTypeInt); err == nil {
+				t.Errorf("value %s should be rejected (above max), got nil", tc.aboveMax)
+			}
+			if err := validateParamConstraints(tc.key, tc.validDefault, domain.SystemParamTypeInt); err != nil {
+				t.Errorf("default value %s should be accepted, got: %v", tc.validDefault, err)
+			}
+		})
+	}
+}

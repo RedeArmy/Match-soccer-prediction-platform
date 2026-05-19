@@ -18,7 +18,39 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/database"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
+
+// setupTracing initialises the global OpenTelemetry TracerProvider and returns
+// a shutdown function that flushes pending spans on process exit.
+//
+// When tracing is disabled (cfg.Tracing.Enabled == false) the function
+// installs a no-op provider and returns a no-op shutdown — no network
+// connections are made and the call completes in nanoseconds.
+func setupTracing(ctx context.Context, cfg *config.Config, log *zap.Logger) (func(context.Context) error, error) {
+	tc := tracing.Config{
+		Enabled:        cfg.Tracing.Enabled,
+		OTLPEndpoint:   cfg.Tracing.OTLPEndpoint,
+		ServiceName:    cfg.Tracing.ServiceName,
+		ServiceVersion: cfg.Tracing.ServiceVersion,
+		Environment:    cfg.Environment,
+		SampleRate:     cfg.Tracing.SampleRate,
+	}
+	shutdown, err := tracing.Setup(ctx, tc)
+	if err != nil {
+		return nil, fmt.Errorf("tracing: %w", err)
+	}
+	if cfg.Tracing.Enabled {
+		log.Info("tracing enabled",
+			zap.String("otlp_endpoint", cfg.Tracing.OTLPEndpoint),
+			zap.String("service_name", cfg.Tracing.ServiceName),
+			zap.Float64("sample_rate", cfg.Tracing.SampleRate),
+		)
+	} else {
+		log.Info("tracing disabled (noop provider)")
+	}
+	return shutdown, nil
+}
 
 // setupDB opens a connection pool to the primary PostgreSQL database.
 //
@@ -97,6 +129,7 @@ func logStartupBanner(cfg *config.Config, log *zap.Logger) {
 	log.Sugar().Infof("║ Database:         %-37s ║", maskDSN(cfg.Database.DSN))
 	log.Sugar().Infof("║ Redis:            %-37s ║", cfg.Redis.Addr)
 	log.Sugar().Infof("║ Health Port:      %-37s ║", cfg.Worker.HealthPort)
+	log.Sugar().Infof("║ Tracing:          %-37s ║", tracingStatus(cfg))
 	log.Sugar().Info("╚═══════════════════════════════════════════════════════════╝")
 
 	log.Info("worker configuration loaded",
@@ -104,7 +137,16 @@ func logStartupBanner(cfg *config.Config, log *zap.Logger) {
 		zap.String("event_bus_driver", cfg.EventBus.Driver),
 		zap.String("redis_addr", cfg.Redis.Addr),
 		zap.String("health_port", cfg.Worker.HealthPort),
+		zap.Bool("tracing_enabled", cfg.Tracing.Enabled),
 	)
+}
+
+// tracingStatus returns a human-readable tracing status string for the startup banner.
+func tracingStatus(cfg *config.Config) string {
+	if cfg.Tracing.Enabled {
+		return "enabled → " + cfg.Tracing.OTLPEndpoint
+	}
+	return "disabled (noop)"
 }
 
 // maskDSN redacts credentials from a PostgreSQL connection string for safe
