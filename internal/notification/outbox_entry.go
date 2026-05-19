@@ -10,6 +10,7 @@ import (
 // OutboxStatus is the lifecycle state of a domain_outbox row.
 type OutboxStatus string
 
+// Lifecycle states for a domain_outbox row.
 const (
 	OutboxStatusPending    OutboxStatus = "pending"
 	OutboxStatusProcessing OutboxStatus = "processing"

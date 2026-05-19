@@ -12,6 +12,7 @@ package notification
 //   - P3 Low: summaries and low-signal updates; in-app only or batched digest.
 type Priority int
 
+// Priority levels ordered from most to least urgent.
 const (
 	PriorityP0Critical Priority = 0
 	PriorityP1High     Priority = 1
