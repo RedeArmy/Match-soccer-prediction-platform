@@ -862,9 +862,9 @@ type AdminNotificationLog struct {
 // ops alerting.
 type NotificationDLQEntry struct {
 	ID          int64
-	OutboxID    *int64  // references domain_outbox.id; nil when the outbox row was purged
-	Channel     string  // 'email' | 'push' | 'sse'
-	UserID      *int    // nil for admin/system events that have no target user
+	OutboxID    *int64 // references domain_outbox.id; nil when the outbox row was purged
+	Channel     string // 'email' | 'push' | 'sse'
+	UserID      *int   // nil for admin/system events that have no target user
 	EventType   string
 	Payload     []byte // raw JSON payload from the outbox entry
 	ErrorDetail string
