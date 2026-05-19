@@ -147,10 +147,26 @@ func (s *Server) DrainAudit() {
 	}
 }
 
+// StartPgNotifyBridge starts the pg_notify bridge goroutine under a
+// cancellable context. Call this once after Routes() from the process entry
+// point (cmd/api/main.go). It is intentionally NOT called inside Routes() so
+// that tests which create a Server and call Routes() without a corresponding
+// Stop do not leak a goroutine that holds a pool connection.
+func (s *Server) StartPgNotifyBridge() {
+	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
+	s.stopBridge = bridgeCancel
+	done := make(chan struct{})
+	s.bridgeDone = done
+	go func() {
+		defer close(done)
+		s.runPgNotifyBridge(bridgeCtx)
+	}()
+}
+
 // StopPgNotifyBridge cancels the pg_notify bridge goroutine and waits for it
 // to exit. Must be called before closing the database pool so the bridge
 // releases its acquired connection before pool.Close() calls WG.Wait().
-// Safe to call even if Routes() was never invoked (no-op in that case).
+// Safe to call if StartPgNotifyBridge was never invoked (no-op in that case).
 func (s *Server) StopPgNotifyBridge() {
 	if s.stopBridge != nil {
 		s.stopBridge()
@@ -278,16 +294,11 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	// SSE hub — created once and shared by the notification handler and the
-	// pg_notify bridge goroutine.
+	// pg_notify bridge goroutine.  The bridge itself is started explicitly via
+	// StartPgNotifyBridge(), called from cmd/api/main.go after Routes() returns.
+	// Keeping the start out of Routes() prevents goroutine leaks in tests that
+	// call Routes() on a Server they then discard without a matching Stop call.
 	s.notifHub = hub.New()
-	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
-	s.stopBridge = bridgeCancel
-	done := make(chan struct{})
-	s.bridgeDone = done
-	go func() {
-		defer close(done)
-		s.runPgNotifyBridge(bridgeCtx)
-	}()
 
 	h := s.buildHandlers(infraCtx, repos, paramSvc, scorer)
 

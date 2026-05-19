@@ -168,6 +168,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
+	app.StartPgNotifyBridge()
 
 	srvErr := make(chan error, 1)
 	go func() {

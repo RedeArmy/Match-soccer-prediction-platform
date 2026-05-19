@@ -31,9 +31,13 @@ ON CONFLICT (endpoint) DO UPDATE
         active     = TRUE
 RETURNING id, created_at
 `
-	return apperrors.Internal(r.pool.QueryRow(ctx, q,
+	err := r.pool.QueryRow(ctx, q,
 		sub.UserID, sub.Endpoint, sub.P256dhKey, sub.AuthKey, sub.UserAgent,
-	).Scan(&sub.ID, &sub.CreatedAt))
+	).Scan(&sub.ID, &sub.CreatedAt)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
 }
 
 func (r *postgresPushSubscriptionRepository) ListActiveByUser(ctx context.Context, userID int) ([]*domain.PushSubscription, error) {
@@ -71,7 +75,10 @@ func (r *postgresPushSubscriptionRepository) DeleteByEndpoint(ctx context.Contex
 		`DELETE FROM push_subscriptions WHERE endpoint = $1`,
 		endpoint,
 	)
-	return apperrors.Internal(err)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
 }
 
 func (r *postgresPushSubscriptionRepository) MarkInactive(ctx context.Context, id int64) error {
@@ -79,7 +86,10 @@ func (r *postgresPushSubscriptionRepository) MarkInactive(ctx context.Context, i
 		`UPDATE push_subscriptions SET active = FALSE WHERE id = $1`,
 		id,
 	)
-	return apperrors.Internal(err)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
 }
 
 var _ PushSubscriptionRepository = (*postgresPushSubscriptionRepository)(nil)
