@@ -235,13 +235,7 @@ func TestPayloadStructs_JSONRoundtrip(t *testing.T) {
 				HomeScore: 2, AwayScore: 1, PointsEarned: 5,
 			},
 			target: func() any { return &notification.PredictionScoredPayload{} },
-			check: func(t *testing.T, decoded any) {
-				t.Helper()
-				d := decoded.(*notification.PredictionScoredPayload)
-				if d.PointsEarned != 5 {
-					t.Errorf("PointsEarned: got %d; want 5", d.PointsEarned)
-				}
-			},
+			check:  checkPredictionScored,
 		},
 		{
 			name: "AdminBankTransferPayload",
@@ -252,13 +246,7 @@ func TestPayloadStructs_JSONRoundtrip(t *testing.T) {
 				Currency:    "GTQ",
 			},
 			target: func() any { return &notification.AdminBankTransferPayload{} },
-			check: func(t *testing.T, decoded any) {
-				t.Helper()
-				d := decoded.(*notification.AdminBankTransferPayload)
-				if d.ProofID != 77 {
-					t.Errorf("ProofID: got %d; want 77", d.ProofID)
-				}
-			},
+			check:  checkAdminBankTransfer,
 		},
 		{
 			name: "MatchEventPayload with scores",
@@ -270,13 +258,7 @@ func TestPayloadStructs_JSONRoundtrip(t *testing.T) {
 				}
 			}(),
 			target: func() any { return &notification.MatchEventPayload{} },
-			check: func(t *testing.T, decoded any) {
-				t.Helper()
-				d := decoded.(*notification.MatchEventPayload)
-				if d.HomeScore == nil || *d.HomeScore != 2 {
-					t.Errorf("HomeScore: got %v; want 2", d.HomeScore)
-				}
-			},
+			check:  checkMatchEventHomeScore,
 		},
 		{
 			name: "PredictionDeadlinePayload",
@@ -289,28 +271,59 @@ func TestPayloadStructs_JSONRoundtrip(t *testing.T) {
 				MinutesLeft: 60,
 			},
 			target: func() any { return &notification.PredictionDeadlinePayload{} },
-			check: func(t *testing.T, decoded any) {
-				t.Helper()
-				d := decoded.(*notification.PredictionDeadlinePayload)
-				if d.MinutesLeft != 60 {
-					t.Errorf("MinutesLeft: got %d; want 60", d.MinutesLeft)
-				}
-			},
+			check:  checkPredictionDeadline,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			raw, err := json.Marshal(tc.payload)
-			if err != nil {
-				t.Fatalf("Marshal: %v", err)
-			}
-			dst := tc.target()
-			if err := json.Unmarshal(raw, dst); err != nil {
-				t.Fatalf("Unmarshal: %v", err)
-			}
-			tc.check(t, dst)
+			assertJSONRoundtrip(t, tc.payload, tc.target, tc.check)
 		})
+	}
+}
+
+func assertJSONRoundtrip(t *testing.T, payload any, target func() any, check func(*testing.T, any)) {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	dst := target()
+	if err := json.Unmarshal(raw, dst); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	check(t, dst)
+}
+
+func checkPredictionScored(t *testing.T, decoded any) {
+	t.Helper()
+	d := decoded.(*notification.PredictionScoredPayload)
+	if d.PointsEarned != 5 {
+		t.Errorf("PointsEarned: got %d; want 5", d.PointsEarned)
+	}
+}
+
+func checkAdminBankTransfer(t *testing.T, decoded any) {
+	t.Helper()
+	d := decoded.(*notification.AdminBankTransferPayload)
+	if d.ProofID != 77 {
+		t.Errorf("ProofID: got %d; want 77", d.ProofID)
+	}
+}
+
+func checkMatchEventHomeScore(t *testing.T, decoded any) {
+	t.Helper()
+	d := decoded.(*notification.MatchEventPayload)
+	if d.HomeScore == nil || *d.HomeScore != 2 {
+		t.Errorf("HomeScore: got %v; want 2", d.HomeScore)
+	}
+}
+
+func checkPredictionDeadline(t *testing.T, decoded any) {
+	t.Helper()
+	d := decoded.(*notification.PredictionDeadlinePayload)
+	if d.MinutesLeft != 60 {
+		t.Errorf("MinutesLeft: got %d; want 60", d.MinutesLeft)
 	}
 }
