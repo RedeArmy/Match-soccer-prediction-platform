@@ -896,12 +896,12 @@ func (n *UserNotification) IsRead() bool { return n.ReadAt != nil }
 // NotificationPreference controls per-user, per-event-type channel opt-in.
 // Missing rows default to all channels enabled (opt-out model).
 type NotificationPreference struct {
-	UserID        int
-	EventType     string
-	ChannelEmail  bool
-	ChannelPush   bool
-	ChannelInApp  bool
-	UpdatedAt     time.Time
+	UserID       int
+	EventType    string
+	ChannelEmail bool
+	ChannelPush  bool
+	ChannelInApp bool
+	UpdatedAt    time.Time
 }
 
 // ── Push subscriptions ────────────────────────────────────────────────────────
