@@ -160,7 +160,7 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 	priority := notification.PriorityOf(entry.EventType)
 
 	if pref.ChannelPush {
-		d.deliverPush(ctx, entry, userID, content, log)
+		d.deliverPush(ctx, entry, userID, n.ID, content, log)
 	}
 
 	// Email for user events requires a user email resolver (Phase 3).
@@ -194,7 +194,19 @@ func (d *UserDispatcher) notifyPg(ctx context.Context, n *domain.UserNotificatio
 	}
 }
 
-func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.OutboxEntry, userID int, content userContent, log *zap.Logger) {
+// pushPayload is the JSON contract delivered to the browser Service Worker.
+// All fields must remain stable — the Service Worker reads them by name.
+type pushPayload struct {
+	NotificationID int64  `json:"notification_id"`
+	Type           string `json:"type"`
+	Title          string `json:"title"`
+	Body           string `json:"body"`
+	ActionURL      string `json:"action_url,omitempty"`
+	Icon           string `json:"icon"`
+	Badge          string `json:"badge"`
+}
+
+func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.OutboxEntry, userID int, notifID int64, content userContent, log *zap.Logger) {
 	if d.pusher == nil || d.pushRepo == nil {
 		return
 	}
@@ -203,17 +215,24 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 		return
 	}
 
-	body, _ := json.Marshal(map[string]string{
-		"title":      content.title,
-		"body":       content.body,
-		"action_url": content.actionURL,
-		"event_type": string(entry.EventType),
-	})
-
+	icon := domain.DefaultNotifyPushIconURL
+	badge := domain.DefaultNotifyPushBadgeURL
 	ttl := domain.DefaultNotifyWebPushTTLSec
 	if d.params != nil {
+		icon = d.params.GetString(ctx, domain.ParamKeyNotifyPushIconURL, domain.DefaultNotifyPushIconURL)
+		badge = d.params.GetString(ctx, domain.ParamKeyNotifyPushBadgeURL, domain.DefaultNotifyPushBadgeURL)
 		ttl = d.params.GetInt(ctx, domain.ParamKeyNotifyWebPushTTLSec, domain.DefaultNotifyWebPushTTLSec)
 	}
+
+	body, _ := json.Marshal(pushPayload{
+		NotificationID: notifID,
+		Type:           string(entry.EventType),
+		Title:          content.title,
+		Body:           content.body,
+		ActionURL:      content.actionURL,
+		Icon:           icon,
+		Badge:          badge,
+	})
 
 	for _, sub := range subs {
 		code, sendErr := d.pusher.Send(ctx, infrapush.Message{
@@ -231,11 +250,18 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 			continue
 		}
 		if code == http.StatusGone {
+			// Subscription has expired at the push service.  Mark it inactive
+			// so future dispatches skip it, write a DLQ entry for observability,
+			// and continue to any remaining subscriptions for this user.
 			if inactiveErr := d.pushRepo.MarkInactive(ctx, sub.ID); inactiveErr != nil {
 				log.Warn("user dispatcher: mark subscription inactive failed",
 					zap.Int64("sub_id", sub.ID),
 					zap.Error(inactiveErr),
 				)
+			}
+			if d.dlqRepo != nil {
+				d.writeDLQEntry(ctx, entry, userID, "push",
+					fmt.Errorf("HTTP 410 Gone: subscription %d expired", sub.ID))
 			}
 		}
 	}

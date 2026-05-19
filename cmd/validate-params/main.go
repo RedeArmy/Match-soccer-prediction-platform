@@ -43,6 +43,7 @@ type paramSpec struct {
 //   - 000080_seed_reliability_params             (+9)
 //   - 000087_seed_notify_params                  (+11)
 //   - 000088_seed_notify_sse_push_params         (+2)
+//   - 000089_seed_notify_push_asset_params       (+2)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -160,6 +161,9 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyNotifyWebPushVAPIDPublicKey, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyWebPushVAPIDPrivateKey, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyWebPushVAPIDSubject, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
+	// Web Push notification asset URLs (Phase 3); string params with non-empty defaults.
+	{key: domain.ParamKeyNotifyPushIconURL, defaultValue: domain.DefaultNotifyPushIconURL, paramType: "string", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyPushBadgeURL, defaultValue: domain.DefaultNotifyPushBadgeURL, paramType: "string", category: "notify", isRuntime: true},
 }
 
 type dbParam struct {

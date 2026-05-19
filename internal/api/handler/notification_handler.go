@@ -290,6 +290,21 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, prefToResponse(pref))
 }
 
+// ── Push — VAPID public key ───────────────────────────────────────────────────
+
+// GetVAPIDPublicKey handles GET /api/v1/push/vapid-public-key.
+// Returns the VAPID application server public key so the browser can call
+// PushManager.subscribe({applicationServerKey: ...}).  The key is a
+// Base64URL-encoded uncompressed P-256 point stored in system_params.
+func (h *NotificationHandler) GetVAPIDPublicKey(w http.ResponseWriter, r *http.Request) {
+	key := h.params.GetString(r.Context(), domain.ParamKeyNotifyWebPushVAPIDPublicKey, "")
+	if key == "" {
+		writeError(w, r, h.log, apperrors.Internal(fmt.Errorf("VAPID public key not configured")))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"vapid_public_key": key})
+}
+
 // ── Push subscribe / unsubscribe ──────────────────────────────────────────────
 
 type pushSubscribeRequest struct {

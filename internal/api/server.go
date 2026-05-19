@@ -15,6 +15,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"time"
 
@@ -226,6 +227,15 @@ func (s *Server) Routes() http.Handler {
 		httpSwagger.URL("/swagger/doc.json"),
 		httpSwagger.DeepLinking(true),
 	))
+
+	// Static assets — Service Worker must be served at the root scope so that
+	// it controls all pages. The embedded FS is built into the binary at compile
+	// time; no separate asset deployment step is required.
+	staticSub, _ := fs.Sub(staticFiles, "static")
+	staticServer := http.FileServer(http.FS(staticSub))
+	r.Get("/sw.js", staticServer.ServeHTTP)
+	r.Get("/push.js", staticServer.ServeHTTP)
+	r.Get("/icons/*", staticServer.ServeHTTP)
 
 	if s.db == nil {
 		// When the database is unavailable, register the entire API surface with
@@ -467,6 +477,7 @@ func (s *Server) Routes() http.Handler {
 		r.Route("/push", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Get("/vapid-public-key", h.notification.GetVAPIDPublicKey)
 			r.Post("/subscribe", h.notification.SubscribePush)
 			r.Delete("/subscribe", h.notification.UnsubscribePush)
 		})

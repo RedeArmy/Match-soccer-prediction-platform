@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -85,6 +86,46 @@ func (s *stubPgNotifier) Notify(_ context.Context, channel, payload string) erro
 	s.channel = channel
 	s.payload = payload
 	return nil
+}
+
+// stubParamService implements service.SystemParamService with configurable
+// string and int lookups; all other methods return zero values.
+type stubParamService struct {
+	strings map[string]string
+	ints    map[string]int
+}
+
+func (s *stubParamService) GetString(_ context.Context, key, def string) string {
+	if v, ok := s.strings[key]; ok {
+		return v
+	}
+	return def
+}
+
+func (s *stubParamService) GetInt(_ context.Context, key string, def int) int {
+	if v, ok := s.ints[key]; ok {
+		return v
+	}
+	return def
+}
+
+func (s *stubParamService) GetDuration(_ context.Context, _ string, def time.Duration) time.Duration {
+	return def
+}
+func (s *stubParamService) GetBool(_ context.Context, _ string, def bool) bool { return def }
+func (s *stubParamService) Get(_ context.Context, _ string) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubParamService) GetAll(_ context.Context) ([]*domain.SystemParam, error) { return nil, nil }
+func (s *stubParamService) GetByCategory(_ context.Context, _ string) ([]*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubParamService) Set(_ context.Context, _, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubParamService) BulkSet(_ context.Context, _ map[string]string, _ int) error { return nil }
+func (s *stubParamService) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -276,6 +317,44 @@ func TestUserDispatcher_NoPushChannel_NoPushSent(t *testing.T) {
 	}
 	if pusher.sent != 0 {
 		t.Errorf("push send calls: got %d; want 0 (channel disabled)", pusher.sent)
+	}
+}
+
+func TestUserDispatcher_PushWithParams_SendsWithOverriddenAssets(t *testing.T) {
+	t.Parallel()
+	notifRepo := &stubNotifRepo{inserted: true}
+	pushRepo := &stubPushRepo{subs: []*domain.PushSubscription{
+		{ID: 7, UserID: 9, Endpoint: "https://push.example.com/p", P256dhKey: "k", AuthKey: "a", Active: true},
+	}}
+	pusher := &stubPusher{code: http.StatusCreated}
+	params := &stubParamService{
+		strings: map[string]string{
+			domain.ParamKeyNotifyPushIconURL:  "/cdn/icon-192.png",
+			domain.ParamKeyNotifyPushBadgeURL: "/cdn/badge-72.png",
+		},
+		ints: map[string]int{
+			domain.ParamKeyNotifyWebPushTTLSec: 3600,
+		},
+	}
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo: notifRepo,
+		PrefRepo:  &stubPrefRepo{pref: allEnabled()},
+		PushRepo:  pushRepo,
+		DLQRepo:   &recordingDLQRepo{},
+		Hub:       hub.New(),
+		Pusher:    pusher,
+		Log:       zap.NewNop(),
+		Params:    params,
+	})
+
+	entry := makeEntry(t, notification.EventPredictionConfirmed,
+		notification.PredictionConfirmedPayload{UserID: 9, PredictionID: 1, MatchID: 1, HomeTeam: "A", AwayTeam: "B"})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch returned error: %v", err)
+	}
+	if pusher.sent != 1 {
+		t.Errorf("push send calls: got %d; want 1", pusher.sent)
 	}
 }
 
