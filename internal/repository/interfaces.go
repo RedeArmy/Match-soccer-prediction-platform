@@ -469,6 +469,52 @@ type NotificationDLQEntryCreator interface {
 	CreateEntry(ctx context.Context, entry *domain.NotificationDLQEntry) error
 }
 
+// UserNotificationRepository manages the per-user notification inbox.
+type UserNotificationRepository interface {
+	// Create inserts a new notification.  Uses ON CONFLICT (idempotency_key) DO
+	// NOTHING so the outbox worker can safely retry.  entry.ID and entry.CreatedAt
+	// are populated on a real insert; on conflict the struct is unchanged.
+	// Returns (false, nil) when the idempotency key already exists.
+	Create(ctx context.Context, n *domain.UserNotification) (inserted bool, err error)
+	// List returns the notification inbox for a user, newest-first.
+	// Pass unreadOnly=true to restrict to unread rows.
+	// Results are paginated via limit+offset.
+	List(ctx context.Context, userID, limit, offset int, unreadOnly bool) ([]*domain.UserNotification, error)
+	// CountUnread returns the number of unread notifications for a user.
+	CountUnread(ctx context.Context, userID int) (int, error)
+	// MarkRead marks a single notification as read.
+	// Returns apperrors.NotFound when the notification does not belong to the user.
+	MarkRead(ctx context.Context, notificationID int64, userID int) error
+	// MarkAllRead marks all unread notifications for a user as read.
+	MarkAllRead(ctx context.Context, userID int) error
+}
+
+// NotificationPreferenceRepository manages per-user, per-event-type channel opt-in.
+type NotificationPreferenceRepository interface {
+	// Get returns the preference for a (userID, eventType) pair.
+	// Returns apperrors.NotFound when no row exists (caller should apply defaults).
+	Get(ctx context.Context, userID int, eventType string) (*domain.NotificationPreference, error)
+	// ListByUser returns all preference rows for a user.
+	ListByUser(ctx context.Context, userID int) ([]*domain.NotificationPreference, error)
+	// Upsert inserts or updates a preference row (conflict on (user_id, event_type)).
+	Upsert(ctx context.Context, pref *domain.NotificationPreference) error
+}
+
+// PushSubscriptionRepository manages Web Push (VAPID) subscriptions.
+type PushSubscriptionRepository interface {
+	// Create inserts a new subscription.  Uses ON CONFLICT (endpoint) DO UPDATE
+	// to reactivate an existing subscription when the same browser re-registers.
+	Create(ctx context.Context, sub *domain.PushSubscription) error
+	// ListActiveByUser returns all active subscriptions for a user.
+	ListActiveByUser(ctx context.Context, userID int) ([]*domain.PushSubscription, error)
+	// DeleteByEndpoint removes the subscription matching the given endpoint.
+	// Used when the user explicitly unsubscribes.
+	DeleteByEndpoint(ctx context.Context, endpoint string) error
+	// MarkInactive deactivates a subscription by ID.
+	// Called when a push delivery returns HTTP 410 Gone.
+	MarkInactive(ctx context.Context, id int64) error
+}
+
 // PaymentRecordRepository manages entry-fee payment records.
 //
 // Records are created in pending state. Validate and Reject transition them

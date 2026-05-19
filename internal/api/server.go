@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"time"
 
+	"encoding/json"
+
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,6 +35,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/internal/notification/hub"
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -76,6 +79,7 @@ type appHandlers struct {
 	withdrawal        *handler.WithdrawalHandler
 	paymentIntent     *handler.PaymentIntentHandler
 	paymentWebhook    *handler.PaymentWebhookHandler
+	notification      *handler.NotificationHandler
 	adminUser         *handler.AdminUserHandler
 	adminGroup        *handler.AdminGroupHandler
 	adminPayment      *handler.AdminPaymentHandler
@@ -114,6 +118,13 @@ type Server struct {
 	// Typically set in tests via SetLimiterStore to bypass throttling when
 	// exercising the full middleware chain with many requests for the same user.
 	limiterStore *middleware.LimiterStore
+	// notifHub is the in-process SSE hub; created once in Routes() and reused
+	// by the notification handler and the pg_notify bridge goroutine.
+	notifHub *hub.Hub
+	// stopBridge cancels the pg_notify bridge goroutine context; nil until Routes() is called.
+	stopBridge context.CancelFunc
+	// bridgeDone is closed when the pg_notify bridge goroutine exits.
+	bridgeDone <-chan struct{}
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
@@ -133,6 +144,35 @@ func (s *Server) SetLimiterStore(store *middleware.LimiterStore) { s.limiterStor
 func (s *Server) DrainAudit() {
 	if s.auditSvc != nil {
 		s.auditSvc.Drain()
+	}
+}
+
+// StartPgNotifyBridge starts the pg_notify bridge goroutine under a
+// cancellable context. Call this once after Routes() from the process entry
+// point (cmd/api/main.go). It is intentionally NOT called inside Routes() so
+// that tests which create a Server and call Routes() without a corresponding
+// Stop do not leak a goroutine that holds a pool connection.
+func (s *Server) StartPgNotifyBridge() {
+	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
+	s.stopBridge = bridgeCancel
+	done := make(chan struct{})
+	s.bridgeDone = done
+	go func() {
+		defer close(done)
+		s.runPgNotifyBridge(bridgeCtx)
+	}()
+}
+
+// StopPgNotifyBridge cancels the pg_notify bridge goroutine and waits for it
+// to exit. Must be called before closing the database pool so the bridge
+// releases its acquired connection before pool.Close() calls WG.Wait().
+// Safe to call if StartPgNotifyBridge was never invoked (no-op in that case).
+func (s *Server) StopPgNotifyBridge() {
+	if s.stopBridge != nil {
+		s.stopBridge()
+	}
+	if s.bridgeDone != nil {
+		<-s.bridgeDone
 	}
 }
 
@@ -252,6 +292,14 @@ func (s *Server) Routes() http.Handler {
 	if s.cfg.EventBus.Driver != "redis" {
 		s.registerLocalSubscribers(scorer)
 	}
+
+	// SSE hub — created once and shared by the notification handler and the
+	// pg_notify bridge goroutine.  The bridge itself is started explicitly via
+	// StartPgNotifyBridge(), called from cmd/api/main.go after Routes() returns.
+	// Keeping the start out of Routes() prevents goroutine leaks in tests that
+	// call Routes() on a Server they then discard without a matching Stop call.
+	s.notifHub = hub.New()
+
 	h := s.buildHandlers(infraCtx, repos, paramSvc, scorer)
 
 	// Webhook endpoints — authenticated via provider-specific signatures, not Clerk JWT.
@@ -404,6 +452,23 @@ func (s *Server) Routes() http.Handler {
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.With(idem).Post("/", h.withdrawal.Create)
 			r.Get("/", h.withdrawal.ListMine)
+		})
+
+		r.Route("/notifications", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
+			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Get("/", h.notification.GetInbox)
+			r.Get("/stream", h.notification.GetStream)
+			r.Post("/mark-read", h.notification.MarkRead)
+			r.Get("/preferences", h.notification.GetPreferences)
+			r.Patch("/preferences", h.notification.UpdatePreferences)
+		})
+
+		r.Route("/push", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
+			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Post("/subscribe", h.notification.SubscribePush)
+			r.Delete("/subscribe", h.notification.UnsubscribePush)
 		})
 
 		// Admin panel - all routes require RoleAdmin. RequireRole now stores the
@@ -648,6 +713,10 @@ func (s *Server) buildHandlers(
 
 	outboxWriter := outbox.NewWriter(s.db)
 
+	notifRepo := repository.NewPostgresUserNotificationRepository(s.db)
+	prefRepo := repository.NewPostgresNotificationPreferenceRepository(s.db)
+	pushRepo := repository.NewPostgresPushSubscriptionRepository(s.db)
+
 	balanceSvc := service.NewBalanceService(repos.user, ledgerRepo, s.log)
 	bankTransferSvc := service.NewBankTransferService(proofRepo, outboxWriter, auditSvc, s.log)
 	paymentIntentSvc := service.NewPaymentIntentService(intentRepo, params, s.log)
@@ -655,6 +724,7 @@ func (s *Server) buildHandlers(
 	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, outboxWriter, auditSvc, s.log)
 
 	return appHandlers{
+		notification:      handler.NewNotificationHandler(notifRepo, prefRepo, pushRepo, s.notifHub, params, s.log),
 		match:             handler.NewMatchHandler(matchSvc, s.log),
 		prediction:        handler.NewPredictionHandler(predSvc, s.log),
 		group:             handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
@@ -723,6 +793,69 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok","service":"world-cup-quiniela"}`)
+}
+
+// runPgNotifyBridge holds a dedicated PostgreSQL connection and listens on the
+// 'user_notifications' channel.  Each notification payload is parsed and
+// broadcast to the in-process SSE hub so connected SSE clients receive it
+// without a database round-trip.
+//
+// The goroutine exits when ctx is cancelled (server shutdown) or when the
+// dedicated connection is lost.  Loss of the LISTEN connection means in-flight
+// SSE clients will miss notifications until the next reconnect — acceptable
+// because the client resynchronises on reconnect via GET /notifications.
+func (s *Server) runPgNotifyBridge(ctx context.Context) {
+	if s.db == nil || s.notifHub == nil {
+		return
+	}
+
+	conn, err := s.db.Acquire(ctx)
+	if err != nil {
+		s.log.Warn("pg_notify bridge: failed to acquire connection", zap.Error(err))
+		return
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, "LISTEN user_notifications"); err != nil {
+		s.log.Warn("pg_notify bridge: LISTEN failed", zap.Error(err))
+		return
+	}
+	s.log.Info("pg_notify bridge: listening on user_notifications")
+
+	for {
+		pgNotif, err := conn.Conn().WaitForNotification(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return // clean shutdown
+			}
+			s.log.Warn("pg_notify bridge: WaitForNotification error", zap.Error(err))
+			return
+		}
+
+		var p struct {
+			UserID    int    `json:"user_id"`
+			ID        int64  `json:"id"`
+			EventType string `json:"event_type"`
+			Title     string `json:"title"`
+			Body      string `json:"body"`
+			ActionURL string `json:"action_url"`
+			CreatedAt string `json:"created_at"`
+		}
+		if err := json.Unmarshal([]byte(pgNotif.Payload), &p); err != nil {
+			s.log.Warn("pg_notify bridge: failed to parse payload", zap.Error(err))
+			continue
+		}
+
+		s.notifHub.Broadcast(p.UserID, hub.Notification{
+			ID:        p.ID,
+			UserID:    p.UserID,
+			EventType: p.EventType,
+			Title:     p.Title,
+			Body:      p.Body,
+			ActionURL: p.ActionURL,
+			CreatedAt: p.CreatedAt,
+		})
+	}
 }
 
 // leaderboardTTLHook returns the mutation hook registered for
