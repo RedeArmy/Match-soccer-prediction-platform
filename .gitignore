@@ -68,3 +68,4 @@ go.work.sum
 /api
 /worker
 /genschema
+/validate-params

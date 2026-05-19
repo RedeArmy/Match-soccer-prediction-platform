@@ -28,6 +28,36 @@ type Config struct {
 	Worker      WorkerConfig   `mapstructure:"worker"`
 	Storage     StorageConfig  `mapstructure:"storage"`
 	Tracing     TracingConfig  `mapstructure:"tracing"`
+	Email       EmailConfig    `mapstructure:"email"`
+	N8n         N8nConfig      `mapstructure:"n8n"`
+}
+
+// EmailConfig holds credentials for the transactional email provider (Resend).
+//
+// ResendAPIKey is the only required field.  An empty key results in a NoopClient
+// being used — emails are silently discarded, which is appropriate for local
+// development but will cause missed alerts in production.
+//
+// Set via WCQ_EMAIL_RESENDAPIKEY and WCQ_EMAIL_FROMADDRESS.
+type EmailConfig struct {
+	// ResendAPIKey is the Resend API key.  Keep this out of source control;
+	// inject via environment variable or secrets manager.
+	ResendAPIKey string `mapstructure:"resendAPIKey"`
+	// FromAddress is the sender address stamped on every outgoing email.
+	// Example: "World Cup Quiniela <noreply@quinielamundial.gt>".
+	FromAddress string `mapstructure:"fromAddress"`
+}
+
+// N8nConfig holds the webhook URL for the n8n automation platform.
+//
+// When WebhookURL is empty the n8n integration is disabled and system-level
+// alerts are delivered via email only.
+//
+// Set via WCQ_N8N_WEBHOOKURL.
+type N8nConfig struct {
+	// WebhookURL is the n8n webhook endpoint that receives system-level alert
+	// notifications.  An empty value disables the integration.
+	WebhookURL string `mapstructure:"webhookURL"`
 }
 
 // StorageConfig configures the object storage backend used for binary assets
