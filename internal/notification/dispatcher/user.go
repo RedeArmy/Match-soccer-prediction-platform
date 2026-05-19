@@ -64,51 +64,54 @@ type notifPref struct {
 //  5. Fires pg_notify('user_notifications', …) for the SSE bridge.
 //  6. Checks notification preferences; if channel_push=true and active
 //     subscriptions exist, sends Web Push (marks 410 Gone subscriptions inactive).
-//  7. For P0/P1 events without push or when push fails, sends email (future: user email resolver).
+//  7. For P0/P1 events with channel_email=true, delivers email via mailer.
 //  8. On persist failure, writes a DLQ entry and returns the error for retry.
 type UserDispatcher struct {
-	notifRepo  repository.UserNotificationRepository
-	prefRepo   repository.NotificationPreferenceRepository
-	pushRepo   repository.PushSubscriptionRepository
-	dlqRepo    repository.NotificationDLQEntryCreator
-	hub        *hub.Hub
-	pusher     infrapush.Sender
-	mailer     infraemail.Sender
-	fromAddr   string
-	pgNotifier PgNotifier
-	params     service.SystemParamService
-	log        *zap.Logger
+	notifRepo     repository.UserNotificationRepository
+	prefRepo      repository.NotificationPreferenceRepository
+	pushRepo      repository.PushSubscriptionRepository
+	dlqRepo       repository.NotificationDLQEntryCreator
+	hub           *hub.Hub
+	pusher        infrapush.Sender
+	mailer        infraemail.Sender
+	emailResolver UserEmailResolver
+	fromAddr      string
+	pgNotifier    PgNotifier
+	params        service.SystemParamService
+	log           *zap.Logger
 }
 
 // UserDispatcherConfig bundles constructor arguments for UserDispatcher.
 type UserDispatcherConfig struct {
-	NotifRepo  repository.UserNotificationRepository
-	PrefRepo   repository.NotificationPreferenceRepository
-	PushRepo   repository.PushSubscriptionRepository
-	DLQRepo    repository.NotificationDLQEntryCreator
-	Hub        *hub.Hub
-	Pusher     infrapush.Sender
-	Mailer     infraemail.Sender
-	FromAddr   string
-	PgNotifier PgNotifier                 // nil disables pg_notify (tests without DB)
-	Params     service.SystemParamService // nil uses defaults
-	Log        *zap.Logger
+	NotifRepo     repository.UserNotificationRepository
+	PrefRepo      repository.NotificationPreferenceRepository
+	PushRepo      repository.PushSubscriptionRepository
+	DLQRepo       repository.NotificationDLQEntryCreator
+	Hub           *hub.Hub
+	Pusher        infrapush.Sender
+	Mailer        infraemail.Sender
+	EmailResolver UserEmailResolver // nil disables email delivery
+	FromAddr      string
+	PgNotifier    PgNotifier                 // nil disables pg_notify (tests without DB)
+	Params        service.SystemParamService // nil uses defaults
+	Log           *zap.Logger
 }
 
 // NewUserDispatcher constructs a UserDispatcher.
 func NewUserDispatcher(cfg UserDispatcherConfig) *UserDispatcher {
 	return &UserDispatcher{
-		notifRepo:  cfg.NotifRepo,
-		prefRepo:   cfg.PrefRepo,
-		pushRepo:   cfg.PushRepo,
-		dlqRepo:    cfg.DLQRepo,
-		hub:        cfg.Hub,
-		pusher:     cfg.Pusher,
-		mailer:     cfg.Mailer,
-		fromAddr:   cfg.FromAddr,
-		pgNotifier: cfg.PgNotifier,
-		params:     cfg.Params,
-		log:        cfg.Log,
+		notifRepo:     cfg.NotifRepo,
+		prefRepo:      cfg.PrefRepo,
+		pushRepo:      cfg.PushRepo,
+		dlqRepo:       cfg.DLQRepo,
+		hub:           cfg.Hub,
+		pusher:        cfg.Pusher,
+		mailer:        cfg.Mailer,
+		emailResolver: cfg.EmailResolver,
+		fromAddr:      cfg.FromAddr,
+		pgNotifier:    cfg.PgNotifier,
+		params:        cfg.Params,
+		log:           cfg.Log,
 	}
 }
 
@@ -163,12 +166,8 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 		d.deliverPush(ctx, entry, userID, n.ID, content, log)
 	}
 
-	// Email for user events requires a user email resolver (Phase 3).
-	// For P0/P1 we log intent so the gap is visible in observability.
 	if pref.ChannelEmail && priority <= notification.PriorityP1High {
-		log.Debug("user dispatcher: email channel pending user email resolver",
-			zap.Int("user_id", userID),
-		)
+		d.deliverEmail(ctx, entry, userID, content, log)
 	}
 
 	return nil

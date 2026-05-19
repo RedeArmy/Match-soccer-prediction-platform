@@ -269,6 +269,75 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			GeneratedAt: now,
 		}
 
+	// ── Scheduler digest events ───────────────────────────────────────────────
+
+	case notification.EventAdminPendingReminder:
+		var p notification.AdminPendingReminderPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   "[ACTION REQUIRED] Pending items awaiting admin review",
+			Headline:  "Periodic pending-items reminder",
+			Body:      fmt.Sprintf("%d bank transfer proof(s) and %d withdrawal request(s) are awaiting your review.", p.PendingTransfers, p.PendingWithdrawals),
+			Details: func() map[string]string {
+				d := map[string]string{
+					"Pending Transfers":   fmt.Sprintf("%d", p.PendingTransfers),
+					"Pending Withdrawals": fmt.Sprintf("%d", p.PendingWithdrawals),
+				}
+				if p.OldestPendingSince != "" {
+					d["Oldest Pending Since"] = p.OldestPendingSince
+				}
+				return d
+			}(),
+			GeneratedAt: now,
+		}
+
+	case notification.EventAdminDailySummary:
+		var p notification.AdminDailySummaryPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   fmt.Sprintf("[DAILY SUMMARY] Operations summary for %s", p.Date),
+			Headline:  "Daily operations summary",
+			Body:      fmt.Sprintf("Here is the operations summary for %s.", p.Date),
+			Details: map[string]string{
+				"Date":                p.Date,
+				"New Users":           fmt.Sprintf("%d", p.NewUsers),
+				"New Transfers":       fmt.Sprintf("%d", p.NewTransfers),
+				"Approved Transfers":  fmt.Sprintf("%d", p.ApprovedTransfers),
+				"Total Credited":      formatCents(p.TotalCreditedCents, "GTQ"),
+				"New Withdrawals":     fmt.Sprintf("%d", p.NewWithdrawals),
+				"Pending Transfers":   fmt.Sprintf("%d", p.PendingTransfers),
+				"Pending Withdrawals": fmt.Sprintf("%d", p.PendingWithdrawals),
+			},
+			GeneratedAt: now,
+		}
+
+	case notification.EventAdminWeeklyReport:
+		var p notification.AdminWeeklyReportPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   fmt.Sprintf("[WEEKLY REPORT] %s – %s", p.WeekStartDate, p.WeekEndDate),
+			Headline:  "Weekly operations report",
+			Body:      fmt.Sprintf("Weekly summary for the period %s to %s.", p.WeekStartDate, p.WeekEndDate),
+			Details: func() map[string]string {
+				d := map[string]string{
+					"Period":            fmt.Sprintf("%s – %s", p.WeekStartDate, p.WeekEndDate),
+					"Total Revenue":     formatCents(p.TotalRevenueCents, "GTQ"),
+					"New Users":         fmt.Sprintf("%d", p.NewUsers),
+					"Active Quinielas":  fmt.Sprintf("%d", p.ActiveQuinielas),
+					"Total Withdrawals": fmt.Sprintf("%d", p.TotalWithdrawals),
+					"Withdrawal Amount": formatCents(p.WithdrawalCents, "GTQ"),
+				}
+				if p.TopGroupName != "" {
+					d["Top Group"] = fmt.Sprintf("%s (%d pts)", p.TopGroupName, p.TopGroupPoints)
+				}
+				return d
+			}(),
+			GeneratedAt: now,
+		}
+
 	// ── Generic fallback ──────────────────────────────────────────────────────
 
 	default:

@@ -7,10 +7,26 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 )
 
 const resendBaseURL = "https://api.resend.com"
+
+// RetryAfterError is returned when the API responds HTTP 429 Too Many Requests.
+// RetryAfter is parsed from the Retry-After header when present; otherwise zero,
+// signalling the caller should apply its own back-off strategy.
+type RetryAfterError struct {
+	RetryAfter time.Duration
+	Msg        string
+}
+
+func (e *RetryAfterError) Error() string {
+	if e.RetryAfter > 0 {
+		return fmt.Sprintf("email: rate limited (retry after %s): %s", e.RetryAfter, e.Msg)
+	}
+	return fmt.Sprintf("email: rate limited: %s", e.Msg)
+}
 
 // ResendClient delivers email via the Resend API (https://resend.com).
 // Construct with NewResendClient; zero value is not usable.
@@ -83,10 +99,20 @@ func (c *ResendClient) Send(ctx context.Context, msg Message) (string, error) {
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		var resErr resendError
 		_ = json.Unmarshal(raw, &resErr)
-		if resErr.Message != "" {
-			return "", fmt.Errorf("resend: status %d: %s", resp.StatusCode, resErr.Message)
+		msg := resErr.Message
+		if msg == "" {
+			msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
 		}
-		return "", fmt.Errorf("resend: status %d", resp.StatusCode)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			var retryAfter time.Duration
+			if s := resp.Header.Get("Retry-After"); s != "" {
+				if secs, convErr := strconv.Atoi(s); convErr == nil {
+					retryAfter = time.Duration(secs) * time.Second
+				}
+			}
+			return "", &RetryAfterError{RetryAfter: retryAfter, Msg: msg}
+		}
+		return "", fmt.Errorf("resend: status %d: %s", resp.StatusCode, msg)
 	}
 
 	var result resendResponse

@@ -252,8 +252,9 @@ const (
 	// Web Push notification asset URLs served by the application.
 	// Operators can override these via system_params to use a CDN or a
 	// branding-specific asset without a process restart.
-	DefaultNotifyPushIconURL  = PushDefaultIcon  // notify.push_icon_url
-	DefaultNotifyPushBadgeURL = PushDefaultBadge // notify.push_badge_url
+	DefaultNotifyPushIconURL       = PushDefaultIcon     // notify.push_icon_url
+	DefaultNotifyPushBadgeURL      = PushDefaultBadge    // notify.push_badge_url
+	DefaultNotifySchedulerTimezone = "America/Guatemala" // notify.scheduler_timezone
 )
 
 const (
@@ -511,6 +512,10 @@ const (
 	// PNG) displayed in the Android notification bar.
 	// is_runtime=TRUE: changes propagate within the 30 s cache window.
 	ParamKeyNotifyPushBadgeURL = "notify.push_badge_url"
+	// ParamKeyNotifySchedulerTimezone is the IANA timezone used by the notification
+	// scheduler when evaluating daily and weekly job schedules (e.g. "America/Guatemala").
+	// is_runtime=FALSE: requires a worker restart to take effect.
+	ParamKeyNotifySchedulerTimezone = "notify.scheduler_timezone"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather

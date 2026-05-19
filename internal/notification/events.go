@@ -83,6 +83,17 @@ const (
 	EventAdminMatchResultPending     EventType = "admin.match_result_pending"
 	EventAdminScoringDiscrepancy     EventType = "admin.scoring_discrepancy"
 	EventAdminGroupReported          EventType = "admin.group_reported"
+
+	// Scheduler-emitted digest events (Phase 4 — Sprint 7).
+	// EventAdminPendingReminder is emitted every 4 hours when pending
+	// bank transfers or withdrawal requests await admin action.
+	EventAdminPendingReminder EventType = "admin.pending_reminder"
+	// EventAdminDailySummary is emitted daily at the configured hour with
+	// operational metrics for the preceding 24-hour window.
+	EventAdminDailySummary EventType = "admin.daily_summary"
+	// EventAdminWeeklyReport is emitted every Monday at the configured hour
+	// with revenue, top groups, and top users for the preceding 7 days.
+	EventAdminWeeklyReport EventType = "admin.weekly_report"
 )
 
 // System / infrastructure alert events (always deliver via email + ops channel).
@@ -269,4 +280,41 @@ type SystemAlertPayload struct {
 	Detail      string `json:"detail"`
 	Severity    string `json:"severity"`
 	AffectedIDs []int  `json:"affected_ids,omitempty"`
+}
+
+// ── Phase 4 scheduler payloads ────────────────────────────────────────────────
+
+// AdminPendingReminderPayload is the payload for EventAdminPendingReminder,
+// emitted every 4 hours when items are awaiting admin action.
+type AdminPendingReminderPayload struct {
+	PendingTransfers   int    `json:"pending_transfers"`
+	PendingWithdrawals int    `json:"pending_withdrawals"`
+	OldestPendingSince string `json:"oldest_pending_since,omitempty"` // RFC3339 UTC
+}
+
+// AdminDailySummaryPayload is the payload for EventAdminDailySummary,
+// emitted daily with operational metrics for the preceding 24-hour window.
+type AdminDailySummaryPayload struct {
+	Date               string `json:"date"` // YYYY-MM-DD (local date)
+	NewUsers           int    `json:"new_users"`
+	NewTransfers       int    `json:"new_transfers"`
+	ApprovedTransfers  int    `json:"approved_transfers"`
+	TotalCreditedCents int    `json:"total_credited_cents"`
+	NewWithdrawals     int    `json:"new_withdrawals"`
+	PendingTransfers   int    `json:"pending_transfers"`
+	PendingWithdrawals int    `json:"pending_withdrawals"`
+}
+
+// AdminWeeklyReportPayload is the payload for EventAdminWeeklyReport,
+// emitted every Monday with revenue and engagement metrics for the past 7 days.
+type AdminWeeklyReportPayload struct {
+	WeekStartDate     string `json:"week_start_date"` // YYYY-MM-DD
+	WeekEndDate       string `json:"week_end_date"`   // YYYY-MM-DD
+	TotalRevenueCents int    `json:"total_revenue_cents"`
+	NewUsers          int    `json:"new_users"`
+	ActiveQuinielas   int    `json:"active_quinielas"`
+	TopGroupName      string `json:"top_group_name,omitempty"`
+	TopGroupPoints    int    `json:"top_group_points,omitempty"`
+	TotalWithdrawals  int    `json:"total_withdrawals"`
+	WithdrawalCents   int    `json:"withdrawal_cents"`
 }

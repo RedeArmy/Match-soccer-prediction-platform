@@ -28,12 +28,15 @@ type Keys struct {
 	PrivateKey string
 }
 
+// generateVAPIDKeys is the underlying key-generation function; injectable for tests.
+var generateVAPIDKeys = wp.GenerateVAPIDKeys
+
 // GenerateKeys returns a fresh ECDH P-256 key pair in Base64URL encoding.
 // Call once per deployment; the returned keys are safe to write directly into
 // environment variables or system_params rows.
 func GenerateKeys() (Keys, error) {
 	// webpush-go returns (privateKey, publicKey, err) — note the order.
-	priv, pub, err := wp.GenerateVAPIDKeys()
+	priv, pub, err := generateVAPIDKeys()
 	if err != nil {
 		return Keys{}, fmt.Errorf("vapid: generate keys: %w", err)
 	}

@@ -407,6 +407,8 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		// Added by migration 000089
 		domain.ParamKeyNotifyPushIconURL:  true,
 		domain.ParamKeyNotifyPushBadgeURL: true,
+		// Added by migration 000090
+		domain.ParamKeyNotifySchedulerTimezone: true,
 	}
 
 	for _, spec := range allParams {
@@ -472,7 +474,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 68 // Update when adding new system parameters (was 66; +2 push asset URL params from migration 000089)
+	const expectedCount = 69 // Update when adding new system parameters (was 68; +1 scheduler timezone param from migration 000090)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}
