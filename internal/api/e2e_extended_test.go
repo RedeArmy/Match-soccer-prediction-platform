@@ -271,7 +271,7 @@ func TestE2E_GroupManagement_JoinApproveLeave(t *testing.T) {
 	// Step 2 — joiner requests membership; state is pending until approved.
 	rec = doRequest(t, h, http.MethodPost, "/api/v1/groups/join", joinerToken,
 		jsonBody(t, map[string]any{"invite_code": group.InviteCode}))
-	assertStatus(t, rec, http.StatusCreated, "join group")
+	assertStatus(t, rec, http.StatusOK, "join group")
 	var membership struct {
 		ID     int    `json:"id"`
 		Status string `json:"status"`
@@ -302,12 +302,14 @@ func TestE2E_GroupManagement_JoinApproveLeave(t *testing.T) {
 	rec = doRequest(t, h, http.MethodGet,
 		fmt.Sprintf("/api/v1/groups/%d/members", group.ID), ownerToken, nil)
 	assertStatus(t, rec, http.StatusOK, "list members after join")
-	var afterJoin []struct{ Status string `json:"status"` }
+	var afterJoin struct {
+		Data []struct{ Status string `json:"status"` } `json:"data"`
+	}
 	if err := json.NewDecoder(rec.Body).Decode(&afterJoin); err != nil {
 		t.Fatalf("decode list-members: %v", err)
 	}
-	if len(afterJoin) != 2 {
-		t.Errorf("list members: expected 2, got %d", len(afterJoin))
+	if len(afterJoin.Data) != 2 {
+		t.Errorf("list members: expected 2, got %d", len(afterJoin.Data))
 	}
 
 	// Step 5 — joiner self-removes via DELETE /groups/{id}/members/me.
@@ -315,16 +317,24 @@ func TestE2E_GroupManagement_JoinApproveLeave(t *testing.T) {
 		fmt.Sprintf("/api/v1/groups/%d/members/me", group.ID), joinerToken, nil)
 	assertStatus(t, rec, http.StatusNoContent, "leave group")
 
-	// Step 6 — only the owner remains.
+	// Step 6 — only the owner remains active; joiner's row has status="left".
 	rec = doRequest(t, h, http.MethodGet,
 		fmt.Sprintf("/api/v1/groups/%d/members", group.ID), ownerToken, nil)
 	assertStatus(t, rec, http.StatusOK, "list members after leave")
-	var afterLeave []struct{ Status string `json:"status"` }
+	var afterLeave struct {
+		Data []struct{ Status string `json:"status"` } `json:"data"`
+	}
 	if err := json.NewDecoder(rec.Body).Decode(&afterLeave); err != nil {
 		t.Fatalf("decode list-members after leave: %v", err)
 	}
-	if len(afterLeave) != 1 {
-		t.Errorf("list members after leave: expected 1, got %d", len(afterLeave))
+	var activeAfterLeave int
+	for _, m := range afterLeave.Data {
+		if m.Status != "left" {
+			activeAfterLeave++
+		}
+	}
+	if activeAfterLeave != 1 {
+		t.Errorf("list members after leave: expected 1 active member, got %d", activeAfterLeave)
 	}
 }
 
@@ -368,7 +378,7 @@ func TestE2E_LeaderboardRanking_ExactScoreBeatsOutcomeOnly(t *testing.T) {
 
 	rec = doRequest(t, h, http.MethodPost, "/api/v1/groups/join", userBToken,
 		jsonBody(t, map[string]any{"invite_code": group.InviteCode}))
-	assertStatus(t, rec, http.StatusCreated, "user B join")
+	assertStatus(t, rec, http.StatusOK, "user B join")
 	var memberB struct {
 		ID int `json:"id"`
 	}
