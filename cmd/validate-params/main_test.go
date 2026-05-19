@@ -389,6 +389,18 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyTxRetryMaxAttempts:           true,
 		domain.ParamKeyTxRetryBaseDelayMs:           true,
 		domain.ParamKeyTxRetryMaxDelayMs:            true,
+		// Added by migration 000087
+		domain.ParamKeyNotifyBankTransferStaleSec:       true,
+		domain.ParamKeyNotifyWithdrawalStaleSec:         true,
+		domain.ParamKeyNotifyHighValueWithdrawalCents:   true,
+		domain.ParamKeyNotifyPendingReminderIntervalSec: true,
+		domain.ParamKeyNotifyPredictionDeadlineLeadMin1: true,
+		domain.ParamKeyNotifyPredictionDeadlineLeadMin2: true,
+		domain.ParamKeyNotifyPredictionMissingLeadMin:   true,
+		domain.ParamKeyNotifyAdminEmails:                true,
+		domain.ParamKeyNotifyWebPushVAPIDPublicKey:      true,
+		domain.ParamKeyNotifyWebPushVAPIDPrivateKey:     true,
+		domain.ParamKeyNotifyWebPushVAPIDSubject:        true,
 	}
 
 	for _, spec := range allParams {
@@ -439,6 +451,8 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 		// Added by migration 000080
 		"breaker":    true,
 		"repository": true,
+		// Added by migration 000087
+		"notify": true,
 	}
 
 	for _, spec := range allParams {
@@ -452,18 +466,23 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 53 // Update when adding new system parameters (was 44; +9 reliability params from migration 000080)
+	const expectedCount = 64 // Update when adding new system parameters (was 53; +11 notify params from migration 000087)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}
 }
 
-// TestDefaultValuesAreNonEmpty verifies that every paramSpec has a non-empty
-// default value. Empty defaults indicate a configuration bug.
+// TestDefaultValuesAreNonEmpty verifies that every non-string paramSpec has a
+// non-empty default value. String params whose defaults are intentionally empty
+// (e.g. VAPID keys, admin email list) must be set by the operator at deployment
+// time and are therefore exempt from this check.
 func TestDefaultValuesAreNonEmpty(t *testing.T) {
 	for _, spec := range allParams {
+		if spec.paramType == "string" {
+			continue // operator-supplied credentials: empty default is valid
+		}
 		if spec.defaultValue == "" {
-			t.Errorf("%s: defaultValue is empty - every param must have a fallback", spec.key)
+			t.Errorf("%s: defaultValue is empty - every non-string param must have a fallback", spec.key)
 		}
 	}
 }

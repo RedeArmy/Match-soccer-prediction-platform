@@ -453,6 +453,22 @@ type AuditLogRepository interface {
 	List(ctx context.Context, f AuditLogFilters, p CursorPage) ([]*domain.AuditLog, string, error)
 }
 
+// AdminNotificationLogRepository provides append-only write access to the
+// admin_notification_log table.  Every admin email dispatch — whether
+// successful or failed — produces one row.  Rows are never updated or deleted.
+type AdminNotificationLogRepository interface {
+	// Create inserts an immutable log entry.  entry.ID and entry.CreatedAt are
+	// populated by the database on INSERT.
+	Create(ctx context.Context, entry *domain.AdminNotificationLog) error
+}
+
+// NotificationDLQRepository writes delivery failures to notification_dlq so
+// they can be inspected and replayed by operators.
+type NotificationDLQRepository interface {
+	// CreateEntry inserts a new DLQ record for a failed channel delivery.
+	CreateEntry(ctx context.Context, entry *domain.NotificationDLQEntry) error
+}
+
 // PaymentRecordRepository manages entry-fee payment records.
 //
 // Records are created in pending state. Validate and Reject transition them

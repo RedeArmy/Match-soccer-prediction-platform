@@ -830,3 +830,43 @@ type WithdrawalRequest struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
+
+// ── Admin notification log ────────────────────────────────────────────────────
+
+// AdminNotifStatus is the delivery outcome of an admin email dispatch.
+type AdminNotifStatus string
+
+// Delivery outcomes recorded in admin_notification_log.
+const (
+	AdminNotifStatusSent   AdminNotifStatus = "sent"
+	AdminNotifStatusFailed AdminNotifStatus = "failed"
+)
+
+// AdminNotificationLog is an immutable record of a single admin email dispatch.
+// The table is append-only; rows are never updated or deleted.
+type AdminNotificationLog struct {
+	ID          int64
+	EventType   string
+	Recipients  []string
+	Subject     string
+	Status      AdminNotifStatus
+	ResendMsgID string    // populated on successful delivery
+	ErrorDetail string    // populated on failure
+	CreatedAt   time.Time // set by the database on INSERT
+}
+
+// ── Notification DLQ ─────────────────────────────────────────────────────────
+
+// NotificationDLQEntry records a delivery failure for a specific channel
+// after all retry attempts have been exhausted.  Used for manual replay and
+// ops alerting.
+type NotificationDLQEntry struct {
+	ID          int64
+	OutboxID    *int64  // references domain_outbox.id; nil when the outbox row was purged
+	Channel     string  // 'email' | 'push' | 'sse'
+	UserID      *int    // nil for admin/system events that have no target user
+	EventType   string
+	Payload     []byte // raw JSON payload from the outbox entry
+	ErrorDetail string
+	CreatedAt   time.Time
+}
