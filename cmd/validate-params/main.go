@@ -41,6 +41,7 @@ type paramSpec struct {
 //   - 000078_sync_system_params_is_runtime       (canonical is_runtime sync)
 //   - 000079_seed_rate_limit_params              (+2)
 //   - 000080_seed_reliability_params             (+9)
+//   - 000087_seed_notify_params                  (+11)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -141,6 +142,20 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyBankTransferMinAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMinAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyBankTransferMaxAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMaxAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyPaymentIntentTTLMinutes, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentTTLMinutes), paramType: "int", category: "payment", isRuntime: true},
+
+	// Notifications — runtime: thresholds and recipient list are tunable without restart.
+	{key: domain.ParamKeyNotifyBankTransferStaleSec, defaultValue: strconv.Itoa(domain.DefaultNotifyBankTransferStaleSec), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyWithdrawalStaleSec, defaultValue: strconv.Itoa(domain.DefaultNotifyWithdrawalStaleSec), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyHighValueWithdrawalCents, defaultValue: strconv.Itoa(domain.DefaultNotifyHighValueWithdrawalCents), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyPendingReminderIntervalSec, defaultValue: strconv.Itoa(domain.DefaultNotifyPendingReminderIntervalSec), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyPredictionDeadlineLeadMin1, defaultValue: strconv.Itoa(domain.DefaultNotifyPredictionDeadlineLeadMin1), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyPredictionDeadlineLeadMin2, defaultValue: strconv.Itoa(domain.DefaultNotifyPredictionDeadlineLeadMin2), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyPredictionMissingLeadMin, defaultValue: strconv.Itoa(domain.DefaultNotifyPredictionMissingLeadMin), paramType: "int", category: "notify", isRuntime: true},
+	// String params — empty default is intentional: must be set by the operator before enabling notifications.
+	{key: domain.ParamKeyNotifyAdminEmails, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyWebPushVAPIDPublicKey, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyWebPushVAPIDPrivateKey, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyWebPushVAPIDSubject, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
 }
 
 type dbParam struct {

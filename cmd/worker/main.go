@@ -45,7 +45,11 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/election"
+	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
+	"github.com/rede/world-cup-quiniela/internal/notification/escalation"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/config"
@@ -206,19 +210,56 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		return fmt.Errorf("leader election: %w", err)
 	}
 
+	// ── Notification subsystem (Phase 1 — admin email critical path) ──────────
+
+	outboxRepo := outbox.NewPostgresRepository(db)
+	outboxWriter := outbox.NewWriter(db)
+
+	adminLogRepo := repository.NewPostgresAdminNotificationLogRepository(db)
+	dlqRepo := repository.NewPostgresNotificationDLQRepository(db)
+
+	var mailer infraemail.Sender
+	if cfg.Email.ResendAPIKey != "" {
+		mailer = infraemail.NewResendClient(cfg.Email.ResendAPIKey)
+	} else {
+		log.Warn("WCQ_EMAIL_RESENDAPIKEY is not set — admin emails will be discarded (NoopClient)")
+		mailer = infraemail.NoopClient{}
+	}
+
+	adminDispatcher := dispatcher.NewAdminDispatcher(dispatcher.Config{
+		Params:   params,
+		LogRepo:  adminLogRepo,
+		DLQRepo:  dlqRepo,
+		Mailer:   mailer,
+		FromAddr: cfg.Email.FromAddress,
+		N8nURL:   cfg.N8n.WebhookURL,
+		Log:      log,
+	})
+
+	transferRepo := repository.NewPostgresBankTransferProofRepository(db)
+	withdrawRepo := repository.NewPostgresWithdrawalRequestRepository(db)
+
+	escalationInterval := 30 * time.Minute
+	escalationScheduler := escalation.NewScheduler(
+		params, transferRepo, withdrawRepo, outboxWriter, escalationInterval, log,
+	)
+
 	return startWorker(ctx, workerDeps{
-		cfg:               cfg,
-		bus:               bus,
-		scorer:            scorer,
-		snapshotter:       snapshotter,
-		predRepo:          predRepo,
-		invalidators:      invalidators,
-		purger:            purger,
-		purgeRetention:    purgeRetention,
-		snapshotKeepCount: snapshotKeepLatestCount,
-		rc:                rc,
-		checkers:          buildHealthCheckers(db, rc),
-		dlqElection:       dlqElection,
+		cfg:                 cfg,
+		bus:                 bus,
+		scorer:              scorer,
+		snapshotter:         snapshotter,
+		predRepo:            predRepo,
+		invalidators:        invalidators,
+		purger:              purger,
+		purgeRetention:      purgeRetention,
+		snapshotKeepCount:   snapshotKeepLatestCount,
+		rc:                  rc,
+		checkers:            buildHealthCheckers(db, rc),
+		dlqElection:         dlqElection,
+		outboxRepo:          outboxRepo,
+		outboxDispatcher:    adminDispatcher,
+		escalationScheduler: escalationScheduler,
 	}, log)
 }
 
@@ -256,18 +297,21 @@ const dlqMonitorLockID int64 = 1
 // parameter list within the 7-param lint limit while remaining easy to
 // extend without changing the function signature.
 type workerDeps struct {
-	cfg               *config.Config
-	bus               events.Bus
-	scorer            service.MatchScorer
-	snapshotter       service.Snapshotter
-	predRepo          repository.PredictionRepository
-	invalidators      []service.PostScoringInvalidator
-	purger            repository.Purger
-	purgeRetention    time.Duration
-	snapshotKeepCount int
-	rc                *redis.Client
-	checkers          []health.Checker
-	dlqElection       election.LeaderElection
+	cfg                 *config.Config
+	bus                 events.Bus
+	scorer              service.MatchScorer
+	snapshotter         service.Snapshotter
+	predRepo            repository.PredictionRepository
+	invalidators        []service.PostScoringInvalidator
+	purger              repository.Purger
+	purgeRetention      time.Duration
+	snapshotKeepCount   int
+	rc                  *redis.Client
+	checkers            []health.Checker
+	dlqElection         election.LeaderElection
+	outboxRepo          outbox.Repository
+	outboxDispatcher    outbox.Dispatcher
+	escalationScheduler *escalation.Scheduler
 }
 
 // All parameters are already constructed so this function has no I/O of its
@@ -321,6 +365,29 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		monitorPurge(ctx, deps.purger, deps.purgeRetention, deps.snapshotKeepCount, purgeTicker.C, log)
 	}()
 
+	// Outbox worker — polls domain_outbox and dispatches admin/system notifications.
+	var outboxDone sync.WaitGroup
+	if deps.outboxRepo != nil && deps.outboxDispatcher != nil {
+		outboxWorker := outbox.NewWorker(deps.outboxRepo, deps.outboxDispatcher, log)
+		outboxDone.Add(1)
+		go func() {
+			defer outboxDone.Done()
+			outboxWorker.Run(ctx)
+		}()
+		log.Info("outbox worker started (admin email dispatcher active)")
+	}
+
+	// Escalation scheduler — emits stale-alert events every 30 minutes.
+	var escalationDone sync.WaitGroup
+	if deps.escalationScheduler != nil {
+		escalationDone.Add(1)
+		go func() {
+			defer escalationDone.Done()
+			deps.escalationScheduler.Run(ctx)
+		}()
+		log.Info("escalation scheduler started")
+	}
+
 	var runErr error
 	select {
 	case <-ctx.Done():
@@ -343,6 +410,8 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		deps.dlqElection.Close(shutdownCtx)
 	}
 	purgeDone.Wait()
+	outboxDone.Wait()
+	escalationDone.Wait()
 	log.Sugar().Info("worker stopped")
 	return runErr
 }
