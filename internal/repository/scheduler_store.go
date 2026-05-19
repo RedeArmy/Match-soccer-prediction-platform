@@ -10,7 +10,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/scheduler"
 )
 
-// PostgresSchedulerStore implements scheduler.SchedulerStore backed by PostgreSQL.
+// PostgresSchedulerStore implements scheduler.Store backed by PostgreSQL.
 type PostgresSchedulerStore struct {
 	db *pgxpool.Pool
 }

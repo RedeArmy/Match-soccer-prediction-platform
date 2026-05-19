@@ -36,7 +36,7 @@ func (w *stubWriter) Write(_ context.Context, et notification.EventType, _, _ st
 	return nil
 }
 
-// stubStore is a minimal SchedulerStore for tests.
+// stubStore is a minimal Store for tests.
 type stubStore struct {
 	pendingTransfers   int
 	pendingWithdrawals int

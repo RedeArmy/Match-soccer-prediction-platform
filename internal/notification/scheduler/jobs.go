@@ -17,10 +17,10 @@ type OutboxWriter interface {
 	Write(ctx context.Context, eventType notification.EventType, aggregateType, aggregateID string, payload any) error
 }
 
-// SchedulerStore provides the aggregated query results that scheduler jobs need.
+// Store provides the aggregated query results that scheduler jobs need.
 // Each method maps to a narrow, purpose-built repository query so the interface
 // stays small and the production implementation can be incrementally built.
-type SchedulerStore interface {
+type Store interface {
 	// CountPendingTransfers returns the number of bank transfer proofs in pending state.
 	CountPendingTransfers(ctx context.Context) (int, error)
 
@@ -47,7 +47,7 @@ type SchedulerStore interface {
 	ListUpcomingMatchesWithDeadline(ctx context.Context, deadlineWindow time.Duration) ([]DeadlineMatch, error)
 }
 
-// DailySummaryRow carries the aggregated stats returned by SchedulerStore.DailySummary.
+// DailySummaryRow carries the aggregated stats returned by Store.DailySummary.
 type DailySummaryRow struct {
 	NewUsers           int
 	NewTransfers       int
@@ -58,7 +58,7 @@ type DailySummaryRow struct {
 	PendingWithdrawals int
 }
 
-// WeeklySummaryRow carries the aggregated stats returned by SchedulerStore.WeeklySummary.
+// WeeklySummaryRow carries the aggregated stats returned by Store.WeeklySummary.
 type WeeklySummaryRow struct {
 	TotalRevenueCents int
 	NewUsers          int
@@ -80,13 +80,13 @@ type DeadlineMatch struct {
 // Jobs holds the dependencies shared across all scheduler job functions and
 // returns pre-built job functions that can be registered with a Scheduler.
 type Jobs struct {
-	store  SchedulerStore
+	store  Store
 	writer OutboxWriter
 	log    *zap.Logger
 }
 
 // NewJobs constructs a Jobs instance.
-func NewJobs(store SchedulerStore, writer OutboxWriter, log *zap.Logger) *Jobs {
+func NewJobs(store Store, writer OutboxWriter, log *zap.Logger) *Jobs {
 	return &Jobs{store: store, writer: writer, log: log}
 }
 
