@@ -272,6 +272,23 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyBankTransferMinAmountCents: {100, 1_000_000},      // 1 GTQ – 10 000 GTQ
 	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
 	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 10_080},           // 5 min – 1 week
+
+	// Idempotency middleware (is_runtime=FALSE; restart required)
+	domain.ParamKeyAPIIdempotencyTTLHours:  {1, 720},   // 1 h – 30 days
+	domain.ParamKeyAPIIdempotencyKeyMaxLen: {16, 4096}, // 16 bytes min; 4 KB max
+
+	// Circuit breaker: PayPal certificate fetcher (is_runtime=FALSE; restart required)
+	domain.ParamKeyBreakerPaypalCertMaxFails:    {1, 100},   // at least 1 failure to open
+	domain.ParamKeyBreakerPaypalCertCooldownSec: {1, 3_600}, // 1 s – 1 hour
+
+	// Circuit breaker: file store (S3/GDrive/OneDrive) (is_runtime=FALSE; restart required)
+	domain.ParamKeyBreakerFileStoreMaxFails:    {1, 100},   // at least 1 failure to open
+	domain.ParamKeyBreakerFileStoreCooldownSec: {1, 3_600}, // 1 s – 1 hour
+
+	// DB transaction retry policy (is_runtime=FALSE; restart required)
+	domain.ParamKeyTxRetryMaxAttempts: {1, 20},     // at least 1 attempt; 20 is very generous
+	domain.ParamKeyTxRetryBaseDelayMs: {1, 10_000}, // 1 ms – 10 s base backoff
+	domain.ParamKeyTxRetryMaxDelayMs:  {1, 60_000}, // 1 ms – 60 s max cap
 }
 
 // validateParamConstraints enforces per-key business-rule bounds for int params.

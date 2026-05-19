@@ -89,4 +89,13 @@ func setDefaults(v *viper.Viper) {
 	// gdrive
 	v.SetDefault("storage.gdriveCredentialsJSON", "")
 	v.SetDefault("storage.gdriveFolderID", "")
+
+	// tracing is disabled by default so development environments start
+	// without requiring an OTel Collector. Set WCQ_TRACING_ENABLED=true
+	// and WCQ_TRACING_OTLPENDPOINT=<url> to activate span export.
+	v.SetDefault("tracing.enabled", false)
+	v.SetDefault("tracing.otlpEndpoint", "")
+	v.SetDefault("tracing.serviceName", "world-cup-quiniela")
+	v.SetDefault("tracing.serviceVersion", "1.0.0")
+	v.SetDefault("tracing.sampleRate", 1.0)
 }

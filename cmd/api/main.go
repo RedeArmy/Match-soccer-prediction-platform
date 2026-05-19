@@ -94,6 +94,18 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// cancelled, keeping setup isolated from SIGTERM timing.
 	setupCtx := context.WithoutCancel(ctx)
 
+	shutdownTracing, err := setupTracing(setupCtx, cfg, log)
+	if err != nil {
+		return fmt.Errorf("tracing: %w", err)
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(flushCtx); err != nil {
+			log.Sugar().Warnf("tracing flush: %v", err)
+		}
+	}()
+
 	// The database connection is treated as optional at startup intentionally.
 	// The /health endpoint must remain reachable even when the database is
 	// temporarily unavailable - a common situation during rolling deployments
