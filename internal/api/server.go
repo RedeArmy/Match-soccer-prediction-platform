@@ -121,6 +121,10 @@ type Server struct {
 	// notifHub is the in-process SSE hub; created once in Routes() and reused
 	// by the notification handler and the pg_notify bridge goroutine.
 	notifHub *hub.Hub
+	// stopBridge cancels the pg_notify bridge goroutine context; nil until Routes() is called.
+	stopBridge context.CancelFunc
+	// bridgeDone is closed when the pg_notify bridge goroutine exits.
+	bridgeDone <-chan struct{}
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
@@ -140,6 +144,19 @@ func (s *Server) SetLimiterStore(store *middleware.LimiterStore) { s.limiterStor
 func (s *Server) DrainAudit() {
 	if s.auditSvc != nil {
 		s.auditSvc.Drain()
+	}
+}
+
+// StopPgNotifyBridge cancels the pg_notify bridge goroutine and waits for it
+// to exit. Must be called before closing the database pool so the bridge
+// releases its acquired connection before pool.Close() calls WG.Wait().
+// Safe to call even if Routes() was never invoked (no-op in that case).
+func (s *Server) StopPgNotifyBridge() {
+	if s.stopBridge != nil {
+		s.stopBridge()
+	}
+	if s.bridgeDone != nil {
+		<-s.bridgeDone
 	}
 }
 
@@ -263,7 +280,14 @@ func (s *Server) Routes() http.Handler {
 	// SSE hub — created once and shared by the notification handler and the
 	// pg_notify bridge goroutine.
 	s.notifHub = hub.New()
-	go s.runPgNotifyBridge(infraCtx)
+	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
+	s.stopBridge = bridgeCancel
+	done := make(chan struct{})
+	s.bridgeDone = done
+	go func() {
+		defer close(done)
+		s.runPgNotifyBridge(bridgeCtx)
+	}()
 
 	h := s.buildHandlers(infraCtx, repos, paramSvc, scorer)
 

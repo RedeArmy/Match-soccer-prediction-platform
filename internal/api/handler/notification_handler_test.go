@@ -238,8 +238,10 @@ func TestNotifHandler_GetStream_Connected_ReceivesEvent(t *testing.T) {
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		if scanner.Text() == "event: connected" {
-			// Broadcast a notification so the data-send branch executes.
-			go h.Broadcast(callerID, hub.Notification{ID: 1, Title: "ping"})
+			// Synchronous broadcast: the hub channel is buffered (size 32) so this
+			// never blocks, and it avoids spawning a goroutine that could outlive
+			// the test and trigger the race detector.
+			h.Broadcast(callerID, hub.Notification{ID: 1, Title: "ping"})
 			cancel()
 			return
 		}

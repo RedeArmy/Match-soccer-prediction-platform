@@ -209,6 +209,13 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	log.Sugar().Info("draining audit log writes...")
 	app.DrainAudit()
 
+	// Cancel the pg_notify bridge goroutine and wait for it to exit before
+	// db.Close() runs (deferred above). The bridge holds an acquired pool
+	// connection; releasing it first prevents pool.Close() from deadlocking
+	// on WG.Wait().
+	log.Sugar().Info("stopping pg_notify bridge...")
+	app.StopPgNotifyBridge()
+
 	log.Sugar().Info("server stopped")
 	return nil
 }

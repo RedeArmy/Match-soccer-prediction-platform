@@ -89,16 +89,24 @@ func (h *Hub) Connect(userID int) (<-chan Notification, func()) {
 // If a connection's buffer is full the notification is dropped for that
 // connection and the dropped metric is incremented.
 func (h *Hub) Broadcast(userID int, n Notification) {
+	// Snapshot channels under the read lock so that a concurrent cleanup()
+	// cannot modify the inner map while we iterate.  Sending to the buffered
+	// channels happens after the lock is released to keep the critical section
+	// short; the channels themselves are goroutine-safe.
 	h.mu.RLock()
 	conns := h.clients[userID]
-	h.mu.RUnlock()
-
 	if len(conns) == 0 {
+		h.mu.RUnlock()
 		return
 	}
+	snapshot := make([]chan Notification, 0, len(conns))
+	for _, ch := range conns {
+		snapshot = append(snapshot, ch)
+	}
+	h.mu.RUnlock()
 
 	h.metrics.broadcasts.Add(1)
-	for _, ch := range conns {
+	for _, ch := range snapshot {
 		select {
 		case ch <- n:
 		default:
