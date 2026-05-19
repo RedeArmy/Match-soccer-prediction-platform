@@ -476,6 +476,52 @@ func TestNotifHandler_UpdatePreferences_MissingEventType_400(t *testing.T) {
 	}
 }
 
+// ── GetVAPIDPublicKey ─────────────────────────────────────────────────────────
+
+type fixedStringParamSvc struct {
+	stubAdminParamSvc
+	key   string
+	value string
+}
+
+func (s *fixedStringParamSvc) GetString(_ context.Context, k string, d string) string {
+	if k == s.key {
+		return s.value
+	}
+	return d
+}
+
+func TestNotifHandler_GetVAPIDPublicKey_OK(t *testing.T) {
+	t.Parallel()
+	const fakeKey = "BNcRdreALRFXTkOOUHK1EtK2wtwe6Cg-example-key"
+	ps := &fixedStringParamSvc{key: domain.ParamKeyNotifyWebPushVAPIDPublicKey, value: fakeKey}
+	h := handler.NewNotificationHandler(&stubUserNotifRepo{}, &stubNotifPrefRepo{}, &stubNotifPushRepo{}, hub.New(), ps, zaptest.NewLogger(t))
+
+	w := httptest.NewRecorder()
+	h.GetVAPIDPublicKey(w, httptest.NewRequest(http.MethodGet, "/push/vapid-public-key", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf(fmtExpect200, w.Code)
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["vapid_public_key"] != fakeKey {
+		t.Errorf("vapid_public_key: got %q; want %q", resp["vapid_public_key"], fakeKey)
+	}
+}
+
+func TestNotifHandler_GetVAPIDPublicKey_NotConfigured_500(t *testing.T) {
+	t.Parallel()
+	h := newNotifHandler(t, nil, nil, nil)
+	w := httptest.NewRecorder()
+	h.GetVAPIDPublicKey(w, httptest.NewRequest(http.MethodGet, "/push/vapid-public-key", nil))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf(fmtExpect500, w.Code)
+	}
+}
+
 // ── SubscribePush ─────────────────────────────────────────────────────────────
 
 func TestNotifHandler_SubscribePush_OK(t *testing.T) {

@@ -108,5 +108,5 @@ function arrayBufferToBase64Url(buffer) {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
-    .replace(/=+$/, '');
+    .replace(/={1,2}$/, '');
 }

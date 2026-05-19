@@ -126,22 +126,23 @@ func (s *PostgresSchedulerStore) WeeklySummary(ctx context.Context, since time.T
 		return row, err
 	}
 
-	// Active quinielas: those that had at least one prediction in the window.
+	// Active quinielas: those whose members submitted at least one prediction in the window.
 	if err := s.db.QueryRow(ctx, `
-		SELECT COUNT(DISTINCT q.id)
-		FROM quinielas q
-		JOIN predictions p ON p.quiniela_id = q.id
+		SELECT COUNT(DISTINCT gm.quiniela_id)
+		FROM predictions p
+		JOIN group_memberships gm ON gm.user_id = p.user_id AND gm.status = 'active'
 		WHERE p.created_at >= $1 AND p.created_at < $2`,
 		since, until,
 	).Scan(&row.ActiveQuinielas); err != nil {
 		return row, err
 	}
 
-	// Top leaderboard group: highest total points in the window.
+	// Top leaderboard group: highest total points scored in the window.
 	_ = s.db.QueryRow(ctx, `
 		SELECT q.name, COALESCE(SUM(p.points), 0) AS pts
 		FROM quinielas q
-		JOIN predictions p ON p.quiniela_id = q.id
+		JOIN group_memberships gm ON gm.quiniela_id = q.id AND gm.status = 'active'
+		JOIN predictions p ON p.user_id = gm.user_id
 		WHERE p.updated_at >= $1 AND p.updated_at < $2
 		GROUP BY q.id, q.name
 		ORDER BY pts DESC
@@ -189,9 +190,9 @@ func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Con
 		       u.id AS user_id
 		FROM matches m
 		JOIN quinielas q ON TRUE
-		JOIN group_memberships gm ON gm.quiniela_id = q.id AND gm.status = 'approved'
+		JOIN group_memberships gm ON gm.quiniela_id = q.id AND gm.status = 'active'
 		JOIN users u ON u.id = gm.user_id
-		LEFT JOIN predictions p ON p.match_id = m.id AND p.user_id = u.id AND p.quiniela_id = q.id
+		LEFT JOIN predictions p ON p.match_id = m.id AND p.user_id = u.id
 		WHERE m.status = 'scheduled'
 		  AND m.kickoff_at > $1
 		  AND m.kickoff_at <= $2
