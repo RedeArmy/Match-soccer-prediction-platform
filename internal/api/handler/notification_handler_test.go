@@ -216,10 +216,15 @@ func TestNotifHandler_GetStream_Connected_ReceivesEvent(t *testing.T) {
 		ctx := middleware.ContextWithUser(r.Context(), &domain.User{ID: callerID})
 		nh.GetStream(w, r.WithContext(ctx))
 	}))
-	defer srv.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	t.Cleanup(func() {
+		cancel()
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = srv.Config.Shutdown(shutCtx)
+		srv.Close()
+	})
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
 	resp, err := http.DefaultClient.Do(req) //nolint:noctx
@@ -238,11 +243,7 @@ func TestNotifHandler_GetStream_Connected_ReceivesEvent(t *testing.T) {
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		if scanner.Text() == "event: connected" {
-			// Synchronous broadcast: the hub channel is buffered (size 32) so this
-			// never blocks, and it avoids spawning a goroutine that could outlive
-			// the test and trigger the race detector.
 			h.Broadcast(callerID, hub.Notification{ID: 1, Title: "ping"})
-			cancel()
 			return
 		}
 	}
@@ -262,10 +263,15 @@ func TestNotifHandler_GetStream_Broadcast_DeliverData(t *testing.T) {
 		ctx := middleware.ContextWithUser(r.Context(), &domain.User{ID: callerID})
 		nh.GetStream(w, r.WithContext(ctx))
 	}))
-	defer srv.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	t.Cleanup(func() {
+		cancel()
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = srv.Config.Shutdown(shutCtx)
+		srv.Close()
+	})
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
 	resp, err := http.DefaultClient.Do(req) //nolint:noctx
@@ -284,7 +290,6 @@ func TestNotifHandler_GetStream_Broadcast_DeliverData(t *testing.T) {
 			continue
 		}
 		if connected && strings.HasPrefix(line, "data:") && strings.Contains(line, "hello") {
-			cancel()
 			return
 		}
 	}
