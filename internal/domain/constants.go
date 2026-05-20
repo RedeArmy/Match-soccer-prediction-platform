@@ -248,6 +248,23 @@ const (
 	// retain an undelivered message.  After this window the message is discarded
 	// rather than delivered to a reconnected device.
 	DefaultNotifyWebPushTTLSec = 86400 // notify.web_push_ttl_sec — 24 hours
+
+	// Web Push notification asset URLs served by the application.
+	// Operators can override these via system_params to use a CDN or a
+	// branding-specific asset without a process restart.
+	DefaultNotifyPushIconURL       = PushDefaultIcon     // notify.push_icon_url
+	DefaultNotifyPushBadgeURL      = PushDefaultBadge    // notify.push_badge_url
+	DefaultNotifySchedulerTimezone = "America/Guatemala" // notify.scheduler_timezone
+)
+
+const (
+	// PushDefaultIcon is the URL of the notification icon shown by the browser
+	// when no event-specific icon is provided. The asset must be served by the
+	// application at this path (192×192 px, PNG).
+	PushDefaultIcon = "/icons/icon-192.png"
+	// PushDefaultBadge is the URL of the monochrome badge icon displayed in the
+	// Android notification bar (72×72 px, PNG).
+	PushDefaultBadge = "/icons/badge-72.png"
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -487,6 +504,18 @@ const (
 	// ParamKeyNotifyWebPushTTLSec is the Web Push message time-to-live in seconds.
 	// The push service discards undelivered messages after this window expires.
 	ParamKeyNotifyWebPushTTLSec = "notify.web_push_ttl_sec"
+	// ParamKeyNotifyPushIconURL is the URL of the notification icon (192×192 px PNG)
+	// shown by the browser. Override to point to a CDN or branding-specific asset.
+	// is_runtime=TRUE: changes propagate within the 30 s cache window.
+	ParamKeyNotifyPushIconURL = "notify.push_icon_url"
+	// ParamKeyNotifyPushBadgeURL is the URL of the monochrome badge icon (72×72 px
+	// PNG) displayed in the Android notification bar.
+	// is_runtime=TRUE: changes propagate within the 30 s cache window.
+	ParamKeyNotifyPushBadgeURL = "notify.push_badge_url"
+	// ParamKeyNotifySchedulerTimezone is the IANA timezone used by the notification
+	// scheduler when evaluating daily and weekly job schedules (e.g. "America/Guatemala").
+	// is_runtime=FALSE: requires a worker restart to take effect.
+	ParamKeyNotifySchedulerTimezone = "notify.scheduler_timezone"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather
