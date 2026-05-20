@@ -442,20 +442,16 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 			body:  fmt.Sprintf("The result for %s vs %s has been recorded.", p.HomeTeam, p.AwayTeam),
 		}
 
-	case notification.EventMatchPostponed:
+	case notification.EventMatchPostponed, notification.EventMatchCancelled:
 		var p notification.MatchEventPayload
 		_ = entry.DecodePayload(&p)
-		return userContent{
-			title: "Match postponed",
-			body:  fmt.Sprintf("%s vs %s has been postponed.", p.HomeTeam, p.AwayTeam),
+		verb := "postponed"
+		if entry.EventType == notification.EventMatchCancelled {
+			verb = "cancelled"
 		}
-
-	case notification.EventMatchCancelled:
-		var p notification.MatchEventPayload
-		_ = entry.DecodePayload(&p)
 		return userContent{
-			title: "Match cancelled",
-			body:  fmt.Sprintf("%s vs %s has been cancelled.", p.HomeTeam, p.AwayTeam),
+			title: "Match " + verb,
+			body:  fmt.Sprintf("%s vs %s has been %s.", p.HomeTeam, p.AwayTeam, verb),
 		}
 
 	case notification.EventGroupJoinApproved:
@@ -586,12 +582,18 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 			body:  fmt.Sprintf("Hi %s! Your account is ready. Start predicting now.", p.UserName),
 		}
 
-	case notification.EventAccountBalanceCredited:
+	case notification.EventAccountBalanceCredited, notification.EventAccountBalanceDebited:
 		var p notification.AccountBalancePayload
 		_ = entry.DecodePayload(&p)
+		if entry.EventType == notification.EventAccountBalanceCredited {
+			return userContent{
+				title: "Balance credited",
+				body:  fmt.Sprintf("%s has been added to your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+			}
+		}
 		return userContent{
-			title: "Balance credited",
-			body:  fmt.Sprintf("%s has been added to your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+			title: "Balance debited",
+			body:  fmt.Sprintf("%s has been deducted from your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
 		}
 
 	case notification.EventAccountLowBalance:
@@ -602,25 +604,15 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 			body:  fmt.Sprintf("Your balance is %s. Top up to continue participating.", formatCents(p.BalanceAfter, p.Currency)),
 		}
 
-	case notification.EventAccountBalanceDebited:
-		var p notification.AccountBalancePayload
-		_ = entry.DecodePayload(&p)
-		return userContent{
-			title: "Balance debited",
-			body:  fmt.Sprintf("%s has been deducted from your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
-		}
-
-	case notification.EventGroupMemberJoined:
+	case notification.EventGroupMemberJoined, notification.EventGroupMemberLeft:
 		var p notification.GroupJoinPayload
 		_ = entry.DecodePayload(&p)
-		return userContent{
-			title: "New member joined your group",
-			body:  fmt.Sprintf("A new member has joined %s.", p.QuinielaName),
+		if entry.EventType == notification.EventGroupMemberJoined {
+			return userContent{
+				title: "New member joined your group",
+				body:  fmt.Sprintf("A new member has joined %s.", p.QuinielaName),
+			}
 		}
-
-	case notification.EventGroupMemberLeft:
-		var p notification.GroupJoinPayload
-		_ = entry.DecodePayload(&p)
 		return userContent{
 			title: "Member left the group",
 			body:  fmt.Sprintf("A member has left %s.", p.QuinielaName),
