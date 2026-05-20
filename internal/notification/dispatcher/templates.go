@@ -338,6 +338,140 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			GeneratedAt: now,
 		}
 
+	// ── Match / Scoring admin events ─────────────────────────────────────────
+
+	case notification.EventAdminMatchResultPending:
+		var p notification.AdminMatchResultPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   fmt.Sprintf("[ACTION REQUIRED] Match result not entered — %s vs %s", p.HomeTeam, p.AwayTeam),
+			Headline:  "Match result awaiting entry",
+			Body:      fmt.Sprintf("%s vs %s finished %d minutes ago but no result has been recorded. Predictions cannot be scored until the result is entered.", p.HomeTeam, p.AwayTeam, p.MinutesElapsed),
+			Details: map[string]string{
+				"Match ID":        fmt.Sprintf("%d", p.MatchID),
+				"Teams":           fmt.Sprintf("%s vs %s", p.HomeTeam, p.AwayTeam),
+				"Finished At":     p.FinishedAt.UTC().Format(time.RFC3339),
+				"Minutes Elapsed": fmt.Sprintf("%d", p.MinutesElapsed),
+			},
+			GeneratedAt: now,
+		}
+
+	case notification.EventAdminScoringDiscrepancy:
+		var p notification.SystemAlertPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   "[CRITICAL] Scoring discrepancy detected — manual review required",
+			Headline:  "Scoring calculation discrepancy",
+			Body:      "A discrepancy has been detected in the scoring calculation. Affected predictions may carry incorrect points. Immediate investigation is required to preserve leaderboard integrity.",
+			Details: map[string]string{
+				"Component": p.Component,
+				"Detail":    p.Detail,
+				"Severity":  p.Severity,
+			},
+			GeneratedAt: now,
+		}
+
+	case notification.EventAdminGroupReported:
+		var p notification.SystemAlertPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   "[ACTION REQUIRED] Quiniela group reported by a user",
+			Headline:  "User report filed against a group",
+			Body:      "A user has reported a quiniela group for a potential policy violation. Please review the group and take appropriate action within the required response window.",
+			Details: map[string]string{
+				"Component": p.Component,
+				"Detail":    p.Detail,
+			},
+			GeneratedAt: now,
+		}
+
+	// ── System alert events ───────────────────────────────────────────────────
+
+	case notification.EventSystemCircuitBreakerHalfOpen:
+		var p notification.SystemAlertPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   "[WARNING] Circuit breaker in half-open state — " + p.Component,
+			Headline:  "Circuit breaker transitioning to half-open",
+			Body:      "A circuit breaker has entered the half-open state, indicating cautious recovery from a failure period. Monitor closely — further failures will re-open the breaker and resume degraded operation.",
+			Details: map[string]string{
+				"Component": p.Component,
+				"Detail":    p.Detail,
+				"Severity":  p.Severity,
+			},
+			GeneratedAt: now,
+		}
+
+	case notification.EventSystemTxRetryExhausted:
+		var p notification.SystemAlertPayload
+		_ = entry.DecodePayload(&p)
+		details := map[string]string{
+			"Component": p.Component,
+			"Detail":    p.Detail,
+			"Severity":  p.Severity,
+		}
+		if len(p.AffectedIDs) > 0 {
+			details["Affected IDs"] = fmt.Sprint(p.AffectedIDs)
+		}
+		return emailData{
+			EventType:   et,
+			Subject:     "[CRITICAL] Transaction retry limit exhausted — potential data loss",
+			Headline:    "Transaction retry attempts exhausted",
+			Body:        "A database transaction has exhausted all retry attempts and was abandoned. Data integrity may be at risk. Immediate investigation is required to determine whether any domain writes were lost.",
+			Details:     details,
+			GeneratedAt: now,
+		}
+
+	case notification.EventSystemRateLimitAbuse:
+		var p notification.SystemAlertPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   "[SECURITY] Suspected rate limit abuse detected",
+			Headline:  "Abnormal request rate detected",
+			Body:      "A client has triggered the rate limiter at an unusually high frequency, suggesting automated abuse or a misconfigured integration. Review the client and consider blocking the source.",
+			Details: map[string]string{
+				"Component": p.Component,
+				"Detail":    p.Detail,
+			},
+			GeneratedAt: now,
+		}
+
+	case notification.EventSystemIdempotencyCollision:
+		var p notification.SystemAlertPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   "[WARNING] Idempotency key collision detected",
+			Headline:  "Duplicate request with conflicting payload",
+			Body:      "Two requests were received with the same idempotency key but differing payloads, indicating a potential client bug or replay attack. The conflicting request was rejected. No data was modified.",
+			Details: map[string]string{
+				"Component": p.Component,
+				"Detail":    p.Detail,
+			},
+			GeneratedAt: now,
+		}
+
+	case notification.EventSystemFileStoreUnavailable:
+		var p notification.SystemAlertPayload
+		_ = entry.DecodePayload(&p)
+		return emailData{
+			EventType: et,
+			Subject:   "[CRITICAL] File storage service unavailable",
+			Headline:  "File store is unreachable",
+			Body:      "The file storage service is unavailable. Proof uploads and all file-dependent operations are currently failing. Immediate action is required to restore service.",
+			Details: map[string]string{
+				"Component": p.Component,
+				"Detail":    p.Detail,
+				"Severity":  p.Severity,
+			},
+			GeneratedAt: now,
+		}
+
 	// ── Generic fallback ──────────────────────────────────────────────────────
 
 	default:

@@ -445,6 +445,52 @@ func TestGroupMembershipRepository_CountActive_IgnoresPendingAndLeft(t *testing.
 	}
 }
 
+// ── GroupMembershipRepository - ListActiveMemberIDsByGroup ───────────────────
+
+func TestGroupMembershipRepository_ListActiveMemberIDsByGroup_ReturnsActiveIDs(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	member1 := seedUser(t)
+	member2 := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, member1.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, member2.ID, domain.MembershipPending, false) // excluded
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	ids, err := repo.ListActiveMemberIDsByGroup(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 active member IDs, got %d: %v", len(ids), ids)
+	}
+	idSet := map[int]bool{ids[0]: true, ids[1]: true}
+	if !idSet[owner.ID] || !idSet[member1.ID] {
+		t.Errorf("returned IDs %v; want {%d, %d}", ids, owner.ID, member1.ID)
+	}
+}
+
+func TestGroupMembershipRepository_ListActiveMemberIDsByGroup_ExcludesPendingAndLeft(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	u2 := seedUser(t)
+	u3 := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, u2.ID, domain.MembershipPending, false)
+	seedMembership(t, q.ID, u3.ID, domain.MembershipLeft, false)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	ids, err := repo.ListActiveMemberIDsByGroup(context.Background(), q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(ids) != 1 || ids[0] != owner.ID {
+		t.Errorf("expected [%d], got %v", owner.ID, ids)
+	}
+}
+
 // ── GroupMembershipRepository - OldestActiveMember ────────────────────────────
 
 func TestGroupMembershipRepository_OldestActiveMember_ReturnsMemberWithEarliestJoinedAt(t *testing.T) {

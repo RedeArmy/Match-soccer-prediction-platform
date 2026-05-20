@@ -168,7 +168,7 @@ type MatchEventPayload struct {
 // EventGroupJoinRejected, EventGroupMemberJoined, and EventGroupMemberLeft.
 type GroupJoinPayload struct {
 	QuinielaID   int    `json:"quiniela_id"`
-	QuinielaNam  string `json:"quiniela_name"`
+	QuinielaName string `json:"quiniela_name"`
 	MembershipID int    `json:"membership_id"`
 	UserID       int    `json:"user_id"`
 	OwnerID      int    `json:"owner_id"`
@@ -177,25 +177,25 @@ type GroupJoinPayload struct {
 // GroupLeaderboardMilestonePayload is the payload for
 // EventGroupLeaderboardMilestone.
 type GroupLeaderboardMilestonePayload struct {
-	UserID      int    `json:"user_id"`
-	QuinielaID  int    `json:"quiniela_id"`
-	QuinielaNam string `json:"quiniela_name"`
-	NewRank     int    `json:"new_rank"`
-	TotalPoints int    `json:"total_points"`
+	UserID       int    `json:"user_id"`
+	QuinielaID   int    `json:"quiniela_id"`
+	QuinielaName string `json:"quiniela_name"`
+	NewRank      int    `json:"new_rank"`
+	TotalPoints  int    `json:"total_points"`
 }
 
 // GroupDisbandedPayload is the payload for EventGroupDisbanded.
 type GroupDisbandedPayload struct {
-	QuinielaID  int    `json:"quiniela_id"`
-	QuinielaNam string `json:"quiniela_name"`
-	OwnerID     int    `json:"owner_id"`
+	QuinielaID   int    `json:"quiniela_id"`
+	QuinielaName string `json:"quiniela_name"`
+	OwnerID      int    `json:"owner_id"`
 }
 
 // GroupDeadlinePayload is the payload for EventGroupDeadline24h.
 type GroupDeadlinePayload struct {
-	QuinielaID  int       `json:"quiniela_id"`
-	QuinielaNam string    `json:"quiniela_name"`
-	DeadlineAt  time.Time `json:"deadline_at"`
+	QuinielaID   int       `json:"quiniela_id"`
+	QuinielaName string    `json:"quiniela_name"`
+	DeadlineAt   time.Time `json:"deadline_at"`
 }
 
 // PaymentPayload is shared by EventPaymentConfirmed and EventPaymentFailed.

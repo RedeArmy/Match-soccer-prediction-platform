@@ -97,6 +97,11 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifyWebPushVAPIDPublicKey":      ParamKeyNotifyWebPushVAPIDPublicKey,
 		"ParamKeyNotifyWebPushVAPIDPrivateKey":     ParamKeyNotifyWebPushVAPIDPrivateKey,
 		"ParamKeyNotifyWebPushVAPIDSubject":        ParamKeyNotifyWebPushVAPIDSubject,
+		"ParamKeyNotifySSEHeartbeatIntervalSec":    ParamKeyNotifySSEHeartbeatIntervalSec,
+		"ParamKeyNotifyWebPushTTLSec":              ParamKeyNotifyWebPushTTLSec,
+		"ParamKeyNotifyPushIconURL":                ParamKeyNotifyPushIconURL,
+		"ParamKeyNotifyPushBadgeURL":               ParamKeyNotifyPushBadgeURL,
+		"ParamKeyNotifySchedulerTimezone":          ParamKeyNotifySchedulerTimezone,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -181,10 +186,12 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultNotifyPredictionDeadlineLeadMin1": DefaultNotifyPredictionDeadlineLeadMin1,
 		"DefaultNotifyPredictionDeadlineLeadMin2": DefaultNotifyPredictionDeadlineLeadMin2,
 		"DefaultNotifyPredictionMissingLeadMin":   DefaultNotifyPredictionMissingLeadMin,
+		"DefaultNotifySSEHeartbeatIntervalSec":    DefaultNotifySSEHeartbeatIntervalSec,
+		"DefaultNotifyWebPushTTLSec":              DefaultNotifyWebPushTTLSec,
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 64 // update when adding a new ParamKey* constant
+		const expectedCount = 69 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -192,7 +199,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 54 // update when adding a new Default* constant
+		const expectedCount = 56 // update when adding a new Default* constant
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -314,6 +321,11 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyNotifyWebPushVAPIDPublicKey", ParamKeyNotifyWebPushVAPIDPublicKey, "notify"},
 		{"ParamKeyNotifyWebPushVAPIDPrivateKey", ParamKeyNotifyWebPushVAPIDPrivateKey, "notify"},
 		{"ParamKeyNotifyWebPushVAPIDSubject", ParamKeyNotifyWebPushVAPIDSubject, "notify"},
+		{"ParamKeyNotifySSEHeartbeatIntervalSec", ParamKeyNotifySSEHeartbeatIntervalSec, "notify"},
+		{"ParamKeyNotifyWebPushTTLSec", ParamKeyNotifyWebPushTTLSec, "notify"},
+		{"ParamKeyNotifyPushIconURL", ParamKeyNotifyPushIconURL, "notify"},
+		{"ParamKeyNotifyPushBadgeURL", ParamKeyNotifyPushBadgeURL, "notify"},
+		{"ParamKeyNotifySchedulerTimezone", ParamKeyNotifySchedulerTimezone, "notify"},
 	}
 
 	for _, tc := range paramKeys {
@@ -411,6 +423,8 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyPredictionDeadlineLeadMin1": DefaultNotifyPredictionDeadlineLeadMin1,
 		"DefaultNotifyPredictionDeadlineLeadMin2": DefaultNotifyPredictionDeadlineLeadMin2,
 		"DefaultNotifyPredictionMissingLeadMin":   DefaultNotifyPredictionMissingLeadMin,
+		"DefaultNotifySSEHeartbeatIntervalSec":    DefaultNotifySSEHeartbeatIntervalSec,
+		"DefaultNotifyWebPushTTLSec":              DefaultNotifyWebPushTTLSec,
 	}
 
 	for name, value := range defaults {

@@ -259,6 +259,11 @@ type GroupMembershipRepository interface {
 	MarkPaid(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
 	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.GroupMembership, error)
 	ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error)
+	// ListActiveMemberIDsByGroup returns the user IDs of all active members of
+	// quinielaID, excluding soft-deleted users. It is the narrow read used by
+	// UserDispatcher to fan out broadcast events (e.g. EventGroupMemberJoined)
+	// to every current group member without loading full membership rows.
+	ListActiveMemberIDsByGroup(ctx context.Context, quinielaID int) ([]int, error)
 	// CountActive returns the number of members with status=active in the given
 	// quiniela. It is called exclusively by syncGroupStatus after every
 	// membership transition to decide whether the quiniela should be set to

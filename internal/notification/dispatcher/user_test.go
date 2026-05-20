@@ -20,14 +20,26 @@ import (
 // ── Test doubles ─────────────────────────────────────────────────────────────
 
 type stubNotifRepo struct {
-	inserted bool
-	err      error
-	last     *domain.UserNotification
+	inserted    bool
+	err         error
+	last        *domain.UserNotification
+	createCount int
 }
 
 func (s *stubNotifRepo) Create(_ context.Context, n *domain.UserNotification) (bool, error) {
+	s.createCount++
 	s.last = n
 	return s.inserted, s.err
+}
+
+// stubMemberLister satisfies dispatcher.GroupMemberLister for fan-out tests.
+type stubMemberLister struct {
+	memberIDs []int
+	err       error
+}
+
+func (s *stubMemberLister) ListActiveMemberIDsByGroup(_ context.Context, _ int) ([]int, error) {
+	return s.memberIDs, s.err
 }
 func (s *stubNotifRepo) List(_ context.Context, _, _, _ int, _ bool) ([]*domain.UserNotification, error) {
 	return nil, nil
@@ -390,9 +402,9 @@ func TestUserDispatcher_AllUserEvents_Rendered(t *testing.T) {
 		{notification.EventPredictionScored, notification.PredictionScoredPayload{UserID: 1, HomeTeam: "G", AwayTeam: "H", HomeScore: 2, AwayScore: 1, PointsEarned: 10}},
 		// MatchEventPayload and some group payloads have no user_id (broadcast events)
 		// and are intentionally skipped by the dispatcher — tested separately.
-		{notification.EventGroupJoinApproved, notification.GroupJoinPayload{UserID: 1, QuinielaNam: "Liga A"}},
-		{notification.EventGroupJoinRejected, notification.GroupJoinPayload{UserID: 1, QuinielaNam: "Liga B"}},
-		{notification.EventGroupLeaderboardMilestone, notification.GroupLeaderboardMilestonePayload{UserID: 1, NewRank: 1, TotalPoints: 50, QuinielaNam: "Liga E"}},
+		{notification.EventGroupJoinApproved, notification.GroupJoinPayload{UserID: 1, QuinielaName: "Liga A"}},
+		{notification.EventGroupJoinRejected, notification.GroupJoinPayload{UserID: 1, QuinielaName: "Liga B"}},
+		{notification.EventGroupLeaderboardMilestone, notification.GroupLeaderboardMilestonePayload{UserID: 1, NewRank: 1, TotalPoints: 50, QuinielaName: "Liga E"}},
 		{notification.EventPaymentConfirmed, notification.PaymentPayload{UserID: 1, AmountCents: 10000, Currency: "GTQ"}},
 		{notification.EventPaymentFailed, notification.PaymentPayload{UserID: 1, AmountCents: 5000, Currency: "GTQ", Reason: "declined"}},
 		{notification.EventPaymentBankTransferSubmitted, notification.BankTransferPayload{UserID: 1, AmountCents: 20000, Currency: "GTQ"}},
@@ -406,6 +418,12 @@ func TestUserDispatcher_AllUserEvents_Rendered(t *testing.T) {
 		{notification.EventAccountWelcome, notification.AccountWelcomePayload{UserID: 1, UserName: "Bob"}},
 		{notification.EventAccountBalanceCredited, notification.AccountBalancePayload{UserID: 1, AmountCents: 500, BalanceAfter: 5000, Currency: "GTQ"}},
 		{notification.EventAccountLowBalance, notification.AccountBalancePayload{UserID: 1, BalanceAfter: 100, Currency: "GTQ"}},
+		{notification.EventAccountBalanceDebited, notification.AccountBalancePayload{UserID: 1, AmountCents: 200, BalanceAfter: 4800, Currency: "GTQ"}},
+		// EventGroupMemberJoined / EventGroupMemberLeft are broadcast (fan-out) events
+		// tested separately in TestUserDispatcher_BroadcastFanOut_*.
+		{notification.EventPaymentPendingTimeout, notification.PaymentPayload{UserID: 1, PaymentID: 9, AmountCents: 8000, Currency: "GTQ"}},
+		{notification.EventWithdrawalProcessing, notification.WithdrawalPayload{UserID: 1, RequestID: 11, AmountCents: 25000, Currency: "GTQ"}},
+		{notification.EventWithdrawalPendingTimeout, notification.WithdrawalPayload{UserID: 1, RequestID: 12, AmountCents: 25000, Currency: "GTQ"}},
 		// Unknown event type exercises the default branch.
 		{notification.EventType("custom.unknown"), notification.PredictionConfirmedPayload{UserID: 1}},
 	}
@@ -431,5 +449,116 @@ func TestUserDispatcher_AllUserEvents_Rendered(t *testing.T) {
 				t.Errorf("empty body for %s", tc.et)
 			}
 		})
+	}
+}
+
+// ── Bug 1: EventGroupJoinRequested must notify the owner, not the requester ──
+
+func TestUserDispatcher_GroupJoinRequested_NotifiesOwner(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	d := newUserDispatcher(notifRepo, &stubPrefRepo{err: errors.New("no pref")}, &stubPushRepo{}, infrapush.NoopSender{}, nil, &recordingDLQRepo{})
+
+	const requesterID = 10
+	const ownerID = 99
+	entry := makeEntry(t, notification.EventGroupJoinRequested, notification.GroupJoinPayload{
+		QuinielaID:   5,
+		QuinielaName: "Liga Test",
+		UserID:       requesterID,
+		OwnerID:      ownerID,
+	})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch returned error: %v", err)
+	}
+	if notifRepo.last == nil {
+		t.Fatal("notification not persisted")
+	}
+	if notifRepo.last.UserID != ownerID {
+		t.Errorf("notification delivered to user %d; want owner %d", notifRepo.last.UserID, ownerID)
+	}
+}
+
+// ── Bug 2: EventGroupMemberJoined/Left must fan-out to all active members ────
+
+func TestUserDispatcher_BroadcastFanOut_DeliveredToAllMembers(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	memberIDs := []int{2, 3, 4}                                            // actor is UserID=1; all three are other members
+	lister := &stubMemberLister{memberIDs: append([]int{1}, memberIDs...)} // include actor to verify exclusion
+
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:    notifRepo,
+		PrefRepo:     &stubPrefRepo{err: errors.New("no pref")},
+		PushRepo:     &stubPushRepo{},
+		DLQRepo:      &recordingDLQRepo{},
+		Hub:          hub.New(),
+		Pusher:       infrapush.NoopSender{},
+		MemberLister: lister,
+		Log:          zap.NewNop(),
+	})
+
+	entry := makeEntry(t, notification.EventGroupMemberJoined, notification.GroupJoinPayload{
+		QuinielaID:   7,
+		QuinielaName: "Liga X",
+		UserID:       1, // actor — must be excluded from fan-out
+		OwnerID:      2,
+	})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch returned error: %v", err)
+	}
+	// Actor (UserID=1) excluded → 3 deliveries to IDs 2, 3, 4
+	if notifRepo.createCount != len(memberIDs) {
+		t.Errorf("notifications persisted: got %d; want %d", notifRepo.createCount, len(memberIDs))
+	}
+}
+
+func TestUserDispatcher_BroadcastFanOut_NilLister_Skips(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	// newUserDispatcher does NOT set MemberLister — broadcast must be silently skipped.
+	d := newUserDispatcher(notifRepo, &stubPrefRepo{err: errors.New("no pref")}, &stubPushRepo{}, infrapush.NoopSender{}, nil, &recordingDLQRepo{})
+
+	entry := makeEntry(t, notification.EventGroupMemberLeft, notification.GroupJoinPayload{
+		QuinielaID: 3,
+		UserID:     1,
+	})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch returned unexpected error: %v", err)
+	}
+	if notifRepo.createCount != 0 {
+		t.Errorf("expected 0 notifications when MemberLister is nil; got %d", notifRepo.createCount)
+	}
+}
+
+func TestUserDispatcher_BroadcastFanOut_ListerError_Propagates(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	lister := &stubMemberLister{err: errors.New("db timeout")}
+
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:    notifRepo,
+		PrefRepo:     &stubPrefRepo{err: errors.New("no pref")},
+		PushRepo:     &stubPushRepo{},
+		DLQRepo:      &recordingDLQRepo{},
+		Hub:          hub.New(),
+		Pusher:       infrapush.NoopSender{},
+		MemberLister: lister,
+		Log:          zap.NewNop(),
+	})
+
+	entry := makeEntry(t, notification.EventGroupMemberJoined, notification.GroupJoinPayload{
+		QuinielaID: 9,
+		UserID:     1,
+	})
+
+	if err := d.Dispatch(context.Background(), entry); err == nil {
+		t.Fatal("expected error when MemberLister fails; got nil")
 	}
 }
