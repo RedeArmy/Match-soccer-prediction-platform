@@ -151,6 +151,19 @@ func inBucket(minutesLeft, leadMin int) bool {
 	return minutesLeft >= leadMin-bucketToleranceMin && minutesLeft <= leadMin+bucketToleranceMin
 }
 
+// resolveDeadlineBucket returns the lead-time bucket (in minutes) that
+// minutesLeft falls into, and whether a match was found.
+// Returns (0, false) when minutesLeft is not within tolerance of either lead time.
+func resolveDeadlineBucket(minutesLeft, leadMin1, leadMin2 int) (int, bool) {
+	if inBucket(minutesLeft, leadMin1) {
+		return leadMin1, true
+	}
+	if inBucket(minutesLeft, leadMin2) {
+		return leadMin2, true
+	}
+	return 0, false
+}
+
 // PredictionDeadlineApproaching queries upcoming matches and emits
 // EventPredictionMissingReminder for users with no prediction, but only when
 // the match is within one of two configured lead-time buckets.
@@ -180,15 +193,7 @@ func (j *Jobs) PredictionDeadlineApproaching(ctx context.Context) error {
 	}
 
 	for _, dm := range upcoming {
-		bucketMin, ok := func() (int, bool) {
-			if inBucket(dm.MinutesLeft, leadMin1) {
-				return leadMin1, true
-			}
-			if inBucket(dm.MinutesLeft, leadMin2) {
-				return leadMin2, true
-			}
-			return 0, false
-		}()
+		bucketMin, ok := resolveDeadlineBucket(dm.MinutesLeft, leadMin1, leadMin2)
 		if !ok {
 			continue // match is in the window but not at an alert boundary
 		}

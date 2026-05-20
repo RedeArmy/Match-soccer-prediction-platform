@@ -412,6 +412,15 @@ func (d *UserDispatcher) writeDLQEntry(ctx context.Context, entry *notification.
 	}
 }
 
+// Action URL path constants used by buildUserContent.
+// Defined once here to prevent silent drift when the API route changes.
+const (
+	urlMatchDetail = "/api/v1/matches/%d"
+	urlGroupsMe    = "/api/v1/groups/me"
+	urlBalance     = "/api/v1/users/me/balance"
+	urlWithdrawals = "/api/v1/withdrawals"
+)
+
 // buildUserContent returns the rendered title and body for the given event.
 func buildUserContent(entry *notification.OutboxEntry) userContent {
 	switch entry.EventType {
@@ -431,7 +440,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Prediction deadline approaching",
 			body:      fmt.Sprintf("%s vs %s kicks off in %d minutes — submit your prediction now.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
-			actionURL: fmt.Sprintf("/api/v1/matches/%d", p.MatchID),
+			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
 		}
 
 	case notification.EventPredictionMissingReminder:
@@ -440,7 +449,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Missing prediction reminder",
 			body:      fmt.Sprintf("You haven't predicted %s vs %s yet. Deadline is in %d minutes.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
-			actionURL: fmt.Sprintf("/api/v1/matches/%d", p.MatchID),
+			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
 		}
 
 	case notification.EventPredictionLocked:
@@ -449,7 +458,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Predictions locked",
 			body:      fmt.Sprintf("Predictions for %s vs %s are now locked.", p.HomeTeam, p.AwayTeam),
-			actionURL: fmt.Sprintf("/api/v1/matches/%d", p.MatchID),
+			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
 		}
 
 	case notification.EventPredictionScored:
@@ -467,7 +476,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Match result entered",
 			body:      fmt.Sprintf("The result for %s vs %s has been recorded.", p.HomeTeam, p.AwayTeam),
-			actionURL: fmt.Sprintf("/api/v1/matches/%d", p.MatchID),
+			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
 		}
 
 	case notification.EventMatchPostponed, notification.EventMatchCancelled:
@@ -480,7 +489,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Match " + verb,
 			body:      fmt.Sprintf("%s vs %s has been %s.", p.HomeTeam, p.AwayTeam, verb),
-			actionURL: fmt.Sprintf("/api/v1/matches/%d", p.MatchID),
+			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
 		}
 
 	case notification.EventGroupJoinApproved:
@@ -498,7 +507,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Group join request rejected",
 			body:      fmt.Sprintf("Your request to join %s was not approved.", p.QuinielaName),
-			actionURL: "/api/v1/groups/me",
+			actionURL: urlGroupsMe,
 		}
 
 	case notification.EventGroupDisbanded:
@@ -507,7 +516,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Group disbanded",
 			body:      fmt.Sprintf("The group %s has been disbanded.", p.QuinielaName),
-			actionURL: "/api/v1/groups/me",
+			actionURL: urlGroupsMe,
 		}
 
 	case notification.EventGroupDeadline24h:
@@ -534,7 +543,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Payment confirmed",
 			body:      fmt.Sprintf("Your payment of %s has been confirmed.", formatCents(p.AmountCents, p.Currency)),
-			actionURL: "/api/v1/users/me/balance",
+			actionURL: urlBalance,
 		}
 
 	case notification.EventPaymentFailed:
@@ -561,7 +570,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Bank transfer approved",
 			body:      fmt.Sprintf("%s has been credited to your account.", formatCents(p.AmountCents, p.Currency)),
-			actionURL: "/api/v1/users/me/balance",
+			actionURL: urlBalance,
 		}
 
 	case notification.EventPaymentBankTransferRejected:
@@ -579,7 +588,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Withdrawal requested",
 			body:      fmt.Sprintf("Your withdrawal of %s is pending admin approval.", formatCents(p.AmountCents, p.Currency)),
-			actionURL: "/api/v1/withdrawals",
+			actionURL: urlWithdrawals,
 		}
 
 	case notification.EventWithdrawalApproved:
@@ -588,7 +597,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Withdrawal approved",
 			body:      fmt.Sprintf("Your withdrawal of %s has been approved.", formatCents(p.AmountCents, p.Currency)),
-			actionURL: "/api/v1/withdrawals",
+			actionURL: urlWithdrawals,
 		}
 
 	case notification.EventWithdrawalRejected:
@@ -597,7 +606,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Withdrawal rejected",
 			body:      fmt.Sprintf("Your withdrawal of %s was rejected. %s", formatCents(p.AmountCents, p.Currency), p.Notes),
-			actionURL: "/api/v1/withdrawals",
+			actionURL: urlWithdrawals,
 		}
 
 	case notification.EventWithdrawalCompleted:
@@ -606,7 +615,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Withdrawal completed",
 			body:      fmt.Sprintf("Your withdrawal of %s has been processed successfully.", formatCents(p.AmountCents, p.Currency)),
-			actionURL: "/api/v1/users/me/balance",
+			actionURL: urlBalance,
 		}
 
 	case notification.EventWithdrawalFailed:
@@ -615,7 +624,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Withdrawal failed",
 			body:      fmt.Sprintf("Your withdrawal of %s could not be completed. Please contact support.", formatCents(p.AmountCents, p.Currency)),
-			actionURL: "/api/v1/withdrawals",
+			actionURL: urlWithdrawals,
 		}
 
 	case notification.EventAccountWelcome:
@@ -624,7 +633,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Welcome to World Cup Quiniela!",
 			body:      fmt.Sprintf("Hi %s! Your account is ready. Start predicting now.", p.UserName),
-			actionURL: "/api/v1/groups/me",
+			actionURL: urlGroupsMe,
 		}
 
 	case notification.EventAccountBalanceCredited, notification.EventAccountBalanceDebited:
@@ -634,13 +643,13 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 			return userContent{
 				title:     "Balance credited",
 				body:      fmt.Sprintf("%s has been added to your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
-				actionURL: "/api/v1/users/me/balance",
+				actionURL: urlBalance,
 			}
 		}
 		return userContent{
 			title:     "Balance debited",
 			body:      fmt.Sprintf("%s has been deducted from your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
-			actionURL: "/api/v1/users/me/balance",
+			actionURL: urlBalance,
 		}
 
 	case notification.EventAccountLowBalance:
@@ -649,7 +658,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Low balance alert",
 			body:      fmt.Sprintf("Your balance is %s. Top up to continue participating.", formatCents(p.BalanceAfter, p.Currency)),
-			actionURL: "/api/v1/users/me/balance",
+			actionURL: urlBalance,
 		}
 
 	case notification.EventGroupMemberJoined, notification.EventGroupMemberLeft:
@@ -683,7 +692,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Withdrawal being processed",
 			body:      fmt.Sprintf("Your withdrawal of %s is now being processed. Funds will be transferred shortly.", formatCents(p.AmountCents, p.Currency)),
-			actionURL: "/api/v1/withdrawals",
+			actionURL: urlWithdrawals,
 		}
 
 	case notification.EventWithdrawalPendingTimeout:
@@ -692,7 +701,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title:     "Withdrawal request expired",
 			body:      fmt.Sprintf("Your withdrawal of %s has expired without admin action. Please submit a new request or contact support.", formatCents(p.AmountCents, p.Currency)),
-			actionURL: "/api/v1/withdrawals",
+			actionURL: urlWithdrawals,
 		}
 
 	default:
