@@ -2,7 +2,7 @@
 // Quiniela platform.
 //
 // Jobs are registered with a schedule spec (interval, daily, or weekly) and
-// executed by a single Scheduler goroutine.  An injectable Clock makes the
+// executed by a single Scheduler goroutine.  An injectable Nower makes the
 // scheduler fully deterministic in tests without any real-time sleeps.
 //
 // Every job writes one or more outbox events; the outbox worker then claims
@@ -20,9 +20,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// Clock is an injectable time source.  Production code uses RealClock; tests
+// Nower is an injectable time source.  Production code uses RealClock; tests
 // inject a stub to drive the scheduler forward without real-time delays.
-type Clock interface {
+type Nower interface {
 	Now() time.Time
 }
 
@@ -74,7 +74,7 @@ type job struct {
 // with Run.
 type Scheduler struct {
 	jobs    []*job
-	clock   Clock
+	clock   Nower
 	elector LeaderElector
 	tick    time.Duration // resolution of the internal ticker
 	loc     *time.Location
@@ -83,7 +83,7 @@ type Scheduler struct {
 
 // Config bundles constructor arguments for Scheduler.
 type Config struct {
-	Clock    Clock          // nil → RealClock
+	Clock    Nower          // nil → RealClock
 	Elector  LeaderElector  // nil → always leader
 	Tick     time.Duration  // nil → 30s
 	Location *time.Location // nil → UTC

@@ -16,7 +16,7 @@ import (
 
 // ── Test doubles ─────────────────────────────────────────────────────────────
 
-// stubClock is an injectable Clock that returns a fixed time.
+// stubClock is an injectable Nower that returns a fixed time.
 type stubClock struct{ t time.Time }
 
 func (c *stubClock) Now() time.Time { return c.t }

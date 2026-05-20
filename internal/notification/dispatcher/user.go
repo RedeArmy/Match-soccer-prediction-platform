@@ -234,35 +234,39 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 	})
 
 	for _, sub := range subs {
-		code, sendErr := d.pusher.Send(ctx, infrapush.Message{
-			Endpoint:  sub.Endpoint,
-			P256dhKey: sub.P256dhKey,
-			AuthKey:   sub.AuthKey,
-			Body:      body,
-			TTL:       ttl,
-		})
-		if sendErr != nil {
-			log.Warn("user dispatcher: push send failed",
-				zap.Int64("sub_id", sub.ID),
-				zap.Error(sendErr),
-			)
-			continue
-		}
-		if code == http.StatusGone {
-			// Subscription has expired at the push service.  Mark it inactive
-			// so future dispatches skip it, write a DLQ entry for observability,
-			// and continue to any remaining subscriptions for this user.
-			if inactiveErr := d.pushRepo.MarkInactive(ctx, sub.ID); inactiveErr != nil {
-				log.Warn("user dispatcher: mark subscription inactive failed",
-					zap.Int64("sub_id", sub.ID),
-					zap.Error(inactiveErr),
-				)
-			}
-			if d.dlqRepo != nil {
-				d.writeDLQEntry(ctx, entry, userID, "push",
-					fmt.Errorf("HTTP 410 Gone: subscription %d expired", sub.ID))
-			}
-		}
+		d.sendPushToSubscription(ctx, entry, userID, sub, body, ttl, log)
+	}
+}
+
+func (d *UserDispatcher) sendPushToSubscription(ctx context.Context, entry *notification.OutboxEntry, userID int, sub *domain.PushSubscription, body []byte, ttl int, log *zap.Logger) {
+	code, err := d.pusher.Send(ctx, infrapush.Message{
+		Endpoint:  sub.Endpoint,
+		P256dhKey: sub.P256dhKey,
+		AuthKey:   sub.AuthKey,
+		Body:      body,
+		TTL:       ttl,
+	})
+	if err != nil {
+		log.Warn("user dispatcher: push send failed",
+			zap.Int64("sub_id", sub.ID),
+			zap.Error(err),
+		)
+		return
+	}
+	if code != http.StatusGone {
+		return
+	}
+	// Subscription has expired at the push service.  Mark it inactive so future
+	// dispatches skip it, write a DLQ entry for observability.
+	if inactiveErr := d.pushRepo.MarkInactive(ctx, sub.ID); inactiveErr != nil {
+		log.Warn("user dispatcher: mark subscription inactive failed",
+			zap.Int64("sub_id", sub.ID),
+			zap.Error(inactiveErr),
+		)
+	}
+	if d.dlqRepo != nil {
+		d.writeDLQEntry(ctx, entry, userID, "push",
+			fmt.Errorf("HTTP 410 Gone: subscription %d expired", sub.ID))
 	}
 }
 

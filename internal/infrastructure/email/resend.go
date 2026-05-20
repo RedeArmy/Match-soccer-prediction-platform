@@ -97,22 +97,7 @@ func (c *ResendClient) Send(ctx context.Context, msg Message) (string, error) {
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		var resErr resendError
-		_ = json.Unmarshal(raw, &resErr)
-		msg := resErr.Message
-		if msg == "" {
-			msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
-		}
-		if resp.StatusCode == http.StatusTooManyRequests {
-			var retryAfter time.Duration
-			if s := resp.Header.Get("Retry-After"); s != "" {
-				if secs, convErr := strconv.Atoi(s); convErr == nil {
-					retryAfter = time.Duration(secs) * time.Second
-				}
-			}
-			return "", &RetryAfterError{RetryAfter: retryAfter, Msg: msg}
-		}
-		return "", fmt.Errorf("resend: status %d: %s", resp.StatusCode, msg)
+		return "", parseAPIError(resp, raw)
 	}
 
 	var result resendResponse
@@ -120,6 +105,34 @@ func (c *ResendClient) Send(ctx context.Context, msg Message) (string, error) {
 		return "", fmt.Errorf("resend: parse response: %w", err)
 	}
 	return result.ID, nil
+}
+
+// parseAPIError builds a typed error from a non-2xx Resend API response.
+func parseAPIError(resp *http.Response, raw []byte) error {
+	var resErr resendError
+	_ = json.Unmarshal(raw, &resErr)
+	msg := resErr.Message
+	if msg == "" {
+		msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return &RetryAfterError{RetryAfter: parseRetryAfter(resp.Header), Msg: msg}
+	}
+	return fmt.Errorf("resend: status %d: %s", resp.StatusCode, msg)
+}
+
+// parseRetryAfter extracts a duration from the Retry-After header, returning
+// zero if the header is absent or unparseable.
+func parseRetryAfter(h http.Header) time.Duration {
+	s := h.Get("Retry-After")
+	if s == "" {
+		return 0
+	}
+	secs, err := strconv.Atoi(s)
+	if err != nil {
+		return 0
+	}
+	return time.Duration(secs) * time.Second
 }
 
 // NoopClient discards every message and returns an empty ID.  Use it in

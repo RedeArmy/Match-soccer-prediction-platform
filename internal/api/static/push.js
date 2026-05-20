@@ -103,7 +103,7 @@ async function unregisterPushSubscription(authToken) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function isPushSupported() {
-  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  return 'serviceWorker' in navigator && 'PushManager' in globalThis && 'Notification' in globalThis;
 }
 
 async function fetchVAPIDPublicKey(authToken) {
@@ -151,7 +151,7 @@ async function postSubscription(subscription, authToken) {
  */
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const base64  = (base64String + padding).replaceAll('-', '+').replaceAll('_', '/');
   const rawData = atob(base64);
   return Uint8Array.from(rawData, (c) => c.charCodeAt(0));
 }
@@ -163,8 +163,8 @@ function urlBase64ToUint8Array(base64String) {
  */
 function arrayBufferToBase64Url(buffer) {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
     .replace(/={1,2}$/, '');
 }
 

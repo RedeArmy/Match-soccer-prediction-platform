@@ -23,7 +23,7 @@
 
 // ── Push event ────────────────────────────────────────────────────────────────
 
-self.addEventListener('push', (event) => {
+globalThis.addEventListener('push', (event) => {
   if (!event.data) return;
 
   let payload;
@@ -49,15 +49,15 @@ self.addEventListener('push', (event) => {
     },
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(globalThis.registration.showNotification(title, options));
 });
 
 // ── Notification click ────────────────────────────────────────────────────────
 
-self.addEventListener('notificationclick', (event) => {
+globalThis.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+  const targetUrl = event.notification.data?.url ?? '/';
 
   event.waitUntil(
     clients
@@ -65,7 +65,7 @@ self.addEventListener('notificationclick', (event) => {
       .then((clientList) => {
         // Focus an existing tab that already shows the target path.
         for (const client of clientList) {
-          if (new URL(client.url).pathname === new URL(targetUrl, self.location.origin).pathname) {
+          if (new URL(client.url).pathname === new URL(targetUrl, globalThis.location.origin).pathname) {
             return client.focus();
           }
         }
@@ -81,12 +81,12 @@ self.addEventListener('notificationclick', (event) => {
 // browser has automatically renewed it.  We must POST the new subscription
 // to the server so the next push reaches the correct endpoint.
 
-self.addEventListener('pushsubscriptionchange', (event) => {
+globalThis.addEventListener('pushsubscriptionchange', (event) => {
   event.waitUntil(resubscribe(event));
 });
 
 async function resubscribe(event) {
-  const subscription = await self.registration.pushManager.subscribe(
+  const subscription = await globalThis.registration.pushManager.subscribe(
     event.oldSubscription.options,
   );
 
@@ -105,8 +105,8 @@ async function resubscribe(event) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function arrayBufferToBase64Url(buffer) {
-  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
+  return btoa(String.fromCodePoint(...new Uint8Array(buffer)))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
     .replace(/={1,2}$/, '');
 }

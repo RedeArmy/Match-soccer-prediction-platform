@@ -11,6 +11,9 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
 
+// dateOnlyLayout is the Go reference time for YYYY-MM-DD date strings.
+const dateOnlyLayout = "2006-01-02"
+
 // OutboxWriter is the write-side contract consumed by scheduler jobs.
 // The production implementation is *outbox.Writer; tests may supply a stub.
 type OutboxWriter interface {
@@ -176,7 +179,7 @@ func (j *Jobs) AdminDailySummary(ctx context.Context) error {
 	}
 
 	payload := notification.AdminDailySummaryPayload{
-		Date:               since.Format("2006-01-02"),
+		Date:               since.Format(dateOnlyLayout),
 		NewUsers:           row.NewUsers,
 		NewTransfers:       row.NewTransfers,
 		ApprovedTransfers:  row.ApprovedTransfers,
@@ -188,7 +191,7 @@ func (j *Jobs) AdminDailySummary(ctx context.Context) error {
 	if err := j.writer.Write(ctx,
 		notification.EventAdminDailySummary,
 		"scheduler",
-		since.Format("2006-01-02"),
+		since.Format(dateOnlyLayout),
 		payload,
 	); err != nil {
 		return fmt.Errorf("scheduler: daily summary: write outbox: %w", err)
@@ -208,8 +211,8 @@ func (j *Jobs) AdminWeeklyReport(ctx context.Context) error {
 	}
 
 	payload := notification.AdminWeeklyReportPayload{
-		WeekStartDate:     since.Format("2006-01-02"),
-		WeekEndDate:       now.Truncate(24 * time.Hour).Format("2006-01-02"),
+		WeekStartDate:     since.Format(dateOnlyLayout),
+		WeekEndDate:       now.Truncate(24 * time.Hour).Format(dateOnlyLayout),
 		TotalRevenueCents: row.TotalRevenueCents,
 		NewUsers:          row.NewUsers,
 		ActiveQuinielas:   row.ActiveQuinielas,
@@ -221,7 +224,7 @@ func (j *Jobs) AdminWeeklyReport(ctx context.Context) error {
 	if err := j.writer.Write(ctx,
 		notification.EventAdminWeeklyReport,
 		"scheduler",
-		since.Format("2006-01-02"),
+		since.Format(dateOnlyLayout),
 		payload,
 	); err != nil {
 		return fmt.Errorf("scheduler: weekly report: write outbox: %w", err)
