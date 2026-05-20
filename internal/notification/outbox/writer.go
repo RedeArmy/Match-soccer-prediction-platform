@@ -76,6 +76,42 @@ func (w *Writer) WriteInTx(
 	return nil
 }
 
+// BatchEvent is a single notification intent passed to WriteBatch.
+type BatchEvent struct {
+	EventType     notification.EventType
+	AggregateType string
+	AggregateID   string
+	Payload       any
+}
+
+// WriteBatch atomically inserts all events in a single transaction acquired
+// from the pool.  If any insert fails the whole batch is rolled back and no
+// rows are written.
+//
+// Use WriteBatch when two correlated notifications — e.g. an admin alert and a
+// user-facing event for the same business action — must either both appear in
+// the outbox or neither does.  This eliminates the crash window that exists
+// between two successive Write calls.
+//
+// For full end-to-end atomicity (domain write + outbox writes in the same
+// commit) use WriteInTx with the caller's existing transaction instead.
+func (w *Writer) WriteBatch(ctx context.Context, events []BatchEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	tx, err := w.pool.Begin(ctx)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	for _, e := range events {
+		if err := w.WriteInTx(ctx, tx, e.EventType, e.AggregateType, e.AggregateID, e.Payload); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
 // Write opens a short-lived connection from the pool and inserts an outbox row
 // outside of any existing transaction.
 //

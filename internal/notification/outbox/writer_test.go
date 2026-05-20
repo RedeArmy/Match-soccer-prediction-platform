@@ -171,6 +171,95 @@ func TestWriter_WriteInTx(t *testing.T) {
 	}
 }
 
+// TestWriter_WriteBatch_AtomicInsert verifies that WriteBatch inserts all rows
+// atomically: both entries appear after a successful call.
+func TestWriter_WriteBatch_AtomicInsert(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	w := outbox.NewWriter(testPool)
+	events := []outbox.BatchEvent{
+		{
+			EventType:     notification.EventAdminBankTransferPending,
+			AggregateType: "bank_transfer_proof",
+			AggregateID:   "batch_admin_1",
+			Payload:       notification.AdminBankTransferPayload{UserID: 1, ProofID: 1, AmountCents: 5000, Currency: "GTQ"},
+		},
+		{
+			EventType:     notification.EventPaymentBankTransferSubmitted,
+			AggregateType: "bank_transfer_proof",
+			AggregateID:   "batch_user_1",
+			Payload:       notification.BankTransferPayload{UserID: 1, ProofID: 1, AmountCents: 5000, Currency: "GTQ"},
+		},
+	}
+
+	if err := w.WriteBatch(ctx, events); err != nil {
+		t.Fatalf("WriteBatch: %v", err)
+	}
+
+	for _, e := range events {
+		var count int
+		if err := testPool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM domain_outbox
+			  WHERE event_type = $1 AND aggregate_id = $2 AND status = 'pending'`,
+			string(e.EventType), e.AggregateID,
+		).Scan(&count); err != nil {
+			t.Fatalf("count query: %v", err)
+		}
+		if count == 0 {
+			t.Errorf("expected row for event_type=%s aggregate_id=%s; got 0", e.EventType, e.AggregateID)
+		}
+	}
+}
+
+// TestWriter_WriteBatch_Empty verifies that WriteBatch with an empty slice is
+// a no-op and returns nil.
+func TestWriter_WriteBatch_Empty(t *testing.T) {
+	t.Parallel()
+	if err := outbox.NewWriter(testPool).WriteBatch(context.Background(), nil); err != nil {
+		t.Fatalf("WriteBatch(nil): %v", err)
+	}
+}
+
+// TestWriter_WriteBatch_InvalidPayload_NoneInserted verifies that an invalid
+// payload causes the whole batch to be rolled back: the valid first entry must
+// not appear in the table after the call returns an error.
+func TestWriter_WriteBatch_InvalidPayload_NoneInserted(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	const goodAggID = "batch_rollback_good_1"
+	w := outbox.NewWriter(testPool)
+	events := []outbox.BatchEvent{
+		{
+			EventType:     notification.EventAdminBankTransferPending,
+			AggregateType: "bank_transfer_proof",
+			AggregateID:   goodAggID,
+			Payload:       notification.AdminBankTransferPayload{UserID: 1},
+		},
+		{
+			EventType:     notification.EventAdminBankTransferPending,
+			AggregateType: "bank_transfer_proof",
+			AggregateID:   "batch_rollback_bad_1",
+			Payload:       make(chan int), // non-marshallable → triggers rollback
+		},
+	}
+
+	if err := w.WriteBatch(ctx, events); err == nil {
+		t.Fatal("expected error for non-marshallable payload; got nil")
+	}
+
+	var count int
+	if err := testPool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM domain_outbox WHERE aggregate_id = $1`, goodAggID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count query: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("rollback failed: good entry still present (%d rows)", count)
+	}
+}
+
 // TestWriter_InvalidPayload verifies that a non-marshallable payload returns
 // an error before touching the database.
 func TestWriter_InvalidPayload(t *testing.T) {

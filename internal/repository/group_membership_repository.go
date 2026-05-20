@@ -313,6 +313,32 @@ func (r *PostgresGroupMembershipRepository) ListByQuiniela(ctx context.Context, 
 	return collectMemberships(rows)
 }
 
+func (r *PostgresGroupMembershipRepository) ListActiveMemberIDsByGroup(ctx context.Context, quinielaID int) ([]int, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT gm.user_id
+		 FROM group_memberships gm
+		 JOIN users u ON u.id = gm.user_id AND u.deleted_at IS NULL
+		 WHERE gm.quiniela_id = $1 AND gm.status = 'active'`,
+		quinielaID,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return ids, nil
+}
+
 func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error) {
 	// JOIN with quinielas excludes memberships in soft-deleted groups so that
 	// GET /api/v1/groups/me never surfaces a group the owner has deleted.

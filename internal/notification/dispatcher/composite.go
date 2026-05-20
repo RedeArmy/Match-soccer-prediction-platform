@@ -12,9 +12,12 @@ import (
 //   - admin.* / system.*  →  AdminDispatcher
 //   - all other events    →  UserDispatcher
 //
-// Both dispatchers may be called for the same entry when the event has both an
-// admin leg and a user-facing leg (currently none — the separation is clean in
-// the event type taxonomy).
+// Dual-dispatch (one business action → admin alert + user notification) is
+// handled at the publisher level: services call outbox.Writer.WriteBatch to
+// insert two correlated entries atomically (one admin.* event, one user event).
+// The worker claims and dispatches each independently, giving per-entry
+// at-least-once delivery and retry isolation without coupling the two dispatch
+// paths.
 type CompositeDispatcher struct {
 	admin *AdminDispatcher
 	user  *UserDispatcher

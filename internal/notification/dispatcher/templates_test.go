@@ -131,6 +131,65 @@ func TestBuildEmailData_AllEventTypes(t *testing.T) {
 			},
 			want: "WEEKLY REPORT",
 		},
+		// ── Match / Scoring ───────────────────────────────────────────────────
+		{
+			name: "MatchResultPending",
+			et:   notification.EventAdminMatchResultPending,
+			payload: notification.AdminMatchResultPayload{
+				MatchID: 7, HomeTeam: "Brasil", AwayTeam: "Francia",
+				MinutesElapsed: 97,
+			},
+			want: "ACTION REQUIRED",
+		},
+		{
+			name:    "ScoringDiscrepancy",
+			et:      notification.EventAdminScoringDiscrepancy,
+			payload: notification.SystemAlertPayload{Component: "scorer", Detail: "delta -3pts", Severity: "critical"},
+			want:    "CRITICAL",
+		},
+		{
+			name:    "GroupReported",
+			et:      notification.EventAdminGroupReported,
+			payload: notification.SystemAlertPayload{Component: "group:42", Detail: "spam content"},
+			want:    "ACTION REQUIRED",
+		},
+		// ── System alerts ─────────────────────────────────────────────────────
+		{
+			name:    "CircuitBreakerHalfOpen",
+			et:      notification.EventSystemCircuitBreakerHalfOpen,
+			payload: notification.SystemAlertPayload{Component: "email", Detail: "1 probe sent", Severity: "medium"},
+			want:    "WARNING",
+		},
+		{
+			name:    "TxRetryExhaustedNoAffectedIDs",
+			et:      notification.EventSystemTxRetryExhausted,
+			payload: notification.SystemAlertPayload{Component: "payment_service", Detail: "5 retries", Severity: "critical"},
+			want:    "CRITICAL",
+		},
+		{
+			name:    "TxRetryExhaustedWithAffectedIDs",
+			et:      notification.EventSystemTxRetryExhausted,
+			payload: notification.SystemAlertPayload{Component: "payment_service", Detail: "5 retries", Severity: "critical", AffectedIDs: []int{101, 202}},
+			want:    "CRITICAL",
+		},
+		{
+			name:    "RateLimitAbuse",
+			et:      notification.EventSystemRateLimitAbuse,
+			payload: notification.SystemAlertPayload{Component: "api_gateway", Detail: "2000 req/min from 1.2.3.4"},
+			want:    "SECURITY",
+		},
+		{
+			name:    "IdempotencyCollision",
+			et:      notification.EventSystemIdempotencyCollision,
+			payload: notification.SystemAlertPayload{Component: "withdrawal_service", Detail: "key=abc payload mismatch"},
+			want:    "WARNING",
+		},
+		{
+			name:    "FileStoreUnavailable",
+			et:      notification.EventSystemFileStoreUnavailable,
+			payload: notification.SystemAlertPayload{Component: "s3", Detail: "connection timeout", Severity: "critical"},
+			want:    "CRITICAL",
+		},
 		{
 			name:    "UnknownEvent",
 			et:      notification.EventType("unknown.custom.event"),

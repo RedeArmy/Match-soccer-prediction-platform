@@ -30,6 +30,51 @@ type minUserPayload struct {
 	UserID int `json:"user_id"`
 }
 
+// ownerPayload extracts owner_id from payloads where the notification
+// recipient is the group owner rather than the actor.
+type ownerPayload struct {
+	OwnerID int `json:"owner_id"`
+}
+
+// GroupMemberLister provides the minimal read access that UserDispatcher needs
+// to fan-out broadcast events to every active group member.  A dedicated
+// interface (instead of the full GroupMembershipRepository) keeps the
+// dependency surface narrow and makes test doubles trivial.
+type GroupMemberLister interface {
+	ListActiveMemberIDsByGroup(ctx context.Context, quinielaID int) ([]int, error)
+}
+
+// broadcastEvents is the set of event types that must be delivered to all
+// active members of a quiniela rather than to a single recipient.
+var broadcastEvents = map[notification.EventType]struct{}{
+	notification.EventGroupMemberJoined: {},
+	notification.EventGroupMemberLeft:   {},
+}
+
+func isBroadcastEvent(et notification.EventType) bool {
+	_, ok := broadcastEvents[et]
+	return ok
+}
+
+// resolveRecipient determines the target user ID for single-recipient delivery.
+// Most events address payload.user_id (the actor); a small set redirect to a
+// different field — e.g. EventGroupJoinRequested notifies the group owner, not
+// the requester.  Returns (0, false) when no valid recipient can be extracted.
+func resolveRecipient(entry *notification.OutboxEntry) (int, bool) {
+	switch entry.EventType {
+	case notification.EventGroupJoinRequested:
+		var p ownerPayload
+		if err := json.Unmarshal(entry.Payload, &p); err == nil && p.OwnerID != 0 {
+			return p.OwnerID, true
+		}
+	}
+	var up minUserPayload
+	if err := json.Unmarshal(entry.Payload, &up); err == nil && up.UserID != 0 {
+		return up.UserID, true
+	}
+	return 0, false
+}
+
 // pgNotifyPayload is the JSON structure broadcast over pg_notify.
 type pgNotifyPayload struct {
 	UserID    int    `json:"user_id"`
@@ -58,14 +103,17 @@ type notifPref struct {
 //
 // For every claimed outbox entry it:
 //  1. Skips admin/system events (handled by AdminDispatcher).
-//  2. Extracts the target user ID from the payload.
-//  3. Renders the notification title and body.
-//  4. Persists a UserNotification row with idempotency guard.
-//  5. Fires pg_notify('user_notifications', …) for the SSE bridge.
-//  6. Checks notification preferences; if channel_push=true and active
+//  2. For broadcast events (e.g. EventGroupMemberJoined): queries all active
+//     group members and delivers to each, excluding the actor.
+//  3. For all other events: resolves the single target user via resolveRecipient
+//     (which redirects to OwnerID for EventGroupJoinRequested).
+//  4. Renders the notification title and body.
+//  5. Persists a UserNotification row with idempotency guard.
+//  6. Fires pg_notify('user_notifications', …) for the SSE bridge.
+//  7. Checks notification preferences; if channel_push=true and active
 //     subscriptions exist, sends Web Push (marks 410 Gone subscriptions inactive).
-//  7. For P0/P1 events with channel_email=true, delivers email via mailer.
-//  8. On persist failure, writes a DLQ entry and returns the error for retry.
+//  8. For P0/P1 events with channel_email=true, delivers email via mailer.
+//  9. On persist failure, writes a DLQ entry and returns the error for retry.
 type UserDispatcher struct {
 	notifRepo     repository.UserNotificationRepository
 	prefRepo      repository.NotificationPreferenceRepository
@@ -78,6 +126,7 @@ type UserDispatcher struct {
 	fromAddr      string
 	pgNotifier    PgNotifier
 	params        service.SystemParamService
+	memberLister  GroupMemberLister // nil disables broadcast fan-out (tests without DB)
 	log           *zap.Logger
 }
 
@@ -94,6 +143,7 @@ type UserDispatcherConfig struct {
 	FromAddr      string
 	PgNotifier    PgNotifier                 // nil disables pg_notify (tests without DB)
 	Params        service.SystemParamService // nil uses defaults
+	MemberLister  GroupMemberLister          // nil disables broadcast fan-out (tests without DB)
 	Log           *zap.Logger
 }
 
@@ -111,6 +161,7 @@ func NewUserDispatcher(cfg UserDispatcherConfig) *UserDispatcher {
 		fromAddr:      cfg.FromAddr,
 		pgNotifier:    cfg.PgNotifier,
 		params:        cfg.Params,
+		memberLister:  cfg.MemberLister,
 		log:           cfg.Log,
 	}
 }
@@ -126,25 +177,33 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 		zap.String("event_type", string(entry.EventType)),
 	)
 
-	// Extract target user ID.
-	var up minUserPayload
-	if err := json.Unmarshal(entry.Payload, &up); err != nil || up.UserID == 0 {
-		log.Warn("user dispatcher: cannot extract user_id from payload; skipping")
+	if isBroadcastEvent(entry.EventType) {
+		return d.dispatchBroadcast(ctx, entry, log)
+	}
+
+	userID, ok := resolveRecipient(entry)
+	if !ok {
+		log.Warn("user dispatcher: cannot resolve recipient; skipping")
 		return nil
 	}
-	userID := up.UserID
 
-	// Render title/body.
+	return d.deliverToUser(ctx, entry, userID, fmt.Sprintf("outbox-%d", entry.ID), log)
+}
+
+// deliverToUser persists, SSE-notifies, and optionally push/email-delivers a
+// single notification to userID.  idempotencyKey must be unique per
+// (outbox entry, recipient) pair; for fan-out events use the form
+// "outbox-{id}-user-{uid}" so multiple recipients do not collide.
+func (d *UserDispatcher) deliverToUser(ctx context.Context, entry *notification.OutboxEntry, userID int, idempotencyKey string, log *zap.Logger) error {
 	content := buildUserContent(entry)
 
-	// Persist notification (idempotency-safe).
 	n := &domain.UserNotification{
 		UserID:         userID,
 		EventType:      string(entry.EventType),
 		Title:          content.title,
 		Body:           content.body,
 		ActionURL:      content.actionURL,
-		IdempotencyKey: fmt.Sprintf("outbox-%d", entry.ID),
+		IdempotencyKey: idempotencyKey,
 	}
 	inserted, err := d.notifRepo.Create(ctx, n)
 	if err != nil {
@@ -153,24 +212,58 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 		return fmt.Errorf("user dispatcher: persist: %w", err)
 	}
 
-	// Broadcast via pg_notify (best-effort, SSE bridge on API server picks it up).
 	if inserted && d.pgNotifier != nil {
 		d.notifyPg(ctx, n, entry, log)
 	}
 
-	// Delivery channels depend on priority and preferences.
 	pref := d.resolvePreferences(ctx, userID, string(entry.EventType))
 	priority := notification.PriorityOf(entry.EventType)
 
 	if pref.ChannelPush {
 		d.deliverPush(ctx, entry, userID, n.ID, content, log)
 	}
-
 	if pref.ChannelEmail && priority <= notification.PriorityP1High {
 		d.deliverEmail(ctx, entry, userID, content, log)
 	}
 
 	return nil
+}
+
+// dispatchBroadcast fans out a group broadcast event to all active members of
+// the quiniela referenced in the payload, excluding the actor (payload.user_id)
+// so the user who triggered the event does not receive a self-notification.
+// Each delivery is attempted independently; the last error (if any) is returned.
+func (d *UserDispatcher) dispatchBroadcast(ctx context.Context, entry *notification.OutboxEntry, log *zap.Logger) error {
+	if d.memberLister == nil {
+		log.Warn("user dispatcher: broadcast event but MemberLister not configured; skipping")
+		return nil
+	}
+
+	var p notification.GroupJoinPayload
+	if err := entry.DecodePayload(&p); err != nil || p.QuinielaID == 0 {
+		log.Warn("user dispatcher: broadcast event missing quiniela_id; skipping")
+		return nil
+	}
+
+	memberIDs, err := d.memberLister.ListActiveMemberIDsByGroup(ctx, p.QuinielaID)
+	if err != nil {
+		log.Error("user dispatcher: broadcast fan-out: list members failed", zap.Error(err))
+		return fmt.Errorf("user dispatcher: broadcast list: %w", err)
+	}
+
+	var lastErr error
+	for _, uid := range memberIDs {
+		if uid == p.UserID {
+			continue // do not notify the actor
+		}
+		key := fmt.Sprintf("outbox-%d-user-%d", entry.ID, uid)
+		if err := d.deliverToUser(ctx, entry, uid, key, log); err != nil {
+			log.Error("user dispatcher: broadcast deliver failed",
+				zap.Int("recipient_user_id", uid), zap.Error(err))
+			lastErr = err
+		}
+	}
+	return lastErr
 }
 
 func (d *UserDispatcher) notifyPg(ctx context.Context, n *domain.UserNotification, entry *notification.OutboxEntry, log *zap.Logger) {
@@ -370,7 +463,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		_ = entry.DecodePayload(&p)
 		return userContent{
 			title: "Group join approved",
-			body:  fmt.Sprintf("You have been approved to join %s.", p.QuinielaNam),
+			body:  fmt.Sprintf("You have been approved to join %s.", p.QuinielaName),
 		}
 
 	case notification.EventGroupJoinRejected:
@@ -378,7 +471,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		_ = entry.DecodePayload(&p)
 		return userContent{
 			title: "Group join request rejected",
-			body:  fmt.Sprintf("Your request to join %s was not approved.", p.QuinielaNam),
+			body:  fmt.Sprintf("Your request to join %s was not approved.", p.QuinielaName),
 		}
 
 	case notification.EventGroupDisbanded:
@@ -386,7 +479,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		_ = entry.DecodePayload(&p)
 		return userContent{
 			title: "Group disbanded",
-			body:  fmt.Sprintf("The group %s has been disbanded.", p.QuinielaNam),
+			body:  fmt.Sprintf("The group %s has been disbanded.", p.QuinielaName),
 		}
 
 	case notification.EventGroupDeadline24h:
@@ -394,7 +487,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		_ = entry.DecodePayload(&p)
 		return userContent{
 			title: "Group deadline in 24 hours",
-			body:  fmt.Sprintf("The prediction window for %s closes in 24 hours.", p.QuinielaNam),
+			body:  fmt.Sprintf("The prediction window for %s closes in 24 hours.", p.QuinielaName),
 		}
 
 	case notification.EventGroupLeaderboardMilestone:
@@ -402,7 +495,7 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		_ = entry.DecodePayload(&p)
 		return userContent{
 			title: "Leaderboard milestone",
-			body:  fmt.Sprintf("You are now ranked #%d in %s with %d points.", p.NewRank, p.QuinielaNam, p.TotalPoints),
+			body:  fmt.Sprintf("You are now ranked #%d in %s with %d points.", p.NewRank, p.QuinielaName, p.TotalPoints),
 		}
 
 	case notification.EventPaymentConfirmed:
@@ -507,6 +600,54 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		return userContent{
 			title: "Low balance alert",
 			body:  fmt.Sprintf("Your balance is %s. Top up to continue participating.", formatCents(p.BalanceAfter, p.Currency)),
+		}
+
+	case notification.EventAccountBalanceDebited:
+		var p notification.AccountBalancePayload
+		_ = entry.DecodePayload(&p)
+		return userContent{
+			title: "Balance debited",
+			body:  fmt.Sprintf("%s has been deducted from your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+		}
+
+	case notification.EventGroupMemberJoined:
+		var p notification.GroupJoinPayload
+		_ = entry.DecodePayload(&p)
+		return userContent{
+			title: "New member joined your group",
+			body:  fmt.Sprintf("A new member has joined %s.", p.QuinielaName),
+		}
+
+	case notification.EventGroupMemberLeft:
+		var p notification.GroupJoinPayload
+		_ = entry.DecodePayload(&p)
+		return userContent{
+			title: "Member left the group",
+			body:  fmt.Sprintf("A member has left %s.", p.QuinielaName),
+		}
+
+	case notification.EventPaymentPendingTimeout:
+		var p notification.PaymentPayload
+		_ = entry.DecodePayload(&p)
+		return userContent{
+			title: "Payment expired",
+			body:  fmt.Sprintf("Your payment of %s has expired without confirmation. Please try again.", formatCents(p.AmountCents, p.Currency)),
+		}
+
+	case notification.EventWithdrawalProcessing:
+		var p notification.WithdrawalPayload
+		_ = entry.DecodePayload(&p)
+		return userContent{
+			title: "Withdrawal being processed",
+			body:  fmt.Sprintf("Your withdrawal of %s is now being processed. Funds will be transferred shortly.", formatCents(p.AmountCents, p.Currency)),
+		}
+
+	case notification.EventWithdrawalPendingTimeout:
+		var p notification.WithdrawalPayload
+		_ = entry.DecodePayload(&p)
+		return userContent{
+			title: "Withdrawal request expired",
+			body:  fmt.Sprintf("Your withdrawal of %s has expired without admin action. Please submit a new request or contact support.", formatCents(p.AmountCents, p.Currency)),
 		}
 
 	default:

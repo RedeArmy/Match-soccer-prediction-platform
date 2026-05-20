@@ -143,6 +143,9 @@ func (r *stubMemberRepo) MarkPaid(_ context.Context, _, _ int) (*domain.GroupMem
 func (r *stubMemberRepo) ListByQuiniela(_ context.Context, _ int) ([]*domain.GroupMembership, error) {
 	return r.memberships, r.err
 }
+func (r *stubMemberRepo) ListActiveMemberIDsByGroup(_ context.Context, _ int) ([]int, error) {
+	return nil, r.err
+}
 func (r *stubMemberRepo) ListByUser(_ context.Context, _ int) ([]*domain.GroupMembership, error) {
 	return r.memberships, r.err
 }
