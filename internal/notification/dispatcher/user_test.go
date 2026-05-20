@@ -463,10 +463,10 @@ func TestUserDispatcher_GroupJoinRequested_NotifiesOwner(t *testing.T) {
 	const requesterID = 10
 	const ownerID = 99
 	entry := makeEntry(t, notification.EventGroupJoinRequested, notification.GroupJoinPayload{
-		QuinielaID:  5,
+		QuinielaID:   5,
 		QuinielaName: "Liga Test",
-		UserID:      requesterID,
-		OwnerID:     ownerID,
+		UserID:       requesterID,
+		OwnerID:      ownerID,
 	})
 
 	if err := d.Dispatch(context.Background(), entry); err != nil {
@@ -486,7 +486,7 @@ func TestUserDispatcher_BroadcastFanOut_DeliveredToAllMembers(t *testing.T) {
 	t.Parallel()
 
 	notifRepo := &stubNotifRepo{inserted: true}
-	memberIDs := []int{2, 3, 4} // actor is UserID=1; all three are other members
+	memberIDs := []int{2, 3, 4}                                            // actor is UserID=1; all three are other members
 	lister := &stubMemberLister{memberIDs: append([]int{1}, memberIDs...)} // include actor to verify exclusion
 
 	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
@@ -501,10 +501,10 @@ func TestUserDispatcher_BroadcastFanOut_DeliveredToAllMembers(t *testing.T) {
 	})
 
 	entry := makeEntry(t, notification.EventGroupMemberJoined, notification.GroupJoinPayload{
-		QuinielaID:  7,
+		QuinielaID:   7,
 		QuinielaName: "Liga X",
-		UserID:      1, // actor — must be excluded from fan-out
-		OwnerID:     2,
+		UserID:       1, // actor — must be excluded from fan-out
+		OwnerID:      2,
 	})
 
 	if err := d.Dispatch(context.Background(), entry); err != nil {
