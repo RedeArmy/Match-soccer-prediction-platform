@@ -298,6 +298,8 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyPredictionDeadlineLeadMin1: {5, 120},               // 5 min – 2 h
 	domain.ParamKeyNotifyPredictionDeadlineLeadMin2: {5, 60},                // 5 min – 1 h
 	domain.ParamKeyNotifyPredictionMissingLeadMin:   {15, 240},              // 15 min – 4 h
+	domain.ParamKeyNotifySSEHeartbeatIntervalSec:    {5, 300},               // 5 s – 5 min
+	domain.ParamKeyNotifyWebPushTTLSec:              {3_600, 2_592_000},     // 1 h – 30 days
 }
 
 // validateParamConstraints enforces per-key business-rule bounds for int params.

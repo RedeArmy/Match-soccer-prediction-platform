@@ -52,11 +52,31 @@ func TestPriorityOf_P1Events(t *testing.T) {
 		notification.EventPaymentConfirmed,
 		notification.EventPaymentFailed,
 		notification.EventAccountLowBalance,
+		// Digest/reminder: action may be required but no money or security at risk.
+		notification.EventAdminPendingReminder,
 	}
 
 	for _, et := range p1Events {
 		if got := notification.PriorityOf(et); got != notification.PriorityP1High {
 			t.Errorf("PriorityOf(%q) = %d; want P1 (%d)", et, got, notification.PriorityP1High)
+		}
+	}
+}
+
+// TestPriorityOf_P2Events verifies that informative admin digest events are
+// classified as P2Medium and do not trigger on-call alerting paths.
+func TestPriorityOf_P2Events(t *testing.T) {
+	t.Parallel()
+
+	p2Events := []notification.EventType{
+		// Scheduled digests: informative only, never on-call worthy.
+		notification.EventAdminDailySummary,
+		notification.EventAdminWeeklyReport,
+	}
+
+	for _, et := range p2Events {
+		if got := notification.PriorityOf(et); got != notification.PriorityP2Medium {
+			t.Errorf("PriorityOf(%q) = %d; want P2 (%d)", et, got, notification.PriorityP2Medium)
 		}
 	}
 }
@@ -88,6 +108,9 @@ func TestIsAdminEvent(t *testing.T) {
 		notification.EventAdminMatchResultPending,
 		notification.EventAdminScoringDiscrepancy,
 		notification.EventAdminGroupReported,
+		notification.EventAdminPendingReminder,
+		notification.EventAdminDailySummary,
+		notification.EventAdminWeeklyReport,
 		notification.EventSystemCircuitBreakerOpened,
 		notification.EventSystemCircuitBreakerHalfOpen,
 		notification.EventSystemWebhookSignatureFailed,
