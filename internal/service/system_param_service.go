@@ -291,15 +291,16 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyTxRetryMaxDelayMs:  {1, 60_000}, // 1 ms – 60 s max cap
 
 	// Notification subsystem (is_runtime=TRUE; changes propagate within 30 s cache window)
-	domain.ParamKeyNotifyBankTransferStaleSec:       {3_600, 172_800},       // 1 h – 48 h
-	domain.ParamKeyNotifyWithdrawalStaleSec:         {3_600, 259_200},       // 1 h – 72 h
-	domain.ParamKeyNotifyHighValueWithdrawalCents:   {100_000, 100_000_000}, // Q1 000 – Q1 000 000
-	domain.ParamKeyNotifyPendingReminderIntervalSec: {1_800, 86_400},        // 30 min – 24 h
-	domain.ParamKeyNotifyPredictionDeadlineLeadMin1: {5, 120},               // 5 min – 2 h
-	domain.ParamKeyNotifyPredictionDeadlineLeadMin2: {5, 60},                // 5 min – 1 h
-	domain.ParamKeyNotifyPredictionMissingLeadMin:   {15, 240},              // 15 min – 4 h
-	domain.ParamKeyNotifySSEHeartbeatIntervalSec:    {5, 300},               // 5 s – 5 min
-	domain.ParamKeyNotifyWebPushTTLSec:              {3_600, 2_592_000},     // 1 h – 30 days
+	domain.ParamKeyNotifyBankTransferStaleSec:            {3_600, 172_800},       // 1 h – 48 h
+	domain.ParamKeyNotifyWithdrawalStaleSec:              {3_600, 259_200},       // 1 h – 72 h
+	domain.ParamKeyNotifyHighValueWithdrawalCents:        {100_000, 100_000_000}, // Q1 000 – Q1 000 000
+	domain.ParamKeyNotifyPendingReminderIntervalSec:      {1_800, 86_400},        // 30 min – 24 h
+	domain.ParamKeyNotifyPredictionDeadlineLeadMin1:      {5, 120},               // 5 min – 2 h
+	domain.ParamKeyNotifyPredictionDeadlineLeadMin2:      {5, 60},                // 5 min – 1 h
+	domain.ParamKeyNotifyPredictionMissingLeadMin:        {15, 240},              // 15 min – 4 h
+	domain.ParamKeyNotifySSEHeartbeatIntervalSec:         {5, 300},               // 5 s – 5 min
+	domain.ParamKeyNotifyWebPushTTLSec:                   {3_600, 2_592_000},     // 1 h – 30 days
+	domain.ParamKeyNotifyBankTransferQueueDepthThreshold: {1, 500},               // 1 – 500 pending transfers
 }
 
 // validateParamConstraints enforces per-key business-rule bounds for int params.

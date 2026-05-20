@@ -15,13 +15,30 @@ const (
 	detailKeyRequestID = "Request ID"
 )
 
+// emailDetail is a single key-value row in the admin email detail table.
+// Using a slice (not a map) guarantees deterministic row order across invocations.
+type emailDetail struct {
+	Key   string
+	Value string
+}
+
+// details builds an ordered emailDetail slice from alternating key/value pairs.
+// Callers that need conditional rows may append to the returned slice.
+func details(pairs ...string) []emailDetail {
+	d := make([]emailDetail, 0, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		d = append(d, emailDetail{Key: pairs[i], Value: pairs[i+1]})
+	}
+	return d
+}
+
 // emailData is the bag of values injected into every admin email template.
 type emailData struct {
 	EventType   string
 	Subject     string
 	Headline    string
 	Body        string
-	Details     map[string]string
+	Details     []emailDetail
 	GeneratedAt string
 }
 
@@ -58,7 +75,7 @@ var baseTemplate = template.Must(template.New("base").Parse(`<!DOCTYPE html>
     {{if .Details}}
     <div class="details">
       <table>
-        {{range $k,$v := .Details}}<tr><td>{{$k}}</td><td>{{$v}}</td></tr>{{end}}
+        {{range .Details}}<tr><td>{{.Key}}</td><td>{{.Value}}</td></tr>{{end}}
       </table>
     </div>
     {{end}}
@@ -98,12 +115,12 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[ACTION REQUIRED] Bank transfer proof awaiting review",
 			Headline:  "New bank transfer proof submitted",
 			Body:      "A user has submitted a bank transfer proof that requires your review before the balance is credited.",
-			Details: map[string]string{
-				"Proof ID":      fmt.Sprintf("%d", p.ProofID),
-				detailKeyUserID: fmt.Sprintf("%d", p.UserID),
-				"Amount":        formatCents(p.AmountCents, p.Currency),
-				"Submitted":     now,
-			},
+			Details: details(
+				"Proof ID", fmt.Sprintf("%d", p.ProofID),
+				detailKeyUserID, fmt.Sprintf("%d", p.UserID),
+				"Amount", formatCents(p.AmountCents, p.Currency),
+				"Submitted", now,
+			),
 			GeneratedAt: now,
 		}
 
@@ -115,12 +132,12 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[URGENT] Bank transfer proof overdue — no admin action in 12+ hours",
 			Headline:  "Bank transfer proof has been waiting too long",
 			Body:      "A bank transfer proof has exceeded the stale threshold without admin review. Immediate action is required.",
-			Details: map[string]string{
-				"Proof ID":      fmt.Sprintf("%d", p.ProofID),
-				detailKeyUserID: fmt.Sprintf("%d", p.UserID),
-				"Amount":        formatCents(p.AmountCents, p.Currency),
-				"Pending Since": p.PendingSince,
-			},
+			Details: details(
+				"Proof ID", fmt.Sprintf("%d", p.ProofID),
+				detailKeyUserID, fmt.Sprintf("%d", p.UserID),
+				"Amount", formatCents(p.AmountCents, p.Currency),
+				"Pending Since", p.PendingSince,
+			),
 			GeneratedAt: now,
 		}
 
@@ -132,9 +149,9 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[ACTION REQUIRED] Bank transfer queue is backing up",
 			Headline:  "Multiple bank transfer proofs awaiting review",
 			Body:      "The bank transfer review queue has reached a high depth. Please process pending proofs to avoid further delays.",
-			Details: map[string]string{
-				"Queue Depth": fmt.Sprintf("%d", p.QueueDepth),
-			},
+			Details: details(
+				"Queue Depth", fmt.Sprintf("%d", p.QueueDepth),
+			),
 			GeneratedAt: now,
 		}
 
@@ -148,12 +165,12 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[ACTION REQUIRED] Withdrawal request awaiting approval",
 			Headline:  "New withdrawal request submitted",
 			Body:      "A user has submitted a withdrawal request that requires admin approval.",
-			Details: map[string]string{
-				detailKeyRequestID: fmt.Sprintf("%d", p.RequestID),
-				detailKeyUserID:    fmt.Sprintf("%d", p.UserID),
-				"Amount":           formatCents(p.AmountCents, p.Currency),
-				"Submitted":        now,
-			},
+			Details: details(
+				detailKeyRequestID, fmt.Sprintf("%d", p.RequestID),
+				detailKeyUserID, fmt.Sprintf("%d", p.UserID),
+				"Amount", formatCents(p.AmountCents, p.Currency),
+				"Submitted", now,
+			),
 			GeneratedAt: now,
 		}
 
@@ -165,12 +182,12 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[URGENT] Withdrawal request overdue — no admin action in 24+ hours",
 			Headline:  "Withdrawal request has been waiting too long",
 			Body:      "A withdrawal request has exceeded the stale threshold without admin action. Immediate review is required.",
-			Details: map[string]string{
-				detailKeyRequestID: fmt.Sprintf("%d", p.RequestID),
-				detailKeyUserID:    fmt.Sprintf("%d", p.UserID),
-				"Amount":           formatCents(p.AmountCents, p.Currency),
-				"Pending Since":    p.PendingSince,
-			},
+			Details: details(
+				detailKeyRequestID, fmt.Sprintf("%d", p.RequestID),
+				detailKeyUserID, fmt.Sprintf("%d", p.UserID),
+				"Amount", formatCents(p.AmountCents, p.Currency),
+				"Pending Since", p.PendingSince,
+			),
 			GeneratedAt: now,
 		}
 
@@ -182,11 +199,11 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[CRITICAL] High-value withdrawal request requires immediate review",
 			Headline:  "High-value withdrawal detected",
 			Body:      "A withdrawal request above the high-value threshold has been submitted. This event requires heightened scrutiny before approval.",
-			Details: map[string]string{
-				detailKeyRequestID: fmt.Sprintf("%d", p.RequestID),
-				detailKeyUserID:    fmt.Sprintf("%d", p.UserID),
-				"Amount":           formatCents(p.AmountCents, p.Currency),
-			},
+			Details: details(
+				detailKeyRequestID, fmt.Sprintf("%d", p.RequestID),
+				detailKeyUserID, fmt.Sprintf("%d", p.UserID),
+				"Amount", formatCents(p.AmountCents, p.Currency),
+			),
 			GeneratedAt: now,
 		}
 
@@ -200,11 +217,11 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[CRITICAL] Circuit breaker opened — " + p.Component,
 			Headline:  "Circuit breaker is OPEN",
 			Body:      "A circuit breaker has opened, indicating repeated failures in a system component. Downstream operations are degraded.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-				"Severity":  p.Severity,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+				"Severity", p.Severity,
+			),
 			GeneratedAt: now,
 		}
 
@@ -216,11 +233,11 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[CRITICAL] Balance ledger mismatch detected — financial integrity at risk",
 			Headline:  "Balance ledger integrity check failed",
 			Body:      "The balance ledger consistency check has detected a mismatch. This is a P0 financial integrity issue requiring immediate investigation.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-				"Severity":  p.Severity,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+				"Severity", p.Severity,
+			),
 			GeneratedAt: now,
 		}
 
@@ -232,10 +249,10 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[SECURITY] Webhook signature verification failed",
 			Headline:  "Invalid webhook signature detected",
 			Body:      "An incoming webhook failed signature verification. This could indicate a replay attack or misconfiguration.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+			),
 			GeneratedAt: now,
 		}
 
@@ -247,10 +264,10 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[SECURITY] Repeated webhook signature failures",
 			Headline:  "Multiple webhook signature failures in succession",
 			Body:      "Repeated webhook signature verification failures suggest a potential attack or a broken provider configuration.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+			),
 			GeneratedAt: now,
 		}
 
@@ -262,10 +279,10 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[ACTION REQUIRED] Payment dispute reported",
 			Headline:  "A payment dispute has been raised",
 			Body:      "A user or payment provider has raised a dispute on a payment. Please review and respond within the dispute window.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+			),
 			GeneratedAt: now,
 		}
 
@@ -274,21 +291,19 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 	case notification.EventAdminPendingReminder:
 		var p notification.AdminPendingReminderPayload
 		_ = entry.DecodePayload(&p)
+		d := details(
+			"Pending Transfers", fmt.Sprintf("%d", p.PendingTransfers),
+			"Pending Withdrawals", fmt.Sprintf("%d", p.PendingWithdrawals),
+		)
+		if p.OldestPendingSince != "" {
+			d = append(d, emailDetail{Key: "Oldest Pending Since", Value: p.OldestPendingSince})
+		}
 		return emailData{
-			EventType: et,
-			Subject:   "[ACTION REQUIRED] Pending items awaiting admin review",
-			Headline:  "Periodic pending-items reminder",
-			Body:      fmt.Sprintf("%d bank transfer proof(s) and %d withdrawal request(s) are awaiting your review.", p.PendingTransfers, p.PendingWithdrawals),
-			Details: func() map[string]string {
-				d := map[string]string{
-					"Pending Transfers":   fmt.Sprintf("%d", p.PendingTransfers),
-					"Pending Withdrawals": fmt.Sprintf("%d", p.PendingWithdrawals),
-				}
-				if p.OldestPendingSince != "" {
-					d["Oldest Pending Since"] = p.OldestPendingSince
-				}
-				return d
-			}(),
+			EventType:   et,
+			Subject:     "[ACTION REQUIRED] Pending items awaiting admin review",
+			Headline:    "Periodic pending-items reminder",
+			Body:        fmt.Sprintf("%d bank transfer proof(s) and %d withdrawal request(s) are awaiting your review.", p.PendingTransfers, p.PendingWithdrawals),
+			Details:     d,
 			GeneratedAt: now,
 		}
 
@@ -300,41 +315,39 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   fmt.Sprintf("[DAILY SUMMARY] Operations summary for %s", p.Date),
 			Headline:  "Daily operations summary",
 			Body:      fmt.Sprintf("Here is the operations summary for %s.", p.Date),
-			Details: map[string]string{
-				"Date":                p.Date,
-				"New Users":           fmt.Sprintf("%d", p.NewUsers),
-				"New Transfers":       fmt.Sprintf("%d", p.NewTransfers),
-				"Approved Transfers":  fmt.Sprintf("%d", p.ApprovedTransfers),
-				"Total Credited":      formatCents(p.TotalCreditedCents, "GTQ"),
-				"New Withdrawals":     fmt.Sprintf("%d", p.NewWithdrawals),
-				"Pending Transfers":   fmt.Sprintf("%d", p.PendingTransfers),
-				"Pending Withdrawals": fmt.Sprintf("%d", p.PendingWithdrawals),
-			},
+			Details: details(
+				"Date", p.Date,
+				"New Users", fmt.Sprintf("%d", p.NewUsers),
+				"New Transfers", fmt.Sprintf("%d", p.NewTransfers),
+				"Approved Transfers", fmt.Sprintf("%d", p.ApprovedTransfers),
+				"Total Credited", formatCents(p.TotalCreditedCents, "GTQ"),
+				"New Withdrawals", fmt.Sprintf("%d", p.NewWithdrawals),
+				"Pending Transfers", fmt.Sprintf("%d", p.PendingTransfers),
+				"Pending Withdrawals", fmt.Sprintf("%d", p.PendingWithdrawals),
+			),
 			GeneratedAt: now,
 		}
 
 	case notification.EventAdminWeeklyReport:
 		var p notification.AdminWeeklyReportPayload
 		_ = entry.DecodePayload(&p)
+		d := details(
+			"Period", fmt.Sprintf("%s – %s", p.WeekStartDate, p.WeekEndDate),
+			"Total Revenue", formatCents(p.TotalRevenueCents, "GTQ"),
+			"New Users", fmt.Sprintf("%d", p.NewUsers),
+			"Active Quinielas", fmt.Sprintf("%d", p.ActiveQuinielas),
+			"Total Withdrawals", fmt.Sprintf("%d", p.TotalWithdrawals),
+			"Withdrawal Amount", formatCents(p.WithdrawalCents, "GTQ"),
+		)
+		if p.TopGroupName != "" {
+			d = append(d, emailDetail{Key: "Top Group", Value: fmt.Sprintf("%s (%d pts)", p.TopGroupName, p.TopGroupPoints)})
+		}
 		return emailData{
-			EventType: et,
-			Subject:   fmt.Sprintf("[WEEKLY REPORT] %s – %s", p.WeekStartDate, p.WeekEndDate),
-			Headline:  "Weekly operations report",
-			Body:      fmt.Sprintf("Weekly summary for the period %s to %s.", p.WeekStartDate, p.WeekEndDate),
-			Details: func() map[string]string {
-				d := map[string]string{
-					"Period":            fmt.Sprintf("%s – %s", p.WeekStartDate, p.WeekEndDate),
-					"Total Revenue":     formatCents(p.TotalRevenueCents, "GTQ"),
-					"New Users":         fmt.Sprintf("%d", p.NewUsers),
-					"Active Quinielas":  fmt.Sprintf("%d", p.ActiveQuinielas),
-					"Total Withdrawals": fmt.Sprintf("%d", p.TotalWithdrawals),
-					"Withdrawal Amount": formatCents(p.WithdrawalCents, "GTQ"),
-				}
-				if p.TopGroupName != "" {
-					d["Top Group"] = fmt.Sprintf("%s (%d pts)", p.TopGroupName, p.TopGroupPoints)
-				}
-				return d
-			}(),
+			EventType:   et,
+			Subject:     fmt.Sprintf("[WEEKLY REPORT] %s – %s", p.WeekStartDate, p.WeekEndDate),
+			Headline:    "Weekly operations report",
+			Body:        fmt.Sprintf("Weekly summary for the period %s to %s.", p.WeekStartDate, p.WeekEndDate),
+			Details:     d,
 			GeneratedAt: now,
 		}
 
@@ -348,12 +361,12 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   fmt.Sprintf("[ACTION REQUIRED] Match result not entered — %s vs %s", p.HomeTeam, p.AwayTeam),
 			Headline:  "Match result awaiting entry",
 			Body:      fmt.Sprintf("%s vs %s finished %d minutes ago but no result has been recorded. Predictions cannot be scored until the result is entered.", p.HomeTeam, p.AwayTeam, p.MinutesElapsed),
-			Details: map[string]string{
-				"Match ID":        fmt.Sprintf("%d", p.MatchID),
-				"Teams":           fmt.Sprintf("%s vs %s", p.HomeTeam, p.AwayTeam),
-				"Finished At":     p.FinishedAt.UTC().Format(time.RFC3339),
-				"Minutes Elapsed": fmt.Sprintf("%d", p.MinutesElapsed),
-			},
+			Details: details(
+				"Match ID", fmt.Sprintf("%d", p.MatchID),
+				"Teams", fmt.Sprintf("%s vs %s", p.HomeTeam, p.AwayTeam),
+				"Finished At", p.FinishedAt.UTC().Format(time.RFC3339),
+				"Minutes Elapsed", fmt.Sprintf("%d", p.MinutesElapsed),
+			),
 			GeneratedAt: now,
 		}
 
@@ -365,11 +378,11 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[CRITICAL] Scoring discrepancy detected — manual review required",
 			Headline:  "Scoring calculation discrepancy",
 			Body:      "A discrepancy has been detected in the scoring calculation. Affected predictions may carry incorrect points. Immediate investigation is required to preserve leaderboard integrity.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-				"Severity":  p.Severity,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+				"Severity", p.Severity,
+			),
 			GeneratedAt: now,
 		}
 
@@ -381,10 +394,10 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[ACTION REQUIRED] Quiniela group reported by a user",
 			Headline:  "User report filed against a group",
 			Body:      "A user has reported a quiniela group for a potential policy violation. Please review the group and take appropriate action within the required response window.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+			),
 			GeneratedAt: now,
 		}
 
@@ -398,31 +411,31 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[WARNING] Circuit breaker in half-open state — " + p.Component,
 			Headline:  "Circuit breaker transitioning to half-open",
 			Body:      "A circuit breaker has entered the half-open state, indicating cautious recovery from a failure period. Monitor closely — further failures will re-open the breaker and resume degraded operation.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-				"Severity":  p.Severity,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+				"Severity", p.Severity,
+			),
 			GeneratedAt: now,
 		}
 
 	case notification.EventSystemTxRetryExhausted:
 		var p notification.SystemAlertPayload
 		_ = entry.DecodePayload(&p)
-		details := map[string]string{
-			"Component": p.Component,
-			"Detail":    p.Detail,
-			"Severity":  p.Severity,
-		}
+		d := details(
+			"Component", p.Component,
+			"Detail", p.Detail,
+			"Severity", p.Severity,
+		)
 		if len(p.AffectedIDs) > 0 {
-			details["Affected IDs"] = fmt.Sprint(p.AffectedIDs)
+			d = append(d, emailDetail{Key: "Affected IDs", Value: fmt.Sprint(p.AffectedIDs)})
 		}
 		return emailData{
 			EventType:   et,
 			Subject:     "[CRITICAL] Transaction retry limit exhausted — potential data loss",
 			Headline:    "Transaction retry attempts exhausted",
 			Body:        "A database transaction has exhausted all retry attempts and was abandoned. Data integrity may be at risk. Immediate investigation is required to determine whether any domain writes were lost.",
-			Details:     details,
+			Details:     d,
 			GeneratedAt: now,
 		}
 
@@ -434,10 +447,10 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[SECURITY] Suspected rate limit abuse detected",
 			Headline:  "Abnormal request rate detected",
 			Body:      "A client has triggered the rate limiter at an unusually high frequency, suggesting automated abuse or a misconfigured integration. Review the client and consider blocking the source.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+			),
 			GeneratedAt: now,
 		}
 
@@ -449,10 +462,10 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[WARNING] Idempotency key collision detected",
 			Headline:  "Duplicate request with conflicting payload",
 			Body:      "Two requests were received with the same idempotency key but differing payloads, indicating a potential client bug or replay attack. The conflicting request was rejected. No data was modified.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+			),
 			GeneratedAt: now,
 		}
 
@@ -464,11 +477,11 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:   "[CRITICAL] File storage service unavailable",
 			Headline:  "File store is unreachable",
 			Body:      "The file storage service is unavailable. Proof uploads and all file-dependent operations are currently failing. Immediate action is required to restore service.",
-			Details: map[string]string{
-				"Component": p.Component,
-				"Detail":    p.Detail,
-				"Severity":  p.Severity,
-			},
+			Details: details(
+				"Component", p.Component,
+				"Detail", p.Detail,
+				"Severity", p.Severity,
+			),
 			GeneratedAt: now,
 		}
 
@@ -480,7 +493,7 @@ func buildEmailData(entry *notification.OutboxEntry) emailData {
 			Subject:     "[ADMIN ALERT] " + et,
 			Headline:    "Admin notification: " + et,
 			Body:        "An admin-level event has been raised. Please review the details below.",
-			Details:     map[string]string{"Event Type": et, "Aggregate ID": entry.AggregateID},
+			Details:     details("Event Type", et, "Aggregate ID", entry.AggregateID),
 			GeneratedAt: now,
 		}
 	}

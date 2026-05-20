@@ -9,6 +9,5 @@ WHERE key IN (
     'notify.prediction_missing_lead_min',
     'notify.admin_emails',
     'notify.web_push_vapid_public_key',
-    'notify.web_push_vapid_private_key',
     'notify.web_push_vapid_subject'
 );

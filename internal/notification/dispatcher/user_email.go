@@ -11,6 +11,7 @@ import (
 
 	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/unsubscribe"
 )
 
 // UserEmailResolver resolves the email address and display name for a user by ID.
@@ -22,13 +23,14 @@ type UserEmailResolver interface {
 
 // userEmailData is the bag of values injected into the user-facing email template.
 type userEmailData struct {
-	Name        string
-	Subject     string
-	Headline    string
-	Body        string
-	ActionURL   string
-	ActionLabel string
-	GeneratedAt string
+	Name           string
+	Subject        string
+	Headline       string
+	Body           string
+	ActionURL      string
+	ActionLabel    string
+	UnsubscribeURL string // empty omits the unsubscribe link from the footer
+	GeneratedAt    string
 }
 
 var userBaseTemplate = template.Must(template.New("user-base").Parse(`<!DOCTYPE html>
@@ -47,6 +49,7 @@ var userBaseTemplate = template.Must(template.New("user-base").Parse(`<!DOCTYPE 
   .content p{color:#444;line-height:1.6}
   .cta{display:inline-block;margin-top:24px;padding:12px 24px;background:#e74c3c;color:#fff;text-decoration:none;border-radius:4px;font-weight:700;font-size:14px}
   .footer{background:#f8f9fa;padding:16px 32px;font-size:12px;color:#888;text-align:center}
+  .footer a{color:#888;text-decoration:underline}
 </style>
 </head>
 <body>
@@ -59,7 +62,10 @@ var userBaseTemplate = template.Must(template.New("user-base").Parse(`<!DOCTYPE 
     <p>{{.Body}}</p>
     {{if .ActionURL}}<a class="cta" href="{{.ActionURL}}">{{.ActionLabel}}</a>{{end}}
   </div>
-  <div class="footer">Sent at {{.GeneratedAt}} &bull; You are receiving this because you have an account on World Cup Quiniela.</div>
+  <div class="footer">
+    Sent at {{.GeneratedAt}} &bull; You are receiving this because you have an account on World Cup Quiniela.
+    {{if .UnsubscribeURL}}&bull; <a href="{{.UnsubscribeURL}}">Unsubscribe from emails</a>{{end}}
+  </div>
 </div>
 </body>
 </html>`))
@@ -79,6 +85,11 @@ func (d *UserDispatcher) deliverEmail(
 		return
 	}
 
+	// Honour the user's global email opt-out (one-click unsubscribe link).
+	if opted, _ := d.prefRepo.GlobalEmailOptedOut(ctx, userID); opted {
+		return
+	}
+
 	toAddr, name, err := d.emailResolver.ResolveEmailByID(ctx, userID)
 	if err != nil {
 		log.Warn("user dispatcher: resolve user email failed",
@@ -88,7 +99,13 @@ func (d *UserDispatcher) deliverEmail(
 		return
 	}
 
-	subject, html, err := renderUserEmail(content, name)
+	unsubURL := ""
+	if d.unsubscribeSecret != "" && d.appBaseURL != "" {
+		tok := unsubscribe.SignToken(userID, d.unsubscribeSecret, timeNow())
+		unsubURL = d.appBaseURL + "/api/v1/notifications/unsubscribe?token=" + tok
+	}
+
+	subject, html, err := renderUserEmail(content, name, unsubURL)
 	if err != nil {
 		log.Warn("user dispatcher: render user email failed", zap.Error(err))
 		return
@@ -115,9 +132,13 @@ func (d *UserDispatcher) deliverEmail(
 	}
 }
 
+// timeNow is a package-level variable pointing to time.Now, allowing tests
+// to inject a fixed clock when they need deterministic token expiry.
+var timeNow = time.Now
+
 // renderUserEmail returns the subject and rendered HTML body for a user event.
-func renderUserEmail(content userContent, recipientName string) (subject, html string, err error) {
-	data := buildUserEmailData(content, recipientName)
+func renderUserEmail(content userContent, recipientName, unsubURL string) (subject, html string, err error) {
+	data := buildUserEmailData(content, recipientName, unsubURL)
 	var buf bytes.Buffer
 	if tmplErr := userBaseTemplate.Execute(&buf, data); tmplErr != nil {
 		return "", "", fmt.Errorf("dispatcher: render user email: %w", tmplErr)
@@ -125,18 +146,19 @@ func renderUserEmail(content userContent, recipientName string) (subject, html s
 	return data.Subject, buf.String(), nil
 }
 
-func buildUserEmailData(content userContent, name string) userEmailData {
+func buildUserEmailData(content userContent, name, unsubURL string) userEmailData {
 	greeting := name
 	if greeting == "" {
 		greeting = "there"
 	}
 	return userEmailData{
-		Name:        greeting,
-		Subject:     content.title,
-		Headline:    content.title,
-		Body:        fmt.Sprintf("Hi %s, %s", greeting, content.body),
-		ActionURL:   content.actionURL,
-		ActionLabel: "Open app",
-		GeneratedAt: time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
+		Name:           greeting,
+		Subject:        content.title,
+		Headline:       content.title,
+		Body:           fmt.Sprintf("Hi %s, %s", greeting, content.body),
+		ActionURL:      content.actionURL,
+		ActionLabel:    "Open app",
+		UnsubscribeURL: unsubURL,
+		GeneratedAt:    time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
 	}
 }

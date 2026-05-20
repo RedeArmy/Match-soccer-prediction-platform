@@ -82,19 +82,14 @@ VALUES
     ),
 
     -- ── VAPID keys for Web Push ───────────────────────────────────────────────
+    -- Note: the private key is intentionally absent — it must be injected via
+    -- WCQ_WEBPUSH_VAPIDPRIVATEKEY and must never be stored in system_params.
     (
         'notify.web_push_vapid_public_key',
         '', '',
         'string', 'notify',
         TRUE,
         'VAPID public key (base64url-encoded P-256 point, RFC 8292) used to authenticate Web Push subscription requests. An empty value disables Web Push delivery. Changeable at runtime.'
-    ),
-    (
-        'notify.web_push_vapid_private_key',
-        '', '',
-        'string', 'notify',
-        TRUE,
-        'VAPID private key (secret). Inject via environment variable or secrets manager; do not store in source control. An empty value disables Web Push delivery. Changeable at runtime.'
     ),
     (
         'notify.web_push_vapid_subject',

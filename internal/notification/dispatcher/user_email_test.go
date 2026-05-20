@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
@@ -254,5 +255,63 @@ func TestUserDispatcher_NoEmailResolver_SkipsEmail(t *testing.T) {
 	}
 	if called {
 		t.Error("HTTP server was called when EmailResolver is nil — expected no email attempt")
+	}
+}
+
+func TestUserDispatcher_GlobalOptOut_SkipsEmail(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Eve"}
+	notifRepo := stubNotifRepo{inserted: true}
+	// channel_email=true but the user has globally opted out of all emails.
+	prefRepo := stubPrefRepo{
+		pref:         &domain.NotificationPreference{ChannelEmail: true},
+		globalOptOut: true,
+	}
+
+	d := newMinimalUserDispatcher(notifRepo, prefRepo, mailer, resolver, &recordingDLQRepo{})
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 0 {
+		t.Errorf("emails sent: got %d; want 0 (global email opt-out)", len(mailer.messages))
+	}
+}
+
+func TestUserDispatcher_UnsubscribeURL_AppearsInEmail(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Frank"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true},
+	}
+
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:         &notifRepo,
+		PrefRepo:          &prefRepo,
+		DLQRepo:           &recordingDLQRepo{},
+		Mailer:            mailer,
+		EmailResolver:     resolver,
+		FromAddr:          "noreply@test.com",
+		UnsubscribeSecret: "test-secret",
+		AppBaseURL:        "https://quiniela.example.com",
+		Log:               zap.NewNop(),
+	})
+
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+	html := mailer.messages[0].HTML
+	if !strings.Contains(html, "/api/v1/notifications/unsubscribe?token=") {
+		t.Error("rendered HTML should contain an unsubscribe link; none found")
+	}
+	if !strings.Contains(html, "Unsubscribe from emails") {
+		t.Error("rendered HTML should contain unsubscribe anchor text")
 	}
 }
