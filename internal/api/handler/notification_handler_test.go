@@ -216,10 +216,15 @@ func TestNotifHandler_GetStream_Connected_ReceivesEvent(t *testing.T) {
 		ctx := middleware.ContextWithUser(r.Context(), &domain.User{ID: callerID})
 		nh.GetStream(w, r.WithContext(ctx))
 	}))
-	defer srv.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	t.Cleanup(func() {
+		cancel()
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = srv.Config.Shutdown(shutCtx)
+		srv.Close()
+	})
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
 	resp, err := http.DefaultClient.Do(req) //nolint:noctx
@@ -238,11 +243,7 @@ func TestNotifHandler_GetStream_Connected_ReceivesEvent(t *testing.T) {
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		if scanner.Text() == "event: connected" {
-			// Synchronous broadcast: the hub channel is buffered (size 32) so this
-			// never blocks, and it avoids spawning a goroutine that could outlive
-			// the test and trigger the race detector.
 			h.Broadcast(callerID, hub.Notification{ID: 1, Title: "ping"})
-			cancel()
 			return
 		}
 	}
@@ -262,10 +263,15 @@ func TestNotifHandler_GetStream_Broadcast_DeliverData(t *testing.T) {
 		ctx := middleware.ContextWithUser(r.Context(), &domain.User{ID: callerID})
 		nh.GetStream(w, r.WithContext(ctx))
 	}))
-	defer srv.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	t.Cleanup(func() {
+		cancel()
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = srv.Config.Shutdown(shutCtx)
+		srv.Close()
+	})
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
 	resp, err := http.DefaultClient.Do(req) //nolint:noctx
@@ -284,7 +290,6 @@ func TestNotifHandler_GetStream_Broadcast_DeliverData(t *testing.T) {
 			continue
 		}
 		if connected && strings.HasPrefix(line, "data:") && strings.Contains(line, "hello") {
-			cancel()
 			return
 		}
 	}
@@ -473,6 +478,52 @@ func TestNotifHandler_UpdatePreferences_MissingEventType_400(t *testing.T) {
 	h.UpdatePreferences(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d", w.Code)
+	}
+}
+
+// ── GetVAPIDPublicKey ─────────────────────────────────────────────────────────
+
+type fixedStringParamSvc struct {
+	stubAdminParamSvc
+	key   string
+	value string
+}
+
+func (s *fixedStringParamSvc) GetString(_ context.Context, k string, d string) string {
+	if k == s.key {
+		return s.value
+	}
+	return d
+}
+
+func TestNotifHandler_GetVAPIDPublicKey_OK(t *testing.T) {
+	t.Parallel()
+	const fakeKey = "BNcRdreALRFXTkOOUHK1EtK2wtwe6Cg-example-key"
+	ps := &fixedStringParamSvc{key: domain.ParamKeyNotifyWebPushVAPIDPublicKey, value: fakeKey}
+	h := handler.NewNotificationHandler(&stubUserNotifRepo{}, &stubNotifPrefRepo{}, &stubNotifPushRepo{}, hub.New(), ps, zaptest.NewLogger(t))
+
+	w := httptest.NewRecorder()
+	h.GetVAPIDPublicKey(w, httptest.NewRequest(http.MethodGet, "/push/vapid-public-key", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf(fmtExpect200, w.Code)
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["vapid_public_key"] != fakeKey {
+		t.Errorf("vapid_public_key: got %q; want %q", resp["vapid_public_key"], fakeKey)
+	}
+}
+
+func TestNotifHandler_GetVAPIDPublicKey_NotConfigured_500(t *testing.T) {
+	t.Parallel()
+	h := newNotifHandler(t, nil, nil, nil)
+	w := httptest.NewRecorder()
+	h.GetVAPIDPublicKey(w, httptest.NewRequest(http.MethodGet, "/push/vapid-public-key", nil))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf(fmtExpect500, w.Code)
 	}
 }
 

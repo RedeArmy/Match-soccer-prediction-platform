@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/email"
@@ -197,5 +198,20 @@ func TestNewResendClient_ReturnsNonNil(t *testing.T) {
 	c := email.NewResendClient("test-api-key")
 	if c == nil {
 		t.Error("NewResendClient returned nil")
+	}
+}
+
+func TestRetryAfterError_Error_ContainsDuration(t *testing.T) {
+	t.Parallel()
+
+	err := &email.RetryAfterError{RetryAfter: 30}
+	got := err.Error()
+	if got == "" {
+		t.Error("Error() must not return empty string")
+	}
+	// The message must mention the retry duration so callers can log it usefully.
+	const want = "30"
+	if !strings.Contains(got, want) {
+		t.Errorf("Error() = %q; want it to contain %q", got, want)
 	}
 }

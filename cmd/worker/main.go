@@ -51,6 +51,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
 	"github.com/rede/world-cup-quiniela/internal/notification/escalation"
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
+	"github.com/rede/world-cup-quiniela/internal/notification/scheduler"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/config"
@@ -266,17 +267,18 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 
 	userDispatcher := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
-		NotifRepo:  notifRepo,
-		PrefRepo:   prefRepo,
-		PushRepo:   pushRepo,
-		DLQRepo:    dlqRepo,
-		Hub:        nil, // hub lives in the API server; cross-process delivery via pg_notify
-		Pusher:     pusher,
-		Mailer:     mailer,
-		FromAddr:   cfg.Email.FromAddress,
-		PgNotifier: &pgPoolNotifier{pool: db},
-		Params:     params,
-		Log:        log,
+		NotifRepo:     notifRepo,
+		PrefRepo:      prefRepo,
+		PushRepo:      pushRepo,
+		DLQRepo:       dlqRepo,
+		Hub:           nil, // hub lives in the API server; cross-process delivery via pg_notify
+		Pusher:        pusher,
+		Mailer:        mailer,
+		EmailResolver: &repoEmailResolver{userRepo: userRepo},
+		FromAddr:      cfg.Email.FromAddress,
+		PgNotifier:    &pgPoolNotifier{pool: db},
+		Params:        params,
+		Log:           log,
 	})
 
 	compositeDispatcher := dispatcher.NewCompositeDispatcher(adminDispatcher, userDispatcher)
@@ -288,6 +290,28 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	escalationScheduler := escalation.NewScheduler(
 		params, transferRepo, withdrawRepo, outboxWriter, escalationInterval, log,
 	)
+
+	// Notification scheduler: prediction deadline reminders, admin digests, match result alerts.
+	tzName := params.GetString(ctx, domain.ParamKeyNotifySchedulerTimezone, domain.DefaultNotifySchedulerTimezone)
+	schedulerLoc, tzErr := time.LoadLocation(tzName)
+	if tzErr != nil {
+		log.Warn("notification scheduler: invalid timezone, falling back to UTC",
+			zap.String("timezone", tzName),
+			zap.Error(tzErr),
+		)
+		schedulerLoc = time.UTC
+	}
+	schedulerStore := repository.NewPostgresSchedulerStore(db)
+	jobs := scheduler.NewJobs(schedulerStore, outboxWriter, log)
+	notifScheduler := scheduler.New(scheduler.Config{
+		Location: schedulerLoc,
+		Log:      log,
+	})
+	notifScheduler.RegisterInterval("prediction.deadline_approaching", 5*time.Minute, jobs.PredictionDeadlineApproaching)
+	notifScheduler.RegisterInterval("admin.match_result_pending", 15*time.Minute, jobs.AdminMatchResultPending)
+	notifScheduler.RegisterInterval("admin.pending_reminder", 4*time.Hour, jobs.AdminPendingReminder)
+	notifScheduler.RegisterDaily("admin.daily_summary", 8, 0, jobs.AdminDailySummary)
+	notifScheduler.RegisterWeekly("admin.weekly_report", time.Monday, 8, 0, jobs.AdminWeeklyReport)
 
 	return startWorker(ctx, workerDeps{
 		cfg:                 cfg,
@@ -305,6 +329,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		outboxRepo:          outboxRepo,
 		outboxDispatcher:    compositeDispatcher,
 		escalationScheduler: escalationScheduler,
+		notifScheduler:      notifScheduler,
 	}, log)
 }
 
@@ -357,6 +382,7 @@ type workerDeps struct {
 	outboxRepo          outbox.Repository
 	outboxDispatcher    outbox.Dispatcher
 	escalationScheduler *escalation.Scheduler
+	notifScheduler      *scheduler.Scheduler
 }
 
 // All parameters are already constructed so this function has no I/O of its
@@ -433,6 +459,17 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		log.Info("escalation scheduler started")
 	}
 
+	// Notification scheduler — prediction deadline reminders, admin digests, match result alerts.
+	var notifSchedDone sync.WaitGroup
+	if deps.notifScheduler != nil {
+		notifSchedDone.Add(1)
+		go func() {
+			defer notifSchedDone.Done()
+			deps.notifScheduler.Run(ctx)
+		}()
+		log.Info("notification scheduler started")
+	}
+
 	var runErr error
 	select {
 	case <-ctx.Done():
@@ -457,6 +494,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	purgeDone.Wait()
 	outboxDone.Wait()
 	escalationDone.Wait()
+	notifSchedDone.Wait()
 	log.Sugar().Info("worker stopped")
 	return runErr
 }
@@ -581,4 +619,22 @@ func handleLiveness(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok","service":"world-cup-quiniela-worker"}`)
+}
+
+// repoEmailResolver adapts repository.UserRepository to the
+// dispatcher.UserEmailResolver interface so UserDispatcher can resolve user
+// email addresses when delivering transactional emails.
+type repoEmailResolver struct {
+	userRepo repository.UserRepository
+}
+
+func (r *repoEmailResolver) ResolveEmailByID(ctx context.Context, userID int) (string, string, error) {
+	u, err := r.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return "", "", err
+	}
+	if u == nil {
+		return "", "", fmt.Errorf("user %d not found", userID)
+	}
+	return u.Email, u.Name, nil
 }

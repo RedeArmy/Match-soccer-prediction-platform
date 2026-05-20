@@ -1,0 +1,258 @@
+package dispatcher_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"go.uber.org/zap"
+
+	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
+
+	"github.com/rede/world-cup-quiniela/internal/domain"
+)
+
+// ── Email resolver stubs ──────────────────────────────────────────────────────
+
+type stubEmailResolver struct {
+	email string
+	name  string
+	err   error
+}
+
+func (s *stubEmailResolver) ResolveEmailByID(_ context.Context, _ int) (string, string, error) {
+	return s.email, s.name, s.err
+}
+
+// ── Mailer stubs ──────────────────────────────────────────────────────────────
+
+type captureMailer struct {
+	messages []infraemail.Message
+	err      error
+}
+
+func (m *captureMailer) Send(_ context.Context, msg infraemail.Message) (string, error) {
+	m.messages = append(m.messages, msg)
+	return "captured-id", m.err
+}
+
+// ── Test helpers ──────────────────────────────────────────────────────────────
+
+// buildPaymentConfirmedEntry returns an outbox entry for EventPaymentConfirmed
+// targeting userID 42.
+func buildPaymentConfirmedEntry() *notification.OutboxEntry {
+	p := notification.PaymentPayload{
+		UserID:      42,
+		PaymentID:   99,
+		AmountCents: 5000,
+		Currency:    "GTQ",
+	}
+	raw, _ := json.Marshal(p)
+	return &notification.OutboxEntry{
+		ID:          1,
+		EventType:   notification.EventPaymentConfirmed,
+		AggregateID: "99",
+		Payload:     raw,
+	}
+}
+
+// buildWithdrawalCompletedEntry returns an outbox entry for EventWithdrawalCompleted
+// targeting userID 42.
+func buildWithdrawalCompletedEntry() *notification.OutboxEntry {
+	p := notification.WithdrawalPayload{
+		UserID:      42,
+		RequestID:   7,
+		AmountCents: 20000,
+		Currency:    "GTQ",
+	}
+	raw, _ := json.Marshal(p)
+	return &notification.OutboxEntry{
+		ID:          2,
+		EventType:   notification.EventWithdrawalCompleted,
+		AggregateID: "7",
+		Payload:     raw,
+	}
+}
+
+// newMinimalUserDispatcher constructs a UserDispatcher with only the fields
+// needed to exercise the email delivery path.
+func newMinimalUserDispatcher(
+	notifRepo stubNotifRepo,
+	prefRepo stubPrefRepo,
+	mailer infraemail.Sender,
+	resolver dispatcher.UserEmailResolver,
+	dlq *recordingDLQRepo,
+) *dispatcher.UserDispatcher {
+	nr := notifRepo
+	return dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:     &nr,
+		PrefRepo:      &prefRepo,
+		DLQRepo:       dlq,
+		Mailer:        mailer,
+		EmailResolver: resolver,
+		FromAddr:      "noreply@test.com",
+		Log:           zap.NewNop(),
+	})
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+func TestUserDispatcher_PaymentConfirmed_DeliversEmail(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "player@test.com", name: "Alice"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{
+			ChannelEmail: true, ChannelPush: false, ChannelInApp: true,
+		},
+	}
+
+	d := newMinimalUserDispatcher(notifRepo, prefRepo, mailer, resolver, &recordingDLQRepo{})
+	entry := buildPaymentConfirmedEntry()
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+	msg := mailer.messages[0]
+	if msg.From != "noreply@test.com" {
+		t.Errorf("From: got %q", msg.From)
+	}
+	if len(msg.To) == 0 || msg.To[0] != "player@test.com" {
+		t.Errorf("To: got %v; want [player@test.com]", msg.To)
+	}
+	if msg.Subject == "" {
+		t.Error("Subject must not be empty")
+	}
+	if msg.HTML == "" {
+		t.Error("HTML must not be empty")
+	}
+}
+
+func TestUserDispatcher_WithdrawalCompleted_DeliversEmail(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "user@test.com", name: "Bob"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{
+			ChannelEmail: true, ChannelPush: false, ChannelInApp: true,
+		},
+	}
+
+	d := newMinimalUserDispatcher(notifRepo, prefRepo, mailer, resolver, &recordingDLQRepo{})
+	entry := buildWithdrawalCompletedEntry()
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+}
+
+func TestUserDispatcher_EmailDisabled_SkipsEmail(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Carol"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{
+			ChannelEmail: false, ChannelPush: false, ChannelInApp: true,
+		},
+	}
+
+	d := newMinimalUserDispatcher(notifRepo, prefRepo, mailer, resolver, &recordingDLQRepo{})
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 0 {
+		t.Errorf("emails sent: got %d; want 0 (channel_email=false)", len(mailer.messages))
+	}
+}
+
+func TestUserDispatcher_ResolverError_NoEmailNoDLQ(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{err: errors.New("user not found")}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true},
+	}
+	dlq := &recordingDLQRepo{}
+
+	d := newMinimalUserDispatcher(notifRepo, prefRepo, mailer, resolver, dlq)
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch must not propagate resolver error: %v", err)
+	}
+	if len(mailer.messages) != 0 {
+		t.Errorf("emails sent: got %d; want 0 (resolver failed)", len(mailer.messages))
+	}
+}
+
+func TestUserDispatcher_MailerError_WritesDLQ(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{err: errors.New("send failed")}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Dan"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true},
+	}
+	dlq := &recordingDLQRepo{}
+
+	d := newMinimalUserDispatcher(notifRepo, prefRepo, mailer, resolver, dlq)
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch must not propagate mailer error: %v", err)
+	}
+	if len(dlq.entries) == 0 {
+		t.Error("expected a DLQ entry for mailer failure; none recorded")
+	}
+}
+
+func TestUserDispatcher_NoEmailResolver_SkipsEmail(t *testing.T) {
+	t.Parallel()
+
+	var called bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	mailer := infraemail.NewResendClientWithBaseURL("key", srv.URL)
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true},
+	}
+
+	// EmailResolver is nil → email skipped silently.
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:     &notifRepo,
+		PrefRepo:      &prefRepo,
+		DLQRepo:       &recordingDLQRepo{},
+		Mailer:        mailer,
+		EmailResolver: nil,
+		FromAddr:      "noreply@test.com",
+		Log:           zap.NewNop(),
+	})
+
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if called {
+		t.Error("HTTP server was called when EmailResolver is nil — expected no email attempt")
+	}
+}
