@@ -153,7 +153,7 @@ function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64  = (base64String + padding).replaceAll('-', '+').replaceAll('_', '/');
   const rawData = atob(base64);
-  return Uint8Array.from(rawData, (c) => c.charCodeAt(0));
+  return Uint8Array.from(rawData, (c) => c.codePointAt(0));
 }
 
 /**
@@ -162,7 +162,7 @@ function urlBase64ToUint8Array(base64String) {
  * auth_key fields.
  */
 function arrayBufferToBase64Url(buffer) {
-  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+  return btoa(String.fromCodePoint(...new Uint8Array(buffer)))
     .replaceAll('+', '-')
     .replaceAll('/', '_')
     .replace(/={1,2}$/, '');
