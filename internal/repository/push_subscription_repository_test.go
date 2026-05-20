@@ -228,6 +228,40 @@ func TestPushSubscriptionRepository_DeleteByEndpoint_CancelledContext_ReturnsErr
 	}
 }
 
+func TestPushSubscriptionRepository_UpdateLastUsed_SetsTimestamp(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresPushSubscriptionRepository(testDB)
+
+	sub := newPushSub(u.ID, "ep-update-last-used")
+	_ = repo.Create(context.Background(), sub)
+
+	if err := repo.UpdateLastUsed(context.Background(), sub.ID); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+}
+
+func TestPushSubscriptionRepository_UpdateLastUsed_Nonexistent_NoError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresPushSubscriptionRepository(testDB)
+
+	if err := repo.UpdateLastUsed(context.Background(), 99999); err != nil {
+		t.Fatalf("expected no error for nonexistent ID, got %v", err)
+	}
+}
+
+func TestPushSubscriptionRepository_UpdateLastUsed_CancelledContext_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresPushSubscriptionRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := repo.UpdateLastUsed(ctx, 1); err == nil {
+		t.Error("expected error for cancelled context, got nil")
+	}
+}
+
 func TestPushSubscriptionRepository_MarkInactive_CancelledContext_ReturnsError(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresPushSubscriptionRepository(testDB)

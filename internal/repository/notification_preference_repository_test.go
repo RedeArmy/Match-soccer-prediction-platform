@@ -183,6 +183,87 @@ func TestNotificationPreferenceRepository_Upsert_CancelledContext_ReturnsError(t
 	}
 }
 
+// ── DisableAllEmail / GlobalEmailOptedOut ─────────────────────────────────────
+
+func TestNotificationPreferenceRepository_DisableAllEmail_SetsGlobalOptOut(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresNotificationPreferenceRepository(testDB)
+
+	if err := repo.DisableAllEmail(context.Background(), u.ID); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	optedOut, err := repo.GlobalEmailOptedOut(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GlobalEmailOptedOut: %v", err)
+	}
+	if !optedOut {
+		t.Error("expected GlobalEmailOptedOut=true after DisableAllEmail")
+	}
+}
+
+func TestNotificationPreferenceRepository_GlobalEmailOptedOut_False_WhenNoSentinel(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresNotificationPreferenceRepository(testDB)
+
+	optedOut, err := repo.GlobalEmailOptedOut(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if optedOut {
+		t.Error("expected GlobalEmailOptedOut=false when no sentinel row exists")
+	}
+}
+
+func TestNotificationPreferenceRepository_DisableAllEmail_Idempotent(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresNotificationPreferenceRepository(testDB)
+
+	for range 3 {
+		if err := repo.DisableAllEmail(context.Background(), u.ID); err != nil {
+			t.Fatalf("DisableAllEmail (idempotent): %v", err)
+		}
+	}
+
+	optedOut, err := repo.GlobalEmailOptedOut(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GlobalEmailOptedOut: %v", err)
+	}
+	if !optedOut {
+		t.Error("expected GlobalEmailOptedOut=true after repeated DisableAllEmail calls")
+	}
+}
+
+func TestNotificationPreferenceRepository_DisableAllEmail_CancelledContext_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresNotificationPreferenceRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := repo.DisableAllEmail(ctx, u.ID); err == nil {
+		t.Error("expected error for cancelled context, got nil")
+	}
+}
+
+func TestNotificationPreferenceRepository_GlobalEmailOptedOut_CancelledContext_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresNotificationPreferenceRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := repo.GlobalEmailOptedOut(ctx, u.ID)
+	if err == nil {
+		t.Error("expected error for cancelled context, got nil")
+	}
+}
+
 func TestNotificationPreferenceRepository_ListByUser_IsolatedByUser(t *testing.T) {
 	cleanTables(t)
 	u1 := seedUser(t)

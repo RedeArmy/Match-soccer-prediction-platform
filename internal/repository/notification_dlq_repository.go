@@ -69,7 +69,10 @@ LIMIT $1
 		}
 		entries = append(entries, e)
 	}
-	return entries, apperrors.Internal(rows.Err())
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return entries, nil
 }
 
 func (r *postgresNotificationDLQRepository) MarkResolved(ctx context.Context, id int64) error {
