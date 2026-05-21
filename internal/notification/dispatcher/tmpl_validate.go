@@ -11,6 +11,11 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
 
+const (
+	sampleQuinielaName = "Mi Quiniela"
+	samplePendingSince = "2026-05-21T08:00:00Z"
+)
+
 // ValidateTemplate checks that a NotificationTemplate is safe to persist for
 // the given event type.  It performs three checks in order:
 //
@@ -122,24 +127,24 @@ func samplePayloadFor(et notification.EventType) json.RawMessage {
 	case notification.EventGroupJoinRequested, notification.EventGroupJoinApproved,
 		notification.EventGroupJoinRejected, notification.EventGroupMemberJoined, notification.EventGroupMemberLeft:
 		v = notification.GroupJoinPayload{
-			QuinielaID: 3, QuinielaName: "Mi Quiniela", MembershipID: 7,
+			QuinielaID: 3, QuinielaName: sampleQuinielaName, MembershipID: 7,
 			UserID: 1, OwnerID: 2,
 		}
 
 	case notification.EventGroupLeaderboardMilestone:
 		v = notification.GroupLeaderboardMilestonePayload{
-			UserID: 1, QuinielaID: 3, QuinielaName: "Mi Quiniela",
+			UserID: 1, QuinielaID: 3, QuinielaName: sampleQuinielaName,
 			NewRank: 2, TotalPoints: 15,
 		}
 
 	case notification.EventGroupDisbanded:
 		v = notification.GroupDisbandedPayload{
-			QuinielaID: 3, QuinielaName: "Mi Quiniela", OwnerID: 2,
+			QuinielaID: 3, QuinielaName: sampleQuinielaName, OwnerID: 2,
 		}
 
 	case notification.EventGroupDeadline24h:
 		v = notification.GroupDeadlinePayload{
-			QuinielaID: 3, QuinielaName: "Mi Quiniela",
+			QuinielaID: 3, QuinielaName: sampleQuinielaName,
 			DeadlineAt: time.Date(2026, 6, 15, 20, 30, 0, 0, time.UTC),
 		}
 
@@ -188,14 +193,14 @@ func samplePayloadFor(et notification.EventType) json.RawMessage {
 		notification.EventAdminBankTransferQueueDepth:
 		v = notification.AdminBankTransferPayload{
 			ProofID: 7, UserID: 1, AmountCents: 12500, Currency: "GTQ",
-			QueueDepth: 5, PendingSince: "2026-05-21T08:00:00Z",
+			QueueDepth: 5, PendingSince: samplePendingSince,
 		}
 
 	case notification.EventAdminWithdrawalPending, notification.EventAdminWithdrawalStale,
 		notification.EventAdminHighValueWithdrawal:
 		v = notification.AdminWithdrawalPayload{
 			RequestID: 15, UserID: 1, AmountCents: 50000, Currency: "GTQ",
-			PendingSince: "2026-05-21T08:00:00Z",
+			PendingSince: samplePendingSince,
 		}
 
 	case notification.EventAdminMatchResultPending:
@@ -208,7 +213,7 @@ func samplePayloadFor(et notification.EventType) json.RawMessage {
 	case notification.EventAdminPendingReminder:
 		v = notification.AdminPendingReminderPayload{
 			PendingTransfers: 3, PendingWithdrawals: 2,
-			OldestPendingSince: "2026-05-21T08:00:00Z",
+			OldestPendingSince: samplePendingSince,
 		}
 
 	case notification.EventAdminDailySummary:
