@@ -337,4 +337,3 @@ func (h *AdminNotificationTemplateHandler) pathParams(w http.ResponseWriter, r *
 	}
 	return eventType, locale, true
 }
-

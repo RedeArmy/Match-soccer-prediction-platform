@@ -302,9 +302,9 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyWebPushTTLSec:                   {3_600, 2_592_000},     // 1 h – 30 days
 	domain.ParamKeyNotifyBankTransferQueueDepthThreshold: {1, 500},               // 1 – 500 pending transfers
 	// Template cache and push payload limits (Phase 5 · migration 000099).
-	domain.ParamKeyNotifyTemplateCacheTTLSec: {30, 3_600},  // 30 s – 1 h
-	domain.ParamKeyNotifyPushTitleMaxChars:   {10, 500},    // 10 – 500 chars
-	domain.ParamKeyNotifyPushBodyMaxChars:    {50, 2_000},  // 50 – 2 000 chars
+	domain.ParamKeyNotifyTemplateCacheTTLSec: {30, 3_600}, // 30 s – 1 h
+	domain.ParamKeyNotifyPushTitleMaxChars:   {10, 500},   // 10 – 500 chars
+	domain.ParamKeyNotifyPushBodyMaxChars:    {50, 2_000}, // 50 – 2 000 chars
 }
 
 // validateParamConstraints enforces per-key business-rule bounds for int params.
