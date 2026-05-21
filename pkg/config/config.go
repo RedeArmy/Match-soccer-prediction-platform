@@ -30,6 +30,7 @@ type Config struct {
 	Tracing     TracingConfig  `mapstructure:"tracing"`
 	Email       EmailConfig    `mapstructure:"email"`
 	N8n         N8nConfig      `mapstructure:"n8n"`
+	WebPush     WebPushConfig  `mapstructure:"webPush"`
 }
 
 // EmailConfig holds credentials for the transactional email provider (Resend).
@@ -46,6 +47,12 @@ type EmailConfig struct {
 	// FromAddress is the sender address stamped on every outgoing email.
 	// Example: "World Cup Quiniela <noreply@quinielamundial.gt>".
 	FromAddress string `mapstructure:"fromAddress"`
+	// UnsubscribeSecret is the HMAC-SHA256 secret used to sign and verify
+	// email unsubscribe tokens (CAN-SPAM / GDPR compliance).
+	// An empty value disables the unsubscribe link in outgoing emails and
+	// the /api/v1/notifications/unsubscribe endpoint returns 500.
+	// Set via WCQ_EMAIL_UNSUBSCRIBESECRET.
+	UnsubscribeSecret string `mapstructure:"unsubscribeSecret"`
 }
 
 // N8nConfig holds the webhook URL for the n8n automation platform.
@@ -58,6 +65,23 @@ type N8nConfig struct {
 	// WebhookURL is the n8n webhook endpoint that receives system-level alert
 	// notifications.  An empty value disables the integration.
 	WebhookURL string `mapstructure:"webhookURL"`
+	// WebhookSecret is the shared secret used to sign outgoing n8n webhook
+	// requests via HMAC-SHA256 (header X-Signature: sha256=<hex>).
+	// An empty value sends unsigned requests and logs a startup warning.
+	// Set via WCQ_N8N_WEBHOOKSECRET.
+	WebhookSecret string `mapstructure:"webhookSecret"`
+}
+
+// WebPushConfig holds secrets required for RFC 8292 Web Push via VAPID.
+//
+// VAPIDPrivateKey is a cryptographic secret and must never be stored in the
+// database or configuration files. Inject it via WCQ_WEBPUSH_VAPIDPRIVATEKEY.
+// The public key and subject are non-secret and live in system_params.
+type WebPushConfig struct {
+	// VAPIDPrivateKey is the base64url-encoded P-256 private key used to sign
+	// VAPID JWT assertions (RFC 8292). An empty value disables Web Push.
+	// Set via WCQ_WEBPUSH_VAPIDPRIVATEKEY.
+	VAPIDPrivateKey string `mapstructure:"vapidPrivateKey"`
 }
 
 // StorageConfig configures the object storage backend used for binary assets
@@ -154,6 +178,11 @@ type ServerConfig struct {
 	ReadTimeout  time.Duration `mapstructure:"readTimeout"`
 	WriteTimeout time.Duration `mapstructure:"writeTimeout"`
 	IdleTimeout  time.Duration `mapstructure:"idleTimeout"`
+	// AppBaseURL is the externally reachable base URL of this service
+	// (e.g. "https://app.quinielamundial.gt"), used to build absolute links
+	// inside outgoing emails.  No trailing slash.
+	// Set via WCQ_SERVER_APPBASEURL.
+	AppBaseURL string `mapstructure:"appBaseURL"`
 }
 
 // DatabaseConfig carries the connection string and pool settings for the

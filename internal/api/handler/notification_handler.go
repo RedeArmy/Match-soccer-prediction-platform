@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,38 +13,46 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
+	"github.com/rede/world-cup-quiniela/internal/notification/unsubscribe"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // NotificationHandler serves the notification inbox, SSE stream, mark-read,
-// preference management, and Web Push subscribe/unsubscribe endpoints.
+// preference management, Web Push subscribe/unsubscribe, and one-click email
+// unsubscribe endpoints.
 type NotificationHandler struct {
-	notifRepo repository.UserNotificationRepository
-	prefRepo  repository.NotificationPreferenceRepository
-	pushRepo  repository.PushSubscriptionRepository
-	hub       *hub.Hub
-	params    service.SystemParamService
-	log       *zap.Logger
+	notifRepo         repository.UserNotificationRepository
+	prefRepo          repository.NotificationPreferenceRepository
+	pushRepo          repository.PushSubscriptionRepository
+	hub               *hub.Hub
+	params            service.SystemParamService
+	unsubscribeSecret string // WCQ_EMAIL_UNSUBSCRIBESECRET; empty disables Unsubscribe endpoint
+	log               *zap.Logger
+}
+
+// NotificationHandlerConfig bundles constructor arguments for NotificationHandler.
+type NotificationHandlerConfig struct {
+	NotifRepo         repository.UserNotificationRepository
+	PrefRepo          repository.NotificationPreferenceRepository
+	PushRepo          repository.PushSubscriptionRepository
+	Hub               *hub.Hub
+	Params            service.SystemParamService
+	UnsubscribeSecret string // WCQ_EMAIL_UNSUBSCRIBESECRET; empty disables Unsubscribe
+	Log               *zap.Logger
 }
 
 // NewNotificationHandler constructs a NotificationHandler.
-func NewNotificationHandler(
-	notifRepo repository.UserNotificationRepository,
-	prefRepo repository.NotificationPreferenceRepository,
-	pushRepo repository.PushSubscriptionRepository,
-	h *hub.Hub,
-	params service.SystemParamService,
-	log *zap.Logger,
-) *NotificationHandler {
+func NewNotificationHandler(cfg NotificationHandlerConfig) *NotificationHandler {
 	return &NotificationHandler{
-		notifRepo: notifRepo,
-		prefRepo:  prefRepo,
-		pushRepo:  pushRepo,
-		hub:       h,
-		params:    params,
-		log:       log,
+		notifRepo:         cfg.NotifRepo,
+		prefRepo:          cfg.PrefRepo,
+		pushRepo:          cfg.PushRepo,
+		hub:               cfg.Hub,
+		params:            cfg.Params,
+		unsubscribeSecret: cfg.UnsubscribeSecret,
+		log:               cfg.Log,
 	}
 }
 
@@ -390,6 +399,43 @@ func (h *NotificationHandler) UnsubscribePush(w http.ResponseWriter, r *http.Req
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ── One-click email unsubscribe ───────────────────────────────────────────────
+
+// Unsubscribe handles GET /api/v1/notifications/unsubscribe?token=<tok>.
+//
+// This endpoint is intentionally unauthenticated — email clients cannot attach
+// an Authorization header when a user clicks a mailto link.  The token is a
+// short-lived HMAC-SHA256 signed value (see internal/notification/unsubscribe)
+// that encodes the user ID and an expiry timestamp; it is validated before any
+// write is performed.
+//
+// On success, a global email opt-out sentinel row is upserted for the user
+// (event_type = '*', channel_email = FALSE).  The dispatcher honours this flag
+// and skips future email delivery for the affected user regardless of per-event
+// preferences.
+func (h *NotificationHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
+	if h.unsubscribeSecret == "" {
+		writeError(w, r, h.log, apperrors.Internal(errors.New("unsubscribe endpoint not configured")))
+		return
+	}
+	tok := r.URL.Query().Get("token")
+	if tok == "" {
+		writeError(w, r, h.log, apperrors.Validation("token is required"))
+		return
+	}
+	userID, err := unsubscribe.VerifyToken(tok, h.unsubscribeSecret)
+	if err != nil {
+		writeError(w, r, h.log, apperrors.Validation("invalid or expired unsubscribe token"))
+		return
+	}
+	if err := h.prefRepo.DisableAllEmail(r.Context(), userID); err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	h.log.Info("email unsubscribe: global opt-out recorded", zap.Int("user_id", userID))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "unsubscribed"})
 }
 
 // ── Converters ────────────────────────────────────────────────────────────────

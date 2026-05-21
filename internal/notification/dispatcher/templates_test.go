@@ -221,6 +221,98 @@ func TestBuildEmailData_AllEventTypes(t *testing.T) {
 	}
 }
 
+// TestBuildEmailData_DetailsOrdering_Deterministic verifies that the detail
+// table rows are rendered in the same order on every invocation, which is
+// guaranteed because Details is a []emailDetail (not a map).
+func TestBuildEmailData_DetailsOrdering_Deterministic(t *testing.T) {
+	t.Parallel()
+
+	entry, err := notification.NewOutboxEntry(
+		notification.EventAdminBankTransferPending,
+		"test", "1",
+		notification.AdminBankTransferPayload{ProofID: 42, UserID: 7, AmountCents: 5000, Currency: "GTQ"},
+	)
+	if err != nil {
+		t.Fatalf("NewOutboxEntry: %v", err)
+	}
+
+	_, html1, _ := renderEmail(entry)
+	_, html2, _ := renderEmail(entry)
+	_, html3, _ := renderEmail(entry)
+
+	if html1 != html2 || html2 != html3 {
+		t.Error("renderEmail output is not deterministic across invocations")
+	}
+
+	// Proof ID must appear before User ID, which must appear before Amount.
+	if p, u, a := strings.Index(html1, "Proof ID"), strings.Index(html1, "User ID"), strings.Index(html1, "Amount"); p >= u || u >= a {
+		t.Errorf("detail rows out of expected order: Proof ID@%d UserID@%d Amount@%d", p, u, a)
+	}
+}
+
+// TestBuildUserContent_ActionURL_PopulatedForKnownEvents verifies that every
+// known event type produces a non-empty, correctly routed action URL and that
+// the default branch (unknown event) does not.
+func TestBuildUserContent_ActionURL_PopulatedForKnownEvents(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		et      notification.EventType
+		payload any
+		want    string
+	}{
+		{notification.EventPredictionConfirmed, notification.PredictionConfirmedPayload{UserID: 1, MatchID: 3}, "/api/v1/predictions/me"},
+		{notification.EventPredictionDeadlineApproach, notification.PredictionDeadlinePayload{UserID: 1, MatchID: 7}, "/api/v1/matches/7"},
+		{notification.EventPredictionMissingReminder, notification.PredictionDeadlinePayload{UserID: 1, MatchID: 8}, "/api/v1/matches/8"},
+		{notification.EventPredictionLocked, notification.PredictionLockedPayload{UserID: 1, MatchID: 9}, "/api/v1/matches/9"},
+		{notification.EventPredictionScored, notification.PredictionScoredPayload{UserID: 1, MatchID: 2}, "/api/v1/predictions/me"},
+		{notification.EventMatchResultEntered, notification.MatchEventPayload{MatchID: 11}, "/api/v1/matches/11"},
+		{notification.EventMatchPostponed, notification.MatchEventPayload{MatchID: 12}, "/api/v1/matches/12"},
+		{notification.EventMatchCancelled, notification.MatchEventPayload{MatchID: 13}, "/api/v1/matches/13"},
+		{notification.EventGroupJoinApproved, notification.GroupJoinPayload{UserID: 1, QuinielaID: 5}, "/api/v1/groups/5"},
+		{notification.EventGroupJoinRejected, notification.GroupJoinPayload{UserID: 1, QuinielaID: 6}, "/api/v1/groups/me"},
+		{notification.EventGroupDisbanded, notification.GroupDisbandedPayload{QuinielaID: 7}, "/api/v1/groups/me"},
+		{notification.EventGroupDeadline24h, notification.GroupDeadlinePayload{QuinielaID: 8}, "/api/v1/groups/8"},
+		{notification.EventGroupLeaderboardMilestone, notification.GroupLeaderboardMilestonePayload{UserID: 1, QuinielaID: 9}, "/api/v1/groups/9/leaderboard"},
+		{notification.EventGroupMemberJoined, notification.GroupJoinPayload{UserID: 2, QuinielaID: 10}, "/api/v1/groups/10/members"},
+		{notification.EventGroupMemberLeft, notification.GroupJoinPayload{UserID: 3, QuinielaID: 10}, "/api/v1/groups/10/members"},
+		{notification.EventPaymentConfirmed, notification.PaymentPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/users/me/balance"},
+		{notification.EventPaymentFailed, notification.PaymentPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/payment-intents"},
+		{notification.EventPaymentBankTransferSubmitted, notification.BankTransferPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/bank-transfers"},
+		{notification.EventPaymentBankTransferApproved, notification.BankTransferPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/users/me/balance"},
+		{notification.EventPaymentBankTransferRejected, notification.BankTransferPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/bank-transfers"},
+		{notification.EventPaymentPendingTimeout, notification.PaymentPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/payment-intents"},
+		{notification.EventWithdrawalRequested, notification.WithdrawalPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/withdrawals"},
+		{notification.EventWithdrawalApproved, notification.WithdrawalPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/withdrawals"},
+		{notification.EventWithdrawalRejected, notification.WithdrawalPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/withdrawals"},
+		{notification.EventWithdrawalProcessing, notification.WithdrawalPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/withdrawals"},
+		{notification.EventWithdrawalCompleted, notification.WithdrawalPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/users/me/balance"},
+		{notification.EventWithdrawalFailed, notification.WithdrawalPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/withdrawals"},
+		{notification.EventWithdrawalPendingTimeout, notification.WithdrawalPayload{UserID: 1, AmountCents: 100, Currency: "GTQ"}, "/api/v1/withdrawals"},
+		{notification.EventAccountWelcome, notification.AccountWelcomePayload{UserID: 1, UserName: "Alice"}, "/api/v1/groups/me"},
+		{notification.EventAccountBalanceCredited, notification.AccountBalancePayload{UserID: 1, AmountCents: 100, BalanceAfter: 500, Currency: "GTQ"}, "/api/v1/users/me/balance"},
+		{notification.EventAccountBalanceDebited, notification.AccountBalancePayload{UserID: 1, AmountCents: 100, BalanceAfter: 400, Currency: "GTQ"}, "/api/v1/users/me/balance"},
+		{notification.EventAccountLowBalance, notification.AccountBalancePayload{UserID: 1, BalanceAfter: 50, Currency: "GTQ"}, "/api/v1/users/me/balance"},
+		// Default branch: unknown event must produce an empty actionURL.
+		{notification.EventType("custom.unknown"), notification.PredictionConfirmedPayload{UserID: 1}, ""},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(string(tc.et), func(t *testing.T) {
+			t.Parallel()
+			entry, err := notification.NewOutboxEntry(tc.et, "test", "1", tc.payload)
+			if err != nil {
+				t.Fatalf("NewOutboxEntry: %v", err)
+			}
+			got := buildUserContent(entry)
+			if got.actionURL != tc.want {
+				t.Errorf("actionURL = %q; want %q", got.actionURL, tc.want)
+			}
+		})
+	}
+}
+
 func TestFormatCents_Zero(t *testing.T) {
 	t.Parallel()
 

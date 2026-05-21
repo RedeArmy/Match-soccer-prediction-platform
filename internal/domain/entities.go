@@ -868,7 +868,10 @@ type NotificationDLQEntry struct {
 	EventType   string
 	Payload     []byte // raw JSON payload from the outbox entry
 	ErrorDetail string
+	Attempts    int
 	CreatedAt   time.Time
+	LastRetryAt *time.Time
+	ResolvedAt  *time.Time
 }
 
 // ── User notifications ────────────────────────────────────────────────────────

@@ -92,4 +92,15 @@ func (r *postgresPushSubscriptionRepository) MarkInactive(ctx context.Context, i
 	return nil
 }
 
+func (r *postgresPushSubscriptionRepository) UpdateLastUsed(ctx context.Context, id int64) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE push_subscriptions SET last_used_at = NOW() WHERE id = $1`,
+		id,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
 var _ PushSubscriptionRepository = (*postgresPushSubscriptionRepository)(nil)

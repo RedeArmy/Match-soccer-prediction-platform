@@ -336,6 +336,11 @@ func (s *Server) Routes() http.Handler {
 	r.With(middleware.PayPalWebhookAuth(s.cfg.Payment.PayPalWebhookID, certFetcher, s.log)).
 		Post("/webhooks/paypal", h.paymentWebhook.HandlePayPal)
 
+	// One-click email unsubscribe — no Clerk auth required; the signed token
+	// provides its own authentication (see internal/notification/unsubscribe).
+	// Registered on the root router before /api/v1 so it bypasses RequireAuth.
+	r.Get("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
+
 	// Idempotency store for payment write endpoints. The in-memory store is
 	// correct for single-process deployments; replace with a Redis-backed store
 	// for multi-replica deployments where reservations must be visible across
@@ -735,7 +740,15 @@ func (s *Server) buildHandlers(
 	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, outboxWriter, auditSvc, s.log)
 
 	return appHandlers{
-		notification:      handler.NewNotificationHandler(notifRepo, prefRepo, pushRepo, s.notifHub, params, s.log),
+		notification: handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+			NotifRepo:         notifRepo,
+			PrefRepo:          prefRepo,
+			PushRepo:          pushRepo,
+			Hub:               s.notifHub,
+			Params:            params,
+			UnsubscribeSecret: s.cfg.Email.UnsubscribeSecret,
+			Log:               s.log,
+		}),
 		match:             handler.NewMatchHandler(matchSvc, s.log),
 		prediction:        handler.NewPredictionHandler(predSvc, s.log),
 		group:             handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),

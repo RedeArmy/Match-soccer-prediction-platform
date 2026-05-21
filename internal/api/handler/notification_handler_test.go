@@ -16,6 +16,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
+	"github.com/rede/world-cup-quiniela/internal/notification/unsubscribe"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -50,9 +51,10 @@ func (s *stubUserNotifRepo) MarkRead(_ context.Context, _ int64, _ int) error { 
 func (s *stubUserNotifRepo) MarkAllRead(_ context.Context, _ int) error       { return s.err }
 
 type stubNotifPrefRepo struct {
-	pref  *domain.NotificationPreference
-	prefs []*domain.NotificationPreference
-	err   error
+	pref         *domain.NotificationPreference
+	prefs        []*domain.NotificationPreference
+	err          error
+	globalOptOut bool
 }
 
 func (s *stubNotifPrefRepo) Get(_ context.Context, _ int, _ string) (*domain.NotificationPreference, error) {
@@ -63,6 +65,12 @@ func (s *stubNotifPrefRepo) ListByUser(_ context.Context, _ int) ([]*domain.Noti
 }
 func (s *stubNotifPrefRepo) Upsert(_ context.Context, _ *domain.NotificationPreference) error {
 	return s.err
+}
+func (s *stubNotifPrefRepo) DisableAllEmail(_ context.Context, _ int) error {
+	return s.err
+}
+func (s *stubNotifPrefRepo) GlobalEmailOptedOut(_ context.Context, _ int) (bool, error) {
+	return s.globalOptOut, s.err
 }
 
 type stubNotifPushRepo struct {
@@ -75,6 +83,7 @@ func (s *stubNotifPushRepo) ListActiveByUser(_ context.Context, _ int) ([]*domai
 }
 func (s *stubNotifPushRepo) DeleteByEndpoint(_ context.Context, _ string) error { return s.err }
 func (s *stubNotifPushRepo) MarkInactive(_ context.Context, _ int64) error      { return s.err }
+func (s *stubNotifPushRepo) UpdateLastUsed(_ context.Context, _ int64) error    { return s.err }
 
 // ── Builder helpers ───────────────────────────────────────────────────────────
 
@@ -89,7 +98,14 @@ func newNotifHandler(t *testing.T, nr *stubUserNotifRepo, pr *stubNotifPrefRepo,
 	if ps == nil {
 		ps = &stubNotifPushRepo{}
 	}
-	return handler.NewNotificationHandler(nr, pr, ps, hub.New(), &stubAdminParamSvc{}, zaptest.NewLogger(t))
+	return handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: nr,
+		PrefRepo:  pr,
+		PushRepo:  ps,
+		Hub:       hub.New(),
+		Params:    &stubAdminParamSvc{},
+		Log:       zaptest.NewLogger(t),
+	})
 }
 
 func notifRequestJSON(method, path, body string) *http.Request {
@@ -167,7 +183,12 @@ func TestNotifHandler_GetInbox_CountError_500(t *testing.T) {
 	// List succeeds but CountUnread fails; simulate via a secondary error flag.
 	// We need a custom stub for this case.
 	type twoErrRepo struct{ stubUserNotifRepo }
-	h := handler.NewNotificationHandler(&twoErrRepo{}, nil, nil, hub.New(), &stubAdminParamSvc{}, zaptest.NewLogger(t))
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: &twoErrRepo{},
+		Hub:       hub.New(),
+		Params:    &stubAdminParamSvc{},
+		Log:       zaptest.NewLogger(t),
+	})
 	req := withCaller(httptest.NewRequest(http.MethodGet, "/notifications", nil), testCaller)
 	w := httptest.NewRecorder()
 	h.GetInbox(w, req)
@@ -206,10 +227,14 @@ func TestNotifHandler_GetStream_NoFlusher_500(t *testing.T) {
 func TestNotifHandler_GetStream_Connected_ReceivesEvent(t *testing.T) {
 	t.Parallel()
 	h := hub.New()
-	nh := handler.NewNotificationHandler(
-		&stubUserNotifRepo{}, &stubNotifPrefRepo{}, &stubNotifPushRepo{},
-		h, &stubAdminParamSvc{}, zaptest.NewLogger(t),
-	)
+	nh := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: &stubUserNotifRepo{},
+		PrefRepo:  &stubNotifPrefRepo{},
+		PushRepo:  &stubNotifPushRepo{},
+		Hub:       h,
+		Params:    &stubAdminParamSvc{},
+		Log:       zaptest.NewLogger(t),
+	})
 
 	callerID := 55
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -253,10 +278,14 @@ func TestNotifHandler_GetStream_Connected_ReceivesEvent(t *testing.T) {
 func TestNotifHandler_GetStream_Broadcast_DeliverData(t *testing.T) {
 	t.Parallel()
 	h := hub.New()
-	nh := handler.NewNotificationHandler(
-		&stubUserNotifRepo{}, &stubNotifPrefRepo{}, &stubNotifPushRepo{},
-		h, &stubAdminParamSvc{}, zaptest.NewLogger(t),
-	)
+	nh := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: &stubUserNotifRepo{},
+		PrefRepo:  &stubNotifPrefRepo{},
+		PushRepo:  &stubNotifPushRepo{},
+		Hub:       h,
+		Params:    &stubAdminParamSvc{},
+		Log:       zaptest.NewLogger(t),
+	})
 
 	callerID := 66
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -500,7 +529,14 @@ func TestNotifHandler_GetVAPIDPublicKey_OK(t *testing.T) {
 	t.Parallel()
 	const fakeKey = "BNcRdreALRFXTkOOUHK1EtK2wtwe6Cg-example-key"
 	ps := &fixedStringParamSvc{key: domain.ParamKeyNotifyWebPushVAPIDPublicKey, value: fakeKey}
-	h := handler.NewNotificationHandler(&stubUserNotifRepo{}, &stubNotifPrefRepo{}, &stubNotifPushRepo{}, hub.New(), ps, zaptest.NewLogger(t))
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: &stubUserNotifRepo{},
+		PrefRepo:  &stubNotifPrefRepo{},
+		PushRepo:  &stubNotifPushRepo{},
+		Hub:       hub.New(),
+		Params:    ps,
+		Log:       zaptest.NewLogger(t),
+	})
 
 	w := httptest.NewRecorder()
 	h.GetVAPIDPublicKey(w, httptest.NewRequest(http.MethodGet, "/push/vapid-public-key", nil))
@@ -640,4 +676,101 @@ func TestNotifHandler_UnsubscribePush_RepoError_500(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf(fmtExpect500, w.Code)
 	}
+}
+
+// ── Unsubscribe (one-click email opt-out) ─────────────────────────────────────
+
+func TestNotifHandler_Unsubscribe_ValidToken_200(t *testing.T) {
+	t.Parallel()
+
+	const secret = "test-unsub-secret-32-bytes-XXXXX"
+	pr := &stubNotifPrefRepo{}
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo:         &stubUserNotifRepo{},
+		PrefRepo:          pr,
+		PushRepo:          &stubNotifPushRepo{},
+		Hub:               hub.New(),
+		Params:            &stubAdminParamSvc{},
+		UnsubscribeSecret: secret,
+		Log:               zaptest.NewLogger(t),
+	})
+
+	tok := signUnsubToken(42, secret)
+	req := httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe?token="+tok, nil)
+	w := httptest.NewRecorder()
+	h.Unsubscribe(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200; got %d — %s", w.Code, w.Body.String())
+	}
+}
+
+func TestNotifHandler_Unsubscribe_MissingToken_422(t *testing.T) {
+	t.Parallel()
+
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo:         &stubUserNotifRepo{},
+		PrefRepo:          &stubNotifPrefRepo{},
+		PushRepo:          &stubNotifPushRepo{},
+		Hub:               hub.New(),
+		Params:            &stubAdminParamSvc{},
+		UnsubscribeSecret: "some-secret",
+		Log:               zaptest.NewLogger(t),
+	})
+
+	w := httptest.NewRecorder()
+	h.Unsubscribe(w, httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe", nil))
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422; got %d", w.Code)
+	}
+}
+
+func TestNotifHandler_Unsubscribe_InvalidToken_422(t *testing.T) {
+	t.Parallel()
+
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo:         &stubUserNotifRepo{},
+		PrefRepo:          &stubNotifPrefRepo{},
+		PushRepo:          &stubNotifPushRepo{},
+		Hub:               hub.New(),
+		Params:            &stubAdminParamSvc{},
+		UnsubscribeSecret: "correct-secret",
+		Log:               zaptest.NewLogger(t),
+	})
+
+	// Token signed with the wrong secret — must be rejected.
+	tok := signUnsubToken(5, "wrong-secret")
+	req := httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe?token="+tok, nil)
+	w := httptest.NewRecorder()
+	h.Unsubscribe(w, req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422; got %d", w.Code)
+	}
+}
+
+func TestNotifHandler_Unsubscribe_NoSecretConfigured_500(t *testing.T) {
+	t.Parallel()
+
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: &stubUserNotifRepo{},
+		PrefRepo:  &stubNotifPrefRepo{},
+		PushRepo:  &stubNotifPushRepo{},
+		Hub:       hub.New(),
+		Params:    &stubAdminParamSvc{},
+		// UnsubscribeSecret intentionally empty.
+		Log: zaptest.NewLogger(t),
+	})
+
+	w := httptest.NewRecorder()
+	h.Unsubscribe(w, httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe?token=anything", nil))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when secret not configured; got %d", w.Code)
+	}
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+// signUnsubToken generates a valid unsubscribe token for use in tests only.
+func signUnsubToken(userID int, secret string) string {
+	return unsubscribe.SignToken(userID, secret, time.Now())
 }

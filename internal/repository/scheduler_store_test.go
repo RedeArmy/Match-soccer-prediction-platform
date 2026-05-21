@@ -217,6 +217,104 @@ func TestSchedulerStore_ListFinishedMatchesMissingResult_ExcludesMatchesWithScor
 	}
 }
 
+// ── ListStaleBankTransfers ────────────────────────────────────────────────────
+
+func TestSchedulerStore_ListStaleBankTransfers_Empty(t *testing.T) {
+	cleanTables(t)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	proofs, err := store.ListStaleBankTransfers(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("ListStaleBankTransfers: %v", err)
+	}
+	if len(proofs) != 0 {
+		t.Errorf("got %d proofs; want 0", len(proofs))
+	}
+}
+
+func TestSchedulerStore_ListStaleBankTransfers_ReturnsPendingBeforeCutoff(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	seedBankTransferProof(t, u.ID, 5000)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	// Cutoff in the future — the recently seeded proof is stale relative to it.
+	proofs, err := store.ListStaleBankTransfers(context.Background(), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ListStaleBankTransfers: %v", err)
+	}
+	if len(proofs) != 1 {
+		t.Fatalf("got %d proofs; want 1", len(proofs))
+	}
+	if proofs[0].UserID != u.ID {
+		t.Errorf("UserID: got %d; want %d", proofs[0].UserID, u.ID)
+	}
+}
+
+func TestSchedulerStore_ListStaleBankTransfers_ExcludesAfterCutoff(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	seedBankTransferProof(t, u.ID, 5000)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	// Cutoff in the past — the recently seeded proof is NOT stale relative to it.
+	proofs, err := store.ListStaleBankTransfers(context.Background(), time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("ListStaleBankTransfers: %v", err)
+	}
+	if len(proofs) != 0 {
+		t.Errorf("got %d proofs; want 0 (proof created after cutoff)", len(proofs))
+	}
+}
+
+// ── ListStaleWithdrawals ──────────────────────────────────────────────────────
+
+func TestSchedulerStore_ListStaleWithdrawals_Empty(t *testing.T) {
+	cleanTables(t)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	reqs, err := store.ListStaleWithdrawals(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("ListStaleWithdrawals: %v", err)
+	}
+	if len(reqs) != 0 {
+		t.Errorf("got %d reqs; want 0", len(reqs))
+	}
+}
+
+func TestSchedulerStore_ListStaleWithdrawals_ReturnsPendingBeforeCutoff(t *testing.T) {
+	cleanTables(t)
+	u := seedUserWithBalance(t, 50000)
+	seedWithdrawalRequest(t, u.ID, 10000)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	reqs, err := store.ListStaleWithdrawals(context.Background(), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ListStaleWithdrawals: %v", err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("got %d reqs; want 1", len(reqs))
+	}
+	if reqs[0].UserID != u.ID {
+		t.Errorf("UserID: got %d; want %d", reqs[0].UserID, u.ID)
+	}
+}
+
+func TestSchedulerStore_ListStaleWithdrawals_ExcludesAfterCutoff(t *testing.T) {
+	cleanTables(t)
+	u := seedUserWithBalance(t, 50000)
+	seedWithdrawalRequest(t, u.ID, 10000)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	reqs, err := store.ListStaleWithdrawals(context.Background(), time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("ListStaleWithdrawals: %v", err)
+	}
+	if len(reqs) != 0 {
+		t.Errorf("got %d reqs; want 0 (request created after cutoff)", len(reqs))
+	}
+}
+
 func TestSchedulerStore_ListUpcomingMatchesWithDeadline_NoMatches(t *testing.T) {
 	cleanTables(t)
 	store := repository.NewPostgresSchedulerStore(testDB)

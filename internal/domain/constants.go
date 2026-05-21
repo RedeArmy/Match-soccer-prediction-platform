@@ -224,6 +224,10 @@ const (
 	DefaultNotifyBankTransferStaleSec = 43200 // notify.bank_transfer_stale_sec  — 12 hours
 	DefaultNotifyWithdrawalStaleSec   = 86400 // notify.withdrawal_stale_sec     — 24 hours
 
+	// Queue-depth alert: number of pending bank-transfer proofs that triggers a
+	// P0 EventAdminBankTransferQueueDepth alert alongside the regular pending reminder.
+	DefaultNotifyBankTransferQueueDepthThreshold = 20 // notify.bank_transfer_queue_depth_threshold
+
 	// High-value withdrawal: amount in cents above which EventAdminHighValueWithdrawal
 	// is also emitted alongside the regular EventAdminWithdrawalPending.
 	DefaultNotifyHighValueWithdrawalCents = 1_000_000 // notify.high_value_withdrawal_cents — Q10 000
@@ -481,6 +485,10 @@ const (
 	// ParamKeyNotifyPredictionMissingLeadMin is the lead time in minutes before
 	// kick-off at which a missing-prediction reminder is sent.
 	ParamKeyNotifyPredictionMissingLeadMin = "notify.prediction_missing_lead_min"
+	// ParamKeyNotifyBankTransferQueueDepthThreshold is the number of pending
+	// bank-transfer proofs that triggers a P0 EventAdminBankTransferQueueDepth
+	// alert alongside the regular EventAdminPendingReminder.
+	ParamKeyNotifyBankTransferQueueDepthThreshold = "notify.bank_transfer_queue_depth_threshold"
 
 	// String params — no integer Default* constant because the value is free-form.
 
@@ -490,9 +498,6 @@ const (
 	// ParamKeyNotifyWebPushVAPIDPublicKey is the VAPID public key used to sign
 	// Web Push subscription requests (RFC 8292). Must be a base64url-encoded P-256 point.
 	ParamKeyNotifyWebPushVAPIDPublicKey = "notify.web_push_vapid_public_key"
-	// ParamKeyNotifyWebPushVAPIDPrivateKey is the VAPID private key (secret).
-	// Keep this value out of source control; inject via environment variable or secrets manager.
-	ParamKeyNotifyWebPushVAPIDPrivateKey = "notify.web_push_vapid_private_key"
 	// ParamKeyNotifyWebPushVAPIDSubject is the VAPID subject claim — an HTTPS URL
 	// or mailto: address that identifies the application server to push services.
 	ParamKeyNotifyWebPushVAPIDSubject = "notify.web_push_vapid_subject"

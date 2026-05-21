@@ -390,17 +390,17 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyTxRetryBaseDelayMs:           true,
 		domain.ParamKeyTxRetryMaxDelayMs:            true,
 		// Added by migration 000087
-		domain.ParamKeyNotifyBankTransferStaleSec:       true,
-		domain.ParamKeyNotifyWithdrawalStaleSec:         true,
-		domain.ParamKeyNotifyHighValueWithdrawalCents:   true,
-		domain.ParamKeyNotifyPendingReminderIntervalSec: true,
-		domain.ParamKeyNotifyPredictionDeadlineLeadMin1: true,
-		domain.ParamKeyNotifyPredictionDeadlineLeadMin2: true,
-		domain.ParamKeyNotifyPredictionMissingLeadMin:   true,
-		domain.ParamKeyNotifyAdminEmails:                true,
-		domain.ParamKeyNotifyWebPushVAPIDPublicKey:      true,
-		domain.ParamKeyNotifyWebPushVAPIDPrivateKey:     true,
-		domain.ParamKeyNotifyWebPushVAPIDSubject:        true,
+		domain.ParamKeyNotifyBankTransferStaleSec:            true,
+		domain.ParamKeyNotifyWithdrawalStaleSec:              true,
+		domain.ParamKeyNotifyHighValueWithdrawalCents:        true,
+		domain.ParamKeyNotifyPendingReminderIntervalSec:      true,
+		domain.ParamKeyNotifyPredictionDeadlineLeadMin1:      true,
+		domain.ParamKeyNotifyPredictionDeadlineLeadMin2:      true,
+		domain.ParamKeyNotifyPredictionMissingLeadMin:        true,
+		domain.ParamKeyNotifyBankTransferQueueDepthThreshold: true,
+		domain.ParamKeyNotifyAdminEmails:                     true,
+		domain.ParamKeyNotifyWebPushVAPIDPublicKey:           true,
+		domain.ParamKeyNotifyWebPushVAPIDSubject:             true,
 		// Added by migration 000088
 		domain.ParamKeyNotifySSEHeartbeatIntervalSec: true,
 		domain.ParamKeyNotifyWebPushTTLSec:           true,
@@ -474,7 +474,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 69 // Update when adding new system parameters (was 68; +1 scheduler timezone param from migration 000090)
+	const expectedCount = 69 // Update when adding new system parameters (was 69; -1 VAPID private key moved to env var WCQ_WEBPUSH_VAPIDPRIVATEKEY; +1 queue_depth_threshold)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

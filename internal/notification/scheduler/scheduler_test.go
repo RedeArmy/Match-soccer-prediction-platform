@@ -26,14 +26,49 @@ type stubLeader struct{ leader bool }
 
 func (l *stubLeader) TryAcquire(_ context.Context) bool { return l.leader }
 
-// stubWriter records all Write calls for assertion in tests.
+// stubWriter records all Write and WriteDedup calls for assertion in tests.
+// WriteDedup tracks seen dedup keys so a second call with the same key returns
+// written=false, mirroring the production DB behaviour.
 type stubWriter struct {
-	events []notification.EventType
+	events    []notification.EventType
+	seenDedup map[string]bool
 }
 
 func (w *stubWriter) Write(_ context.Context, et notification.EventType, _, _ string, _ any) error {
 	w.events = append(w.events, et)
 	return nil
+}
+
+func (w *stubWriter) WriteDedup(_ context.Context, dedupKey string, et notification.EventType, _, _ string, _ any) (bool, error) {
+	if w.seenDedup == nil {
+		w.seenDedup = make(map[string]bool)
+	}
+	if w.seenDedup[dedupKey] {
+		return false, nil
+	}
+	w.seenDedup[dedupKey] = true
+	w.events = append(w.events, et)
+	return true, nil
+}
+
+// stubParams returns configurable values for stale threshold params.
+type stubParams struct {
+	bankSec, withdrawSec int
+	queueDepthThreshold  int // 0 means "use default"
+}
+
+func (s *stubParams) GetInt(_ context.Context, key string, defaultVal int) int {
+	switch key {
+	case domain.ParamKeyNotifyBankTransferStaleSec:
+		return s.bankSec
+	case domain.ParamKeyNotifyWithdrawalStaleSec:
+		return s.withdrawSec
+	case domain.ParamKeyNotifyBankTransferQueueDepthThreshold:
+		if s.queueDepthThreshold != 0 {
+			return s.queueDepthThreshold
+		}
+	}
+	return defaultVal
 }
 
 // stubStore is a minimal Store for tests.
@@ -44,7 +79,8 @@ type stubStore struct {
 	oldestErr          error
 	finishedMatches    []*domain.Match
 	deadlineMatches    []scheduler.DeadlineMatch
-	writeErr           error
+	staleBankTransfers []*domain.BankTransferProof
+	staleWithdrawals   []*domain.WithdrawalRequest
 }
 
 func (s *stubStore) CountPendingTransfers(_ context.Context) (int, error) {
@@ -67,6 +103,12 @@ func (s *stubStore) ListFinishedMatchesMissingResult(_ context.Context) ([]*doma
 }
 func (s *stubStore) ListUpcomingMatchesWithDeadline(_ context.Context, _ time.Duration) ([]scheduler.DeadlineMatch, error) {
 	return s.deadlineMatches, nil
+}
+func (s *stubStore) ListStaleBankTransfers(_ context.Context, _ time.Time) ([]*domain.BankTransferProof, error) {
+	return s.staleBankTransfers, nil
+}
+func (s *stubStore) ListStaleWithdrawals(_ context.Context, _ time.Time) ([]*domain.WithdrawalRequest, error) {
+	return s.staleWithdrawals, nil
 }
 
 // ── Scheduler unit tests ──────────────────────────────────────────────────────
@@ -210,7 +252,7 @@ func TestJobs_AdminPendingReminder_EmitsEventWhenPendingExist(t *testing.T) {
 
 	store := &stubStore{pendingTransfers: 3, pendingWithdrawals: 1}
 	writer := &stubWriter{}
-	jobs := scheduler.NewJobs(store, writer, zap.NewNop())
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
 
 	if err := jobs.AdminPendingReminder(context.Background()); err != nil {
 		t.Fatalf("AdminPendingReminder: %v", err)
@@ -225,13 +267,62 @@ func TestJobs_AdminPendingReminder_SkipsWhenNoPending(t *testing.T) {
 
 	store := &stubStore{pendingTransfers: 0, pendingWithdrawals: 0}
 	writer := &stubWriter{}
-	jobs := scheduler.NewJobs(store, writer, zap.NewNop())
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
 
 	if err := jobs.AdminPendingReminder(context.Background()); err != nil {
 		t.Fatalf("AdminPendingReminder: %v", err)
 	}
 	if len(writer.events) != 0 {
 		t.Errorf("events: %v; want none", writer.events)
+	}
+}
+
+func TestJobs_AdminPendingReminder_QueueDepthExceeded_EmitsBothEvents(t *testing.T) {
+	t.Parallel()
+
+	// 25 pending transfers with a threshold of 20 → both the regular reminder
+	// and the P0 queue-depth alert should be emitted.
+	store := &stubStore{pendingTransfers: 25, pendingWithdrawals: 0}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Params: &stubParams{queueDepthThreshold: 20},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.AdminPendingReminder(context.Background()); err != nil {
+		t.Fatalf("AdminPendingReminder: %v", err)
+	}
+	if len(writer.events) != 2 {
+		t.Fatalf("events: got %d; want 2", len(writer.events))
+	}
+	if writer.events[0] != notification.EventAdminPendingReminder {
+		t.Errorf("events[0]: got %s; want %s", writer.events[0], notification.EventAdminPendingReminder)
+	}
+	if writer.events[1] != notification.EventAdminBankTransferQueueDepth {
+		t.Errorf("events[1]: got %s; want %s", writer.events[1], notification.EventAdminBankTransferQueueDepth)
+	}
+}
+
+func TestJobs_AdminPendingReminder_BelowQueueDepthThreshold_SkipsQueueDepthEvent(t *testing.T) {
+	t.Parallel()
+
+	// 5 pending transfers with a threshold of 20 → only the regular reminder.
+	store := &stubStore{pendingTransfers: 5, pendingWithdrawals: 2}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Params: &stubParams{queueDepthThreshold: 20},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.AdminPendingReminder(context.Background()); err != nil {
+		t.Fatalf("AdminPendingReminder: %v", err)
+	}
+	if len(writer.events) != 1 || writer.events[0] != notification.EventAdminPendingReminder {
+		t.Errorf("events: %v; want [%s]", writer.events, notification.EventAdminPendingReminder)
 	}
 }
 
@@ -245,7 +336,7 @@ func TestJobs_AdminMatchResultPending_EmitsOnePerMatch(t *testing.T) {
 		},
 	}
 	writer := &stubWriter{}
-	jobs := scheduler.NewJobs(store, writer, zap.NewNop())
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
 
 	if err := jobs.AdminMatchResultPending(context.Background()); err != nil {
 		t.Fatalf("AdminMatchResultPending: %v", err)
@@ -263,14 +354,20 @@ func TestJobs_AdminMatchResultPending_EmitsOnePerMatch(t *testing.T) {
 func TestJobs_PredictionDeadlineApproaching_EmitsPerUser(t *testing.T) {
 	t.Parallel()
 
-	m := &domain.Match{ID: 5, HomeTeam: "Mexico", AwayTeam: "USA", KickoffAt: time.Now().Add(30 * time.Minute)}
+	// MinutesLeft=60 aligns with the default bucket-1 lead time (60±5 min).
+	m := &domain.Match{ID: 5, HomeTeam: "Mexico", AwayTeam: "USA", KickoffAt: time.Now().Add(60 * time.Minute)}
 	store := &stubStore{
 		deadlineMatches: []scheduler.DeadlineMatch{
-			{Match: m, MissingUserIDs: []int{100, 101, 102}, MinutesLeft: 30},
+			{Match: m, MissingUserIDs: []int{100, 101, 102}, MinutesLeft: 60},
 		},
 	}
 	writer := &stubWriter{}
-	jobs := scheduler.NewJobs(store, writer, zap.NewNop())
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Params: &stubParams{},
+		Log:    zap.NewNop(),
+	})
 
 	if err := jobs.PredictionDeadlineApproaching(context.Background()); err != nil {
 		t.Fatalf("PredictionDeadlineApproaching: %v", err)
@@ -285,12 +382,73 @@ func TestJobs_PredictionDeadlineApproaching_EmitsPerUser(t *testing.T) {
 	}
 }
 
+func TestJobs_PredictionDeadlineApproaching_SkipsOutsideBucket(t *testing.T) {
+	t.Parallel()
+
+	// MinutesLeft=30 is between the default buckets (60 and 15) so no reminder
+	// should fire.
+	m := &domain.Match{ID: 7, HomeTeam: "Brazil", AwayTeam: "Germany", KickoffAt: time.Now().Add(30 * time.Minute)}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: m, MissingUserIDs: []int{200}, MinutesLeft: 30},
+		},
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Params: &stubParams{},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.PredictionDeadlineApproaching(context.Background()); err != nil {
+		t.Fatalf("PredictionDeadlineApproaching: %v", err)
+	}
+	if len(writer.events) != 0 {
+		t.Errorf("events: got %d; want 0 (MinutesLeft=30 outside both buckets)", len(writer.events))
+	}
+}
+
+func TestJobs_PredictionDeadlineApproaching_DedupPreventsDouble(t *testing.T) {
+	t.Parallel()
+
+	m := &domain.Match{ID: 9, HomeTeam: "France", AwayTeam: "Spain", KickoffAt: time.Now().Add(60 * time.Minute)}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: m, MissingUserIDs: []int{300}, MinutesLeft: 60},
+		},
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Params: &stubParams{},
+		Log:    zap.NewNop(),
+	})
+
+	// First run: should emit one event.
+	if err := jobs.PredictionDeadlineApproaching(context.Background()); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if len(writer.events) != 1 {
+		t.Fatalf("first run: events=%d; want 1", len(writer.events))
+	}
+
+	// Second run (same bucket, same user, same match): dedup key already seen.
+	if err := jobs.PredictionDeadlineApproaching(context.Background()); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if len(writer.events) != 1 {
+		t.Errorf("second run: events=%d; want 1 (dedup should prevent double-emit)", len(writer.events))
+	}
+}
+
 func TestJobs_AdminDailySummary_EmitsEvent(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
 	writer := &stubWriter{}
-	jobs := scheduler.NewJobs(store, writer, zap.NewNop())
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
 
 	if err := jobs.AdminDailySummary(context.Background()); err != nil {
 		t.Fatalf("AdminDailySummary: %v", err)
@@ -305,7 +463,7 @@ func TestJobs_AdminWeeklyReport_EmitsEvent(t *testing.T) {
 
 	store := &stubStore{}
 	writer := &stubWriter{}
-	jobs := scheduler.NewJobs(store, writer, zap.NewNop())
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
 
 	if err := jobs.AdminWeeklyReport(context.Background()); err != nil {
 		t.Fatalf("AdminWeeklyReport: %v", err)
@@ -357,7 +515,7 @@ func TestJobs_AdminPendingReminder_OldestNonZero_IncludedInPayload(t *testing.T)
 	oldest := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	store := &stubStore{pendingTransfers: 2, pendingWithdrawals: 0, oldest: oldest}
 	writer := &stubWriter{}
-	jobs := scheduler.NewJobs(store, writer, zap.NewNop())
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
 
 	if err := jobs.AdminPendingReminder(context.Background()); err != nil {
 		t.Fatalf("AdminPendingReminder: %v", err)
@@ -376,7 +534,7 @@ func TestJobs_AdminPendingReminder_OldestError_StillEmitsEvent(t *testing.T) {
 		oldestErr:          errors.New("db error"),
 	}
 	writer := &stubWriter{}
-	jobs := scheduler.NewJobs(store, writer, zap.NewNop())
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
 
 	if err := jobs.AdminPendingReminder(context.Background()); err != nil {
 		t.Fatalf("AdminPendingReminder: %v", err)
@@ -384,5 +542,98 @@ func TestJobs_AdminPendingReminder_OldestError_StillEmitsEvent(t *testing.T) {
 	// Event is still emitted even though OldestPendingTransferSince failed.
 	if len(writer.events) != 1 {
 		t.Errorf("expected 1 event; got %d", len(writer.events))
+	}
+}
+
+// ── StaleEscalation tests ─────────────────────────────────────────────────────
+
+func TestJobs_StaleEscalation_EmitsBankTransferStale(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	// proof created 13 h ago; threshold is 12 h → stale
+	staleProof := &domain.BankTransferProof{
+		ID: 7, UserID: 42, AmountCents: 100_000, Currency: "GTQ",
+		CreatedAt: now.Add(-13 * time.Hour),
+	}
+	store := &stubStore{staleBankTransfers: []*domain.BankTransferProof{staleProof}}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Params: &stubParams{bankSec: 12 * 3600, withdrawSec: 24 * 3600},
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.StaleEscalation(context.Background()); err != nil {
+		t.Fatalf("StaleEscalation: %v", err)
+	}
+	if len(writer.events) != 1 || writer.events[0] != notification.EventAdminBankTransferStale {
+		t.Errorf("events: %v; want [%s]", writer.events, notification.EventAdminBankTransferStale)
+	}
+}
+
+func TestJobs_StaleEscalation_EmitsWithdrawalStale(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	staleReq := &domain.WithdrawalRequest{
+		ID: 3, UserID: 9, AmountCents: 50_000, Currency: "GTQ",
+		CreatedAt: now.Add(-25 * time.Hour), // 25 h > 24 h threshold
+	}
+	store := &stubStore{staleWithdrawals: []*domain.WithdrawalRequest{staleReq}}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Params: &stubParams{bankSec: 12 * 3600, withdrawSec: 24 * 3600},
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.StaleEscalation(context.Background()); err != nil {
+		t.Fatalf("StaleEscalation: %v", err)
+	}
+	if len(writer.events) != 1 || writer.events[0] != notification.EventAdminWithdrawalStale {
+		t.Errorf("events: %v; want [%s]", writer.events, notification.EventAdminWithdrawalStale)
+	}
+}
+
+func TestJobs_StaleEscalation_NothingStale_NoEvents(t *testing.T) {
+	t.Parallel()
+
+	store := &stubStore{} // both slices nil → no stale items
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Params: &stubParams{bankSec: 12 * 3600, withdrawSec: 24 * 3600},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.StaleEscalation(context.Background()); err != nil {
+		t.Fatalf("StaleEscalation: %v", err)
+	}
+	if len(writer.events) != 0 {
+		t.Errorf("events: got %d; want 0", len(writer.events))
+	}
+}
+
+func TestJobs_StaleEscalation_NilParams_Skips(t *testing.T) {
+	t.Parallel()
+
+	store := &stubStore{
+		staleBankTransfers: []*domain.BankTransferProof{{ID: 1, CreatedAt: time.Now().Add(-24 * time.Hour)}},
+	}
+	writer := &stubWriter{}
+	// Params is intentionally nil — StaleEscalation must be a no-op.
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
+
+	if err := jobs.StaleEscalation(context.Background()); err != nil {
+		t.Fatalf("StaleEscalation with nil params: %v", err)
+	}
+	if len(writer.events) != 0 {
+		t.Errorf("events: got %d; want 0 (params=nil should skip)", len(writer.events))
 	}
 }

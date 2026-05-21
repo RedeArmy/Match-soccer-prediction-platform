@@ -321,3 +321,83 @@ func TestWriter_PayloadRoundtrip(t *testing.T) {
 		t.Errorf("Detail: got %q; want %q", decoded.Detail, original.Detail)
 	}
 }
+
+// TestWriter_WriteDedup_FirstInsert_ReturnsWritten verifies that the first call
+// with a novel dedup_key inserts a row and returns written=true.
+func TestWriter_WriteDedup_FirstInsert_ReturnsWritten(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	w := outbox.NewWriter(testPool)
+	const dedupKey = "dedup_test:first_insert"
+	payload := notification.AdminBankTransferPayload{QueueDepth: 5}
+
+	written, err := w.WriteDedup(ctx,
+		dedupKey,
+		notification.EventAdminBankTransferQueueDepth,
+		"scheduler", "queue_depth",
+		payload,
+	)
+	if err != nil {
+		t.Fatalf("WriteDedup: %v", err)
+	}
+	if !written {
+		t.Fatal("written: got false; want true (first insert)")
+	}
+
+	var count int
+	if err := testPool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM domain_outbox WHERE dedup_key = $1`, dedupKey,
+	).Scan(&count); err != nil {
+		t.Fatalf("count query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("outbox rows with dedup_key: got %d; want 1", count)
+	}
+}
+
+// TestWriter_WriteDedup_SecondInsert_ReturnsNotWritten verifies that a second
+// call with the same dedup_key is a no-op (ON CONFLICT DO NOTHING) and returns
+// written=false without an error.
+func TestWriter_WriteDedup_SecondInsert_ReturnsNotWritten(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	w := outbox.NewWriter(testPool)
+	const dedupKey = "dedup_test:second_insert"
+	payload := notification.AdminBankTransferPayload{QueueDepth: 10}
+
+	// First insert — must succeed.
+	if _, err := w.WriteDedup(ctx,
+		dedupKey,
+		notification.EventAdminBankTransferQueueDepth,
+		"scheduler", "queue_depth",
+		payload,
+	); err != nil {
+		t.Fatalf("first WriteDedup: %v", err)
+	}
+
+	// Second insert — must be a no-op.
+	written, err := w.WriteDedup(ctx,
+		dedupKey,
+		notification.EventAdminBankTransferQueueDepth,
+		"scheduler", "queue_depth",
+		notification.AdminBankTransferPayload{QueueDepth: 99},
+	)
+	if err != nil {
+		t.Fatalf("second WriteDedup: %v", err)
+	}
+	if written {
+		t.Error("written: got true; want false (duplicate dedup_key should be skipped)")
+	}
+
+	var count int
+	if err := testPool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM domain_outbox WHERE dedup_key = $1`, dedupKey,
+	).Scan(&count); err != nil {
+		t.Fatalf("count query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("outbox rows with dedup_key: got %d; want 1 (no duplicate inserted)", count)
+	}
+}

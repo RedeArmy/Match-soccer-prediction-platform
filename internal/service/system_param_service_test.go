@@ -783,7 +783,7 @@ func TestValidateParamConstraints_ReliabilityParams(t *testing.T) {
 }
 
 // TestValidateParamConstraints_NotifyParams validates the range enforcement for
-// the seven integer notification parameters seeded by migration 000087.
+// the ten integer notification parameters seeded by migrations 000087 and 000092.
 func TestValidateParamConstraints_NotifyParams(t *testing.T) {
 	cases := []struct {
 		key          string
@@ -832,6 +832,24 @@ func TestValidateParamConstraints_NotifyParams(t *testing.T) {
 			belowMin:     "14",  // below 15 min minimum
 			aboveMax:     "241", // above 240 min maximum
 			validDefault: "120", // 120 min default
+		},
+		{
+			key:          domain.ParamKeyNotifySSEHeartbeatIntervalSec,
+			belowMin:     "4",   // below 5 s minimum
+			aboveMax:     "301", // above 5 min maximum
+			validDefault: "30",  // 30 s default
+		},
+		{
+			key:          domain.ParamKeyNotifyWebPushTTLSec,
+			belowMin:     "3599",    // just below 1 h minimum
+			aboveMax:     "2592001", // just above 30 days maximum
+			validDefault: "86400",   // 24 h default
+		},
+		{
+			key:          domain.ParamKeyNotifyBankTransferQueueDepthThreshold,
+			belowMin:     "0",   // zero threshold makes no operational sense
+			aboveMax:     "501", // above 500 maximum
+			validDefault: "20",  // 20 default
 		},
 	}
 

@@ -49,8 +49,9 @@ func (s *stubNotifRepo) MarkRead(_ context.Context, _ int64, _ int) error  { ret
 func (s *stubNotifRepo) MarkAllRead(_ context.Context, _ int) error        { return nil }
 
 type stubPrefRepo struct {
-	pref *domain.NotificationPreference
-	err  error
+	pref         *domain.NotificationPreference
+	err          error
+	globalOptOut bool
 }
 
 func (s *stubPrefRepo) Get(_ context.Context, _ int, _ string) (*domain.NotificationPreference, error) {
@@ -59,11 +60,18 @@ func (s *stubPrefRepo) Get(_ context.Context, _ int, _ string) (*domain.Notifica
 func (s *stubPrefRepo) ListByUser(_ context.Context, _ int) ([]*domain.NotificationPreference, error) {
 	return nil, nil
 }
-func (s *stubPrefRepo) Upsert(_ context.Context, _ *domain.NotificationPreference) error { return nil }
+func (s *stubPrefRepo) Upsert(_ context.Context, _ *domain.NotificationPreference) error {
+	return nil
+}
+func (s *stubPrefRepo) DisableAllEmail(_ context.Context, _ int) error { return nil }
+func (s *stubPrefRepo) GlobalEmailOptedOut(_ context.Context, _ int) (bool, error) {
+	return s.globalOptOut, nil
+}
 
 type stubPushRepo struct {
-	subs       []*domain.PushSubscription
-	markCalled int64 // last sub ID marked inactive
+	subs           []*domain.PushSubscription
+	markCalled     int64      // last sub ID marked inactive
+	lastUsedCalled chan int64 // receives sub ID on each UpdateLastUsed call; nil to ignore
 }
 
 func (s *stubPushRepo) Create(_ context.Context, _ *domain.PushSubscription) error { return nil }
@@ -73,6 +81,12 @@ func (s *stubPushRepo) ListActiveByUser(_ context.Context, _ int) ([]*domain.Pus
 func (s *stubPushRepo) DeleteByEndpoint(_ context.Context, _ string) error { return nil }
 func (s *stubPushRepo) MarkInactive(_ context.Context, id int64) error {
 	s.markCalled = id
+	return nil
+}
+func (s *stubPushRepo) UpdateLastUsed(_ context.Context, id int64) error {
+	if s.lastUsedCalled != nil {
+		s.lastUsedCalled <- id
+	}
 	return nil
 }
 
@@ -560,5 +574,65 @@ func TestUserDispatcher_BroadcastFanOut_ListerError_Propagates(t *testing.T) {
 
 	if err := d.Dispatch(context.Background(), entry); err == nil {
 		t.Fatal("expected error when MemberLister fails; got nil")
+	}
+}
+
+func TestUserDispatcher_Push_UpdatesLastUsedAt(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	called := make(chan int64, 1)
+	pushRepo := &stubPushRepo{
+		subs: []*domain.PushSubscription{
+			{ID: 55, UserID: 6, Endpoint: "https://push.example.com/q", P256dhKey: "k", AuthKey: "a", Active: true},
+		},
+		lastUsedCalled: called,
+	}
+	pusher := &stubPusher{code: http.StatusCreated}
+	d := newUserDispatcher(notifRepo, &stubPrefRepo{pref: allEnabled()}, pushRepo, pusher, nil, &recordingDLQRepo{})
+
+	entry := makeEntry(t, notification.EventPredictionConfirmed,
+		notification.PredictionConfirmedPayload{UserID: 6, PredictionID: 3, MatchID: 4, HomeTeam: "A", AwayTeam: "B"})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch returned error: %v", err)
+	}
+
+	select {
+	case gotID := <-called:
+		if gotID != 55 {
+			t.Errorf("UpdateLastUsed called with sub_id %d; want 55", gotID)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Error("UpdateLastUsed goroutine did not fire within 500ms")
+	}
+}
+
+func TestUserDispatcher_PushGone_DoesNotUpdateLastUsedAt(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	called := make(chan int64, 1)
+	pushRepo := &stubPushRepo{
+		subs: []*domain.PushSubscription{
+			{ID: 77, UserID: 8, Endpoint: "https://push.example.com/r", P256dhKey: "k", AuthKey: "a", Active: true},
+		},
+		lastUsedCalled: called,
+	}
+	pusher := &stubPusher{code: http.StatusGone}
+	d := newUserDispatcher(notifRepo, &stubPrefRepo{pref: allEnabled()}, pushRepo, pusher, nil, &recordingDLQRepo{})
+
+	entry := makeEntry(t, notification.EventPredictionConfirmed,
+		notification.PredictionConfirmedPayload{UserID: 8, PredictionID: 5, MatchID: 6, HomeTeam: "C", AwayTeam: "D"})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch returned error: %v", err)
+	}
+
+	select {
+	case id := <-called:
+		t.Errorf("UpdateLastUsed must not be called on 410 Gone; got sub_id %d", id)
+	case <-time.After(100 * time.Millisecond):
+		// expected: no update on Gone
 	}
 }

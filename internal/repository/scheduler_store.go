@@ -179,6 +179,58 @@ func (s *PostgresSchedulerStore) ListFinishedMatchesMissingResult(ctx context.Co
 	return matches, rows.Err()
 }
 
+// ListStaleBankTransfers returns pending bank transfer proofs whose created_at
+// is strictly before before, ordered by created_at ascending.
+func (s *PostgresSchedulerStore) ListStaleBankTransfers(ctx context.Context, before time.Time) ([]*domain.BankTransferProof, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, user_id, amount_cents, currency, created_at
+		FROM bank_transfer_proofs
+		WHERE status = 'pending' AND created_at < $1
+		ORDER BY created_at ASC`,
+		before,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var proofs []*domain.BankTransferProof
+	for rows.Next() {
+		p := &domain.BankTransferProof{}
+		if err := rows.Scan(&p.ID, &p.UserID, &p.AmountCents, &p.Currency, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		proofs = append(proofs, p)
+	}
+	return proofs, rows.Err()
+}
+
+// ListStaleWithdrawals returns pending withdrawal requests whose created_at
+// is strictly before before, ordered by created_at ascending.
+func (s *PostgresSchedulerStore) ListStaleWithdrawals(ctx context.Context, before time.Time) ([]*domain.WithdrawalRequest, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, user_id, amount_cents, currency, created_at
+		FROM withdrawal_requests
+		WHERE status = 'pending' AND created_at < $1
+		ORDER BY created_at ASC`,
+		before,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reqs []*domain.WithdrawalRequest
+	for rows.Next() {
+		r := &domain.WithdrawalRequest{}
+		if err := rows.Scan(&r.ID, &r.UserID, &r.AmountCents, &r.Currency, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		reqs = append(reqs, r)
+	}
+	return reqs, rows.Err()
+}
+
 // ListUpcomingMatchesWithDeadline returns matches whose kickoff is within
 // deadlineWindow and that have users with no prediction submitted.
 func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Context, deadlineWindow time.Duration) ([]scheduler.DeadlineMatch, error) {

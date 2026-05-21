@@ -14,11 +14,26 @@ import (
 // dateOnlyLayout is the Go reference time for YYYY-MM-DD date strings.
 const dateOnlyLayout = "2006-01-02"
 
+// ParamReader is the subset of SystemParamService consumed by Jobs.
+type ParamReader interface {
+	GetInt(ctx context.Context, key string, defaultVal int) int
+}
+
 // OutboxWriter is the write-side contract consumed by scheduler jobs.
 // The production implementation is *outbox.Writer; tests may supply a stub.
 type OutboxWriter interface {
 	Write(ctx context.Context, eventType notification.EventType, aggregateType, aggregateID string, payload any) error
+	// WriteDedup inserts an outbox row only when no row with the same dedupKey
+	// already exists.  written=false (nil error) means the insert was skipped.
+	WriteDedup(ctx context.Context, dedupKey string, eventType notification.EventType, aggregateType, aggregateID string, payload any) (written bool, err error)
 }
+
+// bucketToleranceMin is the half-width (in minutes) of the bucket window
+// around each configured lead time.  A match with MinutesLeft in
+// [leadMin - bucketToleranceMin, leadMin + bucketToleranceMin] is considered
+// to be in that bucket.  The value matches the scheduler's firing interval so
+// a single tick always covers exactly one reminder opportunity.
+const bucketToleranceMin = 5
 
 // Store provides the aggregated query results that scheduler jobs need.
 // Each method maps to a narrow, purpose-built repository query so the interface
@@ -48,6 +63,14 @@ type Store interface {
 	// is within the next deadlineWindow, for which there are users with missing
 	// predictions.  Each returned DeadlineMatch carries the list of user IDs.
 	ListUpcomingMatchesWithDeadline(ctx context.Context, deadlineWindow time.Duration) ([]DeadlineMatch, error)
+
+	// ListStaleBankTransfers returns pending bank transfer proofs whose created_at
+	// is strictly before the given cutoff, ordered by created_at ascending.
+	ListStaleBankTransfers(ctx context.Context, before time.Time) ([]*domain.BankTransferProof, error)
+
+	// ListStaleWithdrawals returns pending withdrawal requests whose created_at
+	// is strictly before the given cutoff, ordered by created_at ascending.
+	ListStaleWithdrawals(ctx context.Context, before time.Time) ([]*domain.WithdrawalRequest, error)
 }
 
 // DailySummaryRow carries the aggregated stats returned by Store.DailySummary.
@@ -80,30 +103,104 @@ type DeadlineMatch struct {
 	MinutesLeft    int
 }
 
+// JobsConfig bundles the dependencies for NewJobs.
+type JobsConfig struct {
+	Store  Store
+	Writer OutboxWriter
+	// Params is optional.  When nil, StaleEscalation is a no-op.
+	Params ParamReader
+	// Clock is optional.  When nil, defaults to RealClock (time.Now).
+	Clock Nower
+	Log   *zap.Logger
+}
+
 // Jobs holds the dependencies shared across all scheduler job functions and
 // returns pre-built job functions that can be registered with a Scheduler.
 type Jobs struct {
 	store  Store
 	writer OutboxWriter
+	params ParamReader
+	clock  Nower
 	log    *zap.Logger
 }
 
-// NewJobs constructs a Jobs instance.
-func NewJobs(store Store, writer OutboxWriter, log *zap.Logger) *Jobs {
-	return &Jobs{store: store, writer: writer, log: log}
+// NewJobs constructs a Jobs instance.  Clock defaults to RealClock when nil.
+func NewJobs(cfg JobsConfig) *Jobs {
+	if cfg.Clock == nil {
+		cfg.Clock = RealClock{}
+	}
+	return &Jobs{
+		store:  cfg.Store,
+		writer: cfg.Writer,
+		params: cfg.Params,
+		clock:  cfg.Clock,
+		log:    cfg.Log,
+	}
+}
+
+// getInt reads an integer param, returning def when params is nil.
+func (j *Jobs) getInt(ctx context.Context, key string, def int) int {
+	if j.params == nil {
+		return def
+	}
+	return j.params.GetInt(ctx, key, def)
+}
+
+// inBucket reports whether minutesLeft falls within [leadMin±bucketToleranceMin].
+func inBucket(minutesLeft, leadMin int) bool {
+	return minutesLeft >= leadMin-bucketToleranceMin && minutesLeft <= leadMin+bucketToleranceMin
+}
+
+// resolveDeadlineBucket returns the lead-time bucket (in minutes) that
+// minutesLeft falls into, and whether a match was found.
+// Returns (0, false) when minutesLeft is not within tolerance of either lead time.
+func resolveDeadlineBucket(minutesLeft, leadMin1, leadMin2 int) (int, bool) {
+	if inBucket(minutesLeft, leadMin1) {
+		return leadMin1, true
+	}
+	if inBucket(minutesLeft, leadMin2) {
+		return leadMin2, true
+	}
+	return 0, false
 }
 
 // PredictionDeadlineApproaching queries upcoming matches and emits
-// EventPredictionMissingReminder for every user that has not yet submitted a
-// prediction.  Intended to run every 5 minutes.
+// EventPredictionMissingReminder for users with no prediction, but only when
+// the match is within one of two configured lead-time buckets.
+//
+// Two buckets gate emission so users receive at most two reminders per match
+// (e.g. 60 min and 15 min before kickoff) instead of one per scheduler tick:
+//   - bucket 1: notify.prediction_deadline_lead_min_1 (default 60 min)
+//   - bucket 2: notify.prediction_deadline_lead_min_2 (default 15 min)
+//
+// A dedup_key per (match, user, bucket) prevents duplicate outbox rows when
+// the scheduler fires multiple times within the same bucket window.
+//
+// Intended to run every 5 minutes (bucketToleranceMin = 5).
 func (j *Jobs) PredictionDeadlineApproaching(ctx context.Context) error {
-	upcoming, err := j.store.ListUpcomingMatchesWithDeadline(ctx, 60*time.Minute)
+	leadMin1 := j.getInt(ctx, domain.ParamKeyNotifyPredictionDeadlineLeadMin1, domain.DefaultNotifyPredictionDeadlineLeadMin1)
+	leadMin2 := j.getInt(ctx, domain.ParamKeyNotifyPredictionDeadlineLeadMin2, domain.DefaultNotifyPredictionDeadlineLeadMin2)
+
+	maxLead := leadMin1
+	if leadMin2 > maxLead {
+		maxLead = leadMin2
+	}
+	window := time.Duration(maxLead+bucketToleranceMin) * time.Minute
+
+	upcoming, err := j.store.ListUpcomingMatchesWithDeadline(ctx, window)
 	if err != nil {
 		return fmt.Errorf("scheduler: prediction deadline: list upcoming: %w", err)
 	}
 
 	for _, dm := range upcoming {
+		bucketMin, ok := resolveDeadlineBucket(dm.MinutesLeft, leadMin1, leadMin2)
+		if !ok {
+			continue // match is in the window but not at an alert boundary
+		}
+
 		for _, uid := range dm.MissingUserIDs {
+			dedupKey := fmt.Sprintf("prediction.missing_reminder:match:%d:user:%d:b%d",
+				dm.Match.ID, uid, bucketMin)
 			payload := notification.PredictionDeadlinePayload{
 				UserID:      uid,
 				MatchID:     dm.Match.ID,
@@ -112,16 +209,24 @@ func (j *Jobs) PredictionDeadlineApproaching(ctx context.Context) error {
 				DeadlineAt:  dm.Match.KickoffAt,
 				MinutesLeft: dm.MinutesLeft,
 			}
-			if err := j.writer.Write(ctx,
+			written, err := j.writer.WriteDedup(ctx,
+				dedupKey,
 				notification.EventPredictionMissingReminder,
 				"match",
 				fmt.Sprintf("%d", dm.Match.ID),
 				payload,
-			); err != nil {
+			)
+			if err != nil {
 				j.log.Warn("scheduler: prediction deadline: write outbox",
 					zap.Int("match_id", dm.Match.ID),
 					zap.Int("user_id", uid),
 					zap.Error(err),
+				)
+			} else if !written {
+				j.log.Debug("scheduler: prediction deadline: dedup skipped",
+					zap.Int("match_id", dm.Match.ID),
+					zap.Int("user_id", uid),
+					zap.Int("bucket_min", bucketMin),
 				)
 			}
 		}
@@ -130,8 +235,14 @@ func (j *Jobs) PredictionDeadlineApproaching(ctx context.Context) error {
 }
 
 // AdminPendingReminder counts pending bank transfers and withdrawals and emits
-// EventAdminPendingReminder when either count is non-zero.  Intended to run
-// every 4 hours.
+// EventAdminPendingReminder when either count is non-zero.
+//
+// When the number of pending bank transfers reaches the configured
+// notify.bank_transfer_queue_depth_threshold it also emits the P0 event
+// EventAdminBankTransferQueueDepth so that operators are alerted to a
+// growing backlog before it becomes critical.
+//
+// Intended to run every 4 hours.
 func (j *Jobs) AdminPendingReminder(ctx context.Context) error {
 	transfers, err := j.store.CountPendingTransfers(ctx)
 	if err != nil {
@@ -166,13 +277,32 @@ func (j *Jobs) AdminPendingReminder(ctx context.Context) error {
 	); err != nil {
 		return fmt.Errorf("scheduler: pending reminder: write outbox: %w", err)
 	}
+
+	// P0 queue-depth alert: emit when pending bank transfers exceed the threshold.
+	threshold := j.getInt(ctx,
+		domain.ParamKeyNotifyBankTransferQueueDepthThreshold,
+		domain.DefaultNotifyBankTransferQueueDepthThreshold,
+	)
+	if transfers >= threshold {
+		qdPayload := notification.AdminBankTransferPayload{QueueDepth: transfers}
+		if err := j.writer.Write(ctx,
+			notification.EventAdminBankTransferQueueDepth,
+			"scheduler",
+			"queue_depth",
+			qdPayload,
+		); err != nil {
+			j.log.Warn("scheduler: pending reminder: write queue depth alert", zap.Error(err))
+			// Best-effort: do not fail the whole job over the secondary alert.
+		}
+	}
+
 	return nil
 }
 
 // AdminDailySummary collects 24-hour operational metrics and emits
 // EventAdminDailySummary.  Intended to run once a day at 08:00 local time.
 func (j *Jobs) AdminDailySummary(ctx context.Context) error {
-	since := time.Now().UTC().Truncate(24 * time.Hour)
+	since := j.clock.Now().UTC().Truncate(24 * time.Hour)
 	row, err := j.store.DailySummary(ctx, since)
 	if err != nil {
 		return fmt.Errorf("scheduler: daily summary: query: %w", err)
@@ -202,7 +332,7 @@ func (j *Jobs) AdminDailySummary(ctx context.Context) error {
 // AdminWeeklyReport collects 7-day metrics and emits EventAdminWeeklyReport.
 // Intended to run once per week on Monday at 08:00 local time.
 func (j *Jobs) AdminWeeklyReport(ctx context.Context) error {
-	now := time.Now().UTC()
+	now := j.clock.Now().UTC()
 	since := now.AddDate(0, 0, -7).Truncate(24 * time.Hour)
 
 	row, err := j.store.WeeklySummary(ctx, since)
@@ -241,7 +371,7 @@ func (j *Jobs) AdminMatchResultPending(ctx context.Context) error {
 		return fmt.Errorf("scheduler: match result pending: query: %w", err)
 	}
 
-	now := time.Now().UTC()
+	now := j.clock.Now().UTC()
 	for _, m := range matches {
 		elapsed := int(now.Sub(m.KickoffAt).Minutes())
 		payload := notification.AdminMatchResultPayload{
@@ -259,6 +389,70 @@ func (j *Jobs) AdminMatchResultPending(ctx context.Context) error {
 		); err != nil {
 			j.log.Warn("scheduler: match result pending: write outbox",
 				zap.Int("match_id", m.ID),
+				zap.Error(err),
+			)
+		}
+	}
+	return nil
+}
+
+// StaleEscalation queries pending bank transfers and withdrawal requests older
+// than their configured review thresholds and emits a stale alert for each one.
+// Skips silently when Params is nil.  Intended to run every 30 minutes.
+func (j *Jobs) StaleEscalation(ctx context.Context) error {
+	if j.params == nil {
+		return nil
+	}
+
+	bankStaleSec := j.params.GetInt(ctx, domain.ParamKeyNotifyBankTransferStaleSec, domain.DefaultNotifyBankTransferStaleSec)
+	bankCutoff := j.clock.Now().Add(-time.Duration(bankStaleSec) * time.Second)
+	proofs, err := j.store.ListStaleBankTransfers(ctx, bankCutoff)
+	if err != nil {
+		return fmt.Errorf("scheduler: stale escalation: bank transfers: %w", err)
+	}
+	for _, proof := range proofs {
+		payload := notification.AdminBankTransferPayload{
+			ProofID:      proof.ID,
+			UserID:       proof.UserID,
+			AmountCents:  proof.AmountCents,
+			Currency:     proof.Currency,
+			PendingSince: proof.CreatedAt.UTC().Format(time.RFC3339),
+		}
+		if err := j.writer.Write(ctx,
+			notification.EventAdminBankTransferStale,
+			"bank_transfer_proof",
+			fmt.Sprintf("%d", proof.ID),
+			payload,
+		); err != nil {
+			j.log.Warn("scheduler: stale escalation: bank transfer write",
+				zap.Int64("proof_id", proof.ID),
+				zap.Error(err),
+			)
+		}
+	}
+
+	withdrawStaleSec := j.params.GetInt(ctx, domain.ParamKeyNotifyWithdrawalStaleSec, domain.DefaultNotifyWithdrawalStaleSec)
+	withdrawCutoff := j.clock.Now().Add(-time.Duration(withdrawStaleSec) * time.Second)
+	reqs, err := j.store.ListStaleWithdrawals(ctx, withdrawCutoff)
+	if err != nil {
+		return fmt.Errorf("scheduler: stale escalation: withdrawals: %w", err)
+	}
+	for _, req := range reqs {
+		payload := notification.AdminWithdrawalPayload{
+			RequestID:    req.ID,
+			UserID:       req.UserID,
+			AmountCents:  req.AmountCents,
+			Currency:     req.Currency,
+			PendingSince: req.CreatedAt.UTC().Format(time.RFC3339),
+		}
+		if err := j.writer.Write(ctx,
+			notification.EventAdminWithdrawalStale,
+			"withdrawal_request",
+			fmt.Sprintf("%d", req.ID),
+			payload,
+		); err != nil {
+			j.log.Warn("scheduler: stale escalation: withdrawal write",
+				zap.Int("request_id", req.ID),
 				zap.Error(err),
 			)
 		}

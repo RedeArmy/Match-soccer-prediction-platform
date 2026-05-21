@@ -474,6 +474,28 @@ type NotificationDLQEntryCreator interface {
 	CreateEntry(ctx context.Context, entry *domain.NotificationDLQEntry) error
 }
 
+// NotificationDLQRepository is the full persistence contract for the
+// notification dead-letter queue, including the replay-worker operations.
+type NotificationDLQRepository interface {
+	NotificationDLQEntryCreator
+
+	// ClaimBatch returns up to limit unresolved entries whose attempts are
+	// below maxAttempts and whose exponential back-off delay has elapsed.
+	// The retry delay for attempt n is 2^n seconds.
+	ClaimBatch(ctx context.Context, limit, maxAttempts int) ([]*domain.NotificationDLQEntry, error)
+
+	// MarkResolved sets resolved_at = NOW() for the given entry, removing it
+	// from future ClaimBatch results.
+	MarkResolved(ctx context.Context, id int64) error
+
+	// RecordFailure increments attempts, sets last_retry_at = NOW(), and
+	// updates error_detail for the given entry.
+	RecordFailure(ctx context.Context, id int64, errDetail string) error
+
+	// CountUnresolved returns the number of entries where resolved_at IS NULL.
+	CountUnresolved(ctx context.Context) (int64, error)
+}
+
 // UserNotificationRepository manages the per-user notification inbox.
 type UserNotificationRepository interface {
 	// Create inserts a new notification.  Uses ON CONFLICT (idempotency_key) DO
@@ -503,6 +525,13 @@ type NotificationPreferenceRepository interface {
 	ListByUser(ctx context.Context, userID int) ([]*domain.NotificationPreference, error)
 	// Upsert inserts or updates a preference row (conflict on (user_id, event_type)).
 	Upsert(ctx context.Context, pref *domain.NotificationPreference) error
+	// DisableAllEmail records a global email opt-out for userID by upserting a
+	// sentinel row (event_type = '*', channel_email = FALSE).  Idempotent.
+	DisableAllEmail(ctx context.Context, userID int) error
+	// GlobalEmailOptedOut reports whether userID has a global email opt-out
+	// (sentinel row with event_type = '*' and channel_email = FALSE).
+	// Returns (false, nil) when no sentinel row exists.
+	GlobalEmailOptedOut(ctx context.Context, userID int) (bool, error)
 }
 
 // PushSubscriptionRepository manages Web Push (VAPID) subscriptions.
@@ -518,6 +547,10 @@ type PushSubscriptionRepository interface {
 	// MarkInactive deactivates a subscription by ID.
 	// Called when a push delivery returns HTTP 410 Gone.
 	MarkInactive(ctx context.Context, id int64) error
+	// UpdateLastUsed stamps last_used_at = NOW() for the given subscription.
+	// Called after every successful push delivery so inactive-subscription
+	// cleanup jobs can identify browsers that have not been reached recently.
+	UpdateLastUsed(ctx context.Context, id int64) error
 }
 
 // PaymentRecordRepository manages entry-fee payment records.
