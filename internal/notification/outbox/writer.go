@@ -49,7 +49,7 @@ const insertOutboxDedupSQL = `
 INSERT INTO domain_outbox
     (event_type, aggregate_type, aggregate_id, payload, scheduled_at, dedup_key)
 VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
+ON CONFLICT DO NOTHING
 RETURNING id
 `
 

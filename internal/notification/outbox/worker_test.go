@@ -2,6 +2,7 @@ package outbox_test
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -66,10 +67,10 @@ func TestWorker_PollAndDispatch(t *testing.T) {
 	)
 
 	writer := outbox.NewWriter(testPool)
-	for range 2 {
+	for i := range 2 {
 		if err := writer.Write(ctx,
 			notification.EventPredictionScored,
-			"prediction", "worker_happy",
+			"prediction", fmt.Sprintf("worker_happy_%d", i),
 			notification.PredictionScoredPayload{UserID: 1, MatchID: 1, PointsEarned: 3},
 		); err != nil {
 			t.Fatalf("seed write: %v", err)
