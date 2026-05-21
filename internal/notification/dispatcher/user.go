@@ -464,10 +464,11 @@ func (d *UserDispatcher) writeDLQEntry(ctx context.Context, entry *notification.
 // Action URL path constants used by buildUserContent.
 // Defined once here to prevent silent drift when the API route changes.
 const (
-	urlMatchDetail = "/api/v1/matches/%d"
-	urlGroupsMe    = "/api/v1/groups/me"
-	urlBalance     = "/api/v1/users/me/balance"
-	urlWithdrawals = "/api/v1/withdrawals"
+	urlMatchDetail  = "/api/v1/matches/%d"
+	urlGroupsMe     = "/api/v1/groups/me"
+	urlBalance      = "/api/v1/users/me/balance"
+	urlWithdrawals  = "/api/v1/withdrawals"
+	urlGroupMembers = "/api/v1/groups/%d/members"
 )
 
 // buildUserContent returns the rendered title, body, and locale for the given
@@ -592,7 +593,7 @@ func resolveUserContent(entry *notification.OutboxEntry, locale Locale) userCont
 				fmt.Sprintf("Alguien ha solicitado unirse a %s. Revisa y aprueba o rechaza la solicitud.", p.QuinielaName),
 				locale,
 			),
-			actionURL: fmt.Sprintf("/api/v1/groups/%d/members", p.QuinielaID),
+			actionURL: fmt.Sprintf(urlGroupMembers, p.QuinielaID),
 		}
 
 	case notification.EventGroupJoinApproved:
@@ -851,7 +852,7 @@ func resolveUserContent(entry *notification.OutboxEntry, locale Locale) userCont
 					fmt.Sprintf("Un nuevo miembro se ha unido a %s.", p.QuinielaName),
 					locale,
 				),
-				actionURL: fmt.Sprintf("/api/v1/groups/%d/members", p.QuinielaID),
+				actionURL: fmt.Sprintf(urlGroupMembers, p.QuinielaID),
 			}
 		}
 		return userContent{
@@ -861,7 +862,7 @@ func resolveUserContent(entry *notification.OutboxEntry, locale Locale) userCont
 				fmt.Sprintf("Un miembro ha abandonado %s.", p.QuinielaName),
 				locale,
 			),
-			actionURL: fmt.Sprintf("/api/v1/groups/%d/members", p.QuinielaID),
+			actionURL: fmt.Sprintf(urlGroupMembers, p.QuinielaID),
 		}
 
 	case notification.EventPaymentPendingTimeout:
@@ -903,10 +904,9 @@ func resolveUserContent(entry *notification.OutboxEntry, locale Locale) userCont
 			actionURL: urlWithdrawals,
 		}
 
-	default:
-		return userContent{
-			title: localeStr("New notification", "Nueva notificación", locale),
-			body:  localeStr("You have a new notification. Open the app for details.", "Tienes una nueva notificación. Abre la aplicación para más detalles.", locale),
-		}
+	}
+	return userContent{
+		title: localeStr("New notification", "Nueva notificación", locale),
+		body:  localeStr("You have a new notification. Open the app for details.", "Tienes una nueva notificación. Abre la aplicación para más detalles.", locale),
 	}
 }

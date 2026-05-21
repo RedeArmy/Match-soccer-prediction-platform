@@ -571,11 +571,12 @@ func (s *Server) Routes() http.Handler {
 			r.Patch("/scoring-rules/{phase}", h.adminScoringRules.Update)
 
 			// Notification content templates (DB-backed, operator-editable)
+			const tmplByKey = "/notification-templates/{event_type}/{locale}"
 			r.Get("/notification-templates", h.adminNotifTemplate.List)
-			r.Get("/notification-templates/{event_type}/{locale}", h.adminNotifTemplate.Get)
-			r.Put("/notification-templates/{event_type}/{locale}", h.adminNotifTemplate.Upsert)
-			r.Delete("/notification-templates/{event_type}/{locale}", h.adminNotifTemplate.Delete)
-			r.Post("/notification-templates/{event_type}/{locale}/preview", h.adminNotifTemplate.Preview)
+			r.Get(tmplByKey, h.adminNotifTemplate.Get)
+			r.Put(tmplByKey, h.adminNotifTemplate.Upsert)
+			r.Delete(tmplByKey, h.adminNotifTemplate.Delete)
+			r.Post(tmplByKey+"/preview", h.adminNotifTemplate.Preview)
 		})
 	})
 
