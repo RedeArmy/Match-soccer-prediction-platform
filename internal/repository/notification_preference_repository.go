@@ -93,4 +93,42 @@ ON CONFLICT (user_id, event_type) DO UPDATE
 	return nil
 }
 
+// globalOptOutEventType is the sentinel event_type stored in
+// notification_preferences to represent a user-level email opt-out.
+// The value '*' is intentionally not a valid notification event type so it
+// never conflicts with per-event-type preference rows.
+const globalOptOutEventType = "*"
+
+func (r *postgresNotificationPreferenceRepository) DisableAllEmail(ctx context.Context, userID int) error {
+	const q = `
+INSERT INTO notification_preferences (user_id, event_type, channel_email, channel_push, channel_inapp, updated_at)
+VALUES ($1, $2, FALSE, TRUE, TRUE, NOW())
+ON CONFLICT (user_id, event_type) DO UPDATE
+    SET channel_email = FALSE,
+        updated_at    = NOW()
+`
+	_, err := r.pool.Exec(ctx, q, userID, globalOptOutEventType)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
+func (r *postgresNotificationPreferenceRepository) GlobalEmailOptedOut(ctx context.Context, userID int) (bool, error) {
+	const q = `
+SELECT NOT channel_email
+FROM notification_preferences
+WHERE user_id = $1 AND event_type = $2
+`
+	var optedOut bool
+	err := r.pool.QueryRow(ctx, q, userID, globalOptOutEventType).Scan(&optedOut)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil // no sentinel row → not opted out
+		}
+		return false, apperrors.Internal(err)
+	}
+	return optedOut, nil
+}
+
 var _ NotificationPreferenceRepository = (*postgresNotificationPreferenceRepository)(nil)

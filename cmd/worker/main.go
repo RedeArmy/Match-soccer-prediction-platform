@@ -49,7 +49,6 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	infrapush "github.com/rede/world-cup-quiniela/internal/infrastructure/webpush"
 	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
-	"github.com/rede/world-cup-quiniela/internal/notification/escalation"
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/notification/scheduler"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -239,13 +238,14 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 
 	adminDispatcher := dispatcher.NewAdminDispatcher(dispatcher.Config{
-		Params:   params,
-		LogRepo:  adminLogRepo,
-		DLQRepo:  dlqRepo,
-		Mailer:   mailer,
-		FromAddr: cfg.Email.FromAddress,
-		N8nURL:   cfg.N8n.WebhookURL,
-		Log:      log,
+		Params:    params,
+		LogRepo:   adminLogRepo,
+		DLQRepo:   dlqRepo,
+		Mailer:    mailer,
+		FromAddr:  cfg.Email.FromAddress,
+		N8nURL:    cfg.N8n.WebhookURL,
+		N8nSecret: cfg.N8n.WebhookSecret,
+		Log:       log,
 	})
 
 	// Phase 2: User-facing in-app dispatcher with SSE/push/email channels.
@@ -254,8 +254,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	pushRepo := repository.NewPostgresPushSubscriptionRepository(db)
 
 	vapidPublicKey := params.GetString(ctx, domain.ParamKeyNotifyWebPushVAPIDPublicKey, "")
-	vapidPrivateKey := params.GetString(ctx, domain.ParamKeyNotifyWebPushVAPIDPrivateKey, "")
+	vapidPrivateKey := cfg.WebPush.VAPIDPrivateKey
 	vapidSubject := params.GetString(ctx, domain.ParamKeyNotifyWebPushVAPIDSubject, "")
+
+	if vapidPrivateKey == "" {
+		log.Warn("web push: WCQ_WEBPUSH_VAPIDPRIVATEKEY not set — push notifications disabled")
+	}
 
 	var pusher infrapush.Sender
 	if vapidPublicKey != "" && vapidPrivateKey != "" {
@@ -267,31 +271,28 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 
 	userDispatcher := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
-		NotifRepo:     notifRepo,
-		PrefRepo:      prefRepo,
-		PushRepo:      pushRepo,
-		DLQRepo:       dlqRepo,
-		Hub:           nil, // hub lives in the API server; cross-process delivery via pg_notify
-		Pusher:        pusher,
-		Mailer:        mailer,
-		EmailResolver: &repoEmailResolver{userRepo: userRepo},
-		FromAddr:      cfg.Email.FromAddress,
-		PgNotifier:    &pgPoolNotifier{pool: db},
-		Params:        params,
-		Log:           log,
+		NotifRepo:         notifRepo,
+		PrefRepo:          prefRepo,
+		PushRepo:          pushRepo,
+		DLQRepo:           dlqRepo,
+		Hub:               nil, // hub lives in the API server; cross-process delivery via pg_notify
+		Pusher:            pusher,
+		Mailer:            mailer,
+		EmailResolver:     &repoEmailResolver{userRepo: userRepo},
+		FromAddr:          cfg.Email.FromAddress,
+		UnsubscribeSecret: cfg.Email.UnsubscribeSecret,
+		AppBaseURL:        cfg.Server.AppBaseURL,
+		PgNotifier:        &pgPoolNotifier{pool: db},
+		Params:            params,
+		Log:               log,
 	})
 
 	compositeDispatcher := dispatcher.NewCompositeDispatcher(adminDispatcher, userDispatcher)
 
-	transferRepo := repository.NewPostgresBankTransferProofRepository(db)
-	withdrawRepo := repository.NewPostgresWithdrawalRequestRepository(db)
+	dlqReplayWorker := outbox.NewDLQWorker(dlqRepo, outboxWriter, log)
 
-	escalationInterval := 30 * time.Minute
-	escalationScheduler := escalation.NewScheduler(
-		params, transferRepo, withdrawRepo, outboxWriter, escalationInterval, log,
-	)
-
-	// Notification scheduler: prediction deadline reminders, admin digests, match result alerts.
+	// Notification scheduler: prediction deadline reminders, admin digests,
+	// match result alerts, and stale-operation escalation.
 	tzName := params.GetString(ctx, domain.ParamKeyNotifySchedulerTimezone, domain.DefaultNotifySchedulerTimezone)
 	schedulerLoc, tzErr := time.LoadLocation(tzName)
 	if tzErr != nil {
@@ -302,7 +303,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		schedulerLoc = time.UTC
 	}
 	schedulerStore := repository.NewPostgresSchedulerStore(db)
-	jobs := scheduler.NewJobs(schedulerStore, outboxWriter, log)
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  schedulerStore,
+		Writer: outboxWriter,
+		Params: params,
+		Log:    log,
+	})
 	notifScheduler := scheduler.New(scheduler.Config{
 		Location: schedulerLoc,
 		Log:      log,
@@ -310,26 +316,27 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	notifScheduler.RegisterInterval("prediction.deadline_approaching", 5*time.Minute, jobs.PredictionDeadlineApproaching)
 	notifScheduler.RegisterInterval("admin.match_result_pending", 15*time.Minute, jobs.AdminMatchResultPending)
 	notifScheduler.RegisterInterval("admin.pending_reminder", 4*time.Hour, jobs.AdminPendingReminder)
+	notifScheduler.RegisterInterval("admin.stale_escalation", 30*time.Minute, jobs.StaleEscalation)
 	notifScheduler.RegisterDaily("admin.daily_summary", 8, 0, jobs.AdminDailySummary)
 	notifScheduler.RegisterWeekly("admin.weekly_report", time.Monday, 8, 0, jobs.AdminWeeklyReport)
 
 	return startWorker(ctx, workerDeps{
-		cfg:                 cfg,
-		bus:                 bus,
-		scorer:              scorer,
-		snapshotter:         snapshotter,
-		predRepo:            predRepo,
-		invalidators:        invalidators,
-		purger:              purger,
-		purgeRetention:      purgeRetention,
-		snapshotKeepCount:   snapshotKeepLatestCount,
-		rc:                  rc,
-		checkers:            buildHealthCheckers(db, rc),
-		dlqElection:         dlqElection,
-		outboxRepo:          outboxRepo,
-		outboxDispatcher:    compositeDispatcher,
-		escalationScheduler: escalationScheduler,
-		notifScheduler:      notifScheduler,
+		cfg:               cfg,
+		bus:               bus,
+		scorer:            scorer,
+		snapshotter:       snapshotter,
+		predRepo:          predRepo,
+		invalidators:      invalidators,
+		purger:            purger,
+		purgeRetention:    purgeRetention,
+		snapshotKeepCount: snapshotKeepLatestCount,
+		rc:                rc,
+		checkers:          buildHealthCheckers(db, rc),
+		dlqElection:       dlqElection,
+		outboxRepo:        outboxRepo,
+		outboxDispatcher:  compositeDispatcher,
+		dlqReplayWorker:   dlqReplayWorker,
+		notifScheduler:    notifScheduler,
 	}, log)
 }
 
@@ -367,22 +374,22 @@ const dlqMonitorLockID int64 = 1
 // parameter list within the 7-param lint limit while remaining easy to
 // extend without changing the function signature.
 type workerDeps struct {
-	cfg                 *config.Config
-	bus                 events.Bus
-	scorer              service.MatchScorer
-	snapshotter         service.Snapshotter
-	predRepo            repository.PredictionRepository
-	invalidators        []service.PostScoringInvalidator
-	purger              repository.Purger
-	purgeRetention      time.Duration
-	snapshotKeepCount   int
-	rc                  *redis.Client
-	checkers            []health.Checker
-	dlqElection         election.LeaderElection
-	outboxRepo          outbox.Repository
-	outboxDispatcher    outbox.Dispatcher
-	escalationScheduler *escalation.Scheduler
-	notifScheduler      *scheduler.Scheduler
+	cfg               *config.Config
+	bus               events.Bus
+	scorer            service.MatchScorer
+	snapshotter       service.Snapshotter
+	predRepo          repository.PredictionRepository
+	invalidators      []service.PostScoringInvalidator
+	purger            repository.Purger
+	purgeRetention    time.Duration
+	snapshotKeepCount int
+	rc                *redis.Client
+	checkers          []health.Checker
+	dlqElection       election.LeaderElection
+	outboxRepo        outbox.Repository
+	outboxDispatcher  outbox.Dispatcher
+	dlqReplayWorker   *outbox.DLQWorker
+	notifScheduler    *scheduler.Scheduler
 }
 
 // All parameters are already constructed so this function has no I/O of its
@@ -448,15 +455,15 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		log.Info("outbox worker started (admin email dispatcher active)")
 	}
 
-	// Escalation scheduler — emits stale-alert events every 30 minutes.
-	var escalationDone sync.WaitGroup
-	if deps.escalationScheduler != nil {
-		escalationDone.Add(1)
+	// DLQ replay worker — replays failed notification_dlq entries into domain_outbox.
+	var dlqReplayDone sync.WaitGroup
+	if deps.dlqReplayWorker != nil {
+		dlqReplayDone.Add(1)
 		go func() {
-			defer escalationDone.Done()
-			deps.escalationScheduler.Run(ctx)
+			defer dlqReplayDone.Done()
+			deps.dlqReplayWorker.Run(ctx)
 		}()
-		log.Info("escalation scheduler started")
+		log.Info("dlq replay worker started")
 	}
 
 	// Notification scheduler — prediction deadline reminders, admin digests, match result alerts.
@@ -493,7 +500,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	}
 	purgeDone.Wait()
 	outboxDone.Wait()
-	escalationDone.Wait()
+	dlqReplayDone.Wait()
 	notifSchedDone.Wait()
 	log.Sugar().Info("worker stopped")
 	return runErr

@@ -18,6 +18,7 @@ package outbox
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -31,6 +32,18 @@ const insertOutboxSQL = `
 INSERT INTO domain_outbox
     (event_type, aggregate_type, aggregate_id, payload, scheduled_at)
 VALUES ($1, $2, $3, $4, $5)
+`
+
+// insertOutboxDedupSQL inserts an outbox row with a dedup_key.  If a row with
+// the same non-null dedup_key is already in the table the insert is a no-op
+// (ON CONFLICT DO NOTHING) and no id is returned.  The partial unique index
+// idx_outbox_dedup (WHERE dedup_key IS NOT NULL) satisfies the conflict target.
+const insertOutboxDedupSQL = `
+INSERT INTO domain_outbox
+    (event_type, aggregate_type, aggregate_id, payload, scheduled_at, dedup_key)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
+RETURNING id
 `
 
 // Writer is the write-side of the transactional outbox.
@@ -110,6 +123,49 @@ func (w *Writer) WriteBatch(ctx context.Context, events []BatchEvent) error {
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// WriteDedup inserts an outbox row with an explicit dedup_key.  If a row with
+// the same key already exists in the table (regardless of its status) the
+// insert is skipped and written=false is returned with a nil error.
+//
+// Use this method from scheduler jobs that may fire more than once within a
+// single reminder window.  The dedupKey should encode the event's full
+// uniqueness scope — e.g. "prediction.missing_reminder:match:42:user:99:b60"
+// for the 60-minute bucket of a specific (match, user) pair — so that each
+// logical send fires exactly once per window even if the scheduler restarts.
+//
+// The dedup protection covers the lifetime of the outbox row: once the row is
+// purged from the table the same key can be re-used on a future send.
+func (w *Writer) WriteDedup(
+	ctx context.Context,
+	dedupKey string,
+	eventType notification.EventType,
+	aggregateType, aggregateID string,
+	payload any,
+) (written bool, err error) {
+	entry, err := notification.NewOutboxEntry(eventType, aggregateType, aggregateID, payload)
+	if err != nil {
+		return false, err
+	}
+	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var id int64
+	scanErr := w.pool.QueryRow(writeCtx, insertOutboxDedupSQL,
+		string(entry.EventType),
+		entry.AggregateType,
+		entry.AggregateID,
+		entry.Payload,
+		entry.ScheduledAt,
+		dedupKey,
+	).Scan(&id)
+	if errors.Is(scanErr, pgx.ErrNoRows) {
+		return false, nil // conflict: existing row with same dedup_key
+	}
+	if scanErr != nil {
+		return false, apperrors.Internal(scanErr)
+	}
+	return true, nil
 }
 
 // Write opens a short-lived connection from the pool and inserts an outbox row

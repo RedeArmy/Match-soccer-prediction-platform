@@ -86,22 +86,22 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyBankTransferMaxAmountCents": ParamKeyBankTransferMaxAmountCents,
 		"ParamKeyPaymentIntentTTLMinutes":    ParamKeyPaymentIntentTTLMinutes,
 		// Notification subsystem
-		"ParamKeyNotifyBankTransferStaleSec":       ParamKeyNotifyBankTransferStaleSec,
-		"ParamKeyNotifyWithdrawalStaleSec":         ParamKeyNotifyWithdrawalStaleSec,
-		"ParamKeyNotifyHighValueWithdrawalCents":   ParamKeyNotifyHighValueWithdrawalCents,
-		"ParamKeyNotifyPendingReminderIntervalSec": ParamKeyNotifyPendingReminderIntervalSec,
-		"ParamKeyNotifyPredictionDeadlineLeadMin1": ParamKeyNotifyPredictionDeadlineLeadMin1,
-		"ParamKeyNotifyPredictionDeadlineLeadMin2": ParamKeyNotifyPredictionDeadlineLeadMin2,
-		"ParamKeyNotifyPredictionMissingLeadMin":   ParamKeyNotifyPredictionMissingLeadMin,
-		"ParamKeyNotifyAdminEmails":                ParamKeyNotifyAdminEmails,
-		"ParamKeyNotifyWebPushVAPIDPublicKey":      ParamKeyNotifyWebPushVAPIDPublicKey,
-		"ParamKeyNotifyWebPushVAPIDPrivateKey":     ParamKeyNotifyWebPushVAPIDPrivateKey,
-		"ParamKeyNotifyWebPushVAPIDSubject":        ParamKeyNotifyWebPushVAPIDSubject,
-		"ParamKeyNotifySSEHeartbeatIntervalSec":    ParamKeyNotifySSEHeartbeatIntervalSec,
-		"ParamKeyNotifyWebPushTTLSec":              ParamKeyNotifyWebPushTTLSec,
-		"ParamKeyNotifyPushIconURL":                ParamKeyNotifyPushIconURL,
-		"ParamKeyNotifyPushBadgeURL":               ParamKeyNotifyPushBadgeURL,
-		"ParamKeyNotifySchedulerTimezone":          ParamKeyNotifySchedulerTimezone,
+		"ParamKeyNotifyBankTransferStaleSec":            ParamKeyNotifyBankTransferStaleSec,
+		"ParamKeyNotifyWithdrawalStaleSec":              ParamKeyNotifyWithdrawalStaleSec,
+		"ParamKeyNotifyHighValueWithdrawalCents":        ParamKeyNotifyHighValueWithdrawalCents,
+		"ParamKeyNotifyPendingReminderIntervalSec":      ParamKeyNotifyPendingReminderIntervalSec,
+		"ParamKeyNotifyPredictionDeadlineLeadMin1":      ParamKeyNotifyPredictionDeadlineLeadMin1,
+		"ParamKeyNotifyPredictionDeadlineLeadMin2":      ParamKeyNotifyPredictionDeadlineLeadMin2,
+		"ParamKeyNotifyPredictionMissingLeadMin":        ParamKeyNotifyPredictionMissingLeadMin,
+		"ParamKeyNotifyBankTransferQueueDepthThreshold": ParamKeyNotifyBankTransferQueueDepthThreshold,
+		"ParamKeyNotifyAdminEmails":                     ParamKeyNotifyAdminEmails,
+		"ParamKeyNotifyWebPushVAPIDPublicKey":           ParamKeyNotifyWebPushVAPIDPublicKey,
+		"ParamKeyNotifyWebPushVAPIDSubject":             ParamKeyNotifyWebPushVAPIDSubject,
+		"ParamKeyNotifySSEHeartbeatIntervalSec":         ParamKeyNotifySSEHeartbeatIntervalSec,
+		"ParamKeyNotifyWebPushTTLSec":                   ParamKeyNotifyWebPushTTLSec,
+		"ParamKeyNotifyPushIconURL":                     ParamKeyNotifyPushIconURL,
+		"ParamKeyNotifyPushBadgeURL":                    ParamKeyNotifyPushBadgeURL,
+		"ParamKeyNotifySchedulerTimezone":               ParamKeyNotifySchedulerTimezone,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -179,15 +179,16 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultTxRetryBaseDelayMs": DefaultTxRetryBaseDelayMs,
 		"DefaultTxRetryMaxDelayMs":  DefaultTxRetryMaxDelayMs,
 		// Notification subsystem
-		"DefaultNotifyBankTransferStaleSec":       DefaultNotifyBankTransferStaleSec,
-		"DefaultNotifyWithdrawalStaleSec":         DefaultNotifyWithdrawalStaleSec,
-		"DefaultNotifyHighValueWithdrawalCents":   DefaultNotifyHighValueWithdrawalCents,
-		"DefaultNotifyPendingReminderIntervalSec": DefaultNotifyPendingReminderIntervalSec,
-		"DefaultNotifyPredictionDeadlineLeadMin1": DefaultNotifyPredictionDeadlineLeadMin1,
-		"DefaultNotifyPredictionDeadlineLeadMin2": DefaultNotifyPredictionDeadlineLeadMin2,
-		"DefaultNotifyPredictionMissingLeadMin":   DefaultNotifyPredictionMissingLeadMin,
-		"DefaultNotifySSEHeartbeatIntervalSec":    DefaultNotifySSEHeartbeatIntervalSec,
-		"DefaultNotifyWebPushTTLSec":              DefaultNotifyWebPushTTLSec,
+		"DefaultNotifyBankTransferStaleSec":            DefaultNotifyBankTransferStaleSec,
+		"DefaultNotifyWithdrawalStaleSec":              DefaultNotifyWithdrawalStaleSec,
+		"DefaultNotifyHighValueWithdrawalCents":        DefaultNotifyHighValueWithdrawalCents,
+		"DefaultNotifyPendingReminderIntervalSec":      DefaultNotifyPendingReminderIntervalSec,
+		"DefaultNotifyPredictionDeadlineLeadMin1":      DefaultNotifyPredictionDeadlineLeadMin1,
+		"DefaultNotifyPredictionDeadlineLeadMin2":      DefaultNotifyPredictionDeadlineLeadMin2,
+		"DefaultNotifyPredictionMissingLeadMin":        DefaultNotifyPredictionMissingLeadMin,
+		"DefaultNotifyBankTransferQueueDepthThreshold": DefaultNotifyBankTransferQueueDepthThreshold,
+		"DefaultNotifySSEHeartbeatIntervalSec":         DefaultNotifySSEHeartbeatIntervalSec,
+		"DefaultNotifyWebPushTTLSec":                   DefaultNotifyWebPushTTLSec,
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
@@ -199,7 +200,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 56 // update when adding a new Default* constant
+		const expectedCount = 57 // update when adding a new Default* constant
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -317,9 +318,9 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyNotifyPredictionDeadlineLeadMin1", ParamKeyNotifyPredictionDeadlineLeadMin1, "notify"},
 		{"ParamKeyNotifyPredictionDeadlineLeadMin2", ParamKeyNotifyPredictionDeadlineLeadMin2, "notify"},
 		{"ParamKeyNotifyPredictionMissingLeadMin", ParamKeyNotifyPredictionMissingLeadMin, "notify"},
+		{"ParamKeyNotifyBankTransferQueueDepthThreshold", ParamKeyNotifyBankTransferQueueDepthThreshold, "notify"},
 		{"ParamKeyNotifyAdminEmails", ParamKeyNotifyAdminEmails, "notify"},
 		{"ParamKeyNotifyWebPushVAPIDPublicKey", ParamKeyNotifyWebPushVAPIDPublicKey, "notify"},
-		{"ParamKeyNotifyWebPushVAPIDPrivateKey", ParamKeyNotifyWebPushVAPIDPrivateKey, "notify"},
 		{"ParamKeyNotifyWebPushVAPIDSubject", ParamKeyNotifyWebPushVAPIDSubject, "notify"},
 		{"ParamKeyNotifySSEHeartbeatIntervalSec", ParamKeyNotifySSEHeartbeatIntervalSec, "notify"},
 		{"ParamKeyNotifyWebPushTTLSec", ParamKeyNotifyWebPushTTLSec, "notify"},
@@ -416,15 +417,16 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultTxRetryBaseDelayMs": DefaultTxRetryBaseDelayMs,
 		"DefaultTxRetryMaxDelayMs":  DefaultTxRetryMaxDelayMs,
 		// Notification subsystem
-		"DefaultNotifyBankTransferStaleSec":       DefaultNotifyBankTransferStaleSec,
-		"DefaultNotifyWithdrawalStaleSec":         DefaultNotifyWithdrawalStaleSec,
-		"DefaultNotifyHighValueWithdrawalCents":   DefaultNotifyHighValueWithdrawalCents,
-		"DefaultNotifyPendingReminderIntervalSec": DefaultNotifyPendingReminderIntervalSec,
-		"DefaultNotifyPredictionDeadlineLeadMin1": DefaultNotifyPredictionDeadlineLeadMin1,
-		"DefaultNotifyPredictionDeadlineLeadMin2": DefaultNotifyPredictionDeadlineLeadMin2,
-		"DefaultNotifyPredictionMissingLeadMin":   DefaultNotifyPredictionMissingLeadMin,
-		"DefaultNotifySSEHeartbeatIntervalSec":    DefaultNotifySSEHeartbeatIntervalSec,
-		"DefaultNotifyWebPushTTLSec":              DefaultNotifyWebPushTTLSec,
+		"DefaultNotifyBankTransferStaleSec":            DefaultNotifyBankTransferStaleSec,
+		"DefaultNotifyWithdrawalStaleSec":              DefaultNotifyWithdrawalStaleSec,
+		"DefaultNotifyHighValueWithdrawalCents":        DefaultNotifyHighValueWithdrawalCents,
+		"DefaultNotifyPendingReminderIntervalSec":      DefaultNotifyPendingReminderIntervalSec,
+		"DefaultNotifyPredictionDeadlineLeadMin1":      DefaultNotifyPredictionDeadlineLeadMin1,
+		"DefaultNotifyPredictionDeadlineLeadMin2":      DefaultNotifyPredictionDeadlineLeadMin2,
+		"DefaultNotifyPredictionMissingLeadMin":        DefaultNotifyPredictionMissingLeadMin,
+		"DefaultNotifyBankTransferQueueDepthThreshold": DefaultNotifyBankTransferQueueDepthThreshold,
+		"DefaultNotifySSEHeartbeatIntervalSec":         DefaultNotifySSEHeartbeatIntervalSec,
+		"DefaultNotifyWebPushTTLSec":                   DefaultNotifyWebPushTTLSec,
 	}
 
 	for name, value := range defaults {

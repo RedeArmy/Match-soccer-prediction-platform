@@ -9,6 +9,9 @@ package dispatcher
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -39,7 +42,8 @@ type ParamReader interface {
 //  5. Appends an immutable row to admin_notification_log.
 //  6. On email failure: appends a row to notification_dlq and returns the
 //     error so the outbox worker applies exponential-backoff retry.
-//  7. For system.* events: fires the optional n8n webhook (best-effort).
+//  7. For system.* events: fires the optional n8n webhook (best-effort),
+//     signed with HMAC-SHA256 when n8nSecret is configured.
 type AdminDispatcher struct {
 	params     ParamReader
 	logRepo    repository.AdminNotificationLogCreator
@@ -47,23 +51,28 @@ type AdminDispatcher struct {
 	mailer     infraemail.Sender
 	fromAddr   string
 	n8nURL     string // empty disables webhook
+	n8nSecret  string // empty sends unsigned requests (warns at construction)
 	httpClient *http.Client
 	log        *zap.Logger
 }
 
 // Config bundles the constructor arguments for AdminDispatcher.
 type Config struct {
-	Params   ParamReader
-	LogRepo  repository.AdminNotificationLogCreator
-	DLQRepo  repository.NotificationDLQEntryCreator
-	Mailer   infraemail.Sender
-	FromAddr string // e.g. "Quiniela <noreply@example.com>"
-	N8nURL   string // optional; empty disables the n8n webhook
-	Log      *zap.Logger
+	Params    ParamReader
+	LogRepo   repository.AdminNotificationLogCreator
+	DLQRepo   repository.NotificationDLQEntryCreator
+	Mailer    infraemail.Sender
+	FromAddr  string // e.g. "Quiniela <noreply@example.com>"
+	N8nURL    string // optional; empty disables the n8n webhook
+	N8nSecret string // optional; empty sends unsigned requests (WCQ_N8N_WEBHOOKSECRET)
+	Log       *zap.Logger
 }
 
 // NewAdminDispatcher constructs an AdminDispatcher.
 func NewAdminDispatcher(cfg Config) *AdminDispatcher {
+	if cfg.N8nURL != "" && cfg.N8nSecret == "" {
+		cfg.Log.Warn("n8n webhook: WCQ_N8N_WEBHOOKSECRET not set — requests will be unsigned; any caller who discovers the URL can inject events")
+	}
 	return &AdminDispatcher{
 		params:     cfg.Params,
 		logRepo:    cfg.LogRepo,
@@ -71,6 +80,7 @@ func NewAdminDispatcher(cfg Config) *AdminDispatcher {
 		mailer:     cfg.Mailer,
 		fromAddr:   cfg.FromAddr,
 		n8nURL:     cfg.N8nURL,
+		n8nSecret:  cfg.N8nSecret,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 		log:        cfg.Log,
 	}
@@ -199,7 +209,9 @@ func (d *AdminDispatcher) writeDLQ(ctx context.Context, entry *notification.Outb
 }
 
 // notifyN8n fires a best-effort POST to the configured n8n webhook URL.
-// The payload is a minimal JSON object with event_type and aggregate_id.
+// When n8nSecret is set the request carries an X-Signature: sha256=<hex>
+// header computed as HMAC-SHA256(body, secret) so the n8n workflow can
+// verify the sender's identity before acting on the payload.
 func (d *AdminDispatcher) notifyN8n(ctx context.Context, entry *notification.OutboxEntry, log *zap.Logger) {
 	body := fmt.Sprintf(
 		`{"event_type":%q,"aggregate_type":%q,"aggregate_id":%q}`,
@@ -212,6 +224,11 @@ func (d *AdminDispatcher) notifyN8n(ctx context.Context, entry *notification.Out
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if d.n8nSecret != "" {
+		mac := hmac.New(sha256.New, []byte(d.n8nSecret))
+		mac.Write([]byte(body))
+		req.Header.Set("X-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	}
 	resp, err := d.httpClient.Do(req)
 	if err != nil {
 		log.Warn("n8n webhook: request failed", zap.Error(err))

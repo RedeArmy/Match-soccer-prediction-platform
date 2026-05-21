@@ -2,9 +2,13 @@ package dispatcher_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -84,15 +88,17 @@ func newDispatcher(
 	logRepo repository.AdminNotificationLogCreator,
 	dlqRepo repository.NotificationDLQEntryCreator,
 	n8nURL string,
+	n8nSecret string,
 ) *dispatcher.AdminDispatcher {
 	return dispatcher.NewAdminDispatcher(dispatcher.Config{
-		Params:   &stubParams{emails: emails},
-		LogRepo:  logRepo,
-		DLQRepo:  dlqRepo,
-		Mailer:   mailer,
-		FromAddr: "Quiniela <noreply@test.com>",
-		N8nURL:   n8nURL,
-		Log:      log,
+		Params:    &stubParams{emails: emails},
+		LogRepo:   logRepo,
+		DLQRepo:   dlqRepo,
+		Mailer:    mailer,
+		FromAddr:  "Quiniela <noreply@test.com>",
+		N8nURL:    n8nURL,
+		N8nSecret: n8nSecret,
+		Log:       log,
 	})
 }
 
@@ -105,7 +111,7 @@ func TestAdminDispatcher_NonAdminEvent_Noop(t *testing.T) {
 	logRepo := &recordingLogRepo{}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, "")
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, "", "")
 
 	entry := makeEntry(t, notification.EventPredictionConfirmed,
 		notification.PredictionConfirmedPayload{UserID: 1, MatchID: 2})
@@ -128,7 +134,7 @@ func TestAdminDispatcher_NoRecipientsConfigured_Noop(t *testing.T) {
 	logRepo := &recordingLogRepo{}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "", mailer, logRepo, dlqRepo, "")
+	d := newDispatcher(log, "", mailer, logRepo, dlqRepo, "", "")
 
 	entry := makeEntry(t, notification.EventAdminBankTransferPending,
 		notification.AdminBankTransferPayload{ProofID: 1, UserID: 2, AmountCents: 50000, Currency: "GTQ"})
@@ -148,7 +154,7 @@ func TestAdminDispatcher_SuccessfulDelivery(t *testing.T) {
 	logRepo := &recordingLogRepo{}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, "")
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, "", "")
 
 	entry := makeEntry(t, notification.EventAdminBankTransferPending,
 		notification.AdminBankTransferPayload{ProofID: 7, UserID: 42, AmountCents: 100000, Currency: "GTQ"})
@@ -182,7 +188,7 @@ func TestAdminDispatcher_EmailFailure_WritesDLQ_ReturnsError(t *testing.T) {
 	logRepo := &recordingLogRepo{}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, "")
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, "", "")
 
 	entry := makeEntry(t, notification.EventAdminWithdrawalPending,
 		notification.AdminWithdrawalPayload{RequestID: 3, UserID: 9, AmountCents: 250000, Currency: "GTQ"})
@@ -222,7 +228,7 @@ func TestAdminDispatcher_MultipleRecipients(t *testing.T) {
 	logRepo := &recordingLogRepo{}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "a@test.com, b@test.com, c@test.com", captureMailer, logRepo, dlqRepo, "")
+	d := newDispatcher(log, "a@test.com, b@test.com, c@test.com", captureMailer, logRepo, dlqRepo, "", "")
 
 	entry := makeEntry(t, notification.EventAdminHighValueWithdrawal,
 		notification.AdminWithdrawalPayload{RequestID: 1, UserID: 5, AmountCents: 2_000_000, Currency: "GTQ"})
@@ -254,7 +260,7 @@ func TestAdminDispatcher_SystemEvent_FiresN8nWebhook(t *testing.T) {
 	logRepo := &recordingLogRepo{}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, srv.URL)
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, srv.URL, "")
 
 	entry := makeEntry(t, notification.EventSystemCircuitBreakerOpened,
 		notification.SystemAlertPayload{Component: "payment-gateway", Detail: "timeout", Severity: "critical"})
@@ -278,7 +284,7 @@ func TestAdminDispatcher_BalanceLedgerMismatch_CriticalSubject(t *testing.T) {
 	logRepo := &recordingLogRepo{}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "admin@test.com", captureMailer, logRepo, dlqRepo, "")
+	d := newDispatcher(log, "admin@test.com", captureMailer, logRepo, dlqRepo, "", "")
 
 	entry := makeEntry(t, notification.EventSystemBalanceLedgerMismatch,
 		notification.SystemAlertPayload{Component: "ledger", Detail: "sum mismatch", Severity: "critical"})
@@ -297,7 +303,7 @@ func TestAdminDispatcher_WriteLog_RepoError_Swallowed(t *testing.T) {
 	mailer := &stubMailer{msgID: "ok-id"}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "admin@test.com", mailer, &errorLogRepo{}, dlqRepo, "")
+	d := newDispatcher(log, "admin@test.com", mailer, &errorLogRepo{}, dlqRepo, "", "")
 
 	entry := makeEntry(t, notification.EventAdminBankTransferPending,
 		notification.AdminBankTransferPayload{ProofID: 1, UserID: 2, AmountCents: 100, Currency: "GTQ"})
@@ -315,7 +321,7 @@ func TestAdminDispatcher_WriteDLQ_RepoError_Swallowed(t *testing.T) {
 	mailer := &stubMailer{sendErr: sendErr}
 	logRepo := &recordingLogRepo{}
 
-	d := newDispatcher(log, "admin@test.com", mailer, logRepo, &errorDLQRepo{}, "")
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, &errorDLQRepo{}, "", "")
 
 	entry := makeEntry(t, notification.EventAdminWithdrawalPending,
 		notification.AdminWithdrawalPayload{RequestID: 1, UserID: 2, AmountCents: 500, Currency: "GTQ"})
@@ -340,7 +346,7 @@ func TestAdminDispatcher_N8nWebhook_Non2xx_Swallowed(t *testing.T) {
 	logRepo := &recordingLogRepo{}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, srv.URL)
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, srv.URL, "")
 
 	entry := makeEntry(t, notification.EventSystemCircuitBreakerOpened,
 		notification.SystemAlertPayload{Component: "db", Detail: "timeout", Severity: "critical"})
@@ -364,7 +370,7 @@ func TestAdminDispatcher_N8nWebhook_RequestFailed_Swallowed(t *testing.T) {
 	logRepo := &recordingLogRepo{}
 	dlqRepo := &recordingDLQRepo{}
 
-	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, srv.URL)
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, srv.URL, "")
 
 	entry := makeEntry(t, notification.EventSystemCircuitBreakerOpened,
 		notification.SystemAlertPayload{Component: "cache", Detail: "connect failed", Severity: "critical"})
@@ -429,4 +435,84 @@ func equalFold(a, b string) bool {
 		}
 	}
 	return true
+}
+
+// ── n8n HMAC-SHA256 signature tests ──────────────────────────────────────────
+
+func TestAdminDispatcher_N8nWebhook_WithSecret_SendsSignatureHeader(t *testing.T) {
+	t.Parallel()
+
+	const secret = "supersecret"
+	var gotSig string
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		gotSig = r.Header.Get("X-Signature")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	log := zaptest.NewLogger(t)
+	mailer := &stubMailer{msgID: "msg-ok"}
+	logRepo := &recordingLogRepo{}
+	dlqRepo := &recordingDLQRepo{}
+
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, srv.URL, secret)
+
+	entry := makeEntry(t, notification.EventSystemCircuitBreakerOpened,
+		notification.SystemAlertPayload{Component: "db", Detail: "timeout", Severity: "critical"})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond) // allow best-effort goroutine to complete
+
+	if gotSig == "" {
+		t.Fatal("X-Signature header missing; expected sha256=<hex>")
+	}
+	if !strings.HasPrefix(gotSig, "sha256=") {
+		t.Errorf("X-Signature format: got %q; want sha256=<hex>", gotSig)
+	}
+	sigHex := strings.TrimPrefix(gotSig, "sha256=")
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(gotBody))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	if sigHex != expected {
+		t.Errorf("X-Signature mismatch: got %q; want %q", sigHex, expected)
+	}
+}
+
+func TestAdminDispatcher_N8nWebhook_NoSecret_NoSignatureHeader(t *testing.T) {
+	t.Parallel()
+
+	var gotSig string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSig = r.Header.Get("X-Signature")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	log := zaptest.NewLogger(t)
+	mailer := &stubMailer{msgID: "msg-ok"}
+	logRepo := &recordingLogRepo{}
+	dlqRepo := &recordingDLQRepo{}
+
+	// empty secret → unsigned request
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, srv.URL, "")
+
+	entry := makeEntry(t, notification.EventSystemCircuitBreakerOpened,
+		notification.SystemAlertPayload{Component: "cache", Detail: "conn refused", Severity: "warn"})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	if gotSig != "" {
+		t.Errorf("X-Signature must be absent when no secret is configured; got %q", gotSig)
+	}
 }

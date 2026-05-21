@@ -45,6 +45,7 @@ type paramSpec struct {
 //   - 000088_seed_notify_sse_push_params         (+2)
 //   - 000089_seed_notify_push_asset_params       (+2)
 //   - 000090_seed_scheduler_timezone_param       (+1)
+//   - 000092_seed_queue_depth_param              (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -154,13 +155,13 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyNotifyPredictionDeadlineLeadMin1, defaultValue: strconv.Itoa(domain.DefaultNotifyPredictionDeadlineLeadMin1), paramType: "int", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyPredictionDeadlineLeadMin2, defaultValue: strconv.Itoa(domain.DefaultNotifyPredictionDeadlineLeadMin2), paramType: "int", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyPredictionMissingLeadMin, defaultValue: strconv.Itoa(domain.DefaultNotifyPredictionMissingLeadMin), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyBankTransferQueueDepthThreshold, defaultValue: strconv.Itoa(domain.DefaultNotifyBankTransferQueueDepthThreshold), paramType: "int", category: "notify", isRuntime: true},
 	// SSE and Web Push delivery tuning (Phase 2).
 	{key: domain.ParamKeyNotifySSEHeartbeatIntervalSec, defaultValue: strconv.Itoa(domain.DefaultNotifySSEHeartbeatIntervalSec), paramType: "int", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyWebPushTTLSec, defaultValue: strconv.Itoa(domain.DefaultNotifyWebPushTTLSec), paramType: "int", category: "notify", isRuntime: true},
 	// String params — empty default is intentional: must be set by the operator before enabling notifications.
 	{key: domain.ParamKeyNotifyAdminEmails, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyWebPushVAPIDPublicKey, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
-	{key: domain.ParamKeyNotifyWebPushVAPIDPrivateKey, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyWebPushVAPIDSubject, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
 	// Web Push notification asset URLs (Phase 3); string params with non-empty defaults.
 	{key: domain.ParamKeyNotifyPushIconURL, defaultValue: domain.DefaultNotifyPushIconURL, paramType: "string", category: "notify", isRuntime: true},
