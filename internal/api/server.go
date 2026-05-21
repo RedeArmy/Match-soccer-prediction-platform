@@ -738,7 +738,8 @@ func (s *Server) buildHandlers(
 
 	outboxWriter := outbox.NewWriter(s.db)
 
-	tmplRepo := repository.NewPostgresNotificationTemplateRepository(s.db)
+	tmplCacheTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyTemplateCacheTTLSec, domain.DefaultNotifyTemplateCacheTTLSec)) * time.Second
+	tmplRepo := repository.NewPostgresNotificationTemplateRepository(s.db, tmplCacheTTL)
 	notifRepo := repository.NewPostgresUserNotificationRepository(s.db)
 	prefRepo := repository.NewPostgresNotificationPreferenceRepository(s.db)
 	pushRepo := repository.NewPostgresPushSubscriptionRepository(s.db)

@@ -438,6 +438,8 @@ definitions:
         type: string
       body_tmpl:
         type: string
+      email_subject_tmpl:
+        type: string
       event_type:
         type: string
       locale:
@@ -576,6 +578,8 @@ definitions:
       action_url:
         type: string
       body:
+        type: string
+      email_subject:
         type: string
       title:
         type: string
@@ -836,6 +840,8 @@ definitions:
         type: string
       body_tmpl:
         type: string
+      email_subject_tmpl:
+        type: string
       sample_payload:
         items:
           type: integer
@@ -940,6 +946,8 @@ definitions:
       action_url_tmpl:
         type: string
       body_tmpl:
+        type: string
+      email_subject_tmpl:
         type: string
       title_tmpl:
         type: string

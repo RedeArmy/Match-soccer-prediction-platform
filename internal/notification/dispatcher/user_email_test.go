@@ -385,3 +385,91 @@ func TestUserDispatcher_UnsubscribeURL_AppearsInEmail(t *testing.T) {
 		t.Error("rendered HTML should contain unsubscribe anchor text")
 	}
 }
+
+func TestUserDispatcher_EmailSubjectTmpl_OverridesTitle(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Diana"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true, ChannelInApp: true},
+	}
+
+	tmplRepo := &stubTemplateRepo{
+		tmpl: &domain.NotificationTemplate{
+			EventType:        string(notification.EventPaymentConfirmed),
+			Locale:           "en",
+			TitleTmpl:        "Payment confirmed",
+			BodyTmpl:         "Your payment is confirmed.",
+			EmailSubjectTmpl: "Your payment of {{formatCents .amount_cents .currency}} is confirmed",
+		},
+	}
+
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:     &notifRepo,
+		PrefRepo:      &prefRepo,
+		DLQRepo:       &recordingDLQRepo{},
+		Mailer:        mailer,
+		EmailResolver: resolver,
+		FromAddr:      "noreply@test.com",
+		TemplateRepo:  tmplRepo,
+		Log:           zap.NewNop(),
+	})
+
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+	subject := mailer.messages[0].Subject
+	if !strings.Contains(subject, "GTQ") {
+		t.Errorf("Subject = %q; want DB email_subject_tmpl rendered value containing GTQ", subject)
+	}
+	if subject == "Payment confirmed" {
+		t.Errorf("Subject = %q; email_subject_tmpl should override the notification title", subject)
+	}
+}
+
+func TestUserDispatcher_EmptyEmailSubjectTmpl_FallsBackToTitle(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Eve"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true, ChannelInApp: true},
+	}
+
+	tmplRepo := &stubTemplateRepo{
+		tmpl: &domain.NotificationTemplate{
+			EventType:        string(notification.EventPaymentConfirmed),
+			Locale:           "en",
+			TitleTmpl:        "Payment confirmed",
+			BodyTmpl:         "Your payment is confirmed.",
+			EmailSubjectTmpl: "", // empty — should fall back to title
+		},
+	}
+
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:     &notifRepo,
+		PrefRepo:      &prefRepo,
+		DLQRepo:       &recordingDLQRepo{},
+		Mailer:        mailer,
+		EmailResolver: resolver,
+		FromAddr:      "noreply@test.com",
+		TemplateRepo:  tmplRepo,
+		Log:           zap.NewNop(),
+	})
+
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+	if mailer.messages[0].Subject != "Payment confirmed" {
+		t.Errorf("Subject = %q; want 'Payment confirmed' (fallback to title when email_subject_tmpl empty)", mailer.messages[0].Subject)
+	}
+}

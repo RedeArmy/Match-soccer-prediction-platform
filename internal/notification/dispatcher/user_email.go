@@ -161,9 +161,13 @@ func buildUserEmailData(content userContent, name, unsubURL string) userEmailDat
 		greeting = localeStr("there", "amig@", locale)
 	}
 	hi := localeStr("Hi", "Hola", locale)
+	subject := content.emailSubject
+	if subject == "" {
+		subject = content.title
+	}
 	return userEmailData{
 		Name:             greeting,
-		Subject:          content.title,
+		Subject:          subject,
 		Headline:         content.title,
 		Body:             fmt.Sprintf("%s %s, %s", hi, greeting, content.body),
 		ActionURL:        content.actionURL,

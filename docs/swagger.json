@@ -5537,6 +5537,9 @@
                 "body_tmpl": {
                     "type": "string"
                 },
+                "email_subject_tmpl": {
+                    "type": "string"
+                },
                 "event_type": {
                     "type": "string"
                 },
@@ -5749,6 +5752,9 @@
                     "type": "string"
                 },
                 "body": {
+                    "type": "string"
+                },
+                "email_subject": {
                     "type": "string"
                 },
                 "title": {
@@ -6150,6 +6156,9 @@
                 "body_tmpl": {
                     "type": "string"
                 },
+                "email_subject_tmpl": {
+                    "type": "string"
+                },
                 "sample_payload": {
                     "type": "array",
                     "items": {
@@ -6312,6 +6321,9 @@
                     "type": "string"
                 },
                 "body_tmpl": {
+                    "type": "string"
+                },
+                "email_subject_tmpl": {
                     "type": "string"
                 },
                 "title_tmpl": {

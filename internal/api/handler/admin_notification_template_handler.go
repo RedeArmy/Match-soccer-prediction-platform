@@ -32,24 +32,26 @@ func NewAdminNotificationTemplateHandler(
 
 // NotificationTemplateResponse is the JSON representation of a stored template.
 type NotificationTemplateResponse struct {
-	EventType     string `json:"event_type"`
-	Locale        string `json:"locale"`
-	TitleTmpl     string `json:"title_tmpl"`
-	BodyTmpl      string `json:"body_tmpl"`
-	ActionURLTmpl string `json:"action_url_tmpl"`
-	UpdatedBy     *int   `json:"updated_by,omitempty"`
-	UpdatedAt     string `json:"updated_at"`
+	EventType        string `json:"event_type"`
+	Locale           string `json:"locale"`
+	TitleTmpl        string `json:"title_tmpl"`
+	BodyTmpl         string `json:"body_tmpl"`
+	ActionURLTmpl    string `json:"action_url_tmpl"`
+	EmailSubjectTmpl string `json:"email_subject_tmpl,omitempty"`
+	UpdatedBy        *int   `json:"updated_by,omitempty"`
+	UpdatedAt        string `json:"updated_at"`
 }
 
 func templateToResponse(t *domain.NotificationTemplate) NotificationTemplateResponse {
 	return NotificationTemplateResponse{
-		EventType:     t.EventType,
-		Locale:        t.Locale,
-		TitleTmpl:     t.TitleTmpl,
-		BodyTmpl:      t.BodyTmpl,
-		ActionURLTmpl: t.ActionURLTmpl,
-		UpdatedBy:     t.UpdatedBy,
-		UpdatedAt:     t.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		EventType:        t.EventType,
+		Locale:           t.Locale,
+		TitleTmpl:        t.TitleTmpl,
+		BodyTmpl:         t.BodyTmpl,
+		ActionURLTmpl:    t.ActionURLTmpl,
+		EmailSubjectTmpl: t.EmailSubjectTmpl,
+		UpdatedBy:        t.UpdatedBy,
+		UpdatedAt:        t.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	}
 }
 
@@ -124,9 +126,10 @@ func (h *AdminNotificationTemplateHandler) Get(w http.ResponseWriter, r *http.Re
 }
 
 type upsertTemplateRequest struct {
-	TitleTmpl     string `json:"title_tmpl"`
-	BodyTmpl      string `json:"body_tmpl"`
-	ActionURLTmpl string `json:"action_url_tmpl"`
+	TitleTmpl        string `json:"title_tmpl"`
+	BodyTmpl         string `json:"body_tmpl"`
+	ActionURLTmpl    string `json:"action_url_tmpl"`
+	EmailSubjectTmpl string `json:"email_subject_tmpl"`
 }
 
 // Upsert handles PUT /admin/notification-templates/{event_type}/{locale}.
@@ -179,16 +182,18 @@ func (h *AdminNotificationTemplateHandler) Upsert(w http.ResponseWriter, r *http
 	}
 
 	candidate := &domain.NotificationTemplate{
-		EventType:     eventType,
-		Locale:        locale,
-		TitleTmpl:     req.TitleTmpl,
-		BodyTmpl:      req.BodyTmpl,
-		ActionURLTmpl: req.ActionURLTmpl,
-		UpdatedBy:     &caller.ID,
+		EventType:        eventType,
+		Locale:           locale,
+		TitleTmpl:        req.TitleTmpl,
+		BodyTmpl:         req.BodyTmpl,
+		ActionURLTmpl:    req.ActionURLTmpl,
+		EmailSubjectTmpl: req.EmailSubjectTmpl,
+		UpdatedBy:        &caller.ID,
 	}
 
-	// Validate template syntax with a zero-value payload before persisting.
-	if valErr := validateTemplateSyntax(candidate); valErr != nil {
+	// Validate the template against a typed sample payload for this event type.
+	// This catches unknown variables (missingkey=error) and non-relative action URLs.
+	if valErr := dispatcher.ValidateTemplate(eventType, candidate); valErr != nil {
 		writeError(w, r, h.log, apperrors.Validation(valErr.Error()))
 		return
 	}
@@ -237,17 +242,19 @@ func (h *AdminNotificationTemplateHandler) Delete(w http.ResponseWriter, r *http
 }
 
 type previewTemplateRequest struct {
-	TitleTmpl     string          `json:"title_tmpl"`
-	BodyTmpl      string          `json:"body_tmpl"`
-	ActionURLTmpl string          `json:"action_url_tmpl"`
-	SamplePayload json.RawMessage `json:"sample_payload"`
+	TitleTmpl        string          `json:"title_tmpl"`
+	BodyTmpl         string          `json:"body_tmpl"`
+	ActionURLTmpl    string          `json:"action_url_tmpl"`
+	EmailSubjectTmpl string          `json:"email_subject_tmpl"`
+	SamplePayload    json.RawMessage `json:"sample_payload"`
 }
 
 // PreviewResponse is the rendered result returned by the preview endpoint.
 type PreviewResponse struct {
-	Title     string `json:"title"`
-	Body      string `json:"body"`
-	ActionURL string `json:"action_url,omitempty"`
+	Title        string `json:"title"`
+	Body         string `json:"body"`
+	ActionURL    string `json:"action_url,omitempty"`
+	EmailSubject string `json:"email_subject,omitempty"`
 }
 
 // Preview handles POST /admin/notification-templates/{event_type}/{locale}/preview.
@@ -298,16 +305,17 @@ func (h *AdminNotificationTemplateHandler) Preview(w http.ResponseWriter, r *htt
 	}
 
 	tmpl := &domain.NotificationTemplate{
-		TitleTmpl:     req.TitleTmpl,
-		BodyTmpl:      req.BodyTmpl,
-		ActionURLTmpl: req.ActionURLTmpl,
+		TitleTmpl:        req.TitleTmpl,
+		BodyTmpl:         req.BodyTmpl,
+		ActionURLTmpl:    req.ActionURLTmpl,
+		EmailSubjectTmpl: req.EmailSubjectTmpl,
 	}
-	title, body, actionURL, renderErr := dispatcher.RenderTemplate(tmpl, payload)
+	title, body, actionURL, emailSubject, renderErr := dispatcher.RenderTemplate(tmpl, payload)
 	if renderErr != nil {
 		writeError(w, r, h.log, apperrors.Validation(renderErr.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, PreviewResponse{Title: title, Body: body, ActionURL: actionURL})
+	writeJSON(w, http.StatusOK, PreviewResponse{Title: title, Body: body, ActionURL: actionURL, EmailSubject: emailSubject})
 }
 
 // pathParams extracts and validates {event_type} and {locale} from the URL.
@@ -328,27 +336,4 @@ func (h *AdminNotificationTemplateHandler) pathParams(w http.ResponseWriter, r *
 		return "", "", false
 	}
 	return eventType, locale, true
-}
-
-// validateTemplateSyntax parses each template string with a zero-value data map
-// to catch syntax errors before persisting.  It does NOT run the full render so
-// missing field references do not cause a validation failure.
-func validateTemplateSyntax(t *domain.NotificationTemplate) error {
-	for _, s := range []struct{ name, tmpl string }{
-		{"title_tmpl", t.TitleTmpl},
-		{"body_tmpl", t.BodyTmpl},
-		{"action_url_tmpl", t.ActionURLTmpl},
-	} {
-		if s.tmpl == "" {
-			continue
-		}
-		if _, _, _, err := dispatcher.RenderTemplate(&domain.NotificationTemplate{
-			TitleTmpl:     s.tmpl,
-			BodyTmpl:      s.tmpl,
-			ActionURLTmpl: s.tmpl,
-		}, json.RawMessage(`{}`)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
