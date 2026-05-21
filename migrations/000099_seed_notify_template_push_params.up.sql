@@ -8,12 +8,12 @@
 -- notify.push_body_max_chars         — maximum runes kept in the push body field
 --   (Android FCM hard limit is 300).
 
-INSERT INTO system_params (key, value, type, category, is_runtime, description)
+INSERT INTO system_params (key, value, default_value, type, category, is_runtime, description)
 VALUES
-    ('notify.template_cache_ttl_seconds', '300',  'int', 'notify', TRUE,
+    ('notify.template_cache_ttl_seconds', '300', '300', 'int', 'notify', TRUE,
      'TTL in seconds for the in-memory notification template cache (30–3600).'),
-    ('notify.push_title_max_chars',       '100',  'int', 'notify', TRUE,
+    ('notify.push_title_max_chars',       '100', '100', 'int', 'notify', TRUE,
      'Maximum rune count for push notification title field (10–500).'),
-    ('notify.push_body_max_chars',        '300',  'int', 'notify', TRUE,
+    ('notify.push_body_max_chars',        '300', '300', 'int', 'notify', TRUE,
      'Maximum rune count for push notification body field (50–2000).')
 ON CONFLICT (key) DO NOTHING;
