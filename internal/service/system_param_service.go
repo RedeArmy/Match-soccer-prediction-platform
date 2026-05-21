@@ -305,6 +305,8 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyTemplateCacheTTLSec: {30, 3_600}, // 30 s – 1 h
 	domain.ParamKeyNotifyPushTitleMaxChars:   {10, 500},   // 10 – 500 chars
 	domain.ParamKeyNotifyPushBodyMaxChars:    {50, 2_000}, // 50 – 2 000 chars
+	// Push subscription pruning retention (migration 000102).
+	domain.ParamKeyNotifyPushSubRetentionDays: {1, 365}, // 1 day – 1 year
 }
 
 // validateParamConstraints enforces per-key business-rule bounds for int params.

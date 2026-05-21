@@ -83,17 +83,20 @@ type dlqEntry struct {
 type RedisBus struct {
 	client       *redis.Client
 	log          *zap.Logger
-	consumerName string // unique per process; prevents two replicas from stealing each other's PEL
+	baseCtx      context.Context // root context for all consumer goroutines
+	consumerName string          // unique per process; prevents two replicas from stealing each other's PEL
 	cancels      []context.CancelFunc
 	mu           sync.RWMutex
 	handlers     map[events.EventType][]func(context.Context, events.Envelope) error
 }
 
 // NewRedisBus constructs a RedisBus that publishes and subscribes using the
-// provided Redis client. The client is not owned by the bus and must be closed
-// by the caller after Close has been called.
+// provided Redis client. ctx is the application lifecycle context: all consumer
+// goroutines are children of it, so a SIGTERM-triggered cancellation propagates
+// to the bus without an explicit Close call. The client is not owned by the bus
+// and must be closed by the caller after Close has been called.
 // If log is nil a no-op logger is used so that tests do not need to provide one.
-func NewRedisBus(client *redis.Client, log *zap.Logger) *RedisBus {
+func NewRedisBus(ctx context.Context, client *redis.Client, log *zap.Logger) *RedisBus {
 	if log == nil {
 		log = zap.NewNop()
 	}
@@ -104,6 +107,7 @@ func NewRedisBus(client *redis.Client, log *zap.Logger) *RedisBus {
 	return &RedisBus{
 		client:       client,
 		log:          log,
+		baseCtx:      ctx,
 		consumerName: fmt.Sprintf("%s-%d", hostname, os.Getpid()),
 		handlers:     make(map[events.EventType][]func(context.Context, events.Envelope) error),
 	}
@@ -137,7 +141,7 @@ func (b *RedisBus) Subscribe(eventType events.EventType, handler func(context.Co
 	var ctx context.Context
 	if len(existing) == 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(context.Background())
+		ctx, cancel = context.WithCancel(b.baseCtx)
 		b.cancels = append(b.cancels, cancel)
 	}
 	b.mu.Unlock()
@@ -173,9 +177,9 @@ func (b *RedisBus) Publish(ctx context.Context, envelope events.Envelope) error 
 //
 // Returns true if the group exists (either created now or already present),
 // false if creation failed due to a non-recoverable Redis error.
-func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) bool {
+func (b *RedisBus) ensureConsumerGroup(ctx context.Context, eventType events.EventType) bool {
 	err := b.client.XGroupCreateMkStream(
-		context.Background(),
+		ctx,
 		streamKey(eventType),
 		consumerGroup,
 		"0",
@@ -219,7 +223,7 @@ func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) bool {
 func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 	key := streamKey(eventType)
 
-	if !b.ensureConsumerGroup(eventType) {
+	if !b.ensureConsumerGroup(ctx, eventType) {
 		b.log.Error("redis bus: consumer group setup failed, goroutine exiting",
 			zap.String("stream", key),
 		)
@@ -371,7 +375,7 @@ func (b *RedisBus) processMessage(ctx context.Context, eventType events.EventTyp
 			zap.String("stream", key),
 			zap.String("id", msg.ID),
 		)
-		b.ack(key, msg.ID)
+		b.ack(ctx, key, msg.ID)
 		return
 	}
 
@@ -382,7 +386,7 @@ func (b *RedisBus) processMessage(ctx context.Context, eventType events.EventTyp
 			zap.String("id", msg.ID),
 			zap.Error(err),
 		)
-		b.ack(key, msg.ID)
+		b.ack(ctx, key, msg.ID)
 		return
 	}
 
@@ -397,16 +401,18 @@ func (b *RedisBus) processMessage(ctx context.Context, eventType events.EventTyp
 	for _, h := range handlers {
 		h := h
 		if err := callWithRetry(ctx, func() error { return h(handlerCtx, envelope) }); err != nil {
-			b.pushDLQ(envelope, err)
+			b.pushDLQ(ctx, envelope, err)
 		}
 	}
 
-	b.ack(key, msg.ID)
+	b.ack(ctx, key, msg.ID)
 }
 
 // ack sends XACK for the given message ID and logs a warning on failure.
-func (b *RedisBus) ack(key, msgID string) {
-	if err := b.client.XAck(context.Background(), key, consumerGroup, msgID).Err(); err != nil {
+// WithoutCancel ensures XACK completes even during graceful shutdown when
+// the consume goroutine's context is already cancelled.
+func (b *RedisBus) ack(ctx context.Context, key, msgID string) {
+	if err := b.client.XAck(context.WithoutCancel(ctx), key, consumerGroup, msgID).Err(); err != nil {
 		b.log.Warn("redis bus: XACK failed",
 			zap.String("stream", key),
 			zap.String("id", msgID),
@@ -416,7 +422,7 @@ func (b *RedisBus) ack(key, msgID string) {
 }
 
 // pushDLQ appends a dead-letter entry to the Redis list at dlq:<event_type>.
-func (b *RedisBus) pushDLQ(envelope events.Envelope, handlerErr error) {
+func (b *RedisBus) pushDLQ(ctx context.Context, envelope events.Envelope, handlerErr error) {
 	entry := dlqEntry{
 		EventType:      string(envelope.Type),
 		Envelope:       envelope,
@@ -432,7 +438,7 @@ func (b *RedisBus) pushDLQ(envelope events.Envelope, handlerErr error) {
 		)
 		return
 	}
-	if err := b.client.RPush(context.Background(), dlqKey(envelope.Type), data).Err(); err != nil {
+	if err := b.client.RPush(context.WithoutCancel(ctx), dlqKey(envelope.Type), data).Err(); err != nil {
 		b.log.Error("redis bus: push to dlq",
 			zap.String("event_type", string(envelope.Type)),
 			zap.Error(err),

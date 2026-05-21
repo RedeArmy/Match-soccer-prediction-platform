@@ -216,7 +216,10 @@ func (r *PostgresPaymentRecordRepository) List(ctx context.Context, f PaymentFil
 	}
 
 	q := `SELECT ` + paymentColumns + ` FROM payment_records` + wb.clause() + ` ORDER BY created_at DESC`
-	q, pagedArgs, _ := applyPagination(q, wb.args, wb.next(), p)
+	q, pagedArgs, _, err := applyPagination(q, wb.args, wb.next(), p)
+	if err != nil {
+		return nil, apperrors.BadRequest(err.Error())
+	}
 	return r.queryPaymentRecords(ctx, q, pagedArgs...)
 }
 

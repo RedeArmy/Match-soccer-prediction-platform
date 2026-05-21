@@ -156,7 +156,10 @@ func (r *PostgresBalanceLedgerRepository) ListByUser(ctx context.Context, userID
 	defer cancel()
 	q := `SELECT id, user_id, delta_cents, kind, balance_after, ref_id, ref_type, created_by, created_at
 		  FROM balance_ledger WHERE user_id = $1 ORDER BY created_at DESC`
-	q, args, _ := applyPagination(q, []any{userID}, 2, p)
+	q, args, _, err := applyPagination(q, []any{userID}, 2, p)
+	if err != nil {
+		return nil, apperrors.BadRequest(err.Error())
+	}
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
 		return nil, apperrors.Internal(err)

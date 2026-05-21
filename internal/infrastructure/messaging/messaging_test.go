@@ -220,7 +220,7 @@ func TestInMemoryBus_Publish_SucceedsOnSecondAttempt(t *testing.T) {
 
 func TestRedisBus_Publish_DeliversToSubscriber(t *testing.T) {
 	_, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	received := make(chan events.Envelope, 1)
 	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, env events.Envelope) error {
@@ -248,7 +248,7 @@ func TestRedisBus_Publish_DeliversToSubscriber(t *testing.T) {
 
 func TestRedisBus_Publish_DeliversToMultipleHandlers(t *testing.T) {
 	_, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	received := make(chan struct{}, 3)
 	for range 3 {
@@ -276,7 +276,7 @@ func TestRedisBus_Publish_DeliversToMultipleHandlers(t *testing.T) {
 
 func TestRedisBus_Close_IsIdempotent(t *testing.T) {
 	_, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
 		// No-op handler: this test only needs a live subscription goroutine;
@@ -294,7 +294,7 @@ func TestRedisBus_Close_IsIdempotent(t *testing.T) {
 
 func TestRedisBus_Close_SubscriptionCloseError_DoesNotPanic(t *testing.T) {
 	mr, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
 		// No-op handler: this test only needs a live subscription goroutine to
@@ -313,7 +313,7 @@ func TestRedisBus_Close_SubscriptionCloseError_DoesNotPanic(t *testing.T) {
 
 func TestRedisBus_Publish_DoesNotCrossDeliver(t *testing.T) {
 	_, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	called := make(chan struct{}, 1)
 	bus.Subscribe(events.EventMatchStarted, func(_ context.Context, _ events.Envelope) error {
@@ -341,7 +341,7 @@ func TestRedisBus_ContextCancelled_StopsRetrying(t *testing.T) {
 	defer func() { messaging.RetryBackoff = orig }()
 
 	_, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	calls := make(chan struct{}, 10)
 	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
@@ -378,7 +378,7 @@ func TestRedisBus_DLQPushError_DoesNotPanic(t *testing.T) {
 	defer func() { messaging.RetryBackoff = orig }()
 
 	mr, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	// Count handler calls so we know when all retries are exhausted.
 	var mu sync.Mutex
@@ -417,7 +417,7 @@ func TestRedisBus_DLQPushError_DoesNotPanic(t *testing.T) {
 // message without a "payload" field is acknowledged and skipped without panicking.
 func TestRedisBus_ProcessMessage_MissingPayload_DoesNotPanic(t *testing.T) {
 	_, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	handlerCalled := make(chan struct{}, 1)
 	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
@@ -445,7 +445,7 @@ func TestRedisBus_ProcessMessage_MissingPayload_DoesNotPanic(t *testing.T) {
 // stream message whose payload is not valid JSON is acknowledged and skipped.
 func TestRedisBus_ProcessMessage_InvalidJSONPayload_DoesNotPanic(t *testing.T) {
 	_, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	handlerCalled := make(chan struct{}, 1)
 	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {
@@ -479,7 +479,7 @@ func TestRedisBus_ConcurrentMessages_ProcessedConcurrently(t *testing.T) {
 	defer func() { messaging.StreamWorkerCount = orig }()
 
 	_, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	const numMessages = 4
 	gate := make(chan struct{}) // closed to release all in-flight handlers at once
@@ -552,7 +552,7 @@ func TestRedisBus_RetriesAndPushesToDLQ_OnHandlerError(t *testing.T) {
 	defer func() { messaging.RetryBackoff = orig }()
 
 	mr, client := newMiniRedis(t)
-	bus := messaging.NewRedisBus(client, nil)
+	bus := messaging.NewRedisBus(context.Background(), client, nil)
 
 	calls := make(chan struct{}, 10)
 	bus.Subscribe(events.EventMatchFinished, func(_ context.Context, _ events.Envelope) error {

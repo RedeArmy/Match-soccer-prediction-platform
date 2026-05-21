@@ -35,16 +35,16 @@ var ErrNotFound = fmt.Errorf("storage: object not found")
 
 // New constructs the FileStore selected by cfg.Driver.
 // Recognised drivers: "local", "s3", "onedrive", "gdrive".
-func New(cfg Config) (FileStore, error) {
+func New(ctx context.Context, cfg Config) (FileStore, error) {
 	switch cfg.Driver {
 	case "local":
 		return NewLocalFileStore(cfg.LocalDir)
 	case "s3":
-		return NewS3FileStore(cfg)
+		return NewS3FileStore(ctx, cfg)
 	case "onedrive":
-		return NewOneDriveFileStore(cfg)
+		return NewOneDriveFileStore(ctx, cfg)
 	case "gdrive":
-		return NewGDriveFileStore(cfg)
+		return NewGDriveFileStore(ctx, cfg)
 	default:
 		return nil, fmt.Errorf("storage: unknown driver %q", cfg.Driver)
 	}

@@ -113,7 +113,7 @@ func TestLocalFileStore_ContentType_InferredFromExtension(t *testing.T) {
 }
 
 func TestNew_LocalDriver_ReturnsStore(t *testing.T) {
-	fs, err := storage.New(storage.Config{Driver: "local", LocalDir: t.TempDir()})
+	fs, err := storage.New(context.Background(), storage.Config{Driver: "local", LocalDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestNew_LocalDriver_ReturnsStore(t *testing.T) {
 }
 
 func TestNew_UnknownDriver_ReturnsError(t *testing.T) {
-	_, err := storage.New(storage.Config{Driver: "s3"})
+	_, err := storage.New(context.Background(), storage.Config{Driver: "s3"})
 	if err == nil {
 		t.Error("expected error for unknown driver, got nil")
 	}

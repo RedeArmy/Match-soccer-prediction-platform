@@ -20,7 +20,7 @@ func newTestS3Store(t *testing.T, handler http.Handler) (*storage.S3FileStore, *
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	store, err := storage.NewS3FileStore(storage.Config{
+	store, err := storage.NewS3FileStore(context.Background(), storage.Config{
 		S3Bucket:      "test-bucket",
 		S3Region:      "us-east-1",
 		S3Endpoint:    srv.URL,

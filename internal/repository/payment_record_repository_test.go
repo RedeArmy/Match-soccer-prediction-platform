@@ -281,6 +281,15 @@ func TestPaymentRecordRepository_List_Pagination(t *testing.T) {
 	}
 }
 
+func TestPaymentRecordRepository_List_ZeroLimitReturnsError(t *testing.T) {
+	repo := repository.NewPostgresPaymentRecordRepository(testDB)
+
+	_, err := repo.List(context.Background(), repository.PaymentFilters{}, repository.Pagination{Limit: 0})
+	if err == nil {
+		t.Error("expected error for zero Pagination.Limit, got nil")
+	}
+}
+
 func TestPaymentRecordRepository_ListStale_ReturnsPending(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)

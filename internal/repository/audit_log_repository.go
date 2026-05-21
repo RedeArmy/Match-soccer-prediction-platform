@@ -126,7 +126,7 @@ func (r *PostgresAuditLogRepository) ListByAction(ctx context.Context, action st
 // row is stripped before returning. The returned cursor is empty on the last page.
 func (r *PostgresAuditLogRepository) List(ctx context.Context, f AuditLogFilters, p CursorPage) ([]*domain.AuditLog, string, error) {
 	if p.Limit <= 0 {
-		panic("repository: CursorPage.Limit must be positive")
+		return nil, "", apperrors.BadRequest("page size must be a positive integer")
 	}
 
 	wb := newWhereBuilder()

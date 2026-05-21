@@ -387,7 +387,9 @@ func (d *UserDispatcher) sendPushToSubscription(ctx context.Context, entry *noti
 	// Fire-and-forget: a slow or failed write must not block the delivery path.
 	subID := sub.ID
 	go func() {
-		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// WithoutCancel strips request cancellation so this outlives the HTTP
+		// response, while still propagating tracing context from the parent.
+		updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := d.pushRepo.UpdateLastUsed(updateCtx, subID); err != nil {
 			log.Warn("user dispatcher: update push subscription last_used_at failed",

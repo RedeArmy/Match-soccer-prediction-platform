@@ -105,7 +105,7 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 	}
 	log.Sugar().Infof("event bus: using Redis driver (%s)", cfg.Redis.Addr)
 
-	bus := messaging.NewRedisBus(redisClient, log)
+	bus := messaging.NewRedisBus(ctx, redisClient, log)
 
 	cleanup := func() {
 		bus.Close()

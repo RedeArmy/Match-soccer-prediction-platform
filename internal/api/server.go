@@ -699,7 +699,7 @@ func (s *Server) buildHandlers(
 		dlqSvc = service.NoopDLQService{}
 	}
 
-	fileStore, err := storage.New(storage.Config{
+	fileStore, err := storage.New(ctx, storage.Config{
 		Driver:   s.cfg.Storage.Driver,
 		LocalDir: s.cfg.Storage.LocalDir,
 		// s3
@@ -719,7 +719,7 @@ func (s *Server) buildHandlers(
 	})
 	if err != nil {
 		s.log.Warn("storage: falling back to local driver", zap.Error(err))
-		fileStore, _ = storage.New(storage.Config{Driver: "local", LocalDir: "uploads"})
+		fileStore, _ = storage.New(ctx, storage.Config{Driver: "local", LocalDir: "uploads"})
 	}
 	// Wrap the file store with a circuit breaker. Failure threshold and cooldown
 	// are read from system_params at startup (is_runtime=FALSE: restart required).
