@@ -23,6 +23,7 @@ type userContent struct {
 	title     string
 	body      string
 	actionURL string
+	locale    Locale // propagated to email renderer for greeting/CTA localisation
 }
 
 // minUserPayload extracts only the user_id field from any outbox payload.
@@ -130,7 +131,8 @@ type UserDispatcher struct {
 	appBaseURL        string // WCQ_SERVER_APPBASEURL; used to build absolute links in emails
 	pgNotifier        PgNotifier
 	params            service.SystemParamService
-	memberLister      GroupMemberLister // nil disables broadcast fan-out (tests without DB)
+	templateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
+	memberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
 	log               *zap.Logger
 }
 
@@ -145,11 +147,12 @@ type UserDispatcherConfig struct {
 	Mailer            infraemail.Sender
 	EmailResolver     UserEmailResolver // nil disables email delivery
 	FromAddr          string
-	UnsubscribeSecret string                     // WCQ_EMAIL_UNSUBSCRIBESECRET; empty omits link
-	AppBaseURL        string                     // WCQ_SERVER_APPBASEURL; needed for absolute links
-	PgNotifier        PgNotifier                 // nil disables pg_notify (tests without DB)
-	Params            service.SystemParamService // nil uses defaults
-	MemberLister      GroupMemberLister          // nil disables broadcast fan-out (tests without DB)
+	UnsubscribeSecret string                                    // WCQ_EMAIL_UNSUBSCRIBESECRET; empty omits link
+	AppBaseURL        string                                    // WCQ_SERVER_APPBASEURL; needed for absolute links
+	PgNotifier        PgNotifier                                // nil disables pg_notify (tests without DB)
+	Params            service.SystemParamService                // nil uses defaults
+	TemplateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
+	MemberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
 	Log               *zap.Logger
 }
 
@@ -169,6 +172,7 @@ func NewUserDispatcher(cfg UserDispatcherConfig) *UserDispatcher {
 		appBaseURL:        cfg.AppBaseURL,
 		pgNotifier:        cfg.PgNotifier,
 		params:            cfg.Params,
+		templateRepo:      cfg.TemplateRepo,
 		memberLister:      cfg.MemberLister,
 		log:               cfg.Log,
 	}
@@ -203,7 +207,7 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 // (outbox entry, recipient) pair; for fan-out events use the form
 // "outbox-{id}-user-{uid}" so multiple recipients do not collide.
 func (d *UserDispatcher) deliverToUser(ctx context.Context, entry *notification.OutboxEntry, userID int, idempotencyKey string, log *zap.Logger) error {
-	content := buildUserContent(entry)
+	content := d.resolveContent(ctx, entry, log)
 
 	n := &domain.UserNotification{
 		UserID:         userID,
@@ -397,6 +401,51 @@ func (d *UserDispatcher) resolvePreferences(ctx context.Context, userID int, eve
 	}
 }
 
+// resolveContent returns the notification content for entry.  It queries the
+// operator-editable template store first; on a miss or render failure it falls
+// through to the compiled Go default.  The two-level fallback guarantees
+// delivery even when the template store is unavailable or contains an invalid
+// template.
+func (d *UserDispatcher) resolveContent(ctx context.Context, entry *notification.OutboxEntry, log *zap.Logger) userContent {
+	locale := d.resolveLocale(ctx)
+	if d.templateRepo != nil {
+		tmpl, err := d.templateRepo.Get(ctx, string(entry.EventType), string(locale))
+		if err != nil {
+			log.Warn("dispatcher: template store lookup failed; using compiled default",
+				zap.String("event_type", string(entry.EventType)),
+				zap.String("locale", string(locale)),
+				zap.Error(err),
+			)
+		} else if tmpl != nil {
+			title, body, actionURL, renderErr := RenderTemplate(tmpl, entry.Payload)
+			if renderErr != nil {
+				log.Warn("dispatcher: template render failed; using compiled default",
+					zap.String("event_type", string(entry.EventType)),
+					zap.String("locale", string(locale)),
+					zap.Error(renderErr),
+				)
+			} else {
+				return userContent{title: title, body: body, actionURL: actionURL, locale: locale}
+			}
+		}
+	}
+	return buildUserContent(entry, locale)
+}
+
+// resolveLocale returns the active delivery locale.  Falls back to LocaleEN
+// when params is nil (unit tests without a DB) or the key is absent so that
+// existing tests continue to receive English content without any changes.
+func (d *UserDispatcher) resolveLocale(ctx context.Context) Locale {
+	if d.params == nil {
+		return LocaleEN
+	}
+	raw := d.params.GetString(ctx, domain.ParamKeyNotifyDefaultLocale, string(LocaleEN))
+	if Locale(raw) == LocaleES {
+		return LocaleES
+	}
+	return LocaleEN
+}
+
 func (d *UserDispatcher) writeDLQEntry(ctx context.Context, entry *notification.OutboxEntry, userID int, channel string, sendErr error) {
 	outboxID := entry.ID
 	dlq := &domain.NotificationDLQEntry{
@@ -415,22 +464,38 @@ func (d *UserDispatcher) writeDLQEntry(ctx context.Context, entry *notification.
 // Action URL path constants used by buildUserContent.
 // Defined once here to prevent silent drift when the API route changes.
 const (
-	urlMatchDetail = "/api/v1/matches/%d"
-	urlGroupsMe    = "/api/v1/groups/me"
-	urlBalance     = "/api/v1/users/me/balance"
-	urlWithdrawals = "/api/v1/withdrawals"
+	urlMatchDetail  = "/api/v1/matches/%d"
+	urlGroupsMe     = "/api/v1/groups/me"
+	urlBalance      = "/api/v1/users/me/balance"
+	urlWithdrawals  = "/api/v1/withdrawals"
+	urlGroupMembers = "/api/v1/groups/%d/members"
 )
 
-// buildUserContent returns the rendered title and body for the given event.
-func buildUserContent(entry *notification.OutboxEntry) userContent {
+// buildUserContent returns the rendered title, body, and locale for the given
+// event.  All user-visible strings are selected based on locale so the returned
+// content is ready for both in-app persistence and email rendering.
+func buildUserContent(entry *notification.OutboxEntry, locale Locale) userContent {
+	c := resolveUserContent(entry, locale)
+	c.locale = locale
+	return c
+}
+
+// resolveUserContent maps an outbox entry to its title/body/actionURL for the
+// given locale.  It is extracted so buildUserContent can attach the locale field
+// after the switch without threading it through every return statement.
+func resolveUserContent(entry *notification.OutboxEntry, locale Locale) userContent { //nolint:cyclop
 	switch entry.EventType {
 
 	case notification.EventPredictionConfirmed:
 		var p notification.PredictionConfirmedPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Prediction confirmed",
-			body:      fmt.Sprintf("Your prediction for %s vs %s has been recorded.", p.HomeTeam, p.AwayTeam),
+			title: localeStr("Prediction confirmed", "Predicción confirmada", locale),
+			body: localeStr(
+				fmt.Sprintf("Your prediction for %s vs %s has been recorded.", p.HomeTeam, p.AwayTeam),
+				fmt.Sprintf("Tu predicción para %s vs %s ha sido registrada.", p.HomeTeam, p.AwayTeam),
+				locale,
+			),
 			actionURL: "/api/v1/predictions/me",
 		}
 
@@ -438,8 +503,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.PredictionDeadlinePayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Prediction deadline approaching",
-			body:      fmt.Sprintf("%s vs %s kicks off in %d minutes — submit your prediction now.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
+			title: localeStr("Prediction deadline approaching", "Límite de predicción se acerca", locale),
+			body: localeStr(
+				fmt.Sprintf("%s vs %s kicks off in %d minutes — submit your prediction now.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
+				fmt.Sprintf("%s vs %s empieza en %d minutos — envía tu predicción ahora.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
+				locale,
+			),
 			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
 		}
 
@@ -447,8 +516,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.PredictionDeadlinePayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Missing prediction reminder",
-			body:      fmt.Sprintf("You haven't predicted %s vs %s yet. Deadline is in %d minutes.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
+			title: localeStr("Missing prediction reminder", "Recordatorio de predicción pendiente", locale),
+			body: localeStr(
+				fmt.Sprintf("You haven't predicted %s vs %s yet. Deadline is in %d minutes.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
+				fmt.Sprintf("Aún no has predicho %s vs %s. El límite cierra en %d minutos.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
+				locale,
+			),
 			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
 		}
 
@@ -456,8 +529,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.PredictionLockedPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Predictions locked",
-			body:      fmt.Sprintf("Predictions for %s vs %s are now locked.", p.HomeTeam, p.AwayTeam),
+			title: localeStr("Predictions locked", "Predicciones cerradas", locale),
+			body: localeStr(
+				fmt.Sprintf("Predictions for %s vs %s are now locked.", p.HomeTeam, p.AwayTeam),
+				fmt.Sprintf("Las predicciones para %s vs %s ya están cerradas.", p.HomeTeam, p.AwayTeam),
+				locale,
+			),
 			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
 		}
 
@@ -465,8 +542,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.PredictionScoredPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Match scored",
-			body:      fmt.Sprintf("%s vs %s finished %d-%d. You earned %d points.", p.HomeTeam, p.AwayTeam, p.HomeScore, p.AwayScore, p.PointsEarned),
+			title: localeStr("Match scored", "Partido puntuado", locale),
+			body: localeStr(
+				fmt.Sprintf("%s vs %s finished %d-%d. You earned %d points.", p.HomeTeam, p.AwayTeam, p.HomeScore, p.AwayScore, p.PointsEarned),
+				fmt.Sprintf("%s vs %s terminó %d-%d. Ganaste %d puntos.", p.HomeTeam, p.AwayTeam, p.HomeScore, p.AwayScore, p.PointsEarned),
+				locale,
+			),
 			actionURL: "/api/v1/predictions/me",
 		}
 
@@ -474,30 +555,57 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.MatchEventPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Match result entered",
-			body:      fmt.Sprintf("The result for %s vs %s has been recorded.", p.HomeTeam, p.AwayTeam),
+			title: localeStr("Match result entered", "Resultado registrado", locale),
+			body: localeStr(
+				fmt.Sprintf("The result for %s vs %s has been recorded.", p.HomeTeam, p.AwayTeam),
+				fmt.Sprintf("El resultado de %s vs %s ha sido registrado.", p.HomeTeam, p.AwayTeam),
+				locale,
+			),
 			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
 		}
 
 	case notification.EventMatchPostponed, notification.EventMatchCancelled:
 		var p notification.MatchEventPayload
 		_ = entry.DecodePayload(&p)
-		verb := "postponed"
+		title := localeStr("Match postponed", "Partido aplazado", locale)
+		body := localeStr(
+			fmt.Sprintf("%s vs %s has been postponed.", p.HomeTeam, p.AwayTeam),
+			fmt.Sprintf("%s vs %s ha sido aplazado.", p.HomeTeam, p.AwayTeam),
+			locale,
+		)
 		if entry.EventType == notification.EventMatchCancelled {
-			verb = "cancelled"
+			title = localeStr("Match cancelled", "Partido cancelado", locale)
+			body = localeStr(
+				fmt.Sprintf("%s vs %s has been cancelled.", p.HomeTeam, p.AwayTeam),
+				fmt.Sprintf("%s vs %s ha sido cancelado.", p.HomeTeam, p.AwayTeam),
+				locale,
+			)
 		}
+		return userContent{title: title, body: body, actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID)}
+
+	case notification.EventGroupJoinRequested:
+		var p notification.GroupJoinPayload
+		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Match " + verb,
-			body:      fmt.Sprintf("%s vs %s has been %s.", p.HomeTeam, p.AwayTeam, verb),
-			actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
+			title: localeStr("New join request", "Nueva solicitud de unión", locale),
+			body: localeStr(
+				fmt.Sprintf("Someone has requested to join %s. Review and approve or reject the request.", p.QuinielaName),
+				fmt.Sprintf("Alguien ha solicitado unirse a %s. Revisa y aprueba o rechaza la solicitud.", p.QuinielaName),
+				locale,
+			),
+			actionURL: fmt.Sprintf(urlGroupMembers, p.QuinielaID),
 		}
 
 	case notification.EventGroupJoinApproved:
 		var p notification.GroupJoinPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Group join approved",
-			body:      fmt.Sprintf("You have been approved to join %s.", p.QuinielaName),
+			title: localeStr("Group join approved", "Solicitud de grupo aprobada", locale),
+			body: localeStr(
+				fmt.Sprintf("You have been approved to join %s.", p.QuinielaName),
+				fmt.Sprintf("Has sido aprobado para unirte a %s.", p.QuinielaName),
+				locale,
+			),
 			actionURL: fmt.Sprintf("/api/v1/groups/%d", p.QuinielaID),
 		}
 
@@ -505,8 +613,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.GroupJoinPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Group join request rejected",
-			body:      fmt.Sprintf("Your request to join %s was not approved.", p.QuinielaName),
+			title: localeStr("Group join request rejected", "Solicitud de grupo rechazada", locale),
+			body: localeStr(
+				fmt.Sprintf("Your request to join %s was not approved.", p.QuinielaName),
+				fmt.Sprintf("Tu solicitud para unirte a %s no fue aprobada.", p.QuinielaName),
+				locale,
+			),
 			actionURL: urlGroupsMe,
 		}
 
@@ -514,8 +626,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.GroupDisbandedPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Group disbanded",
-			body:      fmt.Sprintf("The group %s has been disbanded.", p.QuinielaName),
+			title: localeStr("Group disbanded", "Grupo disuelto", locale),
+			body: localeStr(
+				fmt.Sprintf("The group %s has been disbanded.", p.QuinielaName),
+				fmt.Sprintf("El grupo %s ha sido disuelto.", p.QuinielaName),
+				locale,
+			),
 			actionURL: urlGroupsMe,
 		}
 
@@ -523,8 +639,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.GroupDeadlinePayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Group deadline in 24 hours",
-			body:      fmt.Sprintf("The prediction window for %s closes in 24 hours.", p.QuinielaName),
+			title: localeStr("Group deadline in 24 hours", "Límite de grupo en 24 horas", locale),
+			body: localeStr(
+				fmt.Sprintf("The prediction window for %s closes in 24 hours.", p.QuinielaName),
+				fmt.Sprintf("La ventana de predicciones para %s cierra en 24 horas.", p.QuinielaName),
+				locale,
+			),
 			actionURL: fmt.Sprintf("/api/v1/groups/%d", p.QuinielaID),
 		}
 
@@ -532,8 +652,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.GroupLeaderboardMilestonePayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Leaderboard milestone",
-			body:      fmt.Sprintf("You are now ranked #%d in %s with %d points.", p.NewRank, p.QuinielaName, p.TotalPoints),
+			title: localeStr("Leaderboard milestone", "Hito en el marcador", locale),
+			body: localeStr(
+				fmt.Sprintf("You are now ranked #%d in %s with %d points.", p.NewRank, p.QuinielaName, p.TotalPoints),
+				fmt.Sprintf("Ahora estás en el puesto #%d en %s con %d puntos.", p.NewRank, p.QuinielaName, p.TotalPoints),
+				locale,
+			),
 			actionURL: fmt.Sprintf("/api/v1/groups/%d/leaderboard", p.QuinielaID),
 		}
 
@@ -541,8 +665,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.PaymentPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Payment confirmed",
-			body:      fmt.Sprintf("Your payment of %s has been confirmed.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Payment confirmed", "Pago confirmado", locale),
+			body: localeStr(
+				fmt.Sprintf("Your payment of %s has been confirmed.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("Tu pago de %s ha sido confirmado.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: urlBalance,
 		}
 
@@ -550,8 +678,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.PaymentPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Payment failed",
-			body:      fmt.Sprintf("Your payment of %s could not be processed. %s", formatCents(p.AmountCents, p.Currency), p.Reason),
+			title: localeStr("Payment failed", "Pago fallido", locale),
+			body: localeStr(
+				fmt.Sprintf("Your payment of %s could not be processed. %s", formatCents(p.AmountCents, p.Currency), p.Reason),
+				fmt.Sprintf("Tu pago de %s no pudo procesarse. %s", formatCents(p.AmountCents, p.Currency), p.Reason),
+				locale,
+			),
 			actionURL: "/api/v1/payment-intents",
 		}
 
@@ -559,8 +691,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.BankTransferPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Bank transfer proof submitted",
-			body:      fmt.Sprintf("Your transfer proof for %s has been submitted and is awaiting review.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Bank transfer proof submitted", "Comprobante de transferencia enviado", locale),
+			body: localeStr(
+				fmt.Sprintf("Your transfer proof for %s has been submitted and is awaiting review.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("Tu comprobante de transferencia por %s ha sido enviado y está pendiente de revisión.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: "/api/v1/bank-transfers",
 		}
 
@@ -568,8 +704,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.BankTransferPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Bank transfer approved",
-			body:      fmt.Sprintf("%s has been credited to your account.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Bank transfer approved", "Transferencia bancaria aprobada", locale),
+			body: localeStr(
+				fmt.Sprintf("%s has been credited to your account.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("%s ha sido acreditado a tu cuenta.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: urlBalance,
 		}
 
@@ -577,8 +717,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.BankTransferPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Bank transfer rejected",
-			body:      fmt.Sprintf("Your transfer proof for %s was rejected. %s", formatCents(p.AmountCents, p.Currency), p.Notes),
+			title: localeStr("Bank transfer rejected", "Transferencia bancaria rechazada", locale),
+			body: localeStr(
+				fmt.Sprintf("Your transfer proof for %s was rejected. %s", formatCents(p.AmountCents, p.Currency), p.Notes),
+				fmt.Sprintf("Tu comprobante de transferencia por %s fue rechazado. %s", formatCents(p.AmountCents, p.Currency), p.Notes),
+				locale,
+			),
 			actionURL: "/api/v1/bank-transfers",
 		}
 
@@ -586,8 +730,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.WithdrawalPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Withdrawal requested",
-			body:      fmt.Sprintf("Your withdrawal of %s is pending admin approval.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Withdrawal requested", "Retiro solicitado", locale),
+			body: localeStr(
+				fmt.Sprintf("Your withdrawal of %s is pending admin approval.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("Tu retiro de %s está pendiente de aprobación del administrador.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: urlWithdrawals,
 		}
 
@@ -595,8 +743,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.WithdrawalPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Withdrawal approved",
-			body:      fmt.Sprintf("Your withdrawal of %s has been approved.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Withdrawal approved", "Retiro aprobado", locale),
+			body: localeStr(
+				fmt.Sprintf("Your withdrawal of %s has been approved.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("Tu retiro de %s ha sido aprobado.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: urlWithdrawals,
 		}
 
@@ -604,8 +756,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.WithdrawalPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Withdrawal rejected",
-			body:      fmt.Sprintf("Your withdrawal of %s was rejected. %s", formatCents(p.AmountCents, p.Currency), p.Notes),
+			title: localeStr("Withdrawal rejected", "Retiro rechazado", locale),
+			body: localeStr(
+				fmt.Sprintf("Your withdrawal of %s was rejected. %s", formatCents(p.AmountCents, p.Currency), p.Notes),
+				fmt.Sprintf("Tu retiro de %s fue rechazado. %s", formatCents(p.AmountCents, p.Currency), p.Notes),
+				locale,
+			),
 			actionURL: urlWithdrawals,
 		}
 
@@ -613,8 +769,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.WithdrawalPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Withdrawal completed",
-			body:      fmt.Sprintf("Your withdrawal of %s has been processed successfully.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Withdrawal completed", "Retiro completado", locale),
+			body: localeStr(
+				fmt.Sprintf("Your withdrawal of %s has been processed successfully.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("Tu retiro de %s ha sido procesado exitosamente.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: urlBalance,
 		}
 
@@ -622,8 +782,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.WithdrawalPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Withdrawal failed",
-			body:      fmt.Sprintf("Your withdrawal of %s could not be completed. Please contact support.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Withdrawal failed", "Retiro fallido", locale),
+			body: localeStr(
+				fmt.Sprintf("Your withdrawal of %s could not be completed. Please contact support.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("Tu retiro de %s no pudo completarse. Por favor, contacta al soporte.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: urlWithdrawals,
 		}
 
@@ -631,8 +795,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.AccountWelcomePayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Welcome to World Cup Quiniela!",
-			body:      fmt.Sprintf("Hi %s! Your account is ready. Start predicting now.", p.UserName),
+			title: localeStr("Welcome to World Cup Quiniela!", "¡Bienvenido a World Cup Quiniela!", locale),
+			body: localeStr(
+				fmt.Sprintf("Hi %s! Your account is ready. Start predicting now.", p.UserName),
+				fmt.Sprintf("¡Hola %s! Tu cuenta está lista. Empieza a predecir ahora.", p.UserName),
+				locale,
+			),
 			actionURL: urlGroupsMe,
 		}
 
@@ -641,14 +809,22 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		_ = entry.DecodePayload(&p)
 		if entry.EventType == notification.EventAccountBalanceCredited {
 			return userContent{
-				title:     "Balance credited",
-				body:      fmt.Sprintf("%s has been added to your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+				title: localeStr("Balance credited", "Saldo acreditado", locale),
+				body: localeStr(
+					fmt.Sprintf("%s has been added to your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+					fmt.Sprintf("%s ha sido añadido a tu cuenta. Nuevo saldo: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+					locale,
+				),
 				actionURL: urlBalance,
 			}
 		}
 		return userContent{
-			title:     "Balance debited",
-			body:      fmt.Sprintf("%s has been deducted from your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+			title: localeStr("Balance debited", "Saldo debitado", locale),
+			body: localeStr(
+				fmt.Sprintf("%s has been deducted from your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+				fmt.Sprintf("%s ha sido deducido de tu cuenta. Nuevo saldo: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+				locale,
+			),
 			actionURL: urlBalance,
 		}
 
@@ -656,8 +832,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.AccountBalancePayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Low balance alert",
-			body:      fmt.Sprintf("Your balance is %s. Top up to continue participating.", formatCents(p.BalanceAfter, p.Currency)),
+			title: localeStr("Low balance alert", "Alerta de saldo bajo", locale),
+			body: localeStr(
+				fmt.Sprintf("Your balance is %s. Top up to continue participating.", formatCents(p.BalanceAfter, p.Currency)),
+				fmt.Sprintf("Tu saldo es %s. Recarga para seguir participando.", formatCents(p.BalanceAfter, p.Currency)),
+				locale,
+			),
 			actionURL: urlBalance,
 		}
 
@@ -666,23 +846,35 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		_ = entry.DecodePayload(&p)
 		if entry.EventType == notification.EventGroupMemberJoined {
 			return userContent{
-				title:     "New member joined your group",
-				body:      fmt.Sprintf("A new member has joined %s.", p.QuinielaName),
-				actionURL: fmt.Sprintf("/api/v1/groups/%d/members", p.QuinielaID),
+				title: localeStr("New member joined your group", "Nuevo miembro en tu grupo", locale),
+				body: localeStr(
+					fmt.Sprintf("A new member has joined %s.", p.QuinielaName),
+					fmt.Sprintf("Un nuevo miembro se ha unido a %s.", p.QuinielaName),
+					locale,
+				),
+				actionURL: fmt.Sprintf(urlGroupMembers, p.QuinielaID),
 			}
 		}
 		return userContent{
-			title:     "Member left the group",
-			body:      fmt.Sprintf("A member has left %s.", p.QuinielaName),
-			actionURL: fmt.Sprintf("/api/v1/groups/%d/members", p.QuinielaID),
+			title: localeStr("Member left the group", "Miembro abandonó el grupo", locale),
+			body: localeStr(
+				fmt.Sprintf("A member has left %s.", p.QuinielaName),
+				fmt.Sprintf("Un miembro ha abandonado %s.", p.QuinielaName),
+				locale,
+			),
+			actionURL: fmt.Sprintf(urlGroupMembers, p.QuinielaID),
 		}
 
 	case notification.EventPaymentPendingTimeout:
 		var p notification.PaymentPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Payment expired",
-			body:      fmt.Sprintf("Your payment of %s has expired without confirmation. Please try again.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Payment expired", "Pago expirado", locale),
+			body: localeStr(
+				fmt.Sprintf("Your payment of %s has expired without confirmation. Please try again.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("Tu pago de %s ha expirado sin confirmación. Por favor, inténtalo de nuevo.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: "/api/v1/payment-intents",
 		}
 
@@ -690,8 +882,12 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.WithdrawalPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Withdrawal being processed",
-			body:      fmt.Sprintf("Your withdrawal of %s is now being processed. Funds will be transferred shortly.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Withdrawal being processed", "Retiro en proceso", locale),
+			body: localeStr(
+				fmt.Sprintf("Your withdrawal of %s is now being processed. Funds will be transferred shortly.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("Tu retiro de %s está siendo procesado. Los fondos serán transferidos pronto.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: urlWithdrawals,
 		}
 
@@ -699,15 +895,18 @@ func buildUserContent(entry *notification.OutboxEntry) userContent {
 		var p notification.WithdrawalPayload
 		_ = entry.DecodePayload(&p)
 		return userContent{
-			title:     "Withdrawal request expired",
-			body:      fmt.Sprintf("Your withdrawal of %s has expired without admin action. Please submit a new request or contact support.", formatCents(p.AmountCents, p.Currency)),
+			title: localeStr("Withdrawal request expired", "Solicitud de retiro expirada", locale),
+			body: localeStr(
+				fmt.Sprintf("Your withdrawal of %s has expired without admin action. Please submit a new request or contact support.", formatCents(p.AmountCents, p.Currency)),
+				fmt.Sprintf("Tu retiro de %s ha expirado sin acción del administrador. Envía una nueva solicitud o contacta al soporte.", formatCents(p.AmountCents, p.Currency)),
+				locale,
+			),
 			actionURL: urlWithdrawals,
 		}
 
-	default:
-		return userContent{
-			title: "New notification",
-			body:  "You have a new notification. Open the app for details.",
-		}
+	}
+	return userContent{
+		title: localeStr("New notification", "Nueva notificación", locale),
+		body:  localeStr("You have a new notification. Open the app for details.", "Tienes una nueva notificación. Abre la aplicación para más detalles.", locale),
 	}
 }

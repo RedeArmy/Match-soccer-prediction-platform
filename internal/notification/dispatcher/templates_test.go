@@ -305,7 +305,7 @@ func TestBuildUserContent_ActionURL_PopulatedForKnownEvents(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewOutboxEntry: %v", err)
 			}
-			got := buildUserContent(entry)
+			got := buildUserContent(entry, LocaleEN)
 			if got.actionURL != tc.want {
 				t.Errorf("actionURL = %q; want %q", got.actionURL, tc.want)
 			}

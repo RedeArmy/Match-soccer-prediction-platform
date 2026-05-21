@@ -1,0 +1,153 @@
+package repository
+
+import (
+	"context"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+)
+
+const templateCacheTTL = 5 * time.Minute
+
+type templateCacheKey struct{ eventType, locale string }
+
+// postgresNotificationTemplateRepository implements NotificationTemplateRepository.
+// It eagerly loads all rows into an in-memory map on first access and refreshes
+// every templateCacheTTL (5 min).  Writes immediately invalidate the cache so
+// the next read re-fetches from the database.
+type postgresNotificationTemplateRepository struct {
+	pool *pgxpool.Pool
+
+	mu       sync.RWMutex
+	cache    map[templateCacheKey]*domain.NotificationTemplate
+	loadedAt time.Time
+}
+
+// NewPostgresNotificationTemplateRepository constructs a caching repository
+// backed by the given connection pool.
+func NewPostgresNotificationTemplateRepository(pool *pgxpool.Pool) NotificationTemplateRepository {
+	return &postgresNotificationTemplateRepository{pool: pool}
+}
+
+func (r *postgresNotificationTemplateRepository) cacheHit(key templateCacheKey) (*domain.NotificationTemplate, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.cache == nil || time.Since(r.loadedAt) >= templateCacheTTL {
+		return nil, false
+	}
+	t, ok := r.cache[key]
+	return t, ok
+}
+
+// warm loads all rows from the database and replaces the cache.
+// Must be called with mu write-locked.
+func (r *postgresNotificationTemplateRepository) warm(ctx context.Context) error {
+	const q = `
+SELECT event_type, locale, title_tmpl, body_tmpl, action_url_tmpl,
+       updated_by, updated_at
+FROM   notification_templates
+ORDER  BY event_type, locale
+`
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	m := make(map[templateCacheKey]*domain.NotificationTemplate)
+	for rows.Next() {
+		var t domain.NotificationTemplate
+		if err := rows.Scan(
+			&t.EventType, &t.Locale,
+			&t.TitleTmpl, &t.BodyTmpl, &t.ActionURLTmpl,
+			&t.UpdatedBy, &t.UpdatedAt,
+		); err != nil {
+			return apperrors.Internal(err)
+		}
+		m[templateCacheKey{t.EventType, t.Locale}] = &t
+	}
+	if err := rows.Err(); err != nil {
+		return apperrors.Internal(err)
+	}
+
+	r.cache = m
+	r.loadedAt = time.Now()
+	return nil
+}
+
+func (r *postgresNotificationTemplateRepository) Get(ctx context.Context, eventType, locale string) (*domain.NotificationTemplate, error) {
+	key := templateCacheKey{eventType, locale}
+	if t, ok := r.cacheHit(key); ok {
+		return t, nil // may be nil (negative cache entry is not stored — miss = not found)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Re-check after acquiring write lock: another goroutine may have warmed the cache.
+	if r.cache != nil && time.Since(r.loadedAt) < templateCacheTTL {
+		return r.cache[key], nil
+	}
+	if err := r.warm(ctx); err != nil {
+		return nil, err
+	}
+	return r.cache[key], nil
+}
+
+func (r *postgresNotificationTemplateRepository) List(ctx context.Context) ([]*domain.NotificationTemplate, error) {
+	r.mu.Lock()
+	if r.cache == nil || time.Since(r.loadedAt) >= templateCacheTTL {
+		if err := r.warm(ctx); err != nil {
+			r.mu.Unlock()
+			return nil, err
+		}
+	}
+	out := make([]*domain.NotificationTemplate, 0, len(r.cache))
+	for _, t := range r.cache {
+		cp := *t
+		out = append(out, &cp)
+	}
+	r.mu.Unlock()
+	return out, nil
+}
+
+func (r *postgresNotificationTemplateRepository) Upsert(ctx context.Context, t *domain.NotificationTemplate) error {
+	const q = `
+INSERT INTO notification_templates
+    (event_type, locale, title_tmpl, body_tmpl, action_url_tmpl, updated_by, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, now())
+ON CONFLICT (event_type, locale) DO UPDATE SET
+    title_tmpl      = EXCLUDED.title_tmpl,
+    body_tmpl       = EXCLUDED.body_tmpl,
+    action_url_tmpl = EXCLUDED.action_url_tmpl,
+    updated_by      = EXCLUDED.updated_by,
+    updated_at      = now()
+`
+	if _, err := r.pool.Exec(ctx, q,
+		t.EventType, t.Locale,
+		t.TitleTmpl, t.BodyTmpl, t.ActionURLTmpl,
+		t.UpdatedBy,
+	); err != nil {
+		return apperrors.Internal(err)
+	}
+	r.invalidate()
+	return nil
+}
+
+func (r *postgresNotificationTemplateRepository) Delete(ctx context.Context, eventType, locale string) error {
+	const q = `DELETE FROM notification_templates WHERE event_type = $1 AND locale = $2`
+	if _, err := r.pool.Exec(ctx, q, eventType, locale); err != nil {
+		return apperrors.Internal(err)
+	}
+	r.invalidate()
+	return nil
+}
+
+func (r *postgresNotificationTemplateRepository) invalidate() {
+	r.mu.Lock()
+	r.loadedAt = time.Time{}
+	r.mu.Unlock()
+}

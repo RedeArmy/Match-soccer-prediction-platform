@@ -68,30 +68,31 @@ type coreRepos struct {
 
 // appHandlers groups all route handlers; fields are unexported and used only within Routes.
 type appHandlers struct {
-	match             *handler.MatchHandler
-	prediction        *handler.PredictionHandler
-	group             *handler.GroupHandler
-	leaderboard       *handler.LeaderboardHandler
-	userStats         *handler.UserStatsHandler
-	tiebreaker        *handler.TiebreakerHandler
-	tournament        *handler.TournamentHandler
-	balance           *handler.BalanceHandler
-	bankTransfer      *handler.BankTransferHandler
-	withdrawal        *handler.WithdrawalHandler
-	paymentIntent     *handler.PaymentIntentHandler
-	paymentWebhook    *handler.PaymentWebhookHandler
-	notification      *handler.NotificationHandler
-	adminUser         *handler.AdminUserHandler
-	adminGroup        *handler.AdminGroupHandler
-	adminPayment      *handler.AdminPaymentHandler
-	adminLeaderboard  *handler.AdminLeaderboardHandler
-	adminDLQ          *handler.AdminDLQHandler
-	adminAudit        *handler.AdminAuditHandler
-	adminParam        *handler.AdminSystemParamHandler
-	adminTiebreaker   *handler.AdminTiebreakerHandler
-	adminConflict     *handler.AdminConflictHandler
-	adminStats        *handler.AdminStatsHandler
-	adminScoringRules *handler.AdminScoringRuleHandler
+	match              *handler.MatchHandler
+	prediction         *handler.PredictionHandler
+	group              *handler.GroupHandler
+	leaderboard        *handler.LeaderboardHandler
+	userStats          *handler.UserStatsHandler
+	tiebreaker         *handler.TiebreakerHandler
+	tournament         *handler.TournamentHandler
+	balance            *handler.BalanceHandler
+	bankTransfer       *handler.BankTransferHandler
+	withdrawal         *handler.WithdrawalHandler
+	paymentIntent      *handler.PaymentIntentHandler
+	paymentWebhook     *handler.PaymentWebhookHandler
+	notification       *handler.NotificationHandler
+	adminUser          *handler.AdminUserHandler
+	adminGroup         *handler.AdminGroupHandler
+	adminPayment       *handler.AdminPaymentHandler
+	adminLeaderboard   *handler.AdminLeaderboardHandler
+	adminDLQ           *handler.AdminDLQHandler
+	adminAudit         *handler.AdminAuditHandler
+	adminParam         *handler.AdminSystemParamHandler
+	adminTiebreaker    *handler.AdminTiebreakerHandler
+	adminConflict      *handler.AdminConflictHandler
+	adminStats         *handler.AdminStatsHandler
+	adminScoringRules  *handler.AdminScoringRuleHandler
+	adminNotifTemplate *handler.AdminNotificationTemplateHandler
 }
 
 // Server holds the shared dependencies made available to all HTTP handlers.
@@ -568,6 +569,14 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/scoring-rules", h.adminScoringRules.List)
 			r.Get("/scoring-rules/{phase}", h.adminScoringRules.GetByPhase)
 			r.Patch("/scoring-rules/{phase}", h.adminScoringRules.Update)
+
+			// Notification content templates (DB-backed, operator-editable)
+			const tmplByKey = "/notification-templates/{event_type}/{locale}"
+			r.Get("/notification-templates", h.adminNotifTemplate.List)
+			r.Get(tmplByKey, h.adminNotifTemplate.Get)
+			r.Put(tmplByKey, h.adminNotifTemplate.Upsert)
+			r.Delete(tmplByKey, h.adminNotifTemplate.Delete)
+			r.Post(tmplByKey+"/preview", h.adminNotifTemplate.Preview)
 		})
 	})
 
@@ -729,6 +738,7 @@ func (s *Server) buildHandlers(
 
 	outboxWriter := outbox.NewWriter(s.db)
 
+	tmplRepo := repository.NewPostgresNotificationTemplateRepository(s.db)
 	notifRepo := repository.NewPostgresUserNotificationRepository(s.db)
 	prefRepo := repository.NewPostgresNotificationPreferenceRepository(s.db)
 	pushRepo := repository.NewPostgresPushSubscriptionRepository(s.db)
@@ -749,29 +759,30 @@ func (s *Server) buildHandlers(
 			UnsubscribeSecret: s.cfg.Email.UnsubscribeSecret,
 			Log:               s.log,
 		}),
-		match:             handler.NewMatchHandler(matchSvc, s.log),
-		prediction:        handler.NewPredictionHandler(predSvc, s.log),
-		group:             handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
-		leaderboard:       handler.NewLeaderboardHandler(ranker, s.log),
-		userStats:         handler.NewUserStatsHandler(userStatsSvc, s.log),
-		tiebreaker:        handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
-		tournament:        handler.NewTournamentHandler(tournamentSvc, s.log),
-		balance:           handler.NewBalanceHandler(balanceSvc, s.log),
-		bankTransfer:      handler.NewBankTransferHandler(bankTransferSvc, fileStore, maxUploadBytes, minTransferCents, maxTransferCents, s.log),
-		withdrawal:        handler.NewWithdrawalHandler(withdrawalSvc, s.log),
-		paymentIntent:     handler.NewPaymentIntentHandler(paymentIntentSvc, s.log),
-		paymentWebhook:    handler.NewPaymentWebhookHandler(webhookPaymentSvc, s.log),
-		adminUser:         handler.NewAdminUserHandler(adminUserSvc, s.log),
-		adminGroup:        handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),
-		adminPayment:      handler.NewAdminPaymentHandler(paymentSvc, s.log),
-		adminLeaderboard:  handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
-		adminDLQ:          handler.NewAdminDLQHandler(dlqSvc, s.log),
-		adminAudit:        handler.NewAdminAuditHandler(auditSvc, s.log),
-		adminParam:        handler.NewAdminSystemParamHandler(paramSvcWithAudit, s.log),
-		adminTiebreaker:   handler.NewAdminTiebreakerHandler(adminReadSvc, s.log),
-		adminConflict:     handler.NewAdminConflictHandler(conflictSvc, s.log),
-		adminStats:        handler.NewAdminStatsHandler(adminReadSvc, s.log),
-		adminScoringRules: handler.NewAdminScoringRuleHandler(scoringRuleSvc, s.log),
+		match:              handler.NewMatchHandler(matchSvc, s.log),
+		prediction:         handler.NewPredictionHandler(predSvc, s.log),
+		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
+		leaderboard:        handler.NewLeaderboardHandler(ranker, s.log),
+		userStats:          handler.NewUserStatsHandler(userStatsSvc, s.log),
+		tiebreaker:         handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
+		tournament:         handler.NewTournamentHandler(tournamentSvc, s.log),
+		balance:            handler.NewBalanceHandler(balanceSvc, s.log),
+		bankTransfer:       handler.NewBankTransferHandler(bankTransferSvc, fileStore, maxUploadBytes, minTransferCents, maxTransferCents, s.log),
+		withdrawal:         handler.NewWithdrawalHandler(withdrawalSvc, s.log),
+		paymentIntent:      handler.NewPaymentIntentHandler(paymentIntentSvc, s.log),
+		paymentWebhook:     handler.NewPaymentWebhookHandler(webhookPaymentSvc, s.log),
+		adminUser:          handler.NewAdminUserHandler(adminUserSvc, s.log),
+		adminGroup:         handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),
+		adminPayment:       handler.NewAdminPaymentHandler(paymentSvc, s.log),
+		adminLeaderboard:   handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
+		adminDLQ:           handler.NewAdminDLQHandler(dlqSvc, s.log),
+		adminAudit:         handler.NewAdminAuditHandler(auditSvc, s.log),
+		adminParam:         handler.NewAdminSystemParamHandler(paramSvcWithAudit, s.log),
+		adminTiebreaker:    handler.NewAdminTiebreakerHandler(adminReadSvc, s.log),
+		adminConflict:      handler.NewAdminConflictHandler(conflictSvc, s.log),
+		adminStats:         handler.NewAdminStatsHandler(adminReadSvc, s.log),
+		adminScoringRules:  handler.NewAdminScoringRuleHandler(scoringRuleSvc, s.log),
+		adminNotifTemplate: handler.NewAdminNotificationTemplateHandler(tmplRepo, s.log),
 	}
 }
 
