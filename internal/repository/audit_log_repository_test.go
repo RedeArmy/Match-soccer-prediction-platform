@@ -199,13 +199,11 @@ func TestAuditLogRepository_List_WithRoleAndMetadata(t *testing.T) {
 	}
 }
 
-func TestAuditLogRepository_List_ZeroLimitPanics(t *testing.T) {
+func TestAuditLogRepository_List_ZeroLimitReturnsError(t *testing.T) {
 	repo := repository.NewPostgresAuditLogRepository(testDB)
 
-	defer func() {
-		if recover() == nil {
-			t.Error("expected panic for zero CursorPage.Limit, got none")
-		}
-	}()
-	_, _, _ = repo.List(context.Background(), repository.AuditLogFilters{}, repository.CursorPage{Limit: 0})
+	_, _, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.CursorPage{Limit: 0})
+	if err == nil {
+		t.Error("expected error for zero CursorPage.Limit, got nil")
+	}
 }

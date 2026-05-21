@@ -35,12 +35,10 @@ type GDriveFileStore struct {
 // JSON credential. Otherwise Application Default Credentials (ADC) are used,
 // which resolves via the GOOGLE_APPLICATION_CREDENTIALS environment variable
 // or the GCE metadata server. GDriveFolderID is always required.
-func NewGDriveFileStore(cfg Config) (*GDriveFileStore, error) {
+func NewGDriveFileStore(ctx context.Context, cfg Config) (*GDriveFileStore, error) {
 	if cfg.GDriveFolderID == "" {
 		return nil, fmt.Errorf("storage: GDriveFolderID is required for gdrive driver")
 	}
-
-	ctx := context.Background()
 
 	var opts []option.ClientOption
 	if cfg.GDriveCredentialsJSON != "" {

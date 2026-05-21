@@ -411,6 +411,15 @@ func TestUserRepository_ListFiltered_CursorPagination(t *testing.T) {
 	}
 }
 
+func TestUserRepository_ListFiltered_ZeroLimitReturnsError(t *testing.T) {
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	_, _, err := repo.ListFiltered(context.Background(), repository.UserFilters{}, repository.CursorPage{Limit: 0})
+	if err == nil {
+		t.Error("expected error for zero CursorPage.Limit, got nil")
+	}
+}
+
 // ── UserRepository.GetStatusCounts ───────────────────────────────────────────
 
 func TestUserRepository_GetStatusCounts_ReturnsCorrectTotals(t *testing.T) {

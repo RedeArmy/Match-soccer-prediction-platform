@@ -272,6 +272,11 @@ const (
 	// is_runtime=TRUE: changes propagate within the 30 s param cache window.
 	DefaultNotifyPushTitleMaxChars = 100 // notify.push_title_max_chars — Android title limit
 	DefaultNotifyPushBodyMaxChars  = 300 // notify.push_body_max_chars  — push body limit
+
+	// DefaultNotifyPushSubRetentionDays is the number of days after inactivation
+	// before a push subscription row is permanently deleted.  Inactive rows that
+	// have been retained beyond this window are pruned daily by the scheduler.
+	DefaultNotifyPushSubRetentionDays = 30 // notify.push_sub_retention_days
 )
 
 const (
@@ -557,6 +562,11 @@ const (
 	// delivery.  Default is 300 (standard push notification body limit).
 	// is_runtime=TRUE: changes propagate within the 30 s param cache window.
 	ParamKeyNotifyPushBodyMaxChars = "notify.push_body_max_chars"
+
+	// ParamKeyNotifyPushSubRetentionDays is the number of days after inactivation
+	// before a push subscription is permanently deleted by the pruning job.
+	// is_runtime=TRUE: takes effect on the next daily prune run.
+	ParamKeyNotifyPushSubRetentionDays = "notify.push_sub_retention_days"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather

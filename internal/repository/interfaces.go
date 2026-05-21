@@ -551,6 +551,11 @@ type PushSubscriptionRepository interface {
 	// Called after every successful push delivery so inactive-subscription
 	// cleanup jobs can identify browsers that have not been reached recently.
 	UpdateLastUsed(ctx context.Context, id int64) error
+	// DeleteInactive permanently removes subscriptions that have been inactive
+	// for longer than the given threshold.  Returns the number of rows deleted.
+	// Uses COALESCE(inactivated_at, created_at) so rows deactivated before
+	// migration 000101 are still pruned based on creation time.
+	DeleteInactive(ctx context.Context, olderThan time.Time) (int64, error)
 }
 
 // PaymentRecordRepository manages entry-fee payment records.

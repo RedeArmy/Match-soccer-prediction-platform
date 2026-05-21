@@ -310,7 +310,7 @@ func (h *AdminNotificationTemplateHandler) Preview(w http.ResponseWriter, r *htt
 		ActionURLTmpl:    req.ActionURLTmpl,
 		EmailSubjectTmpl: req.EmailSubjectTmpl,
 	}
-	title, body, actionURL, emailSubject, renderErr := dispatcher.RenderTemplate(tmpl, payload)
+	title, body, actionURL, emailSubject, _, renderErr := dispatcher.RenderTemplate(tmpl, payload)
 	if renderErr != nil {
 		writeError(w, r, h.log, apperrors.Validation(renderErr.Error()))
 		return

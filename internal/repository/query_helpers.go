@@ -73,12 +73,11 @@ func collectRows[T any](rows pgx.Rows, scan func(pgx.Rows) (T, error)) ([]T, err
 // n is the next positional argument index (1-based) for the query being built.
 //
 // Pagination.Limit must be positive (bounded) or -1 (unbounded via Unbounded()).
-// Zero-value Pagination{} (Limit=0) triggers a panic to fail fast during development
-// rather than silently executing an unbounded query that could exhaust memory in
-// production. Tests that need unbounded queries must explicitly call Unbounded().
-func applyPagination(q string, args []any, n int, p Pagination) (string, []any, int) {
+// Zero-value Pagination{} (Limit=0) is invalid and returns an error so callers
+// propagate it as a proper HTTP 400 rather than crashing the process.
+func applyPagination(q string, args []any, n int, p Pagination) (string, []any, int, error) {
 	if p.Limit == 0 {
-		panic("repository: Pagination.Limit=0 is invalid; use positive limit or Unbounded()")
+		return q, args, n, fmt.Errorf("repository: Pagination.Limit=0 is invalid; use positive limit or Unbounded()")
 	}
 	if p.Limit > 0 {
 		q += " LIMIT $" + itoa(n)
@@ -91,7 +90,7 @@ func applyPagination(q string, args []any, n int, p Pagination) (string, []any, 
 		args = append(args, p.Offset)
 		n++
 	}
-	return q, args, n
+	return q, args, n, nil
 }
 
 // itoa converts a non-negative int to its decimal string representation.

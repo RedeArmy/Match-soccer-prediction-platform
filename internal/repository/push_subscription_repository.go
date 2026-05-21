@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -83,13 +84,25 @@ func (r *postgresPushSubscriptionRepository) DeleteByEndpoint(ctx context.Contex
 
 func (r *postgresPushSubscriptionRepository) MarkInactive(ctx context.Context, id int64) error {
 	_, err := r.pool.Exec(ctx,
-		`UPDATE push_subscriptions SET active = FALSE WHERE id = $1`,
+		`UPDATE push_subscriptions SET active = FALSE, inactivated_at = NOW() WHERE id = $1`,
 		id,
 	)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
 	return nil
+}
+
+func (r *postgresPushSubscriptionRepository) DeleteInactive(ctx context.Context, olderThan time.Time) (int64, error) {
+	tag, err := r.pool.Exec(ctx,
+		`DELETE FROM push_subscriptions
+         WHERE active = FALSE AND COALESCE(inactivated_at, created_at) < $1`,
+		olderThan,
+	)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r *postgresPushSubscriptionRepository) UpdateLastUsed(ctx context.Context, id int64) error {

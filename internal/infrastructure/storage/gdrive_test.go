@@ -1,6 +1,7 @@
 package storage_test
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -43,7 +44,7 @@ func serviceAccountJSON(t *testing.T) string {
 }
 
 func TestNewGDriveFileStore_InvalidCredentialsJSON_ReturnsError(t *testing.T) {
-	_, err := storage.NewGDriveFileStore(storage.Config{
+	_, err := storage.NewGDriveFileStore(context.Background(), storage.Config{
 		Driver:                "gdrive",
 		GDriveCredentialsJSON: "not valid json",
 		GDriveFolderID:        "folder-id",
@@ -54,7 +55,7 @@ func TestNewGDriveFileStore_InvalidCredentialsJSON_ReturnsError(t *testing.T) {
 }
 
 func TestNewGDriveFileStore_MissingFolderID(t *testing.T) {
-	_, err := storage.NewGDriveFileStore(storage.Config{
+	_, err := storage.NewGDriveFileStore(context.Background(), storage.Config{
 		Driver:                "gdrive",
 		GDriveCredentialsJSON: serviceAccountJSON(t),
 	})
@@ -64,7 +65,7 @@ func TestNewGDriveFileStore_MissingFolderID(t *testing.T) {
 }
 
 func TestNewGDriveFileStore_WithCredentialsJSON_Constructs(t *testing.T) {
-	store, err := storage.NewGDriveFileStore(storage.Config{
+	store, err := storage.NewGDriveFileStore(context.Background(), storage.Config{
 		Driver:                "gdrive",
 		GDriveCredentialsJSON: serviceAccountJSON(t),
 		GDriveFolderID:        "folder-id",
@@ -78,7 +79,7 @@ func TestNewGDriveFileStore_WithCredentialsJSON_Constructs(t *testing.T) {
 }
 
 func TestNew_GDriveDriverConstructsStore(t *testing.T) {
-	store, err := storage.New(storage.Config{
+	store, err := storage.New(context.Background(), storage.Config{
 		Driver:                "gdrive",
 		GDriveCredentialsJSON: serviceAccountJSON(t),
 		GDriveFolderID:        "folder-id",

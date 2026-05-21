@@ -229,13 +229,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	adminLogRepo := repository.NewPostgresAdminNotificationLogRepository(db)
 	dlqRepo := repository.NewPostgresNotificationDLQRepository(db)
 
-	var mailer infraemail.Sender
-	if cfg.Email.ResendAPIKey != "" {
-		mailer = infraemail.NewResendClient(cfg.Email.ResendAPIKey)
-	} else {
-		log.Warn("WCQ_EMAIL_RESENDAPIKEY is not set — admin emails will be discarded (NoopClient)")
-		mailer = infraemail.NoopClient{}
-	}
+	mailer := buildMailer(cfg.Email.ResendAPIKey, log)
 
 	adminDispatcher := dispatcher.NewAdminDispatcher(dispatcher.Config{
 		Params:    params,
@@ -257,18 +251,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	vapidPrivateKey := cfg.WebPush.VAPIDPrivateKey
 	vapidSubject := params.GetString(ctx, domain.ParamKeyNotifyWebPushVAPIDSubject, "")
 
-	if vapidPrivateKey == "" {
-		log.Warn("web push: WCQ_WEBPUSH_VAPIDPRIVATEKEY not set — push notifications disabled")
-	}
-
-	var pusher infrapush.Sender
-	if vapidPublicKey != "" && vapidPrivateKey != "" {
-		pusher = infrapush.NewVAPIDClient(vapidPublicKey, vapidPrivateKey, vapidSubject)
-		log.Info("web push: VAPID client active")
-	} else {
-		pusher = infrapush.NoopSender{}
-		log.Warn("web push: VAPID keys not configured — push notifications disabled (NoopSender)")
-	}
+	pusher := buildPusher(vapidPublicKey, vapidPrivateKey, vapidSubject, log)
 
 	tmplCacheTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyTemplateCacheTTLSec, domain.DefaultNotifyTemplateCacheTTLSec)) * time.Second
 	tmplRepo := repository.NewPostgresNotificationTemplateRepository(db, tmplCacheTTL)
@@ -323,6 +306,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	notifScheduler.RegisterInterval("admin.stale_escalation", 30*time.Minute, jobs.StaleEscalation)
 	notifScheduler.RegisterDaily("admin.daily_summary", 8, 0, jobs.AdminDailySummary)
 	notifScheduler.RegisterWeekly("admin.weekly_report", time.Monday, 8, 0, jobs.AdminWeeklyReport)
+	notifScheduler.RegisterInterval("push.subscription_prune", 24*time.Hour, makePushPruneJob(params, pushRepo, log))
 
 	return startWorker(ctx, workerDeps{
 		cfg:               cfg,
@@ -342,6 +326,45 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		dlqReplayWorker:   dlqReplayWorker,
 		notifScheduler:    notifScheduler,
 	}, log)
+}
+
+// buildMailer returns an email sender: a real Resend client when the API key is
+// configured, or a no-op client that discards all messages otherwise.
+func buildMailer(resendAPIKey string, log *zap.Logger) infraemail.Sender {
+	if resendAPIKey == "" {
+		log.Warn("WCQ_EMAIL_RESENDAPIKEY is not set — admin emails will be discarded (NoopClient)")
+		return infraemail.NoopClient{}
+	}
+	return infraemail.NewResendClient(resendAPIKey)
+}
+
+// buildPusher returns a web-push sender: a real VAPID client when both keys are
+// present, or a no-op sender that silently drops pushes otherwise.
+func buildPusher(pubKey, privKey, subject string, log *zap.Logger) infrapush.Sender {
+	if pubKey == "" || privKey == "" {
+		log.Warn("web push: VAPID keys not configured — push notifications disabled (NoopSender)")
+		return infrapush.NoopSender{}
+	}
+	log.Info("web push: VAPID client active")
+	return infrapush.NewVAPIDClient(pubKey, privKey, subject)
+}
+
+// makePushPruneJob returns the scheduler job that deletes inactive push
+// subscriptions older than the configured retention window.
+func makePushPruneJob(params service.SystemParamService, pushRepo repository.PushSubscriptionRepository, log *zap.Logger) func(context.Context) error {
+	return func(ctx context.Context) error {
+		retentionDays := params.GetInt(ctx, domain.ParamKeyNotifyPushSubRetentionDays, domain.DefaultNotifyPushSubRetentionDays)
+		cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
+		n, err := pushRepo.DeleteInactive(ctx, cutoff)
+		if err != nil {
+			log.Warn("push subscription prune: failed", zap.Error(err))
+			return err
+		}
+		if n > 0 {
+			log.Info("push subscription prune: deleted stale inactive subscriptions", zap.Int64("count", n))
+		}
+		return nil
+	}
 }
 
 // startWorker wires event subscribers, starts the health HTTP server, starts
@@ -401,10 +424,10 @@ type workerDeps struct {
 // lifecycle management - and the part that can be exercised in unit tests
 // by injecting an InMemoryBus, a stub scorer, and a pre-cancelled context.
 func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
-	deps.bus.Subscribe(events.EventMatchStarted, newMatchStartedHandler(log))
+	deps.bus.Subscribe(ctx, events.EventMatchStarted, newMatchStartedHandler(log))
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
-	deps.bus.Subscribe(events.EventMatchFinished,
+	deps.bus.Subscribe(ctx, events.EventMatchFinished,
 		newMatchFinishedHandler(deps.scorer, deps.snapshotter, deps.predRepo, deps.invalidators, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 

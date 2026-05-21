@@ -113,9 +113,15 @@ func (d *UserDispatcher) deliverEmail(
 		content.actionURL = d.appBaseURL + content.actionURL
 	}
 
-	subject, html, err := renderUserEmail(content, name, unsubURL)
-	if err != nil {
-		log.Warn("user dispatcher: render user email failed", zap.Error(err))
+	var subject, html string
+	var renderErr error
+	if content.emailHTMLTmpl != "" {
+		subject, html, renderErr = renderUserEmailFromTmpl(content.emailHTMLTmpl, content, name, unsubURL)
+	} else {
+		subject, html, renderErr = renderUserEmail(content, name, unsubURL)
+	}
+	if renderErr != nil {
+		log.Warn("user dispatcher: render user email failed", zap.Error(renderErr))
 		return
 	}
 
@@ -150,6 +156,23 @@ func renderUserEmail(content userContent, recipientName, unsubURL string) (subje
 	var buf bytes.Buffer
 	if tmplErr := userBaseTemplate.Execute(&buf, data); tmplErr != nil {
 		return "", "", fmt.Errorf("dispatcher: render user email: %w", tmplErr)
+	}
+	return data.Subject, buf.String(), nil
+}
+
+// renderUserEmailFromTmpl renders a custom operator-supplied html/template string
+// using the same userEmailData that the default userBaseTemplate receives.  This
+// lets operators replace the entire email HTML while keeping access to all
+// standard fields (.Headline, .Body, .ActionURL, .UnsubscribeURL, etc.).
+func renderUserEmailFromTmpl(tmplStr string, content userContent, recipientName, unsubURL string) (subject, html string, err error) {
+	t, parseErr := template.New("user-email-custom").Parse(tmplStr)
+	if parseErr != nil {
+		return "", "", fmt.Errorf("dispatcher: parse email_html_tmpl: %w", parseErr)
+	}
+	data := buildUserEmailData(content, recipientName, unsubURL)
+	var buf bytes.Buffer
+	if execErr := t.Execute(&buf, data); execErr != nil {
+		return "", "", fmt.Errorf("dispatcher: render email_html_tmpl: %w", execErr)
 	}
 	return data.Subject, buf.String(), nil
 }

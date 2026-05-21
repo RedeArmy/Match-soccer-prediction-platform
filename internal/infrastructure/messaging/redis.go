@@ -129,21 +129,21 @@ func (b *RedisBus) Close() {
 // to avoid a race where the goroutine starts reading from a group that failed to
 // be created due to transient Redis unavailability. If group creation fails, the
 // goroutine exits cleanly and logs an error rather than spinning in a retry loop.
-func (b *RedisBus) Subscribe(eventType events.EventType, handler func(context.Context, events.Envelope) error) {
+func (b *RedisBus) Subscribe(ctx context.Context, eventType events.EventType, handler func(context.Context, events.Envelope) error) {
 	b.mu.Lock()
 	existing := b.handlers[eventType]
 	b.handlers[eventType] = append(existing, handler)
 
-	var ctx context.Context
+	var consumeCtx context.Context
 	if len(existing) == 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(context.Background())
+		consumeCtx, cancel = context.WithCancel(ctx)
 		b.cancels = append(b.cancels, cancel)
 	}
 	b.mu.Unlock()
 
 	if len(existing) == 0 {
-		go b.consume(ctx, eventType)
+		go b.consume(consumeCtx, eventType)
 	}
 }
 
@@ -173,9 +173,9 @@ func (b *RedisBus) Publish(ctx context.Context, envelope events.Envelope) error 
 //
 // Returns true if the group exists (either created now or already present),
 // false if creation failed due to a non-recoverable Redis error.
-func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) bool {
+func (b *RedisBus) ensureConsumerGroup(ctx context.Context, eventType events.EventType) bool {
 	err := b.client.XGroupCreateMkStream(
-		context.Background(),
+		ctx,
 		streamKey(eventType),
 		consumerGroup,
 		"0",
@@ -219,7 +219,7 @@ func (b *RedisBus) ensureConsumerGroup(eventType events.EventType) bool {
 func (b *RedisBus) consume(ctx context.Context, eventType events.EventType) {
 	key := streamKey(eventType)
 
-	if !b.ensureConsumerGroup(eventType) {
+	if !b.ensureConsumerGroup(ctx, eventType) {
 		b.log.Error("redis bus: consumer group setup failed, goroutine exiting",
 			zap.String("stream", key),
 		)
@@ -371,7 +371,7 @@ func (b *RedisBus) processMessage(ctx context.Context, eventType events.EventTyp
 			zap.String("stream", key),
 			zap.String("id", msg.ID),
 		)
-		b.ack(key, msg.ID)
+		b.ack(ctx, key, msg.ID)
 		return
 	}
 
@@ -382,7 +382,7 @@ func (b *RedisBus) processMessage(ctx context.Context, eventType events.EventTyp
 			zap.String("id", msg.ID),
 			zap.Error(err),
 		)
-		b.ack(key, msg.ID)
+		b.ack(ctx, key, msg.ID)
 		return
 	}
 
@@ -397,16 +397,18 @@ func (b *RedisBus) processMessage(ctx context.Context, eventType events.EventTyp
 	for _, h := range handlers {
 		h := h
 		if err := callWithRetry(ctx, func() error { return h(handlerCtx, envelope) }); err != nil {
-			b.pushDLQ(envelope, err)
+			b.pushDLQ(ctx, envelope, err)
 		}
 	}
 
-	b.ack(key, msg.ID)
+	b.ack(ctx, key, msg.ID)
 }
 
 // ack sends XACK for the given message ID and logs a warning on failure.
-func (b *RedisBus) ack(key, msgID string) {
-	if err := b.client.XAck(context.Background(), key, consumerGroup, msgID).Err(); err != nil {
+// WithoutCancel ensures XACK completes even during graceful shutdown when
+// the consume goroutine's context is already cancelled.
+func (b *RedisBus) ack(ctx context.Context, key, msgID string) {
+	if err := b.client.XAck(context.WithoutCancel(ctx), key, consumerGroup, msgID).Err(); err != nil {
 		b.log.Warn("redis bus: XACK failed",
 			zap.String("stream", key),
 			zap.String("id", msgID),
@@ -416,7 +418,7 @@ func (b *RedisBus) ack(key, msgID string) {
 }
 
 // pushDLQ appends a dead-letter entry to the Redis list at dlq:<event_type>.
-func (b *RedisBus) pushDLQ(envelope events.Envelope, handlerErr error) {
+func (b *RedisBus) pushDLQ(ctx context.Context, envelope events.Envelope, handlerErr error) {
 	entry := dlqEntry{
 		EventType:      string(envelope.Type),
 		Envelope:       envelope,
@@ -432,7 +434,7 @@ func (b *RedisBus) pushDLQ(envelope events.Envelope, handlerErr error) {
 		)
 		return
 	}
-	if err := b.client.RPush(context.Background(), dlqKey(envelope.Type), data).Err(); err != nil {
+	if err := b.client.RPush(context.WithoutCancel(ctx), dlqKey(envelope.Type), data).Err(); err != nil {
 		b.log.Error("redis bus: push to dlq",
 			zap.String("event_type", string(envelope.Type)),
 			zap.Error(err),
