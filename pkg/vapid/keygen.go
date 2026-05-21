@@ -6,9 +6,17 @@
 //
 //	go run ./cmd/vapid-keygen
 //
-// Copy the output into your environment variables or into the system_params
-// table (keys notify.web_push_vapid_public_key / notify.web_push_vapid_private_key).
-// All existing browser subscriptions must be re-registered when keys are rotated.
+// Copy the public key into the system_params table (key
+// notify.web_push_vapid_public_key) and into your browser
+// applicationServerKey configuration.
+//
+// Store the private key ONLY as an environment variable
+// (WCQ_WEBPUSH_VAPIDPRIVATEKEY) — never in system_params or any database:
+// it is a cryptographic secret that would allow any attacker with DB read
+// access to impersonate the application server to push services.
+//
+// All existing browser subscriptions must be re-registered when keys are
+// rotated.
 package vapid
 
 import (
@@ -32,8 +40,9 @@ type Keys struct {
 var generateVAPIDKeys = wp.GenerateVAPIDKeys
 
 // GenerateKeys returns a fresh ECDH P-256 key pair in Base64URL encoding.
-// Call once per deployment; the returned keys are safe to write directly into
-// environment variables or system_params rows.
+// Call once per deployment.  Write the public key to system_params
+// (notify.web_push_vapid_public_key) and the private key exclusively to the
+// WCQ_WEBPUSH_VAPIDPRIVATEKEY environment variable — never to the database.
 func GenerateKeys() (Keys, error) {
 	// webpush-go returns (privateKey, publicKey, err) — note the order.
 	priv, pub, err := generateVAPIDKeys()

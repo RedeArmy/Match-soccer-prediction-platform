@@ -23,14 +23,15 @@ type UserEmailResolver interface {
 
 // userEmailData is the bag of values injected into the user-facing email template.
 type userEmailData struct {
-	Name           string
-	Subject        string
-	Headline       string
-	Body           string
-	ActionURL      string
-	ActionLabel    string
-	UnsubscribeURL string // empty omits the unsubscribe link from the footer
-	GeneratedAt    string
+	Name             string
+	Subject          string
+	Headline         string
+	Body             string
+	ActionURL        string
+	ActionLabel      string
+	UnsubscribeURL   string // empty omits the unsubscribe link from the footer
+	UnsubscribeLabel string // localised anchor text for the unsubscribe link
+	GeneratedAt      string
 }
 
 var userBaseTemplate = template.Must(template.New("user-base").Parse(`<!DOCTYPE html>
@@ -64,7 +65,7 @@ var userBaseTemplate = template.Must(template.New("user-base").Parse(`<!DOCTYPE 
   </div>
   <div class="footer">
     Sent at {{.GeneratedAt}} &bull; You are receiving this because you have an account on World Cup Quiniela.
-    {{if .UnsubscribeURL}}&bull; <a href="{{.UnsubscribeURL}}">Unsubscribe from emails</a>{{end}}
+    {{if .UnsubscribeURL}}&bull; <a href="{{.UnsubscribeURL}}">{{.UnsubscribeLabel}}</a>{{end}}
   </div>
 </div>
 </body>
@@ -103,6 +104,13 @@ func (d *UserDispatcher) deliverEmail(
 	if d.unsubscribeSecret != "" && d.appBaseURL != "" {
 		tok := unsubscribe.SignToken(userID, d.unsubscribeSecret, timeNow())
 		unsubURL = d.appBaseURL + "/api/v1/notifications/unsubscribe?token=" + tok
+	}
+
+	// Resolve relative action URLs to absolute so the CTA button in the email
+	// is a working hyperlink.  Email clients interpret bare-path hrefs relative
+	// to the mail service's domain, not the application origin.
+	if d.appBaseURL != "" && len(content.actionURL) > 0 && content.actionURL[0] == '/' {
+		content.actionURL = d.appBaseURL + content.actionURL
 	}
 
 	subject, html, err := renderUserEmail(content, name, unsubURL)
@@ -147,18 +155,21 @@ func renderUserEmail(content userContent, recipientName, unsubURL string) (subje
 }
 
 func buildUserEmailData(content userContent, name, unsubURL string) userEmailData {
+	locale := content.locale
 	greeting := name
 	if greeting == "" {
-		greeting = "there"
+		greeting = localeStr("there", "amig@", locale)
 	}
+	hi := localeStr("Hi", "Hola", locale)
 	return userEmailData{
-		Name:           greeting,
-		Subject:        content.title,
-		Headline:       content.title,
-		Body:           fmt.Sprintf("Hi %s, %s", greeting, content.body),
-		ActionURL:      content.actionURL,
-		ActionLabel:    "Open app",
-		UnsubscribeURL: unsubURL,
-		GeneratedAt:    time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
+		Name:             greeting,
+		Subject:          content.title,
+		Headline:         content.title,
+		Body:             fmt.Sprintf("%s %s, %s", hi, greeting, content.body),
+		ActionURL:        content.actionURL,
+		ActionLabel:      localeStr("Open app", "Abrir aplicación", locale),
+		UnsubscribeURL:   unsubURL,
+		UnsubscribeLabel: localeStr("Unsubscribe from emails", "Darse de baja de correos", locale),
+		GeneratedAt:      time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
 	}
 }

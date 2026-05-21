@@ -922,3 +922,21 @@ type PushSubscription struct {
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 }
+
+// NotificationTemplate stores operator-editable Go text/template content for a
+// user-facing notification event.  Each row overrides the compiled Go default
+// for the (EventType, Locale) pair.  Deleting a row reverts that combination
+// to the compiled fallback without requiring a redeployment.
+//
+// TitleTmpl, BodyTmpl, and ActionURLTmpl are Go text/template strings.
+// Template data = outbox payload decoded as map[string]any (JSON snake_case
+// keys).  Available functions: formatCents, int.
+type NotificationTemplate struct {
+	EventType     string
+	Locale        string
+	TitleTmpl     string
+	BodyTmpl      string
+	ActionURLTmpl string
+	UpdatedBy     *int
+	UpdatedAt     time.Time
+}

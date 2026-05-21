@@ -335,7 +335,7 @@ func TestWriter_WriteDedup_FirstInsert_ReturnsWritten(t *testing.T) {
 	written, err := w.WriteDedup(ctx,
 		dedupKey,
 		notification.EventAdminBankTransferQueueDepth,
-		"scheduler", "queue_depth",
+		"scheduler", "queue_depth_first_insert",
 		payload,
 	)
 	if err != nil {
@@ -371,7 +371,7 @@ func TestWriter_WriteDedup_SecondInsert_ReturnsNotWritten(t *testing.T) {
 	if _, err := w.WriteDedup(ctx,
 		dedupKey,
 		notification.EventAdminBankTransferQueueDepth,
-		"scheduler", "queue_depth",
+		"scheduler", "queue_depth_second_insert",
 		payload,
 	); err != nil {
 		t.Fatalf("first WriteDedup: %v", err)
@@ -381,7 +381,7 @@ func TestWriter_WriteDedup_SecondInsert_ReturnsNotWritten(t *testing.T) {
 	written, err := w.WriteDedup(ctx,
 		dedupKey,
 		notification.EventAdminBankTransferQueueDepth,
-		"scheduler", "queue_depth",
+		"scheduler", "queue_depth_second_insert",
 		notification.AdminBankTransferPayload{QueueDepth: 99},
 	)
 	if err != nil {
