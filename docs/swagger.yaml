@@ -432,6 +432,23 @@ definitions:
       user_id:
         type: integer
     type: object
+  internal_api_handler.NotificationTemplateResponse:
+    properties:
+      action_url_tmpl:
+        type: string
+      body_tmpl:
+        type: string
+      event_type:
+        type: string
+      locale:
+        type: string
+      title_tmpl:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+    type: object
   internal_api_handler.PageMeta:
     properties:
       limit:
@@ -553,6 +570,15 @@ definitions:
         type: string
       user_id:
         type: integer
+    type: object
+  internal_api_handler.PreviewResponse:
+    properties:
+      action_url:
+        type: string
+      body:
+        type: string
+      title:
+        type: string
     type: object
   internal_api_handler.ScoringRuleResponse:
     properties:
@@ -804,6 +830,19 @@ definitions:
       invite_code:
         type: string
     type: object
+  internal_api_handler.previewTemplateRequest:
+    properties:
+      action_url_tmpl:
+        type: string
+      body_tmpl:
+        type: string
+      sample_payload:
+        items:
+          type: integer
+        type: array
+      title_tmpl:
+        type: string
+    type: object
   internal_api_handler.renameGroupRequest:
     properties:
       name:
@@ -895,6 +934,15 @@ definitions:
         type: boolean
       penalties_bonus:
         type: integer
+    type: object
+  internal_api_handler.upsertTemplateRequest:
+    properties:
+      action_url_tmpl:
+        type: string
+      body_tmpl:
+        type: string
+      title_tmpl:
+        type: string
     type: object
 host: localhost:8080
 info:
@@ -1718,6 +1766,209 @@ paths:
       summary: Global leaderboard
       tags:
       - admin-leaderboard
+  /api/v1/admin/notification-templates:
+    get:
+      description: Returns all operator-editable notification content templates
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.NotificationTemplateResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List notification templates
+      tags:
+      - admin-notification-templates
+  /api/v1/admin/notification-templates/{event_type}/{locale}:
+    delete:
+      description: Removes the stored content override for (event_type, locale).
+      parameters:
+      - description: Event type
+        in: path
+        name: event_type
+        required: true
+        type: string
+      - description: Locale
+        in: path
+        name: locale
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a notification template override
+      tags:
+      - admin-notification-templates
+    get:
+      description: Returns the stored content override for the given
+      parameters:
+      - description: Event type (e.g. payment.confirmed)
+        in: path
+        name: event_type
+        required: true
+        type: string
+      - description: Locale (en or es)
+        in: path
+        name: locale
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.NotificationTemplateResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a notification template
+      tags:
+      - admin-notification-templates
+    put:
+      consumes:
+      - application/json
+      description: Creates or replaces the content override for the given
+      parameters:
+      - description: Event type
+        in: path
+        name: event_type
+        required: true
+        type: string
+      - description: Locale
+        in: path
+        name: locale
+        required: true
+        type: string
+      - description: Template content
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.upsertTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.NotificationTemplateResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Template syntax invalid
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create or update a notification template
+      tags:
+      - admin-notification-templates
+  /api/v1/admin/notification-templates/{event_type}/{locale}/preview:
+    post:
+      consumes:
+      - application/json
+      description: Renders the supplied template strings against the provided
+      parameters:
+      - description: Event type
+        in: path
+        name: event_type
+        required: true
+        type: string
+      - description: Locale
+        in: path
+        name: locale
+        required: true
+        type: string
+      - description: Templates + sample payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.previewTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.PreviewResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Template syntax error or render error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Preview a notification template
+      tags:
+      - admin-notification-templates
   /api/v1/admin/payments:
     get:
       description: Returns a paginated list of all payment records. Supports optional
