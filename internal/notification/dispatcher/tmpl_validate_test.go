@@ -210,3 +210,59 @@ func TestRenderTmplStrict_PresentKey_Renders(t *testing.T) {
 		t.Errorf("got %q; want %q", got, "Hello World")
 	}
 }
+
+// ── validateEmailHTMLTmpl ─────────────────────────────────────────────────────
+
+func TestValidateEmailHTMLTmpl_HappyPath_StaticHTML(t *testing.T) {
+	err := validateEmailHTMLTmpl(`<!DOCTYPE html><html><body><p>Hello</p></body></html>`)
+	if err != nil {
+		t.Errorf("unexpected error for valid static HTML: %v", err)
+	}
+}
+
+func TestValidateEmailHTMLTmpl_HappyPath_WithKnownFields(t *testing.T) {
+	err := validateEmailHTMLTmpl(`<html><body><h1>{{.Headline}}</h1><p>{{.Body}}</p><a href="{{.ActionURL}}">{{.ActionLabel}}</a></body></html>`)
+	if err != nil {
+		t.Errorf("unexpected error for template using known userEmailData fields: %v", err)
+	}
+}
+
+func TestValidateEmailHTMLTmpl_ParseError_ReturnsError(t *testing.T) {
+	err := validateEmailHTMLTmpl(`{{.unclosed`)
+	if err == nil {
+		t.Fatal("expected parse error for malformed template, got nil")
+	}
+}
+
+func TestValidateEmailHTMLTmpl_UnknownField_ReturnsError(t *testing.T) {
+	err := validateEmailHTMLTmpl(`<p>{{.NonExistentField}}</p>`)
+	if err == nil {
+		t.Fatal("expected execute error for unknown struct field, got nil")
+	}
+}
+
+func TestValidateTemplate_EmailHTMLTmpl_HappyPath(t *testing.T) {
+	tmpl := &domain.NotificationTemplate{
+		TitleTmpl:     "Payment confirmed",
+		BodyTmpl:      "Your payment is confirmed.",
+		EmailHTMLTmpl: `<html><body><p>{{.Headline}}</p><p>{{.Body}}</p></body></html>`,
+	}
+	if err := ValidateTemplate(string(notification.EventPaymentConfirmed), tmpl); err != nil {
+		t.Errorf("unexpected error for valid email_html_tmpl: %v", err)
+	}
+}
+
+func TestValidateTemplate_EmailHTMLTmpl_Invalid_ReturnsError(t *testing.T) {
+	tmpl := &domain.NotificationTemplate{
+		TitleTmpl:     "Payment confirmed",
+		BodyTmpl:      "Your payment is confirmed.",
+		EmailHTMLTmpl: `{{.unclosed`,
+	}
+	err := ValidateTemplate(string(notification.EventPaymentConfirmed), tmpl)
+	if err == nil {
+		t.Fatal("expected error for invalid email_html_tmpl, got nil")
+	}
+	if !strings.Contains(err.Error(), "email_html_tmpl") {
+		t.Errorf("error %q should mention email_html_tmpl", err.Error())
+	}
+}

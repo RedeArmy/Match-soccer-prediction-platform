@@ -52,7 +52,7 @@ func (r *postgresNotificationTemplateRepository) cacheHit(key templateCacheKey) 
 func (r *postgresNotificationTemplateRepository) warm(ctx context.Context) error {
 	const q = `
 SELECT event_type, locale, title_tmpl, body_tmpl, action_url_tmpl,
-       email_subject_tmpl, updated_by, updated_at
+       email_subject_tmpl, email_html_tmpl, updated_by, updated_at
 FROM   notification_templates
 ORDER  BY event_type, locale
 `
@@ -68,7 +68,7 @@ ORDER  BY event_type, locale
 		if err := rows.Scan(
 			&t.EventType, &t.Locale,
 			&t.TitleTmpl, &t.BodyTmpl, &t.ActionURLTmpl,
-			&t.EmailSubjectTmpl, &t.UpdatedBy, &t.UpdatedAt,
+			&t.EmailSubjectTmpl, &t.EmailHTMLTmpl, &t.UpdatedBy, &t.UpdatedAt,
 		); err != nil {
 			return apperrors.Internal(err)
 		}
@@ -121,19 +121,20 @@ func (r *postgresNotificationTemplateRepository) List(ctx context.Context) ([]*d
 func (r *postgresNotificationTemplateRepository) Upsert(ctx context.Context, t *domain.NotificationTemplate) error {
 	const q = `
 INSERT INTO notification_templates
-    (event_type, locale, title_tmpl, body_tmpl, action_url_tmpl, email_subject_tmpl, updated_by, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+    (event_type, locale, title_tmpl, body_tmpl, action_url_tmpl, email_subject_tmpl, email_html_tmpl, updated_by, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
 ON CONFLICT (event_type, locale) DO UPDATE SET
-    title_tmpl        = EXCLUDED.title_tmpl,
-    body_tmpl         = EXCLUDED.body_tmpl,
-    action_url_tmpl   = EXCLUDED.action_url_tmpl,
+    title_tmpl         = EXCLUDED.title_tmpl,
+    body_tmpl          = EXCLUDED.body_tmpl,
+    action_url_tmpl    = EXCLUDED.action_url_tmpl,
     email_subject_tmpl = EXCLUDED.email_subject_tmpl,
-    updated_by        = EXCLUDED.updated_by,
-    updated_at        = now()
+    email_html_tmpl    = EXCLUDED.email_html_tmpl,
+    updated_by         = EXCLUDED.updated_by,
+    updated_at         = now()
 `
 	if _, err := r.pool.Exec(ctx, q,
 		t.EventType, t.Locale,
-		t.TitleTmpl, t.BodyTmpl, t.ActionURLTmpl, t.EmailSubjectTmpl,
+		t.TitleTmpl, t.BodyTmpl, t.ActionURLTmpl, t.EmailSubjectTmpl, t.EmailHTMLTmpl,
 		t.UpdatedBy,
 	); err != nil {
 		return apperrors.Internal(err)

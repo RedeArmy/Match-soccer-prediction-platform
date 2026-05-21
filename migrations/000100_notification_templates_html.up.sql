@@ -1,0 +1,24 @@
+-- Add an operator-editable full-HTML email template to notification_templates.
+--
+-- When email_html_tmpl is non-empty the dispatcher renders it with html/template
+-- in place of the hardcoded userBaseTemplate.  The template data is the same
+-- userEmailData struct exposed by the default template, giving operators access
+-- to all standard fields:
+--
+--   .Name             — recipient display name (or "there" / "amig@")
+--   .Subject          — resolved email subject line
+--   .Headline         — rendered title_tmpl (notification title)
+--   .Body             — "Hi <Name>, <body_tmpl output>"
+--   .ActionURL        — rendered action_url_tmpl (absolute when AppBaseURL is set)
+--   .ActionLabel      — localised CTA label ("Open app" / "Abrir aplicación")
+--   .UnsubscribeURL   — signed unsubscribe link (empty when not configured)
+--   .UnsubscribeLabel — localised anchor text
+--   .GeneratedAt      — UTC timestamp string "YYYY-MM-DD HH:MM:SS UTC"
+--
+-- html/template is used for rendering so all values are HTML-escaped by default.
+-- Use {{.Body | safeHTML}} if you need unescaped HTML — not recommended.
+--
+-- DEFAULT '' means all existing rows are unchanged: an empty email_html_tmpl
+-- falls back to the compiled userBaseTemplate, so back-fill is not required.
+ALTER TABLE notification_templates
+    ADD COLUMN email_html_tmpl TEXT NOT NULL DEFAULT '';

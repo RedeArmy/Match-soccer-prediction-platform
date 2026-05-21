@@ -56,7 +56,10 @@ func NewInMemoryBus(log *zap.Logger) *InMemoryBus {
 // registration order. Handlers must return an error to signal transient
 // failures; the bus will retry up to maxHandlerAttempts times before logging
 // the event as a dead-letter.
-func (b *InMemoryBus) Subscribe(eventType events.EventType, handler func(context.Context, events.Envelope) error) {
+// Subscribe registers handler to be called for every event of the given type.
+// ctx is accepted to satisfy the events.Subscriber interface but is not used by
+// InMemoryBus, which delivers events synchronously within Publish.
+func (b *InMemoryBus) Subscribe(_ context.Context, eventType events.EventType, handler func(context.Context, events.Envelope) error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.handlers[eventType] = append(b.handlers[eventType], handler)

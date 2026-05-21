@@ -32,7 +32,7 @@ type OneDriveFileStore struct {
 //
 // Required fields: OneDriveTenantID, OneDriveClientID, OneDriveClientSecret,
 // OneDriveDriveID. The OAuth2 token is fetched lazily on the first API call.
-func NewOneDriveFileStore(cfg Config) (*OneDriveFileStore, error) {
+func NewOneDriveFileStore(ctx context.Context, cfg Config) (*OneDriveFileStore, error) {
 	if cfg.OneDriveTenantID == "" {
 		return nil, fmt.Errorf("storage: OneDriveTenantID is required for onedrive driver")
 	}
@@ -57,7 +57,7 @@ func NewOneDriveFileStore(cfg Config) (*OneDriveFileStore, error) {
 	}
 
 	return &OneDriveFileStore{
-		client:  cc.Client(context.Background()),
+		client:  cc.Client(ctx),
 		driveID: cfg.OneDriveDriveID,
 		baseURL: graphBaseURL,
 	}, nil

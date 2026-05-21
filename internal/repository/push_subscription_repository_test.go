@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -270,6 +271,57 @@ func TestPushSubscriptionRepository_MarkInactive_CancelledContext_ReturnsError(t
 	cancel()
 
 	if err := repo.MarkInactive(ctx, 1); err == nil {
+		t.Error("expected error for cancelled context, got nil")
+	}
+}
+
+func TestPushSubscriptionRepository_DeleteInactive_DeletesOldInactiveRows(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresPushSubscriptionRepository(testDB)
+
+	sub := newPushSub(u.ID, "ep-delete-inactive-old")
+	_ = repo.Create(context.Background(), sub)
+	_ = repo.MarkInactive(context.Background(), sub.ID)
+
+	// Cutoff is 1 hour in the future: inactivated_at < future ⇒ row qualifies for deletion.
+	n, err := repo.DeleteInactive(context.Background(), time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("DeleteInactive: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("DeleteInactive: deleted %d rows; want 1", n)
+	}
+}
+
+func TestPushSubscriptionRepository_DeleteInactive_KeepsRecentlyInactivated(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresPushSubscriptionRepository(testDB)
+
+	sub := newPushSub(u.ID, "ep-delete-inactive-recent")
+	_ = repo.Create(context.Background(), sub)
+	_ = repo.MarkInactive(context.Background(), sub.ID)
+
+	// Cutoff is 1 hour in the past: inactivated_at is after the cutoff ⇒ row is kept.
+	n, err := repo.DeleteInactive(context.Background(), time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("DeleteInactive: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("DeleteInactive: deleted %d rows; want 0 (inactivated too recently)", n)
+	}
+}
+
+func TestPushSubscriptionRepository_DeleteInactive_CancelledContext_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresPushSubscriptionRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := repo.DeleteInactive(ctx, time.Now())
+	if err == nil {
 		t.Error("expected error for cancelled context, got nil")
 	}
 }

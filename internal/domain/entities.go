@@ -938,6 +938,7 @@ type NotificationTemplate struct {
 	BodyTmpl         string
 	ActionURLTmpl    string
 	EmailSubjectTmpl string // overrides title as email subject when non-empty
+	EmailHTMLTmpl    string // full html/template replacing userBaseTemplate when non-empty
 	UpdatedBy        *int
 	UpdatedAt        time.Time
 }

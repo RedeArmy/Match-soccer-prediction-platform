@@ -498,7 +498,10 @@ func (r *PostgresPredictionRepository) ListAdmin(ctx context.Context, f Predicti
 	}
 
 	q := `SELECT ` + predictionColumns + ` FROM predictions` + wb.clause() + ` ORDER BY created_at DESC`
-	q, pagedArgs, _ := applyPagination(q, wb.args, wb.next(), p)
+	q, pagedArgs, _, err := applyPagination(q, wb.args, wb.next(), p)
+	if err != nil {
+		return nil, apperrors.BadRequest(err.Error())
+	}
 
 	rows, err := r.db.Query(ctx, q, pagedArgs...)
 	if err != nil {

@@ -30,7 +30,7 @@ type Publisher interface {
 // implementation retries the handler with exponential backoff before routing
 // the event to the dead-letter queue.
 type Subscriber interface {
-	Subscribe(eventType EventType, handler func(ctx context.Context, envelope Envelope) error)
+	Subscribe(ctx context.Context, eventType EventType, handler func(ctx context.Context, envelope Envelope) error)
 }
 
 // Bus combines Publisher and Subscriber into a single interface for

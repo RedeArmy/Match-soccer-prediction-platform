@@ -84,6 +84,9 @@ func (s *stubNotifPushRepo) ListActiveByUser(_ context.Context, _ int) ([]*domai
 func (s *stubNotifPushRepo) DeleteByEndpoint(_ context.Context, _ string) error { return s.err }
 func (s *stubNotifPushRepo) MarkInactive(_ context.Context, _ int64) error      { return s.err }
 func (s *stubNotifPushRepo) UpdateLastUsed(_ context.Context, _ int64) error    { return s.err }
+func (s *stubNotifPushRepo) DeleteInactive(_ context.Context, _ time.Time) (int64, error) {
+	return 0, s.err
+}
 
 // ── Builder helpers ───────────────────────────────────────────────────────────
 

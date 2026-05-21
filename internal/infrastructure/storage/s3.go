@@ -29,7 +29,7 @@ type S3FileStore struct {
 // If S3AccessKeyID and S3SecretKey are both non-empty, static credentials are
 // used. Otherwise the SDK falls back to the standard credential chain
 // (environment variables, shared credentials file, IAM instance profile).
-func NewS3FileStore(cfg Config) (*S3FileStore, error) {
+func NewS3FileStore(ctx context.Context, cfg Config) (*S3FileStore, error) {
 	if cfg.S3Bucket == "" {
 		return nil, fmt.Errorf("storage: S3Bucket is required for s3 driver")
 	}
@@ -46,7 +46,7 @@ func NewS3FileStore(cfg Config) (*S3FileStore, error) {
 		))
 	}
 
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), opts...)
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("storage: loading AWS config: %w", err)
 	}

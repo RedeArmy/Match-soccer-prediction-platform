@@ -230,7 +230,7 @@ func (r *PostgresUserRepository) ListBanned(ctx context.Context) ([]*domain.User
 // empty when the caller is on the last page.
 func (r *PostgresUserRepository) ListFiltered(ctx context.Context, f UserFilters, p CursorPage) ([]*domain.User, string, error) {
 	if p.Limit <= 0 {
-		panic("repository: CursorPage.Limit must be positive")
+		return nil, "", apperrors.BadRequest("page size must be a positive integer")
 	}
 
 	wb := newWhereBuilder()
