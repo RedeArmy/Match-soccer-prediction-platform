@@ -318,3 +318,72 @@ type AdminWeeklyReportPayload struct {
 	TotalWithdrawals  int    `json:"total_withdrawals"`
 	WithdrawalCents   int    `json:"withdrawal_cents"`
 }
+
+// KnownEventTypes is the authoritative set of every EventType constant defined
+// in this package.  Admin handlers consult it when validating event_type values
+// supplied as path parameters or request bodies.
+var KnownEventTypes = map[EventType]struct{}{
+	// Prediction
+	EventPredictionConfirmed:        {},
+	EventPredictionDeadlineApproach: {},
+	EventPredictionMissingReminder:  {},
+	EventPredictionLocked:           {},
+	EventPredictionScored:           {},
+	// Match
+	EventMatchResultEntered: {},
+	EventMatchPostponed:     {},
+	EventMatchCancelled:     {},
+	// Group
+	EventGroupJoinRequested:        {},
+	EventGroupJoinApproved:         {},
+	EventGroupJoinRejected:         {},
+	EventGroupMemberJoined:         {},
+	EventGroupMemberLeft:           {},
+	EventGroupLeaderboardMilestone: {},
+	EventGroupDisbanded:            {},
+	EventGroupDeadline24h:          {},
+	// Payment
+	EventPaymentConfirmed:             {},
+	EventPaymentFailed:                {},
+	EventPaymentBankTransferSubmitted: {},
+	EventPaymentBankTransferApproved:  {},
+	EventPaymentBankTransferRejected:  {},
+	EventPaymentPendingTimeout:        {},
+	// Withdrawal
+	EventWithdrawalRequested:      {},
+	EventWithdrawalApproved:       {},
+	EventWithdrawalRejected:       {},
+	EventWithdrawalProcessing:     {},
+	EventWithdrawalCompleted:      {},
+	EventWithdrawalFailed:         {},
+	EventWithdrawalPendingTimeout: {},
+	// Account
+	EventAccountWelcome:         {},
+	EventAccountBalanceCredited: {},
+	EventAccountBalanceDebited:  {},
+	EventAccountLowBalance:      {},
+	// Admin
+	EventAdminBankTransferPending:    {},
+	EventAdminBankTransferStale:      {},
+	EventAdminBankTransferQueueDepth: {},
+	EventAdminWithdrawalPending:      {},
+	EventAdminWithdrawalStale:        {},
+	EventAdminHighValueWithdrawal:    {},
+	EventAdminPaymentDispute:         {},
+	EventAdminMatchResultPending:     {},
+	EventAdminScoringDiscrepancy:     {},
+	EventAdminGroupReported:          {},
+	EventAdminPendingReminder:        {},
+	EventAdminDailySummary:           {},
+	EventAdminWeeklyReport:           {},
+	// System
+	EventSystemCircuitBreakerOpened:     {},
+	EventSystemCircuitBreakerHalfOpen:   {},
+	EventSystemWebhookSignatureFailed:   {},
+	EventSystemWebhookSignatureRepeated: {},
+	EventSystemTxRetryExhausted:         {},
+	EventSystemBalanceLedgerMismatch:    {},
+	EventSystemRateLimitAbuse:           {},
+	EventSystemIdempotencyCollision:     {},
+	EventSystemFileStoreUnavailable:     {},
+}

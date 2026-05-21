@@ -259,6 +259,19 @@ const (
 	DefaultNotifyPushIconURL       = PushDefaultIcon     // notify.push_icon_url
 	DefaultNotifyPushBadgeURL      = PushDefaultBadge    // notify.push_badge_url
 	DefaultNotifySchedulerTimezone = "America/Guatemala" // notify.scheduler_timezone
+
+	// DefaultNotifyTemplateCacheTTLSec is the number of seconds the notification
+	// template in-memory cache is considered fresh before the repository re-fetches
+	// all rows from the database.  Matches templateCacheTTL in the repository.
+	// is_runtime=FALSE: the TTL is applied at construction time; a restart is required.
+	DefaultNotifyTemplateCacheTTLSec = 300 // notify.template_cache_ttl_seconds — 5 minutes
+
+	// Push notification title and body are truncated to these character counts
+	// before delivery to the Web Push service.  Android clips titles at 100 and
+	// bodies at 300 characters; truncating server-side prevents silent content loss.
+	// is_runtime=TRUE: changes propagate within the 30 s param cache window.
+	DefaultNotifyPushTitleMaxChars = 100 // notify.push_title_max_chars — Android title limit
+	DefaultNotifyPushBodyMaxChars  = 300 // notify.push_body_max_chars  — push body limit
 )
 
 const (
@@ -526,6 +539,24 @@ const (
 	// Supported values: "en" (English) and "es" (Spanish).
 	// is_runtime=TRUE: changes propagate within the cache window without restart.
 	ParamKeyNotifyDefaultLocale = "notify.default_locale"
+
+	// ParamKeyNotifyTemplateCacheTTLSec is the seconds the notification template
+	// in-memory cache is considered fresh.  After expiry the next access
+	// bulk-reloads all rows from the database.
+	// is_runtime=FALSE: change takes effect on the next server/worker restart.
+	ParamKeyNotifyTemplateCacheTTLSec = "notify.template_cache_ttl_seconds"
+
+	// ParamKeyNotifyPushTitleMaxChars is the maximum rune count for a push
+	// notification title.  Titles exceeding this limit are truncated before
+	// delivery.  Default is 100 (the Android push notification title limit).
+	// is_runtime=TRUE: changes propagate within the 30 s param cache window.
+	ParamKeyNotifyPushTitleMaxChars = "notify.push_title_max_chars"
+
+	// ParamKeyNotifyPushBodyMaxChars is the maximum rune count for a push
+	// notification body.  Bodies exceeding this limit are truncated before
+	// delivery.  Default is 300 (standard push notification body limit).
+	// is_runtime=TRUE: changes propagate within the 30 s param cache window.
+	ParamKeyNotifyPushBodyMaxChars = "notify.push_body_max_chars"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather

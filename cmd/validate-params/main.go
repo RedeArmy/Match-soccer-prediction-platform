@@ -48,6 +48,7 @@ type paramSpec struct {
 //   - 000092_seed_queue_depth_param              (+1)
 //   - 000094_seed_locale_param                   (+1)
 //   - 000097_seed_missing_system_params          (+18)
+//   - 000099_seed_notify_template_push_params    (+3)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -172,6 +173,10 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyNotifySchedulerTimezone, defaultValue: domain.DefaultNotifySchedulerTimezone, paramType: "string", category: "notify", isRuntime: false},
 	// Default locale for all user-facing notification text; runtime — propagates within cache window.
 	{key: domain.ParamKeyNotifyDefaultLocale, defaultValue: "es", paramType: "string", category: "notify", isRuntime: true},
+	// Template cache and push payload limits (Phase 5 · migration 000099); runtime — propagate within cache window.
+	{key: domain.ParamKeyNotifyTemplateCacheTTLSec, defaultValue: strconv.Itoa(domain.DefaultNotifyTemplateCacheTTLSec), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyPushTitleMaxChars, defaultValue: strconv.Itoa(domain.DefaultNotifyPushTitleMaxChars), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyPushBodyMaxChars, defaultValue: strconv.Itoa(domain.DefaultNotifyPushBodyMaxChars), paramType: "int", category: "notify", isRuntime: true},
 }
 
 type dbParam struct {
