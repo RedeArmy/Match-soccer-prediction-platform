@@ -14,7 +14,7 @@ func TestSamplePayload_KnownEventType_ReturnsNonNil(t *testing.T) {
 	t.Parallel()
 
 	for et := range notification.KnownEventTypes {
-		if got := notification.SamplePayload(et); got == nil {
+		if notification.SamplePayload(et) == nil {
 			t.Errorf("SamplePayload(%q) = nil; every known event type must have a sample", et)
 		}
 	}

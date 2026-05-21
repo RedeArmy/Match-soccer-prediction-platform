@@ -591,7 +591,7 @@ func (s *Server) Routes() http.Handler {
 // publishes. scorer is passed in - not re-constructed here - so the same
 // stateless scoring instance is shared with the match service.
 func (s *Server) registerLocalSubscribers(scorer service.MatchScorer) {
-	s.bus.Subscribe(events.EventMatchFinished, func(ctx context.Context, env events.Envelope) error {
+	s.bus.Subscribe(context.Background(), events.EventMatchFinished, func(ctx context.Context, env events.Envelope) error {
 		mf, ok := env.Payload.(events.MatchFinished)
 		if !ok {
 			// Malformed payload: retrying will not help.

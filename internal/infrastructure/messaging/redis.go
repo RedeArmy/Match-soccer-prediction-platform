@@ -83,20 +83,17 @@ type dlqEntry struct {
 type RedisBus struct {
 	client       *redis.Client
 	log          *zap.Logger
-	baseCtx      context.Context // root context for all consumer goroutines
-	consumerName string          // unique per process; prevents two replicas from stealing each other's PEL
+	consumerName string // unique per process; prevents two replicas from stealing each other's PEL
 	cancels      []context.CancelFunc
 	mu           sync.RWMutex
 	handlers     map[events.EventType][]func(context.Context, events.Envelope) error
 }
 
 // NewRedisBus constructs a RedisBus that publishes and subscribes using the
-// provided Redis client. ctx is the application lifecycle context: all consumer
-// goroutines are children of it, so a SIGTERM-triggered cancellation propagates
-// to the bus without an explicit Close call. The client is not owned by the bus
-// and must be closed by the caller after Close has been called.
+// provided Redis client. The client is not owned by the bus and must be closed
+// by the caller after Close has been called.
 // If log is nil a no-op logger is used so that tests do not need to provide one.
-func NewRedisBus(ctx context.Context, client *redis.Client, log *zap.Logger) *RedisBus {
+func NewRedisBus(client *redis.Client, log *zap.Logger) *RedisBus {
 	if log == nil {
 		log = zap.NewNop()
 	}
@@ -107,7 +104,6 @@ func NewRedisBus(ctx context.Context, client *redis.Client, log *zap.Logger) *Re
 	return &RedisBus{
 		client:       client,
 		log:          log,
-		baseCtx:      ctx,
 		consumerName: fmt.Sprintf("%s-%d", hostname, os.Getpid()),
 		handlers:     make(map[events.EventType][]func(context.Context, events.Envelope) error),
 	}
@@ -133,21 +129,21 @@ func (b *RedisBus) Close() {
 // to avoid a race where the goroutine starts reading from a group that failed to
 // be created due to transient Redis unavailability. If group creation fails, the
 // goroutine exits cleanly and logs an error rather than spinning in a retry loop.
-func (b *RedisBus) Subscribe(eventType events.EventType, handler func(context.Context, events.Envelope) error) {
+func (b *RedisBus) Subscribe(ctx context.Context, eventType events.EventType, handler func(context.Context, events.Envelope) error) {
 	b.mu.Lock()
 	existing := b.handlers[eventType]
 	b.handlers[eventType] = append(existing, handler)
 
-	var ctx context.Context
+	var consumeCtx context.Context
 	if len(existing) == 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(b.baseCtx)
+		consumeCtx, cancel = context.WithCancel(ctx)
 		b.cancels = append(b.cancels, cancel)
 	}
 	b.mu.Unlock()
 
 	if len(existing) == 0 {
-		go b.consume(ctx, eventType)
+		go b.consume(consumeCtx, eventType)
 	}
 }
 

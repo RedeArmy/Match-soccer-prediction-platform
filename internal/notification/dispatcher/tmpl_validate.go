@@ -38,14 +38,8 @@ func ValidateTemplate(eventType string, t *domain.NotificationTemplate) error {
 	if _, err := renderTmplStrict(t.BodyTmpl, data); err != nil {
 		return fmt.Errorf("body_tmpl: %w", err)
 	}
-	if t.ActionURLTmpl != "" {
-		actionURL, err := renderTmplStrict(t.ActionURLTmpl, data)
-		if err != nil {
-			return fmt.Errorf("action_url_tmpl: %w", err)
-		}
-		if len(actionURL) > 0 && actionURL[0] != '/' {
-			return fmt.Errorf("action_url_tmpl must render to a relative path starting with '/'; got %q", actionURL)
-		}
+	if err := validateActionURLTmpl(t.ActionURLTmpl, data); err != nil {
+		return err
 	}
 	if t.EmailSubjectTmpl != "" {
 		if _, err := renderTmplStrict(t.EmailSubjectTmpl, data); err != nil {
@@ -56,6 +50,22 @@ func ValidateTemplate(eventType string, t *domain.NotificationTemplate) error {
 		if err := validateEmailHTMLTmpl(t.EmailHTMLTmpl); err != nil {
 			return fmt.Errorf("email_html_tmpl: %w", err)
 		}
+	}
+	return nil
+}
+
+// validateActionURLTmpl renders the action URL template and verifies the result
+// is either empty or a relative path starting with "/".
+func validateActionURLTmpl(tmpl string, data map[string]any) error {
+	if tmpl == "" {
+		return nil
+	}
+	actionURL, err := renderTmplStrict(tmpl, data)
+	if err != nil {
+		return fmt.Errorf("action_url_tmpl: %w", err)
+	}
+	if len(actionURL) > 0 && actionURL[0] != '/' {
+		return fmt.Errorf("action_url_tmpl must render to a relative path starting with '/'; got %q", actionURL)
 	}
 	return nil
 }

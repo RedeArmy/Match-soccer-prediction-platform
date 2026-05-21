@@ -29,8 +29,14 @@ func buildEventSamples() map[EventType]json.RawMessage {
 	}
 
 	const (
-		sampleQuinielaName = "Mi Quiniela"
-		samplePendingSince = "2026-05-21T08:00:00Z"
+		sampleQuinielaName      = "Mi Quiniela"
+		samplePendingSince      = "2026-05-21T08:00:00Z"
+		sampleInsufficientFunds = "Insufficient funds"
+		samplePaymentRef        = "REF-001"
+		sampleAmountMismatch    = "Amount does not match"
+		sampleDailyLimit        = "Daily limit exceeded"
+		sampleAlertComponent    = "payment-service"
+		sampleAlertDetail       = "timeout after 3 retries"
 	)
 
 	deadline := time.Date(2026, 6, 15, 20, 30, 0, 0, time.UTC)
@@ -112,58 +118,58 @@ func buildEventSamples() map[EventType]json.RawMessage {
 
 		EventPaymentConfirmed: enc(PaymentPayload{
 			UserID: 1, PaymentID: 42, AmountCents: 12500,
-			Currency: "GTQ", Reference: "REF-001", Reason: "Insufficient funds",
+			Currency: "GTQ", Reference: samplePaymentRef, Reason: sampleInsufficientFunds,
 		}),
 		EventPaymentFailed: enc(PaymentPayload{
 			UserID: 1, PaymentID: 42, AmountCents: 12500,
-			Currency: "GTQ", Reference: "REF-001", Reason: "Insufficient funds",
+			Currency: "GTQ", Reference: samplePaymentRef, Reason: sampleInsufficientFunds,
 		}),
 		EventPaymentPendingTimeout: enc(PaymentPayload{
 			UserID: 1, PaymentID: 42, AmountCents: 12500,
-			Currency: "GTQ", Reference: "REF-001", Reason: "Insufficient funds",
+			Currency: "GTQ", Reference: samplePaymentRef, Reason: sampleInsufficientFunds,
 		}),
 		EventPaymentBankTransferSubmitted: enc(BankTransferPayload{
 			UserID: 1, ProofID: 7, AmountCents: 12500,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Amount does not match",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleAmountMismatch,
 		}),
 		EventPaymentBankTransferApproved: enc(BankTransferPayload{
 			UserID: 1, ProofID: 7, AmountCents: 12500,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Amount does not match",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleAmountMismatch,
 		}),
 		EventPaymentBankTransferRejected: enc(BankTransferPayload{
 			UserID: 1, ProofID: 7, AmountCents: 12500,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Amount does not match",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleAmountMismatch,
 		}),
 
 		// ── Withdrawal ───────────────────────────────────────────────────────────
 
 		EventWithdrawalRequested: enc(WithdrawalPayload{
 			UserID: 1, RequestID: 15, AmountCents: 50000,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Daily limit exceeded",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleDailyLimit,
 		}),
 		EventWithdrawalApproved: enc(WithdrawalPayload{
 			UserID: 1, RequestID: 15, AmountCents: 50000,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Daily limit exceeded",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleDailyLimit,
 		}),
 		EventWithdrawalRejected: enc(WithdrawalPayload{
 			UserID: 1, RequestID: 15, AmountCents: 50000,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Daily limit exceeded",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleDailyLimit,
 		}),
 		EventWithdrawalProcessing: enc(WithdrawalPayload{
 			UserID: 1, RequestID: 15, AmountCents: 50000,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Daily limit exceeded",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleDailyLimit,
 		}),
 		EventWithdrawalCompleted: enc(WithdrawalPayload{
 			UserID: 1, RequestID: 15, AmountCents: 50000,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Daily limit exceeded",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleDailyLimit,
 		}),
 		EventWithdrawalFailed: enc(WithdrawalPayload{
 			UserID: 1, RequestID: 15, AmountCents: 50000,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Daily limit exceeded",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleDailyLimit,
 		}),
 		EventWithdrawalPendingTimeout: enc(WithdrawalPayload{
 			UserID: 1, RequestID: 15, AmountCents: 50000,
-			Currency: "GTQ", AdminID: &adminID, Notes: "Daily limit exceeded",
+			Currency: "GTQ", AdminID: &adminID, Notes: sampleDailyLimit,
 		}),
 
 		// ── Account ──────────────────────────────────────────────────────────────
@@ -230,43 +236,43 @@ func buildEventSamples() map[EventType]json.RawMessage {
 		// ── Admin alerts (shared payload shape) ──────────────────────────────────
 
 		EventAdminPaymentDispute: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventAdminScoringDiscrepancy: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventAdminGroupReported: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 
 		// ── System / infrastructure alerts ───────────────────────────────────────
 
 		EventSystemCircuitBreakerOpened: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventSystemCircuitBreakerHalfOpen: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventSystemWebhookSignatureFailed: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventSystemWebhookSignatureRepeated: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventSystemTxRetryExhausted: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventSystemBalanceLedgerMismatch: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventSystemRateLimitAbuse: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventSystemIdempotencyCollision: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 		EventSystemFileStoreUnavailable: enc(SystemAlertPayload{
-			Component: "payment-service", Detail: "timeout after 3 retries", Severity: "critical",
+			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
 	}
 }
