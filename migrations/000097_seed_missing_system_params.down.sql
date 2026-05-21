@@ -1,0 +1,20 @@
+DELETE FROM system_params WHERE key IN (
+    'conflict.max_scan',
+    'messaging.stream_worker_count',
+    'messaging.stream_read_block_sec',
+    'audit.max_retries',
+    'audit.retry_delay_ms',
+    'worker.snapshot_concurrency',
+    'worker.snapshot_retry_base_ms',
+    'worker.snapshot_max_attempts',
+    'worker.dlq_monitor_interval_sec',
+    'worker.purge_interval_hours',
+    'system.purge_retention_days',
+    'api.body_size_limit_bytes',
+    'snapshot.keep_latest_count',
+    'payment.max_upload_bytes',
+    'payment.withdrawal_min_cents',
+    'payment.withdrawal_max_cents',
+    'payment.bank_transfer_min_amount_cents',
+    'payment.bank_transfer_max_amount_cents'
+);

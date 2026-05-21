@@ -28,10 +28,17 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// insertOutboxSQL inserts a single outbox row.  ON CONFLICT DO NOTHING silently
+// skips the insert when a pending row for the same (aggregate_type,
+// aggregate_id, event_type) triple already exists (requires migration
+// 000093_outbox_event_dedup).  This prevents double-notifications when a
+// service retries after a transient failure before the first event is claimed
+// by the outbox worker.  On databases without the index the clause is a no-op.
 const insertOutboxSQL = `
 INSERT INTO domain_outbox
     (event_type, aggregate_type, aggregate_id, payload, scheduled_at)
 VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT DO NOTHING
 `
 
 // insertOutboxDedupSQL inserts an outbox row with a dedup_key.  If a row with

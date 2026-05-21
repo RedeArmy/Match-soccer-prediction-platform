@@ -279,6 +279,76 @@ func TestUserDispatcher_GlobalOptOut_SkipsEmail(t *testing.T) {
 	}
 }
 
+func TestUserDispatcher_AppBaseURL_MakesActionURLAbsolute(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Grace"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true},
+	}
+
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:     &notifRepo,
+		PrefRepo:      &prefRepo,
+		DLQRepo:       &recordingDLQRepo{},
+		Mailer:        mailer,
+		EmailResolver: resolver,
+		FromAddr:      "noreply@test.com",
+		AppBaseURL:    "https://quiniela.example.com",
+		Log:           zap.NewNop(),
+	})
+
+	// EventPaymentConfirmed → actionURL = "/api/v1/users/me/balance" (relative).
+	// With AppBaseURL set, the rendered email must contain the absolute href.
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+	html := mailer.messages[0].HTML
+	if !strings.Contains(html, "https://quiniela.example.com/api/v1/users/me/balance") {
+		t.Errorf("expected absolute action URL in email HTML; got:\n%s", html)
+	}
+}
+
+func TestUserDispatcher_NoAppBaseURL_ActionURLUnchanged(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Henry"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true},
+	}
+
+	// AppBaseURL deliberately empty — relative actionURL must pass through as-is.
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:     &notifRepo,
+		PrefRepo:      &prefRepo,
+		DLQRepo:       &recordingDLQRepo{},
+		Mailer:        mailer,
+		EmailResolver: resolver,
+		FromAddr:      "noreply@test.com",
+		AppBaseURL:    "",
+		Log:           zap.NewNop(),
+	})
+
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+	html := mailer.messages[0].HTML
+	// Relative path must appear as-is when no base URL is configured.
+	if !strings.Contains(html, "/api/v1/users/me/balance") {
+		t.Errorf("expected relative action URL path in email HTML; got:\n%s", html)
+	}
+}
+
 func TestUserDispatcher_UnsubscribeURL_AppearsInEmail(t *testing.T) {
 	t.Parallel()
 

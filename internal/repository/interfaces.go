@@ -785,3 +785,22 @@ type PaymentIntentRepository interface {
 	// Returns apperrors.NotFound when no pending, non-expired intent matches token.
 	CaptureAndCredit(ctx context.Context, token, captureID string) (*domain.PaymentIntent, error)
 }
+
+// NotificationTemplateRepository manages operator-editable notification content.
+// Each row overrides the compiled Go default for a (event_type, locale) pair.
+// The implementation must cache reads aggressively: Get is called on every
+// notification dispatch and must not block the outbox worker loop with a DB
+// round-trip on every call.
+type NotificationTemplateRepository interface {
+	// Get returns the stored template for (eventType, locale), or nil when no
+	// override exists (caller should fall back to the compiled default).
+	Get(ctx context.Context, eventType, locale string) (*domain.NotificationTemplate, error)
+	// List returns all stored template overrides, ordered by event_type, locale.
+	List(ctx context.Context) ([]*domain.NotificationTemplate, error)
+	// Upsert creates or replaces a template override.  UpdatedAt is set to
+	// now() server-side; the caller populates all other fields.
+	Upsert(ctx context.Context, t *domain.NotificationTemplate) error
+	// Delete removes the override for (eventType, locale), reverting to the
+	// compiled Go default.  Returns nil when the row does not exist.
+	Delete(ctx context.Context, eventType, locale string) error
+}

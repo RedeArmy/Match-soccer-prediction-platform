@@ -521,6 +521,11 @@ const (
 	// scheduler when evaluating daily and weekly job schedules (e.g. "America/Guatemala").
 	// is_runtime=FALSE: requires a worker restart to take effect.
 	ParamKeyNotifySchedulerTimezone = "notify.scheduler_timezone"
+	// ParamKeyNotifyDefaultLocale is the BCP-47 language tag used for all
+	// user-facing notification text (email subjects, bodies, push titles).
+	// Supported values: "en" (English) and "es" (Spanish).
+	// is_runtime=TRUE: changes propagate within the cache window without restart.
+	ParamKeyNotifyDefaultLocale = "notify.default_locale"
 )
 
 // Audit action strings written to the audit_log table. Using constants rather

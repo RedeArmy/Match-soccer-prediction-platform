@@ -46,6 +46,8 @@ type paramSpec struct {
 //   - 000089_seed_notify_push_asset_params       (+2)
 //   - 000090_seed_scheduler_timezone_param       (+1)
 //   - 000092_seed_queue_depth_param              (+1)
+//   - 000094_seed_locale_param                   (+1)
+//   - 000097_seed_missing_system_params          (+18)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -168,6 +170,8 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyNotifyPushBadgeURL, defaultValue: domain.DefaultNotifyPushBadgeURL, paramType: "string", category: "notify", isRuntime: true},
 	// Scheduler timezone (Phase 4 · Sprint 7); not runtime — worker restart required.
 	{key: domain.ParamKeyNotifySchedulerTimezone, defaultValue: domain.DefaultNotifySchedulerTimezone, paramType: "string", category: "notify", isRuntime: false},
+	// Default locale for all user-facing notification text; runtime — propagates within cache window.
+	{key: domain.ParamKeyNotifyDefaultLocale, defaultValue: "es", paramType: "string", category: "notify", isRuntime: true},
 }
 
 type dbParam struct {

@@ -91,7 +91,8 @@ type appHandlers struct {
 	adminTiebreaker   *handler.AdminTiebreakerHandler
 	adminConflict     *handler.AdminConflictHandler
 	adminStats        *handler.AdminStatsHandler
-	adminScoringRules *handler.AdminScoringRuleHandler
+	adminScoringRules    *handler.AdminScoringRuleHandler
+	adminNotifTemplate   *handler.AdminNotificationTemplateHandler
 }
 
 // Server holds the shared dependencies made available to all HTTP handlers.
@@ -568,6 +569,13 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/scoring-rules", h.adminScoringRules.List)
 			r.Get("/scoring-rules/{phase}", h.adminScoringRules.GetByPhase)
 			r.Patch("/scoring-rules/{phase}", h.adminScoringRules.Update)
+
+			// Notification content templates (DB-backed, operator-editable)
+			r.Get("/notification-templates", h.adminNotifTemplate.List)
+			r.Get("/notification-templates/{event_type}/{locale}", h.adminNotifTemplate.Get)
+			r.Put("/notification-templates/{event_type}/{locale}", h.adminNotifTemplate.Upsert)
+			r.Delete("/notification-templates/{event_type}/{locale}", h.adminNotifTemplate.Delete)
+			r.Post("/notification-templates/{event_type}/{locale}/preview", h.adminNotifTemplate.Preview)
 		})
 	})
 
@@ -729,6 +737,7 @@ func (s *Server) buildHandlers(
 
 	outboxWriter := outbox.NewWriter(s.db)
 
+	tmplRepo := repository.NewPostgresNotificationTemplateRepository(s.db)
 	notifRepo := repository.NewPostgresUserNotificationRepository(s.db)
 	prefRepo := repository.NewPostgresNotificationPreferenceRepository(s.db)
 	pushRepo := repository.NewPostgresPushSubscriptionRepository(s.db)
@@ -771,7 +780,8 @@ func (s *Server) buildHandlers(
 		adminTiebreaker:   handler.NewAdminTiebreakerHandler(adminReadSvc, s.log),
 		adminConflict:     handler.NewAdminConflictHandler(conflictSvc, s.log),
 		adminStats:        handler.NewAdminStatsHandler(adminReadSvc, s.log),
-		adminScoringRules: handler.NewAdminScoringRuleHandler(scoringRuleSvc, s.log),
+		adminScoringRules:  handler.NewAdminScoringRuleHandler(scoringRuleSvc, s.log),
+		adminNotifTemplate: handler.NewAdminNotificationTemplateHandler(tmplRepo, s.log),
 	}
 }
 

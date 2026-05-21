@@ -102,6 +102,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifyPushIconURL":                     ParamKeyNotifyPushIconURL,
 		"ParamKeyNotifyPushBadgeURL":                    ParamKeyNotifyPushBadgeURL,
 		"ParamKeyNotifySchedulerTimezone":               ParamKeyNotifySchedulerTimezone,
+		"ParamKeyNotifyDefaultLocale":                   ParamKeyNotifyDefaultLocale,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -192,7 +193,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 69 // update when adding a new ParamKey* constant
+		const expectedCount = 70 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -327,6 +328,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyNotifyPushIconURL", ParamKeyNotifyPushIconURL, "notify"},
 		{"ParamKeyNotifyPushBadgeURL", ParamKeyNotifyPushBadgeURL, "notify"},
 		{"ParamKeyNotifySchedulerTimezone", ParamKeyNotifySchedulerTimezone, "notify"},
+		{"ParamKeyNotifyDefaultLocale", ParamKeyNotifyDefaultLocale, "notify"},
 	}
 
 	for _, tc := range paramKeys {
