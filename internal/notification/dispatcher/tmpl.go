@@ -142,28 +142,32 @@ func renderTmpl(tmplStr string, data map[string]any) (string, error) {
 // emailSubject is empty when EmailSubjectTmpl is not set; callers should fall
 // back to the notification title in that case.
 //
-// Returns ("", "", "", "", error) when the payload cannot be decoded or any
-// template string is syntactically invalid.
-func RenderTemplate(t *domain.NotificationTemplate, payload json.RawMessage) (title, body, actionURL, emailSubject string, err error) {
+// emailHTMLTmpl is the raw template string from EmailHTMLTmpl, passed through
+// without rendering so the caller can later render it with html/template against
+// a fully-populated userEmailData struct that includes recipient-specific fields.
+//
+// Returns ("", "", "", "", "", error) when the payload cannot be decoded or any
+// text/template field is syntactically invalid.
+func RenderTemplate(t *domain.NotificationTemplate, payload json.RawMessage) (title, body, actionURL, emailSubject, emailHTMLTmpl string, err error) {
 	var data map[string]any
 	if err = json.Unmarshal(payload, &data); err != nil {
-		return "", "", "", "", fmt.Errorf("dispatcher: decode payload: %w", err)
+		return "", "", "", "", "", fmt.Errorf("dispatcher: decode payload: %w", err)
 	}
 	if title, err = renderTmpl(t.TitleTmpl, data); err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	if body, err = renderTmpl(t.BodyTmpl, data); err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	if t.ActionURLTmpl != "" {
 		if actionURL, err = renderTmpl(t.ActionURLTmpl, data); err != nil {
-			return "", "", "", "", err
+			return "", "", "", "", "", err
 		}
 	}
 	if t.EmailSubjectTmpl != "" {
 		if emailSubject, err = renderTmpl(t.EmailSubjectTmpl, data); err != nil {
-			return "", "", "", "", err
+			return "", "", "", "", "", err
 		}
 	}
-	return title, body, actionURL, emailSubject, nil
+	return title, body, actionURL, emailSubject, t.EmailHTMLTmpl, nil
 }

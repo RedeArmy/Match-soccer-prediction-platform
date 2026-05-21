@@ -49,6 +49,7 @@ type paramSpec struct {
 //   - 000094_seed_locale_param                   (+1)
 //   - 000097_seed_missing_system_params          (+18)
 //   - 000099_seed_notify_template_push_params    (+3)
+//   - 000102_seed_push_sub_retention_param       (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -177,6 +178,8 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyNotifyTemplateCacheTTLSec, defaultValue: strconv.Itoa(domain.DefaultNotifyTemplateCacheTTLSec), paramType: "int", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyPushTitleMaxChars, defaultValue: strconv.Itoa(domain.DefaultNotifyPushTitleMaxChars), paramType: "int", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyPushBodyMaxChars, defaultValue: strconv.Itoa(domain.DefaultNotifyPushBodyMaxChars), paramType: "int", category: "notify", isRuntime: true},
+	// Push subscription pruning retention (migration 000102); runtime — takes effect on next daily prune run.
+	{key: domain.ParamKeyNotifyPushSubRetentionDays, defaultValue: strconv.Itoa(domain.DefaultNotifyPushSubRetentionDays), paramType: "int", category: "notify", isRuntime: true},
 }
 
 type dbParam struct {

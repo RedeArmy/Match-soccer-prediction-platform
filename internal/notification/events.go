@@ -319,71 +319,15 @@ type AdminWeeklyReportPayload struct {
 	WithdrawalCents   int    `json:"withdrawal_cents"`
 }
 
-// KnownEventTypes is the authoritative set of every EventType constant defined
-// in this package.  Admin handlers consult it when validating event_type values
-// supplied as path parameters or request bodies.
-var KnownEventTypes = map[EventType]struct{}{
-	// Prediction
-	EventPredictionConfirmed:        {},
-	EventPredictionDeadlineApproach: {},
-	EventPredictionMissingReminder:  {},
-	EventPredictionLocked:           {},
-	EventPredictionScored:           {},
-	// Match
-	EventMatchResultEntered: {},
-	EventMatchPostponed:     {},
-	EventMatchCancelled:     {},
-	// Group
-	EventGroupJoinRequested:        {},
-	EventGroupJoinApproved:         {},
-	EventGroupJoinRejected:         {},
-	EventGroupMemberJoined:         {},
-	EventGroupMemberLeft:           {},
-	EventGroupLeaderboardMilestone: {},
-	EventGroupDisbanded:            {},
-	EventGroupDeadline24h:          {},
-	// Payment
-	EventPaymentConfirmed:             {},
-	EventPaymentFailed:                {},
-	EventPaymentBankTransferSubmitted: {},
-	EventPaymentBankTransferApproved:  {},
-	EventPaymentBankTransferRejected:  {},
-	EventPaymentPendingTimeout:        {},
-	// Withdrawal
-	EventWithdrawalRequested:      {},
-	EventWithdrawalApproved:       {},
-	EventWithdrawalRejected:       {},
-	EventWithdrawalProcessing:     {},
-	EventWithdrawalCompleted:      {},
-	EventWithdrawalFailed:         {},
-	EventWithdrawalPendingTimeout: {},
-	// Account
-	EventAccountWelcome:         {},
-	EventAccountBalanceCredited: {},
-	EventAccountBalanceDebited:  {},
-	EventAccountLowBalance:      {},
-	// Admin
-	EventAdminBankTransferPending:    {},
-	EventAdminBankTransferStale:      {},
-	EventAdminBankTransferQueueDepth: {},
-	EventAdminWithdrawalPending:      {},
-	EventAdminWithdrawalStale:        {},
-	EventAdminHighValueWithdrawal:    {},
-	EventAdminPaymentDispute:         {},
-	EventAdminMatchResultPending:     {},
-	EventAdminScoringDiscrepancy:     {},
-	EventAdminGroupReported:          {},
-	EventAdminPendingReminder:        {},
-	EventAdminDailySummary:           {},
-	EventAdminWeeklyReport:           {},
-	// System
-	EventSystemCircuitBreakerOpened:     {},
-	EventSystemCircuitBreakerHalfOpen:   {},
-	EventSystemWebhookSignatureFailed:   {},
-	EventSystemWebhookSignatureRepeated: {},
-	EventSystemTxRetryExhausted:         {},
-	EventSystemBalanceLedgerMismatch:    {},
-	EventSystemRateLimitAbuse:           {},
-	EventSystemIdempotencyCollision:     {},
-	EventSystemFileStoreUnavailable:     {},
-}
+// KnownEventTypes is the authoritative set of every registered EventType.
+// It is derived from eventSamples (event_samples.go) so the two are always
+// in sync: a new const without a corresponding eventSamples entry will not
+// appear here, making any ValidateTemplate call for that type return an
+// "unknown event_type" error — a clear signal that the sample is missing.
+var KnownEventTypes = func() map[EventType]struct{} {
+	m := make(map[EventType]struct{}, len(eventSamples))
+	for k := range eventSamples {
+		m[k] = struct{}{}
+	}
+	return m
+}()

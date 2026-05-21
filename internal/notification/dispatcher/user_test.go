@@ -89,6 +89,7 @@ func (s *stubPushRepo) UpdateLastUsed(_ context.Context, id int64) error {
 	}
 	return nil
 }
+func (s *stubPushRepo) DeleteInactive(_ context.Context, _ time.Time) (int64, error) { return 0, nil }
 
 type stubPusher struct {
 	code int

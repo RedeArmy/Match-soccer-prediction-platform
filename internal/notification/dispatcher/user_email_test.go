@@ -473,3 +473,85 @@ func TestUserDispatcher_EmptyEmailSubjectTmpl_FallsBackToTitle(t *testing.T) {
 		t.Errorf("Subject = %q; want 'Payment confirmed' (fallback to title when email_subject_tmpl empty)", mailer.messages[0].Subject)
 	}
 }
+
+func TestUserDispatcher_EmailHTMLTmpl_RendersCustomTemplate(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Alice"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true, ChannelInApp: true},
+	}
+
+	tmplRepo := &stubTemplateRepo{
+		tmpl: &domain.NotificationTemplate{
+			EventType:     string(notification.EventPaymentConfirmed),
+			Locale:        "en",
+			TitleTmpl:     "Payment confirmed",
+			BodyTmpl:      "Your payment is confirmed.",
+			EmailHTMLTmpl: `<html><body><h1>{{.Headline}}</h1><p>{{.Body}}</p></body></html>`,
+		},
+	}
+
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:     &notifRepo,
+		PrefRepo:      &prefRepo,
+		DLQRepo:       &recordingDLQRepo{},
+		Mailer:        mailer,
+		EmailResolver: resolver,
+		FromAddr:      "noreply@test.com",
+		TemplateRepo:  tmplRepo,
+		Log:           zap.NewNop(),
+	})
+
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+	html := mailer.messages[0].HTML
+	if !strings.Contains(html, "<h1>") {
+		t.Errorf("HTML should contain <h1> from custom email_html_tmpl; got: %s", html)
+	}
+}
+
+func TestUserDispatcher_EmailHTMLTmpl_ParseError_SkipsEmail(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Bob"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true, ChannelInApp: true},
+	}
+
+	tmplRepo := &stubTemplateRepo{
+		tmpl: &domain.NotificationTemplate{
+			EventType:     string(notification.EventPaymentConfirmed),
+			Locale:        "en",
+			TitleTmpl:     "Payment confirmed",
+			BodyTmpl:      "Your payment is confirmed.",
+			EmailHTMLTmpl: `{{.unclosed`,
+		},
+	}
+
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:     &notifRepo,
+		PrefRepo:      &prefRepo,
+		DLQRepo:       &recordingDLQRepo{},
+		Mailer:        mailer,
+		EmailResolver: resolver,
+		FromAddr:      "noreply@test.com",
+		TemplateRepo:  tmplRepo,
+		Log:           zap.NewNop(),
+	})
+
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch must not propagate render error: %v", err)
+	}
+	if len(mailer.messages) != 0 {
+		t.Errorf("emails sent: got %d; want 0 (email_html_tmpl parse error should silently skip)", len(mailer.messages))
+	}
+}

@@ -323,6 +323,19 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	notifScheduler.RegisterInterval("admin.stale_escalation", 30*time.Minute, jobs.StaleEscalation)
 	notifScheduler.RegisterDaily("admin.daily_summary", 8, 0, jobs.AdminDailySummary)
 	notifScheduler.RegisterWeekly("admin.weekly_report", time.Monday, 8, 0, jobs.AdminWeeklyReport)
+	notifScheduler.RegisterInterval("push.subscription_prune", 24*time.Hour, func(ctx context.Context) error {
+		retentionDays := params.GetInt(ctx, domain.ParamKeyNotifyPushSubRetentionDays, domain.DefaultNotifyPushSubRetentionDays)
+		cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
+		n, pruneErr := pushRepo.DeleteInactive(ctx, cutoff)
+		if pruneErr != nil {
+			log.Warn("push subscription prune: failed", zap.Error(pruneErr))
+			return pruneErr
+		}
+		if n > 0 {
+			log.Info("push subscription prune: deleted stale inactive subscriptions", zap.Int64("count", n))
+		}
+		return nil
+	})
 
 	return startWorker(ctx, workerDeps{
 		cfg:               cfg,

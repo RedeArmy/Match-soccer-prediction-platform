@@ -123,7 +123,7 @@ func TestRenderTemplate_HappyPath(t *testing.T) {
 	}
 	payload := json.RawMessage(`{"amount":5000,"currency":"GTQ","payment_id":42}`)
 
-	title, body, actionURL, _, err := RenderTemplate(tmpl, payload)
+	title, body, actionURL, _, _, err := RenderTemplate(tmpl, payload)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestRenderTemplate_NoActionURL_ReturnsEmptyString(t *testing.T) {
 		TitleTmpl: "Hello",
 		BodyTmpl:  "World",
 	}
-	_, _, actionURL, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, actionURL, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestRenderTemplate_InvalidPayload_ReturnsError(t *testing.T) {
 		TitleTmpl: "t",
 		BodyTmpl:  "b",
 	}
-	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`not json`))
+	_, _, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`not json`))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON payload, got nil")
 	}
@@ -168,7 +168,7 @@ func TestRenderTemplate_TitleSyntaxError_ReturnsError(t *testing.T) {
 		TitleTmpl: "{{.unclosed",
 		BodyTmpl:  "valid",
 	}
-	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("expected error for invalid title template, got nil")
 	}
@@ -179,7 +179,7 @@ func TestRenderTemplate_BodySyntaxError_ReturnsError(t *testing.T) {
 		TitleTmpl: "valid title",
 		BodyTmpl:  "{{.unclosed",
 	}
-	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("expected error for invalid body template, got nil")
 	}
@@ -191,7 +191,7 @@ func TestRenderTemplate_ActionURLSyntaxError_ReturnsError(t *testing.T) {
 		BodyTmpl:      "valid body",
 		ActionURLTmpl: "{{.unclosed",
 	}
-	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("expected error for invalid action_url template, got nil")
 	}
@@ -205,7 +205,7 @@ func TestRenderTemplate_EmailSubjectTmpl_RenderedWithFuncs(t *testing.T) {
 	}
 	payload := json.RawMessage(`{"amount":5000,"currency":"GTQ"}`)
 
-	_, _, _, emailSubject, err := RenderTemplate(tmpl, payload)
+	_, _, _, emailSubject, _, err := RenderTemplate(tmpl, payload)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestRenderTemplate_NoEmailSubjectTmpl_ReturnsEmpty(t *testing.T) {
 		TitleTmpl: "Title",
 		BodyTmpl:  "Body",
 	}
-	_, _, _, emailSubject, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, _, emailSubject, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestRenderTemplate_EmailSubjectSyntaxError_ReturnsError(t *testing.T) {
 		BodyTmpl:         "valid body",
 		EmailSubjectTmpl: "{{.unclosed",
 	}
-	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("expected error for invalid email_subject template, got nil")
 	}

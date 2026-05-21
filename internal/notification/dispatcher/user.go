@@ -20,11 +20,12 @@ import (
 
 // userContent holds the rendered title and body for a user-facing notification.
 type userContent struct {
-	title        string
-	body         string
-	actionURL    string
-	emailSubject string // overrides title as email subject when non-empty
-	locale       Locale // propagated to email renderer for greeting/CTA localisation
+	title         string
+	body          string
+	actionURL     string
+	emailSubject  string // overrides title as email subject when non-empty
+	emailHTMLTmpl string // raw html/template string; non-empty replaces userBaseTemplate
+	locale        Locale // propagated to email renderer for greeting/CTA localisation
 }
 
 // minUserPayload extracts only the user_id field from any outbox payload.
@@ -363,35 +364,38 @@ func (d *UserDispatcher) sendPushToSubscription(ctx context.Context, entry *noti
 		)
 		return
 	}
-	if code != http.StatusGone {
-		// Successful delivery.  Update last_used_at as best-effort metadata so
-		// cleanup jobs can identify stale subscriptions (browsers not reached in N days).
-		// Fire-and-forget: a slow or failed write must not block the delivery path.
-		subID := sub.ID
-		go func() {
-			updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := d.pushRepo.UpdateLastUsed(updateCtx, subID); err != nil {
-				log.Warn("user dispatcher: update push subscription last_used_at failed",
-					zap.Int64("sub_id", subID),
-					zap.Error(err),
-				)
-			}
-		}()
+	// HTTP 404 and 410 both signal that the endpoint no longer exists at the
+	// push service.  404 = not found (service never heard of it); 410 = Gone
+	// (service explicitly confirms it is deleted).  Both are permanent failures
+	// that require deactivation — treating 404 as success would permanently
+	// include dead endpoints in every fan-out.
+	if code == http.StatusNotFound || code == http.StatusGone {
+		if inactiveErr := d.pushRepo.MarkInactive(ctx, sub.ID); inactiveErr != nil {
+			log.Warn("user dispatcher: mark subscription inactive failed",
+				zap.Int64("sub_id", sub.ID),
+				zap.Error(inactiveErr),
+			)
+		}
+		if d.dlqRepo != nil {
+			d.writeDLQEntry(ctx, entry, userID, "push",
+				fmt.Errorf("HTTP %d: subscription %d expired", code, sub.ID))
+		}
 		return
 	}
-	// Subscription has expired at the push service.  Mark it inactive so future
-	// dispatches skip it, write a DLQ entry for observability.
-	if inactiveErr := d.pushRepo.MarkInactive(ctx, sub.ID); inactiveErr != nil {
-		log.Warn("user dispatcher: mark subscription inactive failed",
-			zap.Int64("sub_id", sub.ID),
-			zap.Error(inactiveErr),
-		)
-	}
-	if d.dlqRepo != nil {
-		d.writeDLQEntry(ctx, entry, userID, "push",
-			fmt.Errorf("HTTP 410 Gone: subscription %d expired", sub.ID))
-	}
+	// Successful delivery.  Update last_used_at as best-effort metadata so
+	// cleanup jobs can identify stale subscriptions (browsers not reached in N days).
+	// Fire-and-forget: a slow or failed write must not block the delivery path.
+	subID := sub.ID
+	go func() {
+		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := d.pushRepo.UpdateLastUsed(updateCtx, subID); err != nil {
+			log.Warn("user dispatcher: update push subscription last_used_at failed",
+				zap.Int64("sub_id", subID),
+				zap.Error(err),
+			)
+		}
+	}()
 }
 
 func (d *UserDispatcher) resolvePreferences(ctx context.Context, userID int, eventType string) notifPref {
@@ -422,7 +426,7 @@ func (d *UserDispatcher) resolveContent(ctx context.Context, entry *notification
 				zap.Error(err),
 			)
 		} else if tmpl != nil {
-			title, body, actionURL, emailSubject, renderErr := RenderTemplate(tmpl, entry.Payload)
+			title, body, actionURL, emailSubject, emailHTMLTmpl, renderErr := RenderTemplate(tmpl, entry.Payload)
 			if renderErr != nil {
 				log.Warn("dispatcher: template render failed; using compiled default",
 					zap.String("event_type", string(entry.EventType)),
@@ -430,7 +434,7 @@ func (d *UserDispatcher) resolveContent(ctx context.Context, entry *notification
 					zap.Error(renderErr),
 				)
 			} else {
-				return userContent{title: title, body: body, actionURL: actionURL, emailSubject: emailSubject, locale: locale}
+				return userContent{title: title, body: body, actionURL: actionURL, emailSubject: emailSubject, emailHTMLTmpl: emailHTMLTmpl, locale: locale}
 			}
 		}
 	}

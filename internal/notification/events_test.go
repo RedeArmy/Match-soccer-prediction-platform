@@ -8,6 +8,29 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
 
+// TestSamplePayload_KnownEventType_ReturnsNonNil verifies that every known
+// event type has a non-nil sample payload registered in the event catalog.
+func TestSamplePayload_KnownEventType_ReturnsNonNil(t *testing.T) {
+	t.Parallel()
+
+	for et := range notification.KnownEventTypes {
+		if got := notification.SamplePayload(et); got == nil {
+			t.Errorf("SamplePayload(%q) = nil; every known event type must have a sample", et)
+		}
+	}
+}
+
+// TestSamplePayload_UnknownEventType_ReturnsEmptyObject verifies that an
+// unregistered event type returns an empty JSON object rather than panicking.
+func TestSamplePayload_UnknownEventType_ReturnsEmptyObject(t *testing.T) {
+	t.Parallel()
+
+	got := notification.SamplePayload("totally.unknown.event.type")
+	if string(got) != "{}" {
+		t.Errorf("SamplePayload(unknown) = %q; want %q", string(got), "{}")
+	}
+}
+
 // TestEventType_StringValues verifies that every exported EventType constant
 // is a non-empty string and that its string representation matches the value.
 func TestEventType_StringValues(t *testing.T) {
