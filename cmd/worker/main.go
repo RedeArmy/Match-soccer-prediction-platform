@@ -270,7 +270,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		log.Warn("web push: VAPID keys not configured — push notifications disabled (NoopSender)")
 	}
 
-	tmplRepo := repository.NewPostgresNotificationTemplateRepository(db)
+	tmplCacheTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyTemplateCacheTTLSec, domain.DefaultNotifyTemplateCacheTTLSec)) * time.Second
+	tmplRepo := repository.NewPostgresNotificationTemplateRepository(db, tmplCacheTTL)
 
 	userDispatcher := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
 		NotifRepo:         notifRepo,

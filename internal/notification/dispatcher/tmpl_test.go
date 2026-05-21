@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
@@ -122,7 +123,7 @@ func TestRenderTemplate_HappyPath(t *testing.T) {
 	}
 	payload := json.RawMessage(`{"amount":5000,"currency":"GTQ","payment_id":42}`)
 
-	title, body, actionURL, err := RenderTemplate(tmpl, payload)
+	title, body, actionURL, _, err := RenderTemplate(tmpl, payload)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestRenderTemplate_NoActionURL_ReturnsEmptyString(t *testing.T) {
 		TitleTmpl: "Hello",
 		BodyTmpl:  "World",
 	}
-	_, _, actionURL, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, actionURL, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestRenderTemplate_InvalidPayload_ReturnsError(t *testing.T) {
 		TitleTmpl: "t",
 		BodyTmpl:  "b",
 	}
-	_, _, _, err := RenderTemplate(tmpl, json.RawMessage(`not json`))
+	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`not json`))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON payload, got nil")
 	}
@@ -167,7 +168,7 @@ func TestRenderTemplate_TitleSyntaxError_ReturnsError(t *testing.T) {
 		TitleTmpl: "{{.unclosed",
 		BodyTmpl:  "valid",
 	}
-	_, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("expected error for invalid title template, got nil")
 	}
@@ -178,7 +179,7 @@ func TestRenderTemplate_BodySyntaxError_ReturnsError(t *testing.T) {
 		TitleTmpl: "valid title",
 		BodyTmpl:  "{{.unclosed",
 	}
-	_, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("expected error for invalid body template, got nil")
 	}
@@ -190,8 +191,169 @@ func TestRenderTemplate_ActionURLSyntaxError_ReturnsError(t *testing.T) {
 		BodyTmpl:      "valid body",
 		ActionURLTmpl: "{{.unclosed",
 	}
-	_, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("expected error for invalid action_url template, got nil")
+	}
+}
+
+func TestRenderTemplate_EmailSubjectTmpl_RenderedWithFuncs(t *testing.T) {
+	tmpl := &domain.NotificationTemplate{
+		TitleTmpl:        "Title",
+		BodyTmpl:         "Body",
+		EmailSubjectTmpl: "Payment of {{formatCents .amount .currency}} confirmed",
+	}
+	payload := json.RawMessage(`{"amount":5000,"currency":"GTQ"}`)
+
+	_, _, _, emailSubject, err := RenderTemplate(tmpl, payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(emailSubject, "GTQ") {
+		t.Errorf("emailSubject = %q; want string containing GTQ", emailSubject)
+	}
+}
+
+func TestRenderTemplate_NoEmailSubjectTmpl_ReturnsEmpty(t *testing.T) {
+	tmpl := &domain.NotificationTemplate{
+		TitleTmpl: "Title",
+		BodyTmpl:  "Body",
+	}
+	_, _, _, emailSubject, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if emailSubject != "" {
+		t.Errorf("emailSubject = %q; want empty string (no template set)", emailSubject)
+	}
+}
+
+func TestRenderTemplate_EmailSubjectSyntaxError_ReturnsError(t *testing.T) {
+	tmpl := &domain.NotificationTemplate{
+		TitleTmpl:        "valid title",
+		BodyTmpl:         "valid body",
+		EmailSubjectTmpl: "{{.unclosed",
+	}
+	_, _, _, _, err := RenderTemplate(tmpl, json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("expected error for invalid email_subject template, got nil")
+	}
+}
+
+// ── fmtMoney ─────────────────────────────────────────────────────────────────
+
+func TestFmtMoney_Zero(t *testing.T) {
+	if got := fmtMoney(0); got != "Q 0.00" {
+		t.Errorf("fmtMoney(0) = %q; want %q", got, "Q 0.00")
+	}
+}
+
+func TestFmtMoney_SmallAmount(t *testing.T) {
+	if got := fmtMoney(5000); got != "Q 50.00" {
+		t.Errorf("fmtMoney(5000) = %q; want %q", got, "Q 50.00")
+	}
+}
+
+func TestFmtMoney_WithThousandsSeparator(t *testing.T) {
+	if got := fmtMoney(125000); got != "Q 1,250.00" {
+		t.Errorf("fmtMoney(125000) = %q; want %q", got, "Q 1,250.00")
+	}
+}
+
+func TestFmtMoney_LargeAmount(t *testing.T) {
+	if got := fmtMoney(100000000); got != "Q 1,000,000.00" {
+		t.Errorf("fmtMoney(100000000) = %q; want %q", got, "Q 1,000,000.00")
+	}
+}
+
+func TestFmtMoney_NegativeAmount(t *testing.T) {
+	if got := fmtMoney(-5000); got != "-Q 50.00" {
+		t.Errorf("fmtMoney(-5000) = %q; want %q", got, "-Q 50.00")
+	}
+}
+
+func TestFmtMoney_TemplateFunc_PipeCompatible(t *testing.T) {
+	data := map[string]any{"amount_cents": float64(125000)}
+	got, err := renderTmpl("{{.amount_cents | formatMoney}}", data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "Q 1,250.00" {
+		t.Errorf("got %q; want %q", got, "Q 1,250.00")
+	}
+}
+
+// ── fmtTime ──────────────────────────────────────────────────────────────────
+
+func TestFmtTime_RFC3339String(t *testing.T) {
+	got := fmtTime("2026-06-15T20:30:00Z")
+	if got != "15/06 20:30" {
+		t.Errorf("fmtTime(RFC3339) = %q; want %q", got, "15/06 20:30")
+	}
+}
+
+func TestFmtTime_TimeValue(t *testing.T) {
+	ts := time.Date(2026, 5, 19, 20, 30, 0, 0, time.UTC)
+	if got := fmtTime(ts); got != "19/05 20:30" {
+		t.Errorf("fmtTime(time.Time) = %q; want %q", got, "19/05 20:30")
+	}
+}
+
+func TestFmtTime_InvalidString_ReturnsRaw(t *testing.T) {
+	got := fmtTime("not-a-time")
+	if got != "not-a-time" {
+		t.Errorf("fmtTime(invalid) = %q; want raw input", got)
+	}
+}
+
+func TestFmtTime_Nil_ReturnsEmpty(t *testing.T) {
+	if got := fmtTime(nil); got != "" {
+		t.Errorf("fmtTime(nil) = %q; want empty", got)
+	}
+}
+
+func TestFmtTime_TemplateFunc_PipeCompatible(t *testing.T) {
+	data := map[string]any{"deadline_at": "2026-06-15T20:30:00Z"}
+	got, err := renderTmpl("{{.deadline_at | fmtTime}}", data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "15/06 20:30" {
+		t.Errorf("got %q; want %q", got, "15/06 20:30")
+	}
+}
+
+// ── pluralize ─────────────────────────────────────────────────────────────────
+
+func TestPluralize_Singular(t *testing.T) {
+	data := map[string]any{"n": float64(1)}
+	got, err := renderTmpl(`{{.n | pluralize "minuto" "minutos"}}`, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "1 minuto" {
+		t.Errorf("got %q; want %q", got, "1 minuto")
+	}
+}
+
+func TestPluralize_Plural(t *testing.T) {
+	data := map[string]any{"n": float64(30)}
+	got, err := renderTmpl(`{{.n | pluralize "minuto" "minutos"}}`, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "30 minutos" {
+		t.Errorf("got %q; want %q", got, "30 minutos")
+	}
+}
+
+func TestPluralize_Zero_UsesPlural(t *testing.T) {
+	data := map[string]any{"n": float64(0)}
+	got, err := renderTmpl(`{{.n | pluralize "minuto" "minutos"}}`, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "0 minutos" {
+		t.Errorf("got %q; want %q", got, "0 minutos")
 	}
 }

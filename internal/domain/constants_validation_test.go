@@ -103,6 +103,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifyPushBadgeURL":                    ParamKeyNotifyPushBadgeURL,
 		"ParamKeyNotifySchedulerTimezone":               ParamKeyNotifySchedulerTimezone,
 		"ParamKeyNotifyDefaultLocale":                   ParamKeyNotifyDefaultLocale,
+		"ParamKeyNotifyTemplateCacheTTLSec":             ParamKeyNotifyTemplateCacheTTLSec,
+		"ParamKeyNotifyPushTitleMaxChars":               ParamKeyNotifyPushTitleMaxChars,
+		"ParamKeyNotifyPushBodyMaxChars":                ParamKeyNotifyPushBodyMaxChars,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -190,10 +193,13 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultNotifyBankTransferQueueDepthThreshold": DefaultNotifyBankTransferQueueDepthThreshold,
 		"DefaultNotifySSEHeartbeatIntervalSec":         DefaultNotifySSEHeartbeatIntervalSec,
 		"DefaultNotifyWebPushTTLSec":                   DefaultNotifyWebPushTTLSec,
+		"DefaultNotifyTemplateCacheTTLSec":             DefaultNotifyTemplateCacheTTLSec,
+		"DefaultNotifyPushTitleMaxChars":               DefaultNotifyPushTitleMaxChars,
+		"DefaultNotifyPushBodyMaxChars":                DefaultNotifyPushBodyMaxChars,
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 70 // update when adding a new ParamKey* constant
+		const expectedCount = 73 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -201,7 +207,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 57 // update when adding a new Default* constant
+		const expectedCount = 60 // update when adding a new Default* constant
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -329,6 +335,9 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyNotifyPushBadgeURL", ParamKeyNotifyPushBadgeURL, "notify"},
 		{"ParamKeyNotifySchedulerTimezone", ParamKeyNotifySchedulerTimezone, "notify"},
 		{"ParamKeyNotifyDefaultLocale", ParamKeyNotifyDefaultLocale, "notify"},
+		{"ParamKeyNotifyTemplateCacheTTLSec", ParamKeyNotifyTemplateCacheTTLSec, "notify"},
+		{"ParamKeyNotifyPushTitleMaxChars", ParamKeyNotifyPushTitleMaxChars, "notify"},
+		{"ParamKeyNotifyPushBodyMaxChars", ParamKeyNotifyPushBodyMaxChars, "notify"},
 	}
 
 	for _, tc := range paramKeys {

@@ -11,16 +11,15 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
-const templateCacheTTL = 5 * time.Minute
-
 type templateCacheKey struct{ eventType, locale string }
 
 // postgresNotificationTemplateRepository implements NotificationTemplateRepository.
 // It eagerly loads all rows into an in-memory map on first access and refreshes
-// every templateCacheTTL (5 min).  Writes immediately invalidate the cache so
-// the next read re-fetches from the database.
+// every ttl.  Writes immediately invalidate the cache so the next read
+// re-fetches from the database.
 type postgresNotificationTemplateRepository struct {
 	pool *pgxpool.Pool
+	ttl  time.Duration
 
 	mu       sync.RWMutex
 	cache    map[templateCacheKey]*domain.NotificationTemplate
@@ -28,15 +27,20 @@ type postgresNotificationTemplateRepository struct {
 }
 
 // NewPostgresNotificationTemplateRepository constructs a caching repository
-// backed by the given connection pool.
-func NewPostgresNotificationTemplateRepository(pool *pgxpool.Pool) NotificationTemplateRepository {
-	return &postgresNotificationTemplateRepository{pool: pool}
+// backed by the given connection pool.  ttl controls how long the in-memory
+// cache is considered fresh; use domain.DefaultNotifyTemplateCacheTTLSec * time.Second
+// when no system-param override is available.
+func NewPostgresNotificationTemplateRepository(pool *pgxpool.Pool, ttl time.Duration) NotificationTemplateRepository {
+	if ttl <= 0 {
+		ttl = time.Duration(domain.DefaultNotifyTemplateCacheTTLSec) * time.Second
+	}
+	return &postgresNotificationTemplateRepository{pool: pool, ttl: ttl}
 }
 
 func (r *postgresNotificationTemplateRepository) cacheHit(key templateCacheKey) (*domain.NotificationTemplate, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if r.cache == nil || time.Since(r.loadedAt) >= templateCacheTTL {
+	if r.cache == nil || time.Since(r.loadedAt) >= r.ttl {
 		return nil, false
 	}
 	t, ok := r.cache[key]
@@ -48,7 +52,7 @@ func (r *postgresNotificationTemplateRepository) cacheHit(key templateCacheKey) 
 func (r *postgresNotificationTemplateRepository) warm(ctx context.Context) error {
 	const q = `
 SELECT event_type, locale, title_tmpl, body_tmpl, action_url_tmpl,
-       updated_by, updated_at
+       email_subject_tmpl, updated_by, updated_at
 FROM   notification_templates
 ORDER  BY event_type, locale
 `
@@ -64,7 +68,7 @@ ORDER  BY event_type, locale
 		if err := rows.Scan(
 			&t.EventType, &t.Locale,
 			&t.TitleTmpl, &t.BodyTmpl, &t.ActionURLTmpl,
-			&t.UpdatedBy, &t.UpdatedAt,
+			&t.EmailSubjectTmpl, &t.UpdatedBy, &t.UpdatedAt,
 		); err != nil {
 			return apperrors.Internal(err)
 		}
@@ -88,7 +92,7 @@ func (r *postgresNotificationTemplateRepository) Get(ctx context.Context, eventT
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// Re-check after acquiring write lock: another goroutine may have warmed the cache.
-	if r.cache != nil && time.Since(r.loadedAt) < templateCacheTTL {
+	if r.cache != nil && time.Since(r.loadedAt) < r.ttl {
 		return r.cache[key], nil
 	}
 	if err := r.warm(ctx); err != nil {
@@ -99,7 +103,7 @@ func (r *postgresNotificationTemplateRepository) Get(ctx context.Context, eventT
 
 func (r *postgresNotificationTemplateRepository) List(ctx context.Context) ([]*domain.NotificationTemplate, error) {
 	r.mu.Lock()
-	if r.cache == nil || time.Since(r.loadedAt) >= templateCacheTTL {
+	if r.cache == nil || time.Since(r.loadedAt) >= r.ttl {
 		if err := r.warm(ctx); err != nil {
 			r.mu.Unlock()
 			return nil, err
@@ -117,18 +121,19 @@ func (r *postgresNotificationTemplateRepository) List(ctx context.Context) ([]*d
 func (r *postgresNotificationTemplateRepository) Upsert(ctx context.Context, t *domain.NotificationTemplate) error {
 	const q = `
 INSERT INTO notification_templates
-    (event_type, locale, title_tmpl, body_tmpl, action_url_tmpl, updated_by, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
+    (event_type, locale, title_tmpl, body_tmpl, action_url_tmpl, email_subject_tmpl, updated_by, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 ON CONFLICT (event_type, locale) DO UPDATE SET
-    title_tmpl      = EXCLUDED.title_tmpl,
-    body_tmpl       = EXCLUDED.body_tmpl,
-    action_url_tmpl = EXCLUDED.action_url_tmpl,
-    updated_by      = EXCLUDED.updated_by,
-    updated_at      = now()
+    title_tmpl        = EXCLUDED.title_tmpl,
+    body_tmpl         = EXCLUDED.body_tmpl,
+    action_url_tmpl   = EXCLUDED.action_url_tmpl,
+    email_subject_tmpl = EXCLUDED.email_subject_tmpl,
+    updated_by        = EXCLUDED.updated_by,
+    updated_at        = now()
 `
 	if _, err := r.pool.Exec(ctx, q,
 		t.EventType, t.Locale,
-		t.TitleTmpl, t.BodyTmpl, t.ActionURLTmpl,
+		t.TitleTmpl, t.BodyTmpl, t.ActionURLTmpl, t.EmailSubjectTmpl,
 		t.UpdatedBy,
 	); err != nil {
 		return apperrors.Internal(err)

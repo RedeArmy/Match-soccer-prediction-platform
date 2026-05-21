@@ -5543,6 +5543,9 @@ const docTemplate = `{
                 "body_tmpl": {
                     "type": "string"
                 },
+                "email_subject_tmpl": {
+                    "type": "string"
+                },
                 "event_type": {
                     "type": "string"
                 },
@@ -5755,6 +5758,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "body": {
+                    "type": "string"
+                },
+                "email_subject": {
                     "type": "string"
                 },
                 "title": {
@@ -6156,6 +6162,9 @@ const docTemplate = `{
                 "body_tmpl": {
                     "type": "string"
                 },
+                "email_subject_tmpl": {
+                    "type": "string"
+                },
                 "sample_payload": {
                     "type": "array",
                     "items": {
@@ -6318,6 +6327,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "body_tmpl": {
+                    "type": "string"
+                },
+                "email_subject_tmpl": {
                     "type": "string"
                 },
                 "title_tmpl": {

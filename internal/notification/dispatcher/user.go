@@ -20,10 +20,11 @@ import (
 
 // userContent holds the rendered title and body for a user-facing notification.
 type userContent struct {
-	title     string
-	body      string
-	actionURL string
-	locale    Locale // propagated to email renderer for greeting/CTA localisation
+	title        string
+	body         string
+	actionURL    string
+	emailSubject string // overrides title as email subject when non-empty
+	locale       Locale // propagated to email renderer for greeting/CTA localisation
 }
 
 // minUserPayload extracts only the user_id field from any outbox payload.
@@ -322,17 +323,21 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 	icon := domain.DefaultNotifyPushIconURL
 	badge := domain.DefaultNotifyPushBadgeURL
 	ttl := domain.DefaultNotifyWebPushTTLSec
+	titleMax := domain.DefaultNotifyPushTitleMaxChars
+	bodyMax := domain.DefaultNotifyPushBodyMaxChars
 	if d.params != nil {
 		icon = d.params.GetString(ctx, domain.ParamKeyNotifyPushIconURL, domain.DefaultNotifyPushIconURL)
 		badge = d.params.GetString(ctx, domain.ParamKeyNotifyPushBadgeURL, domain.DefaultNotifyPushBadgeURL)
 		ttl = d.params.GetInt(ctx, domain.ParamKeyNotifyWebPushTTLSec, domain.DefaultNotifyWebPushTTLSec)
+		titleMax = d.params.GetInt(ctx, domain.ParamKeyNotifyPushTitleMaxChars, domain.DefaultNotifyPushTitleMaxChars)
+		bodyMax = d.params.GetInt(ctx, domain.ParamKeyNotifyPushBodyMaxChars, domain.DefaultNotifyPushBodyMaxChars)
 	}
 
 	body, _ := json.Marshal(pushPayload{
 		NotificationID: notifID,
 		Type:           string(entry.EventType),
-		Title:          content.title,
-		Body:           content.body,
+		Title:          truncateRunes(content.title, titleMax),
+		Body:           truncateRunes(content.body, bodyMax),
 		ActionURL:      content.actionURL,
 		Icon:           icon,
 		Badge:          badge,
@@ -417,7 +422,7 @@ func (d *UserDispatcher) resolveContent(ctx context.Context, entry *notification
 				zap.Error(err),
 			)
 		} else if tmpl != nil {
-			title, body, actionURL, renderErr := RenderTemplate(tmpl, entry.Payload)
+			title, body, actionURL, emailSubject, renderErr := RenderTemplate(tmpl, entry.Payload)
 			if renderErr != nil {
 				log.Warn("dispatcher: template render failed; using compiled default",
 					zap.String("event_type", string(entry.EventType)),
@@ -425,7 +430,7 @@ func (d *UserDispatcher) resolveContent(ctx context.Context, entry *notification
 					zap.Error(renderErr),
 				)
 			} else {
-				return userContent{title: title, body: body, actionURL: actionURL, locale: locale}
+				return userContent{title: title, body: body, actionURL: actionURL, emailSubject: emailSubject, locale: locale}
 			}
 		}
 	}
@@ -909,4 +914,15 @@ func resolveUserContent(entry *notification.OutboxEntry, locale Locale) userCont
 		title: localeStr("New notification", "Nueva notificación", locale),
 		body:  localeStr("You have a new notification. Open the app for details.", "Tienes una nueva notificación. Abre la aplicación para más detalles.", locale),
 	}
+}
+
+func truncateRunes(s string, max int) string {
+	if max <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max])
 }

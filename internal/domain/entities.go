@@ -932,11 +932,12 @@ type PushSubscription struct {
 // Template data = outbox payload decoded as map[string]any (JSON snake_case
 // keys).  Available functions: formatCents, int.
 type NotificationTemplate struct {
-	EventType     string
-	Locale        string
-	TitleTmpl     string
-	BodyTmpl      string
-	ActionURLTmpl string
-	UpdatedBy     *int
-	UpdatedAt     time.Time
+	EventType        string
+	Locale           string
+	TitleTmpl        string
+	BodyTmpl         string
+	ActionURLTmpl    string
+	EmailSubjectTmpl string // overrides title as email subject when non-empty
+	UpdatedBy        *int
+	UpdatedAt        time.Time
 }
