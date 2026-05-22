@@ -40,6 +40,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
@@ -48,6 +49,7 @@ import (
 	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	infrapush "github.com/rede/world-cup-quiniela/internal/infrastructure/webpush"
+	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/notification/scheduler"
@@ -174,6 +176,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	snapshotConcurrency = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotConcurrency, domain.DefaultWorkerSnapshotConcurrency)
 	snapshotRetryBase = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSnapshotRetryBaseMs, domain.DefaultWorkerSnapshotRetryBaseMs)) * time.Millisecond
 	maxSnapshotAttempts = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotMaxAttempts, domain.DefaultWorkerSnapshotMaxAttempts)
+	snapshotSem = newSnapshotSemaphore(snapshotConcurrency)
 	dlqMonitorInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerDLQMonitorIntervalSec, domain.DefaultWorkerDLQMonitorIntervalSec)) * time.Second
 	purgeTickInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerPurgeIntervalHours, domain.DefaultWorkerPurgeIntervalHours)) * time.Hour
 	snapshotKeepLatestCount = params.GetInt(ctx, domain.ParamKeySnapshotKeepLatestCount, domain.DefaultSnapshotKeepLatestCount)
@@ -256,6 +259,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	tmplCacheTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyTemplateCacheTTLSec, domain.DefaultNotifyTemplateCacheTTLSec)) * time.Second
 	tmplRepo := repository.NewPostgresNotificationTemplateRepository(db, tmplCacheTTL)
 
+	digestWindowSec := int64(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestWindowSec, domain.DefaultNotifyPushDigestWindowSec))
+	digestThreshold := int32(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestThreshold, domain.DefaultNotifyPushDigestThreshold))
+
 	userDispatcher := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
 		NotifRepo:         notifRepo,
 		PrefRepo:          prefRepo,
@@ -271,6 +277,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		PgNotifier:        &pgPoolNotifier{pool: db},
 		Params:            params,
 		TemplateRepo:      tmplRepo,
+		DigestGate:        notification.NewPushDigestGate(digestWindowSec, digestThreshold),
 		Log:               log,
 	})
 
@@ -347,6 +354,13 @@ func buildPusher(pubKey, privKey, subject string, log *zap.Logger) infrapush.Sen
 	}
 	log.Info("web push: VAPID client active")
 	return infrapush.NewVAPIDClient(pubKey, privKey, subject)
+}
+
+// newSnapshotSemaphore returns a weighted semaphore sized to n, which becomes
+// the global DB-concurrency governor for all concurrent snapshot operations.
+// Called once from run() after snapshotConcurrency is resolved from system_params.
+func newSnapshotSemaphore(n int) *semaphore.Weighted {
+	return semaphore.NewWeighted(int64(n))
 }
 
 // makePushPruneJob returns the scheduler job that deletes inactive push

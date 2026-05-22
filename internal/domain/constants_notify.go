@@ -63,6 +63,18 @@ const (
 	// before a push subscription row is permanently deleted by the pruning job.
 	// is_runtime=TRUE: takes effect on the next daily prune run.
 	DefaultNotifyPushSubRetentionDays = 30 // notify.push_sub_retention_days
+
+	// DefaultNotifyPushDigestWindowSec is the sliding-window length (in seconds)
+	// used by PushDigestGate. P2/P3 pushes beyond the threshold within this window
+	// are collapsed into a single digest push and subsequent ones are dropped.
+	// is_runtime=FALSE: worker restart required to change the gate's window.
+	DefaultNotifyPushDigestWindowSec = 300 // notify.push_digest_window_sec — 5 minutes
+
+	// DefaultNotifyPushDigestThreshold is the number of individual P2/P3 push
+	// notifications that may be delivered within the digest window before the gate
+	// collapses further events into a single digest push.
+	// is_runtime=FALSE: worker restart required.
+	DefaultNotifyPushDigestThreshold = 5 // notify.push_digest_threshold
 )
 
 // Notification system parameter keys.
@@ -138,4 +150,13 @@ const (
 	// Format: "Display Name <email@example.com>" or bare "email@example.com".
 	// is_runtime=TRUE: changes propagate within the 30 s param cache window.
 	ParamKeyNotifyFromAddress = "notify.from_address"
+
+	// ParamKeyNotifyPushDigestWindowSec is the duration in seconds of the
+	// PushDigestGate's sliding window per user. is_runtime=FALSE: worker restart.
+	ParamKeyNotifyPushDigestWindowSec = "notify.push_digest_window_sec"
+
+	// ParamKeyNotifyPushDigestThreshold is the maximum number of individual P2/P3
+	// push notifications sent per user per digest window before collapsing to a
+	// summary digest. is_runtime=FALSE: worker restart required.
+	ParamKeyNotifyPushDigestThreshold = "notify.push_digest_threshold"
 )

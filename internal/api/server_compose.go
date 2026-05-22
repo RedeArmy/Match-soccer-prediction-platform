@@ -56,6 +56,7 @@ type appHandlers struct {
 	adminScoringRules  *handler.AdminScoringRuleHandler
 	adminNotifTemplate *handler.AdminNotificationTemplateHandler
 	adminNotifDLQ      *handler.AdminNotificationDLQHandler
+	adminSSEStats      *handler.AdminSSEStatsHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -232,5 +233,6 @@ func (s *Server) buildHandlers(
 		adminScoringRules:  handler.NewAdminScoringRuleHandler(scoringRuleSvc, s.log),
 		adminNotifTemplate: handler.NewAdminNotificationTemplateHandler(tmplRepo, s.log),
 		adminNotifDLQ:      handler.NewAdminNotificationDLQHandler(repository.NewPostgresNotificationDLQRepository(s.db), s.log),
+		adminSSEStats:      handler.NewAdminSSEStatsHandler(s.notifHub, s.log),
 	}
 }

@@ -30,6 +30,26 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 	if d.pusher == nil || d.pushRepo == nil {
 		return
 	}
+
+	// Check the digest gate before touching the database. P0/P1 events always
+	// bypass the gate. P2/P3 events are throttled: after `threshold` individual
+	// pushes in the window, exactly one digest push is sent; further events are
+	// dropped silently until the window resets.
+	var digestCount int32
+	if d.digestGate != nil {
+		priority := notification.PriorityOf(entry.EventType)
+		var sendIndividual bool
+		sendIndividual, digestCount = d.digestGate.Record(userID, priority, time.Now())
+		if !sendIndividual {
+			if digestCount == 0 {
+				return // already sent a digest push for this window; drop
+			}
+			// digestCount > 0: first overflow — send one digest push instead
+			d.deliverDigestPush(ctx, entry, userID, digestCount, log)
+			return
+		}
+	}
+
 	subs, err := d.pushRepo.ListActiveByUser(ctx, userID)
 	if err != nil || len(subs) == 0 {
 		return
@@ -54,6 +74,40 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 		Title:          truncateRunes(content.title, titleMax),
 		Body:           truncateRunes(content.body, bodyMax),
 		ActionURL:      content.actionURL,
+		Icon:           icon,
+		Badge:          badge,
+	})
+
+	for _, sub := range subs {
+		d.sendPushToSubscription(ctx, entry, userID, sub, body, ttl, log)
+	}
+}
+
+// deliverDigestPush sends a single "you have N new notifications" summary push
+// when the digest gate transitions from individual delivery to digest mode.
+// The digest payload uses a synthetic event type ("digest") to let the Service
+// Worker render a consolidated notification rather than a named event.
+func (d *UserDispatcher) deliverDigestPush(ctx context.Context, entry *notification.OutboxEntry, userID int, count int32, log *zap.Logger) {
+	subs, err := d.pushRepo.ListActiveByUser(ctx, userID)
+	if err != nil || len(subs) == 0 {
+		return
+	}
+
+	icon := domain.DefaultNotifyPushIconURL
+	badge := domain.DefaultNotifyPushBadgeURL
+	ttl := domain.DefaultNotifyWebPushTTLSec
+	if d.params != nil {
+		icon = d.params.GetString(ctx, domain.ParamKeyNotifyPushIconURL, domain.DefaultNotifyPushIconURL)
+		badge = d.params.GetString(ctx, domain.ParamKeyNotifyPushBadgeURL, domain.DefaultNotifyPushBadgeURL)
+		ttl = d.params.GetInt(ctx, domain.ParamKeyNotifyWebPushTTLSec, domain.DefaultNotifyWebPushTTLSec)
+	}
+
+	body, _ := json.Marshal(pushPayload{
+		NotificationID: 0, // no single notification ID for a digest
+		Type:           "digest",
+		Title:          fmt.Sprintf("You have %d new notifications", count),
+		Body:           "Tap to view your latest updates.",
+		ActionURL:      "/notifications",
 		Icon:           icon,
 		Badge:          badge,
 	})

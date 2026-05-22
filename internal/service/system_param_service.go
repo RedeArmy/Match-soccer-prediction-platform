@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -308,6 +309,9 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyPushBodyMaxChars:    {50, 2_000}, // 50 – 2 000 chars
 	// Push subscription pruning retention (migration 000102).
 	domain.ParamKeyNotifyPushSubRetentionDays: {1, 365}, // 1 day – 1 year
+	// Push digest gate (migration 000105).
+	domain.ParamKeyNotifyPushDigestWindowSec: {30, 3_600}, // 30 s – 1 hour
+	domain.ParamKeyNotifyPushDigestThreshold: {1, 100},    // at least 1 push before digest
 }
 
 // paramStringValidator validates a string system-param value for a specific key.
@@ -357,6 +361,21 @@ var paramStringConstraints = map[string]paramStringValidator{
 			return nil
 		}
 		return apperrors.Validation(fmt.Sprintf("value %q must be a server-relative path starting with a single '/'", value))
+	},
+	// notify.web_push_vapid_public_key must be a base64url-encoded uncompressed P-256 point
+	// (65 bytes → 87–88 base64url chars) or empty (falls back to the binary default).
+	domain.ParamKeyNotifyWebPushVAPIDPublicKey: func(value string) error {
+		if value == "" {
+			return nil
+		}
+		b, err := base64.RawURLEncoding.DecodeString(value)
+		if err != nil {
+			return apperrors.Validation("notify.web_push_vapid_public_key must be base64url-encoded (no padding)")
+		}
+		if len(b) != 65 {
+			return apperrors.Validation(fmt.Sprintf("notify.web_push_vapid_public_key decoded to %d bytes; expected 65 (uncompressed P-256 point)", len(b)))
+		}
+		return nil
 	},
 	// notify.web_push_vapid_subject must be a contact URI per RFC 8292 §2.1 or empty.
 	domain.ParamKeyNotifyWebPushVAPIDSubject: func(value string) error {

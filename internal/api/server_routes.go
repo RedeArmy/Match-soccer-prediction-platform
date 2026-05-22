@@ -415,6 +415,9 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/scoring-rules/{phase}", h.adminScoringRules.GetByPhase)
 			r.Patch("/scoring-rules/{phase}", h.adminScoringRules.Update)
 
+			// SSE hub observability — per-replica counters; aggregate in Prometheus for cluster totals
+			r.Get("/notifications/sse/stats", h.adminSSEStats.Stats)
+
 			// Notification content templates (DB-backed, operator-editable)
 			const tmplByKey = "/notification-templates/{event_type}/{locale}"
 			r.Get("/notification-templates", h.adminNotifTemplate.List)

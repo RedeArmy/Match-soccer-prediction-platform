@@ -51,6 +51,7 @@ type paramSpec struct {
 //   - 000099_seed_notify_template_push_params    (+3)
 //   - 000102_seed_push_sub_retention_param       (+1)
 //   - 000103_seed_notify_from_address_param      (+1)
+//   - 000105_seed_push_digest_params             (+2)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -182,6 +183,9 @@ var allParams = []paramSpec{
 	// Push subscription pruning retention (migration 000102); runtime — takes effect on next daily prune run.
 	{key: domain.ParamKeyNotifyPushSubRetentionDays, defaultValue: strconv.Itoa(domain.DefaultNotifyPushSubRetentionDays), paramType: "int", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyFromAddress, defaultValue: "", paramType: "string", category: "notify", isRuntime: true},
+	// Push digest gate (migration 000105); not runtime — worker restart required.
+	{key: domain.ParamKeyNotifyPushDigestWindowSec, defaultValue: strconv.Itoa(domain.DefaultNotifyPushDigestWindowSec), paramType: "int", category: "notify", isRuntime: false},
+	{key: domain.ParamKeyNotifyPushDigestThreshold, defaultValue: strconv.Itoa(domain.DefaultNotifyPushDigestThreshold), paramType: "int", category: "notify", isRuntime: false},
 }
 
 type dbParam struct {

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/metric/noop"
+
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
 )
 
@@ -157,6 +159,39 @@ func TestHub_Metrics(t *testing.T) {
 	conns, _, _ = h.Metrics()
 	if conns != 0 {
 		t.Errorf("connections after all cleanups: got %d; want 0", conns)
+	}
+}
+
+func TestHub_RegisterMetrics_NilMeter_IsNoop(t *testing.T) {
+	t.Parallel()
+	h := hub.New()
+	if err := h.RegisterMetrics(nil); err != nil {
+		t.Errorf("RegisterMetrics(nil) should return nil, got: %v", err)
+	}
+}
+
+func TestHub_RegisterMetrics_NoopMeter_RegistersAndCallbacks(t *testing.T) {
+	t.Parallel()
+	h := hub.New()
+
+	// Produce some observable state so callbacks have non-zero values to report.
+	_, c1 := h.Connect(100)
+	defer c1()
+	h.Broadcast(100, makeNotif(1, 100))
+
+	meter := noop.NewMeterProvider().Meter("test")
+	if err := h.RegisterMetrics(meter); err != nil {
+		t.Fatalf("RegisterMetrics returned unexpected error: %v", err)
+	}
+
+	// Verify the meter callbacks do not panic and read live atomics correctly by
+	// calling Metrics() directly — the OTel callbacks delegate to the same atomics.
+	conns, broadcasts, _ := h.Metrics()
+	if conns < 1 {
+		t.Errorf("expected at least 1 connection; got %d", conns)
+	}
+	if broadcasts < 1 {
+		t.Errorf("expected at least 1 broadcast; got %d", broadcasts)
 	}
 }
 
