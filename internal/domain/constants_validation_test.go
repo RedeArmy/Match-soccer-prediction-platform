@@ -708,20 +708,33 @@ func TestSystemParamsMigrationCoverage(t *testing.T) {
 		t.Fatal("runtime.Caller failed to locate test file")
 	}
 	migrationsDir := filepath.Join(filepath.Dir(testFile), "..", "..", "migrations")
+	seeded := collectSeededParams(t, migrationsDir)
 
-	entries, err := os.ReadDir(migrationsDir)
+	for _, key := range allSystemParamKeys() {
+		if !seeded[key] {
+			t.Errorf("param key %q has no INSERT INTO system_params in any *.up.sql migration — add a migration to seed it", key)
+		}
+	}
+}
+
+// collectSeededParams reads every *.up.sql file in dir, applies INSERT and
+// DELETE patterns for system_params rows, and returns the net set of seeded
+// param keys (inserted minus permanently deleted).
+//
+// keyInFileRe matches 'category.name' — the param key naming pattern.
+// SQL descriptions contain spaces and punctuation so they never produce false
+// matches; type/category column values like 'int' or 'system' contain no dot.
+// The whole file is scanned rather than individual INSERT blocks because some
+// descriptions contain semicolons which prematurely terminate a [^;]+ pattern.
+func collectSeededParams(t *testing.T, dir string) map[string]bool {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("cannot read migrations directory %s: %v", migrationsDir, err)
+		t.Fatalf("cannot read migrations directory %s: %v", dir, err)
 	}
 
-	// keyInFileRe matches 'category.name' — the param key naming pattern.
-	// SQL descriptions contain spaces and punctuation so they never produce matches;
-	// type/category column values like 'int' or 'system' contain no dot.
-	// NOTE: we scan the whole file rather than extracting INSERT blocks because
-	// some descriptions contain semicolons which would prematurely terminate a
-	// [^;]+ block-level pattern.
 	keyInFileRe := regexp.MustCompile(`'([a-z]+\.[a-z][a-z0-9_]*)'`)
-	// deleteRe matches DELETE FROM system_params WHERE key = 'category.name'.
 	deleteRe := regexp.MustCompile(
 		`(?i)DELETE\s+FROM\s+system_params\s+WHERE\s+key\s*=\s*'([a-z]+\.[a-z][a-z0-9_]*)'`,
 	)
@@ -733,12 +746,11 @@ func TestSystemParamsMigrationCoverage(t *testing.T) {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".up.sql") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(migrationsDir, entry.Name()))
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
 		if err != nil {
 			t.Fatalf("read %s: %v", entry.Name(), err)
 		}
 		text := string(data)
-
 		for _, m := range deleteRe.FindAllStringSubmatch(text, -1) {
 			deleted[m[1]] = true
 		}
@@ -747,14 +759,8 @@ func TestSystemParamsMigrationCoverage(t *testing.T) {
 		}
 	}
 
-	// Apply net deletions: a key inserted then permanently deleted is not seeded.
 	for k := range deleted {
 		delete(seeded, k)
 	}
-
-	for _, key := range allSystemParamKeys() {
-		if !seeded[key] {
-			t.Errorf("param key %q has no INSERT INTO system_params in any *.up.sql migration — add a migration to seed it", key)
-		}
-	}
+	return seeded
 }
