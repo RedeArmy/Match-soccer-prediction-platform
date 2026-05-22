@@ -42,6 +42,35 @@ var snapshotConcurrency = 16
 // nil before that point (tests that set snapshotConcurrency=1 bypass the nil guard).
 var snapshotSem *semaphore.Weighted
 
+// SnapshotLocker prevents duplicate leaderboard snapshot DB writes across
+// multiple worker replicas for the same (matchID, quinielaID) pair.
+//
+// Without a distributed lock, N replicas each running M concurrent snapshot
+// goroutines produce N×M concurrent DB writes for the same data.  With a lock,
+// the first replica to acquire it does the work; the others skip that pair.
+//
+// The lock must be best-effort: a Redis failure should degrade to the single-
+// process semaphore behaviour, not halt snapshot generation entirely.
+type SnapshotLocker interface {
+	// TryLock attempts to acquire an exclusive snapshot slot for the given pair.
+	// Returns (true, nil) when the lock was acquired — this replica must run the
+	// snapshot. Returns (false, nil) when another replica holds the lock — skip.
+	// Returns (_, non-nil) on transient infrastructure failure — caller should
+	// proceed without the lock (degrade gracefully).
+	TryLock(ctx context.Context, matchID, quinielaID int) (bool, error)
+	// Unlock releases the lock after the snapshot completes.  Errors are
+	// logged by the caller but not propagated: the TTL on the Redis key acts as
+	// a safety net if Unlock is never reached (process crash, context cancel).
+	Unlock(ctx context.Context, matchID, quinielaID int) error
+}
+
+// noopSnapshotLocker always grants the lock.  Used in tests and as a fallback
+// when Redis is unavailable, preserving the in-process semaphore behaviour.
+type noopSnapshotLocker struct{}
+
+func (noopSnapshotLocker) TryLock(_ context.Context, _, _ int) (bool, error) { return true, nil }
+func (noopSnapshotLocker) Unlock(_ context.Context, _, _ int) error          { return nil }
+
 // decodePayload re-encodes env.Payload as JSON and then unmarshals it into T.
 //
 // events.Envelope.Payload is declared as `any`. When InMemoryBus delivers an
@@ -114,6 +143,7 @@ func newMatchFinishedHandler(
 	snapshotter service.Snapshotter,
 	predRepo repository.PredictionRepository,
 	invalidators []service.PostScoringInvalidator,
+	locker SnapshotLocker,
 	log *zap.Logger,
 ) func(context.Context, events.Envelope) error {
 	return func(ctx context.Context, env events.Envelope) error {
@@ -135,13 +165,13 @@ func newMatchFinishedHandler(
 			)
 			// Return the error so the bus retries and, if all attempts fail,
 			// pushes the event to the dead-letter queue for manual replay.
-			return err
+			return fmt.Errorf("score match %d: %w", mf.MatchID, err)
 		}
 
 		log.Sugar().Infof("worker: scored match %d (%s %d-%d %s)",
 			mf.MatchID, mf.HomeTeam, mf.HomeScore, mf.AwayScore, mf.AwayTeam)
 
-		postScoringWork(ctx, mf.MatchID, snapshotter, predRepo, invalidators, log)
+		postScoringWork(ctx, mf.MatchID, snapshotter, predRepo, invalidators, locker, log)
 		return nil
 	}
 }
@@ -164,6 +194,7 @@ func postScoringWork(
 	snapshotter service.Snapshotter,
 	predRepo repository.PredictionRepository,
 	invalidators []service.PostScoringInvalidator,
+	locker SnapshotLocker,
 	log *zap.Logger,
 ) {
 	if predRepo == nil {
@@ -195,8 +226,7 @@ func postScoringWork(
 	// Fan-out snapshot generation across quinielas with a bounded goroutine pool.
 	// g.SetLimit bounds goroutine creation per-event (memory efficiency); the
 	// global snapshotSem bounds total concurrent DB operations across ALL events
-	// simultaneously — preventing N concurrent MatchFinished events from each
-	// spawning snapshotConcurrency goroutines and saturating the DB pool.
+	// on this machine; locker prevents duplicate work across replicas.
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(snapshotConcurrency)
 	for _, qid := range quinielaIDs {
@@ -208,11 +238,53 @@ func postScoringWork(
 				}
 				defer snapshotSem.Release(1)
 			}
-			retrySnapshot(gctx, matchID, qid, snapshotter, log)
+			runSnapshot(gctx, matchID, qid, snapshotter, locker, log)
 			return nil
 		})
 	}
 	_ = g.Wait()
+}
+
+// runSnapshot acquires the distributed lock for this (matchID, quinielaID) pair,
+// runs the snapshot with retries, and releases the lock.  If the lock is held by
+// another replica the work is skipped.  A lock acquisition failure degrades to
+// single-machine behaviour without halting snapshot generation.
+func runSnapshot(
+	ctx context.Context,
+	matchID, quinielaID int,
+	snapshotter service.Snapshotter,
+	locker SnapshotLocker,
+	log *zap.Logger,
+) {
+	if locker != nil {
+		ok, err := locker.TryLock(ctx, matchID, quinielaID)
+		switch {
+		case err != nil:
+			log.Warn("worker: snapshot lock unavailable, proceeding without distributed lock",
+				zap.Int("match_id", matchID),
+				zap.Int("quiniela_id", quinielaID),
+				zap.Error(err),
+			)
+		case !ok:
+			log.Debug("worker: snapshot already claimed by another replica, skipping",
+				zap.Int("match_id", matchID),
+				zap.Int("quiniela_id", quinielaID),
+			)
+			return
+		default:
+			defer func() {
+				// context.WithoutCancel so the unlock survives ctx cancellation.
+				if err := locker.Unlock(context.WithoutCancel(ctx), matchID, quinielaID); err != nil {
+					log.Warn("worker: snapshot unlock failed",
+						zap.Int("match_id", matchID),
+						zap.Int("quiniela_id", quinielaID),
+						zap.Error(err),
+					)
+				}
+			}()
+		}
+	}
+	retrySnapshot(ctx, matchID, quinielaID, snapshotter, log)
 }
 
 // retrySnapshot attempts to take a leaderboard snapshot for quinielaID up to

@@ -137,7 +137,7 @@ func (b *RedisBus) Subscribe(ctx context.Context, eventType events.EventType, ha
 	var consumeCtx context.Context
 	if len(existing) == 0 {
 		var cancel context.CancelFunc
-		consumeCtx, cancel = context.WithCancel(ctx)
+		consumeCtx, cancel = context.WithCancel(ctx) //nolint:gosec // G118: cancel stored in b.cancels; called by Close() on bus shutdown
 		b.cancels = append(b.cancels, cancel)
 	}
 	b.mu.Unlock()

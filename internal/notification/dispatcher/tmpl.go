@@ -33,7 +33,7 @@ var notifTemplateFuncs = template.FuncMap{
 	// fmtTime formats a time value as "DD/MM HH:MM" (UTC).
 	// Accepts time.Time or an RFC3339 string (the shape JSON produces).
 	// Usage: {{.deadline_at | fmtTime}} → "19/05 20:30"
-	"fmtTime": func(v any) string { return fmtTime(v) },
+	"fmtTime": fmtTime,
 	// pluralize returns "N singular" when N == 1, otherwise "N plural".
 	// Usage: {{.minutes_left | pluralize "minuto" "minutos"}} → "30 minutos"
 	"pluralize": func(singular, plural string, count any) string {

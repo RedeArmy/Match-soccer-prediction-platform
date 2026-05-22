@@ -145,7 +145,7 @@ func (w *Worker) process(ctx context.Context, entry *notification.OutboxEntry) {
 		// Exponential backoff with equal jitter: delay = half_fixed + rand[0, half_fixed]
 		full := min(time.Duration(1<<entry.Attempts)*time.Second, 5*time.Minute)
 		half := full / 2
-		delay := half + time.Duration(rand.Int64N(int64(half)+1))
+		delay := half + time.Duration(rand.Int64N(int64(half)+1)) //nolint:gosec // G404: jitter for backoff; cryptographic randomness not required
 		scheduledAt := time.Now().Add(delay)
 		if schedErr := w.repo.Schedule(ctx, entry.ID, scheduledAt); schedErr != nil {
 			log.Error("failed to reschedule outbox entry", zap.Error(schedErr))

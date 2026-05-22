@@ -63,8 +63,7 @@ func isBroadcastEvent(et notification.EventType) bool {
 // different field — e.g. EventGroupJoinRequested notifies the group owner, not
 // the requester.  Returns (0, false) when no valid recipient can be extracted.
 func resolveRecipient(entry *notification.OutboxEntry) (int, bool) {
-	switch entry.EventType {
-	case notification.EventGroupJoinRequested:
+	if entry.EventType == notification.EventGroupJoinRequested {
 		var p ownerPayload
 		if err := json.Unmarshal(entry.Payload, &p); err == nil && p.OwnerID != 0 {
 			return p.OwnerID, true

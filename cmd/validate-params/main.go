@@ -370,7 +370,7 @@ func fetchAllParams(ctx context.Context, pool *pgxpool.Pool) ([]dbParam, error) 
 		ORDER BY category, key
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query system_params: %w", err)
 	}
 	defer rows.Close()
 
@@ -378,10 +378,13 @@ func fetchAllParams(ctx context.Context, pool *pgxpool.Pool) ([]dbParam, error) 
 	for rows.Next() {
 		var p dbParam
 		if err := rows.Scan(&p.key, &p.value, &p.defaultValue, &p.paramType, &p.category, &p.isRuntime, &p.description); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan system_param row: %w", err)
 		}
 		params = append(params, p)
 	}
 
-	return params, rows.Err()
+	if err := rows.Err(); err != nil {
+		return params, fmt.Errorf("fetch system_params: %w", err)
+	}
+	return params, nil
 }

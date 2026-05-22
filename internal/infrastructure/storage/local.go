@@ -34,7 +34,7 @@ func (s *LocalFileStore) Put(_ context.Context, key, _ string, r io.Reader, _ in
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return fmt.Errorf("storage: mkdir for %q: %w", key, err)
 	}
-	f, err := os.Create(dest)
+	f, err := os.Create(dest) //nolint:gosec // G304: path constructed by LocalFileStore.path() from a config base dir and a sanitised key
 	if err != nil {
 		return fmt.Errorf("storage: create %q: %w", key, err)
 	}

@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -73,8 +74,11 @@ func decodeError(err error) error {
 // parseIntParam converts a query-string value to a positive integer.
 func parseIntParam(s string) (int, error) {
 	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return 0, err
+	if err != nil {
+		return 0, fmt.Errorf("parse int %q: %w", s, err)
+	}
+	if n <= 0 {
+		return 0, nil
 	}
 	return n, nil
 }

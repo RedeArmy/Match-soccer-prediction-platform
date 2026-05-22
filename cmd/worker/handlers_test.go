@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
@@ -183,7 +185,7 @@ func TestMatchStartedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 
 func TestMatchFinishedHandler_MapPayload_CallsScorer(t *testing.T) {
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, nil, nil, nil, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, nil, nil, noopSnapshotLocker{}, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithMap(99)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -198,7 +200,7 @@ func TestMatchFinishedHandler_MapPayload_CallsScorer(t *testing.T) {
 
 func TestMatchFinishedHandler_StructPayload_CallsScorer(t *testing.T) {
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, nil, nil, nil, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, nil, nil, noopSnapshotLocker{}, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithStruct(5)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -210,7 +212,7 @@ func TestMatchFinishedHandler_StructPayload_CallsScorer(t *testing.T) {
 
 func TestMatchFinishedHandler_ScorerError_PropagatesError(t *testing.T) {
 	scorer := &stubScorer{err: errors.New("db down")}
-	h := newMatchFinishedHandler(scorer, nil, nil, nil, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, nil, nil, noopSnapshotLocker{}, zap.NewNop())
 
 	err := h(context.Background(), envelopeWithMap(1))
 	if err == nil {
@@ -223,7 +225,7 @@ func TestMatchFinishedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 	// return nil rather than propagating the error, because retrying a
 	// structurally invalid message would burn retry budget uselessly.
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, nil, nil, nil, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, nil, nil, noopSnapshotLocker{}, zap.NewNop())
 
 	env := events.Envelope{
 		Type:    events.EventMatchFinished,
@@ -313,27 +315,27 @@ func (r *stubWorkerPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*dom
 }
 
 func TestPostScoringWork_NilPredRepo_Noop(t *testing.T) {
-	postScoringWork(context.Background(), 1, &stubSnapshotter{}, nil, nil, zap.NewNop())
+	postScoringWork(context.Background(), 1, &stubSnapshotter{}, nil, nil, noopSnapshotLocker{}, zap.NewNop())
 }
 
 func TestPostScoringWork_NilSnapshotter_Noop(t *testing.T) {
-	postScoringWork(context.Background(), 1, nil, &stubWorkerPredRepo{ids: []int{1}}, nil, zap.NewNop())
+	postScoringWork(context.Background(), 1, nil, &stubWorkerPredRepo{ids: []int{1}}, nil, noopSnapshotLocker{}, zap.NewNop())
 }
 
 func TestPostScoringWork_ListError_LogsWarnAndReturns(t *testing.T) {
 	predRepo := &stubWorkerPredRepo{err: errors.New("db down")}
-	postScoringWork(context.Background(), 1, &stubSnapshotter{}, predRepo, nil, zap.NewNop())
+	postScoringWork(context.Background(), 1, &stubSnapshotter{}, predRepo, nil, noopSnapshotLocker{}, zap.NewNop())
 }
 
 func TestPostScoringWork_EmptyList_NoSnapshot(t *testing.T) {
 	predRepo := &stubWorkerPredRepo{ids: []int{}}
-	postScoringWork(context.Background(), 1, &stubSnapshotter{}, predRepo, nil, zap.NewNop())
+	postScoringWork(context.Background(), 1, &stubSnapshotter{}, predRepo, nil, noopSnapshotLocker{}, zap.NewNop())
 }
 
 func TestPostScoringWork_SnapshotSuccess_LogsInfo(t *testing.T) {
 	predRepo := &stubWorkerPredRepo{ids: []int{10, 20}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	postScoringWork(context.Background(), 5, snap, predRepo, nil, zap.NewNop())
+	postScoringWork(context.Background(), 5, snap, predRepo, nil, noopSnapshotLocker{}, zap.NewNop())
 }
 
 func TestPostScoringWork_SnapshotError_LogsWarn(t *testing.T) {
@@ -342,14 +344,14 @@ func TestPostScoringWork_SnapshotError_LogsWarn(t *testing.T) {
 
 	predRepo := &stubWorkerPredRepo{ids: []int{10}}
 	snap := &stubSnapshotter{err: errors.New("snapshot failed")}
-	postScoringWork(context.Background(), 5, snap, predRepo, nil, zap.NewNop())
+	postScoringWork(context.Background(), 5, snap, predRepo, nil, noopSnapshotLocker{}, zap.NewNop())
 }
 
 func TestPostScoringWork_CallsInvalidators(t *testing.T) {
 	called := false
 	inv := &stubInvalidator{fn: func(ids []int) { called = true }}
 	predRepo := &stubWorkerPredRepo{ids: []int{1}}
-	postScoringWork(context.Background(), 5, nil, predRepo, []service.PostScoringInvalidator{inv}, zap.NewNop())
+	postScoringWork(context.Background(), 5, nil, predRepo, []service.PostScoringInvalidator{inv}, noopSnapshotLocker{}, zap.NewNop())
 	if !called {
 		t.Error("expected PostScoringInvalidator to be called")
 	}
@@ -359,7 +361,7 @@ func TestMatchFinishedHandler_WithSnapshot_ScoresAndSnapshots(t *testing.T) {
 	scorer := &stubScorer{}
 	predRepo := &stubWorkerPredRepo{ids: []int{1, 2}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	h := newMatchFinishedHandler(scorer, snap, predRepo, nil, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, snap, predRepo, nil, noopSnapshotLocker{}, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithStruct(10)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -476,7 +478,7 @@ func TestPostScoringWork_WithSemaphore_SnapshotsAllQuinielas(t *testing.T) {
 
 	predRepo := &stubWorkerPredRepo{ids: []int{1, 2, 3}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	postScoringWork(context.Background(), 5, snap, predRepo, nil, zap.NewNop())
+	postScoringWork(context.Background(), 5, snap, predRepo, nil, noopSnapshotLocker{}, zap.NewNop())
 	// All 3 quinielas must be snapshotted despite the semaphore limiting concurrency to 2.
 }
 
@@ -493,8 +495,142 @@ func TestPostScoringWork_WithSemaphore_ContextCancelled_SkipsSnapshot(t *testing
 
 	predRepo := &stubWorkerPredRepo{ids: []int{10, 20}}
 	snap := &countingSnapshotter{succeedAt: 0, err: errors.New("should not reach")}
-	postScoringWork(ctx, 5, snap, predRepo, nil, zap.NewNop())
+	postScoringWork(ctx, 5, snap, predRepo, nil, noopSnapshotLocker{}, zap.NewNop())
 	if snap.calls != 0 {
 		t.Errorf("SnapshotForMatch calls: got %d; want 0 (context cancelled before acquire)", snap.calls)
+	}
+}
+
+// ── runSnapshot locker stubs ──────────────────────────────────────────────────
+
+// errorLocker returns a configurable error from TryLock, simulating a Redis
+// failure. Snapshot generation must degrade to single-process behaviour and
+// still run.
+type errorLocker struct{ err error }
+
+func (l errorLocker) TryLock(_ context.Context, _, _ int) (bool, error) { return false, l.err }
+func (l errorLocker) Unlock(_ context.Context, _, _ int) error          { return nil }
+
+// refuseLocker always returns (false, nil), simulating another replica holding
+// the distributed snapshot lock. The snapshot must be skipped.
+type refuseLocker struct{}
+
+func (refuseLocker) TryLock(_ context.Context, _, _ int) (bool, error) { return false, nil }
+func (refuseLocker) Unlock(_ context.Context, _, _ int) error          { return nil }
+
+// acquireFailUnlockLocker acquires the lock but returns an error on Unlock,
+// simulating a transient Redis failure during cleanup. The snapshot must
+// complete despite the cleanup failure.
+type acquireFailUnlockLocker struct{ unlockErr error }
+
+func (l acquireFailUnlockLocker) TryLock(_ context.Context, _, _ int) (bool, error) {
+	return true, nil
+}
+func (l acquireFailUnlockLocker) Unlock(_ context.Context, _, _ int) error { return l.unlockErr }
+
+// ── runSnapshot ───────────────────────────────────────────────────────────────
+
+func TestRunSnapshot_NilLocker_RunsSnapshot(t *testing.T) {
+	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
+	runSnapshot(context.Background(), 5, 10, snap, nil, zap.NewNop())
+	if snap.calls != 1 {
+		t.Errorf("expected 1 snapshot call with nil locker, got %d", snap.calls)
+	}
+}
+
+func TestRunSnapshot_LockError_DegradesToLocalAndRunsSnapshot(t *testing.T) {
+	// A TryLock error must degrade gracefully: log a warning and still run the
+	// snapshot under the in-process semaphore (best-effort distributed lock).
+	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
+	runSnapshot(context.Background(), 5, 10, snap, errorLocker{err: errors.New("redis down")}, zap.NewNop())
+	if snap.calls != 1 {
+		t.Errorf("expected 1 snapshot call when lock fails, got %d", snap.calls)
+	}
+}
+
+func TestRunSnapshot_LockNotAcquired_SkipsSnapshot(t *testing.T) {
+	// Another replica holds the lock; this replica must not run the snapshot.
+	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
+	runSnapshot(context.Background(), 5, 10, snap, refuseLocker{}, zap.NewNop())
+	if snap.calls != 0 {
+		t.Errorf("expected 0 snapshot calls when lock refused, got %d", snap.calls)
+	}
+}
+
+func TestRunSnapshot_UnlockFails_SnapshotStillRuns(t *testing.T) {
+	// Unlock failure must be logged and swallowed; the snapshot must complete
+	// because scoring already committed before runSnapshot was called.
+	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
+	locker := acquireFailUnlockLocker{unlockErr: errors.New("redis del failed")}
+	runSnapshot(context.Background(), 5, 10, snap, locker, zap.NewNop())
+	if snap.calls != 1 {
+		t.Errorf("expected 1 snapshot call when unlock fails, got %d", snap.calls)
+	}
+}
+
+// ── redisSnapshotLocker ───────────────────────────────────────────────────────
+
+// newTestRedisLocker starts a miniredis server, wires a redisSnapshotLocker to
+// it, and registers cleanup. The Miniredis handle is returned so callers can
+// manipulate server state (e.g. Close to simulate Redis downtime).
+func newTestRedisLocker(t *testing.T) (*redisSnapshotLocker, *miniredis.Miniredis) {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	return &redisSnapshotLocker{client: client, ttl: time.Minute}, mr
+}
+
+func TestRedisSnapshotLocker_TryLock_AcquiresKey(t *testing.T) {
+	locker, _ := newTestRedisLocker(t)
+	ok, err := locker.TryLock(context.Background(), 1, 2)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if !ok {
+		t.Error("expected lock to be acquired on first TryLock")
+	}
+}
+
+func TestRedisSnapshotLocker_TryLock_AlreadyLocked_ReturnsFalse(t *testing.T) {
+	locker, _ := newTestRedisLocker(t)
+	_, _ = locker.TryLock(context.Background(), 1, 2)
+	ok, err := locker.TryLock(context.Background(), 1, 2)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if ok {
+		t.Error("expected second TryLock to be refused while key is held")
+	}
+}
+
+func TestRedisSnapshotLocker_TryLock_RedisDown_ReturnsError(t *testing.T) {
+	locker, mr := newTestRedisLocker(t)
+	mr.Close()
+	_, err := locker.TryLock(context.Background(), 1, 2)
+	if err == nil {
+		t.Error("expected error when Redis is unavailable")
+	}
+}
+
+func TestRedisSnapshotLocker_Unlock_DeletesKey(t *testing.T) {
+	locker, _ := newTestRedisLocker(t)
+	_, _ = locker.TryLock(context.Background(), 3, 4)
+	if err := locker.Unlock(context.Background(), 3, 4); err != nil {
+		t.Fatalf("unexpected Unlock error: %v", err)
+	}
+	// After Unlock the key must be deleted; a subsequent TryLock must succeed.
+	ok, err := locker.TryLock(context.Background(), 3, 4)
+	if err != nil || !ok {
+		t.Errorf("expected re-acquire after Unlock; ok=%v err=%v", ok, err)
+	}
+}
+
+func TestRedisSnapshotLocker_Unlock_RedisDown_ReturnsError(t *testing.T) {
+	locker, mr := newTestRedisLocker(t)
+	_, _ = locker.TryLock(context.Background(), 5, 6)
+	mr.Close()
+	if err := locker.Unlock(context.Background(), 5, 6); err == nil {
+		t.Error("expected error when Redis is unavailable during Unlock")
 	}
 }

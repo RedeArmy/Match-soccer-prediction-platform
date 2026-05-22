@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -166,7 +167,7 @@ func (s *adminReadService) GetDashboardStats(ctx context.Context) (*domain.Dashb
 		return err
 	})
 	if err := g.Wait(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load dashboard stats: %w", err)
 	}
 
 	stats := &domain.DashboardStats{

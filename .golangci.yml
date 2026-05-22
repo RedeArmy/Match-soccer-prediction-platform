@@ -22,6 +22,12 @@ linters:
     - bodyclose       # http response bodies that are never closed
     - noctx           # http requests created without a context
     - revive          # opinionated but configurable style linter
+    - exhaustive      # switch exhaustiveness on named enum types — catches missing
+                      # cases when a new EventType or Status constant is added
+    - gosec           # security: integer overflows, weak crypto, path injection
+    - gocritic        # style correctness: unlambda, singleCaseSwitch, exitAfterDefer
+    - wrapcheck       # errors from external packages must be wrapped for stack traces
+    - gocognit        # cognitive complexity ceiling (catches the same class as SonarQube)
 
   settings:
     revive:
@@ -43,22 +49,109 @@ linters:
         - fmt.Fprintf
         - (*go.uber.org/zap.Logger).Sync
 
+    exhaustive:
+      # A switch that contains a `default:` branch is always considered exhaustive.
+      # This lets partial-dispatch switches (e.g. the admin email template builder,
+      # which intentionally handles only a subset of EventType and falls back to a
+      # generic layout) pass without listing every constant.
+      default-signifies-exhaustive: true
+
+    gosec:
+      # G115 (integer overflow int→int32) is suppressed globally because every
+      # conversion in this codebase is guarded by system-param range bounds or
+      # config validation. Individual call sites document this with //nolint comments.
+      excludes:
+        - G115
+
+    gocritic:
+      # Enable only the checks that have proven high signal for this codebase.
+      # "exitAfterDefer" catches the common TestMain anti-pattern where os.Exit
+      # skips deferred cleanup. "unlambda" removes useless wrapper lambdas.
+      # "singleCaseSwitch" enforces `if` over one-case switches.
+      enabled-checks:
+        - exitAfterDefer
+        - unlambda
+        - singleCaseSwitch
+
+    wrapcheck:
+      # External packages (pgx, redis, strconv, etc.) must be wrapped.
+      # Internal packages are excluded via exclusions.rules below.
+
+    gocognit:
+      # 20 is a reasonable ceiling for production Go code: it allows moderately
+      # complex functions while still catching functions that SonarQube would flag.
+      min-complexity: 20
+
   exclusions:
     rules:
-      # Test files: relax errcheck, unused, and noctx rules — test helpers
-      # often ignore errors, define unexported helpers, and use
-      # httptest.NewRequest without context for simplicity.
+      # Test files: relax errcheck, unused, noctx, gosec, and wrapcheck — test
+      # helpers often ignore errors, use hardcoded secrets, and call os.Setenv
+      # without checking its error (which can only fail when the env var name
+      # contains '=' or '\0', neither of which appears in any test).
       - path: "_test\\.go"
         linters:
           - errcheck
           - unused
           - noctx
+          - gosec
+          - wrapcheck
 
       # Repository and service files implement interfaces; per-method
       # comments on private receivers are redundant noise.
       - path: "internal/(repository|service|middleware)/"
         linters:
           - revive
+
+      # cmd/genschema is a dev-only code-generation tool run in CI with
+      # controlled inputs. File path and permission issues are non-issues there.
+      - path: "cmd/genschema/"
+        linters:
+          - gosec
+
+      # Internal module interface errors carry context from the implementation
+      # that returned them; a second fmt.Errorf wrap at the call site adds
+      # nothing but noise. Only external-package errors (pgx, strconv, io/fs)
+      # at true application-layer boundaries need wrapping.
+      - text: "github.com/rede/world-cup-quiniela/"
+        linters:
+          - wrapcheck
+
+      # ResponseWriter.Write errors cannot meaningfully be wrapped in decorator
+      # types that must satisfy the http.ResponseWriter interface contract —
+      # callers cannot inspect a wrapped error from Write() and the connection
+      # is already established, so the error is unrecoverable regardless.
+      - text: "func \\(net/http\\.ResponseWriter\\)\\.Write"
+        linters:
+          - wrapcheck
+
+      # Infrastructure adapters (database migrations, cache, messaging, email,
+      # storage, leader election) are thin wrappers around external libraries.
+      # Wrapping every pgx/redis/io/fs error at this layer adds no caller-
+      # relevant context; the external error message already identifies the site.
+      - path: "internal/infrastructure/"
+        linters:
+          - wrapcheck
+
+      # pkg/ holds internal library utilities (breaker, idempotency, logger).
+      # Each wraps a single external dependency; adding fmt.Errorf around every
+      # call would double-wrap every error that bubbles up through the stack.
+      - path: "pkg/"
+        linters:
+          - wrapcheck
+
+      # Repository files call pgx directly to implement the data-access layer.
+      # Errors returned from pgx are implementation details; the service layer
+      # adds domain context when it matters. Wrapping every rows.Scan or
+      # pool.QueryRow call is mechanical noise with no diagnostic value.
+      - path: "internal/repository/"
+        linters:
+          - wrapcheck
+
+      # Notification infrastructure uses internal interfaces (SSE hub, outbox
+      # writer, dispatcher chain) whose errors already carry context.
+      - path: "internal/notification/"
+        linters:
+          - wrapcheck
 
     # Generated Swagger docs should not be linted.
     paths:

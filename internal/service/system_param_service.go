@@ -467,6 +467,8 @@ func validateParamConstraints(key, value string, typ domain.SystemParamType) err
 		if fn, ok := paramStringConstraints[key]; ok {
 			return fn(value)
 		}
+	default: // SystemParamTypeBool, SystemParamTypeDuration: no constraints defined yet
+		return nil
 	}
 	return nil
 }
