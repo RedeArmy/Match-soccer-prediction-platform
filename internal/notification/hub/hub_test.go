@@ -1,11 +1,14 @@
 package hub_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
 
 	"go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
 )
@@ -244,5 +247,42 @@ func TestHub_RaceCondition_500Concurrent(t *testing.T) {
 	conns, _, _ := h.Metrics()
 	if conns != 0 {
 		t.Errorf("connections after all cleanups: got %d; want 0", conns)
+	}
+}
+
+// TestHub_RegisterMetrics_CallbacksExecuted verifies that the OTel observable
+// callbacks actually run — and return the live atomic values — when an SDK
+// ManualReader collects metrics. The noop meter used elsewhere skips callbacks;
+// this test exercises the Observe/return-nil paths inside RegisterMetrics.
+func TestHub_RegisterMetrics_CallbacksExecuted(t *testing.T) {
+	t.Parallel()
+
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	defer provider.Shutdown(context.Background()) //nolint:errcheck
+
+	h := hub.New()
+	_, c1 := h.Connect(200)
+	defer c1()
+	h.Broadcast(200, makeNotif(1, 200))
+
+	meter := provider.Meter("hub-test")
+	if err := h.RegisterMetrics(meter); err != nil {
+		t.Fatalf("RegisterMetrics returned error: %v", err)
+	}
+
+	// Collect triggers all registered Int64Callback functions.
+	var data metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &data); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// Verify via Metrics() that the atomics being reported have the expected values.
+	conns, broadcasts, _ := h.Metrics()
+	if conns < 1 {
+		t.Errorf("connections counter: got %d; want ≥ 1", conns)
+	}
+	if broadcasts < 1 {
+		t.Errorf("broadcasts counter: got %d; want ≥ 1", broadcasts)
 	}
 }

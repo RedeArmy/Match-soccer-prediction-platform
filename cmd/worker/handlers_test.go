@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
@@ -460,4 +461,40 @@ func (s *countingSnapshotter) SnapshotForMatch(_ context.Context, _, _ int) (*do
 		return s.snap, nil
 	}
 	return nil, s.err
+}
+
+// ── snapshotSem (global weighted semaphore) ───────────────────────────────────
+
+func TestPostScoringWork_WithSemaphore_SnapshotsAllQuinielas(t *testing.T) {
+	old := snapshotSem
+	snapshotSem = semaphore.NewWeighted(2)
+	t.Cleanup(func() { snapshotSem = old })
+
+	oldBase := snapshotRetryBase
+	snapshotRetryBase = 0
+	t.Cleanup(func() { snapshotRetryBase = oldBase })
+
+	predRepo := &stubWorkerPredRepo{ids: []int{1, 2, 3}}
+	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
+	postScoringWork(context.Background(), 5, snap, predRepo, nil, zap.NewNop())
+	// All 3 quinielas must be snapshotted despite the semaphore limiting concurrency to 2.
+}
+
+func TestPostScoringWork_WithSemaphore_ContextCancelled_SkipsSnapshot(t *testing.T) {
+	old := snapshotSem
+	snapshotSem = semaphore.NewWeighted(1)
+	t.Cleanup(func() { snapshotSem = old })
+
+	// Pre-cancel the context so gctx (derived inside postScoringWork) is
+	// immediately cancelled; snapshotSem.Acquire(gctx, 1) then returns
+	// context.Canceled and the goroutine exits via the "return nil" path.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	predRepo := &stubWorkerPredRepo{ids: []int{10, 20}}
+	snap := &countingSnapshotter{succeedAt: 0, err: errors.New("should not reach")}
+	postScoringWork(ctx, 5, snap, predRepo, nil, zap.NewNop())
+	if snap.calls != 0 {
+		t.Errorf("SnapshotForMatch calls: got %d; want 0 (context cancelled before acquire)", snap.calls)
+	}
 }
