@@ -51,9 +51,10 @@ func NewJWKSProvider(ctx context.Context, jwksURL string, warmupTimeout time.Dur
 		return &failClosedProvider{msg: "authentication is not configured"}
 	}
 
-	// The internal refresh goroutine must outlive any specific request context,
-	// so it is always rooted at context.Background().
-	jwkCache := jwk.NewCache(context.Background())
+	// context.WithoutCancel strips the cancellation signal so the internal
+	// refresh goroutine outlives any specific request or startup context, while
+	// still inheriting OTel trace values carried by ctx.
+	jwkCache := jwk.NewCache(context.WithoutCancel(ctx))
 	if err := jwkCache.Register(jwksURL); err != nil {
 		log.Error("auth: failed to register JWKS URL", zap.String("url", jwksURL), zap.Error(err))
 	}
