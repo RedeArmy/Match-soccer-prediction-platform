@@ -37,6 +37,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
+	"github.com/rede/world-cup-quiniela/pkg/idempotency"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
 
@@ -99,7 +100,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		return fmt.Errorf("tracing: %w", err)
 	}
 	defer func() {
-		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// context.WithoutCancel inherits the OTel span values from ctx without
+		// being affected by the cancellation that already fired (SIGTERM).
+		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := shutdownTracing(flushCtx); err != nil {
 			log.Sugar().Warnf("tracing flush: %v", err)
@@ -143,9 +146,13 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// checker, the event bus (if redis driver), and the cached service
 	// decorators. A dedicated client is used for caching to avoid contention
 	// with the long-lived XREADGROUP connections of the event bus.
+	//
+	// rc is declared outside the if block so it is visible when wiring the
+	// Redis-backed idempotency store below.
+	var rc *redis.Client
 	var cacheStore cache.Store
 	if cfg.Redis.Addr != "" {
-		rc := redis.NewClient(&redis.Options{
+		rc = redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Addr,
 			Password: cfg.Redis.Password,
 			DB:       cfg.Redis.DB,
@@ -161,6 +168,13 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// dependency explicit and eliminates hidden global state.
 	app := api.New(db, cfg, log, bus, cacheStore, checkers)
 
+	// When Redis is available, use a shared idempotency store so reservations
+	// are visible across all replicas. Falls back to MemoryStore (set inside
+	// Routes()) when Redis is not configured.
+	if rc != nil {
+		app.SetIdempotencyStore(idempotency.NewRedisStore(rc))
+	}
+
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      app.Routes(),
@@ -168,7 +182,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
-	app.StartPgNotifyBridge()
+	app.StartPgNotifyBridge(ctx)
 
 	srvErr := make(chan error, 1)
 	go func() {

@@ -31,6 +31,12 @@ type JWKSProvider struct {
 
 // NewJWKSProvider constructs a JWKSProvider and eagerly warms the JWKS cache.
 //
+// ctx is used for the startup warmup fetch and the initial fallback population.
+// It should carry any values (OTel trace IDs, request IDs) the caller wants
+// propagated into those one-time operations. Its cancellation signal is NOT
+// used for the internal background refresh goroutine, which intentionally runs
+// for the lifetime of the process regardless of ctx cancellation.
+//
 // If jwksURL is empty the returned provider is fail-closed: every call to
 // ValidateToken returns ErrProviderUnavailable. This mirrors the expected
 // behaviour in a misconfigured deployment — fail visibly rather than grant
@@ -39,32 +45,34 @@ type JWKSProvider struct {
 // warmupTimeout caps the initial cache prefetch so that a provider outage at
 // startup does not block the process indefinitely. The cache retries on the
 // first request after a failed warmup.
-func NewJWKSProvider(jwksURL string, warmupTimeout time.Duration, log *zap.Logger) IdentityProvider {
+func NewJWKSProvider(ctx context.Context, jwksURL string, warmupTimeout time.Duration, log *zap.Logger) IdentityProvider {
 	if jwksURL == "" {
 		log.Error("auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL")
 		return &failClosedProvider{msg: "authentication is not configured"}
 	}
 
-	cache := jwk.NewCache(context.Background())
-	if err := cache.Register(jwksURL); err != nil {
+	// The internal refresh goroutine must outlive any specific request context,
+	// so it is always rooted at context.Background().
+	jwkCache := jwk.NewCache(context.Background())
+	if err := jwkCache.Register(jwksURL); err != nil {
 		log.Error("auth: failed to register JWKS URL", zap.String("url", jwksURL), zap.Error(err))
 	}
 
-	warmCtx, cancel := context.WithTimeout(context.Background(), warmupTimeout)
+	warmCtx, cancel := context.WithTimeout(ctx, warmupTimeout)
 	defer cancel()
-	if _, err := cache.Refresh(warmCtx, jwksURL); err != nil {
+	if _, err := jwkCache.Refresh(warmCtx, jwksURL); err != nil {
 		log.Warn("auth: JWKS prefetch failed; will retry on first request",
 			zap.String("url", jwksURL), zap.Error(err))
 	}
 
 	p := &JWKSProvider{
-		jwkCache: cache,
+		jwkCache: jwkCache,
 		jwksURL:  jwksURL,
 		log:      log,
 	}
 	// Pre-populate the fallback from the warm-up fetch so it is available
 	// immediately if the live endpoint becomes unreachable on the first request.
-	if ks, err := cache.Get(context.Background(), jwksURL); err == nil {
+	if ks, err := jwkCache.Get(ctx, jwksURL); err == nil {
 		p.fallback = ks
 	}
 	return p

@@ -129,7 +129,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		return fmt.Errorf("tracing: %w", err)
 	}
 	defer func() {
-		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// context.WithoutCancel inherits the OTel span values from ctx without
+		// being affected by the cancellation that already fired (SIGTERM).
+		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := shutdownTracing(flushCtx); err != nil {
 			log.Sugar().Warnf("tracing flush: %v", err)
