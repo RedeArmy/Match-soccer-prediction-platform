@@ -40,6 +40,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
@@ -48,6 +49,7 @@ import (
 	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	infrapush "github.com/rede/world-cup-quiniela/internal/infrastructure/webpush"
+	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/notification/scheduler"
@@ -174,6 +176,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	snapshotConcurrency = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotConcurrency, domain.DefaultWorkerSnapshotConcurrency)
 	snapshotRetryBase = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSnapshotRetryBaseMs, domain.DefaultWorkerSnapshotRetryBaseMs)) * time.Millisecond
 	maxSnapshotAttempts = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotMaxAttempts, domain.DefaultWorkerSnapshotMaxAttempts)
+	snapshotSem = newSnapshotSemaphore(snapshotConcurrency)
 	dlqMonitorInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerDLQMonitorIntervalSec, domain.DefaultWorkerDLQMonitorIntervalSec)) * time.Second
 	purgeTickInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerPurgeIntervalHours, domain.DefaultWorkerPurgeIntervalHours)) * time.Hour
 	snapshotKeepLatestCount = params.GetInt(ctx, domain.ParamKeySnapshotKeepLatestCount, domain.DefaultSnapshotKeepLatestCount)
@@ -209,6 +212,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	purger := repository.NewPostgresPurger(db)
 	retentionDays := params.GetInt(ctx, domain.ParamKeyPurgeRetentionDays, domain.DefaultPurgeRetentionDays)
 	purgeRetention := time.Duration(retentionDays) * 24 * time.Hour
+	paramHistoryRetentionDays := params.GetInt(ctx, domain.ParamKeySystemParamHistoryRetentionDays, domain.DefaultSystemParamHistoryRetentionDays)
+	paramHistoryRetention := time.Duration(paramHistoryRetentionDays) * 24 * time.Hour
 
 	// Leader election for the DLQ monitor via a PostgreSQL session-level
 	// advisory lock. A 15-second timeout is added to ctx to bound the
@@ -256,6 +261,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	tmplCacheTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyTemplateCacheTTLSec, domain.DefaultNotifyTemplateCacheTTLSec)) * time.Second
 	tmplRepo := repository.NewPostgresNotificationTemplateRepository(db, tmplCacheTTL)
 
+	digestWindowSec := int64(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestWindowSec, domain.DefaultNotifyPushDigestWindowSec))
+	digestThreshold := int32(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestThreshold, domain.DefaultNotifyPushDigestThreshold))
+
 	userDispatcher := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
 		NotifRepo:         notifRepo,
 		PrefRepo:          prefRepo,
@@ -271,6 +279,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		PgNotifier:        &pgPoolNotifier{pool: db},
 		Params:            params,
 		TemplateRepo:      tmplRepo,
+		DigestGate:        notification.NewPushDigestGate(digestWindowSec, digestThreshold),
 		Log:               log,
 	})
 
@@ -309,22 +318,23 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	notifScheduler.RegisterInterval("push.subscription_prune", 24*time.Hour, makePushPruneJob(params, pushRepo, log))
 
 	return startWorker(ctx, workerDeps{
-		cfg:               cfg,
-		bus:               bus,
-		scorer:            scorer,
-		snapshotter:       snapshotter,
-		predRepo:          predRepo,
-		invalidators:      invalidators,
-		purger:            purger,
-		purgeRetention:    purgeRetention,
-		snapshotKeepCount: snapshotKeepLatestCount,
-		rc:                rc,
-		checkers:          buildHealthCheckers(db, rc),
-		dlqElection:       dlqElection,
-		outboxRepo:        outboxRepo,
-		outboxDispatcher:  compositeDispatcher,
-		dlqReplayWorker:   dlqReplayWorker,
-		notifScheduler:    notifScheduler,
+		cfg:                   cfg,
+		bus:                   bus,
+		scorer:                scorer,
+		snapshotter:           snapshotter,
+		predRepo:              predRepo,
+		invalidators:          invalidators,
+		purger:                purger,
+		purgeRetention:        purgeRetention,
+		paramHistoryRetention: paramHistoryRetention,
+		snapshotKeepCount:     snapshotKeepLatestCount,
+		rc:                    rc,
+		checkers:              buildHealthCheckers(db, rc),
+		dlqElection:           dlqElection,
+		outboxRepo:            outboxRepo,
+		outboxDispatcher:      compositeDispatcher,
+		dlqReplayWorker:       dlqReplayWorker,
+		notifScheduler:        notifScheduler,
 	}, log)
 }
 
@@ -347,6 +357,13 @@ func buildPusher(pubKey, privKey, subject string, log *zap.Logger) infrapush.Sen
 	}
 	log.Info("web push: VAPID client active")
 	return infrapush.NewVAPIDClient(pubKey, privKey, subject)
+}
+
+// newSnapshotSemaphore returns a weighted semaphore sized to n, which becomes
+// the global DB-concurrency governor for all concurrent snapshot operations.
+// Called once from run() after snapshotConcurrency is resolved from system_params.
+func newSnapshotSemaphore(n int) *semaphore.Weighted {
+	return semaphore.NewWeighted(int64(n))
 }
 
 // makePushPruneJob returns the scheduler job that deletes inactive push
@@ -401,22 +418,23 @@ const dlqMonitorLockID int64 = 1
 // parameter list within the 7-param lint limit while remaining easy to
 // extend without changing the function signature.
 type workerDeps struct {
-	cfg               *config.Config
-	bus               events.Bus
-	scorer            service.MatchScorer
-	snapshotter       service.Snapshotter
-	predRepo          repository.PredictionRepository
-	invalidators      []service.PostScoringInvalidator
-	purger            repository.Purger
-	purgeRetention    time.Duration
-	snapshotKeepCount int
-	rc                *redis.Client
-	checkers          []health.Checker
-	dlqElection       election.LeaderElection
-	outboxRepo        outbox.Repository
-	outboxDispatcher  outbox.Dispatcher
-	dlqReplayWorker   *outbox.DLQWorker
-	notifScheduler    *scheduler.Scheduler
+	cfg                   *config.Config
+	bus                   events.Bus
+	scorer                service.MatchScorer
+	snapshotter           service.Snapshotter
+	predRepo              repository.PredictionRepository
+	invalidators          []service.PostScoringInvalidator
+	purger                repository.Purger
+	purgeRetention        time.Duration
+	paramHistoryRetention time.Duration
+	snapshotKeepCount     int
+	rc                    *redis.Client
+	checkers              []health.Checker
+	dlqElection           election.LeaderElection
+	outboxRepo            outbox.Repository
+	outboxDispatcher      outbox.Dispatcher
+	dlqReplayWorker       *outbox.DLQWorker
+	notifScheduler        *scheduler.Scheduler
 }
 
 // All parameters are already constructed so this function has no I/O of its
@@ -467,7 +485,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	go func() {
 		defer purgeDone.Done()
 		defer purgeTicker.Stop()
-		monitorPurge(ctx, deps.purger, deps.purgeRetention, deps.snapshotKeepCount, purgeTicker.C, log)
+		monitorPurge(ctx, deps.purger, deps.purgeRetention, deps.paramHistoryRetention, deps.snapshotKeepCount, purgeTicker.C, log)
 	}()
 
 	// Outbox worker — polls domain_outbox and dispatches admin/system notifications.
@@ -540,7 +558,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 //
 // If purger is nil (e.g. in unit tests where the database is not available),
 // the function returns immediately.
-func monitorPurge(ctx context.Context, purger repository.Purger, retention time.Duration, snapshotKeepCount int, tickC <-chan time.Time, log *zap.Logger) {
+func monitorPurge(ctx context.Context, purger repository.Purger, retention, paramHistoryRetention time.Duration, snapshotKeepCount int, tickC <-chan time.Time, log *zap.Logger) {
 	if purger == nil {
 		return
 	}
@@ -565,6 +583,12 @@ func monitorPurge(ctx context.Context, purger repository.Purger, retention time.
 				log.Warn("worker: purge old snapshots failed", zap.Error(err))
 			} else if n > 0 {
 				log.Info("worker: purged old leaderboard snapshots", zap.Int64("count", n))
+			}
+			historyBefore := time.Now().Add(-paramHistoryRetention)
+			if n, err := purger.PurgeOldParamHistory(ctx, historyBefore); err != nil {
+				log.Warn("worker: purge param history failed", zap.Error(err))
+			} else if n > 0 {
+				log.Info("worker: purged old param history rows", zap.Int64("count", n))
 			}
 		}
 	}

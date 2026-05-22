@@ -114,6 +114,8 @@ type notifPref struct {
 //  6. Fires pg_notify('user_notifications', …) for the SSE bridge.
 //  7. Checks notification preferences; if channel_push=true and active
 //     subscriptions exist, sends Web Push (marks 410 Gone subscriptions inactive).
+//     P2/P3 bursts are throttled by DigestGate: after threshold individual pushes
+//     within the window, one digest push is sent and further events are dropped.
 //  8. For P0/P1 events with channel_email=true, delivers email via mailer.
 //     Email includes a signed unsubscribe link when UnsubscribeSecret + AppBaseURL
 //     are configured.  Global email opt-out (one-click unsubscribe) is honoured.
@@ -134,6 +136,7 @@ type UserDispatcher struct {
 	params            service.SystemParamService
 	templateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
 	memberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
+	digestGate        *notification.PushDigestGate              // nil disables digest (all pushes sent individually)
 	log               *zap.Logger
 }
 
@@ -154,6 +157,7 @@ type UserDispatcherConfig struct {
 	Params            service.SystemParamService                // nil uses defaults
 	TemplateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
 	MemberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
+	DigestGate        *notification.PushDigestGate              // nil disables digest (all pushes sent individually)
 	Log               *zap.Logger
 }
 
@@ -175,6 +179,7 @@ func NewUserDispatcher(cfg UserDispatcherConfig) *UserDispatcher {
 		params:            cfg.Params,
 		templateRepo:      cfg.TemplateRepo,
 		memberLister:      cfg.MemberLister,
+		digestGate:        cfg.DigestGate,
 		log:               cfg.Log,
 	}
 }

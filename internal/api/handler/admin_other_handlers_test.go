@@ -544,6 +544,7 @@ func newAdminParamRouter(svc *stubAdminParamSvc) http.Handler {
 	r := chi.NewRouter()
 	h := handler.NewAdminSystemParamHandler(svc, zap.NewNop())
 	r.Get(adminOtherPathSysParams, h.ListAll)
+	r.Get("/system-params/{key}/history", h.History)
 	r.Get("/system-params/{key}", h.Get)
 	r.Patch("/system-params/{key}", h.Set)
 	r.Post("/system-params/{key}/reset", h.Reset)
@@ -704,6 +705,34 @@ func TestAdminParamReset_NotFound_Returns404(t *testing.T) {
 	w := doReq(newAdminParamRouter(svc), req)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestAdminParamHistory_Success_Returns200(t *testing.T) {
+	svc := &stubAdminParamSvc{}
+	w := do(newAdminParamRouter(svc), http.MethodGet, "/system-params/scoring.exact/history", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminParamHistory_WithEntries_Returns200AndSerializesRows(t *testing.T) {
+	svc := &stubAdminParamSvc{
+		history: []*domain.SystemParamHistory{
+			{Key: "scoring.exact", OldValue: "5", NewValue: "7", ActorID: 1, Action: "set"},
+		},
+	}
+	w := do(newAdminParamRouter(svc), http.MethodGet, "/system-params/scoring.exact/history", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminParamHistory_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminParamSvc{err: errors.New(adminOtherDBError)}
+	w := do(newAdminParamRouter(svc), http.MethodGet, "/system-params/scoring.exact/history", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
 	}
 }
 

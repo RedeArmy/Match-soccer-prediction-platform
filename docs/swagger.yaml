@@ -269,6 +269,17 @@ definitions:
       next_cursor:
         type: string
     type: object
+  internal_api_handler.CursorPaged-internal_api_handler_SystemParamHistoryResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api_handler.SystemParamHistoryResponse'
+        type: array
+      has_more:
+        type: boolean
+      next_cursor:
+        type: string
+    type: object
   internal_api_handler.DashboardStatsResponse:
     properties:
       groups:
@@ -666,6 +677,23 @@ definitions:
       name:
         type: string
     type: object
+  internal_api_handler.SystemParamHistoryResponse:
+    properties:
+      action:
+        type: string
+      actor_id:
+        type: integer
+      changed_at:
+        type: string
+      id:
+        type: integer
+      key:
+        type: string
+      new_value:
+        type: string
+      old_value:
+        type: string
+    type: object
   internal_api_handler.SystemParamResponse:
     properties:
       category:
@@ -949,6 +977,15 @@ definitions:
       value:
         type: string
     type: object
+  internal_api_handler.sseStatsResponse:
+    properties:
+      broadcasts:
+        type: integer
+      connections:
+        type: integer
+      dropped:
+        type: integer
+    type: object
   internal_api_handler.submitPredictionRequest:
     properties:
       away_score:
@@ -1024,6 +1061,27 @@ info:
   title: World Cup Quiniela API
   version: "1.0"
 paths:
+  /admin/notifications/sse/stats:
+    get:
+      description: Returns per-replica SSE connection count, cumulative broadcasts,
+        and dropped events. Aggregate across replicas for cluster-wide totals.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.sseStatsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: SSE hub stats
+      tags:
+      - admin
+      - notifications
   /api/v1/admin/audit-log:
     get:
       description: Returns a cursor-paginated list of audit log entries. Supports
@@ -2764,6 +2822,51 @@ paths:
       security:
       - BearerAuth: []
       summary: Update a system parameter
+      tags:
+      - admin-system-params
+  /api/v1/admin/system-params/{key}/history:
+    get:
+      description: Returns the mutation history for the given parameter key in
+      parameters:
+      - description: Parameter key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Page size (default 20, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque pagination cursor from prior response
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.CursorPaged-internal_api_handler_SystemParamHistoryResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Key is required
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: System parameter mutation history
       tags:
       - admin-system-params
   /api/v1/admin/system-params/{key}/reset:

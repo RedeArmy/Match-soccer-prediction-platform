@@ -437,6 +437,21 @@ type SystemParamRepository interface {
 	ResetToDefault(ctx context.Context, key string) (*domain.SystemParam, error)
 }
 
+// SystemParamHistoryRepository provides append-only access to the
+// system_params_history table. Every successful Set or ResetToDefault call
+// produces exactly one row via Record. Rows are never updated or deleted by
+// application code; retention is handled by a scheduled purge job.
+type SystemParamHistoryRepository interface {
+	// Record inserts one history entry. entry.ID and entry.ChangedAt are set
+	// by the database. Callers may pass a zero ChangedAt; the database default
+	// (now()) applies.
+	Record(ctx context.Context, entry *domain.SystemParamHistory) error
+	// ListByKey returns history rows for the given param key ordered by id DESC
+	// (newest-first). The second return value is an opaque cursor for the next
+	// page; it is empty on the final page.
+	ListByKey(ctx context.Context, key string, p CursorPage) ([]*domain.SystemParamHistory, string, error)
+}
+
 // AuditLogRepository provides append-only access to the audit_log table.
 //
 // No UPDATE or DELETE is ever issued; rows are immutable once written. The
@@ -674,6 +689,12 @@ type Purger interface {
 	//   - predictions rows deleted  (OperationalDelete)
 	//   - tiebreakers rows deleted  (OperationalDelete)
 	EraseUserPII(ctx context.Context, userID int) error
+	// PurgeOldParamHistory removes system_params_history rows whose changed_at
+	// is strictly before before. Returns the number of rows deleted. The purge
+	// is bounded by the system.param_history_retention_days system parameter,
+	// computed by the caller. Failures are non-fatal: the worker retries on the
+	// next purge tick.
+	PurgeOldParamHistory(ctx context.Context, before time.Time) (int64, error)
 }
 
 // ScoringRuleRepository defines persistence operations for per-phase scoring

@@ -15,6 +15,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
 // ── Test doubles ─────────────────────────────────────────────────────────────
@@ -153,6 +154,9 @@ func (s *stubParamService) Set(_ context.Context, _, _ string, _ int) (*domain.S
 func (s *stubParamService) BulkSet(_ context.Context, _ map[string]string, _ int) error { return nil }
 func (s *stubParamService) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
 	return nil, nil
+}
+func (s *stubParamService) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
+	return nil, "", nil
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

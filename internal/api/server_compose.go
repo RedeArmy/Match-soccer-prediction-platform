@@ -56,6 +56,7 @@ type appHandlers struct {
 	adminScoringRules  *handler.AdminScoringRuleHandler
 	adminNotifTemplate *handler.AdminNotificationTemplateHandler
 	adminNotifDLQ      *handler.AdminNotificationDLQHandler
+	adminSSEStats      *handler.AdminSSEStatsHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -97,8 +98,12 @@ func (s *Server) buildHandlers(
 	s.auditSvc = auditSvc
 
 	// Re-wire paramSvc with the now-available audit service so that Set/BulkSet
-	// calls from admin handlers are recorded in the audit trail.
-	paramSvcWithAudit := service.NewSystemParamService(repos.sysParam, auditSvc, s.log)
+	// calls from admin handlers are recorded in the audit trail, and with a
+	// history repository so every mutation appends to system_params_history.
+	paramHistoryRepo := repository.NewPostgresSystemParamHistoryRepository(s.db)
+	paramSvcWithAudit := service.NewSystemParamService(repos.sysParam, auditSvc, s.log,
+		service.WithParamHistory(paramHistoryRepo),
+	)
 
 	matchSvc := service.NewMatchService(repos.match, s.bus, scorer, auditSvc, s.log)
 	if s.cache != nil {
@@ -232,5 +237,6 @@ func (s *Server) buildHandlers(
 		adminScoringRules:  handler.NewAdminScoringRuleHandler(scoringRuleSvc, s.log),
 		adminNotifTemplate: handler.NewAdminNotificationTemplateHandler(tmplRepo, s.log),
 		adminNotifDLQ:      handler.NewAdminNotificationDLQHandler(repository.NewPostgresNotificationDLQRepository(s.db), s.log),
+		adminSSEStats:      handler.NewAdminSSEStatsHandler(s.notifHub, s.log),
 	}
 }
