@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -75,7 +76,7 @@ func (s *paymentIntentService) Create(ctx context.Context, userID, amountCents i
 func generateIntentToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", fmt.Errorf("generate intent token: %w", err)
 	}
 	return hex.EncodeToString(b), nil
 }

@@ -175,7 +175,7 @@ func (s *Server) buildHandlers(
 	}
 	// Wrap the file store with a circuit breaker. Failure threshold and cooldown
 	// are read from system_params at startup (is_runtime=FALSE: restart required).
-	fileStore = storage.NewResilientFileStore(
+	resiStore := storage.NewResilientFileStore(
 		fileStore,
 		breaker.New(
 			"file-store",
@@ -184,6 +184,11 @@ func (s *Server) buildHandlers(
 		),
 		s.log,
 	)
+	fileStore = resiStore
+	// Register a health checker so /health/ready reflects live storage state.
+	// The checker bypasses the circuit breaker to probe the provider directly
+	// when the circuit is closed, and reports "degraded" immediately when open.
+	s.checkers = append(s.checkers, storage.NewChecker("file-store", resiStore))
 	maxUploadBytes := int64(params.GetInt(ctx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
 	minTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMinAmountCents, domain.DefaultBankTransferMinAmountCents)
 	maxTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMaxAmountCents, domain.DefaultBankTransferMaxAmountCents)

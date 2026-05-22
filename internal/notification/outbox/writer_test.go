@@ -24,8 +24,9 @@ var testPool *pgxpool.Pool
 func TestMain(m *testing.M) {
 	var cleanup func()
 	testPool, cleanup = mustSetupDB()
-	defer cleanup()
-	os.Exit(m.Run())
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 func mustSetupDB() (*pgxpool.Pool, func()) {

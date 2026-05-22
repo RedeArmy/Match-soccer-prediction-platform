@@ -68,8 +68,9 @@ var testDB *pgxpool.Pool
 func TestMain(m *testing.M) {
 	var cleanup func()
 	testDB, cleanup = mustSetupDB()
-	defer cleanup()
-	os.Exit(m.Run())
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 // mustSetupDB starts a PostgreSQL container, runs migrations, and returns a

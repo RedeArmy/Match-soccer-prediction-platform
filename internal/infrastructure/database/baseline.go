@@ -94,7 +94,7 @@ func MarkMigrationsApplied(ctx context.Context, pool *pgxpool.Pool, sqlFS fs.FS)
 // baselineFile must be the path to migrations/baseline/schema.sql.
 // sqlFS is typically the embed.FS from the migrations package.
 func MigrateFresh(ctx context.Context, dsn string, baselineFile string, sqlFS fs.FS) error {
-	baselineSQL, err := os.ReadFile(baselineFile)
+	baselineSQL, err := os.ReadFile(baselineFile) //nolint:gosec // G304: path set by application config at startup, not user input
 	if err != nil {
 		return fmt.Errorf("migrate fresh: read baseline %s: %w", baselineFile, err)
 	}

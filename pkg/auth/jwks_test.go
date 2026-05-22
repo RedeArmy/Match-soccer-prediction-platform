@@ -16,7 +16,7 @@ import (
 // ── fail-closed provider (empty URL) ─────────────────────────────────────────
 
 func TestNewJWKSProvider_EmptyURL_AlwaysReturnsProviderUnavailable(t *testing.T) {
-	p := auth.NewJWKSProvider("", auth.DefaultWarmupTimeout, zap.NewNop())
+	p := auth.NewJWKSProvider(context.Background(), "", auth.DefaultWarmupTimeout, zap.NewNop())
 
 	_, err := p.ValidateToken(context.Background(), "any.token.here")
 	if !errors.Is(err, auth.ErrProviderUnavailable) {
@@ -35,7 +35,7 @@ func TestJWKSProvider_FetchError_NoFallback_ReturnsProviderUnavailable(t *testin
 	}))
 	defer srv.Close()
 
-	p := auth.NewJWKSProvider(srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
 
 	_, err := p.ValidateToken(context.Background(), "some.token.value")
 	if !errors.Is(err, auth.ErrProviderUnavailable) {
@@ -58,7 +58,7 @@ func TestJWKSProvider_InvalidToken_ReturnsInvalidToken(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := auth.NewJWKSProvider(srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
 
 	_, err := p.ValidateToken(context.Background(), "not.a.jwt")
 	if !errors.Is(err, auth.ErrInvalidToken) {
@@ -69,7 +69,7 @@ func TestJWKSProvider_InvalidToken_ReturnsInvalidToken(t *testing.T) {
 // TestJWKSProvider_ErrorWrapping_PreservesIs verifies that the sentinel errors
 // remain detectable via errors.Is even when wrapped with additional context.
 func TestJWKSProvider_ErrorWrapping_PreservesIs(t *testing.T) {
-	p := auth.NewJWKSProvider("", auth.DefaultWarmupTimeout, zap.NewNop())
+	p := auth.NewJWKSProvider(context.Background(), "", auth.DefaultWarmupTimeout, zap.NewNop())
 
 	_, err := p.ValidateToken(context.Background(), "ignored")
 	if err == nil {

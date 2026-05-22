@@ -53,6 +53,13 @@ const (
 // Middleware is applied in declaration order. RequestID must be declared
 // first so its value is available to every subsequent handler.
 func (s *Server) Routes() http.Handler {
+	// infraCtx is a context.Background()-derived context used for one-time reads
+	// at construction time. It intentionally carries no cancellation so that a
+	// SIGTERM received during startup does not abort parameter reads or the JWKS
+	// warmup. Defined once here so both the degraded (db == nil) and normal paths
+	// share the same context without duplicating the rationale comment.
+	infraCtx := context.Background()
+
 	r := chi.NewRouter()
 
 	// Global middleware - applied to every request.
@@ -87,7 +94,7 @@ func (s *Server) Routes() http.Handler {
 		// because they are registered above and are not part of /api/v1.
 		r.Route("/api/v1", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(domain.DefaultAPIBodySizeLimitBytes))
-			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log), s.log))
+			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(infraCtx, s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log), s.log))
 			dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
 				middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
 			}
@@ -112,9 +119,7 @@ func (s *Server) Routes() http.Handler {
 	paramSvc := service.NewSystemParamService(repos.sysParam, nil, s.log)
 
 	// Read infrastructure params once at startup. Changes require a process
-	// restart (is_runtime=FALSE in system_params). Use context.Background()
-	// because this is a one-time read at construction time, not a request path.
-	infraCtx := context.Background()
+	// restart (is_runtime=FALSE in system_params).
 	messaging.Configure(
 		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingMaxRetries, domain.DefaultMessagingMaxRetries),
 		int64(paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamMaxLen, domain.DefaultMessagingStreamMaxLen)),
@@ -142,7 +147,7 @@ func (s *Server) Routes() http.Handler {
 	ruleRepo := repository.NewPostgresScoringRuleRepository(s.db)
 	scorer := service.NewScoringService(repos.match, repos.pred, ruleRepo, paramSvc, s.log)
 	if s.cfg.EventBus.Driver != "redis" {
-		s.registerLocalSubscribers(scorer)
+		s.registerLocalSubscribers(infraCtx, scorer)
 	}
 
 	// SSE hub — created once and shared by the notification handler and the
@@ -183,19 +188,21 @@ func (s *Server) Routes() http.Handler {
 	// Registered on the root router before /api/v1 so it bypasses RequireAuth.
 	r.Get("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
 
-	// Idempotency store for payment write endpoints. The in-memory store is
-	// correct for single-process deployments; replace with a Redis-backed store
-	// for multi-replica deployments where reservations must be visible across
-	// all instances.
+	// Idempotency store for payment write endpoints.
+	// SetIdempotencyStore (called from cmd/api/main.go before Routes()) wires the
+	// Redis-backed store when Redis is available so reservations are shared across
+	// all replicas. Falls back to MemoryStore for single-process deployments.
 	idemTTL := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
 	idemKeyMaxLen := paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
-	idemStore := idempotency.NewMemoryStore()
-	idem := middleware.Idempotency(idemStore, s.log, idemTTL, idemKeyMaxLen)
+	if s.idemStore == nil {
+		s.idemStore = idempotency.NewMemoryStore()
+	}
+	idem := middleware.Idempotency(s.idemStore, s.log, idemTTL, idemKeyMaxLen)
 
 	// Versioned API surface with Clerk JWT authentication.
 	// Rate limit params are read once at startup (is_runtime=FALSE); a process
 	// restart is required to change the rate or burst.
-	clerkProvider := auth.NewJWKSProvider(s.cfg.Clerk.JWKSURL, authWarmup, s.log)
+	clerkProvider := auth.NewJWKSProvider(infraCtx, s.cfg.Clerk.JWKSURL, authWarmup, s.log)
 	userRateStore := s.limiterStore
 	if userRateStore == nil {
 		userRateStore = middleware.NewLimiterStore(
@@ -441,8 +448,8 @@ func (s *Server) Routes() http.Handler {
 // worker process owns all event consumption exclusively and the API server only
 // publishes. scorer is passed in - not re-constructed here - so the same
 // stateless scoring instance is shared with the match service.
-func (s *Server) registerLocalSubscribers(scorer service.MatchScorer) {
-	s.bus.Subscribe(context.Background(), events.EventMatchFinished, func(ctx context.Context, env events.Envelope) error {
+func (s *Server) registerLocalSubscribers(ctx context.Context, scorer service.MatchScorer) {
+	s.bus.Subscribe(ctx, events.EventMatchFinished, func(ctx context.Context, env events.Envelope) error {
 		mf, ok := env.Payload.(events.MatchFinished)
 		if !ok {
 			// Malformed payload: retrying will not help.

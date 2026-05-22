@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -12,30 +13,55 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
-// runPgNotifyBridge holds a dedicated PostgreSQL connection and listens on the
-// 'user_notifications' channel.  Each notification payload is parsed and
-// broadcast to the in-process SSE hub so connected SSE clients receive it
-// without a database round-trip.
+const (
+	bridgeBackoffInit = time.Second
+	bridgeBackoffMax  = 30 * time.Second
+)
+
+// runPgNotifyBridge loops forever (until ctx is cancelled), maintaining a
+// dedicated PostgreSQL connection that LISTENs on the 'user_notifications'
+// channel. Each notification payload is parsed and broadcast to the in-process
+// SSE hub so connected SSE clients receive it without a database round-trip.
 //
-// The goroutine exits when ctx is cancelled (server shutdown) or when the
-// dedicated connection is lost.  Loss of the LISTEN connection means in-flight
-// SSE clients will miss notifications until the next reconnect — acceptable
-// because the client resynchronises on reconnect via GET /notifications.
+// When the connection is lost the bridge reconnects with exponential backoff
+// (1 s → 2 s → … → 30 s) so a transient PostgreSQL restart or network blip
+// does not permanently silence the SSE channel.
 func (s *Server) runPgNotifyBridge(ctx context.Context) {
 	if s.db == nil || s.notifHub == nil {
 		return
 	}
+	backoff := bridgeBackoffInit
+	for {
+		err := s.listenAndBridge(ctx)
+		if ctx.Err() != nil {
+			return // clean shutdown
+		}
+		s.log.Warn("pg_notify bridge: connection lost — reconnecting",
+			zap.Error(err),
+			zap.Duration("backoff", backoff),
+		)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, bridgeBackoffMax)
+	}
+}
 
+// listenAndBridge acquires one connection, sends LISTEN, and fans out
+// notifications until the connection is lost or ctx is cancelled.
+// Returns nil on clean shutdown (ctx cancelled); returns a non-nil error on
+// connection loss, which runPgNotifyBridge uses to trigger a reconnect.
+func (s *Server) listenAndBridge(ctx context.Context) error {
 	conn, err := s.db.Acquire(ctx)
 	if err != nil {
-		s.log.Warn("pg_notify bridge: failed to acquire connection", zap.Error(err))
-		return
+		return fmt.Errorf("acquire connection: %w", err)
 	}
 	defer conn.Release()
 
 	if _, err := conn.Exec(ctx, "LISTEN user_notifications"); err != nil {
-		s.log.Warn("pg_notify bridge: LISTEN failed", zap.Error(err))
-		return
+		return fmt.Errorf("LISTEN failed: %w", err)
 	}
 	s.log.Info("pg_notify bridge: listening on user_notifications")
 
@@ -43,10 +69,9 @@ func (s *Server) runPgNotifyBridge(ctx context.Context) {
 		pgNotif, err := conn.Conn().WaitForNotification(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return // clean shutdown
+				return nil // clean shutdown
 			}
-			s.log.Warn("pg_notify bridge: WaitForNotification error", zap.Error(err))
-			return
+			return fmt.Errorf("WaitForNotification: %w", err) // triggers reconnect
 		}
 
 		var p struct {

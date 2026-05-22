@@ -190,6 +190,8 @@ func winMethodBonus(predicted, actual *domain.WinMethod, cfg scoringConfig) int 
 		if *predicted == domain.WinMethodPenalties {
 			return cfg.penaltiesBonus
 		}
+	default: // WinMethodNormal: no bonus for normal-time victories
+		return 0
 	}
 	return 0
 }
