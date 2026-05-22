@@ -73,10 +73,6 @@ linters:
         - unlambda
         - singleCaseSwitch
 
-    wrapcheck:
-      # External packages (pgx, redis, strconv, etc.) must be wrapped.
-      # Internal packages are excluded via exclusions.rules below.
-
     gocognit:
       # 20 is a reasonable ceiling for production Go code: it allows moderately
       # complex functions while still catching functions that SonarQube would flag.
