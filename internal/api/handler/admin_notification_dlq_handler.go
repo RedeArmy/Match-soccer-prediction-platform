@@ -28,14 +28,14 @@ func NewAdminNotificationDLQHandler(repo repository.NotificationDLQRepository, l
 
 // notifDLQEntryResponse is the JSON shape for a single DLQ entry.
 type notifDLQEntryResponse struct {
-	ID          int64   `json:"id"`
-	Channel     string  `json:"channel"`
-	UserID      *int    `json:"user_id,omitempty"`
-	EventType   string  `json:"event_type"`
-	ErrorDetail string  `json:"error_detail"`
-	Attempts    int     `json:"attempts"`
-	CreatedAt   string  `json:"created_at"`
-	Resolved    bool    `json:"resolved"`
+	ID          int64  `json:"id"`
+	Channel     string `json:"channel"`
+	UserID      *int   `json:"user_id,omitempty"`
+	EventType   string `json:"event_type"`
+	ErrorDetail string `json:"error_detail"`
+	Attempts    int    `json:"attempts"`
+	CreatedAt   string `json:"created_at"`
+	Resolved    bool   `json:"resolved"`
 }
 
 // NotifDLQStatsResponse is the JSON body for GET /admin/notification-dlq.
