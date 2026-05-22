@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run run-worker test test-integration test-cover test-migrate-roundtrip lint clean docker-up docker-down docker-logs migrate migrate-fresh migrate-fresh-seed schema-dump dev hooks swagger-gen swagger-clean validate-params help
+.PHONY: build run run-worker test test-integration test-cover test-migrate-roundtrip lint clean docker-up docker-down docker-logs migrate migrate-fresh migrate-fresh-seed schema-dump dev hooks swagger-gen swagger-clean validate-params bench bench-save bench-compare help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -170,6 +170,44 @@ swagger-gen:
 ## swagger-clean: Remove all generated Swagger docs (re-run swagger-gen to rebuild)
 swagger-clean:
 	rm -rf docs/*.go docs/*.json docs/*.yaml
+
+## bench: Run all benchmarks once and print results to stdout.
+##        Use -count=N to increase run count for more stable measurements.
+##        Example: make bench COUNT=6
+COUNT ?= 1
+bench:
+	go test -bench=. -benchmem -benchtime=1x -count=$(COUNT) -run='^$$' \
+		./internal/notification/... \
+		./internal/service/... \
+		./internal/api/...
+
+## bench-save: Run benchmarks and save results to .bench/current.txt.
+##             Commit the output as .bench/baseline.txt to establish a new baseline.
+bench-save:
+	@mkdir -p .bench
+	go test -bench=. -benchmem -count=6 -run='^$$' \
+		./internal/notification/... \
+		./internal/service/... \
+		./internal/api/... \
+	| tee .bench/current.txt
+	@echo ""
+	@echo "Results saved to .bench/current.txt"
+	@echo "To update the baseline: cp .bench/current.txt .bench/baseline.txt"
+
+## bench-compare: Run benchmarks and diff against .bench/baseline.txt using benchstat.
+##                Requires a baseline: run 'make bench-save' and commit .bench/baseline.txt first.
+bench-compare:
+	@if [ ! -f .bench/baseline.txt ]; then \
+		echo "No baseline found at .bench/baseline.txt. Run 'make bench-save' first."; \
+		exit 1; \
+	fi
+	@mkdir -p .bench
+	go test -bench=. -benchmem -count=6 -run='^$$' \
+		./internal/notification/... \
+		./internal/service/... \
+		./internal/api/... \
+	> .bench/current.txt
+	go run golang.org/x/perf/cmd/benchstat .bench/baseline.txt .bench/current.txt
 
 ## help: Display this help message
 help:

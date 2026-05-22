@@ -369,6 +369,8 @@ var paramIntConstraints = map[string]paramIntRange{
 	// Push digest gate (migration 000105).
 	domain.ParamKeyNotifyPushDigestWindowSec: {30, 3_600}, // 30 s – 1 hour
 	domain.ParamKeyNotifyPushDigestThreshold: {1, 100},    // at least 1 push before digest
+	// Email render budget (migration 000108).
+	domain.ParamKeyNotifyRenderTimeoutMs: {100, 30_000}, // 100 ms – 30 s
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

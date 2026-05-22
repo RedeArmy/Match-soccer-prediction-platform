@@ -8,7 +8,10 @@
 // setup.
 package notification
 
-import "time"
+import (
+	"sort"
+	"time"
+)
 
 // EventType identifies the kind of notification event written to the outbox.
 // Using a named string type prevents silent routing failures caused by typos.
@@ -331,3 +334,19 @@ var KnownEventTypes = func() map[EventType]struct{} {
 	}
 	return m
 }()
+
+// AllEventTypes returns a deterministically sorted slice of every EventType in
+// the catalog. The slice is derived from KnownEventTypes (which is derived from
+// eventSamples), so a new constant that has no eventSamples entry will not appear
+// here — a clear signal that the registration is incomplete.
+//
+// Use this in exhaustiveness tests to assert that every EventType is handled
+// by each dispatch site (priority table, email builder registry, etc.).
+func AllEventTypes() []EventType {
+	all := make([]EventType, 0, len(KnownEventTypes))
+	for et := range KnownEventTypes {
+		all = append(all, et)
+	}
+	sort.Slice(all, func(i, j int) bool { return string(all[i]) < string(all[j]) })
+	return all
+}

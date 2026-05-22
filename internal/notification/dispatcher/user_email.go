@@ -114,15 +114,27 @@ func (d *UserDispatcher) deliverEmail(
 		content.actionURL = d.appBaseURL + content.actionURL
 	}
 
-	var subject, html string
-	var renderErr error
-	if content.emailHTMLTmpl != "" {
-		subject, html, renderErr = renderUserEmailFromTmpl(content.emailHTMLTmpl, content, name, unsubURL)
-	} else {
-		subject, html, renderErr = renderUserEmail(content, name, unsubURL)
+	renderTimeoutMs := domain.DefaultNotifyRenderTimeoutMs
+	if d.params != nil {
+		renderTimeoutMs = d.params.GetInt(ctx, domain.ParamKeyNotifyRenderTimeoutMs, domain.DefaultNotifyRenderTimeoutMs)
 	}
+	renderTimeout := time.Duration(renderTimeoutMs) * time.Millisecond
+
+	var subject, html string
+	renderErr := withRenderTimeout(ctx, renderTimeout, func() error {
+		var e error
+		if content.emailHTMLTmpl != "" {
+			subject, html, e = renderUserEmailFromTmpl(content.emailHTMLTmpl, content, name, unsubURL)
+		} else {
+			subject, html, e = renderUserEmail(content, name, unsubURL)
+		}
+		return e
+	})
 	if renderErr != nil {
-		log.Warn("user dispatcher: render user email failed", zap.Error(renderErr))
+		log.Warn("user dispatcher: render user email failed",
+			zap.Duration("render_timeout", renderTimeout),
+			zap.Error(renderErr),
+		)
 		return
 	}
 

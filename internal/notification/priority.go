@@ -1,5 +1,7 @@
 package notification
 
+import "strings"
+
 // Priority classifies the urgency of a notification event and determines
 // which delivery channels are activated by the dispatcher.
 //
@@ -96,38 +98,16 @@ func PriorityOf(et EventType) Priority {
 	return PriorityP2Medium
 }
 
-// adminEventSet is the authoritative set of EventTypes directed at administrators.
-// Adding a new admin/system event type here is the single update point — no switch
-// arms to forget. IsAdminEvent is O(1) and CC=2 (consistent with priorityTable).
-var adminEventSet = map[EventType]struct{}{
-	EventAdminBankTransferPending:       {},
-	EventAdminBankTransferStale:         {},
-	EventAdminBankTransferQueueDepth:    {},
-	EventAdminWithdrawalPending:         {},
-	EventAdminWithdrawalStale:           {},
-	EventAdminHighValueWithdrawal:       {},
-	EventAdminPaymentDispute:            {},
-	EventAdminMatchResultPending:        {},
-	EventAdminScoringDiscrepancy:        {},
-	EventAdminGroupReported:             {},
-	EventAdminPendingReminder:           {},
-	EventAdminDailySummary:              {},
-	EventAdminWeeklyReport:              {},
-	EventSystemCircuitBreakerOpened:     {},
-	EventSystemCircuitBreakerHalfOpen:   {},
-	EventSystemWebhookSignatureFailed:   {},
-	EventSystemWebhookSignatureRepeated: {},
-	EventSystemTxRetryExhausted:         {},
-	EventSystemBalanceLedgerMismatch:    {},
-	EventSystemRateLimitAbuse:           {},
-	EventSystemIdempotencyCollision:     {},
-	EventSystemFileStoreUnavailable:     {},
-}
-
 // IsAdminEvent reports whether the event type is directed at administrators
 // rather than (or in addition to) the originating user. Admin events always
 // trigger an immediate email to all active admin recipients.
+//
+// Classification is derived from the EventType naming convention: every event
+// in the "admin." or "system." namespace is an admin event. This means new
+// admin/system constants are classified automatically — no manual set to maintain.
+// TestAllEventTypes_AdminClassificationMatchesPrefixConvention guards the
+// convention: it fails if any KnownEventType violates the expected prefix mapping.
 func IsAdminEvent(et EventType) bool {
-	_, ok := adminEventSet[et]
-	return ok
+	s := string(et)
+	return strings.HasPrefix(s, "admin.") || strings.HasPrefix(s, "system.")
 }

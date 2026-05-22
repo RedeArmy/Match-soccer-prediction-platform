@@ -389,5 +389,6 @@ func AllParamKeys() []string {
 		ParamKeyNotifyFromAddress,
 		ParamKeyNotifyPushDigestWindowSec,
 		ParamKeyNotifyPushDigestThreshold,
+		ParamKeyNotifyRenderTimeoutMs,
 	}
 }
