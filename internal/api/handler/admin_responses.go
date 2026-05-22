@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"time"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
@@ -90,6 +92,30 @@ type SystemParamResponse struct {
 	IsRuntime    bool   `json:"is_runtime"`
 	Description  string `json:"description"`
 	UpdatedAt    string `json:"updated_at"`
+}
+
+// SystemParamHistoryResponse is one row from system_params_history.
+type SystemParamHistoryResponse struct {
+	ID        int64  `json:"id"`
+	Key       string `json:"key"`
+	OldValue  string `json:"old_value"`
+	NewValue  string `json:"new_value"`
+	ActorID   int    `json:"actor_id"`
+	Action    string `json:"action"`
+	ChangedAt string `json:"changed_at"`
+}
+
+// systemParamHistoryToResponse maps a domain history entry to its wire type.
+func systemParamHistoryToResponse(h *domain.SystemParamHistory) SystemParamHistoryResponse {
+	return SystemParamHistoryResponse{
+		ID:        h.ID,
+		Key:       h.Key,
+		OldValue:  h.OldValue,
+		NewValue:  h.NewValue,
+		ActorID:   h.ActorID,
+		Action:    h.Action,
+		ChangedAt: h.ChangedAt.UTC().Format(time.RFC3339),
+	}
 }
 
 // TiebreakerSubmissionResponse is the admin view of a tiebreaker prediction.

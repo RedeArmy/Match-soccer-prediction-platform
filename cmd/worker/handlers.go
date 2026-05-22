@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -29,6 +30,17 @@ var maxSnapshotAttempts = 3
 // latency for large quiniela counts at the cost of more concurrent DB connections.
 // Declared as a var so tests can set it to 1 for deterministic ordering.
 var snapshotConcurrency = 16
+
+// snapshotSem is a global weighted semaphore that bounds the total number of
+// concurrent snapshot DB operations across ALL concurrent MatchFinished events.
+// Without a global guard, N simultaneous match finishes each launch their own
+// errgroup with snapshotConcurrency goroutines, producing N×concurrency total
+// concurrent snapshot queries — enough to saturate the connection pool during
+// elimination phases with multiple parallel matches.
+//
+// Initialised by main.go after reading snapshotConcurrency from system_params;
+// nil before that point (tests that set snapshotConcurrency=1 bypass the nil guard).
+var snapshotSem *semaphore.Weighted
 
 // decodePayload re-encodes env.Payload as JSON and then unmarshals it into T.
 //
@@ -180,14 +192,22 @@ func postScoringWork(
 		return
 	}
 
-	// Fan-out snapshot generation across quinielas with a bounded goroutine
-	// pool. All errors are logged inside retrySnapshot (best-effort semantics);
-	// the errgroup is used only for lifecycle management, not error propagation.
+	// Fan-out snapshot generation across quinielas with a bounded goroutine pool.
+	// g.SetLimit bounds goroutine creation per-event (memory efficiency); the
+	// global snapshotSem bounds total concurrent DB operations across ALL events
+	// simultaneously — preventing N concurrent MatchFinished events from each
+	// spawning snapshotConcurrency goroutines and saturating the DB pool.
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(snapshotConcurrency)
 	for _, qid := range quinielaIDs {
 		qid := qid
 		g.Go(func() error {
+			if snapshotSem != nil {
+				if err := snapshotSem.Acquire(gctx, 1); err != nil {
+					return nil // context cancelled; scoring already committed
+				}
+				defer snapshotSem.Release(1)
+			}
 			retrySnapshot(gctx, matchID, qid, snapshotter, log)
 			return nil
 		})

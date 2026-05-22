@@ -392,6 +392,7 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/system-params/{key}", h.adminParam.Get)
 			r.Patch("/system-params/{key}", h.adminParam.Set)
 			r.Post("/system-params/{key}/reset", h.adminParam.Reset)
+			r.Get("/system-params/{key}/history", h.adminParam.History)
 			r.Post("/system-params/bulk", h.adminParam.BulkSet)
 
 			// Tiebreakers
@@ -414,6 +415,9 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/scoring-rules", h.adminScoringRules.List)
 			r.Get("/scoring-rules/{phase}", h.adminScoringRules.GetByPhase)
 			r.Patch("/scoring-rules/{phase}", h.adminScoringRules.Update)
+
+			// SSE hub observability — per-replica counters; aggregate in Prometheus for cluster totals
+			r.Get("/notifications/sse/stats", h.adminSSEStats.Stats)
 
 			// Notification content templates (DB-backed, operator-editable)
 			const tmplByKey = "/notification-templates/{event_type}/{locale}"

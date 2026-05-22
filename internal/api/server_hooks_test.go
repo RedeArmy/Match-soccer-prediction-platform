@@ -12,6 +12,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
 
@@ -41,6 +42,9 @@ func (s *hookParamSvc) Set(_ context.Context, _, _ string, _ int) (*domain.Syste
 func (s *hookParamSvc) BulkSet(_ context.Context, _ map[string]string, _ int) error { return nil }
 func (s *hookParamSvc) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
 	return nil, nil
+}
+func (s *hookParamSvc) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
+	return nil, "", nil
 }
 
 // hookCacheStore implements cache.Store and cache.PrefixFlusher. It records

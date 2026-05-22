@@ -204,9 +204,10 @@ func (s *stubAuditReader) ListAuditLogsByEntity(_ context.Context, _ string, _ i
 // ── SystemParamService stub (admin-scoped) ────────────────────────────────────
 
 type stubAdminParamSvc struct {
-	param  *domain.SystemParam
-	params []*domain.SystemParam
-	err    error
+	param   *domain.SystemParam
+	params  []*domain.SystemParam
+	history []*domain.SystemParamHistory
+	err     error
 }
 
 func (s *stubAdminParamSvc) Get(_ context.Context, _ string) (*domain.SystemParam, error) {
@@ -232,6 +233,9 @@ func (s *stubAdminParamSvc) BulkSet(_ context.Context, _ map[string]string, _ in
 }
 func (s *stubAdminParamSvc) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
 	return s.param, s.err
+}
+func (s *stubAdminParamSvc) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
+	return s.history, "", s.err
 }
 
 // ── ConflictService stub ──────────────────────────────────────────────────────

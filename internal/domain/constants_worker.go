@@ -25,6 +25,11 @@ const (
 	// display — while staying well below the 6 400-row worst case for 64 matches
 	// across 100 quinielas.
 	DefaultSnapshotKeepLatestCount = 5 // snapshot.keep_latest_count
+
+	// DefaultSystemParamHistoryRetentionDays is how long param mutation records are
+	// kept. 90 days covers the FIFA 2026 tournament window plus two months of
+	// post-tournament analysis without letting the table grow indefinitely.
+	DefaultSystemParamHistoryRetentionDays = 90 // system.param_history_retention_days
 )
 
 // Worker and system-purge system parameter keys.
@@ -52,4 +57,10 @@ const (
 	// snapshots to retain per quiniela. The daily purge job deletes every snapshot
 	// beyond this count. is_runtime=FALSE: worker restart required.
 	ParamKeySnapshotKeepLatestCount = "snapshot.keep_latest_count"
+
+	// ParamKeySystemParamHistoryRetentionDays is the number of days to keep rows
+	// in system_params_history before the daily purge job deletes them.
+	// Older entries are removed by the worker on each purge tick.
+	// is_runtime=FALSE: worker restart required to apply a new value.
+	ParamKeySystemParamHistoryRetentionDays = "system.param_history_retention_days"
 )

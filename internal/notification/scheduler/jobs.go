@@ -9,6 +9,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/escalation"
 )
 
 // dateOnlyLayout is the Go reference time for YYYY-MM-DD date strings.
@@ -399,63 +400,25 @@ func (j *Jobs) AdminMatchResultPending(ctx context.Context) error {
 // StaleEscalation queries pending bank transfers and withdrawal requests older
 // than their configured review thresholds and emits a stale alert for each one.
 // Skips silently when Params is nil.  Intended to run every 30 minutes.
+// Escalation logic is delegated to the escalation package for independent
+// testability and extension.
 func (j *Jobs) StaleEscalation(ctx context.Context) error {
 	if j.params == nil {
 		return nil
 	}
 
 	bankStaleSec := j.params.GetInt(ctx, domain.ParamKeyNotifyBankTransferStaleSec, domain.DefaultNotifyBankTransferStaleSec)
-	bankCutoff := j.clock.Now().Add(-time.Duration(bankStaleSec) * time.Second)
-	proofs, err := j.store.ListStaleBankTransfers(ctx, bankCutoff)
-	if err != nil {
-		return fmt.Errorf("scheduler: stale escalation: bank transfers: %w", err)
-	}
-	for _, proof := range proofs {
-		payload := notification.AdminBankTransferPayload{
-			ProofID:      proof.ID,
-			UserID:       proof.UserID,
-			AmountCents:  proof.AmountCents,
-			Currency:     proof.Currency,
-			PendingSince: proof.CreatedAt.UTC().Format(time.RFC3339),
-		}
-		if err := j.writer.Write(ctx,
-			notification.EventAdminBankTransferStale,
-			"bank_transfer_proof",
-			fmt.Sprintf("%d", proof.ID),
-			payload,
-		); err != nil {
-			j.log.Warn("scheduler: stale escalation: bank transfer write",
-				zap.Int64("proof_id", proof.ID),
-				zap.Error(err),
-			)
-		}
-	}
-
 	withdrawStaleSec := j.params.GetInt(ctx, domain.ParamKeyNotifyWithdrawalStaleSec, domain.DefaultNotifyWithdrawalStaleSec)
-	withdrawCutoff := j.clock.Now().Add(-time.Duration(withdrawStaleSec) * time.Second)
-	reqs, err := j.store.ListStaleWithdrawals(ctx, withdrawCutoff)
-	if err != nil {
-		return fmt.Errorf("scheduler: stale escalation: withdrawals: %w", err)
-	}
-	for _, req := range reqs {
-		payload := notification.AdminWithdrawalPayload{
-			RequestID:    req.ID,
-			UserID:       req.UserID,
-			AmountCents:  req.AmountCents,
-			Currency:     req.Currency,
-			PendingSince: req.CreatedAt.UTC().Format(time.RFC3339),
-		}
-		if err := j.writer.Write(ctx,
-			notification.EventAdminWithdrawalStale,
-			"withdrawal_request",
-			fmt.Sprintf("%d", req.ID),
-			payload,
-		); err != nil {
-			j.log.Warn("scheduler: stale escalation: withdrawal write",
-				zap.Int("request_id", req.ID),
-				zap.Error(err),
-			)
-		}
+	now := j.clock.Now()
+
+	esc := escalation.NewStaleOps(j.store, j.writer, escalation.Config{
+		BankTransferStale: time.Duration(bankStaleSec) * time.Second,
+		WithdrawalStale:   time.Duration(withdrawStaleSec) * time.Second,
+		Now:               func() time.Time { return now },
+	}, j.log)
+
+	if err := esc.Run(ctx); err != nil {
+		return fmt.Errorf("scheduler: stale escalation: %w", err)
 	}
 	return nil
 }

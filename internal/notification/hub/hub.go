@@ -17,10 +17,13 @@
 package hub
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"sync"
 	"sync/atomic"
+
+	"go.opentelemetry.io/otel/metric"
 )
 
 const chanBufSize = 32
@@ -128,6 +131,57 @@ func (h *Hub) Metrics() (connections, broadcasts, dropped int64) {
 	return h.metrics.connections.Load(),
 		h.metrics.broadcasts.Load(),
 		h.metrics.dropped.Load()
+}
+
+// RegisterMetrics wires up OTel instruments for the hub's counters.
+// Call once at startup after the meter provider is initialised; it is a no-op
+// when meter is nil. Exported metrics:
+//
+//   - notification.sse.connections   (UpDownCounter) current open SSE connections
+//   - notification.sse.broadcasts    (Counter) cumulative Broadcast calls
+//   - notification.sse.dropped       (Counter) cumulative dropped events
+//
+// In a multi-replica deployment, Prometheus aggregates per-replica gauges so
+// operators can observe both the per-instance count and the cluster total via
+// sum(notification_sse_connections).
+func (h *Hub) RegisterMetrics(meter metric.Meter) error {
+	if meter == nil {
+		return nil
+	}
+
+	_, err := meter.Int64ObservableUpDownCounter(
+		"notification.sse.connections",
+		metric.WithDescription("Number of currently open SSE connections on this replica."),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			o.Observe(h.metrics.connections.Load())
+			return nil
+		}),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = meter.Int64ObservableCounter(
+		"notification.sse.broadcasts",
+		metric.WithDescription("Cumulative SSE Broadcast calls since process start."),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			o.Observe(h.metrics.broadcasts.Load())
+			return nil
+		}),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = meter.Int64ObservableCounter(
+		"notification.sse.dropped",
+		metric.WithDescription("Cumulative SSE events dropped due to full client buffers since process start."),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			o.Observe(h.metrics.dropped.Load())
+			return nil
+		}),
+	)
+	return err
 }
 
 func newConnID() string {

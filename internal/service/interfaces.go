@@ -332,6 +332,10 @@ type SystemParamService interface {
 	// and any registered mutation hooks are fired, identical to Set.
 	// Returns ErrNotFound when key does not exist.
 	ResetToDefault(ctx context.Context, key string, actorID int) (*domain.SystemParam, error)
+	// GetHistory returns the mutation history for key in reverse-chronological
+	// order with cursor-based pagination. Returns an empty slice when no history
+	// repository is wired (WithParamHistory was not used at construction).
+	GetHistory(ctx context.Context, key string, p repository.CursorPage) ([]*domain.SystemParamHistory, string, error)
 }
 
 // AuditLogger records significant administrative and system actions to an

@@ -225,3 +225,44 @@ func (h *AdminSystemParamHandler) Reset(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, systemParamToResponse(param))
 }
+
+// History handles GET /admin/system-params/{key}/history.
+//
+// @Summary      System parameter mutation history
+// @Description  Returns the mutation history for the given parameter key in
+//
+//	reverse-chronological order (most recent change first). Each entry
+//	records the old value, the new value, the actor, and the action type
+//	("set" or "reset"). Requires admin role.
+//
+// @Tags         admin-system-params
+// @Produce      json
+// @Security     BearerAuth
+// @Param        key     path      string  true   "Parameter key"
+// @Param        limit   query     int     false  "Page size (default 20, max 100)"
+// @Param        cursor  query     string  false  "Opaque pagination cursor from prior response"
+// @Success      200  {object}  handler.CursorPaged[handler.SystemParamHistoryResponse]
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422  {object}  handler.ErrorResponse  "Key is required"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/system-params/{key}/history [get]
+func (h *AdminSystemParamHandler) History(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		writeError(w, r, h.log, apperrors.Validation(msgParamKeyRequired))
+		return
+	}
+
+	entries, next, err := h.svc.GetHistory(r.Context(), key, parseCursorPage(r))
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	data := make([]SystemParamHistoryResponse, len(entries))
+	for i, e := range entries {
+		data[i] = systemParamHistoryToResponse(e)
+	}
+	writeJSON(w, http.StatusOK, CursorPaged[SystemParamHistoryResponse]{Data: data, NextCursor: next})
+}

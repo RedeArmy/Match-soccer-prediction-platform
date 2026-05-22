@@ -497,6 +497,9 @@ func (s *systemParamServiceWithMaxScan) BulkSet(_ context.Context, _ map[string]
 func (s *systemParamServiceWithMaxScan) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
 	return nil, nil
 }
+func (s *systemParamServiceWithMaxScan) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
+	return nil, "", nil
+}
 
 // TestConflictService_ConflictSummary_Load_10KConflicts validates behavior
 // under pathological load: 10,000+ conflicts across all categories.
