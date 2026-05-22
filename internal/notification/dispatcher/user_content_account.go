@@ -21,27 +21,29 @@ func buildAccountWelcomeContent(entry *notification.OutboxEntry, locale Locale) 
 }
 
 func buildAccountBalanceCreditedContent(entry *notification.OutboxEntry, locale Locale) userContent {
-	var p notification.AccountBalancePayload
-	_ = entry.DecodePayload(&p)
-	return userContent{
-		title: localeStr("Balance credited", "Saldo acreditado", locale),
-		body: localeStr(
-			fmt.Sprintf("%s has been added to your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
-			fmt.Sprintf("%s ha sido añadido a tu cuenta. Nuevo saldo: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
-			locale,
-		),
-		actionURL: urlBalance,
-	}
+	return buildBalanceMovementContent(entry, locale,
+		"Balance credited", "Saldo acreditado",
+		"%s has been added to your account. New balance: %s.",
+		"%s ha sido añadido a tu cuenta. Nuevo saldo: %s.",
+	)
 }
 
 func buildAccountBalanceDebitedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+	return buildBalanceMovementContent(entry, locale,
+		"Balance debited", "Saldo debitado",
+		"%s has been deducted from your account. New balance: %s.",
+		"%s ha sido deducido de tu cuenta. Nuevo saldo: %s.",
+	)
+}
+
+func buildBalanceMovementContent(entry *notification.OutboxEntry, locale Locale, titleEN, titleES, bodyFmtEN, bodyFmtES string) userContent {
 	var p notification.AccountBalancePayload
 	_ = entry.DecodePayload(&p)
 	return userContent{
-		title: localeStr("Balance debited", "Saldo debitado", locale),
+		title: localeStr(titleEN, titleES, locale),
 		body: localeStr(
-			fmt.Sprintf("%s has been deducted from your account. New balance: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
-			fmt.Sprintf("%s ha sido deducido de tu cuenta. Nuevo saldo: %s.", formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+			fmt.Sprintf(bodyFmtEN, formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
+			fmt.Sprintf(bodyFmtES, formatCents(p.AmountCents, p.Currency), formatCents(p.BalanceAfter, p.Currency)),
 			locale,
 		),
 		actionURL: urlBalance,

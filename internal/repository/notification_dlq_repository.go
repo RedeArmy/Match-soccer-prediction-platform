@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -56,23 +57,7 @@ LIMIT $1
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
-
-	var entries []*domain.NotificationDLQEntry
-	for rows.Next() {
-		e := &domain.NotificationDLQEntry{}
-		if err := rows.Scan(
-			&e.ID, &e.OutboxID, &e.Channel, &e.UserID, &e.EventType,
-			&e.Payload, &e.ErrorDetail, &e.Attempts, &e.CreatedAt,
-			&e.LastRetryAt, &e.ResolvedAt,
-		); err != nil {
-			return nil, apperrors.Internal(err)
-		}
-		entries = append(entries, e)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, apperrors.Internal(err)
-	}
-	return entries, nil
+	return scanDLQEntries(rows)
 }
 
 func (r *postgresNotificationDLQRepository) MarkResolved(ctx context.Context, id int64) error {
@@ -125,7 +110,10 @@ LIMIT $1
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
+	return scanDLQEntries(rows)
+}
 
+func scanDLQEntries(rows pgx.Rows) ([]*domain.NotificationDLQEntry, error) {
 	var entries []*domain.NotificationDLQEntry
 	for rows.Next() {
 		e := &domain.NotificationDLQEntry{}
