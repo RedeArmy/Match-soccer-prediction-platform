@@ -38,7 +38,7 @@ type sseStatsResponse struct {
 //	@Tags			admin,notifications
 //	@Produce		json
 //	@Success		200	{object}	sseStatsResponse
-//	@Failure		500	{object}	apperrors.ErrorResponse
+//	@Failure		500	{object}	handler.ErrorResponse
 //	@Security		BearerAuth
 //	@Router			/admin/notifications/sse/stats [get]
 func (h *AdminSSEStatsHandler) Stats(w http.ResponseWriter, r *http.Request) {
