@@ -180,7 +180,7 @@ func TestE2E_PredictionFlow_FullCycle(t *testing.T) {
 	cleanE2ETables(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
-	h := newE2EServer(t, jwksURL).Routes()
+	h := newE2EServer(t, jwksURL).Routes(context.Background())
 
 	_ = seedE2EUser(t, "admin@e2e.test", "e2e-admin", domain.RoleAdmin)
 	_ = seedE2EUser(t, "user@e2e.test", "e2e-user", domain.RoleUser)
@@ -268,7 +268,7 @@ func TestE2E_ListAdmin_Filters(t *testing.T) {
 	cleanE2ETables(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
-	h := newE2EServer(t, jwksURL).Routes()
+	h := newE2EServer(t, jwksURL).Routes(context.Background())
 
 	_ = seedE2EUser(t, "admin@e2e.test", "e2e-admin", domain.RoleAdmin)
 	userAID := seedE2EUser(t, "user-a@e2e.test", "e2e-user-a", domain.RoleUser)

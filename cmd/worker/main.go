@@ -329,7 +329,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// Wire the cluster-aware digest gate when Redis is available so that the
 	// per-user push threshold is enforced across all worker replicas. Fall back
 	// to the in-memory gate for single-process deployments (development, CI).
-	var digestGate notification.DigestGate
+	var digestGate notification.Recorder
 	if rc != nil {
 		digestGate = notification.NewRedisPushDigestGate(rc, digestWindowSec, digestThreshold)
 	} else {
@@ -351,7 +351,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		PgNotifier:        &redisPubNotifier{client: rc},
 		Params:            params,
 		TemplateRepo:      tmplRepo,
-		DigestGate:        digestGate,
+		Recorder:          digestGate,
 		Log:               log,
 	})
 

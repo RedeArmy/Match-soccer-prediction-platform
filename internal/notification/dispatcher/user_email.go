@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -110,7 +111,7 @@ func (d *UserDispatcher) deliverEmail(
 	// Resolve relative action URLs to absolute so the CTA button in the email
 	// is a working hyperlink.  Email clients interpret bare-path hrefs relative
 	// to the mail service's domain, not the application origin.
-	if d.appBaseURL != "" && len(content.actionURL) > 0 && content.actionURL[0] == '/' {
+	if d.appBaseURL != "" && strings.HasPrefix(content.actionURL, "/") {
 		content.actionURL = d.appBaseURL + content.actionURL
 	}
 

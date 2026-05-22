@@ -66,11 +66,6 @@ type Server struct {
 	// idemStore is the idempotency backing store. When non-nil (Redis available),
 	// reservations are shared across all replicas. Falls back to MemoryStore when nil.
 	idemStore idempotency.Store
-	// infraCtx is a non-cancellable context used for one-time startup reads in
-	// Routes() (parameter loads, JWKS warmup). Set via SetInfraContext before
-	// calling Routes() so that OTel trace values are propagated to DB queries.
-	// Defaults to context.Background() when nil.
-	infraCtx context.Context
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
@@ -90,13 +85,6 @@ func (s *Server) SetLimiterStore(store *middleware.LimiterStore) { s.limiterStor
 // (used when this method is never called) is only safe for single-process
 // deployments.
 func (s *Server) SetIdempotencyStore(store idempotency.Store) { s.idemStore = store }
-
-// SetInfraContext stores the startup context used for one-time parameter reads
-// and JWKS warmup inside Routes(). Pass context.WithoutCancel(ctx) from run()
-// so that a SIGTERM does not abort startup reads while OTel trace values are
-// still propagated to DB queries. Tests leave this unset; the nil fallback in
-// Routes() uses context.Background().
-func (s *Server) SetInfraContext(ctx context.Context) { s.infraCtx = ctx }
 
 // DrainAudit blocks until all in-flight audit log writes complete. Must be
 // called during graceful shutdown before closing the database connection pool

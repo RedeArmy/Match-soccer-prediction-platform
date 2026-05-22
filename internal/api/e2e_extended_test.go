@@ -57,7 +57,7 @@ func TestE2E_WithdrawalLifecycle_ApproveAndProcess(t *testing.T) {
 	cleanE2ETables(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
-	h := newE2EServerUnlimited(t, jwksURL).Routes()
+	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
 
 	_ = seedE2EUser(t, "admin@e2e.test", "e2e-admin", domain.RoleAdmin)
 	userID := seedE2EUser(t, "user@e2e.test", "e2e-user", domain.RoleUser)
@@ -161,7 +161,7 @@ func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
 	cleanE2ETables(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
-	h := newE2EServerUnlimited(t, jwksURL).Routes()
+	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
 
 	_ = seedE2EUser(t, "admin@e2e.test", "e2e-admin", domain.RoleAdmin)
 	userID := seedE2EUser(t, "user@e2e.test", "e2e-user", domain.RoleUser)
@@ -246,7 +246,7 @@ func TestE2E_GroupManagement_JoinApproveLeave(t *testing.T) {
 	cleanE2ETables(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
-	h := newE2EServerUnlimited(t, jwksURL).Routes()
+	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
 
 	_ = seedE2EUser(t, "owner@e2e.test", "e2e-owner", domain.RoleUser)
 	_ = seedE2EUser(t, "joiner@e2e.test", "e2e-joiner", domain.RoleUser)
@@ -354,7 +354,7 @@ func TestE2E_LeaderboardRanking_ExactScoreBeatsOutcomeOnly(t *testing.T) {
 	cleanE2ETables(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
-	h := newE2EServerUnlimited(t, jwksURL).Routes()
+	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
 
 	_ = seedE2EUser(t, "admin@e2e.test", "e2e-admin", domain.RoleAdmin)
 	_ = seedE2EUser(t, "owner@e2e.test", "e2e-owner", domain.RoleUser)
@@ -475,7 +475,7 @@ func TestE2E_Versioning_APIVersionHeaderPresentOnV1(t *testing.T) {
 	cleanE2ETables(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
-	h := newE2EServerUnlimited(t, jwksURL).Routes()
+	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
 
 	_ = seedE2EUser(t, "user@e2e.test", "e2e-user", domain.RoleUser)
 	userToken := signJWT("e2e-user")

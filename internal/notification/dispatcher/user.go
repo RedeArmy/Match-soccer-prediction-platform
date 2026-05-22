@@ -113,7 +113,7 @@ type notifPref struct {
 //  6. Fires pg_notify('user_notifications', …) for the SSE bridge.
 //  7. Checks notification preferences; if channel_push=true and active
 //     subscriptions exist, sends Web Push (marks 410 Gone subscriptions inactive).
-//     P2/P3 bursts are throttled by DigestGate: after threshold individual pushes
+//     P2/P3 bursts are throttled by Recorder: after threshold individual pushes
 //     within the window, one digest push is sent and further events are dropped.
 //  8. For P0/P1 events with channel_email=true, delivers email via mailer.
 //     Email includes a signed unsubscribe link when UnsubscribeSecret + AppBaseURL
@@ -135,7 +135,7 @@ type UserDispatcher struct {
 	params            service.SystemParamService
 	templateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
 	memberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
-	digestGate        notification.DigestGate                   // nil disables digest (all pushes sent individually)
+	digestGate        notification.Recorder                     // nil disables digest (all pushes sent individually)
 	log               *zap.Logger
 }
 
@@ -156,12 +156,12 @@ type UserDispatcherConfig struct {
 	Params            service.SystemParamService                // nil uses defaults
 	TemplateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
 	MemberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
-	// DigestGate throttles P2/P3 push bursts cluster-wide. Use
+	// Recorder throttles P2/P3 push bursts cluster-wide. Use
 	// notification.NewRedisPushDigestGate when Redis is available; fall back to
 	// notification.NewPushDigestGate for single-process deployments. nil disables
 	// digest gating (all pushes delivered individually).
-	DigestGate notification.DigestGate
-	Log        *zap.Logger
+	Recorder notification.Recorder
+	Log      *zap.Logger
 }
 
 // NewUserDispatcher constructs a UserDispatcher.
@@ -182,7 +182,7 @@ func NewUserDispatcher(cfg UserDispatcherConfig) *UserDispatcher {
 		params:            cfg.Params,
 		templateRepo:      cfg.TemplateRepo,
 		memberLister:      cfg.MemberLister,
-		digestGate:        cfg.DigestGate,
+		digestGate:        cfg.Recorder,
 		log:               cfg.Log,
 	}
 }

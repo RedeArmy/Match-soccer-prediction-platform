@@ -164,5 +164,5 @@ func TestPushDigestGate_P3Low_GatedLikeP2(t *testing.T) {
 }
 
 func TestPushDigestGate_SatisfiesDigestGateInterface(t *testing.T) {
-	var _ notification.DigestGate = (*notification.PushDigestGate)(nil)
+	var _ notification.Recorder = (*notification.PushDigestGate)(nil)
 }

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// DigestGate classifies web-push delivery attempts for a given user and
+// Recorder classifies web-push delivery attempts for a given user and
 // priority, collapsing burst P2/P3 notifications into a single digest push.
 // Implementations must be safe for concurrent use from multiple goroutines.
 //
@@ -21,7 +21,7 @@ import (
 //     threshold across all worker replicas so users cannot receive more than
 //     threshold individual pushes per window regardless of which replica handles
 //     their events. Prefer this when Redis is available.
-type DigestGate interface {
+type Recorder interface {
 	// Record classifies a push delivery attempt for userID at priority p.
 	// now is the current wall-clock time; in-process implementations use it
 	// for window expiry, Redis-backed implementations ignore it (TTL is
@@ -71,7 +71,7 @@ func NewPushDigestGate(windowSec int64, threshold int32) *PushDigestGate {
 }
 
 // Record classifies and records a push delivery attempt for userID at priority p.
-// ctx is accepted for DigestGate interface compatibility and is not used.
+// ctx is accepted for Recorder interface compatibility and is not used.
 func (g *PushDigestGate) Record(_ context.Context, userID int, p Priority, now time.Time) (sendIndividual bool, digestCount int32) {
 	if p <= PriorityP1High {
 		return true, 0
@@ -98,12 +98,12 @@ func (g *PushDigestGate) Record(_ context.Context, userID int, p Priority, now t
 	}
 }
 
-var _ DigestGate = (*PushDigestGate)(nil)
+var _ Recorder = (*PushDigestGate)(nil)
 
 // Prune removes digest windows whose sliding interval has expired. It should be
 // called periodically (e.g., by a background ticker) to bound memory growth for
 // large user bases. Users with an active window are never removed.
-// Not part of the DigestGate interface; only PushDigestGate (in-process) needs
+// Not part of the Recorder interface; only PushDigestGate (in-process) needs
 // explicit pruning. Redis-backed implementations rely on key TTL for cleanup.
 func (g *PushDigestGate) Prune(now time.Time) {
 	g.mu.Lock()

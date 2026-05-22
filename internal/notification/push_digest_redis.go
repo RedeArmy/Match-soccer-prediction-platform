@@ -8,7 +8,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// RedisPushDigestGate implements DigestGate using Redis as the shared backing
+// RedisPushDigestGate implements Recorder using Redis as the shared backing
 // store for push-delivery window counters. Unlike the in-memory PushDigestGate,
 // it enforces the threshold cluster-wide: all worker replicas share the same
 // counter so a user cannot receive more than threshold individual pushes per
@@ -54,7 +54,7 @@ func NewRedisPushDigestGate(client redis.Cmdable, windowSec int64, threshold int
 }
 
 // Record classifies a push delivery attempt and increments the Redis window
-// counter for the given user. now is accepted for DigestGate interface
+// counter for the given user. now is accepted for Recorder interface
 // compatibility and is not used; window expiry is managed by Redis TTL.
 //
 // On Redis error, Record degrades to (true, 0): the push is delivered
@@ -81,4 +81,4 @@ func (g *RedisPushDigestGate) Record(ctx context.Context, userID int, p Priority
 	}
 }
 
-var _ DigestGate = (*RedisPushDigestGate)(nil)
+var _ Recorder = (*RedisPushDigestGate)(nil)

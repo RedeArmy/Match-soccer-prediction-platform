@@ -4,12 +4,18 @@ import (
 	"context"
 	"errors"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// retryPolicyMu guards retryMaxAttempts, retryBaseDelay, and retryMaxDelay.
+// InitRetryPolicy holds the write lock; withRetryTx holds the read lock when
+// snapshotting the values at the start of each transaction.
+var retryPolicyMu sync.RWMutex
 
 var (
 	retryMaxAttempts = 3
@@ -18,9 +24,10 @@ var (
 )
 
 // InitRetryPolicy overrides the transaction retry policy for transient
-// database errors. Call once at process startup before any requests are
-// served; calling it concurrently with active requests is not safe.
+// database errors. Safe to call concurrently; uses retryPolicyMu.
 func InitRetryPolicy(maxAttempts, baseDelayMs, maxDelayMs int) {
+	retryPolicyMu.Lock()
+	defer retryPolicyMu.Unlock()
 	retryMaxAttempts = maxAttempts
 	retryBaseDelay = time.Duration(baseDelayMs) * time.Millisecond
 	retryMaxDelay = time.Duration(maxDelayMs) * time.Millisecond
@@ -55,16 +62,24 @@ func isTransientPGError(err error) bool {
 //	attempt 1 → delay: 25–50 ms
 //	attempt 2 → delay: 50–100 ms
 func withRetryTx(ctx context.Context, db *pgxpool.Pool, caller string, fn func(pgx.Tx) error) error {
-	for attempt := range retryMaxAttempts {
+	// Snapshot policy values under the read lock so a concurrent InitRetryPolicy
+	// call cannot modify them mid-loop.
+	retryPolicyMu.RLock()
+	maxAttempts := retryMaxAttempts
+	baseDelay := retryBaseDelay
+	maxDelay := retryMaxDelay
+	retryPolicyMu.RUnlock()
+
+	for attempt := range maxAttempts {
 		err := withTx(ctx, db, caller, fn)
 		if err == nil || !isTransientPGError(err) {
 			return err
 		}
-		if attempt == retryMaxAttempts-1 {
+		if attempt == maxAttempts-1 {
 			return err // exhausted attempts
 		}
 		// Equal-jitter backoff: delay = half_fixed + rand[0, half_fixed]
-		full := min(retryBaseDelay*(1<<attempt), retryMaxDelay)
+		full := min(baseDelay*(1<<attempt), maxDelay)
 		half := full / 2
 		delay := half + time.Duration(rand.Int64N(int64(half)+1)) //nolint:gosec // G404: jitter for backoff; cryptographic randomness not required
 		select {

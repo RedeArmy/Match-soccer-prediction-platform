@@ -176,5 +176,5 @@ func TestRedisPushDigestGate_ThresholdZero_FirstPushTriggersDigest(t *testing.T)
 }
 
 func TestRedisPushDigestGate_SatisfiesDigestGateInterface(t *testing.T) {
-	var _ notification.DigestGate = (*notification.RedisPushDigestGate)(nil)
+	var _ notification.Recorder = (*notification.RedisPushDigestGate)(nil)
 }

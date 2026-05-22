@@ -168,10 +168,6 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// dependency explicit and eliminates hidden global state.
 	app := api.New(db, cfg, log, bus, cacheStore, checkers)
 
-	// Propagate OTel trace values to startup DB reads (parameter loads, JWKS warmup)
-	// while protecting them from SIGTERM. setupCtx is already WithoutCancel(ctx).
-	app.SetInfraContext(setupCtx)
-
 	// When Redis is available, use a shared idempotency store so reservations
 	// are visible across all replicas. Falls back to MemoryStore (set inside
 	// Routes()) when Redis is not configured.
@@ -179,9 +175,11 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		app.SetIdempotencyStore(idempotency.NewRedisStore(rc))
 	}
 
+	// setupCtx is context.WithoutCancel(ctx): OTel trace values are propagated
+	// to startup DB reads while SIGTERM cannot abort them.
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
-		Handler:      app.Routes(),
+		Handler:      app.Routes(setupCtx),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,

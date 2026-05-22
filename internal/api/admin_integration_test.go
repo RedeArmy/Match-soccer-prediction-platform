@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -94,7 +95,7 @@ func TestAdminRoutes_NilDB_Returns503(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Clerk.JWKSURL = jwksURL
 
-	h := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes()
+	h := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes(context.Background())
 	token := "Bearer " + signJWT("test-subject")
 
 	for _, tc := range allAdminRoutes {
@@ -117,7 +118,7 @@ func TestAdminRoutes_NilDB_Returns503(t *testing.T) {
 // route handler, so the response is always 401 and never 404 (which would
 // indicate the route was not registered).
 func TestAdminRoutes_Unauthenticated_Return401(t *testing.T) {
-	h := newAdminTestServer(t).Routes()
+	h := newAdminTestServer(t).Routes(context.Background())
 
 	for _, tc := range allAdminRoutes {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
@@ -146,7 +147,7 @@ func TestAdminRoutes_Unauthenticated_Return401(t *testing.T) {
 // (fail-open), which is the anti-pattern this change removes.
 func TestAdminRoutes_AuthenticatedUser_DBUnavailable_Returns500(t *testing.T) {
 	jwksURL, signJWT := testJWKSServer(t)
-	h := newAdminTestServerWithAuth(t, jwksURL).Routes()
+	h := newAdminTestServerWithAuth(t, jwksURL).Routes(context.Background())
 	token := "Bearer " + signJWT("clerk_fake_subject")
 
 	for _, tc := range allAdminRoutes {

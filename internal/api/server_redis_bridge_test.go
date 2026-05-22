@@ -28,16 +28,8 @@ func newRedisTestClient(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
 func newBridgeTestServer(t *testing.T) *api.Server {
 	t.Helper()
 	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
-	srv.Routes()
+	srv.Routes(context.Background())
 	return srv
-}
-
-// ── SetInfraContext ───────────────────────────────────────────────────────────
-
-func TestServer_SetInfraContext_DoesNotPanic(t *testing.T) {
-	t.Parallel()
-	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
-	srv.SetInfraContext(context.Background()) // must not panic
 }
 
 // ── StartRedisBridge lifecycle ────────────────────────────────────────────────
