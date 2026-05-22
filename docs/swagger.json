@@ -9,6 +9,38 @@
     "host": "localhost:8080",
     "basePath": "/",
     "paths": {
+        "/admin/notifications/sse/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns per-replica SSE connection count, cumulative broadcasts, and dropped events. Aggregate across replicas for cluster-wide totals.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "notifications"
+                ],
+                "summary": "SSE hub stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.sseStatsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/audit-log": {
             "get": {
                 "security": [
@@ -2784,6 +2816,76 @@
                 }
             }
         },
+        "/api/v1/admin/system-params/{key}/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the mutation history for the given parameter key in",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-system-params"
+                ],
+                "summary": "System parameter mutation history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Parameter key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 20, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque pagination cursor from prior response",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.CursorPaged-internal_api_handler_SystemParamHistoryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Key is required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/system-params/{key}/reset": {
             "post": {
                 "security": [
@@ -5544,6 +5646,23 @@
                 }
             }
         },
+        "internal_api_handler.CursorPaged-internal_api_handler_SystemParamHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.SystemParamHistoryResponse"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.DashboardStatsResponse": {
             "type": "object",
             "properties": {
@@ -6148,6 +6267,32 @@
                 }
             }
         },
+        "internal_api_handler.SystemParamHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actor_id": {
+                    "type": "integer"
+                },
+                "changed_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "new_value": {
+                    "type": "string"
+                },
+                "old_value": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.SystemParamResponse": {
             "type": "object",
             "properties": {
@@ -6582,6 +6727,20 @@
             "properties": {
                 "value": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.sseStatsResponse": {
+            "type": "object",
+            "properties": {
+                "broadcasts": {
+                    "type": "integer"
+                },
+                "connections": {
+                    "type": "integer"
+                },
+                "dropped": {
+                    "type": "integer"
                 }
             }
         },
