@@ -941,3 +941,94 @@ func TestValidateParamConstraints_NotifyParams(t *testing.T) {
 		})
 	}
 }
+
+// ── stubHistoryRepo ───────────────────────────────────────────────────────────
+
+type stubHistoryRepo struct {
+	recorded []*domain.SystemParamHistory
+	history  []*domain.SystemParamHistory
+	err      error
+}
+
+func (r *stubHistoryRepo) Record(_ context.Context, entry *domain.SystemParamHistory) error {
+	if r.err != nil {
+		return r.err
+	}
+	r.recorded = append(r.recorded, entry)
+	return nil
+}
+
+func (r *stubHistoryRepo) ListByKey(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
+	return r.history, "", r.err
+}
+
+// ── WithParamHistory / recordHistory / GetHistory ─────────────────────────────
+
+func TestWithParamHistory_Set_RecordsHistoryEntry(t *testing.T) {
+	p := param("k", "old")
+	repo := &stubSystemParamRepo{param: p}
+	hist := &stubHistoryRepo{}
+	svc := NewSystemParamService(repo, nil, zap.NewNop(), WithParamHistory(hist))
+
+	if _, err := svc.Set(context.Background(), "k", "new", 7); err != nil {
+		t.Fatalf(svcUnexpectedErr, err)
+	}
+	if len(hist.recorded) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(hist.recorded))
+	}
+	e := hist.recorded[0]
+	if e.Key != "k" || e.OldValue != "old" || e.NewValue != "new" || e.ActorID != 7 || e.Action != "set" {
+		t.Errorf("unexpected history entry: %+v", e)
+	}
+}
+
+func TestWithParamHistory_RecordError_SetStillSucceeds(t *testing.T) {
+	repo := &stubSystemParamRepo{param: param("k", "v")}
+	hist := &stubHistoryRepo{err: errors.New("history db down")}
+	svc := NewSystemParamService(repo, nil, zap.NewNop(), WithParamHistory(hist))
+
+	if _, err := svc.Set(context.Background(), "k", "v2", 1); err != nil {
+		t.Errorf("Set should succeed even when history recording fails: %v", err)
+	}
+}
+
+func TestGetHistory_NilRepo_ReturnsEmptySlice(t *testing.T) {
+	svc := newParamSvc(&stubSystemParamRepo{})
+
+	entries, next, err := svc.GetHistory(context.Background(), "k", repository.CursorPage{})
+	if err != nil {
+		t.Fatalf(svcUnexpectedErr, err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected empty slice, got %d entries", len(entries))
+	}
+	if next != "" {
+		t.Errorf("expected empty cursor, got %q", next)
+	}
+}
+
+func TestGetHistory_WithRepo_DelegatesToRepo(t *testing.T) {
+	hist := &stubHistoryRepo{
+		history: []*domain.SystemParamHistory{
+			{Key: "k", OldValue: "old", NewValue: "new", ActorID: 1, Action: "set"},
+		},
+	}
+	svc := NewSystemParamService(&stubSystemParamRepo{}, nil, zap.NewNop(), WithParamHistory(hist))
+
+	entries, _, err := svc.GetHistory(context.Background(), "k", repository.CursorPage{})
+	if err != nil {
+		t.Fatalf(svcUnexpectedErr, err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+}
+
+func TestGetHistory_RepoError_PropagatesError(t *testing.T) {
+	hist := &stubHistoryRepo{err: errors.New("db error")}
+	svc := NewSystemParamService(&stubSystemParamRepo{}, nil, zap.NewNop(), WithParamHistory(hist))
+
+	if _, _, err := svc.GetHistory(context.Background(), "k", repository.CursorPage{}); err == nil {
+		t.Error("expected error from ListByKey, got nil")
+	}
+}

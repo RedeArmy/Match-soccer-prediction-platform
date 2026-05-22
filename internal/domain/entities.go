@@ -555,6 +555,19 @@ type SystemParam struct {
 	UpdatedAt    time.Time
 }
 
+// SystemParamHistory is one immutable record of a system_params value change.
+// Action is either "set" (operator override) or "reset" (restored to migration default).
+// ActorID is always non-zero: only authenticated admin operators can mutate params.
+type SystemParamHistory struct {
+	ID        int64
+	Key       string
+	OldValue  string
+	NewValue  string
+	ActorID   int
+	Action    string
+	ChangedAt time.Time
+}
+
 // AuditLog is an immutable record of a significant administrative or system
 // action. Rows are append-only - no UPDATE or DELETE is ever issued against
 // this table. ActorID is nil when the action was triggered by the system

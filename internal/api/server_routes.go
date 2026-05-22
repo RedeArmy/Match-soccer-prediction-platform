@@ -392,6 +392,7 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/system-params/{key}", h.adminParam.Get)
 			r.Patch("/system-params/{key}", h.adminParam.Set)
 			r.Post("/system-params/{key}/reset", h.adminParam.Reset)
+			r.Get("/system-params/{key}/history", h.adminParam.History)
 			r.Post("/system-params/bulk", h.adminParam.BulkSet)
 
 			// Tiebreakers

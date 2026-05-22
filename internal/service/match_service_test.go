@@ -10,6 +10,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -111,6 +112,9 @@ func (*noopSystemParamService) BulkSet(_ context.Context, _ map[string]string, _
 }
 func (*noopSystemParamService) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
 	return nil, nil
+}
+func (*noopSystemParamService) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
+	return nil, "", nil
 }
 
 func newMatchSvc(match *domain.Match) (MatchService, *stubPublisher) {

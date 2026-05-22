@@ -100,4 +100,13 @@ func (p *PostgresPurger) EraseUserPII(ctx context.Context, userID int) error {
 	return nil
 }
 
+func (p *PostgresPurger) PurgeOldParamHistory(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := p.db.Exec(ctx,
+		`DELETE FROM system_params_history WHERE changed_at < $1`, before)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 var _ Purger = (*PostgresPurger)(nil)

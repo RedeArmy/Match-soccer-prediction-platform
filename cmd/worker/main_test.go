@@ -595,8 +595,12 @@ func (s *stubPurger) EraseUserPII(_ context.Context, _ int) error {
 	return s.err
 }
 
+func (s *stubPurger) PurgeOldParamHistory(_ context.Context, _ time.Time) (int64, error) {
+	return 0, s.err
+}
+
 func TestMonitorPurge_NilPurger_ReturnsImmediately(t *testing.T) {
-	monitorPurge(context.Background(), nil, 24*time.Hour, 5, nil, zap.NewNop())
+	monitorPurge(context.Background(), nil, 24*time.Hour, 90*24*time.Hour, 5, nil, zap.NewNop())
 }
 
 func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
@@ -604,7 +608,7 @@ func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	cancel()
 
 	purger := &stubPurger{}
-	monitorPurge(ctx, purger, 24*time.Hour, 5, nil, zap.NewNop())
+	monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 5, nil, zap.NewNop())
 
 	if purger.userCalled != 0 {
 		t.Errorf("expected no purge calls with cancelled context, got %d", purger.userCalled)
@@ -621,7 +625,7 @@ func TestMonitorPurge_OnTick_CallsPurge(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorPurge(ctx, purger, 24*time.Hour, 5, tickC, zap.NewNop())
+		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 5, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -652,7 +656,7 @@ func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorPurge(ctx, purger, 24*time.Hour, 5, tickC, zap.NewNop())
+		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 5, tickC, zap.NewNop())
 		close(done)
 	}()
 

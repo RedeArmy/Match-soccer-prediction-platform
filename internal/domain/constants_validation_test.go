@@ -1,7 +1,11 @@
 package domain
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -60,7 +64,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyWorkerDLQMonitorIntervalSec": ParamKeyWorkerDLQMonitorIntervalSec,
 		"ParamKeyWorkerPurgeIntervalHours":    ParamKeyWorkerPurgeIntervalHours,
 		// System
-		"ParamKeyPurgeRetentionDays": ParamKeyPurgeRetentionDays,
+		"ParamKeyPurgeRetentionDays":              ParamKeyPurgeRetentionDays,
+		"ParamKeySystemParamHistoryRetentionDays": ParamKeySystemParamHistoryRetentionDays,
 		// API
 		"ParamKeyAPIBodySizeLimitBytes":   ParamKeyAPIBodySizeLimitBytes,
 		"ParamKeyAPIRateLimitRatePerSec":  ParamKeyAPIRateLimitRatePerSec,
@@ -160,7 +165,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultWorkerDLQMonitorIntervalSec": DefaultWorkerDLQMonitorIntervalSec,
 		"DefaultWorkerPurgeIntervalHours":    DefaultWorkerPurgeIntervalHours,
 		// System
-		"DefaultPurgeRetentionDays": DefaultPurgeRetentionDays,
+		"DefaultPurgeRetentionDays":              DefaultPurgeRetentionDays,
+		"DefaultSystemParamHistoryRetentionDays": DefaultSystemParamHistoryRetentionDays,
 		// API
 		"DefaultAPIBodySizeLimitBytes":  DefaultAPIBodySizeLimitBytes,
 		"DefaultAPIRateLimitRatePerSec": DefaultAPIRateLimitRatePerSec,
@@ -211,7 +217,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 77 // update when adding a new ParamKey* constant
+		const expectedCount = 78 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -219,7 +225,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 66 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate)
+		const expectedCount = 67 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -305,6 +311,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyWorkerPurgeIntervalHours", ParamKeyWorkerPurgeIntervalHours, "worker"},
 		// System
 		{"ParamKeyPurgeRetentionDays", ParamKeyPurgeRetentionDays, "system"},
+		{"ParamKeySystemParamHistoryRetentionDays", ParamKeySystemParamHistoryRetentionDays, "system"},
 		// API
 		{"ParamKeyAPIBodySizeLimitBytes", ParamKeyAPIBodySizeLimitBytes, "api"},
 		{"ParamKeyAPIRateLimitRatePerSec", ParamKeyAPIRateLimitRatePerSec, "api"},
@@ -418,7 +425,8 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultWorkerDLQMonitorIntervalSec": DefaultWorkerDLQMonitorIntervalSec,
 		"DefaultWorkerPurgeIntervalHours":    DefaultWorkerPurgeIntervalHours,
 		// System
-		"DefaultPurgeRetentionDays": DefaultPurgeRetentionDays,
+		"DefaultPurgeRetentionDays":              DefaultPurgeRetentionDays,
+		"DefaultSystemParamHistoryRetentionDays": DefaultSystemParamHistoryRetentionDays,
 		// API
 		"DefaultAPIBodySizeLimitBytes":   DefaultAPIBodySizeLimitBytes,
 		"DefaultAPIRateLimitRatePerSec":  DefaultAPIRateLimitRatePerSec,
@@ -578,4 +586,175 @@ func getConstantValue(constName string) (interface{}, error) {
 	pkgType := reflect.TypeOf((*interface{})(nil)).Elem()
 	_ = pkgType
 	return nil, nil
+}
+
+// allSystemParamKeys returns every ParamKey* string value declared in the
+// domain package. It is used by TestSystemParamsMigrationCoverage to verify
+// that each constant is seeded in at least one migration file.
+func allSystemParamKeys() []string {
+	return []string{
+		// Scoring
+		ParamKeyScoringExactScore,
+		ParamKeyScoringCorrectOutcome,
+		ParamKeyScoringGoalDiff,
+		ParamKeyScoringExtraTimeBonus,
+		ParamKeyScoringPenaltiesBonus,
+		// Prediction
+		ParamKeyPredictionDeadlineMin,
+		// Group
+		ParamKeyGroupMinMembers,
+		ParamKeyGroupMaxSize,
+		ParamKeyGroupInviteCodeLength,
+		// Conflict
+		ParamKeyConflictStaleDays,
+		ParamKeyConflictMaxScan,
+		// Pagination
+		ParamKeyPaginationDefaultLimit,
+		ParamKeyPaginationMaxLimit,
+		// Tournament
+		ParamKeyTournamentWinPoints,
+		// Admin
+		ParamKeyAdminBulkMaxItems,
+		// Cache
+		ParamKeyCacheMatchTTL,
+		ParamKeyCacheLeaderboardTTL,
+		ParamKeyCacheDashboardTTLSeconds,
+		// Audit
+		ParamKeyAuditWriteTimeout,
+		ParamKeyAuditMaxRetries,
+		ParamKeyAuditRetryDelayMs,
+		// Auth
+		ParamKeyAuthValidationTimeout,
+		// DLQ
+		ParamKeyDLQSampleSize,
+		ParamKeyDLQReplayDefaultLimit,
+		// Messaging
+		ParamKeyMessagingMaxRetries,
+		ParamKeyMessagingStreamMaxLen,
+		ParamKeyMessagingStreamWorkerCount,
+		ParamKeyMessagingStreamReadBlockSec,
+		// Worker
+		ParamKeyWorkerSnapshotConcurrency,
+		ParamKeyWorkerSnapshotRetryBaseMs,
+		ParamKeyWorkerSnapshotMaxAttempts,
+		ParamKeyWorkerDLQMonitorIntervalSec,
+		ParamKeyWorkerPurgeIntervalHours,
+		// System
+		ParamKeyPurgeRetentionDays,
+		ParamKeySystemParamHistoryRetentionDays,
+		// API
+		ParamKeyAPIBodySizeLimitBytes,
+		ParamKeyAPIRateLimitRatePerSec,
+		ParamKeyAPIRateLimitBurst,
+		ParamKeyAPIIdempotencyTTLHours,
+		ParamKeyAPIIdempotencyKeyMaxLen,
+		// Snapshot
+		ParamKeySnapshotKeepLatestCount,
+		// Circuit breaker
+		ParamKeyBreakerPaypalCertMaxFails,
+		ParamKeyBreakerPaypalCertCooldownSec,
+		ParamKeyBreakerFileStoreMaxFails,
+		ParamKeyBreakerFileStoreCooldownSec,
+		// Repository / TX retry
+		ParamKeyTxRetryMaxAttempts,
+		ParamKeyTxRetryBaseDelayMs,
+		ParamKeyTxRetryMaxDelayMs,
+		// Payment
+		ParamKeyPaymentMaxUploadBytes,
+		ParamKeyWithdrawalMinCents,
+		ParamKeyWithdrawalMaxCents,
+		ParamKeyBankTransferMinAmountCents,
+		ParamKeyBankTransferMaxAmountCents,
+		ParamKeyPaymentIntentTTLMinutes,
+		// Notification subsystem
+		ParamKeyNotifyBankTransferStaleSec,
+		ParamKeyNotifyWithdrawalStaleSec,
+		ParamKeyNotifyHighValueWithdrawalCents,
+		ParamKeyNotifyPendingReminderIntervalSec,
+		ParamKeyNotifyPredictionDeadlineLeadMin1,
+		ParamKeyNotifyPredictionDeadlineLeadMin2,
+		ParamKeyNotifyPredictionMissingLeadMin,
+		ParamKeyNotifyBankTransferQueueDepthThreshold,
+		ParamKeyNotifyAdminEmails,
+		ParamKeyNotifyWebPushVAPIDPublicKey,
+		ParamKeyNotifyWebPushVAPIDSubject,
+		ParamKeyNotifySSEHeartbeatIntervalSec,
+		ParamKeyNotifyWebPushTTLSec,
+		ParamKeyNotifyPushIconURL,
+		ParamKeyNotifyPushBadgeURL,
+		ParamKeyNotifySchedulerTimezone,
+		ParamKeyNotifyDefaultLocale,
+		ParamKeyNotifyTemplateCacheTTLSec,
+		ParamKeyNotifyPushTitleMaxChars,
+		ParamKeyNotifyPushBodyMaxChars,
+		ParamKeyNotifyPushSubRetentionDays,
+		ParamKeyNotifyFromAddress,
+		ParamKeyNotifyPushDigestWindowSec,
+		ParamKeyNotifyPushDigestThreshold,
+	}
+}
+
+// TestSystemParamsMigrationCoverage verifies that every ParamKey* constant
+// declared in the domain package is seeded in at least one migration file.
+// It reads all *.up.sql files, tracks INSERT and DELETE operations on
+// system_params, and asserts the net set covers all 78 constants.
+//
+// This prevents the Go constants ↔ DB seed invariant from drifting silently:
+// adding a constant without a migration, or removing a constant without a
+// compensating DELETE migration, will cause this test to fail.
+func TestSystemParamsMigrationCoverage(t *testing.T) {
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed to locate test file")
+	}
+	migrationsDir := filepath.Join(filepath.Dir(testFile), "..", "..", "migrations")
+
+	entries, err := os.ReadDir(migrationsDir)
+	if err != nil {
+		t.Fatalf("cannot read migrations directory %s: %v", migrationsDir, err)
+	}
+
+	// keyInFileRe matches 'category.name' — the param key naming pattern.
+	// SQL descriptions contain spaces and punctuation so they never produce matches;
+	// type/category column values like 'int' or 'system' contain no dot.
+	// NOTE: we scan the whole file rather than extracting INSERT blocks because
+	// some descriptions contain semicolons which would prematurely terminate a
+	// [^;]+ block-level pattern.
+	keyInFileRe := regexp.MustCompile(`'([a-z]+\.[a-z][a-z0-9_]*)'`)
+	// deleteRe matches DELETE FROM system_params WHERE key = 'category.name'.
+	deleteRe := regexp.MustCompile(
+		`(?i)DELETE\s+FROM\s+system_params\s+WHERE\s+key\s*=\s*'([a-z]+\.[a-z][a-z0-9_]*)'`,
+	)
+
+	seeded := make(map[string]bool)
+	deleted := make(map[string]bool)
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".up.sql") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(migrationsDir, entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		text := string(data)
+
+		for _, m := range deleteRe.FindAllStringSubmatch(text, -1) {
+			deleted[m[1]] = true
+		}
+		for _, m := range keyInFileRe.FindAllStringSubmatch(text, -1) {
+			seeded[m[1]] = true
+		}
+	}
+
+	// Apply net deletions: a key inserted then permanently deleted is not seeded.
+	for k := range deleted {
+		delete(seeded, k)
+	}
+
+	for _, key := range allSystemParamKeys() {
+		if !seeded[key] {
+			t.Errorf("param key %q has no INSERT INTO system_params in any *.up.sql migration — add a migration to seed it", key)
+		}
+	}
 }

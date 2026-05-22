@@ -37,20 +37,31 @@ func (e *cacheEntry) valid() bool {
 // replica; infrastructure params (is_runtime = FALSE) use the full 5 min TTL.
 // Set() immediately evicts the affected key so the next read fetches the fresh value.
 type systemParamService struct {
-	repo       repository.SystemParamRepository
-	mu         sync.RWMutex
-	cache      map[string]*cacheEntry
-	hooks      map[string][]func(context.Context) // protected by mu
-	ttl        time.Duration
-	runtimeTTL time.Duration
-	audit      AuditLogger
-	log        *zap.Logger
+	repo        repository.SystemParamRepository
+	historyRepo repository.SystemParamHistoryRepository // nil = history disabled
+	mu          sync.RWMutex
+	cache       map[string]*cacheEntry
+	hooks       map[string][]func(context.Context) // protected by mu
+	ttl         time.Duration
+	runtimeTTL  time.Duration
+	audit       AuditLogger
+	log         *zap.Logger
+}
+
+// SystemParamServiceOption is a functional option for NewSystemParamService.
+type SystemParamServiceOption func(*systemParamService)
+
+// WithParamHistory wires a history repository so that every successful Set or
+// ResetToDefault call appends a row to system_params_history. When this option
+// is not provided, history recording is silently skipped.
+func WithParamHistory(repo repository.SystemParamHistoryRepository) SystemParamServiceOption {
+	return func(s *systemParamService) { s.historyRepo = repo }
 }
 
 // NewSystemParamService constructs a systemParamService.
 // audit records param mutations in the audit trail.
-func NewSystemParamService(repo repository.SystemParamRepository, audit AuditLogger, log *zap.Logger) SystemParamService {
-	return &systemParamService{
+func NewSystemParamService(repo repository.SystemParamRepository, audit AuditLogger, log *zap.Logger, opts ...SystemParamServiceOption) SystemParamService {
+	s := &systemParamService{
 		repo:       repo,
 		cache:      make(map[string]*cacheEntry),
 		hooks:      make(map[string][]func(context.Context)),
@@ -59,6 +70,10 @@ func NewSystemParamService(repo repository.SystemParamRepository, audit AuditLog
 		audit:      audit,
 		log:        log,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // RegisterMutationHook registers fn to be called synchronously after a
@@ -109,7 +124,8 @@ func (s *systemParamService) GetByCategory(ctx context.Context, cat string) ([]*
 // first and the new value is validated against it - an unparseable value
 // is rejected with ErrValidation before any write reaches the repository.
 func (s *systemParamService) Set(ctx context.Context, key, value string, actorID int) (*domain.SystemParam, error) {
-	if err := s.validateValueForKey(ctx, key, value); err != nil {
+	old, err := s.validateAndGetExisting(ctx, key, value)
+	if err != nil {
 		return nil, err
 	}
 	p, err := s.repo.Set(ctx, key, value, actorID)
@@ -118,6 +134,9 @@ func (s *systemParamService) Set(ctx context.Context, key, value string, actorID
 	}
 	s.evict(key)
 	s.callHooks(ctx, key)
+	if old != nil {
+		s.recordHistory(ctx, key, old.Value, value, actorID, "set")
+	}
 	if s.audit != nil {
 		resType := "system_param"
 		role := domain.RoleAdmin
@@ -131,6 +150,9 @@ func (s *systemParamService) Set(ctx context.Context, key, value string, actorID
 // mutation hooks are fired so downstream components (e.g. CachedRankingService
 // TTL) pick up the restored value immediately.
 func (s *systemParamService) ResetToDefault(ctx context.Context, key string, actorID int) (*domain.SystemParam, error) {
+	// Capture old value before mutation; reads from cache when warm (no extra DB round-trip).
+	old, _ := s.Get(ctx, key)
+
 	p, err := s.repo.ResetToDefault(ctx, key)
 	if err != nil {
 		return nil, err
@@ -140,6 +162,9 @@ func (s *systemParamService) ResetToDefault(ctx context.Context, key string, act
 	}
 	s.evict(key)
 	s.callHooks(ctx, key)
+	if old != nil {
+		s.recordHistory(ctx, key, old.Value, p.Value, actorID, "reset")
+	}
 	if s.audit != nil {
 		resType := "system_param"
 		role := domain.RoleAdmin
@@ -148,19 +173,41 @@ func (s *systemParamService) ResetToDefault(ctx context.Context, key string, act
 	return p, nil
 }
 
-// validateValueForKey fetches the declared type of key and checks that value
-// can be parsed to that type and satisfies per-key business-rule constraints.
-// It is a no-op when the key does not yet exist (new params have no constraint
-// at write time).
-func (s *systemParamService) validateValueForKey(ctx context.Context, key, value string) error {
+// validateAndGetExisting validates value against the declared type and
+// constraints of key, returning the existing param so callers can capture
+// old_value for history. Returns (nil, nil) when the key does not yet exist.
+func (s *systemParamService) validateAndGetExisting(ctx context.Context, key, value string) (*domain.SystemParam, error) {
 	existing, err := s.Get(ctx, key)
 	if err != nil || existing == nil {
-		return err // missing key -> no type to validate against
+		return nil, err // missing key → no type constraint to enforce
 	}
 	if err := validateParamValue(value, existing.Type); err != nil {
-		return err
+		return nil, err
 	}
-	return validateParamConstraints(key, value, existing.Type)
+	return existing, validateParamConstraints(key, value, existing.Type)
+}
+
+// recordHistory appends one row to system_params_history. Failures are logged
+// and suppressed: history is an observation layer — it must not block or
+// reverse a mutation that has already succeeded.
+func (s *systemParamService) recordHistory(ctx context.Context, key, oldValue, newValue string, actorID int, action string) {
+	if s.historyRepo == nil {
+		return
+	}
+	entry := &domain.SystemParamHistory{
+		Key:      key,
+		OldValue: oldValue,
+		NewValue: newValue,
+		ActorID:  actorID,
+		Action:   action,
+	}
+	if err := s.historyRepo.Record(ctx, entry); err != nil {
+		s.log.Warn("system_params: failed to record history entry",
+			zap.String("key", key),
+			zap.String("action", action),
+			zap.Error(err),
+		)
+	}
 }
 
 // validateParamValue returns ErrValidation when value cannot be parsed to typ.
@@ -266,6 +313,9 @@ var paramIntConstraints = map[string]paramIntRange{
 
 	// Snapshot retention
 	domain.ParamKeySnapshotKeepLatestCount: {1, 1_000},
+
+	// System param history retention (is_runtime=FALSE; worker restart required)
+	domain.ParamKeySystemParamHistoryRetentionDays: {1, 365}, // 1 day – 1 year
 
 	// Payment / balance (is_runtime = TRUE; changes take effect within cache window)
 	domain.ParamKeyPaymentMaxUploadBytes:      {102_400, 52_428_800}, // 100 KB – 50 MB
@@ -513,10 +563,17 @@ func (s *systemParamService) evict(key string) {
 // BulkSet validates all values against their declared types, then updates
 // all parameters atomically and evicts their cache entries. Validation runs
 // before any write so a single invalid value aborts the entire batch.
+// Old values are captured during the validation pass so that history rows can
+// be written for each key after the batch succeeds.
 func (s *systemParamService) BulkSet(ctx context.Context, params map[string]string, actorID int) error {
+	oldValues := make(map[string]string, len(params))
 	for key, value := range params {
-		if err := s.validateValueForKey(ctx, key, value); err != nil {
+		existing, err := s.validateAndGetExisting(ctx, key, value)
+		if err != nil {
 			return fmt.Errorf("param %q: %w", key, err)
+		}
+		if existing != nil {
+			oldValues[key] = existing.Value
 		}
 	}
 	if err := s.repo.BulkSet(ctx, params, actorID); err != nil {
@@ -525,6 +582,11 @@ func (s *systemParamService) BulkSet(ctx context.Context, params map[string]stri
 	for key := range params {
 		s.evict(key)
 		s.callHooks(ctx, key)
+	}
+	for key, newValue := range params {
+		if oldValue, ok := oldValues[key]; ok {
+			s.recordHistory(ctx, key, oldValue, newValue, actorID, "set")
+		}
 	}
 	if s.audit != nil {
 		keys := make([]string, 0, len(params))
@@ -536,6 +598,15 @@ func (s *systemParamService) BulkSet(ctx context.Context, params map[string]stri
 		s.audit.Log(ctx, &actorID, &role, domain.AuditActionParamUpdated, &resType, nil, map[string]any{"keys": keys})
 	}
 	return nil
+}
+
+// GetHistory returns mutation history for key, newest-first. Returns an empty
+// slice when no history repository is configured.
+func (s *systemParamService) GetHistory(ctx context.Context, key string, p repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
+	if s.historyRepo == nil {
+		return nil, "", nil
+	}
+	return s.historyRepo.ListByKey(ctx, key, p)
 }
 
 var _ SystemParamService = (*systemParamService)(nil)
