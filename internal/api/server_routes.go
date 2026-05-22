@@ -53,12 +53,19 @@ const (
 // Middleware is applied in declaration order. RequestID must be declared
 // first so its value is available to every subsequent handler.
 func (s *Server) Routes() http.Handler {
-	// infraCtx is a context.Background()-derived context used for one-time reads
-	// at construction time. It intentionally carries no cancellation so that a
-	// SIGTERM received during startup does not abort parameter reads or the JWKS
-	// warmup. Defined once here so both the degraded (db == nil) and normal paths
-	// share the same context without duplicating the rationale comment.
-	infraCtx := context.Background()
+	// infraCtx is a non-cancellable context for one-time startup reads (parameter
+	// loads, JWKS warmup). It intentionally carries no cancellation signal so that
+	// a SIGTERM received during startup does not abort these reads.
+	//
+	// When SetInfraContext was called before Routes(), s.infraCtx is
+	// context.WithoutCancel(lifecycleCtx), which propagates OTel trace values so
+	// startup DB queries are observable in distributed tracing. Tests leave
+	// s.infraCtx nil; the fallback to context.Background() is safe there because
+	// no tracing is active.
+	infraCtx := s.infraCtx
+	if infraCtx == nil {
+		infraCtx = context.Background()
+	}
 
 	r := chi.NewRouter()
 
@@ -195,6 +202,9 @@ func (s *Server) Routes() http.Handler {
 	idemTTL := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
 	idemKeyMaxLen := paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
 	if s.idemStore == nil {
+		s.log.Warn("idempotency: Redis not configured — falling back to in-process MemoryStore; " +
+			"idempotency reservations are NOT shared across replicas; " +
+			"set WCQ_REDIS_ADDR to enable distributed idempotency")
 		s.idemStore = idempotency.NewMemoryStore()
 	}
 	idem := middleware.Idempotency(s.idemStore, s.log, idemTTL, idemKeyMaxLen)

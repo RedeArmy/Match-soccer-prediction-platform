@@ -15,6 +15,15 @@ const (
 	DefaultWorkerDLQMonitorIntervalSec = 300 // worker.dlq_monitor_interval_sec (5 min)
 	DefaultWorkerPurgeIntervalHours    = 24  // worker.purge_interval_hours
 
+	// Worker: notification scheduler polling intervals (is_runtime=FALSE: worker restart required).
+	// Each value is the polling cadence for the corresponding scheduler job. Setting
+	// a value too large delays the first firing; too small increases idle DB round-trips.
+	DefaultWorkerSchedPredDeadlineIntervalSec    = 300   // worker.sched_pred_deadline_interval_sec — 5 min
+	DefaultWorkerSchedMatchResultIntervalSec     = 900   // worker.sched_match_result_interval_sec  — 15 min
+	DefaultWorkerSchedPendingReminderIntervalSec = 14400 // worker.sched_pending_reminder_interval_sec — 4 h
+	DefaultWorkerSchedStaleEscalationIntervalSec = 1800  // worker.sched_stale_escalation_interval_sec — 30 min
+	DefaultWorkerSchedPushPruneIntervalSec       = 86400 // worker.sched_push_prune_interval_sec — 24 h
+
 	// Soft-delete retention.
 	DefaultPurgeRetentionDays = 30 // system.purge_retention_days
 
@@ -47,6 +56,14 @@ const (
 	ParamKeyWorkerDLQMonitorIntervalSec = "worker.dlq_monitor_interval_sec"
 	// ParamKeyWorkerPurgeIntervalHours is the hours between permanent purge runs.
 	ParamKeyWorkerPurgeIntervalHours = "worker.purge_interval_hours"
+
+	// Notification scheduler polling intervals (is_runtime=FALSE: worker restart required).
+	// Each param controls how often the corresponding scheduled job fires.
+	ParamKeyWorkerSchedPredDeadlineIntervalSec    = "worker.sched_pred_deadline_interval_sec"
+	ParamKeyWorkerSchedMatchResultIntervalSec     = "worker.sched_match_result_interval_sec"
+	ParamKeyWorkerSchedPendingReminderIntervalSec = "worker.sched_pending_reminder_interval_sec"
+	ParamKeyWorkerSchedStaleEscalationIntervalSec = "worker.sched_stale_escalation_interval_sec"
+	ParamKeyWorkerSchedPushPruneIntervalSec       = "worker.sched_push_prune_interval_sec"
 
 	// ParamKeyPurgeRetentionDays is the age in days after which soft-deleted
 	// users and quinielas are permanently removed by the worker purge goroutine.

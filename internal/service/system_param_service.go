@@ -300,6 +300,13 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyWorkerDLQMonitorIntervalSec: {10, 86_400},
 	domain.ParamKeyWorkerPurgeIntervalHours:    {1, 720}, // 1 h – 30 days
 
+	// Worker: notification scheduler polling intervals
+	domain.ParamKeyWorkerSchedPredDeadlineIntervalSec:    {60, 3_600},      // 1 min – 1 h
+	domain.ParamKeyWorkerSchedMatchResultIntervalSec:     {60, 3_600},      // 1 min – 1 h
+	domain.ParamKeyWorkerSchedPendingReminderIntervalSec: {60, 86_400},     // 1 min – 24 h
+	domain.ParamKeyWorkerSchedStaleEscalationIntervalSec: {60, 86_400},     // 1 min – 24 h
+	domain.ParamKeyWorkerSchedPushPruneIntervalSec:       {3_600, 604_800}, // 1 h – 7 days
+
 	// System
 	domain.ParamKeyPurgeRetentionDays: {1, 365},
 

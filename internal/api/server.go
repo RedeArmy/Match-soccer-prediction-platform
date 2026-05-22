@@ -18,6 +18,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
@@ -65,6 +66,11 @@ type Server struct {
 	// idemStore is the idempotency backing store. When non-nil (Redis available),
 	// reservations are shared across all replicas. Falls back to MemoryStore when nil.
 	idemStore idempotency.Store
+	// infraCtx is a non-cancellable context used for one-time startup reads in
+	// Routes() (parameter loads, JWKS warmup). Set via SetInfraContext before
+	// calling Routes() so that OTel trace values are propagated to DB queries.
+	// Defaults to context.Background() when nil.
+	infraCtx context.Context
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
@@ -84,6 +90,13 @@ func (s *Server) SetLimiterStore(store *middleware.LimiterStore) { s.limiterStor
 // (used when this method is never called) is only safe for single-process
 // deployments.
 func (s *Server) SetIdempotencyStore(store idempotency.Store) { s.idemStore = store }
+
+// SetInfraContext stores the startup context used for one-time parameter reads
+// and JWKS warmup inside Routes(). Pass context.WithoutCancel(ctx) from run()
+// so that a SIGTERM does not abort startup reads while OTel trace values are
+// still propagated to DB queries. Tests leave this unset; the nil fallback in
+// Routes() uses context.Background().
+func (s *Server) SetInfraContext(ctx context.Context) { s.infraCtx = ctx }
 
 // DrainAudit blocks until all in-flight audit log writes complete. Must be
 // called during graceful shutdown before closing the database connection pool
@@ -118,10 +131,11 @@ func (s *Server) StartPgNotifyBridge(ctx context.Context) {
 	}()
 }
 
-// StopPgNotifyBridge cancels the pg_notify bridge goroutine and waits for it
-// to exit. Must be called before closing the database pool so the bridge
-// releases its acquired connection before pool.Close() calls WG.Wait().
-// Safe to call if StartPgNotifyBridge was never invoked (no-op in that case).
+// StopPgNotifyBridge cancels the SSE bridge goroutine (pg_notify or Redis
+// Pub/Sub depending on which Start method was called) and waits for it to exit.
+// Must be called before closing the database pool when using the pg_notify
+// bridge so the acquired connection is released before pool.Close().
+// Safe to call if no bridge was started (no-op in that case).
 func (s *Server) StopPgNotifyBridge() {
 	if s.stopBridge != nil {
 		s.stopBridge()
@@ -129,6 +143,24 @@ func (s *Server) StopPgNotifyBridge() {
 	if s.bridgeDone != nil {
 		<-s.bridgeDone
 	}
+}
+
+// StartRedisBridge starts the SSE notification bridge using Redis Pub/Sub.
+// Prefer this over StartPgNotifyBridge when Redis is available: Redis
+// reconnections are transparent (< 100 ms) vs the 1 s–30 s backoff of the
+// pg_notify LISTEN loop, and no long-lived database connection is consumed.
+//
+// Uses the same stopBridge/bridgeDone lifecycle as StartPgNotifyBridge;
+// StopPgNotifyBridge stops this bridge as well.
+func (s *Server) StartRedisBridge(ctx context.Context, rc redis.UniversalClient) {
+	bridgeCtx, bridgeCancel := context.WithCancel(context.WithoutCancel(ctx))
+	s.stopBridge = bridgeCancel
+	done := make(chan struct{})
+	s.bridgeDone = done
+	go func() {
+		defer close(done)
+		s.runRedisBridge(bridgeCtx, rc)
+	}()
 }
 
 // New constructs a Server with the provided dependencies.

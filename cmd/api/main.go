@@ -168,6 +168,10 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// dependency explicit and eliminates hidden global state.
 	app := api.New(db, cfg, log, bus, cacheStore, checkers)
 
+	// Propagate OTel trace values to startup DB reads (parameter loads, JWKS warmup)
+	// while protecting them from SIGTERM. setupCtx is already WithoutCancel(ctx).
+	app.SetInfraContext(setupCtx)
+
 	// When Redis is available, use a shared idempotency store so reservations
 	// are visible across all replicas. Falls back to MemoryStore (set inside
 	// Routes()) when Redis is not configured.
@@ -182,7 +186,15 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
-	app.StartPgNotifyBridge(ctx)
+
+	// Prefer the Redis Pub/Sub bridge when Redis is available: reconnections
+	// are transparent (< 100 ms) and no long-lived database connection is held.
+	// Fall back to the pg_notify bridge for single-server deployments.
+	if rc != nil {
+		app.StartRedisBridge(ctx, rc)
+	} else {
+		app.StartPgNotifyBridge(ctx)
+	}
 
 	srvErr := make(chan error, 1)
 	go func() {
@@ -207,7 +219,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// grace period (also 30 s by default - adjust both together if changed).
 	// ctx is already cancelled at this point (it unblocked the select above),
 	// so WithoutCancel is required to give the timeout a valid parent.
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.Server.ShutdownTimeout)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {

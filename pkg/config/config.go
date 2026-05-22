@@ -174,10 +174,11 @@ func (c *Config) IsDevelopment() bool {
 // server behind a load balancer must align with the load balancer's own
 // idle and keep-alive settings to avoid silent connection drops.
 type ServerConfig struct {
-	Port         string        `mapstructure:"port"`
-	ReadTimeout  time.Duration `mapstructure:"readTimeout"`
-	WriteTimeout time.Duration `mapstructure:"writeTimeout"`
-	IdleTimeout  time.Duration `mapstructure:"idleTimeout"`
+	Port            string        `mapstructure:"port"`
+	ReadTimeout     time.Duration `mapstructure:"readTimeout"`
+	WriteTimeout    time.Duration `mapstructure:"writeTimeout"`
+	IdleTimeout     time.Duration `mapstructure:"idleTimeout"`
+	ShutdownTimeout time.Duration `mapstructure:"shutdownTimeout"`
 	// AppBaseURL is the externally reachable base URL of this service
 	// (e.g. "https://app.quinielamundial.gt"), used to build absolute links
 	// inside outgoing emails.  No trailing slash.

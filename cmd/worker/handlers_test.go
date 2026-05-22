@@ -469,7 +469,7 @@ func (s *countingSnapshotter) SnapshotForMatch(_ context.Context, _, _ int) (*do
 
 func TestPostScoringWork_WithSemaphore_SnapshotsAllQuinielas(t *testing.T) {
 	old := snapshotSem
-	snapshotSem = semaphore.NewWeighted(2)
+	snapshotSem = &localSnapshotSem{semaphore.NewWeighted(2)}
 	t.Cleanup(func() { snapshotSem = old })
 
 	oldBase := snapshotRetryBase
@@ -484,7 +484,7 @@ func TestPostScoringWork_WithSemaphore_SnapshotsAllQuinielas(t *testing.T) {
 
 func TestPostScoringWork_WithSemaphore_ContextCancelled_SkipsSnapshot(t *testing.T) {
 	old := snapshotSem
-	snapshotSem = semaphore.NewWeighted(1)
+	snapshotSem = &localSnapshotSem{semaphore.NewWeighted(1)}
 	t.Cleanup(func() { snapshotSem = old })
 
 	// Pre-cancel the context so gctx (derived inside postScoringWork) is
@@ -632,5 +632,28 @@ func TestRedisSnapshotLocker_Unlock_RedisDown_ReturnsError(t *testing.T) {
 	mr.Close()
 	if err := locker.Unlock(context.Background(), 5, 6); err == nil {
 		t.Error("expected error when Redis is unavailable during Unlock")
+	}
+}
+
+func TestRedisPubNotifier_Notify_PublishesAndReturnsNil(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rc.Close() })
+
+	n := &redisPubNotifier{client: rc}
+	if err := n.Notify(context.Background(), "ch", `{"user_id":1}`); err != nil {
+		t.Fatalf("Notify: unexpected error: %v", err)
+	}
+}
+
+func TestRedisPubNotifier_Notify_RedisDown_ReturnsError(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rc.Close() })
+	mr.Close() // take Redis down
+
+	n := &redisPubNotifier{client: rc}
+	if err := n.Notify(context.Background(), "ch", "{}"); err == nil {
+		t.Fatal("expected error when Redis is unavailable; got nil")
 	}
 }
