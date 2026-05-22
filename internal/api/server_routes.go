@@ -202,9 +202,10 @@ func (s *Server) Routes() http.Handler {
 	idemTTL := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
 	idemKeyMaxLen := paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
 	if s.idemStore == nil {
-		s.log.Warn("idempotency: Redis not configured — falling back to in-process MemoryStore; " +
-			"idempotency reservations are NOT shared across replicas; " +
-			"set WCQ_REDIS_ADDR to enable distributed idempotency")
+		s.log.Warn("idempotency: Redis not configured — using in-process MemoryStore",
+			zap.Bool("single_process_only", true),
+			zap.String("remedy", "set WCQ_REDIS_ADDR; without it duplicate payment requests can commit on separate replicas"),
+		)
 		s.idemStore = idempotency.NewMemoryStore()
 	}
 	idem := middleware.Idempotency(s.idemStore, s.log, idemTTL, idemKeyMaxLen)

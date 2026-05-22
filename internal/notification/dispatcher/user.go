@@ -135,7 +135,7 @@ type UserDispatcher struct {
 	params            service.SystemParamService
 	templateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
 	memberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
-	digestGate        *notification.PushDigestGate              // nil disables digest (all pushes sent individually)
+	digestGate        notification.DigestGate                   // nil disables digest (all pushes sent individually)
 	log               *zap.Logger
 }
 
@@ -156,8 +156,12 @@ type UserDispatcherConfig struct {
 	Params            service.SystemParamService                // nil uses defaults
 	TemplateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
 	MemberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
-	DigestGate        *notification.PushDigestGate              // nil disables digest (all pushes sent individually)
-	Log               *zap.Logger
+	// DigestGate throttles P2/P3 push bursts cluster-wide. Use
+	// notification.NewRedisPushDigestGate when Redis is available; fall back to
+	// notification.NewPushDigestGate for single-process deployments. nil disables
+	// digest gating (all pushes delivered individually).
+	DigestGate notification.DigestGate
+	Log        *zap.Logger
 }
 
 // NewUserDispatcher constructs a UserDispatcher.

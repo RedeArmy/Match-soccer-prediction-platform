@@ -326,6 +326,16 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	digestWindowSec := int64(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestWindowSec, domain.DefaultNotifyPushDigestWindowSec))
 	digestThreshold := int32(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestThreshold, domain.DefaultNotifyPushDigestThreshold))
 
+	// Wire the cluster-aware digest gate when Redis is available so that the
+	// per-user push threshold is enforced across all worker replicas. Fall back
+	// to the in-memory gate for single-process deployments (development, CI).
+	var digestGate notification.DigestGate
+	if rc != nil {
+		digestGate = notification.NewRedisPushDigestGate(rc, digestWindowSec, digestThreshold)
+	} else {
+		digestGate = notification.NewPushDigestGate(digestWindowSec, digestThreshold)
+	}
+
 	userDispatcher := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
 		NotifRepo:         notifRepo,
 		PrefRepo:          prefRepo,
@@ -341,7 +351,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		PgNotifier:        &redisPubNotifier{client: rc},
 		Params:            params,
 		TemplateRepo:      tmplRepo,
-		DigestGate:        notification.NewPushDigestGate(digestWindowSec, digestThreshold),
+		DigestGate:        digestGate,
 		Log:               log,
 	})
 
