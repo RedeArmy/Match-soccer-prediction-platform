@@ -27,6 +27,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
+	"github.com/rede/world-cup-quiniela/pkg/idempotency"
 )
 
 // Server holds the shared dependencies made available to all HTTP handlers.
@@ -61,6 +62,9 @@ type Server struct {
 	stopBridge context.CancelFunc
 	// bridgeDone is closed when the pg_notify bridge goroutine exits.
 	bridgeDone <-chan struct{}
+	// idemStore is the idempotency backing store. When non-nil (Redis available),
+	// reservations are shared across all replicas. Falls back to MemoryStore when nil.
+	idemStore idempotency.Store
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
@@ -72,6 +76,14 @@ func (s *Server) SetDLQService(dlq service.DLQService) { s.dlqSvc = dlq }
 // requests with the same user ID without triggering 429 responses; pass
 // middleware.NewUnlimitedLimiterStore() to disable rate limiting for the test.
 func (s *Server) SetLimiterStore(store *middleware.LimiterStore) { s.limiterStore = store }
+
+// SetIdempotencyStore replaces the idempotency store used by the payment write
+// endpoints. Must be called before Routes() so the middleware captures the
+// configured store. When Redis is available, pass idempotency.NewRedisStore(rc)
+// to make reservations visible across all replicas; the MemoryStore fallback
+// (used when this method is never called) is only safe for single-process
+// deployments.
+func (s *Server) SetIdempotencyStore(store idempotency.Store) { s.idemStore = store }
 
 // DrainAudit blocks until all in-flight audit log writes complete. Must be
 // called during graceful shutdown before closing the database connection pool
@@ -88,8 +100,15 @@ func (s *Server) DrainAudit() {
 // point (cmd/api/main.go). It is intentionally NOT called inside Routes() so
 // that tests which create a Server and call Routes() without a corresponding
 // Stop do not leak a goroutine that holds a pool connection.
-func (s *Server) StartPgNotifyBridge() {
-	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
+//
+// ctx provides values (OTel trace IDs, request IDs) that the bridge goroutine
+// inherits for structured logging and distributed tracing. Its cancellation
+// signal is stripped via context.WithoutCancel so that a SIGTERM that cancels
+// the caller's context does not immediately abort the bridge; the bridge is
+// stopped explicitly by StopPgNotifyBridge at the right point in the shutdown
+// sequence, after in-flight HTTP connections have been drained.
+func (s *Server) StartPgNotifyBridge(ctx context.Context) {
+	bridgeCtx, bridgeCancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.stopBridge = bridgeCancel
 	done := make(chan struct{})
 	s.bridgeDone = done

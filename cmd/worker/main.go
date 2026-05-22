@@ -66,8 +66,35 @@ import (
 type pgPoolNotifier struct{ pool *pgxpool.Pool }
 
 func (n *pgPoolNotifier) Notify(ctx context.Context, channel, payload string) error {
-	_, err := n.pool.Exec(ctx, "SELECT pg_notify($1, $2)", channel, payload)
-	return err
+	if _, err := n.pool.Exec(ctx, "SELECT pg_notify($1, $2)", channel, payload); err != nil {
+		return fmt.Errorf("pg_notify: %w", err)
+	}
+	return nil
+}
+
+// redisSnapshotLocker implements SnapshotLocker using Redis SET NX EX.  The key
+// pattern is "worker:snap:{matchID}:{quinielaID}".  The TTL is a safety net for
+// crash recovery — the lock is released explicitly via Unlock in the happy path.
+type redisSnapshotLocker struct {
+	client redis.Cmdable
+	ttl    time.Duration
+}
+
+func (l *redisSnapshotLocker) TryLock(ctx context.Context, matchID, quinielaID int) (bool, error) {
+	key := fmt.Sprintf("worker:snap:%d:%d", matchID, quinielaID)
+	ok, err := l.client.SetNX(ctx, key, 1, l.ttl).Result()
+	if err != nil {
+		return false, fmt.Errorf("snapshot lock %q: %w", key, err)
+	}
+	return ok, nil
+}
+
+func (l *redisSnapshotLocker) Unlock(ctx context.Context, matchID, quinielaID int) error {
+	key := fmt.Sprintf("worker:snap:%d:%d", matchID, quinielaID)
+	if err := l.client.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("snapshot unlock %q: %w", key, err)
+	}
+	return nil
 }
 
 // dlqMonitorInterval controls how often the DLQ monitoring goroutine logs
@@ -129,7 +156,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		return fmt.Errorf("tracing: %w", err)
 	}
 	defer func() {
-		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// context.WithoutCancel inherits the OTel span values from ctx without
+		// being affected by the cancellation that already fired (SIGTERM).
+		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := shutdownTracing(flushCtx); err != nil {
 			log.Sugar().Warnf("tracing flush: %v", err)
@@ -317,6 +346,10 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	notifScheduler.RegisterWeekly("admin.weekly_report", time.Monday, 8, 0, jobs.AdminWeeklyReport)
 	notifScheduler.RegisterInterval("push.subscription_prune", 24*time.Hour, makePushPruneJob(params, pushRepo, log))
 
+	// snapshotLockTTL covers the worst-case snapshot retry window with generous
+	// headroom. The lock is also released explicitly by Unlock in the happy path;
+	// the TTL only activates on process crash or context cancellation.
+	const snapshotLockTTL = 2 * time.Minute
 	return startWorker(ctx, workerDeps{
 		cfg:                   cfg,
 		bus:                   bus,
@@ -324,6 +357,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		snapshotter:           snapshotter,
 		predRepo:              predRepo,
 		invalidators:          invalidators,
+		snapshotLocker:        &redisSnapshotLocker{client: rc, ttl: snapshotLockTTL},
 		purger:                purger,
 		purgeRetention:        purgeRetention,
 		paramHistoryRetention: paramHistoryRetention,
@@ -424,6 +458,7 @@ type workerDeps struct {
 	snapshotter           service.Snapshotter
 	predRepo              repository.PredictionRepository
 	invalidators          []service.PostScoringInvalidator
+	snapshotLocker        SnapshotLocker
 	purger                repository.Purger
 	purgeRetention        time.Duration
 	paramHistoryRetention time.Duration
@@ -446,7 +481,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
 	deps.bus.Subscribe(ctx, events.EventMatchFinished,
-		newMatchFinishedHandler(deps.scorer, deps.snapshotter, deps.predRepo, deps.invalidators, log))
+		newMatchFinishedHandler(deps.scorer, deps.snapshotter, deps.predRepo, deps.invalidators, deps.snapshotLocker, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
 	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, log)

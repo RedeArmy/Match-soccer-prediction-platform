@@ -24,9 +24,12 @@ func TestMain(m *testing.M) {
 	if pool != nil {
 		integrationPool = pool
 		integrationDSN = dsn
-		defer cleanup()
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if pool != nil {
+		cleanup()
+	}
+	os.Exit(code)
 }
 
 // mustSetupIntegrationDB starts a PostgreSQL test container and runs all

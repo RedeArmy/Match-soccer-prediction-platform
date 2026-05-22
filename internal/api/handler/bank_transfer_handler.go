@@ -104,12 +104,12 @@ func (h *BankTransferHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(h.maxUpload); err != nil {
+	if err := r.ParseMultipartForm(h.maxUpload); err != nil { //nolint:gosec // G120: body size already enforced by RequestBodyLimit middleware via http.MaxBytesReader
 		writeError(w, r, h.log, apperrors.RequestBodyTooLarge())
 		return
 	}
 
-	amountCents, err := strconv.Atoi(r.FormValue("amount_cents"))
+	amountCents, err := strconv.Atoi(r.FormValue("amount_cents")) //nolint:gosec // G120: body size already enforced by ParseMultipartForm limit above
 	if err != nil || amountCents <= 0 {
 		writeError(w, r, h.log, apperrors.Validation("amount_cents must be a positive integer"))
 		return
@@ -126,7 +126,7 @@ func (h *BankTransferHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		))
 		return
 	}
-	currency := r.FormValue("currency")
+	currency := r.FormValue("currency") //nolint:gosec // G120: body already parsed and bounded by ParseMultipartForm above
 	if currency == "" {
 		currency = "GTQ"
 	}

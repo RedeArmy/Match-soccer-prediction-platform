@@ -70,11 +70,11 @@ func (c *cachedCertFetcher) fetch(ctx context.Context, certURL string) (*x509.Ce
 }
 
 func downloadCert(ctx context.Context, client *http.Client, certURL string) (*x509.Certificate, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, certURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, certURL, nil) //nolint:gosec // G704: certURL validated by validatePayPalCertURL (domain allowlist) before reaching this function
 	if err != nil {
 		return nil, fmt.Errorf("building cert request: %w", err)
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: same as above
 	if err != nil {
 		return nil, fmt.Errorf("fetching PayPal cert: %w", err)
 	}
@@ -254,7 +254,10 @@ func verifyPayPalSig(cert *x509.Certificate, authAlgo string, message, sig []byt
 	}
 
 	_, _ = h.Write(message)
-	return rsa.VerifyPKCS1v15(rsaKey, hashID, h.Sum(nil), sig) // NOSONAR: PKCS#1 v1.5 is mandated by PayPal's webhook verification protocol
+	if err := rsa.VerifyPKCS1v15(rsaKey, hashID, h.Sum(nil), sig); err != nil { // NOSONAR: PKCS#1 v1.5 is mandated by PayPal's protocol
+		return fmt.Errorf("verify PayPal webhook signature: %w", err)
+	}
+	return nil
 }
 
 // BreakerCertFetcher wraps inner with a circuit breaker so that repeated

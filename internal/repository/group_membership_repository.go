@@ -118,8 +118,9 @@ func validateMembershipStatus(existing *domain.GroupMembership) error {
 		return apperrors.Conflict("you are already a member of this group")
 	case domain.MembershipPending:
 		return apperrors.Conflict("you already have a pending join request for this group")
+	default: // MembershipLeft: user previously left and is allowed to rejoin
+		return nil
 	}
-	return nil
 }
 
 func enforceMaxMembers(ctx context.Context, q querier, quinielaID, maxMembers int) error {

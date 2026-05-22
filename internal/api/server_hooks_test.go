@@ -1,6 +1,6 @@
-// White-box tests for server.go hook constructors. This file uses package api
-// (not api_test) so it can exercise unexported functions without exporting them
-// solely for testability.
+// White-box tests for server.go hook constructors and bridge functions.
+// This file uses package api (not api_test) so it can exercise unexported
+// functions without exporting them solely for testability.
 package api
 
 import (
@@ -8,13 +8,36 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
+	"github.com/rede/world-cup-quiniela/internal/notification/hub"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
+
+// bridgePool creates a pgxpool.Pool pointing at an unreachable address.
+// pgxpool connects lazily; Acquire on this pool will fail quickly with
+// "connection refused" on localhost:1 (port 1 is never open).
+func bridgePool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(),
+		"postgres://fake:fake@localhost:1/fake?sslmode=disable&connect_timeout=1")
+	if err != nil {
+		t.Fatalf("create bridge pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+// bridgeServer builds a minimal *Server with the given pool and a live hub,
+// suitable for testing pg_notify bridge behaviour without real PostgreSQL.
+func bridgeServer(t *testing.T, pool *pgxpool.Pool) *Server {
+	t.Helper()
+	return &Server{db: pool, notifHub: hub.New(), log: zap.NewNop()}
+}
 
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
@@ -102,5 +125,81 @@ func TestLeaderboardTTLHook_UsesDefaultWhenParamServiceReturnsDefault(t *testing
 
 	if store.flushedPrefix == "" {
 		t.Error("expected FlushByPrefix to be called; hook body did not execute")
+	}
+}
+
+// ── runPgNotifyBridge / listenAndBridge ───────────────────────────────────────
+
+func TestRunPgNotifyBridge_NilDB(t *testing.T) {
+	s := &Server{db: nil, notifHub: hub.New(), log: zap.NewNop()}
+	done := make(chan struct{})
+	go func() { s.runPgNotifyBridge(context.Background()); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("runPgNotifyBridge did not return immediately when db is nil")
+	}
+}
+
+func TestRunPgNotifyBridge_NilHub(t *testing.T) {
+	s := &Server{db: bridgePool(t), notifHub: nil, log: zap.NewNop()}
+	done := make(chan struct{})
+	go func() { s.runPgNotifyBridge(context.Background()); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("runPgNotifyBridge did not return immediately when notifHub is nil")
+	}
+}
+
+// TestRunPgNotifyBridge_CtxPreCancelled verifies the clean-shutdown path: when
+// ctx is already cancelled on entry, the bridge calls listenAndBridge once,
+// receives an error from Acquire (ctx done), then detects ctx.Err() != nil and
+// returns without entering the backoff retry loop.
+func TestRunPgNotifyBridge_CtxPreCancelled(t *testing.T) {
+	s := bridgeServer(t, bridgePool(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	done := make(chan struct{})
+	go func() { s.runPgNotifyBridge(ctx); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runPgNotifyBridge did not return after context was cancelled")
+	}
+}
+
+// TestRunPgNotifyBridge_ReconnectsOnError verifies that when listenAndBridge
+// returns a non-nil error and the context is still active, the bridge enters
+// the exponential-backoff select and exits cleanly when the context expires.
+// The unreachable pool makes Acquire fail quickly (connection refused), so the
+// test completes well within the 3-second guard timeout.
+func TestRunPgNotifyBridge_ReconnectsOnError(t *testing.T) {
+	s := bridgeServer(t, bridgePool(t))
+	// Short-lived context: bridge should call listenAndBridge, get an error,
+	// enter the backoff select, and exit when the deadline fires.
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() { s.runPgNotifyBridge(ctx); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("runPgNotifyBridge did not exit after context expiry during backoff")
+	}
+}
+
+// TestListenAndBridge_AcquireError verifies that listenAndBridge returns a
+// non-nil wrapped error when Acquire fails (context already cancelled).
+func TestListenAndBridge_AcquireError(t *testing.T) {
+	s := bridgeServer(t, bridgePool(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := s.listenAndBridge(ctx)
+	if err == nil {
+		t.Fatal("expected non-nil error when Acquire fails on cancelled context")
 	}
 }

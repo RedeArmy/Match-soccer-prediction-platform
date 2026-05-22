@@ -278,3 +278,111 @@ var AllMatchPhases = [...]MatchPhase{
 func IsKnockoutPhase(phase MatchPhase) bool {
 	return phase != PhaseGroupStage
 }
+
+// AllParamKeys returns every ParamKey* string value declared across the domain
+// package. It is the single authoritative list used by constraint-coverage tests
+// and by cmd/validate-params to verify that every constant is registered and
+// seeded.  Order is stable and matches the declaration order in the constants
+// files (constants.go, constants_notify.go, constants_worker.go).
+func AllParamKeys() []string {
+	return []string{
+		// Scoring
+		ParamKeyScoringExactScore,
+		ParamKeyScoringCorrectOutcome,
+		ParamKeyScoringGoalDiff,
+		ParamKeyScoringExtraTimeBonus,
+		ParamKeyScoringPenaltiesBonus,
+		// Prediction
+		ParamKeyPredictionDeadlineMin,
+		// Group
+		ParamKeyGroupMinMembers,
+		ParamKeyGroupMaxSize,
+		ParamKeyGroupInviteCodeLength,
+		// Conflict
+		ParamKeyConflictStaleDays,
+		ParamKeyConflictMaxScan,
+		// Pagination
+		ParamKeyPaginationDefaultLimit,
+		ParamKeyPaginationMaxLimit,
+		// Tournament
+		ParamKeyTournamentWinPoints,
+		// Admin
+		ParamKeyAdminBulkMaxItems,
+		// Cache
+		ParamKeyCacheMatchTTL,
+		ParamKeyCacheLeaderboardTTL,
+		ParamKeyCacheDashboardTTLSeconds,
+		// Audit
+		ParamKeyAuditWriteTimeout,
+		ParamKeyAuditMaxRetries,
+		ParamKeyAuditRetryDelayMs,
+		// Auth
+		ParamKeyAuthValidationTimeout,
+		// DLQ
+		ParamKeyDLQSampleSize,
+		ParamKeyDLQReplayDefaultLimit,
+		// Messaging
+		ParamKeyMessagingMaxRetries,
+		ParamKeyMessagingStreamMaxLen,
+		ParamKeyMessagingStreamWorkerCount,
+		ParamKeyMessagingStreamReadBlockSec,
+		// Worker
+		ParamKeyWorkerSnapshotConcurrency,
+		ParamKeyWorkerSnapshotRetryBaseMs,
+		ParamKeyWorkerSnapshotMaxAttempts,
+		ParamKeyWorkerDLQMonitorIntervalSec,
+		ParamKeyWorkerPurgeIntervalHours,
+		// System
+		ParamKeyPurgeRetentionDays,
+		ParamKeySystemParamHistoryRetentionDays,
+		// API
+		ParamKeyAPIBodySizeLimitBytes,
+		ParamKeyAPIRateLimitRatePerSec,
+		ParamKeyAPIRateLimitBurst,
+		ParamKeyAPIIdempotencyTTLHours,
+		ParamKeyAPIIdempotencyKeyMaxLen,
+		// Snapshot
+		ParamKeySnapshotKeepLatestCount,
+		// Circuit breaker
+		ParamKeyBreakerPaypalCertMaxFails,
+		ParamKeyBreakerPaypalCertCooldownSec,
+		ParamKeyBreakerFileStoreMaxFails,
+		ParamKeyBreakerFileStoreCooldownSec,
+		// Repository / TX retry
+		ParamKeyTxRetryMaxAttempts,
+		ParamKeyTxRetryBaseDelayMs,
+		ParamKeyTxRetryMaxDelayMs,
+		// Payment
+		ParamKeyPaymentMaxUploadBytes,
+		ParamKeyWithdrawalMinCents,
+		ParamKeyWithdrawalMaxCents,
+		ParamKeyBankTransferMinAmountCents,
+		ParamKeyBankTransferMaxAmountCents,
+		ParamKeyPaymentIntentTTLMinutes,
+		// Notification subsystem (constants_notify.go)
+		ParamKeyNotifyBankTransferStaleSec,
+		ParamKeyNotifyWithdrawalStaleSec,
+		ParamKeyNotifyHighValueWithdrawalCents,
+		ParamKeyNotifyPendingReminderIntervalSec,
+		ParamKeyNotifyPredictionDeadlineLeadMin1,
+		ParamKeyNotifyPredictionDeadlineLeadMin2,
+		ParamKeyNotifyPredictionMissingLeadMin,
+		ParamKeyNotifyBankTransferQueueDepthThreshold,
+		ParamKeyNotifyAdminEmails,
+		ParamKeyNotifyWebPushVAPIDPublicKey,
+		ParamKeyNotifyWebPushVAPIDSubject,
+		ParamKeyNotifySSEHeartbeatIntervalSec,
+		ParamKeyNotifyWebPushTTLSec,
+		ParamKeyNotifyPushIconURL,
+		ParamKeyNotifyPushBadgeURL,
+		ParamKeyNotifySchedulerTimezone,
+		ParamKeyNotifyDefaultLocale,
+		ParamKeyNotifyTemplateCacheTTLSec,
+		ParamKeyNotifyPushTitleMaxChars,
+		ParamKeyNotifyPushBodyMaxChars,
+		ParamKeyNotifyPushSubRetentionDays,
+		ParamKeyNotifyFromAddress,
+		ParamKeyNotifyPushDigestWindowSec,
+		ParamKeyNotifyPushDigestThreshold,
+	}
+}
