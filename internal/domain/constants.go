@@ -125,48 +125,12 @@ const (
 	DefaultMessagingStreamWorkerCount  = 8       // messaging.stream_worker_count
 	DefaultMessagingStreamReadBlockSec = 5       // messaging.stream_read_block_sec
 
-	// Infrastructure timeouts (seconds)
-	DefaultAuthValidationTimeoutSeconds = 5 // auth.validation_timeout_seconds
-	DefaultAuditWriteTimeoutSeconds     = 5 // audit.write_timeout_seconds
+	// Audit write timeout (seconds)
+	DefaultAuditWriteTimeoutSeconds = 5 // audit.write_timeout_seconds
 
 	// Audit retry policy
 	DefaultAuditMaxRetries   = 2   // audit.max_retries
 	DefaultAuditRetryDelayMs = 250 // audit.retry_delay_ms
-
-	// Worker: leaderboard snapshot generation
-	// 4 concurrent snapshots is sized for a single shared-CPU machine with 256 MB RAM.
-	// Each goroutine holds pgx row buffers while executing ranking queries; 16 goroutines
-	// at peak can exhaust the heap on a memory-constrained instance. Raise via system
-	// param worker.snapshot_concurrency when running on a larger instance.
-	DefaultWorkerSnapshotConcurrency = 4   // worker.snapshot_concurrency
-	DefaultWorkerSnapshotRetryBaseMs = 100 // worker.snapshot_retry_base_ms
-	DefaultWorkerSnapshotMaxAttempts = 3   // worker.snapshot_max_attempts
-
-	// Worker: background maintenance jobs
-	DefaultWorkerDLQMonitorIntervalSec = 300 // worker.dlq_monitor_interval_sec (5 min)
-	DefaultWorkerPurgeIntervalHours    = 24  // worker.purge_interval_hours
-
-	// Soft-delete retention
-	DefaultPurgeRetentionDays = 30 // system.purge_retention_days
-
-	// Leaderboard snapshot retention: number of most-recent snapshots to keep per
-	// quiniela. The daily purge job deletes every snapshot beyond this count,
-	// bounding table growth to (active_quinielas × keep_latest_count) rows.
-	// Five snapshots cover the last five match results — sufficient for trend
-	// display — while staying well below the 6 400-row worst case for 64 matches
-	// across 100 quinielas.
-	DefaultSnapshotKeepLatestCount = 5 // snapshot.keep_latest_count
-
-	// API request limits
-	DefaultAPIBodySizeLimitBytes = 65536 // api.body_size_limit_bytes (64 KB)
-
-	// API rate limiting: per-user token bucket applied at the /api/v1 subrouter.
-	// 10 tokens/second with a burst of 30 allows short activity spikes (e.g.
-	// loading a dashboard that issues several parallel requests) while preventing
-	// sustained high-frequency polling. Both values are read once at process
-	// startup (is_runtime=FALSE); a restart is required to change them.
-	DefaultAPIRateLimitRatePerSec = 10 // api.rate_limit_rate_per_sec (tokens/second)
-	DefaultAPIRateLimitBurst      = 30 // api.rate_limit_burst (max burst size)
 
 	// Prediction window
 	DefaultPredictionDeadlineMin = 5 // prediction.deadline_minutes — closes predictions 5 min before kick-off
@@ -175,118 +139,11 @@ const (
 	DefaultScoringExtraTimeBonus = 0 // scoring.extra_time_bonus
 	DefaultScoringPenaltiesBonus = 0 // scoring.penalties_bonus
 
-	// Payment / balance params
-	DefaultPaymentMaxUploadBytes = 5_242_880 // payment.max_upload_bytes (5 MB)
-	DefaultWithdrawalMinCents    = 5_000     // payment.withdrawal_min_cents (50 GTQ)
-	DefaultWithdrawalMaxCents    = 500_000   // payment.withdrawal_max_cents (5 000 GTQ)
-
-	// Bank transfer amount bounds. These mirror the withdrawal limits: the
-	// declared amount on a bank transfer proof is validated against these
-	// before the proof is accepted for admin review. Prevents claims of
-	// unreasonably small or arbitrarily large transfers.
-	DefaultBankTransferMinAmountCents = 1_000      // payment.bank_transfer_min_amount_cents (10 GTQ)
-	DefaultBankTransferMaxAmountCents = 10_000_000 // payment.bank_transfer_max_amount_cents (100 000 GTQ)
-
-	// DefaultPaymentIntentTTLMinutes is the number of minutes a pending PayPal
-	// payment intent remains valid. After this window expires the intent cannot
-	// be captured, so the customer must start the checkout flow again. 60 minutes
-	// is long enough for a typical PayPal checkout session while being short
-	// enough to limit the window for stale captures.
-	DefaultPaymentIntentTTLMinutes = 60 // payment.intent_ttl_minutes
-
-	// Idempotency middleware: applied to payment write endpoints.
-	// TTL of 24 h gives clients a generous window for safe retry; key length
-	// of 255 bytes fits a UUID, hash, or arbitrary client-generated string.
-	DefaultAPIIdempotencyTTLHours  = 24  // api.idempotency_ttl_hours
-	DefaultAPIIdempotencyKeyMaxLen = 255 // api.idempotency_key_max_len
-
-	// Circuit breaker: PayPal certificate fetcher.
-	// Opens after 3 consecutive cert-download failures; stays open for 60 s.
-	// PayPal will retry webhook delivery while the circuit is open.
-	DefaultBreakerPaypalCertMaxFails    = 3  // breaker.paypal_cert_max_fails
-	DefaultBreakerPaypalCertCooldownSec = 60 // breaker.paypal_cert_cooldown_sec
-
-	// Circuit breaker: file store (S3/GDrive/OneDrive).
-	// Opens after 5 consecutive storage errors; stays open for 30 s.
-	// Handlers return 500 immediately rather than waiting for a network timeout.
-	DefaultBreakerFileStoreMaxFails    = 5  // breaker.file_store_max_fails
-	DefaultBreakerFileStoreCooldownSec = 30 // breaker.file_store_cooldown_sec
-
 	// DB transaction retry policy for transient serialization / deadlock errors.
 	// Equal-jitter backoff: attempt 1 → 25–50 ms, attempt 2 → 50–100 ms.
 	DefaultTxRetryMaxAttempts = 3    // repository.tx_retry_max_attempts
 	DefaultTxRetryBaseDelayMs = 50   // repository.tx_retry_base_delay_ms  (milliseconds)
 	DefaultTxRetryMaxDelayMs  = 1000 // repository.tx_retry_max_delay_ms   (milliseconds)
-
-	// Notification subsystem thresholds (is_runtime=TRUE; changes propagate within cache window).
-	// Stale-alert timers: outbox-worker or background job flags a pending operation as stale
-	// once it has waited longer than these thresholds without an admin action.
-	DefaultNotifyBankTransferStaleSec = 43200 // notify.bank_transfer_stale_sec  — 12 hours
-	DefaultNotifyWithdrawalStaleSec   = 86400 // notify.withdrawal_stale_sec     — 24 hours
-
-	// Queue-depth alert: number of pending bank-transfer proofs that triggers a
-	// P0 EventAdminBankTransferQueueDepth alert alongside the regular pending reminder.
-	DefaultNotifyBankTransferQueueDepthThreshold = 20 // notify.bank_transfer_queue_depth_threshold
-
-	// High-value withdrawal: amount in cents above which EventAdminHighValueWithdrawal
-	// is also emitted alongside the regular EventAdminWithdrawalPending.
-	DefaultNotifyHighValueWithdrawalCents = 1_000_000 // notify.high_value_withdrawal_cents — Q10 000
-
-	// Periodic reminder: interval in seconds between repeated admin "pending" alerts
-	// while an approval is still outstanding.
-	DefaultNotifyPendingReminderIntervalSec = 14400 // notify.pending_reminder_interval_sec — 4 hours
-
-	// Prediction deadline push alerts: how many minutes before kick-off each
-	// reminder fires. Two independent lead times allow a 60-min and 15-min nudge.
-	DefaultNotifyPredictionDeadlineLeadMin1 = 60  // notify.prediction_deadline_lead_min_1
-	DefaultNotifyPredictionDeadlineLeadMin2 = 15  // notify.prediction_deadline_lead_min_2
-	DefaultNotifyPredictionMissingLeadMin   = 120 // notify.prediction_missing_lead_min   — 2 hours
-
-	// SSE delivery parameters (Phase 2).
-	// DefaultNotifySSEHeartbeatIntervalSec is the interval in seconds between
-	// keep-alive heartbeat frames sent on an open SSE connection.  A shorter
-	// interval detects proxy timeouts faster; a longer one reduces server load.
-	DefaultNotifySSEHeartbeatIntervalSec = 30 // notify.sse_heartbeat_interval_sec
-
-	// Web Push delivery TTL: how long (in seconds) the push service should
-	// retain an undelivered message.  After this window the message is discarded
-	// rather than delivered to a reconnected device.
-	DefaultNotifyWebPushTTLSec = 86400 // notify.web_push_ttl_sec — 24 hours
-
-	// Web Push notification asset URLs served by the application.
-	// Operators can override these via system_params to use a CDN or a
-	// branding-specific asset without a process restart.
-	DefaultNotifyPushIconURL       = PushDefaultIcon     // notify.push_icon_url
-	DefaultNotifyPushBadgeURL      = PushDefaultBadge    // notify.push_badge_url
-	DefaultNotifySchedulerTimezone = "America/Guatemala" // notify.scheduler_timezone
-
-	// DefaultNotifyTemplateCacheTTLSec is the number of seconds the notification
-	// template in-memory cache is considered fresh before the repository re-fetches
-	// all rows from the database.  Matches templateCacheTTL in the repository.
-	// is_runtime=FALSE: the TTL is applied at construction time; a restart is required.
-	DefaultNotifyTemplateCacheTTLSec = 300 // notify.template_cache_ttl_seconds — 5 minutes
-
-	// Push notification title and body are truncated to these character counts
-	// before delivery to the Web Push service.  Android clips titles at 100 and
-	// bodies at 300 characters; truncating server-side prevents silent content loss.
-	// is_runtime=TRUE: changes propagate within the 30 s param cache window.
-	DefaultNotifyPushTitleMaxChars = 100 // notify.push_title_max_chars — Android title limit
-	DefaultNotifyPushBodyMaxChars  = 300 // notify.push_body_max_chars  — push body limit
-
-	// DefaultNotifyPushSubRetentionDays is the number of days after inactivation
-	// before a push subscription row is permanently deleted.  Inactive rows that
-	// have been retained beyond this window are pruned daily by the scheduler.
-	DefaultNotifyPushSubRetentionDays = 30 // notify.push_sub_retention_days
-)
-
-const (
-	// PushDefaultIcon is the URL of the notification icon shown by the browser
-	// when no event-specific icon is provided. The asset must be served by the
-	// application at this path (192×192 px, PNG).
-	PushDefaultIcon = "/icons/icon-192.png"
-	// PushDefaultBadge is the URL of the monochrome badge icon displayed in the
-	// Android notification bar (72×72 px, PNG).
-	PushDefaultBadge = "/icons/badge-72.png"
 )
 
 // System parameter keys used by the service layer to fetch runtime-configurable
@@ -333,20 +190,18 @@ const (
 	// without a process restart. Defaults to 1000.
 	ParamKeyAdminBulkMaxItems = "admin.bulk_max_items"
 
-	// Infrastructure params - read once at process startup; changes require restart,
+	// Infrastructure params — read once at process startup; changes require restart,
 	// except cache.leaderboard_ttl_seconds which is propagated immediately via the
-	// mutation hook registered in server.go buildHandlers.
+	// mutation hook registered in server_compose.go buildHandlers.
 
 	// ParamKeyCacheMatchTTL is the match-list cache TTL in seconds.
 	ParamKeyCacheMatchTTL = "cache.match_ttl_seconds"
 	// ParamKeyCacheLeaderboardTTL is the leaderboard cache TTL in seconds.
-	// is_runtime = TRUE: the mutation hook calls CachedRankingService.UpdateTTL
+	// is_runtime=TRUE: the mutation hook calls CachedRankingService.UpdateTTL
 	// and InvalidateAll so the new value takes effect without a restart.
 	ParamKeyCacheLeaderboardTTL = "cache.leaderboard_ttl_seconds"
 	// ParamKeyCacheDashboardTTLSeconds is the dashboard stats cache TTL in seconds.
-	// Defaults to 30 s - long enough to absorb repeated dashboard loads but short
-	// enough that aggregate counts stay reasonably fresh. is_runtime = TRUE so it
-	// can be tuned or set to 0 (disable cache) without a process restart.
+	// is_runtime=TRUE so it can be tuned or set to 0 (disable cache) without restart.
 	ParamKeyCacheDashboardTTLSeconds = "cache.dashboard_ttl_seconds"
 	// ParamKeyAuditWriteTimeout is the maximum time in seconds the audit log
 	// goroutine waits to persist an entry before giving up.
@@ -370,9 +225,6 @@ const (
 	// cost of more idle Redis round-trips. is_runtime=FALSE: restart required.
 	ParamKeyMessagingStreamReadBlockSec = "messaging.stream_read_block_sec"
 
-	// ParamKeyAuthValidationTimeout is the JWKS warm-up timeout in seconds.
-	ParamKeyAuthValidationTimeout = "auth.validation_timeout_seconds"
-
 	// Audit retry policy (is_runtime=FALSE: process restart required).
 	// ParamKeyAuditMaxRetries is the number of write attempts before an audit entry
 	// is permanently lost; emits audit_lost=true on exhaustion.
@@ -380,94 +232,6 @@ const (
 	// ParamKeyAuditRetryDelayMs is the delay in milliseconds between audit write
 	// retries to allow transient DB failures to clear.
 	ParamKeyAuditRetryDelayMs = "audit.retry_delay_ms"
-
-	// Worker params (all is_runtime=FALSE: worker restart required).
-	// ParamKeyWorkerSnapshotConcurrency caps concurrent quiniela snapshots per event.
-	ParamKeyWorkerSnapshotConcurrency = "worker.snapshot_concurrency"
-	// ParamKeyWorkerSnapshotRetryBaseMs is the initial snapshot retry backoff in ms;
-	// doubles on each subsequent attempt (exponential).
-	ParamKeyWorkerSnapshotRetryBaseMs = "worker.snapshot_retry_base_ms"
-	// ParamKeyWorkerSnapshotMaxAttempts is the maximum snapshot write attempts per
-	// quiniela per match event.
-	ParamKeyWorkerSnapshotMaxAttempts = "worker.snapshot_max_attempts"
-	// ParamKeyWorkerDLQMonitorIntervalSec is the seconds between DLQ size log events.
-	ParamKeyWorkerDLQMonitorIntervalSec = "worker.dlq_monitor_interval_sec"
-	// ParamKeyWorkerPurgeIntervalHours is the hours between permanent purge runs.
-	ParamKeyWorkerPurgeIntervalHours = "worker.purge_interval_hours"
-
-	// ParamKeyPurgeRetentionDays is the age in days after which soft-deleted
-	// users and quinielas are permanently removed by the worker purge goroutine.
-	// is_runtime = FALSE: changing the value requires a worker restart.
-	ParamKeyPurgeRetentionDays = "system.purge_retention_days"
-
-	// ParamKeyPaymentMaxUploadBytes is the maximum size in bytes for bank transfer
-	// proof uploads.
-	ParamKeyPaymentMaxUploadBytes = "payment.max_upload_bytes"
-	// ParamKeyWithdrawalMinCents is the minimum withdrawal amount in minor units.
-	ParamKeyWithdrawalMinCents = "payment.withdrawal_min_cents"
-	// ParamKeyWithdrawalMaxCents is the maximum withdrawal amount in minor units.
-	ParamKeyWithdrawalMaxCents = "payment.withdrawal_max_cents"
-	// ParamKeyBankTransferMinAmountCents is the minimum declared amount in minor
-	// units for a bank transfer proof submission.
-	// Defaults to DefaultBankTransferMinAmountCents (1 000 = 10 GTQ).
-	ParamKeyBankTransferMinAmountCents = "payment.bank_transfer_min_amount_cents"
-	// ParamKeyBankTransferMaxAmountCents is the maximum declared amount in minor
-	// units for a bank transfer proof submission.
-	// Defaults to DefaultBankTransferMaxAmountCents (10 000 000 = 100 000 GTQ).
-	ParamKeyBankTransferMaxAmountCents = "payment.bank_transfer_max_amount_cents"
-	// ParamKeyPaymentIntentTTLMinutes is the number of minutes a pending PayPal
-	// payment intent remains valid. After expiry the webhook returns NotFound and
-	// the customer must restart checkout. is_runtime=TRUE: tunable without restart.
-	// Defaults to DefaultPaymentIntentTTLMinutes (60).
-	ParamKeyPaymentIntentTTLMinutes = "payment.intent_ttl_minutes"
-
-	// ParamKeyAPIBodySizeLimitBytes is the maximum request body size in bytes.
-	// Requests exceeding this limit are rejected with 413 to prevent DoS.
-	// is_runtime=FALSE: process restart required.
-	ParamKeyAPIBodySizeLimitBytes = "api.body_size_limit_bytes"
-
-	// ParamKeyAPIRateLimitRatePerSec is the token-bucket refill rate in tokens per
-	// second applied to each authenticated user on the /api/v1 subrouter.
-	// is_runtime=FALSE: the LimiterStore is constructed once at startup; a process
-	// restart is required to apply a new rate.
-	ParamKeyAPIRateLimitRatePerSec = "api.rate_limit_rate_per_sec"
-
-	// ParamKeyAPIRateLimitBurst is the maximum burst size of the per-user token
-	// bucket. A burst of 30 allows up to 30 back-to-back requests before the
-	// steady-state rate takes effect. is_runtime=FALSE: restart required.
-	ParamKeyAPIRateLimitBurst = "api.rate_limit_burst"
-
-	// ParamKeyAPIIdempotencyTTLHours is the number of hours a committed
-	// idempotency entry is retained in the store. Clients may safely retry
-	// with the same Idempotency-Key for this duration after the original request.
-	// is_runtime=FALSE: the TTL is passed to the store at server startup.
-	ParamKeyAPIIdempotencyTTLHours = "api.idempotency_ttl_hours"
-
-	// ParamKeyAPIIdempotencyKeyMaxLen is the maximum byte length of a client-
-	// supplied Idempotency-Key header value. Keys exceeding this limit are
-	// rejected with 422. is_runtime=FALSE: restart required.
-	ParamKeyAPIIdempotencyKeyMaxLen = "api.idempotency_key_max_len"
-
-	// ParamKeySnapshotKeepLatestCount is the number of most-recent leaderboard
-	// snapshots to retain per quiniela. The daily purge job deletes every snapshot
-	// beyond this count. is_runtime=FALSE: worker restart required.
-	ParamKeySnapshotKeepLatestCount = "snapshot.keep_latest_count"
-
-	// Circuit breaker: PayPal certificate fetcher (is_runtime=FALSE: restart required).
-	// ParamKeyBreakerPaypalCertMaxFails is the number of consecutive cert-fetch
-	// failures before the circuit opens.
-	ParamKeyBreakerPaypalCertMaxFails = "breaker.paypal_cert_max_fails"
-	// ParamKeyBreakerPaypalCertCooldownSec is the seconds the circuit stays open
-	// before allowing a single trial request.
-	ParamKeyBreakerPaypalCertCooldownSec = "breaker.paypal_cert_cooldown_sec"
-
-	// Circuit breaker: file store (S3/GDrive/OneDrive) (is_runtime=FALSE: restart required).
-	// ParamKeyBreakerFileStoreMaxFails is the number of consecutive storage errors
-	// before the file-store circuit opens.
-	ParamKeyBreakerFileStoreMaxFails = "breaker.file_store_max_fails"
-	// ParamKeyBreakerFileStoreCooldownSec is the seconds the file-store circuit
-	// stays open before allowing a single trial request.
-	ParamKeyBreakerFileStoreCooldownSec = "breaker.file_store_cooldown_sec"
 
 	// DB transaction retry policy (is_runtime=FALSE: restart required).
 	// ParamKeyTxRetryMaxAttempts is the total number of transaction attempts
@@ -479,135 +243,6 @@ const (
 	// ParamKeyTxRetryMaxDelayMs is the maximum backoff delay cap in milliseconds
 	// so that very high attempt counts do not wait unreasonably long.
 	ParamKeyTxRetryMaxDelayMs = "repository.tx_retry_max_delay_ms"
-
-	// Notification subsystem parameters (is_runtime=TRUE unless noted).
-
-	// ParamKeyNotifyBankTransferStaleSec is the seconds after which an unreviewed
-	// bank-transfer proof triggers EventAdminBankTransferStale.
-	ParamKeyNotifyBankTransferStaleSec = "notify.bank_transfer_stale_sec"
-	// ParamKeyNotifyWithdrawalStaleSec is the seconds after which an unreviewed
-	// withdrawal request triggers EventAdminWithdrawalStale.
-	ParamKeyNotifyWithdrawalStaleSec = "notify.withdrawal_stale_sec"
-	// ParamKeyNotifyHighValueWithdrawalCents is the threshold in cents above which
-	// a withdrawal also triggers EventAdminHighValueWithdrawal.
-	ParamKeyNotifyHighValueWithdrawalCents = "notify.high_value_withdrawal_cents"
-	// ParamKeyNotifyPendingReminderIntervalSec is the seconds between repeated
-	// "pending action required" admin alerts while an operation is still waiting.
-	ParamKeyNotifyPendingReminderIntervalSec = "notify.pending_reminder_interval_sec"
-	// ParamKeyNotifyPredictionDeadlineLeadMin1 is the first (earlier) push-alert
-	// lead time in minutes before prediction deadline closes.
-	ParamKeyNotifyPredictionDeadlineLeadMin1 = "notify.prediction_deadline_lead_min_1"
-	// ParamKeyNotifyPredictionDeadlineLeadMin2 is the second (later, closer) push-alert
-	// lead time in minutes before prediction deadline closes.
-	ParamKeyNotifyPredictionDeadlineLeadMin2 = "notify.prediction_deadline_lead_min_2"
-	// ParamKeyNotifyPredictionMissingLeadMin is the lead time in minutes before
-	// kick-off at which a missing-prediction reminder is sent.
-	ParamKeyNotifyPredictionMissingLeadMin = "notify.prediction_missing_lead_min"
-	// ParamKeyNotifyBankTransferQueueDepthThreshold is the number of pending
-	// bank-transfer proofs that triggers a P0 EventAdminBankTransferQueueDepth
-	// alert alongside the regular EventAdminPendingReminder.
-	ParamKeyNotifyBankTransferQueueDepthThreshold = "notify.bank_transfer_queue_depth_threshold"
-
-	// String params — no integer Default* constant because the value is free-form.
-
-	// ParamKeyNotifyAdminEmails is a comma-separated list of email addresses that
-	// receive all admin.* and system.* notification events.
-	ParamKeyNotifyAdminEmails = "notify.admin_emails"
-	// ParamKeyNotifyWebPushVAPIDPublicKey is the VAPID public key used to sign
-	// Web Push subscription requests (RFC 8292). Must be a base64url-encoded P-256 point.
-	ParamKeyNotifyWebPushVAPIDPublicKey = "notify.web_push_vapid_public_key"
-	// ParamKeyNotifyWebPushVAPIDSubject is the VAPID subject claim — an HTTPS URL
-	// or mailto: address that identifies the application server to push services.
-	ParamKeyNotifyWebPushVAPIDSubject = "notify.web_push_vapid_subject"
-
-	// ParamKeyNotifySSEHeartbeatIntervalSec is the interval in seconds between
-	// keep-alive heartbeat frames on an open SSE connection.
-	// Shorter values detect proxy timeouts faster; longer values reduce server load.
-	ParamKeyNotifySSEHeartbeatIntervalSec = "notify.sse_heartbeat_interval_sec"
-	// ParamKeyNotifyWebPushTTLSec is the Web Push message time-to-live in seconds.
-	// The push service discards undelivered messages after this window expires.
-	ParamKeyNotifyWebPushTTLSec = "notify.web_push_ttl_sec"
-	// ParamKeyNotifyPushIconURL is the URL of the notification icon (192×192 px PNG)
-	// shown by the browser. Override to point to a CDN or branding-specific asset.
-	// is_runtime=TRUE: changes propagate within the 30 s cache window.
-	ParamKeyNotifyPushIconURL = "notify.push_icon_url"
-	// ParamKeyNotifyPushBadgeURL is the URL of the monochrome badge icon (72×72 px
-	// PNG) displayed in the Android notification bar.
-	// is_runtime=TRUE: changes propagate within the 30 s cache window.
-	ParamKeyNotifyPushBadgeURL = "notify.push_badge_url"
-	// ParamKeyNotifySchedulerTimezone is the IANA timezone used by the notification
-	// scheduler when evaluating daily and weekly job schedules (e.g. "America/Guatemala").
-	// is_runtime=FALSE: requires a worker restart to take effect.
-	ParamKeyNotifySchedulerTimezone = "notify.scheduler_timezone"
-	// ParamKeyNotifyDefaultLocale is the BCP-47 language tag used for all
-	// user-facing notification text (email subjects, bodies, push titles).
-	// Supported values: "en" (English) and "es" (Spanish).
-	// is_runtime=TRUE: changes propagate within the cache window without restart.
-	ParamKeyNotifyDefaultLocale = "notify.default_locale"
-
-	// ParamKeyNotifyTemplateCacheTTLSec is the seconds the notification template
-	// in-memory cache is considered fresh.  After expiry the next access
-	// bulk-reloads all rows from the database.
-	// is_runtime=FALSE: change takes effect on the next server/worker restart.
-	ParamKeyNotifyTemplateCacheTTLSec = "notify.template_cache_ttl_seconds"
-
-	// ParamKeyNotifyPushTitleMaxChars is the maximum rune count for a push
-	// notification title.  Titles exceeding this limit are truncated before
-	// delivery.  Default is 100 (the Android push notification title limit).
-	// is_runtime=TRUE: changes propagate within the 30 s param cache window.
-	ParamKeyNotifyPushTitleMaxChars = "notify.push_title_max_chars"
-
-	// ParamKeyNotifyPushBodyMaxChars is the maximum rune count for a push
-	// notification body.  Bodies exceeding this limit are truncated before
-	// delivery.  Default is 300 (standard push notification body limit).
-	// is_runtime=TRUE: changes propagate within the 30 s param cache window.
-	ParamKeyNotifyPushBodyMaxChars = "notify.push_body_max_chars"
-
-	// ParamKeyNotifyPushSubRetentionDays is the number of days after inactivation
-	// before a push subscription is permanently deleted by the pruning job.
-	// is_runtime=TRUE: takes effect on the next daily prune run.
-	ParamKeyNotifyPushSubRetentionDays = "notify.push_sub_retention_days"
-)
-
-// Audit action strings written to the audit_log table. Using constants rather
-// than inline strings prevents typos from creating silent mismatches between
-// the writer and any downstream query that filters by action.
-const (
-	AuditActionMatchCreated         = "match.created"
-	AuditActionMatchStarted         = "match.started"
-	AuditActionMatchResultSet       = "match.result_set"
-	AuditActionTiebreakerQuestion   = "tiebreaker.question_set"
-	AuditActionTiebreakerResult     = "tiebreaker.result_confirmed"
-	AuditActionSlotConfirmed        = "tournament.slot_confirmed"
-	AuditActionGroupDeleted         = "admin_group.deleted"
-	AuditActionMemberRemoved        = "admin_group.member_removed"
-	AuditActionGroupSettingsUpdated = "admin_group.settings_updated"
-	AuditActionOwnershipTransferred = "admin_group.ownership_transferred"
-	AuditActionUserBanned           = "admin_user.banned"
-	AuditActionUserUnbanned         = "admin_user.unbanned"
-	AuditActionPaymentCreated       = "payment.created"
-	AuditActionPaymentValidated     = "payment.validated"
-	AuditActionPaymentRejected      = "payment.rejected"
-	AuditActionJoinApproved         = "group.join_approved"
-	AuditActionGroupRenamed         = "group.renamed"
-	AuditActionParamUpdated         = "param.updated"
-	AuditActionConflictAcknowledged = "conflict.acknowledged"
-	AuditActionConflictAutoResolved = "conflict.auto_resolved"
-	AuditActionMemberBulkRemoved    = "admin_group.member_bulk_removed"
-	AuditActionGroupBulkDeleted     = "admin_group.bulk_deleted"
-	AuditActionLeaderboardRefreshed = "admin_group.leaderboard_refreshed"
-	AuditActionScoringRuleUpdated   = "scoring_rule.updated"
-
-	// Balance and payment actions.
-	AuditActionBankTransferUploaded = "bank_transfer.uploaded"
-	AuditActionBankTransferApproved = "bank_transfer.approved"
-	AuditActionBankTransferRejected = "bank_transfer.rejected"
-	AuditActionBalanceCredited      = "balance.credited"
-	AuditActionBalanceDebited       = "balance.debited"
-	AuditActionWithdrawalRequested  = "withdrawal.requested"
-	AuditActionWithdrawalApproved   = "withdrawal.approved"
-	AuditActionWithdrawalRejected   = "withdrawal.rejected"
-	AuditActionWebhookPaymentCredit = "webhook.payment_credited"
 )
 
 // Snapshot schema versions identify the JSONB encoding format used by

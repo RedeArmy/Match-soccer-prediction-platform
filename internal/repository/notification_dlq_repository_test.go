@@ -286,6 +286,89 @@ func TestNotificationDLQRepository_MarkResolved_CancelledContext_ReturnsError(t 
 	}
 }
 
+// ── ListRecent ────────────────────────────────────────────────────────────────
+
+func TestNotificationDLQRepository_ListRecent_ReturnsEntries(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresNotificationDLQRepository(testDB)
+
+	e1 := makeDLQEntry("email", "admin.bank_transfer_pending")
+	e2 := makeDLQEntry("push", "admin.withdrawal_pending")
+	_ = repo.CreateEntry(context.Background(), e1)
+	_ = repo.CreateEntry(context.Background(), e2)
+
+	entries, err := repo.ListRecent(context.Background(), 10)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("ListRecent: got %d entries, want 2", len(entries))
+	}
+}
+
+func TestNotificationDLQRepository_ListRecent_Empty_ReturnsEmptySlice(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresNotificationDLQRepository(testDB)
+
+	entries, err := repo.ListRecent(context.Background(), 10)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("ListRecent: got %d entries, want 0", len(entries))
+	}
+}
+
+func TestNotificationDLQRepository_ListRecent_RespectsLimit(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresNotificationDLQRepository(testDB)
+
+	for range 5 {
+		_ = repo.CreateEntry(context.Background(), makeDLQEntry("email", "admin.bank_transfer_pending"))
+	}
+
+	entries, err := repo.ListRecent(context.Background(), 3)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(entries) != 3 {
+		t.Errorf("ListRecent: got %d entries, want 3 (limit respected)", len(entries))
+	}
+}
+
+func TestNotificationDLQRepository_ListRecent_IncludesResolved(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresNotificationDLQRepository(testDB)
+
+	e := makeDLQEntry("email", "admin.bank_transfer_stale")
+	_ = repo.CreateEntry(context.Background(), e)
+	_ = repo.MarkResolved(context.Background(), e.ID)
+
+	entries, err := repo.ListRecent(context.Background(), 10)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("ListRecent: got %d entries; want 1 (resolved entries included)", len(entries))
+	}
+	if entries[0].ResolvedAt == nil {
+		t.Error("ListRecent: expected resolved entry to have non-nil ResolvedAt")
+	}
+}
+
+func TestNotificationDLQRepository_ListRecent_CancelledContext_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresNotificationDLQRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := repo.ListRecent(ctx, 10)
+	if err == nil {
+		t.Error("expected error for cancelled context, got nil")
+	}
+}
+
 func TestNotificationDLQRepository_CountUnresolved_CancelledContext_ReturnsError(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresNotificationDLQRepository(testDB)

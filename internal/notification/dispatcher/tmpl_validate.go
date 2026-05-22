@@ -95,6 +95,36 @@ func validateEmailHTMLTmpl(tmplStr string) error {
 	return nil
 }
 
+// PreviewEmailHTML renders an email_html_tmpl string against a sample
+// userEmailData built from the already-rendered content fields so the admin
+// preview endpoint can show realistic HTML without a real user record.
+func PreviewEmailHTML(tmplStr, title, body, actionURL, emailSubject string) (string, error) {
+	t, err := htmltemplate.New("email-html-preview").Parse(tmplStr)
+	if err != nil {
+		return "", fmt.Errorf("dispatcher: parse email_html_tmpl: %w", err)
+	}
+	subject := emailSubject
+	if subject == "" {
+		subject = title
+	}
+	sample := userEmailData{
+		Name:             "Juan García",
+		Subject:          subject,
+		Headline:         title,
+		Body:             body,
+		ActionURL:        actionURL,
+		ActionLabel:      "Open app",
+		UnsubscribeURL:   "",
+		UnsubscribeLabel: "Unsubscribe from emails",
+		GeneratedAt:      "2026-05-21 08:00:00 UTC",
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, sample); err != nil {
+		return "", fmt.Errorf("dispatcher: execute email_html_tmpl: %w", err)
+	}
+	return buf.String(), nil
+}
+
 // renderTmplStrict parses and executes a template string with missingkey=error.
 // Any reference to a map key that is absent in data returns an error, making
 // this function suitable for template validation (not production rendering).

@@ -30,6 +30,12 @@ func (s *stubTemplateRepo) Upsert(_ context.Context, _ *domain.NotificationTempl
 	return nil
 }
 func (s *stubTemplateRepo) Delete(_ context.Context, _, _ string) error { return nil }
+func (s *stubTemplateRepo) ListHistory(_ context.Context, _, _ string, _ int) ([]*domain.NotificationTemplateHistory, error) {
+	return nil, nil
+}
+func (s *stubTemplateRepo) GetHistoryEntry(_ context.Context, _ int64, _, _ string) (*domain.NotificationTemplateHistory, error) {
+	return nil, nil
+}
 
 func newTemplateDispatcher(notifRepo *stubNotifRepo, tmplRepo *stubTemplateRepo) *dispatcher.UserDispatcher {
 	h := hub.New()
