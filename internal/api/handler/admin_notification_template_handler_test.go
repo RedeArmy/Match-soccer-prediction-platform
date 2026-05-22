@@ -27,6 +27,10 @@ type stubNotifTemplateRepo struct {
 	postUpsertGetErr error // if set, Get returns this error after the first Upsert call
 	upsertErr        error
 	deleteErr        error
+	historyEntries   []*domain.NotificationTemplateHistory
+	historyErr       error
+	historyEntry     *domain.NotificationTemplateHistory
+	historyEntryErr  error
 }
 
 func (s *stubNotifTemplateRepo) List(_ context.Context) ([]*domain.NotificationTemplate, error) {
@@ -48,6 +52,12 @@ func (s *stubNotifTemplateRepo) Upsert(_ context.Context, t *domain.Notification
 func (s *stubNotifTemplateRepo) Delete(_ context.Context, _, _ string) error {
 	return s.deleteErr
 }
+func (s *stubNotifTemplateRepo) ListHistory(_ context.Context, _, _ string, _ int) ([]*domain.NotificationTemplateHistory, error) {
+	return s.historyEntries, s.historyErr
+}
+func (s *stubNotifTemplateRepo) GetHistoryEntry(_ context.Context, _ int64, _, _ string) (*domain.NotificationTemplateHistory, error) {
+	return s.historyEntry, s.historyEntryErr
+}
 
 // ── router factory ────────────────────────────────────────────────────────────
 
@@ -59,6 +69,8 @@ func newNotifTemplateRouter(repo *stubNotifTemplateRepo) http.Handler {
 	r.Put("/notification-templates/{event_type}/{locale}", h.Upsert)
 	r.Delete("/notification-templates/{event_type}/{locale}", h.Delete)
 	r.Post("/notification-templates/{event_type}/{locale}/preview", h.Preview)
+	r.Get("/notification-templates/{event_type}/{locale}/history", h.History)
+	r.Post("/notification-templates/{event_type}/{locale}/rollback", h.Rollback)
 	return r
 }
 
@@ -315,6 +327,139 @@ func TestNotifTemplatePreview_InvalidLocale_Returns422(t *testing.T) {
 	repo := &stubNotifTemplateRepo{}
 	body := `{"title_tmpl":"t","body_tmpl":"b"}`
 	w := doWithCaller(newNotifTemplateRouter(repo), http.MethodPost, "/notification-templates/any.event/zz/preview", body)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestNotifTemplatePreview_WithEmailHTMLTmpl_Returns200(t *testing.T) {
+	repo := &stubNotifTemplateRepo{}
+	// Template uses userEmailData struct fields (Headline, Body, Name, etc.).
+	body := `{"title_tmpl":"Hello","body_tmpl":"World","email_html_tmpl":"<html><body>{{.Headline}}</body></html>"}`
+	w := doWithCaller(newNotifTemplateRouter(repo), http.MethodPost, "/notification-templates/any.event/en/preview", body)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestNotifTemplatePreview_InvalidEmailHTMLTmpl_Returns422(t *testing.T) {
+	repo := &stubNotifTemplateRepo{}
+	body := `{"title_tmpl":"Hello","body_tmpl":"World","email_html_tmpl":"{{.unclosed"}`
+	w := doWithCaller(newNotifTemplateRouter(repo), http.MethodPost, "/notification-templates/any.event/en/preview", body)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+
+func historyFix() *domain.NotificationTemplateHistory {
+	return &domain.NotificationTemplateHistory{
+		ID:        1,
+		EventType: "payment.confirmed",
+		Locale:    "en",
+		TitleTmpl: "Old title",
+		BodyTmpl:  "Old body",
+		ChangedAt: time.Now(),
+	}
+}
+
+func TestNotifTemplateHistory_Success_Returns200(t *testing.T) {
+	repo := &stubNotifTemplateRepo{historyEntries: []*domain.NotificationTemplateHistory{historyFix()}}
+	w := do(newNotifTemplateRouter(repo), http.MethodGet, "/notification-templates/payment.confirmed/en/history", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestNotifTemplateHistory_EmptyList_Returns200(t *testing.T) {
+	repo := &stubNotifTemplateRepo{historyEntries: []*domain.NotificationTemplateHistory{}}
+	w := do(newNotifTemplateRouter(repo), http.MethodGet, "/notification-templates/payment.confirmed/en/history", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestNotifTemplateHistory_WithLimitParam_Returns200(t *testing.T) {
+	repo := &stubNotifTemplateRepo{historyEntries: []*domain.NotificationTemplateHistory{historyFix()}}
+	w := do(newNotifTemplateRouter(repo), http.MethodGet, "/notification-templates/payment.confirmed/en/history?limit=5", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestNotifTemplateHistory_RepoError_Returns500(t *testing.T) {
+	repo := &stubNotifTemplateRepo{historyErr: errors.New("db error")}
+	w := do(newNotifTemplateRouter(repo), http.MethodGet, "/notification-templates/payment.confirmed/en/history", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestNotifTemplateHistory_InvalidLocale_Returns422(t *testing.T) {
+	repo := &stubNotifTemplateRepo{}
+	w := do(newNotifTemplateRouter(repo), http.MethodGet, "/notification-templates/payment.confirmed/xx/history", "")
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+// ── Rollback ──────────────────────────────────────────────────────────────────
+
+func TestNotifTemplateRollback_Success_Returns200(t *testing.T) {
+	repo := &stubNotifTemplateRepo{historyEntry: historyFix()}
+	body := `{"history_id":1}`
+	w := doWithCaller(newNotifTemplateRouter(repo), http.MethodPost, "/notification-templates/payment.confirmed/en/rollback", body)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestNotifTemplateRollback_NoCaller_Returns401(t *testing.T) {
+	repo := &stubNotifTemplateRepo{historyEntry: historyFix()}
+	body := `{"history_id":1}`
+	w := do(newNotifTemplateRouter(repo), http.MethodPost, "/notification-templates/payment.confirmed/en/rollback", body)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestNotifTemplateRollback_ZeroHistoryID_Returns422(t *testing.T) {
+	repo := &stubNotifTemplateRepo{}
+	body := `{"history_id":0}`
+	w := doWithCaller(newNotifTemplateRouter(repo), http.MethodPost, "/notification-templates/payment.confirmed/en/rollback", body)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestNotifTemplateRollback_HistoryEntryNotFound_Returns404(t *testing.T) {
+	repo := &stubNotifTemplateRepo{historyEntryErr: errors.New("not found")}
+	body := `{"history_id":999}`
+	w := doWithCaller(newNotifTemplateRouter(repo), http.MethodPost, "/notification-templates/payment.confirmed/en/rollback", body)
+	if w.Code != http.StatusInternalServerError {
+		// writeError maps a generic error to 500; apperrors.NotFound would give 404.
+		// The stub returns a plain error, which produces 500.
+		t.Errorf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestNotifTemplateRollback_UpsertError_Returns500(t *testing.T) {
+	repo := &stubNotifTemplateRepo{
+		historyEntry: historyFix(),
+		upsertErr:    errors.New("db error"),
+	}
+	body := `{"history_id":1}`
+	w := doWithCaller(newNotifTemplateRouter(repo), http.MethodPost, "/notification-templates/payment.confirmed/en/rollback", body)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestNotifTemplateRollback_InvalidLocale_Returns422(t *testing.T) {
+	repo := &stubNotifTemplateRepo{}
+	body := `{"history_id":1}`
+	w := doWithCaller(newNotifTemplateRouter(repo), http.MethodPost, "/notification-templates/payment.confirmed/zz/rollback", body)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}

@@ -96,34 +96,38 @@ func PriorityOf(et EventType) Priority {
 	return PriorityP2Medium
 }
 
+// adminEventSet is the authoritative set of EventTypes directed at administrators.
+// Adding a new admin/system event type here is the single update point — no switch
+// arms to forget. IsAdminEvent is O(1) and CC=2 (consistent with priorityTable).
+var adminEventSet = map[EventType]struct{}{
+	EventAdminBankTransferPending:       {},
+	EventAdminBankTransferStale:         {},
+	EventAdminBankTransferQueueDepth:    {},
+	EventAdminWithdrawalPending:         {},
+	EventAdminWithdrawalStale:           {},
+	EventAdminHighValueWithdrawal:       {},
+	EventAdminPaymentDispute:            {},
+	EventAdminMatchResultPending:        {},
+	EventAdminScoringDiscrepancy:        {},
+	EventAdminGroupReported:             {},
+	EventAdminPendingReminder:           {},
+	EventAdminDailySummary:              {},
+	EventAdminWeeklyReport:              {},
+	EventSystemCircuitBreakerOpened:     {},
+	EventSystemCircuitBreakerHalfOpen:   {},
+	EventSystemWebhookSignatureFailed:   {},
+	EventSystemWebhookSignatureRepeated: {},
+	EventSystemTxRetryExhausted:         {},
+	EventSystemBalanceLedgerMismatch:    {},
+	EventSystemRateLimitAbuse:           {},
+	EventSystemIdempotencyCollision:     {},
+	EventSystemFileStoreUnavailable:     {},
+}
+
 // IsAdminEvent reports whether the event type is directed at administrators
 // rather than (or in addition to) the originating user. Admin events always
 // trigger an immediate email to all active admin recipients.
 func IsAdminEvent(et EventType) bool {
-	switch et {
-	case EventAdminBankTransferPending,
-		EventAdminBankTransferStale,
-		EventAdminBankTransferQueueDepth,
-		EventAdminWithdrawalPending,
-		EventAdminWithdrawalStale,
-		EventAdminHighValueWithdrawal,
-		EventAdminPaymentDispute,
-		EventAdminMatchResultPending,
-		EventAdminScoringDiscrepancy,
-		EventAdminGroupReported,
-		EventAdminPendingReminder,
-		EventAdminDailySummary,
-		EventAdminWeeklyReport,
-		EventSystemCircuitBreakerOpened,
-		EventSystemCircuitBreakerHalfOpen,
-		EventSystemWebhookSignatureFailed,
-		EventSystemWebhookSignatureRepeated,
-		EventSystemTxRetryExhausted,
-		EventSystemBalanceLedgerMismatch,
-		EventSystemRateLimitAbuse,
-		EventSystemIdempotencyCollision,
-		EventSystemFileStoreUnavailable:
-		return true
-	}
-	return false
+	_, ok := adminEventSet[et]
+	return ok
 }

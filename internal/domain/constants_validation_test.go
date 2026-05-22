@@ -106,6 +106,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifyTemplateCacheTTLSec":             ParamKeyNotifyTemplateCacheTTLSec,
 		"ParamKeyNotifyPushTitleMaxChars":               ParamKeyNotifyPushTitleMaxChars,
 		"ParamKeyNotifyPushBodyMaxChars":                ParamKeyNotifyPushBodyMaxChars,
+		"ParamKeyNotifyPushSubRetentionDays":            ParamKeyNotifyPushSubRetentionDays,
+		"ParamKeyNotifyFromAddress":                     ParamKeyNotifyFromAddress,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -196,10 +198,15 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultNotifyTemplateCacheTTLSec":             DefaultNotifyTemplateCacheTTLSec,
 		"DefaultNotifyPushTitleMaxChars":               DefaultNotifyPushTitleMaxChars,
 		"DefaultNotifyPushBodyMaxChars":                DefaultNotifyPushBodyMaxChars,
+		"DefaultNotifyPushSubRetentionDays":            DefaultNotifyPushSubRetentionDays,
+		// String defaults — not in the int defaults map; documented separately.
+		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
+		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
+		"DefaultNotifySchedulerTimezone": DefaultNotifySchedulerTimezone,
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 73 // update when adding a new ParamKey* constant
+		const expectedCount = 75 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -207,7 +214,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 60 // update when adding a new Default* constant
+		const expectedCount = 64 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -338,6 +345,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyNotifyTemplateCacheTTLSec", ParamKeyNotifyTemplateCacheTTLSec, "notify"},
 		{"ParamKeyNotifyPushTitleMaxChars", ParamKeyNotifyPushTitleMaxChars, "notify"},
 		{"ParamKeyNotifyPushBodyMaxChars", ParamKeyNotifyPushBodyMaxChars, "notify"},
+		{"ParamKeyNotifyPushSubRetentionDays", ParamKeyNotifyPushSubRetentionDays, "notify"},
+		{"ParamKeyNotifyFromAddress", ParamKeyNotifyFromAddress, "notify"},
 	}
 
 	for _, tc := range paramKeys {
@@ -438,6 +447,7 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyBankTransferQueueDepthThreshold": DefaultNotifyBankTransferQueueDepthThreshold,
 		"DefaultNotifySSEHeartbeatIntervalSec":         DefaultNotifySSEHeartbeatIntervalSec,
 		"DefaultNotifyWebPushTTLSec":                   DefaultNotifyWebPushTTLSec,
+		"DefaultNotifyPushSubRetentionDays":            DefaultNotifyPushSubRetentionDays,
 	}
 
 	for name, value := range defaults {
@@ -468,6 +478,23 @@ func TestZeroValuedDefaultsAreIntentional(t *testing.T) {
 	}
 }
 
+// TestStringDefaultConstantsAreNonEmpty validates that string Default* constants
+// which represent asset paths or configuration values are not accidentally empty.
+func TestStringDefaultConstantsAreNonEmpty(t *testing.T) {
+	stringDefaults := map[string]string{
+		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
+		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
+		"DefaultNotifySchedulerTimezone": DefaultNotifySchedulerTimezone,
+	}
+	for name, value := range stringDefaults {
+		t.Run(name, func(t *testing.T) {
+			if value == "" {
+				t.Errorf("%s: string default must not be empty", name)
+			}
+		})
+	}
+}
+
 // TestConstantsDocumentation is a reminder test that fails when new constants
 // are added but not documented in this file. If you see a failure here, you
 // likely added a new ParamKey* or Default* constant. Make sure to:
@@ -478,7 +505,8 @@ func TestZeroValuedDefaultsAreIntentional(t *testing.T) {
 //     if the default is legitimately zero)
 //  4. Create a migration to seed it in system_params
 //  5. Add it to allParams in cmd/validate-params/main.go
-//  6. Add its range bounds to paramIntConstraints in service/system_param_service.go
+//  6. Add its range bounds to paramIntConstraints (int) or paramStringConstraints
+//     (string) in service/system_param_service.go
 //  7. Update the expectedCount smoke-test values in TestSystemParamConstants_AllPaired
 func TestConstantsDocumentation(t *testing.T) {
 	t.Run("scoring_constants", testScoringConstants)

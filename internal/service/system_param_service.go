@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -309,19 +310,94 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyPushSubRetentionDays: {1, 365}, // 1 day – 1 year
 }
 
-// validateParamConstraints enforces per-key business-rule bounds for int params.
+// paramStringValidator validates a string system-param value for a specific key.
+// An empty string is always treated as "not configured — use the compiled default"
+// and must be accepted by every validator.
+type paramStringValidator func(value string) error
+
+// paramStringConstraints maps string param keys to their format validators.
+// Keys absent from the map accept any string. The empty string is always valid
+// (it means "fall back to the binary default").
+var paramStringConstraints = map[string]paramStringValidator{
+	// notify.default_locale must be one of the two supported BCP-47 tags.
+	domain.ParamKeyNotifyDefaultLocale: func(value string) error {
+		if value == "" || value == "en" || value == "es" {
+			return nil
+		}
+		return apperrors.Validation(fmt.Sprintf("value %q is not a supported locale (accepted: en, es, or empty)", value))
+	},
+	// notify.scheduler_timezone must be a valid IANA timezone name.
+	domain.ParamKeyNotifySchedulerTimezone: func(value string) error {
+		if value == "" {
+			return nil
+		}
+		if _, err := time.LoadLocation(value); err != nil {
+			return apperrors.Validation(fmt.Sprintf("value %q is not a valid IANA timezone (e.g. America/Guatemala)", value))
+		}
+		return nil
+	},
+	// notify.from_address must be empty or contain '@' (bare address or RFC 5322 display-name form).
+	domain.ParamKeyNotifyFromAddress: func(value string) error {
+		if value == "" || strings.Contains(value, "@") {
+			return nil
+		}
+		return apperrors.Validation(fmt.Sprintf("value %q is not a valid email address (must contain '@')", value))
+	},
+	// notify.push_icon_url must be a server-relative path (single leading '/') or empty.
+	// Protocol-relative URLs ("//host/path") are rejected; they would point off-origin.
+	domain.ParamKeyNotifyPushIconURL: func(value string) error {
+		if value == "" || (strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//")) {
+			return nil
+		}
+		return apperrors.Validation(fmt.Sprintf("value %q must be a server-relative path starting with a single '/'", value))
+	},
+	// notify.push_badge_url must be a server-relative path (single leading '/') or empty.
+	domain.ParamKeyNotifyPushBadgeURL: func(value string) error {
+		if value == "" || (strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//")) {
+			return nil
+		}
+		return apperrors.Validation(fmt.Sprintf("value %q must be a server-relative path starting with a single '/'", value))
+	},
+	// notify.web_push_vapid_subject must be a contact URI per RFC 8292 §2.1 or empty.
+	domain.ParamKeyNotifyWebPushVAPIDSubject: func(value string) error {
+		if value == "" || strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "mailto:") {
+			return nil
+		}
+		return apperrors.Validation(fmt.Sprintf("value %q must start with 'https://' or 'mailto:'", value))
+	},
+	// notify.admin_emails must be empty or a comma-separated list of RFC 5322 addresses.
+	domain.ParamKeyNotifyAdminEmails: func(value string) error {
+		if value == "" {
+			return nil
+		}
+		for _, addr := range strings.Split(value, ",") {
+			addr = strings.TrimSpace(addr)
+			if !strings.Contains(addr, "@") {
+				return apperrors.Validation(fmt.Sprintf("address %q in notify.admin_emails must contain '@'", addr))
+			}
+		}
+		return nil
+	},
+}
+
+// validateParamConstraints enforces per-key business-rule bounds for int params
+// and format constraints for string params.
 // validateParamValue must be called first to ensure value is already parseable.
 func validateParamConstraints(key, value string, typ domain.SystemParamType) error {
-	if typ != domain.SystemParamTypeInt {
-		return nil
-	}
-	n, _ := strconv.Atoi(value) // safe: already validated
-	c, ok := paramIntConstraints[key]
-	if !ok {
-		return nil
-	}
-	if n < c.min || n > c.max {
-		return apperrors.Validation(fmt.Sprintf("value %d is out of allowed range [%d, %d]", n, c.min, c.max))
+	switch typ {
+	case domain.SystemParamTypeInt:
+		n, _ := strconv.Atoi(value) // safe: already validated
+		c, ok := paramIntConstraints[key]
+		if !ok {
+			return nil
+		}
+		if n < c.min || n > c.max {
+			return apperrors.Validation(fmt.Sprintf("value %d is out of allowed range [%d, %d]", n, c.min, c.max))
+		}
+	case domain.SystemParamTypeString:
+		if fn, ok := paramStringConstraints[key]; ok {
+			return fn(value)
+		}
 	}
 	return nil
 }

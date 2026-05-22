@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -38,6 +39,7 @@ type NotificationTemplateResponse struct {
 	BodyTmpl         string `json:"body_tmpl"`
 	ActionURLTmpl    string `json:"action_url_tmpl"`
 	EmailSubjectTmpl string `json:"email_subject_tmpl,omitempty"`
+	EmailHTMLTmpl    string `json:"email_html_tmpl,omitempty"`
 	UpdatedBy        *int   `json:"updated_by,omitempty"`
 	UpdatedAt        string `json:"updated_at"`
 }
@@ -50,6 +52,7 @@ func templateToResponse(t *domain.NotificationTemplate) NotificationTemplateResp
 		BodyTmpl:         t.BodyTmpl,
 		ActionURLTmpl:    t.ActionURLTmpl,
 		EmailSubjectTmpl: t.EmailSubjectTmpl,
+		EmailHTMLTmpl:    t.EmailHTMLTmpl,
 		UpdatedBy:        t.UpdatedBy,
 		UpdatedAt:        t.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	}
@@ -130,6 +133,7 @@ type upsertTemplateRequest struct {
 	BodyTmpl         string `json:"body_tmpl"`
 	ActionURLTmpl    string `json:"action_url_tmpl"`
 	EmailSubjectTmpl string `json:"email_subject_tmpl"`
+	EmailHTMLTmpl    string `json:"email_html_tmpl"`
 }
 
 // Upsert handles PUT /admin/notification-templates/{event_type}/{locale}.
@@ -188,6 +192,7 @@ func (h *AdminNotificationTemplateHandler) Upsert(w http.ResponseWriter, r *http
 		BodyTmpl:         req.BodyTmpl,
 		ActionURLTmpl:    req.ActionURLTmpl,
 		EmailSubjectTmpl: req.EmailSubjectTmpl,
+		EmailHTMLTmpl:    req.EmailHTMLTmpl,
 		UpdatedBy:        &caller.ID,
 	}
 
@@ -246,6 +251,7 @@ type previewTemplateRequest struct {
 	BodyTmpl         string          `json:"body_tmpl"`
 	ActionURLTmpl    string          `json:"action_url_tmpl"`
 	EmailSubjectTmpl string          `json:"email_subject_tmpl"`
+	EmailHTMLTmpl    string          `json:"email_html_tmpl"`
 	SamplePayload    json.RawMessage `json:"sample_payload"`
 }
 
@@ -255,6 +261,7 @@ type PreviewResponse struct {
 	Body         string `json:"body"`
 	ActionURL    string `json:"action_url,omitempty"`
 	EmailSubject string `json:"email_subject,omitempty"`
+	EmailHTML    string `json:"email_html,omitempty"`
 }
 
 // Preview handles POST /admin/notification-templates/{event_type}/{locale}/preview.
@@ -309,13 +316,185 @@ func (h *AdminNotificationTemplateHandler) Preview(w http.ResponseWriter, r *htt
 		BodyTmpl:         req.BodyTmpl,
 		ActionURLTmpl:    req.ActionURLTmpl,
 		EmailSubjectTmpl: req.EmailSubjectTmpl,
+		EmailHTMLTmpl:    req.EmailHTMLTmpl,
 	}
-	title, body, actionURL, emailSubject, _, renderErr := dispatcher.RenderTemplate(tmpl, payload)
+	title, body, actionURL, emailSubject, emailHTMLTmpl, renderErr := dispatcher.RenderTemplate(tmpl, payload)
 	if renderErr != nil {
 		writeError(w, r, h.log, apperrors.Validation(renderErr.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, PreviewResponse{Title: title, Body: body, ActionURL: actionURL, EmailSubject: emailSubject})
+
+	var emailHTML string
+	if emailHTMLTmpl != "" {
+		var previewErr error
+		emailHTML, previewErr = dispatcher.PreviewEmailHTML(emailHTMLTmpl, title, body, actionURL, emailSubject)
+		if previewErr != nil {
+			writeError(w, r, h.log, apperrors.Validation(previewErr.Error()))
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, PreviewResponse{
+		Title:        title,
+		Body:         body,
+		ActionURL:    actionURL,
+		EmailSubject: emailSubject,
+		EmailHTML:    emailHTML,
+	})
+}
+
+// TemplateHistoryResponse is the JSON shape for a single template history entry.
+type TemplateHistoryResponse struct {
+	ID               int64  `json:"id"`
+	EventType        string `json:"event_type"`
+	Locale           string `json:"locale"`
+	TitleTmpl        string `json:"title_tmpl"`
+	BodyTmpl         string `json:"body_tmpl"`
+	ActionURLTmpl    string `json:"action_url_tmpl"`
+	EmailSubjectTmpl string `json:"email_subject_tmpl,omitempty"`
+	EmailHTMLTmpl    string `json:"email_html_tmpl,omitempty"`
+	ChangedBy        *int   `json:"changed_by,omitempty"`
+	ChangedAt        string `json:"changed_at"`
+}
+
+func historyToResponse(h *domain.NotificationTemplateHistory) TemplateHistoryResponse {
+	return TemplateHistoryResponse{
+		ID:               h.ID,
+		EventType:        h.EventType,
+		Locale:           h.Locale,
+		TitleTmpl:        h.TitleTmpl,
+		BodyTmpl:         h.BodyTmpl,
+		ActionURLTmpl:    h.ActionURLTmpl,
+		EmailSubjectTmpl: h.EmailSubjectTmpl,
+		EmailHTMLTmpl:    h.EmailHTMLTmpl,
+		ChangedBy:        h.ChangedBy,
+		ChangedAt:        h.ChangedAt.UTC().Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+// History handles GET /admin/notification-templates/{event_type}/{locale}/history.
+//
+// @Summary      List notification template change history
+// @Description  Returns previous versions of the given (event_type, locale) template,
+//
+//	newest first, archived by the database trigger before each Upsert.
+//	Use the Rollback endpoint to restore any listed version non-destructively.
+//	Requires admin role.
+//
+// @Tags         admin-notification-templates
+// @Produce      json
+// @Security     BearerAuth
+// @Param        event_type  path      string  true   "Event type"
+// @Param        locale      path      string  true   "Locale"
+// @Param        limit       query     int     false  "Max versions to return (1–50, default 20)"
+// @Success      200  {array}   handler.TemplateHistoryResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/notification-templates/{event_type}/{locale}/history [get]
+func (h *AdminNotificationTemplateHandler) History(w http.ResponseWriter, r *http.Request) {
+	eventType, locale, ok := h.pathParams(w, r)
+	if !ok {
+		return
+	}
+	limit := 20
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n >= 1 && n <= 50 {
+			limit = n
+		}
+	}
+	entries, err := h.repo.ListHistory(r.Context(), eventType, locale, limit)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	resp := make([]TemplateHistoryResponse, len(entries))
+	for i, e := range entries {
+		resp[i] = historyToResponse(e)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type rollbackTemplateRequest struct {
+	HistoryID int64 `json:"history_id"`
+}
+
+// Rollback handles POST /admin/notification-templates/{event_type}/{locale}/rollback.
+//
+// @Summary      Rollback to a previous template version
+// @Description  Restores the given history entry as the current live template by
+//
+//	calling Upsert, which causes the trigger to archive the current live
+//	version first.  The rollback is therefore non-destructive: every
+//	previous state remains in the history table and a second rollback can
+//	undo the first.  history_id must belong to the specified (event_type,
+//	locale) pair.  Requires admin role.
+//
+// @Tags         admin-notification-templates
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        event_type  path      string                         true  "Event type"
+// @Param        locale      path      string                         true  "Locale"
+// @Param        body        body      handler.rollbackTemplateRequest true  "History entry to restore"
+// @Success      200  {object}  handler.NotificationTemplateResponse
+// @Failure      400  {object}  handler.ErrorResponse  "Invalid history_id"
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse
+// @Failure      404  {object}  handler.ErrorResponse  "History entry not found"
+// @Failure      422  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/notification-templates/{event_type}/{locale}/rollback [post]
+func (h *AdminNotificationTemplateHandler) Rollback(w http.ResponseWriter, r *http.Request) {
+	eventType, locale, ok := h.pathParams(w, r)
+	if !ok {
+		return
+	}
+	caller, callerOK := middleware.UserFromContext(r.Context())
+	if !callerOK {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	req, err := decodeJSON[rollbackTemplateRequest](r)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if req.HistoryID <= 0 {
+		writeError(w, r, h.log, apperrors.Validation("history_id must be a positive integer"))
+		return
+	}
+	entry, err := h.repo.GetHistoryEntry(r.Context(), req.HistoryID, eventType, locale)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	restored := &domain.NotificationTemplate{
+		EventType:        entry.EventType,
+		Locale:           entry.Locale,
+		TitleTmpl:        entry.TitleTmpl,
+		BodyTmpl:         entry.BodyTmpl,
+		ActionURLTmpl:    entry.ActionURLTmpl,
+		EmailSubjectTmpl: entry.EmailSubjectTmpl,
+		EmailHTMLTmpl:    entry.EmailHTMLTmpl,
+		UpdatedBy:        &caller.ID,
+	}
+	if err := h.repo.Upsert(r.Context(), restored); err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	h.log.Info("admin: notification template rolled back",
+		zap.String("event_type", eventType),
+		zap.String("locale", locale),
+		zap.Int64("history_id", req.HistoryID),
+		zap.Int("restored_by", caller.ID),
+	)
+	saved, err := h.repo.Get(r.Context(), eventType, locale)
+	if err != nil || saved == nil {
+		writeJSON(w, http.StatusOK, templateToResponse(restored))
+		return
+	}
+	writeJSON(w, http.StatusOK, templateToResponse(saved))
 }
 
 // pathParams extracts and validates {event_type} and {locale} from the URL.

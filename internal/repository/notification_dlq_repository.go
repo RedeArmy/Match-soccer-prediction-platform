@@ -112,4 +112,36 @@ func (r *postgresNotificationDLQRepository) CountUnresolved(ctx context.Context)
 	return n, nil
 }
 
+func (r *postgresNotificationDLQRepository) ListRecent(ctx context.Context, limit int) ([]*domain.NotificationDLQEntry, error) {
+	const q = `
+SELECT id, outbox_id, channel, user_id, event_type, payload, error_detail,
+       attempts, created_at, last_retry_at, resolved_at
+FROM notification_dlq
+ORDER BY created_at DESC
+LIMIT $1
+`
+	rows, err := r.pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	var entries []*domain.NotificationDLQEntry
+	for rows.Next() {
+		e := &domain.NotificationDLQEntry{}
+		if err := rows.Scan(
+			&e.ID, &e.OutboxID, &e.Channel, &e.UserID, &e.EventType,
+			&e.Payload, &e.ErrorDetail, &e.Attempts, &e.CreatedAt,
+			&e.LastRetryAt, &e.ResolvedAt,
+		); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return entries, nil
+}
+
 var _ NotificationDLQRepository = (*postgresNotificationDLQRepository)(nil)

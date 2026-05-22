@@ -494,6 +494,11 @@ type NotificationDLQRepository interface {
 
 	// CountUnresolved returns the number of entries where resolved_at IS NULL.
 	CountUnresolved(ctx context.Context) (int64, error)
+
+	// ListRecent returns the most recent entries (resolved and unresolved)
+	// ordered by created_at DESC, limited to limit rows.  Used by the admin
+	// overview endpoint to surface recent delivery failures.
+	ListRecent(ctx context.Context, limit int) ([]*domain.NotificationDLQEntry, error)
 }
 
 // UserNotificationRepository manages the per-user notification inbox.
@@ -808,4 +813,13 @@ type NotificationTemplateRepository interface {
 	// Delete removes the override for (eventType, locale), reverting to the
 	// compiled Go default.  Returns nil when the row does not exist.
 	Delete(ctx context.Context, eventType, locale string) error
+	// ListHistory returns previous versions of (eventType, locale) archived by
+	// the notification_templates_archive trigger, newest first.
+	// limit is clamped to [1, 50] by the implementation.
+	ListHistory(ctx context.Context, eventType, locale string, limit int) ([]*domain.NotificationTemplateHistory, error)
+	// GetHistoryEntry fetches a single history row by primary key, verifying
+	// that it belongs to the given (eventType, locale) pair.
+	// Returns apperrors.NotFound when absent or when the entry belongs to a
+	// different pair.
+	GetHistoryEntry(ctx context.Context, id int64, eventType, locale string) (*domain.NotificationTemplateHistory, error)
 }

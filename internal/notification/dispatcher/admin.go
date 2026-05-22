@@ -112,8 +112,10 @@ func (d *AdminDispatcher) Dispatch(ctx context.Context, entry *notification.Outb
 		return err
 	}
 
+	from := d.params.GetString(ctx, domain.ParamKeyNotifyFromAddress, d.fromAddr)
+
 	msgID, sendErr := d.mailer.Send(ctx, infraemail.Message{
-		From:    d.fromAddr,
+		From:    from,
 		To:      recipients,
 		Subject: subject,
 		HTML:    html,
