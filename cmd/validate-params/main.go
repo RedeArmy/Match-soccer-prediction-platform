@@ -186,6 +186,8 @@ var allParams = []paramSpec{
 	// Push digest gate (migration 000105); not runtime — worker restart required.
 	{key: domain.ParamKeyNotifyPushDigestWindowSec, defaultValue: strconv.Itoa(domain.DefaultNotifyPushDigestWindowSec), paramType: "int", category: "notify", isRuntime: false},
 	{key: domain.ParamKeyNotifyPushDigestThreshold, defaultValue: strconv.Itoa(domain.DefaultNotifyPushDigestThreshold), paramType: "int", category: "notify", isRuntime: false},
+	// Param history retention (migration 000106); not runtime — worker restart required.
+	{key: domain.ParamKeySystemParamHistoryRetentionDays, defaultValue: strconv.Itoa(domain.DefaultSystemParamHistoryRetentionDays), paramType: "int", category: "system", isRuntime: false},
 }
 
 type dbParam struct {
