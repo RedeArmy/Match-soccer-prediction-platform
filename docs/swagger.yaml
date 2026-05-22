@@ -432,11 +432,22 @@ definitions:
       user_id:
         type: integer
     type: object
+  internal_api_handler.NotifDLQStatsResponse:
+    properties:
+      recent:
+        items:
+          $ref: '#/definitions/internal_api_handler.notifDLQEntryResponse'
+        type: array
+      unresolved_count:
+        type: integer
+    type: object
   internal_api_handler.NotificationTemplateResponse:
     properties:
       action_url_tmpl:
         type: string
       body_tmpl:
+        type: string
+      email_html_tmpl:
         type: string
       email_subject_tmpl:
         type: string
@@ -579,6 +590,8 @@ definitions:
         type: string
       body:
         type: string
+      email_html:
+        type: string
       email_subject:
         type: string
       title:
@@ -670,6 +683,29 @@ definitions:
       updated_at:
         type: string
       value:
+        type: string
+    type: object
+  internal_api_handler.TemplateHistoryResponse:
+    properties:
+      action_url_tmpl:
+        type: string
+      body_tmpl:
+        type: string
+      changed_at:
+        type: string
+      changed_by:
+        type: integer
+      email_html_tmpl:
+        type: string
+      email_subject_tmpl:
+        type: string
+      event_type:
+        type: string
+      id:
+        type: integer
+      locale:
+        type: string
+      title_tmpl:
         type: string
     type: object
   internal_api_handler.TiebreakerSubmissionResponse:
@@ -834,11 +870,32 @@ definitions:
       invite_code:
         type: string
     type: object
+  internal_api_handler.notifDLQEntryResponse:
+    properties:
+      attempts:
+        type: integer
+      channel:
+        type: string
+      created_at:
+        type: string
+      error_detail:
+        type: string
+      event_type:
+        type: string
+      id:
+        type: integer
+      resolved:
+        type: boolean
+      user_id:
+        type: integer
+    type: object
   internal_api_handler.previewTemplateRequest:
     properties:
       action_url_tmpl:
         type: string
       body_tmpl:
+        type: string
+      email_html_tmpl:
         type: string
       email_subject_tmpl:
         type: string
@@ -881,6 +938,11 @@ definitions:
     properties:
       notes:
         type: string
+    type: object
+  internal_api_handler.rollbackTemplateRequest:
+    properties:
+      history_id:
+        type: integer
     type: object
   internal_api_handler.setParamRequest:
     properties:
@@ -946,6 +1008,8 @@ definitions:
       action_url_tmpl:
         type: string
       body_tmpl:
+        type: string
+      email_html_tmpl:
         type: string
       email_subject_tmpl:
         type: string
@@ -1774,6 +1838,71 @@ paths:
       summary: Global leaderboard
       tags:
       - admin-leaderboard
+  /api/v1/admin/notification-dlq:
+    get:
+      description: Returns the count of unresolved notification delivery failures
+      parameters:
+      - description: Max recent entries to return (1–100, default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.NotifDLQStatsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Notification delivery DLQ stats
+      tags:
+      - admin-notification-dlq
+  /api/v1/admin/notification-dlq/{id}/resolve:
+    post:
+      description: Marks a notification delivery failure as resolved, removing it
+      parameters:
+      - description: DLQ entry ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Invalid ID
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Manually resolve a notification DLQ entry
+      tags:
+      - admin-notification-dlq
   /api/v1/admin/notification-templates:
     get:
       description: Returns all operator-editable notification content templates
@@ -1927,6 +2056,50 @@ paths:
       summary: Create or update a notification template
       tags:
       - admin-notification-templates
+  /api/v1/admin/notification-templates/{event_type}/{locale}/history:
+    get:
+      description: Returns previous versions of the given (event_type, locale) template,
+      parameters:
+      - description: Event type
+        in: path
+        name: event_type
+        required: true
+        type: string
+      - description: Locale
+        in: path
+        name: locale
+        required: true
+        type: string
+      - description: Max versions to return (1–50, default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.TemplateHistoryResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List notification template change history
+      tags:
+      - admin-notification-templates
   /api/v1/admin/notification-templates/{event_type}/{locale}/preview:
     post:
       consumes:
@@ -1975,6 +2148,64 @@ paths:
       security:
       - BearerAuth: []
       summary: Preview a notification template
+      tags:
+      - admin-notification-templates
+  /api/v1/admin/notification-templates/{event_type}/{locale}/rollback:
+    post:
+      consumes:
+      - application/json
+      description: Restores the given history entry as the current live template by
+      parameters:
+      - description: Event type
+        in: path
+        name: event_type
+        required: true
+        type: string
+      - description: Locale
+        in: path
+        name: locale
+        required: true
+        type: string
+      - description: History entry to restore
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.rollbackTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.NotificationTemplateResponse'
+        "400":
+          description: Invalid history_id
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: History entry not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rollback to a previous template version
       tags:
       - admin-notification-templates
   /api/v1/admin/payments:

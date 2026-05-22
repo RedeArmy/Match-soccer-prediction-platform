@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/internal/notification/unsubscribe"
@@ -126,6 +127,9 @@ func (d *UserDispatcher) deliverEmail(
 	}
 
 	from := d.fromAddr
+	if d.params != nil {
+		from = d.params.GetString(ctx, domain.ParamKeyNotifyFromAddress, d.fromAddr)
+	}
 	if from == "" {
 		from = "World Cup Quiniela <noreply@quiniela.example.com>"
 	}

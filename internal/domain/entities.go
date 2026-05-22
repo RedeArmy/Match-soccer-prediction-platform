@@ -942,3 +942,24 @@ type NotificationTemplate struct {
 	UpdatedBy        *int
 	UpdatedAt        time.Time
 }
+
+// NotificationTemplateHistory is an immutable archive of a previous
+// NotificationTemplate state.  Rows are written automatically by the
+// notification_templates_archive database trigger before each UPDATE on
+// notification_templates.  The row with the highest ID for a given
+// (EventType, Locale) pair is the most recent prior version.
+//
+// Use the admin rollback API to restore a historical version; the trigger
+// will archive the current live row again, preserving the full audit trail.
+type NotificationTemplateHistory struct {
+	ID               int64
+	EventType        string
+	Locale           string
+	TitleTmpl        string
+	BodyTmpl         string
+	ActionURLTmpl    string
+	EmailSubjectTmpl string
+	EmailHTMLTmpl    string
+	ChangedBy        *int // user ID of the operator who made the superseded change
+	ChangedAt        time.Time
+}

@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -157,3 +159,65 @@ func (r *postgresNotificationTemplateRepository) invalidate() {
 	r.loadedAt = time.Time{}
 	r.mu.Unlock()
 }
+
+func (r *postgresNotificationTemplateRepository) ListHistory(ctx context.Context, eventType, locale string, limit int) ([]*domain.NotificationTemplateHistory, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	const q = `
+SELECT id, event_type, locale, title_tmpl, body_tmpl, action_url_tmpl,
+       email_subject_tmpl, email_html_tmpl, changed_by, changed_at
+FROM   notification_template_history
+WHERE  event_type = $1 AND locale = $2
+ORDER  BY id DESC
+LIMIT  $3
+`
+	rows, err := r.pool.Query(ctx, q, eventType, locale, limit)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	var out []*domain.NotificationTemplateHistory
+	for rows.Next() {
+		h := &domain.NotificationTemplateHistory{}
+		if err := rows.Scan(
+			&h.ID, &h.EventType, &h.Locale,
+			&h.TitleTmpl, &h.BodyTmpl, &h.ActionURLTmpl,
+			&h.EmailSubjectTmpl, &h.EmailHTMLTmpl,
+			&h.ChangedBy, &h.ChangedAt,
+		); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		out = append(out, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return out, nil
+}
+
+func (r *postgresNotificationTemplateRepository) GetHistoryEntry(ctx context.Context, id int64, eventType, locale string) (*domain.NotificationTemplateHistory, error) {
+	const q = `
+SELECT id, event_type, locale, title_tmpl, body_tmpl, action_url_tmpl,
+       email_subject_tmpl, email_html_tmpl, changed_by, changed_at
+FROM   notification_template_history
+WHERE  id = $1 AND event_type = $2 AND locale = $3
+`
+	h := &domain.NotificationTemplateHistory{}
+	err := r.pool.QueryRow(ctx, q, id, eventType, locale).Scan(
+		&h.ID, &h.EventType, &h.Locale,
+		&h.TitleTmpl, &h.BodyTmpl, &h.ActionURLTmpl,
+		&h.EmailSubjectTmpl, &h.EmailHTMLTmpl,
+		&h.ChangedBy, &h.ChangedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, apperrors.NotFound("notification template history entry not found")
+		}
+		return nil, apperrors.Internal(err)
+	}
+	return h, nil
+}
+
+var _ NotificationTemplateRepository = (*postgresNotificationTemplateRepository)(nil)

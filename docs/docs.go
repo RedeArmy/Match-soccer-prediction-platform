@@ -1286,6 +1286,109 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/notification-dlq": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the count of unresolved notification delivery failures",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-notification-dlq"
+                ],
+                "summary": "Notification delivery DLQ stats",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Max recent entries to return (1–100, default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.NotifDLQStatsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/notification-dlq/{id}/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks a notification delivery failure as resolved, removing it",
+                "tags": [
+                    "admin-notification-dlq"
+                ],
+                "summary": "Manually resolve a notification DLQ entry",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "DLQ entry ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Invalid ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/notification-templates": {
             "get": {
                 "security": [
@@ -1523,6 +1626,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/notification-templates/{event_type}/{locale}/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns previous versions of the given (event_type, locale) template,",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-notification-templates"
+                ],
+                "summary": "List notification template change history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event type",
+                        "name": "event_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Locale",
+                        "name": "locale",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max versions to return (1–50, default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.TemplateHistoryResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/notification-templates/{event_type}/{locale}/preview": {
             "post": {
                 "security": [
@@ -1587,6 +1758,95 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Template syntax error or render error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/notification-templates/{event_type}/{locale}/rollback": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Restores the given history entry as the current live template by",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-notification-templates"
+                ],
+                "summary": "Rollback to a previous template version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event type",
+                        "name": "event_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Locale",
+                        "name": "locale",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "History entry to restore",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.rollbackTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.NotificationTemplateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid history_id",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "History entry not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -5534,6 +5794,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.NotifDLQStatsResponse": {
+            "type": "object",
+            "properties": {
+                "recent": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.notifDLQEntryResponse"
+                    }
+                },
+                "unresolved_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.NotificationTemplateResponse": {
             "type": "object",
             "properties": {
@@ -5541,6 +5815,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "body_tmpl": {
+                    "type": "string"
+                },
+                "email_html_tmpl": {
                     "type": "string"
                 },
                 "email_subject_tmpl": {
@@ -5760,6 +6037,9 @@ const docTemplate = `{
                 "body": {
                     "type": "string"
                 },
+                "email_html": {
+                    "type": "string"
+                },
                 "email_subject": {
                     "type": "string"
                 },
@@ -5899,6 +6179,41 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.TemplateHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "action_url_tmpl": {
+                    "type": "string"
+                },
+                "body_tmpl": {
+                    "type": "string"
+                },
+                "changed_at": {
+                    "type": "string"
+                },
+                "changed_by": {
+                    "type": "integer"
+                },
+                "email_html_tmpl": {
+                    "type": "string"
+                },
+                "email_subject_tmpl": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "title_tmpl": {
                     "type": "string"
                 }
             }
@@ -6153,6 +6468,35 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.notifDLQEntryResponse": {
+            "type": "object",
+            "properties": {
+                "attempts": {
+                    "type": "integer"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "error_detail": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "resolved": {
+                    "type": "boolean"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.previewTemplateRequest": {
             "type": "object",
             "properties": {
@@ -6160,6 +6504,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "body_tmpl": {
+                    "type": "string"
+                },
+                "email_html_tmpl": {
                     "type": "string"
                 },
                 "email_subject_tmpl": {
@@ -6225,6 +6572,14 @@ const docTemplate = `{
             "properties": {
                 "notes": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.rollbackTemplateRequest": {
+            "type": "object",
+            "properties": {
+                "history_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -6327,6 +6682,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "body_tmpl": {
+                    "type": "string"
+                },
+                "email_html_tmpl": {
                     "type": "string"
                 },
                 "email_subject_tmpl": {

@@ -331,6 +331,7 @@ func TestValidateParamConstraints_InRange_ReturnsNil(t *testing.T) {
 }
 
 func TestValidateParamConstraints_NonIntType_ReturnsNil(t *testing.T) {
+	// Keys absent from paramStringConstraints accept any string.
 	if err := validateParamConstraints("any.key", "not-checked", domain.SystemParamTypeString); err != nil {
 		t.Errorf("unexpected error for non-int type: %v", err)
 	}
@@ -617,6 +618,79 @@ func TestSystemParamService_ResetToDefault_WithAudit_CallsAuditLogger(t *testing
 }
 
 // ── paramIntConstraints structural validation ──────────────────────────────────
+
+// TestValidateParamConstraints_StringParams validates format enforcement for all
+// string params that have entries in paramStringConstraints.
+func TestValidateParamConstraints_StringParams(t *testing.T) {
+	cases := []struct {
+		key     string
+		valid   []string
+		invalid []string
+	}{
+		{
+			key:     domain.ParamKeyNotifyDefaultLocale,
+			valid:   []string{"", "en", "es"},
+			invalid: []string{"fr", "de", "EN", "english"},
+		},
+		{
+			key:     domain.ParamKeyNotifySchedulerTimezone,
+			valid:   []string{"", "America/Guatemala", "UTC", "America/New_York"},
+			invalid: []string{"Not/ATimezone", "invalid", "Americas/Guatemala"},
+		},
+		{
+			key:     domain.ParamKeyNotifyFromAddress,
+			valid:   []string{"", "noreply@example.com", "WCQ Team <noreply@wcq.app>"},
+			invalid: []string{"not-an-email", "plainstring", "nodomain"},
+		},
+		{
+			key:     domain.ParamKeyNotifyPushIconURL,
+			valid:   []string{"", "/icons/icon-192.png", "/path/to/icon.png"},
+			invalid: []string{"http://cdn.example.com/icon.png", "icons/icon.png", "//cdn.example.com/icon.png"},
+		},
+		{
+			key:     domain.ParamKeyNotifyPushBadgeURL,
+			valid:   []string{"", "/icons/badge-72.png", "/assets/badge.png"},
+			invalid: []string{"https://cdn.example.com/badge.png", "badge.png"},
+		},
+		{
+			key:     domain.ParamKeyNotifyWebPushVAPIDSubject,
+			valid:   []string{"", "https://example.com", "mailto:admin@example.com"},
+			invalid: []string{"example.com", "ftp://example.com", "http://not-https.com"},
+		},
+		{
+			key:     domain.ParamKeyNotifyAdminEmails,
+			valid:   []string{"", "admin@example.com", "a@b.com,c@d.com", " a@b.com , c@d.com "},
+			invalid: []string{"notanemail", "good@example.com,notanemail", "a@b.com,bad"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			for _, v := range tc.valid {
+				if err := validateParamConstraints(tc.key, v, domain.SystemParamTypeString); err != nil {
+					t.Errorf("value %q should be valid, got: %v", v, err)
+				}
+			}
+			for _, v := range tc.invalid {
+				if err := validateParamConstraints(tc.key, v, domain.SystemParamTypeString); err == nil {
+					t.Errorf("value %q should be invalid, got nil", v)
+				}
+			}
+		})
+	}
+}
+
+// TestParamStringConstraints_EmptyAlwaysValid ensures every string constraint
+// accepts the empty string (meaning "use the compiled default / not configured").
+func TestParamStringConstraints_EmptyAlwaysValid(t *testing.T) {
+	for key, fn := range paramStringConstraints {
+		t.Run(key, func(t *testing.T) {
+			if err := fn(""); err != nil {
+				t.Errorf("key %q: empty string must always be valid, got: %v", key, err)
+			}
+		})
+	}
+}
 
 // TestParamIntConstraints_AllRangesAreValid ensures every entry in the
 // paramIntConstraints map has a logically valid range: min ≤ max and min ≥ 0.
