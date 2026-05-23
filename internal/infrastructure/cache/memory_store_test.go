@@ -100,8 +100,7 @@ func TestMemoryStore_Set_UnmarshalableValue_ReturnsError(t *testing.T) {
 		t.Error("expected error marshalling channel, got nil")
 	}
 	// The key must not have been written.
-	var dest int
-	if getErr := s.Get(context.Background(), "k", &dest); getErr == nil {
+	if s.Get(context.Background(), "k", new(int)) == nil {
 		t.Error("expected ErrCacheMiss for key that failed to set, got nil")
 	}
 }
