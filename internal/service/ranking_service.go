@@ -13,6 +13,46 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// LeaderboardResult is the value returned by Ranker methods. It bundles the
+// ranked entries with group-level metadata that the handler layer needs to
+// compute prize eligibility and winner count without an additional round-trip.
+//
+// ActivePaidMembers is the count of members with status=active AND paid=true
+// in the quiniela at query time. This is the authoritative input to
+// domain.WinnerCount and domain.EligibleForPayments. It may differ from
+// len(Entries) when some paid members have not yet submitted any predictions
+// (they appear in the member roster but not in the leaderboard entries).
+//
+// WinnerCount is pre-computed from domain.WinnerCount(ActivePaidMembers) so
+// callers do not need to import the domain package to derive it.
+//
+// EligibleForPrizes is pre-computed from domain.EligibleForPayments(ActivePaidMembers).
+// When false, no prizes should be displayed or distributed regardless of the
+// entry_fee setting.
+type LeaderboardResult struct {
+	Entries           []*domain.LeaderboardEntry
+	ActivePaidMembers int
+	WinnerCount       int
+	EligibleForPrizes bool
+}
+
+// Ranker computes leaderboard standings for a given Quiniela.
+//
+// GetLeaderboard returns the overall standings sorted descending by TotalPoints.
+// GetPhaseLeaderboard returns standings restricted to a single tournament phase.
+// Only active, paid members are included in both variants. Unscored predictions
+// (nil points) are excluded from the aggregation. PrizeWinner is set to true on
+// entries that rank within the prize positions determined by domain.WinnerCount.
+//
+// Both methods return a LeaderboardResult that includes group-level prize
+// metadata (ActivePaidMembers, WinnerCount, EligibleForPrizes) alongside the
+// ranked entries, so the handler layer never needs a second DB round-trip to
+// determine whether prizes apply.
+type Ranker interface {
+	GetLeaderboard(ctx context.Context, quinielaID int) (*LeaderboardResult, error)
+	GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) (*LeaderboardResult, error)
+}
+
 // rankingService is the concrete implementation of Ranker.
 type rankingService struct {
 	quinielaRepo      repository.QuinielaRepository

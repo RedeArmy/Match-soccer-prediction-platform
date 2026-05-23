@@ -9,6 +9,18 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
+// BalanceService exposes read-only balance information to users.
+//
+// All balance mutations go through BankTransferService and WithdrawalService
+// so that every change is paired with a ledger row atomically.
+type BalanceService interface {
+	// GetBalance returns the current balance_cents and reserved_cents for the
+	// given user. Returns NotFound for unknown or deleted users.
+	GetBalance(ctx context.Context, userID int) (balanceCents, reservedCents int, err error)
+	// GetLedger returns ledger entries for userID ordered by created_at DESC.
+	GetLedger(ctx context.Context, userID int, p repository.Pagination) ([]*domain.BalanceLedger, error)
+}
+
 type balanceService struct {
 	userRepo   repository.UserRepository
 	ledgerRepo repository.BalanceLedgerRepository

@@ -8,6 +8,7 @@ package domain_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
@@ -42,6 +43,23 @@ func TestSystemParamType_DBValues(t *testing.T) {
 		if got := string(tc.constant); got != tc.want {
 			t.Errorf("SystemParamType constant value = %q, want %q", got, tc.want)
 		}
+	}
+}
+
+// ── UserNotification ──────────────────────────────────────────────────────────
+
+func TestUserNotification_IsRead_NilReadAt_ReturnsFalse(t *testing.T) {
+	n := &domain.UserNotification{}
+	if n.IsRead() {
+		t.Error("IsRead() = true for nil ReadAt, want false")
+	}
+}
+
+func TestUserNotification_IsRead_NonNilReadAt_ReturnsTrue(t *testing.T) {
+	now := time.Now()
+	n := &domain.UserNotification{ReadAt: &now}
+	if !n.IsRead() {
+		t.Error("IsRead() = false for non-nil ReadAt, want true")
 	}
 }
 

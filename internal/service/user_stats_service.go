@@ -8,6 +8,16 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
+// MyStatsGetter computes the performance profile for the authenticated user.
+//
+// GetMyStats aggregates prediction counts, points by tournament phase, and
+// streak information for the given userID. It is called exclusively from the
+// authenticated GET /api/v1/users/me/stats endpoint and operates on global
+// predictions - not scoped to any single quiniela.
+type MyStatsGetter interface {
+	GetMyStats(ctx context.Context, userID int) (*domain.UserStats, error)
+}
+
 // userStatsService is the concrete implementation of MyStatsGetter.
 type userStatsService struct {
 	predRepo repository.PredictionRepository

@@ -13,6 +13,29 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/clock"
 )
 
+// PredictionService defines operations on the Prediction entity.
+//
+// Submit enforces the prediction deadline and delegates persistence to the
+// repository Upsert, which uses ON CONFLICT DO UPDATE to make the operation
+// idempotent. Returns created=true when a new row was inserted, false when
+// the existing prediction for (user_id, match_id) was returned unchanged —
+// enabling the handler to respond 201 for a new submission and 200 for a
+// safe retry without exposing a 409 that the client cannot distinguish from
+// a genuine conflict. Update follows the same deadline rules, requires the
+// caller to own the prediction, and uses optimistic concurrency to prevent
+// silent last-write-wins overwrites.
+type PredictionService interface {
+	Submit(ctx context.Context, prediction *domain.Prediction) (created bool, err error)
+	Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int, predictedWinMethod *domain.WinMethod) (*domain.Prediction, error)
+	GetByUser(ctx context.Context, userID int) ([]*domain.Prediction, error)
+	// GetByUserAndQuiniela returns all predictions for userID scoped to the
+	// given quiniela. It delegates the membership gate to the repository layer
+	// so the check and the data fetch are a single round-trip. A user who is
+	// not an active member of quinielaID receives an empty slice.
+	GetByUserAndQuiniela(ctx context.Context, userID, quinielaID int) ([]*domain.Prediction, error)
+	GetByMatch(ctx context.Context, matchID int) ([]*domain.Prediction, error)
+}
+
 // predictionService is the concrete implementation of PredictionService.
 type predictionService struct {
 	predRepo  repository.PredictionRepository

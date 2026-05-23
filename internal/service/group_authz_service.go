@@ -8,6 +8,21 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// GroupAuthz is a focused permission service for group-scoped membership checks.
+// It centralises the two recurring authorisation patterns shared across
+// QuinielaService, GroupMembershipService, and TiebreakerService so that the
+// rule is defined once and the error message never drifts between callers.
+type GroupAuthz interface {
+	// RequireOwner returns Forbidden when callerID does not hold
+	// MembershipRoleCreateOwner in quinielaID. Returns the repository error
+	// unchanged when the membership lookup itself fails.
+	RequireOwner(ctx context.Context, quinielaID, callerID int) error
+	// RequireActiveMember returns Forbidden when callerID is not an active
+	// member of quinielaID. Returns the repository error unchanged when the
+	// membership lookup itself fails.
+	RequireActiveMember(ctx context.Context, quinielaID, callerID int) error
+}
+
 // groupAuthzService implements GroupAuthz backed by GroupMembershipRepository.
 type groupAuthzService struct {
 	memberRepo repository.GroupMembershipRepository

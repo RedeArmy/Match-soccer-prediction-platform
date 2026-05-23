@@ -9,6 +9,53 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
+// BulkBanError records a single ban failure within a BulkBan call.
+type BulkBanError struct {
+	UserID  int
+	Message string
+}
+
+// BulkBanResult is the outcome of a BulkBan call. Banned holds the IDs of
+// every user that was successfully banned; Failed holds the IDs and reasons
+// for every user whose ban could not be completed. The caller is responsible
+// for deciding the appropriate HTTP status (200 vs 207 Multi-Status).
+type BulkBanResult struct {
+	Banned []int
+	Failed []BulkBanError
+}
+
+// AdminUserProfile aggregates the data needed by the admin user-detail endpoint:
+// the user row, all group memberships, and all payment records.
+type AdminUserProfile struct {
+	User        *domain.User
+	Memberships []*domain.GroupMembership
+	Payments    []*domain.PaymentRecord
+}
+
+// AdminUserService exposes administrative operations on User accounts.
+//
+// BanUser and BulkBan automatically transfer group ownership when the banned
+// user holds MembershipRoleCreateOwner in any quiniela - see
+// GroupMembershipService for the transfer algorithm. The admin role gate is
+// enforced at the HTTP layer; this service does not re-check it.
+type AdminUserService interface {
+	BanUser(ctx context.Context, targetUserID, adminID int, reason string) (*domain.User, error)
+	UnbanUser(ctx context.Context, targetUserID, adminID int) (*domain.User, error)
+	ListUsers(ctx context.Context) ([]*domain.User, error)
+	// BulkBan bans every user in userIDs with the same reason. It processes
+	// bans sequentially so that a failure on one user does not block the
+	// remaining bans. Per-user failures are reported in BulkBanResult.Failed;
+	// the outer error is reserved for unexpected, request-level failures.
+	BulkBan(ctx context.Context, userIDs []int, adminID int, reason string) (BulkBanResult, error)
+	// ListFiltered returns users matching the given filters with cursor-based
+	// pagination. The second return value is an opaque next-page cursor; empty
+	// on the last page.
+	ListFiltered(ctx context.Context, f repository.UserFilters, p repository.CursorPage) ([]*domain.User, string, error)
+	// GetProfile returns the full admin view of a user: base profile, active
+	// group memberships, and payment records.
+	GetProfile(ctx context.Context, userID int) (*AdminUserProfile, error)
+}
+
 // adminUserService is the concrete implementation of AdminUserService.
 type adminUserService struct {
 	userRepo    repository.UserRepository

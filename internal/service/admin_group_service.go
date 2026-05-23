@@ -10,6 +10,46 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// BulkOperationResult is the outcome of a bulk administrative operation.
+// Succeeded holds the IDs of entities that were processed; Failed holds IDs
+// that could not be processed (not found or already in a terminal state).
+type BulkOperationResult struct {
+	Succeeded []int
+	Failed    []int
+}
+
+// AdminGroupService exposes administrative operations on Quiniela groups that
+// are not available to regular members.
+//
+// All methods require an adminID that is stored in the audit trail. The admin
+// role gate is enforced at the HTTP layer via RequireRole - this service does
+// not re-check it internally.
+type AdminGroupService interface {
+	// DeleteGroup soft-deletes the quiniela. Returns NotFound when it does not
+	// exist or is already deleted.
+	DeleteGroup(ctx context.Context, quinielaID, adminID int) error
+	// RemoveMember sets the membership status to 'left'. Returns NotFound for
+	// inactive or non-existent memberships.
+	RemoveMember(ctx context.Context, membershipID, adminID int) error
+	// UpdateGroupSettings changes the entry_fee for a group. Returns the updated Quiniela.
+	UpdateGroupSettings(ctx context.Context, quinielaID int, entryFee, adminID int) (*domain.Quiniela, error)
+	// TransferOwnership assigns MembershipRoleCreateOwner to newOwnerUserID and
+	// demotes the current owner to MembershipRoleMember. Returns NotFound when
+	// quinielaID does not exist or newOwnerUserID is not an active member.
+	TransferOwnership(ctx context.Context, quinielaID, newOwnerUserID, adminID int) error
+	// BulkDeleteGroups soft-deletes multiple quinielas. Succeeded contains IDs
+	// that were deleted; Failed contains IDs already deleted or not found.
+	BulkDeleteGroups(ctx context.Context, ids []int, adminID int) (BulkOperationResult, error)
+	// BulkRemoveMembers sets multiple memberships to 'left'. Only memberships
+	// that belong to quinielaID are affected; IDs from other groups are silently
+	// ignored. Succeeded contains removed IDs; Failed contains IDs already
+	// inactive, not found, or belonging to a different group.
+	BulkRemoveMembers(ctx context.Context, quinielaID int, ids []int, adminID int) (BulkOperationResult, error)
+	// RecalculateLeaderboard triggers an immediate leaderboard snapshot for the
+	// given quiniela. Returns the newly created snapshot.
+	RecalculateLeaderboard(ctx context.Context, quinielaID, adminID int) (*domain.LeaderboardSnapshot, error)
+}
+
 // adminGroupService is the concrete implementation of AdminGroupService.
 type adminGroupService struct {
 	quinielaRepo repository.QuinielaRepository

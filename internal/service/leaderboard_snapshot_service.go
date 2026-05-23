@@ -8,6 +8,19 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
+// Snapshotter persists point-in-time leaderboard copies for a
+// quiniela. It is called by the scoring worker immediately after ScoreMatch
+// completes so the latest rankings are available without re-computing them.
+type Snapshotter interface {
+	// Snapshot takes an admin/manual snapshot for quinielaID. No idempotency
+	// key is used; each call creates a new row. Used by RecalculateLeaderboard.
+	Snapshot(ctx context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error)
+	// SnapshotForMatch takes a worker-triggered snapshot associating the result
+	// with matchID. Replaying the same (quinielaID, matchID) pair is idempotent:
+	// the existing snapshot row is returned without creating a duplicate.
+	SnapshotForMatch(ctx context.Context, quinielaID, matchID int) (*domain.LeaderboardSnapshot, error)
+}
+
 // leaderboardSnapshotService is the concrete implementation of Snapshotter.
 type leaderboardSnapshotService struct {
 	ranker   Ranker

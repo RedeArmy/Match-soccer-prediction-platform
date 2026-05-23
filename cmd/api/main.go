@@ -149,8 +149,13 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	//
 	// rc is declared outside the if block so it is visible when wiring the
 	// Redis-backed idempotency store below.
+	// cacheStore defaults to an in-process MemoryStore so the composition root
+	// never passes nil to service constructors. The MemoryStore is not suitable
+	// for multi-replica production deployments (invalidations are local and
+	// entries never expire), but it provides correct single-replica behaviour
+	// when Redis is not configured.
 	var rc *redis.Client
-	var cacheStore cache.Store
+	cacheStore := cache.Store(cache.NewMemoryStore())
 	if cfg.Redis.Addr != "" {
 		rc = redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Addr,
