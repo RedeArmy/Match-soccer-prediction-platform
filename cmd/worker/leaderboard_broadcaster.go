@@ -33,7 +33,9 @@ type LeaderboardBroadcaster interface {
 // Used in tests and as the fallback when Redis is unavailable.
 type noopLeaderboardBroadcaster struct{}
 
-func (noopLeaderboardBroadcaster) BroadcastLeaderboardUpdated(_ context.Context, _ []int) {}
+func (noopLeaderboardBroadcaster) BroadcastLeaderboardUpdated(_ context.Context, _ []int) {
+	// Intentionally empty: used in tests and as a fallback when Redis is unavailable.
+}
 
 // leaderboardSignalPayload is the JSON body published to the user_notifications
 // Redis Pub/Sub channel. Its field names match hub.Notification and the bridge
