@@ -271,6 +271,15 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		service.NewPostScoringCacheFlush(cacheStore, log),
 	}
 
+	// Broadcast a leaderboard.updated SSE signal after scoring.
+	// rc is always non-nil here: redis.NewClient never returns nil and the
+	// worker rejects non-redis event bus drivers before reaching this point.
+	broadcaster := LeaderboardBroadcaster(&redisPubLeaderboardBroadcaster{
+		client:     rc,
+		memberRepo: memberRepo,
+		log:        log,
+	})
+
 	purger := repository.NewPostgresPurger(db)
 	retentionDays := params.GetInt(ctx, domain.ParamKeyPurgeRetentionDays, domain.DefaultPurgeRetentionDays)
 	purgeRetention := time.Duration(retentionDays) * 24 * time.Hour
@@ -410,6 +419,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		snapshotter:           snapshotter,
 		predRepo:              predRepo,
 		invalidators:          invalidators,
+		broadcaster:           broadcaster,
 		snapshotLocker:        &redisSnapshotLocker{client: rc, ttl: snapshotLockTTL},
 		purger:                purger,
 		purgeRetention:        purgeRetention,
@@ -504,6 +514,7 @@ type workerDeps struct {
 	snapshotter           service.Snapshotter
 	predRepo              repository.PredictionRepository
 	invalidators          []service.PostScoringInvalidator
+	broadcaster           LeaderboardBroadcaster
 	snapshotLocker        SnapshotLocker
 	purger                repository.Purger
 	purgeRetention        time.Duration
@@ -527,7 +538,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
 	deps.bus.Subscribe(ctx, events.EventMatchFinished,
-		newMatchFinishedHandler(deps.scorer, deps.snapshotter, deps.predRepo, deps.invalidators, deps.snapshotLocker, log))
+		newMatchFinishedHandler(deps.scorer, deps.snapshotter, deps.predRepo, deps.invalidators, deps.broadcaster, deps.snapshotLocker, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
 	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, log)

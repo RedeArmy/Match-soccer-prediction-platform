@@ -33,6 +33,15 @@ const (
 	EventMatchCancelled     EventType = "match.cancelled"
 )
 
+// User-facing leaderboard events.
+const (
+	// EventLeaderboardUpdated is a synthetic signal, not stored in the outbox.
+	// The worker publishes it directly to the user_notifications Redis channel
+	// after scoring and cache invalidation complete. SSE clients use the
+	// action_url field to know which group leaderboard to refetch.
+	EventLeaderboardUpdated EventType = "leaderboard.updated"
+)
+
 // User-facing group / quiniela events.
 const (
 	EventGroupJoinRequested        EventType = "group.join_requested"
