@@ -15,7 +15,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (64 total) ──────────────────────────────────────
+	// ── ParamKey* enumeration (84 total) ──────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":     ParamKeyScoringExactScore,
@@ -115,6 +115,14 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifyFromAddress":                     ParamKeyNotifyFromAddress,
 		"ParamKeyNotifyPushDigestWindowSec":             ParamKeyNotifyPushDigestWindowSec,
 		"ParamKeyNotifyPushDigestThreshold":             ParamKeyNotifyPushDigestThreshold,
+		// Worker scheduler intervals (migration 000107)
+		"ParamKeyWorkerSchedPredDeadlineIntervalSec":    ParamKeyWorkerSchedPredDeadlineIntervalSec,
+		"ParamKeyWorkerSchedMatchResultIntervalSec":     ParamKeyWorkerSchedMatchResultIntervalSec,
+		"ParamKeyWorkerSchedPendingReminderIntervalSec": ParamKeyWorkerSchedPendingReminderIntervalSec,
+		"ParamKeyWorkerSchedStaleEscalationIntervalSec": ParamKeyWorkerSchedStaleEscalationIntervalSec,
+		"ParamKeyWorkerSchedPushPruneIntervalSec":       ParamKeyWorkerSchedPushPruneIntervalSec,
+		// Email render timeout (migration 000108)
+		"ParamKeyNotifyRenderTimeoutMs": ParamKeyNotifyRenderTimeoutMs,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -210,6 +218,14 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// Digest gate
 		"DefaultNotifyPushDigestWindowSec": DefaultNotifyPushDigestWindowSec,
 		"DefaultNotifyPushDigestThreshold": DefaultNotifyPushDigestThreshold,
+		// Worker scheduler intervals (migration 000107)
+		"DefaultWorkerSchedPredDeadlineIntervalSec":    DefaultWorkerSchedPredDeadlineIntervalSec,
+		"DefaultWorkerSchedMatchResultIntervalSec":     DefaultWorkerSchedMatchResultIntervalSec,
+		"DefaultWorkerSchedPendingReminderIntervalSec": DefaultWorkerSchedPendingReminderIntervalSec,
+		"DefaultWorkerSchedStaleEscalationIntervalSec": DefaultWorkerSchedStaleEscalationIntervalSec,
+		"DefaultWorkerSchedPushPruneIntervalSec":       DefaultWorkerSchedPushPruneIntervalSec,
+		// Email render timeout (migration 000108)
+		"DefaultNotifyRenderTimeoutMs": DefaultNotifyRenderTimeoutMs,
 		// String defaults — not in the int defaults map; documented separately.
 		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
 		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
@@ -217,7 +233,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 78 // update when adding a new ParamKey* constant
+		const expectedCount = 84 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -225,7 +241,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 67 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate)
+		const expectedCount = 73 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -361,6 +377,14 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyNotifyFromAddress", ParamKeyNotifyFromAddress, "notify"},
 		{"ParamKeyNotifyPushDigestWindowSec", ParamKeyNotifyPushDigestWindowSec, "notify"},
 		{"ParamKeyNotifyPushDigestThreshold", ParamKeyNotifyPushDigestThreshold, "notify"},
+		// Worker scheduler intervals (migration 000107)
+		{"ParamKeyWorkerSchedPredDeadlineIntervalSec", ParamKeyWorkerSchedPredDeadlineIntervalSec, "worker"},
+		{"ParamKeyWorkerSchedMatchResultIntervalSec", ParamKeyWorkerSchedMatchResultIntervalSec, "worker"},
+		{"ParamKeyWorkerSchedPendingReminderIntervalSec", ParamKeyWorkerSchedPendingReminderIntervalSec, "worker"},
+		{"ParamKeyWorkerSchedStaleEscalationIntervalSec", ParamKeyWorkerSchedStaleEscalationIntervalSec, "worker"},
+		{"ParamKeyWorkerSchedPushPruneIntervalSec", ParamKeyWorkerSchedPushPruneIntervalSec, "worker"},
+		// Email render timeout (migration 000108)
+		{"ParamKeyNotifyRenderTimeoutMs", ParamKeyNotifyRenderTimeoutMs, "notify"},
 	}
 
 	for _, tc := range paramKeys {
@@ -465,6 +489,14 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyPushSubRetentionDays":            DefaultNotifyPushSubRetentionDays,
 		"DefaultNotifyPushDigestWindowSec":             DefaultNotifyPushDigestWindowSec,
 		"DefaultNotifyPushDigestThreshold":             DefaultNotifyPushDigestThreshold,
+		// Worker scheduler intervals (migration 000107)
+		"DefaultWorkerSchedPredDeadlineIntervalSec":    DefaultWorkerSchedPredDeadlineIntervalSec,
+		"DefaultWorkerSchedMatchResultIntervalSec":     DefaultWorkerSchedMatchResultIntervalSec,
+		"DefaultWorkerSchedPendingReminderIntervalSec": DefaultWorkerSchedPendingReminderIntervalSec,
+		"DefaultWorkerSchedStaleEscalationIntervalSec": DefaultWorkerSchedStaleEscalationIntervalSec,
+		"DefaultWorkerSchedPushPruneIntervalSec":       DefaultWorkerSchedPushPruneIntervalSec,
+		// Email render timeout (migration 000108)
+		"DefaultNotifyRenderTimeoutMs": DefaultNotifyRenderTimeoutMs,
 	}
 
 	for name, value := range defaults {
@@ -595,7 +627,7 @@ func allSystemParamKeys() []string { return AllParamKeys() }
 // TestSystemParamsMigrationCoverage verifies that every ParamKey* constant
 // declared in the domain package is seeded in at least one migration file.
 // It reads all *.up.sql files, tracks INSERT and DELETE operations on
-// system_params, and asserts the net set covers all 78 constants.
+// system_params, and asserts the net set covers all 84 constants.
 //
 // This prevents the Go constants ↔ DB seed invariant from drifting silently:
 // adding a constant without a migration, or removing a constant without a

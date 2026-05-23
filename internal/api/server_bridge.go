@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -111,5 +112,60 @@ func leaderboardTTLHook(paramSvc service.SystemParamService, ranker *service.Cac
 		)) * time.Second
 		ranker.UpdateTTL(newTTL)
 		ranker.InvalidateAll(ctx)
+	}
+}
+
+// runRedisBridge subscribes to the Redis Pub/Sub channel that the worker
+// publishes user notifications to, and fans each message out to the in-process
+// SSE hub so connected SSE clients receive it without a database round-trip.
+//
+// Compared to runPgNotifyBridge this approach has two advantages:
+//  1. The go-redis client reconnects transparently (< 100 ms) so the window
+//     during which notifications can be dropped is negligibly short.
+//  2. No long-lived PostgreSQL connection is consumed by the bridge goroutine.
+//
+// The payload JSON format is identical to pgNotifyPayload so the worker
+// publishes to the same channel name with the same schema.
+func (s *Server) runRedisBridge(ctx context.Context, rc redis.UniversalClient) {
+	if s.notifHub == nil {
+		return
+	}
+
+	pubsub := rc.Subscribe(ctx, "user_notifications")
+	defer pubsub.Close() //nolint:errcheck
+
+	s.log.Info("redis bridge: subscribed to user_notifications")
+	ch := pubsub.Channel()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return // subscription closed
+			}
+			var p struct {
+				UserID    int    `json:"user_id"`
+				ID        int64  `json:"id"`
+				EventType string `json:"event_type"`
+				Title     string `json:"title"`
+				Body      string `json:"body"`
+				ActionURL string `json:"action_url"`
+				CreatedAt string `json:"created_at"`
+			}
+			if err := json.Unmarshal([]byte(msg.Payload), &p); err != nil {
+				s.log.Warn("redis bridge: failed to parse payload", zap.Error(err))
+				continue
+			}
+			s.notifHub.Broadcast(p.UserID, hub.Notification{
+				ID:        p.ID,
+				UserID:    p.UserID,
+				EventType: p.EventType,
+				Title:     p.Title,
+				Body:      p.Body,
+				ActionURL: p.ActionURL,
+				CreatedAt: p.CreatedAt,
+			})
+		}
 	}
 }

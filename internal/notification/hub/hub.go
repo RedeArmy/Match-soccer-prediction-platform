@@ -118,8 +118,12 @@ func (h *Hub) Broadcast(userID int, n Notification) {
 	}
 }
 
-// HasConnection reports whether userID has at least one open SSE connection.
-func (h *Hub) HasConnection(userID int) bool {
+// HasLocalConnection reports whether userID has at least one open SSE
+// connection on this replica. In a multi-replica deployment this method
+// returns false for users whose SSE connection is open on a different replica;
+// cluster-level presence tracking requires a shared store (e.g. Redis).
+// Use this only for replica-local optimisations, never for routing decisions.
+func (h *Hub) HasLocalConnection(userID int) bool {
 	h.mu.RLock()
 	n := len(h.clients[userID])
 	h.mu.RUnlock()

@@ -99,12 +99,15 @@ func (b *InMemoryBus) Publish(ctx context.Context, envelope events.Envelope) err
 // has no external store, so this log entry is the only recovery artifact.
 // Operators can use the logged envelope JSON to replay the event manually.
 func (b *InMemoryBus) logDLQ(envelope events.Envelope, handlerErr error) {
+	configMu.RLock()
+	attempts := maxHandlerAttempts
+	configMu.RUnlock()
 	raw, _ := json.Marshal(envelope)
 	b.log.Error("event handler failed after all retries - dead-lettered",
 		zap.String("event_type", string(envelope.Type)),
 		zap.Time("occurred_at", envelope.OccurredAt),
 		zap.Time("dead_lettered_at", time.Now().UTC()),
-		zap.Int("attempts", maxHandlerAttempts),
+		zap.Int("attempts", attempts),
 		zap.String("envelope_json", string(raw)),
 		zap.Error(handlerErr),
 	)

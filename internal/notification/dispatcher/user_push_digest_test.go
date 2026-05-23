@@ -26,14 +26,14 @@ func newDigestDispatcher(
 	gate *notification.PushDigestGate,
 ) *dispatcher.UserDispatcher {
 	return dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
-		NotifRepo:  notifRepo,
-		PrefRepo:   &stubPrefRepo{pref: allEnabled()},
-		PushRepo:   pushRepo,
-		DLQRepo:    &recordingDLQRepo{},
-		Hub:        hub.New(),
-		Pusher:     pusher,
-		DigestGate: gate,
-		Log:        zap.NewNop(),
+		NotifRepo: notifRepo,
+		PrefRepo:  &stubPrefRepo{pref: allEnabled()},
+		PushRepo:  pushRepo,
+		DLQRepo:   &recordingDLQRepo{},
+		Hub:       hub.New(),
+		Pusher:    pusher,
+		Recorder:  gate,
+		Log:       zap.NewNop(),
 	})
 }
 
@@ -127,14 +127,14 @@ func TestDeliverDigestPush_ListError_SkipsPush(t *testing.T) {
 
 	gate := notification.NewPushDigestGate(60, 1)
 	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
-		NotifRepo:  notifRepo,
-		PrefRepo:   &stubPrefRepo{pref: allEnabled()},
-		PushRepo:   pushRepo,
-		DLQRepo:    &recordingDLQRepo{},
-		Hub:        hub.New(),
-		Pusher:     pusher,
-		DigestGate: gate,
-		Log:        zap.NewNop(),
+		NotifRepo: notifRepo,
+		PrefRepo:  &stubPrefRepo{pref: allEnabled()},
+		PushRepo:  pushRepo,
+		DLQRepo:   &recordingDLQRepo{},
+		Hub:       hub.New(),
+		Pusher:    pusher,
+		Recorder:  gate,
+		Log:       zap.NewNop(),
 	})
 
 	ctx := context.Background()
@@ -233,15 +233,15 @@ func TestDeliverDigestPush_WithParams_UsesOverriddenAssets(t *testing.T) {
 
 	gate := notification.NewPushDigestGate(60, 1)
 	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
-		NotifRepo:  notifRepo,
-		PrefRepo:   &stubPrefRepo{pref: allEnabled()},
-		PushRepo:   pushRepo,
-		DLQRepo:    &recordingDLQRepo{},
-		Hub:        hub.New(),
-		Pusher:     pusher,
-		DigestGate: gate,
-		Params:     params,
-		Log:        zap.NewNop(),
+		NotifRepo: notifRepo,
+		PrefRepo:  &stubPrefRepo{pref: allEnabled()},
+		PushRepo:  pushRepo,
+		DLQRepo:   &recordingDLQRepo{},
+		Hub:       hub.New(),
+		Pusher:    pusher,
+		Recorder:  gate,
+		Params:    params,
+		Log:       zap.NewNop(),
 	})
 
 	ctx := context.Background()

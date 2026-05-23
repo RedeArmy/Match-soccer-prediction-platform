@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,7 +26,7 @@ func newBenchServer(b *testing.B) *api.Server {
 // This is the performance baseline for the simplest handler in the system.
 func BenchmarkHandlerHealth(b *testing.B) {
 	srv := newBenchServer(b)
-	handler := srv.Routes()
+	handler := srv.Routes(context.Background())
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
@@ -45,7 +46,7 @@ func BenchmarkHandlerHealth(b *testing.B) {
 // the middleware stack has lock contention under concurrency.
 func BenchmarkHandlerHealth_Sequential(b *testing.B) {
 	srv := newBenchServer(b)
-	handler := srv.Routes()
+	handler := srv.Routes(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 
 	b.ResetTimer()
@@ -61,7 +62,7 @@ func BenchmarkHandlerHealth_Sequential(b *testing.B) {
 // isolates chi routing cost, not handler logic.
 func BenchmarkHandlerRouting(b *testing.B) {
 	srv := newBenchServer(b)
-	handler := srv.Routes()
+	handler := srv.Routes(context.Background())
 
 	paths := []string{
 		"/api/v1/matches",
@@ -88,7 +89,7 @@ func BenchmarkHandlerRouting(b *testing.B) {
 // misrouted requests are a common attack vector that could saturate the server.
 func BenchmarkHandlerNotFound(b *testing.B) {
 	srv := newBenchServer(b)
-	handler := srv.Routes()
+	handler := srv.Routes(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/nonexistent/deep/path/12345", nil)
 
 	b.ResetTimer()

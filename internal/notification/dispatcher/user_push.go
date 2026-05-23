@@ -39,7 +39,7 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 	if d.digestGate != nil {
 		priority := notification.PriorityOf(entry.EventType)
 		var sendIndividual bool
-		sendIndividual, digestCount = d.digestGate.Record(userID, priority, time.Now())
+		sendIndividual, digestCount = d.digestGate.Record(ctx, userID, priority, time.Now())
 		if !sendIndividual {
 			if digestCount == 0 {
 				return // already sent a digest push for this window; drop

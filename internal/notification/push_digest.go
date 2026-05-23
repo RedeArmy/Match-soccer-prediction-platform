@@ -5,9 +5,35 @@
 package notification
 
 import (
+	"context"
 	"sync"
 	"time"
 )
+
+// Recorder classifies web-push delivery attempts for a given user and
+// priority, collapsing burst P2/P3 notifications into a single digest push.
+// Implementations must be safe for concurrent use from multiple goroutines.
+//
+// Two implementations are provided:
+//   - PushDigestGate: in-memory, zero-dependency. Correct for a single-process
+//     deployment; in a multi-replica worker each replica has independent state.
+//   - RedisPushDigestGate: Redis-backed, cluster-wide counter. Enforces the
+//     threshold across all worker replicas so users cannot receive more than
+//     threshold individual pushes per window regardless of which replica handles
+//     their events. Prefer this when Redis is available.
+type Recorder interface {
+	// Record classifies a push delivery attempt for userID at priority p.
+	// now is the current wall-clock time; in-process implementations use it
+	// for window expiry, Redis-backed implementations ignore it (TTL is
+	// managed by Redis).
+	//
+	// Returns:
+	//   (true,  0)     P0/P1 — bypass gate; send individual push immediately.
+	//   (true,  0)     P2/P3, count ≤ threshold — send individual push.
+	//   (false, count) P2/P3, first overflow — send one digest push.
+	//   (false, 0)     P2/P3, subsequent overflow — drop silently.
+	Record(ctx context.Context, userID int, p Priority, now time.Time) (sendIndividual bool, digestCount int32)
+}
 
 // PushDigestGate implements a per-user sliding-window gate for web-push
 // delivery. P0 and P1 events always bypass the gate. For P2 and P3 events it
@@ -45,13 +71,8 @@ func NewPushDigestGate(windowSec int64, threshold int32) *PushDigestGate {
 }
 
 // Record classifies and records a push delivery attempt for userID at priority p.
-// Returns:
-//
-//	(true,  0)     P0/P1 event — bypass gate, send individual push immediately.
-//	(true,  0)     P2/P3, count ≤ threshold — send individual push.
-//	(false, count) P2/P3, first overflow — caller should send one digest push.
-//	(false, 0)     P2/P3, subsequent overflow — drop silently.
-func (g *PushDigestGate) Record(userID int, p Priority, now time.Time) (sendIndividual bool, digestCount int32) {
+// ctx is accepted for Recorder interface compatibility and is not used.
+func (g *PushDigestGate) Record(_ context.Context, userID int, p Priority, now time.Time) (sendIndividual bool, digestCount int32) {
 	if p <= PriorityP1High {
 		return true, 0
 	}
@@ -77,9 +98,13 @@ func (g *PushDigestGate) Record(userID int, p Priority, now time.Time) (sendIndi
 	}
 }
 
+var _ Recorder = (*PushDigestGate)(nil)
+
 // Prune removes digest windows whose sliding interval has expired. It should be
 // called periodically (e.g., by a background ticker) to bound memory growth for
 // large user bases. Users with an active window are never removed.
+// Not part of the Recorder interface; only PushDigestGate (in-process) needs
+// explicit pruning. Redis-backed implementations rely on key TTL for cleanup.
 func (g *PushDigestGate) Prune(now time.Time) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

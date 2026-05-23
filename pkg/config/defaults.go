@@ -31,6 +31,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.readTimeout", 10*time.Second)
 	v.SetDefault("server.writeTimeout", 30*time.Second)
 	v.SetDefault("server.idleTimeout", 60*time.Second)
+	v.SetDefault("server.shutdownTimeout", 30*time.Second)
 
 	v.SetDefault("database.dsn", "")
 	v.SetDefault("database.maxOpenConns", 25)

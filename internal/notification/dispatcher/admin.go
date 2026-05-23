@@ -30,6 +30,7 @@ import (
 // service package (avoiding coupling and easing test doubles).
 type ParamReader interface {
 	GetString(ctx context.Context, key, defaultVal string) string
+	GetInt(ctx context.Context, key string, defaultVal int) int
 }
 
 // AdminDispatcher implements outbox.Dispatcher for admin and system events.
@@ -106,10 +107,21 @@ func (d *AdminDispatcher) Dispatch(ctx context.Context, entry *notification.Outb
 		return nil
 	}
 
-	subject, html, err := renderEmail(entry)
-	if err != nil {
-		log.Error("failed to render admin email template", zap.Error(err))
-		return err
+	renderTimeout := time.Duration(
+		d.params.GetInt(ctx, domain.ParamKeyNotifyRenderTimeoutMs, domain.DefaultNotifyRenderTimeoutMs),
+	) * time.Millisecond
+
+	var subject, html string
+	if err := withRenderTimeout(ctx, renderTimeout, func() error {
+		var e error
+		subject, html, e = renderEmailFn(entry)
+		return e
+	}); err != nil {
+		log.Error("failed to render admin email template",
+			zap.Duration("render_timeout", renderTimeout),
+			zap.Error(err),
+		)
+		return fmt.Errorf("dispatcher: render: %w", err)
 	}
 
 	from := d.params.GetString(ctx, domain.ParamKeyNotifyFromAddress, d.fromAddr)

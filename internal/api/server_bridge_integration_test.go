@@ -22,7 +22,7 @@ func newBridgeServer(t *testing.T) *api.Server {
 	t.Helper()
 	cfg := &config.Config{}
 	srv := api.New(e2eDB, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
-	srv.Routes() // initialises notifHub
+	srv.Routes(context.Background()) // initialises notifHub
 	return srv
 }
 

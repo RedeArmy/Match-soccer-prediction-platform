@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -110,28 +111,37 @@ func (d *UserDispatcher) deliverEmail(
 	// Resolve relative action URLs to absolute so the CTA button in the email
 	// is a working hyperlink.  Email clients interpret bare-path hrefs relative
 	// to the mail service's domain, not the application origin.
-	if d.appBaseURL != "" && len(content.actionURL) > 0 && content.actionURL[0] == '/' {
+	if d.appBaseURL != "" && strings.HasPrefix(content.actionURL, "/") {
 		content.actionURL = d.appBaseURL + content.actionURL
 	}
 
-	var subject, html string
-	var renderErr error
-	if content.emailHTMLTmpl != "" {
-		subject, html, renderErr = renderUserEmailFromTmpl(content.emailHTMLTmpl, content, name, unsubURL)
-	} else {
-		subject, html, renderErr = renderUserEmail(content, name, unsubURL)
-	}
-	if renderErr != nil {
-		log.Warn("user dispatcher: render user email failed", zap.Error(renderErr))
-		return
-	}
-
+	renderTimeoutMs := domain.DefaultNotifyRenderTimeoutMs
 	from := d.fromAddr
 	if d.params != nil {
+		renderTimeoutMs = d.params.GetInt(ctx, domain.ParamKeyNotifyRenderTimeoutMs, domain.DefaultNotifyRenderTimeoutMs)
 		from = d.params.GetString(ctx, domain.ParamKeyNotifyFromAddress, d.fromAddr)
 	}
 	if from == "" {
 		from = "World Cup Quiniela <noreply@quiniela.example.com>"
+	}
+	renderTimeout := time.Duration(renderTimeoutMs) * time.Millisecond
+
+	var subject, html string
+	renderErr := withRenderTimeout(ctx, renderTimeout, func() error {
+		var e error
+		if content.emailHTMLTmpl != "" {
+			subject, html, e = renderUserEmailFromTmpl(content.emailHTMLTmpl, content, name, unsubURL)
+		} else {
+			subject, html, e = renderUserEmail(content, name, unsubURL)
+		}
+		return e
+	})
+	if renderErr != nil {
+		log.Warn("user dispatcher: render user email failed",
+			zap.Duration("render_timeout", renderTimeout),
+			zap.Error(renderErr),
+		)
+		return
 	}
 
 	_, sendErr := d.mailer.Send(ctx, infraemail.Message{
