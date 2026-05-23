@@ -139,7 +139,8 @@ func newMatchStartedHandler(log *zap.Logger) func(context.Context, events.Envelo
 //
 // After scoring succeeds the handler runs postScoringWork, which fetches the
 // affected quinielas once, flushes their cache entries via every registered
-// PostScoringInvalidator, and then triggers a leaderboard snapshot for each.
+// PostScoringInvalidator, broadcasts a leaderboard.updated SSE signal to every
+// active group member, and then triggers a leaderboard snapshot for each.
 // All post-scoring steps are best-effort: failures are logged and swallowed
 // because scoring has already committed.
 func newMatchFinishedHandler(
@@ -147,6 +148,7 @@ func newMatchFinishedHandler(
 	snapshotter service.Snapshotter,
 	predRepo repository.PredictionRepository,
 	invalidators []service.PostScoringInvalidator,
+	broadcaster LeaderboardBroadcaster,
 	locker SnapshotLocker,
 	log *zap.Logger,
 ) func(context.Context, events.Envelope) error {
@@ -175,29 +177,33 @@ func newMatchFinishedHandler(
 		log.Sugar().Infof("worker: scored match %d (%s %d-%d %s)",
 			mf.MatchID, mf.HomeTeam, mf.HomeScore, mf.AwayScore, mf.AwayTeam)
 
-		postScoringWork(ctx, mf.MatchID, snapshotter, predRepo, invalidators, locker, log)
+		postScoringWork(ctx, mf.MatchID, snapshotter, predRepo, invalidators, broadcaster, locker, log)
 		return nil
 	}
 }
 
 // postScoringWork fetches the quinielas affected by matchID exactly once, then
-// runs cache invalidation and snapshot generation in that order: invalidation
-// first so the snapshot write is not racing a stale read.
+// runs three steps in this fixed order:
 //
-// All steps are best-effort. A failure to fetch quiniela IDs skips both
-// invalidation and snapshots but does not propagate: scoring has committed.
+//  1. Cache invalidation — flush stale leaderboard entries before any client
+//     refetch can arrive.
+//  2. SSE broadcast — publish a leaderboard.updated signal to every active
+//     group member so connected clients know to refetch immediately.  The
+//     signal is sent after invalidation so the cache is already cold when the
+//     refetch request arrives at the API server.
+//  3. Snapshot — write the post-scoring standings to the snapshot table for
+//     historical queries.  Runs concurrently with the ongoing response to
+//     clients' refetches; the snapshot table is separate from the live cache.
 //
-// Snapshot concurrency: quinielas are snapshotted in parallel with a bounded
-// pool of snapshotConcurrency goroutines. For 500 quinielas with concurrency 16
-// this reduces wall-clock time from O(n×snapshotDuration) to O(⌈n/16⌉×snapshotDuration).
-// Concurrent Snapshot calls for the same quiniela (from two overlapping match
-// events) produce redundant rows; GetLatest always returns the most recent one.
+// All steps are best-effort. A failure to fetch quiniela IDs skips all three
+// but does not propagate: scoring has already committed.
 func postScoringWork(
 	ctx context.Context,
 	matchID int,
 	snapshotter service.Snapshotter,
 	predRepo repository.PredictionRepository,
 	invalidators []service.PostScoringInvalidator,
+	broadcaster LeaderboardBroadcaster,
 	locker SnapshotLocker,
 	log *zap.Logger,
 ) {
@@ -217,10 +223,15 @@ func postScoringWork(
 		return
 	}
 
-	// Invalidation is batched across all quinielas in a single call per
-	// invalidator — no parallelism needed here.
+	// Step 1: flush stale cache entries before broadcasting the refetch signal.
 	for _, inv := range invalidators {
 		inv.InvalidateAfterScoring(ctx, quinielaIDs)
+	}
+
+	// Step 2: signal connected SSE clients to refetch the leaderboard.
+	// Must run after invalidation so the cache is cold when the client arrives.
+	if broadcaster != nil {
+		broadcaster.BroadcastLeaderboardUpdated(ctx, quinielaIDs)
 	}
 
 	if snapshotter == nil {
