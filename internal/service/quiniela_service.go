@@ -9,7 +9,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
-	"github.com/rede/world-cup-quiniela/pkg/codegen"
+	"github.com/rede/world-cup-quiniela/pkg/randcode"
 )
 
 // QuinielaService defines operations on the Quiniela entity.
@@ -37,14 +37,14 @@ type quinielaService struct {
 	authz   GroupAuthz
 	params  SystemParamService
 	audit   AuditLogger
-	codeGen codegen.Generator
+	codeGen randcode.Generator
 }
 
 // NewQuinielaService constructs a quinielaService with the given dependencies.
 // authz enforces group ownership in RenameGroup.
 // params is used to read group.invite_code_length at runtime.
 // audit records rename operations in the audit trail.
-func NewQuinielaService(repo repository.QuinielaRepository, authz GroupAuthz, params SystemParamService, audit AuditLogger, codeGen codegen.Generator) QuinielaService {
+func NewQuinielaService(repo repository.QuinielaRepository, authz GroupAuthz, params SystemParamService, audit AuditLogger, codeGen randcode.Generator) QuinielaService {
 	return &quinielaService{repo: repo, authz: authz, params: params, audit: audit, codeGen: codeGen}
 }
 

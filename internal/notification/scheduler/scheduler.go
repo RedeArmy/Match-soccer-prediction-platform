@@ -15,9 +15,12 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/rede/world-cup-quiniela/pkg/health"
 )
 
 // Nower is an injectable time source.  Production code uses RealClock; tests
@@ -184,6 +187,61 @@ func (s *Scheduler) runDue(ctx context.Context, now time.Time) {
 				)
 			}
 		}
+	}
+}
+
+// HealthChecker returns a health.Checker that acts as a dead-man's switch for
+// the scheduler. It fails when any registered job that has previously fired is
+// overdue by more than threshold × its expected interval. Jobs that have never
+// fired (i.e. the scheduler just started) are exempt until the first run.
+//
+// A threshold of 3.0 is recommended for interval jobs: it tolerates two missed
+// ticks (e.g. a brief Redis hiccup causing TryAcquire to fail) before alerting.
+// Wire the returned Checker into the worker's /health/ready endpoint so
+// Kubernetes liveness probes and on-call alerting detect silent scheduler stalls.
+func (s *Scheduler) HealthChecker(threshold float64) health.Checker {
+	return &schedulerHealthChecker{s: s, threshold: threshold}
+}
+
+// schedulerHealthChecker implements health.Checker for a Scheduler.
+type schedulerHealthChecker struct {
+	s         *Scheduler
+	threshold float64
+}
+
+func (c *schedulerHealthChecker) Name() string { return "scheduler" }
+
+// Check inspects each registered job's lastRun timestamp. For interval jobs it
+// allows threshold × interval before declaring the job overdue. Daily and
+// weekly jobs get a 1-hour grace window on top of their natural cadence.
+func (c *schedulerHealthChecker) Check(_ context.Context) health.Result {
+	now := c.s.clock.Now()
+	for _, j := range c.s.jobs {
+		if j.lastRun.IsZero() {
+			continue // startup grace: job has not yet had a chance to fire
+		}
+		maxAge := c.maxAge(j)
+		if age := now.Sub(j.lastRun); age > maxAge {
+			return health.Result{
+				Status: "error",
+				Error: fmt.Sprintf("scheduler: job %q overdue — last fired %v ago (threshold %v)",
+					j.name, age.Round(time.Second), maxAge.Round(time.Second)),
+			}
+		}
+	}
+	return health.Result{Status: "ok"}
+}
+
+func (c *schedulerHealthChecker) maxAge(j *job) time.Duration {
+	switch j.spec.kind {
+	case kindInterval:
+		return time.Duration(float64(j.spec.interval) * c.threshold)
+	case kindDaily:
+		// Allow threshold × 24 h plus a 1-hour grace for clock skew / DST.
+		return time.Duration(float64(25*time.Hour) * c.threshold)
+	default: // kindWeekly
+		// Allow threshold × 7 days plus a 1-hour grace.
+		return time.Duration(float64(7*24*time.Hour+time.Hour) * c.threshold)
 	}
 }
 

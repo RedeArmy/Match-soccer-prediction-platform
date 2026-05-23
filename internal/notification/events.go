@@ -39,8 +39,20 @@ const (
 	// The worker publishes it directly to the user_notifications Redis channel
 	// after scoring and cache invalidation complete. SSE clients use the
 	// action_url field to know which group leaderboard to refetch.
+	// See ADR 0002 for the synthetic-vs-persisted event decision.
 	EventLeaderboardUpdated EventType = "leaderboard.updated"
 )
+
+// SyntheticEvents is the machine-readable registry of every EventType that is
+// fired directly (e.g. via Redis Pub/Sub) and must never be written to the
+// transactional outbox. Delivery is best-effort; consumers must tolerate loss.
+//
+// Any EventType added here must also be documented in ADR 0002.
+// The outbox.PoolWriter enforces this invariant at runtime: passing a synthetic
+// EventType to Write, WriteInTx, WriteBatch, or WriteDedup returns an error.
+var SyntheticEvents = map[EventType]struct{}{
+	EventLeaderboardUpdated: {},
+}
 
 // User-facing group / quiniela events.
 const (

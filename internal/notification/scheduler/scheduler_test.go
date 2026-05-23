@@ -637,3 +637,117 @@ func TestJobs_StaleEscalation_NilParams_Skips(t *testing.T) {
 		t.Errorf("events: got %d; want 0 (params=nil should skip)", len(writer.events))
 	}
 }
+
+// ── HealthChecker tests ───────────────────────────────────────────────────────
+
+func TestSchedulerHealthChecker_Name(t *testing.T) {
+	t.Parallel()
+	s := scheduler.New(scheduler.Config{Log: zap.NewNop()})
+	if got := s.HealthChecker(3.0).Name(); got != "scheduler" {
+		t.Errorf("Name() = %q; want %q", got, "scheduler")
+	}
+}
+
+func TestSchedulerHealthChecker_NoJobs_OK(t *testing.T) {
+	t.Parallel()
+	s := scheduler.New(scheduler.Config{Log: zap.NewNop()})
+	checker := s.HealthChecker(3.0)
+	result := checker.Check(context.Background())
+	if result.Status != "ok" {
+		t.Errorf("Check() status = %q; want %q", result.Status, "ok")
+	}
+}
+
+func TestSchedulerHealthChecker_StartupGrace_OK(t *testing.T) {
+	// Jobs that have never fired (lastRun zero) must not trigger the health check.
+	t.Parallel()
+	clock := &stubClock{t: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)}
+	s := scheduler.New(scheduler.Config{Clock: clock, Log: zap.NewNop()})
+	s.RegisterInterval("new-job", time.Minute, func(_ context.Context) error { return nil })
+
+	checker := s.HealthChecker(3.0)
+	result := checker.Check(context.Background())
+	if result.Status != "ok" {
+		t.Errorf("startup grace: status = %q; want %q", result.Status, "ok")
+	}
+}
+
+func TestSchedulerHealthChecker_IntervalJobOverdue_Error(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	clock := &stubClock{t: base}
+	s := scheduler.New(scheduler.Config{Clock: clock, Log: zap.NewNop()})
+	s.RegisterInterval("tick-job", 5*time.Minute, func(_ context.Context) error { return nil })
+
+	// Fire the job so lastRun is set.
+	s.RunWithTick(context.Background(), base)
+
+	// Advance clock past threshold (3× interval = 15 min).
+	clock.t = base.Add(16 * time.Minute)
+
+	checker := s.HealthChecker(3.0)
+	result := checker.Check(context.Background())
+	if result.Status != "error" {
+		t.Errorf("overdue interval: status = %q; want %q", result.Status, "error")
+	}
+	if result.Error == "" {
+		t.Error("overdue interval: expected non-empty Error field")
+	}
+}
+
+func TestSchedulerHealthChecker_IntervalJobWithinThreshold_OK(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	clock := &stubClock{t: base}
+	s := scheduler.New(scheduler.Config{Clock: clock, Log: zap.NewNop()})
+	s.RegisterInterval("tick-job", 5*time.Minute, func(_ context.Context) error { return nil })
+	s.RunWithTick(context.Background(), base)
+
+	// Advance to just under the threshold (3×5 min = 15 min).
+	clock.t = base.Add(14 * time.Minute)
+
+	checker := s.HealthChecker(3.0)
+	result := checker.Check(context.Background())
+	if result.Status != "ok" {
+		t.Errorf("within threshold: status = %q; want %q — %s", result.Status, "ok", result.Error)
+	}
+}
+
+func TestSchedulerHealthChecker_DailyJobOverdue_Error(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 5, 22, 8, 0, 0, 0, time.UTC)
+	clock := &stubClock{t: base}
+	s := scheduler.New(scheduler.Config{Clock: clock, Log: zap.NewNop()})
+	s.RegisterDaily("daily-job", 8, 0, func(_ context.Context) error { return nil })
+	s.RunWithTick(context.Background(), base)
+
+	// Advance past threshold (3 × 25 h = 75 h).
+	clock.t = base.Add(76 * time.Hour)
+
+	result := s.HealthChecker(3.0).Check(context.Background())
+	if result.Status != "error" {
+		t.Errorf("overdue daily: status = %q; want %q", result.Status, "error")
+	}
+}
+
+func TestSchedulerHealthChecker_WeeklyJobOverdue_Error(t *testing.T) {
+	t.Parallel()
+
+	// 2026-05-25 is a Monday.
+	base := time.Date(2026, 5, 25, 8, 0, 0, 0, time.UTC)
+	clock := &stubClock{t: base}
+	s := scheduler.New(scheduler.Config{Clock: clock, Log: zap.NewNop()})
+	s.RegisterWeekly("weekly-job", time.Monday, 8, 0, func(_ context.Context) error { return nil })
+	s.RunWithTick(context.Background(), base)
+
+	// Advance past threshold (3 × (7×24h + 1h) = 3 × 169h = 507 h).
+	clock.t = base.Add(508 * time.Hour)
+
+	result := s.HealthChecker(3.0).Check(context.Background())
+	if result.Status != "error" {
+		t.Errorf("overdue weekly: status = %q; want %q", result.Status, "error")
+	}
+}

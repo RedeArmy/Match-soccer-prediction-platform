@@ -14,7 +14,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/breaker"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
-	"github.com/rede/world-cup-quiniela/pkg/codegen"
+	"github.com/rede/world-cup-quiniela/pkg/randcode"
 )
 
 // coreRepos bundles the five shared repository instances constructed once in
@@ -112,7 +112,7 @@ func (s *Server) buildHandlers(
 
 	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.Real{}, s.log)
 	groupAuthz := service.NewGroupAuthzService(repos.member)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, codegen.Crypto{})
+	quinielaSvc := service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{})
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, clock.Real{}, s.log)
 

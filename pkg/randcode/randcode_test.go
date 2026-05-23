@@ -1,15 +1,15 @@
-package codegen_test
+package randcode_test
 
 import (
 	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/rede/world-cup-quiniela/pkg/codegen"
+	"github.com/rede/world-cup-quiniela/pkg/randcode"
 )
 
 func TestCrypto_Generate_LengthAndAlphabet(t *testing.T) {
-	g := codegen.Crypto{}
+	g := randcode.Crypto{}
 	code, err := g.Generate(10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -25,7 +25,7 @@ func TestCrypto_Generate_LengthAndAlphabet(t *testing.T) {
 }
 
 func TestCrypto_Generate_CustomAlphabet(t *testing.T) {
-	g := codegen.Crypto{Alphabet: "AB"}
+	g := randcode.Crypto{Alphabet: "AB"}
 	code, err := g.Generate(8)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -38,7 +38,7 @@ func TestCrypto_Generate_CustomAlphabet(t *testing.T) {
 }
 
 func TestCrypto_Generate_ReaderError_Propagates(t *testing.T) {
-	g := codegen.Crypto{Rand: &failReader{}}
+	g := randcode.Crypto{Rand: &failReader{}}
 	_, err := g.Generate(10)
 	if err == nil {
 		t.Fatal("expected error from failing reader, got nil")
@@ -51,7 +51,7 @@ type failReader struct{}
 func (failReader) Read([]byte) (int, error) { return 0, fmt.Errorf("injected read error") }
 
 func TestFixed_Generate_ReturnsCode(t *testing.T) {
-	g := codegen.Fixed{Code: "TESTCODE"}
+	g := randcode.Fixed{Code: "TESTCODE"}
 	code, err := g.Generate(99) // length param ignored
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

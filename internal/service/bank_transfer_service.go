@@ -36,7 +36,7 @@ type BankTransferService interface {
 
 type bankTransferService struct {
 	proofRepo    repository.BankTransferProofRepository
-	outboxWriter *outbox.Writer
+	outboxWriter outbox.Writer
 	audit        AuditLogger
 	log          *zap.Logger
 }
@@ -44,7 +44,7 @@ type bankTransferService struct {
 // NewBankTransferService constructs a BankTransferService.
 func NewBankTransferService(
 	proofRepo repository.BankTransferProofRepository,
-	outboxWriter *outbox.Writer,
+	outboxWriter outbox.Writer,
 	audit AuditLogger,
 	log *zap.Logger,
 ) BankTransferService {

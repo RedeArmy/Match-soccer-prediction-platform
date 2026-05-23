@@ -42,7 +42,7 @@ type WithdrawalService interface {
 type withdrawalService struct {
 	withdrawalRepo repository.WithdrawalRequestRepository
 	paramRepo      repository.SystemParamRepository
-	outboxWriter   *outbox.Writer
+	outboxWriter   outbox.Writer
 	audit          AuditLogger
 	log            *zap.Logger
 }
@@ -51,7 +51,7 @@ type withdrawalService struct {
 func NewWithdrawalService(
 	withdrawalRepo repository.WithdrawalRequestRepository,
 	paramRepo repository.SystemParamRepository,
-	outboxWriter *outbox.Writer,
+	outboxWriter outbox.Writer,
 	audit AuditLogger,
 	log *zap.Logger,
 ) WithdrawalService {
