@@ -68,13 +68,6 @@ type SnapshotLocker interface {
 	Unlock(ctx context.Context, matchID, quinielaID int) error
 }
 
-// noopSnapshotLocker always grants the lock.  Used in tests and as a fallback
-// when Redis is unavailable, preserving the in-process semaphore behaviour.
-type noopSnapshotLocker struct{}
-
-func (noopSnapshotLocker) TryLock(_ context.Context, _, _ int) (bool, error) { return true, nil }
-func (noopSnapshotLocker) Unlock(_ context.Context, _, _ int) error          { return nil }
-
 // decodePayload re-encodes env.Payload as JSON and then unmarshals it into T.
 //
 // events.Envelope.Payload is declared as `any`. When InMemoryBus delivers an
@@ -133,6 +126,17 @@ func newMatchStartedHandler(log *zap.Logger) func(context.Context, events.Envelo
 	}
 }
 
+// postScoringDeps bundles the infrastructure dependencies for postScoringWork,
+// keeping its parameter count within the 7-param linter limit while remaining
+// straightforward to extend without changing the function signature.
+type postScoringDeps struct {
+	snapshotter  service.Snapshotter
+	predRepo     repository.PredictionRepository
+	invalidators []service.PostScoringInvalidator
+	broadcaster  LeaderboardBroadcaster
+	locker       SnapshotLocker
+}
+
 // newMatchFinishedHandler returns the event handler that the worker registers
 // on the bus for EventMatchFinished events. It is extracted as a constructor
 // so it can be unit-tested in isolation without starting the full worker.
@@ -145,11 +149,7 @@ func newMatchStartedHandler(log *zap.Logger) func(context.Context, events.Envelo
 // because scoring has already committed.
 func newMatchFinishedHandler(
 	scorer service.MatchScorer,
-	snapshotter service.Snapshotter,
-	predRepo repository.PredictionRepository,
-	invalidators []service.PostScoringInvalidator,
-	broadcaster LeaderboardBroadcaster,
-	locker SnapshotLocker,
+	deps postScoringDeps,
 	log *zap.Logger,
 ) func(context.Context, events.Envelope) error {
 	return func(ctx context.Context, env events.Envelope) error {
@@ -177,7 +177,7 @@ func newMatchFinishedHandler(
 		log.Sugar().Infof("worker: scored match %d (%s %d-%d %s)",
 			mf.MatchID, mf.HomeTeam, mf.HomeScore, mf.AwayScore, mf.AwayTeam)
 
-		postScoringWork(ctx, mf.MatchID, snapshotter, predRepo, invalidators, broadcaster, locker, log)
+		postScoringWork(ctx, mf.MatchID, deps, log)
 		return nil
 	}
 }
@@ -200,18 +200,14 @@ func newMatchFinishedHandler(
 func postScoringWork(
 	ctx context.Context,
 	matchID int,
-	snapshotter service.Snapshotter,
-	predRepo repository.PredictionRepository,
-	invalidators []service.PostScoringInvalidator,
-	broadcaster LeaderboardBroadcaster,
-	locker SnapshotLocker,
+	deps postScoringDeps,
 	log *zap.Logger,
 ) {
-	if predRepo == nil {
+	if deps.predRepo == nil {
 		return
 	}
 
-	quinielaIDs, err := predRepo.ListQuinielaIDsByMatch(ctx, matchID)
+	quinielaIDs, err := deps.predRepo.ListQuinielaIDsByMatch(ctx, matchID)
 	if err != nil {
 		log.Warn("worker: could not fetch quiniela IDs after scoring",
 			zap.Int("match_id", matchID),
@@ -224,17 +220,17 @@ func postScoringWork(
 	}
 
 	// Step 1: flush stale cache entries before broadcasting the refetch signal.
-	for _, inv := range invalidators {
+	for _, inv := range deps.invalidators {
 		inv.InvalidateAfterScoring(ctx, quinielaIDs)
 	}
 
 	// Step 2: signal connected SSE clients to refetch the leaderboard.
 	// Must run after invalidation so the cache is cold when the client arrives.
-	if broadcaster != nil {
-		broadcaster.BroadcastLeaderboardUpdated(ctx, quinielaIDs)
+	if deps.broadcaster != nil {
+		deps.broadcaster.BroadcastLeaderboardUpdated(ctx, quinielaIDs)
 	}
 
-	if snapshotter == nil {
+	if deps.snapshotter == nil {
 		return
 	}
 
@@ -253,7 +249,7 @@ func postScoringWork(
 				}
 				defer snapshotSem.Release()
 			}
-			runSnapshot(gctx, matchID, qid, snapshotter, locker, log)
+			runSnapshot(gctx, matchID, qid, deps.snapshotter, deps.locker, log)
 			return nil
 		})
 	}
