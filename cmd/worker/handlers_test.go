@@ -185,7 +185,7 @@ func TestMatchStartedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 
 func TestMatchFinishedHandler_MapPayload_CallsScorer(t *testing.T) {
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, nil, nil, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, postScoringDeps{}, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithMap(99)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -200,7 +200,7 @@ func TestMatchFinishedHandler_MapPayload_CallsScorer(t *testing.T) {
 
 func TestMatchFinishedHandler_StructPayload_CallsScorer(t *testing.T) {
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, nil, nil, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, postScoringDeps{}, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithStruct(5)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -212,7 +212,7 @@ func TestMatchFinishedHandler_StructPayload_CallsScorer(t *testing.T) {
 
 func TestMatchFinishedHandler_ScorerError_PropagatesError(t *testing.T) {
 	scorer := &stubScorer{err: errors.New("db down")}
-	h := newMatchFinishedHandler(scorer, nil, nil, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, postScoringDeps{}, zap.NewNop())
 
 	err := h(context.Background(), envelopeWithMap(1))
 	if err == nil {
@@ -225,7 +225,7 @@ func TestMatchFinishedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 	// return nil rather than propagating the error, because retrying a
 	// structurally invalid message would burn retry budget uselessly.
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, nil, nil, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, postScoringDeps{}, zap.NewNop())
 
 	env := events.Envelope{
 		Type:    events.EventMatchFinished,
@@ -315,27 +315,27 @@ func (r *stubWorkerPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*dom
 }
 
 func TestPostScoringWork_NilPredRepo_Noop(t *testing.T) {
-	postScoringWork(context.Background(), 1, &stubSnapshotter{}, nil, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	postScoringWork(context.Background(), 1, postScoringDeps{snapshotter: &stubSnapshotter{}}, zap.NewNop())
 }
 
 func TestPostScoringWork_NilSnapshotter_Noop(t *testing.T) {
-	postScoringWork(context.Background(), 1, nil, &stubWorkerPredRepo{ids: []int{1}}, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	postScoringWork(context.Background(), 1, postScoringDeps{predRepo: &stubWorkerPredRepo{ids: []int{1}}}, zap.NewNop())
 }
 
 func TestPostScoringWork_ListError_LogsWarnAndReturns(t *testing.T) {
 	predRepo := &stubWorkerPredRepo{err: errors.New("db down")}
-	postScoringWork(context.Background(), 1, &stubSnapshotter{}, predRepo, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	postScoringWork(context.Background(), 1, postScoringDeps{snapshotter: &stubSnapshotter{}, predRepo: predRepo}, zap.NewNop())
 }
 
 func TestPostScoringWork_EmptyList_NoSnapshot(t *testing.T) {
 	predRepo := &stubWorkerPredRepo{ids: []int{}}
-	postScoringWork(context.Background(), 1, &stubSnapshotter{}, predRepo, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	postScoringWork(context.Background(), 1, postScoringDeps{snapshotter: &stubSnapshotter{}, predRepo: predRepo}, zap.NewNop())
 }
 
 func TestPostScoringWork_SnapshotSuccess_LogsInfo(t *testing.T) {
 	predRepo := &stubWorkerPredRepo{ids: []int{10, 20}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	postScoringWork(context.Background(), 5, snap, predRepo, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	postScoringWork(context.Background(), 5, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
 }
 
 func TestPostScoringWork_SnapshotError_LogsWarn(t *testing.T) {
@@ -344,14 +344,14 @@ func TestPostScoringWork_SnapshotError_LogsWarn(t *testing.T) {
 
 	predRepo := &stubWorkerPredRepo{ids: []int{10}}
 	snap := &stubSnapshotter{err: errors.New("snapshot failed")}
-	postScoringWork(context.Background(), 5, snap, predRepo, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	postScoringWork(context.Background(), 5, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
 }
 
 func TestPostScoringWork_CallsInvalidators(t *testing.T) {
 	called := false
 	inv := &stubInvalidator{fn: func(ids []int) { called = true }}
 	predRepo := &stubWorkerPredRepo{ids: []int{1}}
-	postScoringWork(context.Background(), 5, nil, predRepo, []service.PostScoringInvalidator{inv}, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	postScoringWork(context.Background(), 5, postScoringDeps{predRepo: predRepo, invalidators: []service.PostScoringInvalidator{inv}}, zap.NewNop())
 	if !called {
 		t.Error("expected PostScoringInvalidator to be called")
 	}
@@ -361,7 +361,7 @@ func TestMatchFinishedHandler_WithSnapshot_ScoresAndSnapshots(t *testing.T) {
 	scorer := &stubScorer{}
 	predRepo := &stubWorkerPredRepo{ids: []int{1, 2}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	h := newMatchFinishedHandler(scorer, snap, predRepo, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithStruct(10)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -478,7 +478,7 @@ func TestPostScoringWork_WithSemaphore_SnapshotsAllQuinielas(t *testing.T) {
 
 	predRepo := &stubWorkerPredRepo{ids: []int{1, 2, 3}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	postScoringWork(context.Background(), 5, snap, predRepo, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	postScoringWork(context.Background(), 5, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
 	// All 3 quinielas must be snapshotted despite the semaphore limiting concurrency to 2.
 }
 
@@ -495,7 +495,7 @@ func TestPostScoringWork_WithSemaphore_ContextCancelled_SkipsSnapshot(t *testing
 
 	predRepo := &stubWorkerPredRepo{ids: []int{10, 20}}
 	snap := &countingSnapshotter{succeedAt: 0, err: errors.New("should not reach")}
-	postScoringWork(ctx, 5, snap, predRepo, nil, noopLeaderboardBroadcaster{}, noopSnapshotLocker{}, zap.NewNop())
+	postScoringWork(ctx, 5, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
 	if snap.calls != 0 {
 		t.Errorf("SnapshotForMatch calls: got %d; want 0 (context cancelled before acquire)", snap.calls)
 	}
