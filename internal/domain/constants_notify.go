@@ -75,6 +75,13 @@ const (
 	// collapses further events into a single digest push.
 	// is_runtime=FALSE: worker restart required.
 	DefaultNotifyPushDigestThreshold = 5 // notify.push_digest_threshold
+
+	// DefaultNotifyRenderTimeoutMs is the wall-clock budget (milliseconds) for a
+	// single email template render before the dispatcher returns an error and the
+	// outbox worker applies exponential-backoff retry. The default of 5 000 ms
+	// (5 s) is generous for pure-CPU template execution; lower it when profiling
+	// shows renders complete in <100 ms in production. is_runtime=TRUE.
+	DefaultNotifyRenderTimeoutMs = 5_000 // notify.render_timeout_ms
 )
 
 // Notification system parameter keys.
@@ -159,4 +166,10 @@ const (
 	// push notifications sent per user per digest window before collapsing to a
 	// summary digest. is_runtime=FALSE: worker restart required.
 	ParamKeyNotifyPushDigestThreshold = "notify.push_digest_threshold"
+
+	// ParamKeyNotifyRenderTimeoutMs is the maximum milliseconds allowed for a
+	// single email template render. Renders that exceed this budget return an error
+	// so the outbox worker retries the entry rather than stalling indefinitely.
+	// is_runtime=TRUE: new value takes effect within the 30 s param cache window.
+	ParamKeyNotifyRenderTimeoutMs = "notify.render_timeout_ms"
 )

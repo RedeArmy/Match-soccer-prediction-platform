@@ -1,6 +1,7 @@
 package notification
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func BenchmarkPushDigestGate_BelowThreshold(b *testing.B) {
 			// Each iteration uses the same user but the gate resets when the
 			// window expires. With b.N >> 5 the gate will cycle through
 			// individual → digest → drop → (window expires) → individual again.
-			gate.Record(uid, PriorityP2Medium, now)
+			gate.Record(context.Background(), uid, PriorityP2Medium, now)
 		}
 	})
 }
@@ -34,7 +35,7 @@ func BenchmarkPushDigestGate_P0Bypass(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			gate.Record(1, PriorityP0Critical, now)
+			gate.Record(context.Background(), 1, PriorityP0Critical, now)
 		}
 	})
 }
@@ -52,7 +53,7 @@ func BenchmarkPushDigestGate_ManyUsers(b *testing.B) {
 		uid := 0
 		for pb.Next() {
 			uid = (uid + 1) % userCount
-			gate.Record(uid, PriorityP2Medium, now)
+			gate.Record(context.Background(), uid, PriorityP2Medium, now)
 		}
 	})
 }
@@ -67,7 +68,7 @@ func BenchmarkPushDigestGate_Prune(b *testing.B) {
 	past := time.Now().Add(-10 * time.Minute) // all windows already expired
 
 	for i := 0; i < userCount; i++ {
-		gate.Record(i, PriorityP2Medium, past)
+		gate.Record(context.Background(), i, PriorityP2Medium, past)
 	}
 
 	b.ResetTimer()
@@ -77,7 +78,7 @@ func BenchmarkPushDigestGate_Prune(b *testing.B) {
 		// the next iteration. Reset now so the new windows haven't expired yet.
 		fresh := time.Now()
 		for j := 0; j < userCount; j++ {
-			gate.Record(j, PriorityP2Medium, fresh)
+			gate.Record(context.Background(), j, PriorityP2Medium, fresh)
 		}
 	}
 }
@@ -96,7 +97,7 @@ func BenchmarkPushDigestGate_ConcurrentMixedPriority(b *testing.B) {
 		for pb.Next() {
 			uid := i % 1000
 			p := priorities[i%len(priorities)]
-			gate.Record(uid, p, now)
+			gate.Record(context.Background(), uid, p, now)
 			i++
 		}
 	})
@@ -113,13 +114,13 @@ func BenchmarkPushDigestGate_SingleUser_OverThreshold(b *testing.B) {
 
 	// Push user past threshold before timing starts.
 	for i := int32(0); i <= threshold+5; i++ {
-		gate.Record(1, PriorityP2Medium, now)
+		gate.Record(context.Background(), 1, PriorityP2Medium, now)
 	}
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			gate.Record(1, PriorityP2Medium, now)
+			gate.Record(context.Background(), 1, PriorityP2Medium, now)
 		}
 	})
 }

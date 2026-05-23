@@ -62,19 +62,19 @@ func TestHub_Disconnect_CleanedUp(t *testing.T) {
 	}
 }
 
-func TestHub_HasConnection(t *testing.T) {
+func TestHub_HasLocalConnection(t *testing.T) {
 	t.Parallel()
 	h := hub.New()
 
-	if h.HasConnection(3) {
+	if h.HasLocalConnection(3) {
 		t.Error("expected no connection before Connect")
 	}
 	_, cleanup := h.Connect(3)
-	if !h.HasConnection(3) {
+	if !h.HasLocalConnection(3) {
 		t.Error("expected connection after Connect")
 	}
 	cleanup()
-	if h.HasConnection(3) {
+	if h.HasLocalConnection(3) {
 		t.Error("expected no connection after cleanup")
 	}
 }

@@ -300,6 +300,13 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyWorkerDLQMonitorIntervalSec: {10, 86_400},
 	domain.ParamKeyWorkerPurgeIntervalHours:    {1, 720}, // 1 h – 30 days
 
+	// Worker: notification scheduler polling intervals
+	domain.ParamKeyWorkerSchedPredDeadlineIntervalSec:    {60, 3_600},      // 1 min – 1 h
+	domain.ParamKeyWorkerSchedMatchResultIntervalSec:     {60, 3_600},      // 1 min – 1 h
+	domain.ParamKeyWorkerSchedPendingReminderIntervalSec: {60, 86_400},     // 1 min – 24 h
+	domain.ParamKeyWorkerSchedStaleEscalationIntervalSec: {60, 86_400},     // 1 min – 24 h
+	domain.ParamKeyWorkerSchedPushPruneIntervalSec:       {3_600, 604_800}, // 1 h – 7 days
+
 	// System
 	domain.ParamKeyPurgeRetentionDays: {1, 365},
 
@@ -362,6 +369,8 @@ var paramIntConstraints = map[string]paramIntRange{
 	// Push digest gate (migration 000105).
 	domain.ParamKeyNotifyPushDigestWindowSec: {30, 3_600}, // 30 s – 1 hour
 	domain.ParamKeyNotifyPushDigestThreshold: {1, 100},    // at least 1 push before digest
+	// Email render budget (migration 000108).
+	domain.ParamKeyNotifyRenderTimeoutMs: {100, 30_000}, // 100 ms – 30 s
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

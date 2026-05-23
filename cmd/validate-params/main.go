@@ -52,6 +52,9 @@ type paramSpec struct {
 //   - 000102_seed_push_sub_retention_param       (+1)
 //   - 000103_seed_notify_from_address_param      (+1)
 //   - 000105_seed_push_digest_params             (+2)
+//   - 000106_system_params_history              (+1)
+//   - 000107_seed_scheduler_interval_params     (+5)
+//   - 000108_seed_render_timeout_param          (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -188,6 +191,16 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyNotifyPushDigestThreshold, defaultValue: strconv.Itoa(domain.DefaultNotifyPushDigestThreshold), paramType: "int", category: "notify", isRuntime: false},
 	// Param history retention (migration 000106); not runtime — worker restart required.
 	{key: domain.ParamKeySystemParamHistoryRetentionDays, defaultValue: strconv.Itoa(domain.DefaultSystemParamHistoryRetentionDays), paramType: "int", category: "system", isRuntime: false},
+
+	// Notification scheduler polling intervals (migration 000107); not runtime — worker restart required.
+	// Each param controls how often the notification scheduler fires the corresponding job.
+	{key: domain.ParamKeyWorkerSchedPredDeadlineIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPredDeadlineIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerSchedMatchResultIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedMatchResultIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerSchedPendingReminderIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPendingReminderIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerSchedStaleEscalationIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedStaleEscalationIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerSchedPushPruneIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPushPruneIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	// Email render timeout (migration 000108); runtime — takes effect within 30 s cache window.
+	{key: domain.ParamKeyNotifyRenderTimeoutMs, defaultValue: strconv.Itoa(domain.DefaultNotifyRenderTimeoutMs), paramType: "int", category: "notify", isRuntime: true},
 }
 
 type dbParam struct {

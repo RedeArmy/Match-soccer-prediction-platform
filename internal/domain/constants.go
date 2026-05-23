@@ -332,6 +332,11 @@ func AllParamKeys() []string {
 		ParamKeyWorkerSnapshotMaxAttempts,
 		ParamKeyWorkerDLQMonitorIntervalSec,
 		ParamKeyWorkerPurgeIntervalHours,
+		ParamKeyWorkerSchedPredDeadlineIntervalSec,
+		ParamKeyWorkerSchedMatchResultIntervalSec,
+		ParamKeyWorkerSchedPendingReminderIntervalSec,
+		ParamKeyWorkerSchedStaleEscalationIntervalSec,
+		ParamKeyWorkerSchedPushPruneIntervalSec,
 		// System
 		ParamKeyPurgeRetentionDays,
 		ParamKeySystemParamHistoryRetentionDays,
@@ -384,5 +389,6 @@ func AllParamKeys() []string {
 		ParamKeyNotifyFromAddress,
 		ParamKeyNotifyPushDigestWindowSec,
 		ParamKeyNotifyPushDigestThreshold,
+		ParamKeyNotifyRenderTimeoutMs,
 	}
 }

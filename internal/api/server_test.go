@@ -94,7 +94,7 @@ func newTestServerWithCheckers(t *testing.T, checkers []health.Checker) *api.Ser
 }
 
 func TestHealthEndpoint_ReturnsOK(t *testing.T) {
-	handler := newTestServer(t).Routes()
+	handler := newTestServer(t).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, healthPath, nil)
 	rec := httptest.NewRecorder()
@@ -106,7 +106,7 @@ func TestHealthEndpoint_ReturnsOK(t *testing.T) {
 }
 
 func TestHealthEndpoint_ReturnsJSONContentType(t *testing.T) {
-	handler := newTestServer(t).Routes()
+	handler := newTestServer(t).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, healthPath, nil)
 	rec := httptest.NewRecorder()
@@ -119,7 +119,7 @@ func TestHealthEndpoint_ReturnsJSONContentType(t *testing.T) {
 }
 
 func TestHealthEndpoint_BodyContainsStatusOK(t *testing.T) {
-	handler := newTestServer(t).Routes()
+	handler := newTestServer(t).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, healthPath, nil)
 	rec := httptest.NewRecorder()
@@ -135,7 +135,7 @@ func TestHealthEndpoint_BodyContainsStatusOK(t *testing.T) {
 }
 
 func TestHealthEndpoint_OnlyAcceptsGET(t *testing.T) {
-	handler := newTestServer(t).Routes()
+	handler := newTestServer(t).Routes(context.Background())
 
 	// chi returns 405 for registered paths with wrong method, and
 	// 404 for unregistered paths. /health is registered for GET only.
@@ -155,7 +155,7 @@ func TestHealthEndpoint_OnlyAcceptsGET(t *testing.T) {
 // completely outside the routing table (not under /api/v1, /health, or /webhooks).
 // Paths under /api/v1 with a nil DB return 500 via the wildcard degradation stub.
 func TestUnknownRoute_Returns404(t *testing.T) {
-	handler := newTestServer(t).Routes()
+	handler := newTestServer(t).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v99/does-not-exist", nil)
 	rec := httptest.NewRecorder()
@@ -175,7 +175,7 @@ func TestRoutes_DBNil_MatchRoute_Returns503(t *testing.T) {
 	jwksURL, signJWT := testJWKSServer(t)
 	cfg := &config.Config{}
 	cfg.Clerk.JWKSURL = jwksURL
-	h := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes()
+	h := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	req.Header.Set("Authorization", "Bearer "+signJWT("test"))
@@ -193,7 +193,7 @@ func TestRoutes_DBNil_PredictionRoute_Returns503(t *testing.T) {
 	jwksURL, signJWT := testJWKSServer(t)
 	cfg := &config.Config{}
 	cfg.Clerk.JWKSURL = jwksURL
-	h := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes()
+	h := api.New(nil, cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions", nil)
 	req.Header.Set("Authorization", "Bearer "+signJWT("test"))
@@ -215,7 +215,7 @@ func TestRoutes_WithFakeDB_MatchRouteRegistered(t *testing.T) {
 	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
+	srv.Routes(context.Background()).ServeHTTP(rec, req)
 
 	if rec.Code == http.StatusNotFound {
 		t.Errorf("expected route to be registered, got 404")
@@ -236,7 +236,7 @@ func TestWireSubscribers_MalformedPayload_DoesNotPanic(t *testing.T) {
 
 	bus := messaging.NewInMemoryBus(nil)
 	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil, nil)
-	srv.Routes() // registers wireSubscribers
+	srv.Routes(context.Background()) // registers wireSubscribers
 
 	env := events.Envelope{
 		Type:       events.EventMatchFinished,
@@ -257,7 +257,7 @@ func TestWireSubscribers_ScoringError_DoesNotPanic(t *testing.T) {
 
 	bus := messaging.NewInMemoryBus(nil)
 	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), bus, nil, nil)
-	srv.Routes()
+	srv.Routes(context.Background())
 
 	env := events.Envelope{
 		Type:       events.EventMatchFinished,
@@ -273,7 +273,7 @@ func TestRoutes_WithFakeDB_PredictionRouteRegistered(t *testing.T) {
 	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions/me", nil)
 	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
+	srv.Routes(context.Background()).ServeHTTP(rec, req)
 
 	if rec.Code == http.StatusNotFound {
 		t.Errorf("expected route to be registered, got 404")
@@ -283,7 +283,7 @@ func TestRoutes_WithFakeDB_PredictionRouteRegistered(t *testing.T) {
 // ── /health/ready ─────────────────────────────────────────────────────────────
 
 func TestReadinessEndpoint_NoCheckers_Returns200(t *testing.T) {
-	h := newTestServer(t).Routes()
+	h := newTestServer(t).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
@@ -298,7 +298,7 @@ func TestReadinessEndpoint_AllCheckersOK_Returns200(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
 		okChecker(checkerNameDB),
 		okChecker(checkerNameRedis),
-	}).Routes()
+	}).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
@@ -313,7 +313,7 @@ func TestReadinessEndpoint_OneCheckerFails_Returns503(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
 		okChecker(checkerNameDB),
 		errChecker(checkerNameRedis, errConnectionRefused),
-	}).Routes()
+	}).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
@@ -327,7 +327,7 @@ func TestReadinessEndpoint_OneCheckerFails_Returns503(t *testing.T) {
 func TestReadinessEndpoint_ResponseJSON_AllOK(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
 		okChecker(checkerNameDB),
-	}).Routes()
+	}).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
@@ -352,7 +352,7 @@ func TestReadinessEndpoint_ResponseJSON_AllOK(t *testing.T) {
 func TestReadinessEndpoint_ResponseJSON_CheckerError(t *testing.T) {
 	h := newTestServerWithCheckers(t, []health.Checker{
 		errChecker(checkerNameRedis, errConnectionRefused),
-	}).Routes()
+	}).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
@@ -375,7 +375,7 @@ func TestReadinessEndpoint_ResponseJSON_CheckerError(t *testing.T) {
 }
 
 func TestReadinessEndpoint_ContentType_IsJSON(t *testing.T) {
-	h := newTestServer(t).Routes()
+	h := newTestServer(t).Routes(context.Background())
 
 	req := httptest.NewRequest(http.MethodGet, readyPath, nil)
 	rec := httptest.NewRecorder()
@@ -408,7 +408,7 @@ func TestRoutes_WithNonNilCache_MatchRouteRegistered(t *testing.T) {
 	srv := api.New(fakePool(t), &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), noopCacheStore{}, nil)
 	req := httptest.NewRequest(http.MethodGet, pathMatches, nil)
 	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
+	srv.Routes(context.Background()).ServeHTTP(rec, req)
 
 	if rec.Code == http.StatusNotFound {
 		t.Errorf("expected route to be registered with non-nil cache, got 404")

@@ -2,8 +2,15 @@ package messaging
 
 import (
 	"context"
+	"sync"
 	"time"
 )
+
+// configMu guards all package-level configuration globals (RetryBackoff,
+// maxHandlerAttempts, streamMaxLen, StreamWorkerCount, streamReadBlock).
+// Configure holds the write lock; callWithRetry and any other reader that
+// snapshots these values holds the read lock.
+var configMu sync.RWMutex
 
 // RetryBackoff defines the sleep durations between consecutive handler attempts.
 // The slice has maxHandlerAttempts-1 entries: there is no sleep before the first
@@ -17,9 +24,7 @@ var RetryBackoff = []time.Duration{time.Second, 2 * time.Second}
 var maxHandlerAttempts = 3
 
 // Configure applies system_params values to the messaging package-level
-// retry and stream configuration. Must be called before any subscribers are
-// registered (i.e. before bus.Subscribe is first invoked) to avoid a data race
-// with running consumer goroutines.
+// retry and stream configuration. Safe to call concurrently; uses configMu.
 //
 // maxRetries:         total handler attempts (messaging.max_retries).
 // streamMax:          Redis Stream MAXLEN cap (messaging.stream_max_len).
@@ -27,6 +32,8 @@ var maxHandlerAttempts = 3
 // streamReadBlockSec: XREADGROUP block timeout in seconds (messaging.stream_read_block_sec); ≤0 keeps current value.
 // backoff:            per-attempt sleep durations; nil keeps the current value.
 func Configure(maxRetries int, streamMax int64, streamWorkers int, streamReadBlockSec int, backoff []time.Duration) {
+	configMu.Lock()
+	defer configMu.Unlock()
 	maxHandlerAttempts = maxRetries
 	streamMaxLen = streamMax
 	if streamWorkers > 0 {
@@ -45,11 +52,13 @@ func Configure(maxRetries int, streamMax int64, streamWorkers int, streamReadBlo
 // that bus shutdown is not blocked by an in-progress sleep. Returns nil on the
 // first success, or the last non-nil error after all attempts are exhausted.
 func callWithRetry(ctx context.Context, fn func() error) error {
-	// Snapshot RetryBackoff and maxHandlerAttempts once before any handler call.
-	// This ensures the reads are ordered before the first fn() invocation and
-	// avoids a data race with tests that restore RetryBackoff via defer.
+	// Snapshot under the read lock so that a concurrent Configure call cannot
+	// modify the globals mid-read. The snapshot is held for the lifetime of this
+	// call; changes made by a subsequent Configure take effect on the next call.
+	configMu.RLock()
 	backoff := RetryBackoff
 	maxAttempts := maxHandlerAttempts
+	configMu.RUnlock()
 	var err error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if err = fn(); err == nil {

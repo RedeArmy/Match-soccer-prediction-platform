@@ -175,14 +175,24 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		app.SetIdempotencyStore(idempotency.NewRedisStore(rc))
 	}
 
+	// setupCtx is context.WithoutCancel(ctx): OTel trace values are propagated
+	// to startup DB reads while SIGTERM cannot abort them.
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
-		Handler:      app.Routes(),
+		Handler:      app.Routes(setupCtx),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
-	app.StartPgNotifyBridge(ctx)
+
+	// Prefer the Redis Pub/Sub bridge when Redis is available: reconnections
+	// are transparent (< 100 ms) and no long-lived database connection is held.
+	// Fall back to the pg_notify bridge for single-server deployments.
+	if rc != nil {
+		app.StartRedisBridge(ctx, rc)
+	} else {
+		app.StartPgNotifyBridge(ctx)
+	}
 
 	srvErr := make(chan error, 1)
 	go func() {
@@ -207,7 +217,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// grace period (also 30 s by default - adjust both together if changed).
 	// ctx is already cancelled at this point (it unblocked the select above),
 	// so WithoutCancel is required to give the timeout a valid parent.
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.Server.ShutdownTimeout)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {

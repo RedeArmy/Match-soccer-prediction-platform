@@ -56,21 +56,44 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/dsem"
 	"github.com/rede/world-cup-quiniela/pkg/health"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
 
-// pgPoolNotifier implements dispatcher.PgNotifier using a pgx connection pool.
-// It issues a SELECT pg_notify($1, $2) so the API server's LISTEN bridge
-// receives the payload and broadcasts to connected SSE clients.
-type pgPoolNotifier struct{ pool *pgxpool.Pool }
+// redisPubNotifier implements dispatcher.PgNotifier using Redis Pub/Sub.
+//
+// Publishing to a Redis channel is preferred over pg_notify for cross-process
+// SSE delivery because:
+//   - Redis reconnects are transparent and nearly instant (< 100 ms) vs the
+//     1 s–30 s exponential backoff of the pg_notify LISTEN bridge.
+//   - One fewer long-lived PostgreSQL connection per worker replica.
+//   - The payload is not limited to PostgreSQL's 8 kB NOTIFY ceiling.
+//
+// The API server's Redis bridge subscribes to the same channel and broadcasts
+// to its in-process SSE hub. The PgNotifier interface is kept as-is so that
+// no changes are required in the dispatcher layer.
+type redisPubNotifier struct{ client redis.Cmdable }
 
-func (n *pgPoolNotifier) Notify(ctx context.Context, channel, payload string) error {
-	if _, err := n.pool.Exec(ctx, "SELECT pg_notify($1, $2)", channel, payload); err != nil {
-		return fmt.Errorf("pg_notify: %w", err)
+func (n *redisPubNotifier) Notify(ctx context.Context, channel, payload string) error {
+	if err := n.client.Publish(ctx, channel, payload).Err(); err != nil {
+		return fmt.Errorf("redis publish %q: %w", channel, err)
 	}
 	return nil
 }
+
+// localSnapshotSem wraps semaphore.Weighted to satisfy dsem.Semaphore.
+// Used when Redis is not available and the global concurrency limit is
+// enforced per-process only.
+type localSnapshotSem struct{ w *semaphore.Weighted }
+
+func (l *localSnapshotSem) Acquire(ctx context.Context) error {
+	if err := l.w.Acquire(ctx, 1); err != nil {
+		return fmt.Errorf("snapshot semaphore: %w", err)
+	}
+	return nil
+}
+func (l *localSnapshotSem) Release() { l.w.Release(1) }
 
 // redisSnapshotLocker implements SnapshotLocker using Redis SET NX EX.  The key
 // pattern is "worker:snap:{matchID}:{quinielaID}".  The TTL is a safety net for
@@ -205,7 +228,6 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	snapshotConcurrency = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotConcurrency, domain.DefaultWorkerSnapshotConcurrency)
 	snapshotRetryBase = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSnapshotRetryBaseMs, domain.DefaultWorkerSnapshotRetryBaseMs)) * time.Millisecond
 	maxSnapshotAttempts = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotMaxAttempts, domain.DefaultWorkerSnapshotMaxAttempts)
-	snapshotSem = newSnapshotSemaphore(snapshotConcurrency)
 	dlqMonitorInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerDLQMonitorIntervalSec, domain.DefaultWorkerDLQMonitorIntervalSec)) * time.Second
 	purgeTickInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerPurgeIntervalHours, domain.DefaultWorkerPurgeIntervalHours)) * time.Hour
 	snapshotKeepLatestCount = params.GetInt(ctx, domain.ParamKeySnapshotKeepLatestCount, domain.DefaultSnapshotKeepLatestCount)
@@ -232,6 +254,17 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		DB:       cfg.Redis.DB,
 	})
 	defer rc.Close() //nolint:errcheck
+
+	// snapshotSem: cluster-wide distributed semaphore via Redis.
+	// The worker validates WCQ_EVENTBUS_DRIVER=redis at startup so rc is always
+	// non-nil by the time we reach this point.
+	const snapshotSemKey = "worker:snapshot:sem"
+	const snapshotSemTTL = 5 * time.Minute
+	snapshotSem = dsem.New(rc, snapshotSemKey, int64(snapshotConcurrency), snapshotSemTTL)
+	log.Info("worker: snapshot semaphore: distributed Redis semaphore active",
+		zap.String("key", snapshotSemKey),
+		zap.Int("limit", snapshotConcurrency),
+	)
 
 	cacheStore := cache.NewRedisStore(rc)
 	invalidators := []service.PostScoringInvalidator{
@@ -293,6 +326,16 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	digestWindowSec := int64(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestWindowSec, domain.DefaultNotifyPushDigestWindowSec))
 	digestThreshold := int32(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestThreshold, domain.DefaultNotifyPushDigestThreshold))
 
+	// Wire the cluster-aware digest gate when Redis is available so that the
+	// per-user push threshold is enforced across all worker replicas. Fall back
+	// to the in-memory gate for single-process deployments (development, CI).
+	var digestGate notification.Recorder
+	if rc != nil {
+		digestGate = notification.NewRedisPushDigestGate(rc, digestWindowSec, digestThreshold)
+	} else {
+		digestGate = notification.NewPushDigestGate(digestWindowSec, digestThreshold)
+	}
+
 	userDispatcher := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
 		NotifRepo:         notifRepo,
 		PrefRepo:          prefRepo,
@@ -305,10 +348,10 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		FromAddr:          cfg.Email.FromAddress,
 		UnsubscribeSecret: cfg.Email.UnsubscribeSecret,
 		AppBaseURL:        cfg.Server.AppBaseURL,
-		PgNotifier:        &pgPoolNotifier{pool: db},
+		PgNotifier:        &redisPubNotifier{client: rc},
 		Params:            params,
 		TemplateRepo:      tmplRepo,
-		DigestGate:        notification.NewPushDigestGate(digestWindowSec, digestThreshold),
+		Recorder:          digestGate,
 		Log:               log,
 	})
 
@@ -338,13 +381,23 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		Location: schedulerLoc,
 		Log:      log,
 	})
-	notifScheduler.RegisterInterval("prediction.deadline_approaching", 5*time.Minute, jobs.PredictionDeadlineApproaching)
-	notifScheduler.RegisterInterval("admin.match_result_pending", 15*time.Minute, jobs.AdminMatchResultPending)
-	notifScheduler.RegisterInterval("admin.pending_reminder", 4*time.Hour, jobs.AdminPendingReminder)
-	notifScheduler.RegisterInterval("admin.stale_escalation", 30*time.Minute, jobs.StaleEscalation)
+	notifScheduler.RegisterInterval("prediction.deadline_approaching",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPredDeadlineIntervalSec, domain.DefaultWorkerSchedPredDeadlineIntervalSec))*time.Second,
+		jobs.PredictionDeadlineApproaching)
+	notifScheduler.RegisterInterval("admin.match_result_pending",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedMatchResultIntervalSec, domain.DefaultWorkerSchedMatchResultIntervalSec))*time.Second,
+		jobs.AdminMatchResultPending)
+	notifScheduler.RegisterInterval("admin.pending_reminder",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPendingReminderIntervalSec, domain.DefaultWorkerSchedPendingReminderIntervalSec))*time.Second,
+		jobs.AdminPendingReminder)
+	notifScheduler.RegisterInterval("admin.stale_escalation",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedStaleEscalationIntervalSec, domain.DefaultWorkerSchedStaleEscalationIntervalSec))*time.Second,
+		jobs.StaleEscalation)
 	notifScheduler.RegisterDaily("admin.daily_summary", 8, 0, jobs.AdminDailySummary)
 	notifScheduler.RegisterWeekly("admin.weekly_report", time.Monday, 8, 0, jobs.AdminWeeklyReport)
-	notifScheduler.RegisterInterval("push.subscription_prune", 24*time.Hour, makePushPruneJob(params, pushRepo, log))
+	notifScheduler.RegisterInterval("push.subscription_prune",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPushPruneIntervalSec, domain.DefaultWorkerSchedPushPruneIntervalSec))*time.Second,
+		makePushPruneJob(params, pushRepo, log))
 
 	// snapshotLockTTL covers the worst-case snapshot retry window with generous
 	// headroom. The lock is also released explicitly by Unlock in the happy path;
@@ -391,13 +444,6 @@ func buildPusher(pubKey, privKey, subject string, log *zap.Logger) infrapush.Sen
 	}
 	log.Info("web push: VAPID client active")
 	return infrapush.NewVAPIDClient(pubKey, privKey, subject)
-}
-
-// newSnapshotSemaphore returns a weighted semaphore sized to n, which becomes
-// the global DB-concurrency governor for all concurrent snapshot operations.
-// Called once from run() after snapshotConcurrency is resolved from system_params.
-func newSnapshotSemaphore(n int) *semaphore.Weighted {
-	return semaphore.NewWeighted(int64(n))
 }
 
 // makePushPruneJob returns the scheduler job that deletes inactive push
@@ -568,7 +614,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		runErr = err
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deps.cfg.Server.ShutdownTimeout)
 	defer cancel()
 
 	if err := healthSrv.Shutdown(shutdownCtx); err != nil {

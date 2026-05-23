@@ -47,20 +47,23 @@ import (
 // emits a structured log event at Error level with audit_lost=true so that
 // log-aggregation alert rules can page on-call when audit integrity is at risk.
 
+// auditPolicyMu guards auditMaxAttempts and auditRetryDelay.
+// ConfigureAuditRetry holds the write lock; writeWithRetry holds the read lock
+// when snapshotting the values before its retry loop.
+var auditPolicyMu sync.RWMutex
+
 // auditMaxAttempts and auditRetryDelay are the retry policy for audit log writes.
 // Both are package-level vars so that ConfigureAuditRetry can override them at
 // process startup from system_params without requiring a constructor change.
-// Must be set before the first Log call; changing them concurrently with active
-// goroutines is not safe.
 var auditMaxAttempts = 2
 var auditRetryDelay = 250 * time.Millisecond
 
 // ConfigureAuditRetry sets the retry policy for all auditService instances.
-// Must be called before the first Log call (i.e. before the server begins
-// serving requests). Zero or negative values are ignored, preserving the
-// current setting. This follows the same startup-configuration pattern as
-// messaging.Configure.
+// Safe to call concurrently; uses auditPolicyMu. Zero or negative values are
+// ignored, preserving the current setting.
 func ConfigureAuditRetry(maxAttempts, retryDelayMs int) {
+	auditPolicyMu.Lock()
+	defer auditPolicyMu.Unlock()
 	if maxAttempts > 0 {
 		auditMaxAttempts = maxAttempts
 	}
@@ -158,11 +161,13 @@ func (s *auditService) Log(
 // baseCtx must be a non-cancellable context (typically from WithoutCancel)
 // so that the write deadline is governed solely by writeTimeout.
 func (s *auditService) writeWithRetry(baseCtx context.Context, entry *domain.AuditLog, action string) {
-	// Snapshot package-level vars once before the loop so that a concurrent
-	// ConfigureAuditRetry call (which should not happen after startup but is
-	// defensively guarded) does not cause a data race mid-retry.
+	// Snapshot under the read lock so a concurrent ConfigureAuditRetry cannot
+	// modify the globals mid-read. Changes made by a subsequent Configure take
+	// effect on the next Log call.
+	auditPolicyMu.RLock()
 	maxAttempts := auditMaxAttempts
 	retryDelay := auditRetryDelay
+	auditPolicyMu.RUnlock()
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		ctx, cancel := context.WithTimeout(baseCtx, s.writeTimeout)

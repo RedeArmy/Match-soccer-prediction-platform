@@ -34,6 +34,10 @@ func (s *stubParams) GetString(_ context.Context, key, defaultVal string) string
 	return defaultVal
 }
 
+func (s *stubParams) GetInt(_ context.Context, _ string, defaultVal int) int {
+	return defaultVal
+}
+
 type recordingLogRepo struct {
 	entries []*domain.AdminNotificationLog
 }
@@ -144,6 +148,33 @@ func TestAdminDispatcher_NoRecipientsConfigured_Noop(t *testing.T) {
 	}
 	if mailer.calls != 0 {
 		t.Errorf("mailer.Send called %d times; want 0 when no recipients", mailer.calls)
+	}
+}
+
+func TestAdminDispatcher_RenderError_ReturnsError(t *testing.T) {
+	t.Parallel()
+	log := zaptest.NewLogger(t)
+	mailer := &stubMailer{}
+	logRepo := &recordingLogRepo{}
+	dlqRepo := &recordingDLQRepo{}
+
+	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, "", "")
+
+	renderErr := errors.New("template execution failure")
+	restore := dispatcher.SetRenderEmailFn(func(_ *notification.OutboxEntry) (string, string, error) {
+		return "", "", renderErr
+	})
+	defer restore()
+
+	entry := makeEntry(t, notification.EventAdminBankTransferPending,
+		notification.AdminBankTransferPayload{ProofID: 1, UserID: 2, AmountCents: 50000, Currency: "GTQ"})
+
+	err := d.Dispatch(context.Background(), entry)
+	if err == nil {
+		t.Fatal("Dispatch: expected error from render failure, got nil")
+	}
+	if mailer.calls != 0 {
+		t.Errorf("mailer.Send called %d times; want 0 when render fails", mailer.calls)
 	}
 }
 

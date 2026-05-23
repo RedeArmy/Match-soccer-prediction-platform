@@ -8,11 +8,11 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
+	"github.com/rede/world-cup-quiniela/pkg/dsem"
 )
 
 // snapshotRetryBase is the initial backoff duration between snapshot attempts.
@@ -31,16 +31,20 @@ var maxSnapshotAttempts = 3
 // Declared as a var so tests can set it to 1 for deterministic ordering.
 var snapshotConcurrency = 16
 
-// snapshotSem is a global weighted semaphore that bounds the total number of
-// concurrent snapshot DB operations across ALL concurrent MatchFinished events.
+// snapshotSem bounds the total number of concurrent snapshot DB operations
+// across ALL concurrent MatchFinished events on this process (and, when the
+// distributed implementation is wired, across ALL replicas).
+//
 // Without a global guard, N simultaneous match finishes each launch their own
 // errgroup with snapshotConcurrency goroutines, producing N×concurrency total
 // concurrent snapshot queries — enough to saturate the connection pool during
-// elimination phases with multiple parallel matches.
+// elimination phases.
 //
-// Initialised by main.go after reading snapshotConcurrency from system_params;
-// nil before that point (tests that set snapshotConcurrency=1 bypass the nil guard).
-var snapshotSem *semaphore.Weighted
+// Initialised by main.go after reading snapshotConcurrency from system_params.
+// When Redis is available, main.go wires a dsem.RedisSemaphore to enforce the
+// limit cluster-wide; otherwise it wires a localSnapshotSem.
+// nil before initialisation (tests that set snapshotConcurrency=1 bypass the nil guard).
+var snapshotSem dsem.Semaphore
 
 // SnapshotLocker prevents duplicate leaderboard snapshot DB writes across
 // multiple worker replicas for the same (matchID, quinielaID) pair.
@@ -233,10 +237,10 @@ func postScoringWork(
 		qid := qid
 		g.Go(func() error {
 			if snapshotSem != nil {
-				if err := snapshotSem.Acquire(gctx, 1); err != nil {
+				if err := snapshotSem.Acquire(gctx); err != nil {
 					return nil // context cancelled; scoring already committed
 				}
-				defer snapshotSem.Release(1)
+				defer snapshotSem.Release()
 			}
 			runSnapshot(gctx, matchID, qid, snapshotter, locker, log)
 			return nil

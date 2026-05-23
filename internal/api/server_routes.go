@@ -35,31 +35,20 @@ const (
 
 // Routes returns the fully configured http.Handler for the application.
 //
+// ctx is used for one-time startup reads (parameter loads, JWKS warmup). Pass
+// context.WithoutCancel(lifecycleCtx) from cmd/api so that OTel trace values
+// are propagated to DB queries without inheriting the process shutdown signal.
+// Tests pass context.Background().
+//
 // The routing table is arranged in three tiers:
 //
-//  1. Infrastructure endpoints (/health, /swagger) are mounted at the root.
-//     They are consumed by load balancers and monitoring systems and must
-//     not be versioned or gated behind authentication.
+//  1. Infrastructure endpoints (/health, /swagger) — not versioned, no auth.
+//  2. Webhook endpoints — provider-specific signature auth (Svix, HMAC, RSA).
+//  3. Business endpoints under /api/v1 — JWT auth via RequireAuth middleware.
 //
-//  2. Webhook endpoints are mounted at the root without JWT authentication.
-//     Each provider authenticates via its own signature scheme:
-//     Clerk uses Svix HMAC-SHA256; Recurrente uses HMAC-SHA256; PayPal uses
-//     RSA certificate-based verification. See middleware/webhook_*.go.
-//
-//  3. Business endpoints are mounted under /api/v1. The sub-router is the
-//     correct place to attach RequireAuth so it applies to all business
-//     routes without touching /health or /webhooks.
-//
-// Middleware is applied in declaration order. RequestID must be declared
-// first so its value is available to every subsequent handler.
-func (s *Server) Routes() http.Handler {
-	// infraCtx is a context.Background()-derived context used for one-time reads
-	// at construction time. It intentionally carries no cancellation so that a
-	// SIGTERM received during startup does not abort parameter reads or the JWKS
-	// warmup. Defined once here so both the degraded (db == nil) and normal paths
-	// share the same context without duplicating the rationale comment.
-	infraCtx := context.Background()
-
+// Middleware is applied in declaration order; RequestID must come first so its
+// value is available to every subsequent handler and logger.
+func (s *Server) Routes(ctx context.Context) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware - applied to every request.
@@ -94,7 +83,7 @@ func (s *Server) Routes() http.Handler {
 		// because they are registered above and are not part of /api/v1.
 		r.Route("/api/v1", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(domain.DefaultAPIBodySizeLimitBytes))
-			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(infraCtx, s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log), s.log))
+			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log), s.log))
 			dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
 				middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
 			}
@@ -121,24 +110,24 @@ func (s *Server) Routes() http.Handler {
 	// Read infrastructure params once at startup. Changes require a process
 	// restart (is_runtime=FALSE in system_params).
 	messaging.Configure(
-		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingMaxRetries, domain.DefaultMessagingMaxRetries),
-		int64(paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamMaxLen, domain.DefaultMessagingStreamMaxLen)),
-		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamWorkerCount, domain.DefaultMessagingStreamWorkerCount),
-		paramSvc.GetInt(infraCtx, domain.ParamKeyMessagingStreamReadBlockSec, domain.DefaultMessagingStreamReadBlockSec),
+		paramSvc.GetInt(ctx, domain.ParamKeyMessagingMaxRetries, domain.DefaultMessagingMaxRetries),
+		int64(paramSvc.GetInt(ctx, domain.ParamKeyMessagingStreamMaxLen, domain.DefaultMessagingStreamMaxLen)),
+		paramSvc.GetInt(ctx, domain.ParamKeyMessagingStreamWorkerCount, domain.DefaultMessagingStreamWorkerCount),
+		paramSvc.GetInt(ctx, domain.ParamKeyMessagingStreamReadBlockSec, domain.DefaultMessagingStreamReadBlockSec),
 		nil, // retain default RetryBackoff (1s, 2s); no array param defined
 	)
 	service.ConfigureAuditRetry(
-		paramSvc.GetInt(infraCtx, domain.ParamKeyAuditMaxRetries, domain.DefaultAuditMaxRetries),
-		paramSvc.GetInt(infraCtx, domain.ParamKeyAuditRetryDelayMs, domain.DefaultAuditRetryDelayMs),
+		paramSvc.GetInt(ctx, domain.ParamKeyAuditMaxRetries, domain.DefaultAuditMaxRetries),
+		paramSvc.GetInt(ctx, domain.ParamKeyAuditRetryDelayMs, domain.DefaultAuditRetryDelayMs),
 	)
 	repository.InitRetryPolicy(
-		paramSvc.GetInt(infraCtx, domain.ParamKeyTxRetryMaxAttempts, domain.DefaultTxRetryMaxAttempts),
-		paramSvc.GetInt(infraCtx, domain.ParamKeyTxRetryBaseDelayMs, domain.DefaultTxRetryBaseDelayMs),
-		paramSvc.GetInt(infraCtx, domain.ParamKeyTxRetryMaxDelayMs, domain.DefaultTxRetryMaxDelayMs),
+		paramSvc.GetInt(ctx, domain.ParamKeyTxRetryMaxAttempts, domain.DefaultTxRetryMaxAttempts),
+		paramSvc.GetInt(ctx, domain.ParamKeyTxRetryBaseDelayMs, domain.DefaultTxRetryBaseDelayMs),
+		paramSvc.GetInt(ctx, domain.ParamKeyTxRetryMaxDelayMs, domain.DefaultTxRetryMaxDelayMs),
 	)
-	bodySizeLimit := int64(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIBodySizeLimitBytes, domain.DefaultAPIBodySizeLimitBytes))
-	uploadSizeLimit := int64(paramSvc.GetInt(infraCtx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
-	authWarmup := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAuthValidationTimeout, domain.DefaultAuthValidationTimeoutSeconds)) * time.Second
+	bodySizeLimit := int64(paramSvc.GetInt(ctx, domain.ParamKeyAPIBodySizeLimitBytes, domain.DefaultAPIBodySizeLimitBytes))
+	uploadSizeLimit := int64(paramSvc.GetInt(ctx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
+	authWarmup := time.Duration(paramSvc.GetInt(ctx, domain.ParamKeyAuthValidationTimeout, domain.DefaultAuthValidationTimeoutSeconds)) * time.Second
 
 	// scorer is constructed once and shared: local event subscribers and the
 	// match service both use the same stateless scoring logic. With the redis
@@ -147,7 +136,7 @@ func (s *Server) Routes() http.Handler {
 	ruleRepo := repository.NewPostgresScoringRuleRepository(s.db)
 	scorer := service.NewScoringService(repos.match, repos.pred, ruleRepo, paramSvc, s.log)
 	if s.cfg.EventBus.Driver != "redis" {
-		s.registerLocalSubscribers(infraCtx, scorer)
+		s.registerLocalSubscribers(ctx, scorer)
 	}
 
 	// SSE hub — created once and shared by the notification handler and the
@@ -157,7 +146,7 @@ func (s *Server) Routes() http.Handler {
 	// call Routes() on a Server they then discard without a matching Stop call.
 	s.notifHub = hub.New()
 
-	h := s.buildHandlers(infraCtx, repos, paramSvc, scorer)
+	h := s.buildHandlers(ctx, repos, paramSvc, scorer)
 
 	// Webhook endpoints — authenticated via provider-specific signatures, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so they receive no auth middleware.
@@ -176,8 +165,8 @@ func (s *Server) Routes() http.Handler {
 	// to retry the delivery later when the endpoint has recovered.
 	paypalCertBreaker := breaker.New(
 		"paypal-cert",
-		paramSvc.GetInt(infraCtx, domain.ParamKeyBreakerPaypalCertMaxFails, domain.DefaultBreakerPaypalCertMaxFails),
-		time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyBreakerPaypalCertCooldownSec, domain.DefaultBreakerPaypalCertCooldownSec))*time.Second,
+		paramSvc.GetInt(ctx, domain.ParamKeyBreakerPaypalCertMaxFails, domain.DefaultBreakerPaypalCertMaxFails),
+		time.Duration(paramSvc.GetInt(ctx, domain.ParamKeyBreakerPaypalCertCooldownSec, domain.DefaultBreakerPaypalCertCooldownSec))*time.Second,
 	)
 	certFetcher := middleware.BreakerCertFetcher(middleware.DefaultPayPalCertFetcher(), paypalCertBreaker, s.log)
 	r.With(middleware.PayPalWebhookAuth(s.cfg.Payment.PayPalWebhookID, certFetcher, s.log)).
@@ -192,9 +181,13 @@ func (s *Server) Routes() http.Handler {
 	// SetIdempotencyStore (called from cmd/api/main.go before Routes()) wires the
 	// Redis-backed store when Redis is available so reservations are shared across
 	// all replicas. Falls back to MemoryStore for single-process deployments.
-	idemTTL := time.Duration(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
-	idemKeyMaxLen := paramSvc.GetInt(infraCtx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
+	idemTTL := time.Duration(paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
+	idemKeyMaxLen := paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
 	if s.idemStore == nil {
+		s.log.Warn("idempotency: Redis not configured — using in-process MemoryStore",
+			zap.Bool("single_process_only", true),
+			zap.String("remedy", "set WCQ_REDIS_ADDR; without it duplicate payment requests can commit on separate replicas"),
+		)
 		s.idemStore = idempotency.NewMemoryStore()
 	}
 	idem := middleware.Idempotency(s.idemStore, s.log, idemTTL, idemKeyMaxLen)
@@ -202,12 +195,12 @@ func (s *Server) Routes() http.Handler {
 	// Versioned API surface with Clerk JWT authentication.
 	// Rate limit params are read once at startup (is_runtime=FALSE); a process
 	// restart is required to change the rate or burst.
-	clerkProvider := auth.NewJWKSProvider(infraCtx, s.cfg.Clerk.JWKSURL, authWarmup, s.log)
+	clerkProvider := auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, authWarmup, s.log)
 	userRateStore := s.limiterStore
 	if userRateStore == nil {
 		userRateStore = middleware.NewLimiterStore(
-			float64(paramSvc.GetInt(infraCtx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec)),
-			paramSvc.GetInt(infraCtx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst),
+			float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec)),
+			paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst),
 		)
 	}
 	r.Route("/api/v1", func(r chi.Router) {
