@@ -116,8 +116,13 @@ func (d *UserDispatcher) deliverEmail(
 	}
 
 	renderTimeoutMs := domain.DefaultNotifyRenderTimeoutMs
+	from := d.fromAddr
 	if d.params != nil {
 		renderTimeoutMs = d.params.GetInt(ctx, domain.ParamKeyNotifyRenderTimeoutMs, domain.DefaultNotifyRenderTimeoutMs)
+		from = d.params.GetString(ctx, domain.ParamKeyNotifyFromAddress, d.fromAddr)
+	}
+	if from == "" {
+		from = "World Cup Quiniela <noreply@quiniela.example.com>"
 	}
 	renderTimeout := time.Duration(renderTimeoutMs) * time.Millisecond
 
@@ -137,14 +142,6 @@ func (d *UserDispatcher) deliverEmail(
 			zap.Error(renderErr),
 		)
 		return
-	}
-
-	from := d.fromAddr
-	if d.params != nil {
-		from = d.params.GetString(ctx, domain.ParamKeyNotifyFromAddress, d.fromAddr)
-	}
-	if from == "" {
-		from = "World Cup Quiniela <noreply@quiniela.example.com>"
 	}
 
 	_, sendErr := d.mailer.Send(ctx, infraemail.Message{
