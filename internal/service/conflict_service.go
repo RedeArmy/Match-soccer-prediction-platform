@@ -12,6 +12,47 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// ConflictTypeSummary aggregates detected conflicts for a single conflict type.
+type ConflictTypeSummary struct {
+	Type       domain.ConflictType
+	Count      int
+	AvgAgeDays *float64 // nil when no age information is available for this type
+}
+
+// ConflictSummaryResult is the outcome of a ConflictSummary call.
+// It provides per-type counts and average ages, enabling dashboards to surface
+// an alert when unresolved conflicts are accumulating or getting stale.
+type ConflictSummaryResult struct {
+	TotalUnresolved int
+	ByType          []ConflictTypeSummary
+	// LimitReached is true when the conflict backlog equals or exceeds max_scan,
+	// meaning the summary is incomplete and some conflicts were not included.
+	// Dashboard widgets should display a warning when this flag is set.
+	LimitReached bool
+	// MaxScan is the configured limit applied to this scan (conflict.max_scan).
+	// Provided for context when interpreting TotalUnresolved and LimitReached.
+	MaxScan int
+}
+
+// ConflictService detects and resolves operational inconsistencies that require
+// administrative attention. Conflicts are computed on demand; they are not
+// persisted. Resolution records an audit log entry and is intended to
+// acknowledge the conflict - the underlying issue must be fixed separately.
+type ConflictService interface {
+	// ListConflicts returns currently detected conflicts across all conflict
+	// categories, sliced by p. A zero Pagination returns the full list.
+	ListConflicts(ctx context.Context, p repository.Pagination) ([]domain.Conflict, error)
+	// ConflictSummary returns an aggregated view of all detected conflicts
+	// grouped by type, with count and average age per type. Intended for
+	// dashboard alert widgets that need a lightweight summary without the
+	// full conflict detail list.
+	ConflictSummary(ctx context.Context) (*ConflictSummaryResult, error)
+	// ResolveConflict records an admin action on the given conflict. action must
+	// be "ack" (acknowledgement only) or "auto_fix" (attempt automatic remediation
+	// - transfers ownership, rejects stale payments, or removes stale memberships).
+	ResolveConflict(ctx context.Context, conflictType string, entityID, adminID int, action, note string) error
+}
+
 // conflictService is the concrete implementation of ConflictService.
 type conflictService struct {
 	quinielaRepo repository.QuinielaRepository

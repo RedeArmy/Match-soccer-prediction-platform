@@ -11,6 +11,16 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// MatchScorer calculates and persists points for all predictions on a
+// finished match.
+//
+// ScoreMatch is intended to be called from a MatchFinished event handler, not
+// directly from an HTTP handler, which is why it does not return a full list
+// of updated predictions - the caller's context is asynchronous.
+type MatchScorer interface {
+	ScoreMatch(ctx context.Context, matchID int) error
+}
+
 // scoringService is the concrete implementation of MatchScorer.
 type scoringService struct {
 	matchRepo repository.MatchRepository

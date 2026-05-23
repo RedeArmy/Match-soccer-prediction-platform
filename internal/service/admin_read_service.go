@@ -20,6 +20,33 @@ type cachedDashboard struct {
 	expiresAt time.Time
 }
 
+// TiebreakerSubmissionView pairs a tiebreaker prediction with its author's
+// display name. Used by the admin tiebreaker submissions endpoint to avoid
+// N+1 user lookups in the handler layer.
+type TiebreakerSubmissionView struct {
+	Submission *domain.Tiebreaker
+	UserName   string
+}
+
+// AdminReadService handles cross-domain read queries used by admin panel
+// endpoints that cannot be satisfied by a single existing service.
+type AdminReadService interface {
+	// GlobalLeaderboard returns the top limit users ranked by total scored
+	// points across all quinielas.
+	GlobalLeaderboard(ctx context.Context, limit int) ([]*domain.GlobalLeaderboardEntry, error)
+	// ListPredictions returns predictions matching the given admin filters
+	// with pagination.
+	ListPredictions(ctx context.Context, f repository.PredictionAdminFilters, p repository.Pagination) ([]*domain.Prediction, error)
+	// ListTiebreakerSubmissions returns all tiebreaker predictions with user
+	// names resolved, paginated.
+	ListTiebreakerSubmissions(ctx context.Context, p repository.Pagination) ([]TiebreakerSubmissionView, error)
+	// ListSnapshotHistory returns the most recent limit snapshots for a quiniela.
+	ListSnapshotHistory(ctx context.Context, quinielaID, limit int) ([]*domain.LeaderboardSnapshot, error)
+	// GetDashboardStats returns aggregate counts for groups, users, and payments.
+	// Intended for the admin dashboard home screen to populate summary widgets.
+	GetDashboardStats(ctx context.Context) (*domain.DashboardStats, error)
+}
+
 // adminReadService is the concrete implementation of AdminReadService.
 type adminReadService struct {
 	predRepo       repository.PredictionRepository

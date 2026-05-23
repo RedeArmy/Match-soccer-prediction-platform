@@ -13,6 +13,23 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// MatchService defines operations on the Match entity.
+//
+// UpdateResult enforces the transition rules: a result may only be set when
+// the match is in the Live or Finished status. After confirming the result
+// the implementation must emit a MatchFinished domain event so that downstream
+// consumers (MatchScorer, Notifier) react without being called
+// directly.
+type MatchService interface {
+	CreateMatch(ctx context.Context, match *domain.Match) error
+	GetMatch(ctx context.Context, id int) (*domain.Match, error)
+	ListMatches(ctx context.Context) ([]*domain.Match, error)
+	ListMatchesByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error)
+	ListMatchesByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
+	UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error)
+	StartMatch(ctx context.Context, id int) (*domain.Match, error)
+}
+
 // matchService is the concrete implementation of MatchService.
 type matchService struct {
 	repo  repository.MatchRepository

@@ -9,42 +9,33 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/dsem"
 )
 
-// snapshotRetryBase is the initial backoff duration between snapshot attempts.
-// Subsequent attempts double this value. Declared as a var so tests can set it
-// to zero to avoid sleeping.
-var snapshotRetryBase = 100 * time.Millisecond
-
-// maxSnapshotAttempts is the maximum snapshot write attempts per quiniela per
-// match event. Declared as a var so tests can set it to 1 for deterministic
-// behaviour and so worker/main.go can override it from system_params at startup.
-var maxSnapshotAttempts = 3
-
-// snapshotConcurrency caps the number of quinielas snapshotted in parallel
-// within a single postScoringWork call. Raising the value reduces wall-clock
-// latency for large quiniela counts at the cost of more concurrent DB connections.
-// Declared as a var so tests can set it to 1 for deterministic ordering.
-var snapshotConcurrency = 16
-
-// snapshotSem bounds the total number of concurrent snapshot DB operations
-// across ALL concurrent MatchFinished events on this process (and, when the
-// distributed implementation is wired, across ALL replicas).
-//
-// Without a global guard, N simultaneous match finishes each launch their own
-// errgroup with snapshotConcurrency goroutines, producing N×concurrency total
-// concurrent snapshot queries — enough to saturate the connection pool during
-// elimination phases.
-//
-// Initialised by main.go after reading snapshotConcurrency from system_params.
-// When Redis is available, main.go wires a dsem.RedisSemaphore to enforce the
-// limit cluster-wide; otherwise it wires a localSnapshotSem.
-// nil before initialisation (tests that set snapshotConcurrency=1 bypass the nil guard).
-var snapshotSem dsem.Semaphore
+// snapshotConfig holds the snapshot tuning parameters read from system_params
+// at startup. Bundling them in a struct eliminates the package-level mutable
+// vars that previously created an implicit temporal dependency between
+// main.go's bootstrapping sequence and any handler call. Tests construct a
+// snapshotConfig inline, keeping them self-contained and free of global state.
+type snapshotConfig struct {
+	// concurrency is the per-event goroutine limit passed to errgroup.SetLimit.
+	// Defaults to domain.DefaultWorkerSnapshotConcurrency when zero.
+	concurrency int
+	// retryBase is the initial backoff between snapshot retry attempts.
+	// Doubles on each subsequent attempt. Tests set this to zero to avoid sleeping.
+	retryBase time.Duration
+	// maxAttempts is the maximum snapshot write attempts per (matchID, quinielaID).
+	maxAttempts int
+	// sem is the cluster-wide distributed semaphore that bounds concurrent
+	// snapshot DB operations across ALL concurrent MatchFinished events on this
+	// process (and, when Redis is wired, across all replicas). nil disables the
+	// global cap and relies solely on per-event errgroup concurrency.
+	sem dsem.Semaphore
+}
 
 // SnapshotLocker prevents duplicate leaderboard snapshot DB writes across
 // multiple worker replicas for the same (matchID, quinielaID) pair.
@@ -135,6 +126,7 @@ type postScoringDeps struct {
 	invalidators []service.PostScoringInvalidator
 	broadcaster  LeaderboardBroadcaster
 	locker       SnapshotLocker
+	snapshot     snapshotConfig
 }
 
 // newMatchFinishedHandler returns the event handler that the worker registers
@@ -236,20 +228,26 @@ func postScoringWork(
 
 	// Fan-out snapshot generation across quinielas with a bounded goroutine pool.
 	// g.SetLimit bounds goroutine creation per-event (memory efficiency); the
-	// global snapshotSem bounds total concurrent DB operations across ALL events
-	// on this machine; locker prevents duplicate work across replicas.
+	// distributed semaphore in deps.snapshot.sem bounds total concurrent DB
+	// operations across ALL events on this machine and (when Redis is wired)
+	// across all replicas. locker prevents duplicate work across replicas.
+	cfg := deps.snapshot
+	concurrency := cfg.concurrency
+	if concurrency <= 0 {
+		concurrency = domain.DefaultWorkerSnapshotConcurrency
+	}
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(snapshotConcurrency)
+	g.SetLimit(concurrency)
 	for _, qid := range quinielaIDs {
 		qid := qid
 		g.Go(func() error {
-			if snapshotSem != nil {
-				if err := snapshotSem.Acquire(gctx); err != nil {
+			if cfg.sem != nil {
+				if err := cfg.sem.Acquire(gctx); err != nil {
 					return nil // context cancelled; scoring already committed
 				}
-				defer snapshotSem.Release()
+				defer cfg.sem.Release()
 			}
-			runSnapshot(gctx, matchID, qid, deps.snapshotter, deps.locker, log)
+			runSnapshot(gctx, matchID, qid, deps.snapshotter, deps.locker, cfg, log)
 			return nil
 		})
 	}
@@ -265,6 +263,7 @@ func runSnapshot(
 	matchID, quinielaID int,
 	snapshotter service.Snapshotter,
 	locker SnapshotLocker,
+	cfg snapshotConfig,
 	log *zap.Logger,
 ) {
 	if locker != nil {
@@ -295,7 +294,7 @@ func runSnapshot(
 			}()
 		}
 	}
-	retrySnapshot(ctx, matchID, quinielaID, snapshotter, log)
+	retrySnapshot(ctx, matchID, quinielaID, snapshotter, cfg, log)
 }
 
 // retrySnapshot attempts to take a leaderboard snapshot for quinielaID up to
@@ -308,14 +307,19 @@ func retrySnapshot(
 	matchID int,
 	quinielaID int,
 	snapshotter service.Snapshotter,
+	cfg snapshotConfig,
 	log *zap.Logger,
 ) {
-	backoff := snapshotRetryBase
-	for attempt := 1; attempt <= maxSnapshotAttempts; attempt++ {
+	backoff := cfg.retryBase
+	maxAttempts := cfg.maxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = domain.DefaultWorkerSnapshotMaxAttempts
+	}
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if _, err := snapshotter.SnapshotForMatch(ctx, quinielaID, matchID); err == nil {
 			log.Sugar().Infof("worker: leaderboard snapshot saved for quiniela %d (match %d)", quinielaID, matchID)
 			return
-		} else if attempt == maxSnapshotAttempts {
+		} else if attempt == maxAttempts {
 			log.Warn("worker: leaderboard snapshot failed after all retries",
 				zap.Int("match_id", matchID),
 				zap.Int("quiniela_id", quinielaID),

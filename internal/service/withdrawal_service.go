@@ -13,10 +13,36 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// WithdrawalService manages the full payout request lifecycle.
+//
+// Create reserves the requested amount from the user's available balance.
+// Approve advances the status without a balance change.
+// RejectRequest releases the reserved balance back to available.
+// ProcessWithdrawal commits the reserved amount as permanently paid out.
+type WithdrawalService interface {
+	// Create creates a withdrawal request and reserves the balance.
+	// Returns Conflict when available balance is insufficient.
+	Create(ctx context.Context, userID, amountCents int, currency string, method domain.WithdrawalMethod, payoutDetails map[string]string) (*domain.WithdrawalRequest, error)
+	// GetByID returns the request or nil when not found.
+	GetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
+	// ListByUser returns all requests for a user.
+	ListByUser(ctx context.Context, userID int) ([]*domain.WithdrawalRequest, error)
+	// ListPending returns all pending requests for admin review.
+	ListPending(ctx context.Context) ([]*domain.WithdrawalRequest, error)
+	// ApproveRequest transitions the request to approved (admin queue step).
+	ApproveRequest(ctx context.Context, requestID, adminID int, notes string) (*domain.WithdrawalRequest, error)
+	// RejectRequest transitions the request to rejected and releases the
+	// reserved balance.
+	RejectRequest(ctx context.Context, requestID, adminID int, notes string) (*domain.WithdrawalRequest, error)
+	// ProcessWithdrawal transitions an approved request to processed and
+	// commits the reserved amount as paid out.
+	ProcessWithdrawal(ctx context.Context, requestID, adminID int) (*domain.WithdrawalRequest, error)
+}
+
 type withdrawalService struct {
 	withdrawalRepo repository.WithdrawalRequestRepository
 	paramRepo      repository.SystemParamRepository
-	outboxWriter   *outbox.Writer
+	outboxWriter   outbox.Writer
 	audit          AuditLogger
 	log            *zap.Logger
 }
@@ -25,7 +51,7 @@ type withdrawalService struct {
 func NewWithdrawalService(
 	withdrawalRepo repository.WithdrawalRequestRepository,
 	paramRepo repository.SystemParamRepository,
-	outboxWriter *outbox.Writer,
+	outboxWriter outbox.Writer,
 	audit AuditLogger,
 	log *zap.Logger,
 ) WithdrawalService {

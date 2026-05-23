@@ -72,6 +72,58 @@ func ConfigureAuditRetry(maxAttempts, retryDelayMs int) {
 	}
 }
 
+// AuditLogger records significant administrative and system actions to an
+// immutable audit trail.
+//
+// Log is fire-and-forget: it never returns an error. Failures are logged at
+// WARN level and silently discarded so that a transient database issue cannot
+// roll back or fail an already-committed business operation.
+//
+// actorID is nil for system-generated events (e.g. scheduled jobs).
+// resourceType and resourceID identify the affected entity; both are nil for
+// system-level actions. metadata carries any extra context that does not fit
+// into the structured columns.
+type AuditLogger interface {
+	Log(
+		ctx context.Context,
+		actorID *int,
+		actorRole *domain.UserRole,
+		action string,
+		resourceType *string,
+		resourceID *int,
+		metadata map[string]any,
+	)
+}
+
+// AuditReader exposes read-only access to the audit log for admin endpoints.
+// It is implemented by the same concrete type as AuditLogger but is kept
+// separate to apply the Interface Segregation Principle: callers that only
+// write audits receive AuditLogger; those that need reads receive AuditReader.
+// Both methods use cursor-based pagination; the second return value is an
+// opaque next-page token, empty on the last page.
+type AuditReader interface {
+	ListAuditLogs(ctx context.Context, f repository.AuditLogFilters, p repository.CursorPage) ([]*domain.AuditLog, string, error)
+	ListAuditLogsByEntity(ctx context.Context, resourceType string, resourceID int, p repository.CursorPage) ([]*domain.AuditLog, string, error)
+}
+
+// AuditService is the combined interface for callers that need both write and
+// read access to the audit trail - primarily the composition root (server.go)
+// where the service is wired and passed to both audit-writing and
+// audit-reading handlers.
+type AuditService interface {
+	AuditLogger
+	AuditReader
+	// Drain blocks until all in-flight audit Log goroutines complete. Must be
+	// called during graceful shutdown before closing the database connection
+	// pool to prevent losing audit entries that were queued but not yet persisted.
+	Drain()
+	// InFlight returns the number of audit goroutines currently executing.
+	// A sustained non-zero value under low write volume indicates a slow or
+	// failing database; expose this in health checks or metrics to detect
+	// goroutine pile-up before it exhausts memory.
+	InFlight() int64
+}
+
 // auditService is the concrete implementation of AuditLogger.
 type auditService struct {
 	repo         repository.AuditLogRepository

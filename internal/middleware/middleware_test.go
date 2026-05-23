@@ -652,3 +652,84 @@ func TestUserFromContext_ReturnsFalseWhenNotSet(t *testing.T) {
 		t.Error("expected ok=false when no user in context, got true")
 	}
 }
+
+// ── ResolveUser (banned path) ─────────────────────────────────────────────────
+
+func TestResolveUser_BannedUser_Returns403(t *testing.T) {
+	bannedAt := time.Now()
+	repo := &stubUserRepo{user: &domain.User{ID: 7, BannedAt: &bannedAt}}
+	h := resolveUserHandler(repo)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, resolveUserRequest(subjectForResolve))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf(fmtStatus, http.StatusForbidden, rec.Code)
+	}
+}
+
+// ── RequestBodyLimit ──────────────────────────────────────────────────────────
+
+func TestRequestBodyLimit_SmallBody_PassesThrough(t *testing.T) {
+	const limit = 100
+	var readBody []byte
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, limit+10)
+		n, _ := r.Body.Read(buf)
+		readBody = buf[:n]
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := middleware.RequestBodyLimit(limit)(next)
+
+	body := strings.NewReader("small")
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtStatus, http.StatusOK, rec.Code)
+	}
+	if string(readBody) != "small" {
+		t.Errorf("expected body %q, got %q", "small", string(readBody))
+	}
+}
+
+func TestRequestBodyLimit_LargeBody_ExceedsLimitOnRead(t *testing.T) {
+	const limit = 5
+	var readErr error
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, limit+10)
+		_, readErr = r.Body.Read(buf)
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := middleware.RequestBodyLimit(limit)(next)
+
+	body := strings.NewReader("this body is longer than five bytes")
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var maxBytesErr *http.MaxBytesError
+	if !errors.As(readErr, &maxBytesErr) {
+		t.Errorf("expected *http.MaxBytesError on oversized read, got %v", readErr)
+	}
+}
+
+// ── WebhookVerifiedBodyFromContext ────────────────────────────────────────────
+
+func TestWebhookVerifiedBodyFromContext_RoundTrip(t *testing.T) {
+	want := []byte(`{"event":"test"}`)
+	ctx := middleware.SetWebhookVerifiedBody(context.Background(), want)
+	got, ok := middleware.WebhookVerifiedBodyFromContext(ctx)
+	if !ok {
+		t.Fatal("WebhookVerifiedBodyFromContext returned ok=false after SetWebhookVerifiedBody")
+	}
+	if string(got) != string(want) {
+		t.Errorf("expected body %q, got %q", want, got)
+	}
+}
+
+func TestWebhookVerifiedBodyFromContext_ReturnsFalseWhenNotSet(t *testing.T) {
+	_, ok := middleware.WebhookVerifiedBodyFromContext(context.Background())
+	if ok {
+		t.Error("expected ok=false when body not set in context, got true")
+	}
+}

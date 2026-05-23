@@ -12,6 +12,59 @@ import (
 
 const errMsgEmptyTiebreakerQuestion = "tiebreaker question cannot be empty"
 
+// TiebreakerService manages tiebreaker question configurations and member
+// predictions. A tiebreaker resolves ranking ties when all statistical
+// rules still leave two or more members at the same rank.
+//
+// Lifecycle:
+//  1. An administrator calls SetQuestion (global), SetQuestionForPhase, or
+//     SetQuestionForQuiniela to define the active question for the relevant
+//     scope. Until set, no member may submit a prediction.
+//  2. Members call Submit with their numeric estimate.
+//     Submit resolves the active config for the caller's group: it checks for
+//     a group-specific config first, then falls back to the global config.
+//  3. After the tournament, the administrator calls ConfirmResult (global) or
+//     ConfirmResultByID (any config). After confirmation, Submit returns Conflict.
+//
+// Admin gates for write operations are enforced at the HTTP layer via
+// RequireRole middleware, not inside this service.
+type TiebreakerService interface {
+	// SetQuestion stores or replaces the global tiebreaker prompt.
+	// Returns Validation when question is empty.
+	SetQuestion(ctx context.Context, question string) (*domain.TiebreakerConfig, error)
+
+	// SetQuestionForPhase stores or replaces the phase-scoped question for the
+	// given tournament phase. Returns Validation when question is empty or phase
+	// is not a recognised FIFA 2026 tournament phase.
+	SetQuestionForPhase(ctx context.Context, phase domain.MatchPhase, question string) (*domain.TiebreakerConfig, error)
+
+	// SetQuestionForQuiniela stores or replaces a group-specific question.
+	// Returns Validation when question is empty.
+	SetQuestionForQuiniela(ctx context.Context, quinielaID int, question string) (*domain.TiebreakerConfig, error)
+
+	// Submit upserts the caller's prediction for the active config of quinielaID.
+	// The active config is resolved as: group-specific config → global fallback.
+	// Returns Conflict when the result has already been confirmed.
+	// Returns Validation when no question has been configured yet.
+	// Returns Forbidden when the caller is not an active member of quinielaID.
+	Submit(ctx context.Context, quinielaID, callerID, prediction int) (*domain.Tiebreaker, error)
+
+	// GetMine returns the active question and the caller's own prediction for
+	// quinielaID. The active config is resolved the same way as Submit.
+	// Entry is nil when the caller has not submitted yet.
+	// Returns Forbidden when the caller is not an active member of quinielaID.
+	GetMine(ctx context.Context, quinielaID, callerID int) (*domain.TiebreakerView, error)
+
+	// ConfirmResult records the official numeric result for the global config.
+	// After confirmation, Submit returns Conflict for the global scope.
+	// Returns Validation when no global question has been configured yet.
+	ConfirmResult(ctx context.Context, result int) error
+
+	// ConfirmResultByID records the official numeric result for any config.
+	// Returns NotFound when configID does not exist.
+	ConfirmResultByID(ctx context.Context, configID, result int) error
+}
+
 // tiebreakerService is the concrete implementation of TiebreakerService.
 type tiebreakerService struct {
 	configRepo     repository.TiebreakerConfigRepository

@@ -1,4 +1,4 @@
-package codegen
+package randcode
 
 import (
 	"crypto/rand"
@@ -34,7 +34,7 @@ func (c Crypto) Generate(length int) (string, error) {
 	}
 	b := make([]byte, length)
 	if _, err := io.ReadFull(r, b); err != nil {
-		return "", fmt.Errorf("codegen: %w", err)
+		return "", fmt.Errorf("randcode: %w", err)
 	}
 	result := make([]byte, length)
 	for i, v := range b {

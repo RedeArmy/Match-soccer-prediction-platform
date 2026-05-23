@@ -9,8 +9,27 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
-	"github.com/rede/world-cup-quiniela/pkg/codegen"
+	"github.com/rede/world-cup-quiniela/pkg/randcode"
 )
+
+// QuinielaService defines operations on the Quiniela entity.
+//
+// Create generates a unique invite code and records the owner as the first
+// active member (MembershipRoleCreateOwner). GetByInviteCode enables the join flow:
+// the caller obtains the quiniela from a short code before creating the membership.
+//
+// The invite code is permanent - it is generated once at creation and never
+// rotated. Groups are identified by a stable code for the tournament's duration.
+type QuinielaService interface {
+	Create(ctx context.Context, quiniela *domain.Quiniela) error
+	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
+	GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error)
+	GetByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
+	// RenameGroup changes the name of the given group. Only the CreateOwner
+	// (MembershipRoleCreateOwner) of the group may call this; any other caller receives
+	// Forbidden. Returns the updated Quiniela on success.
+	RenameGroup(ctx context.Context, quinielaID, callerUserID int, name string) (*domain.Quiniela, error)
+}
 
 // quinielaService is the concrete implementation of QuinielaService.
 type quinielaService struct {
@@ -18,14 +37,14 @@ type quinielaService struct {
 	authz   GroupAuthz
 	params  SystemParamService
 	audit   AuditLogger
-	codeGen codegen.Generator
+	codeGen randcode.Generator
 }
 
 // NewQuinielaService constructs a quinielaService with the given dependencies.
 // authz enforces group ownership in RenameGroup.
 // params is used to read group.invite_code_length at runtime.
 // audit records rename operations in the audit trail.
-func NewQuinielaService(repo repository.QuinielaRepository, authz GroupAuthz, params SystemParamService, audit AuditLogger, codeGen codegen.Generator) QuinielaService {
+func NewQuinielaService(repo repository.QuinielaRepository, authz GroupAuthz, params SystemParamService, audit AuditLogger, codeGen randcode.Generator) QuinielaService {
 	return &quinielaService{repo: repo, authz: authz, params: params, audit: audit, codeGen: codeGen}
 }
 

@@ -9,6 +9,22 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
+// PaymentService manages entry-fee payment records for quiniela groups.
+//
+// CreateRecord creates a pending record that must later be confirmed by an
+// admin via ValidateDeposit. RejectDeposit marks a pending payment as denied
+// without capturing funds. Only an admin may call Validate or Reject; the
+// caller's identity is enforced at the HTTP layer via RequireRole.
+type PaymentService interface {
+	CreateRecord(ctx context.Context, quinielaID, userID, amount int, currency, reference string) (*domain.PaymentRecord, error)
+	ValidateDeposit(ctx context.Context, paymentID, adminID int, notes string) (*domain.PaymentRecord, error)
+	RejectDeposit(ctx context.Context, paymentID, adminID int, notes string) (*domain.PaymentRecord, error)
+	ListPending(ctx context.Context) ([]*domain.PaymentRecord, error)
+	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.PaymentRecord, error)
+	// List returns all payment records matching the given filters with pagination.
+	List(ctx context.Context, f repository.PaymentFilters, p repository.Pagination) ([]*domain.PaymentRecord, error)
+}
+
 // paymentService is the concrete implementation of PaymentService.
 type paymentService struct {
 	paymentRepo repository.PaymentRecordRepository

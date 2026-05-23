@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
 
@@ -67,9 +68,10 @@ type leaderboardSignalPayload struct {
 // snapshotConcurrency (same limit as snapshot writes) to avoid saturating the
 // database connection pool during elimination-phase multi-match scoring bursts.
 type redisPubLeaderboardBroadcaster struct {
-	client     redis.Cmdable
-	memberRepo ActiveMemberLister
-	log        *zap.Logger
+	client      redis.Cmdable
+	memberRepo  ActiveMemberLister
+	concurrency int
+	log         *zap.Logger
 }
 
 func (b *redisPubLeaderboardBroadcaster) BroadcastLeaderboardUpdated(ctx context.Context, quinielaIDs []int) {
@@ -79,8 +81,12 @@ func (b *redisPubLeaderboardBroadcaster) BroadcastLeaderboardUpdated(ctx context
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
+	concurrency := b.concurrency
+	if concurrency <= 0 {
+		concurrency = domain.DefaultWorkerSnapshotConcurrency
+	}
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(snapshotConcurrency)
+	g.SetLimit(concurrency)
 
 	for _, qid := range quinielaIDs {
 		qid := qid

@@ -225,9 +225,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		params.GetInt(ctx, domain.ParamKeyAuditMaxRetries, domain.DefaultAuditMaxRetries),
 		params.GetInt(ctx, domain.ParamKeyAuditRetryDelayMs, domain.DefaultAuditRetryDelayMs),
 	)
-	snapshotConcurrency = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotConcurrency, domain.DefaultWorkerSnapshotConcurrency)
-	snapshotRetryBase = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSnapshotRetryBaseMs, domain.DefaultWorkerSnapshotRetryBaseMs)) * time.Millisecond
-	maxSnapshotAttempts = params.GetInt(ctx, domain.ParamKeyWorkerSnapshotMaxAttempts, domain.DefaultWorkerSnapshotMaxAttempts)
+	snapshotConcurrency := params.GetInt(ctx, domain.ParamKeyWorkerSnapshotConcurrency, domain.DefaultWorkerSnapshotConcurrency)
+	snapshotRetryBase := time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSnapshotRetryBaseMs, domain.DefaultWorkerSnapshotRetryBaseMs)) * time.Millisecond
+	maxSnapshotAttempts := params.GetInt(ctx, domain.ParamKeyWorkerSnapshotMaxAttempts, domain.DefaultWorkerSnapshotMaxAttempts)
 	dlqMonitorInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerDLQMonitorIntervalSec, domain.DefaultWorkerDLQMonitorIntervalSec)) * time.Second
 	purgeTickInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerPurgeIntervalHours, domain.DefaultWorkerPurgeIntervalHours)) * time.Hour
 	snapshotKeepLatestCount = params.GetInt(ctx, domain.ParamKeySnapshotKeepLatestCount, domain.DefaultSnapshotKeepLatestCount)
@@ -260,7 +260,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// non-nil by the time we reach this point.
 	const snapshotSemKey = "worker:snapshot:sem"
 	const snapshotSemTTL = 5 * time.Minute
-	snapshotSem = dsem.New(rc, snapshotSemKey, int64(snapshotConcurrency), snapshotSemTTL)
+	snapshotSem := dsem.New(rc, snapshotSemKey, int64(snapshotConcurrency), snapshotSemTTL)
 	log.Info("worker: snapshot semaphore: distributed Redis semaphore active",
 		zap.String("key", snapshotSemKey),
 		zap.Int("limit", snapshotConcurrency),
@@ -271,13 +271,23 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		service.NewPostScoringCacheFlush(cacheStore, log),
 	}
 
+	snapCfg := snapshotConfig{
+		concurrency: snapshotConcurrency,
+		retryBase:   snapshotRetryBase,
+		maxAttempts: maxSnapshotAttempts,
+		sem:         snapshotSem,
+	}
+
 	// Broadcast a leaderboard.updated SSE signal after scoring.
 	// rc is always non-nil here: redis.NewClient never returns nil and the
 	// worker rejects non-redis event bus drivers before reaching this point.
+	// Concurrency matches the snapshot pool so SSE fan-out and DB fan-out share
+	// the same budget, keeping total DB connections predictable under load.
 	broadcaster := LeaderboardBroadcaster(&redisPubLeaderboardBroadcaster{
-		client:     rc,
-		memberRepo: memberRepo,
-		log:        log,
+		client:      rc,
+		memberRepo:  memberRepo,
+		concurrency: snapshotConcurrency,
+		log:         log,
 	})
 
 	purger := repository.NewPostgresPurger(db)
@@ -412,6 +422,15 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// headroom. The lock is also released explicitly by Unlock in the happy path;
 	// the TTL only activates on process crash or context cancellation.
 	const snapshotLockTTL = 2 * time.Minute
+
+	// The scheduler health checker acts as a dead-man's switch: if any job has
+	// not fired within 3× its expected interval the worker readiness probe fails,
+	// triggering an on-call alert. A threshold of 3 tolerates two missed ticks
+	// (e.g. brief Redis unavailability causing leader election to abstain) before
+	// the probe degrades. See ADR 0002 for the synthetic-vs-persisted distinction.
+	checkers := buildHealthCheckers(db, rc)
+	checkers = append(checkers, notifScheduler.HealthChecker(3.0))
+
 	return startWorker(ctx, workerDeps{
 		cfg:                   cfg,
 		bus:                   bus,
@@ -421,12 +440,13 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		invalidators:          invalidators,
 		broadcaster:           broadcaster,
 		snapshotLocker:        &redisSnapshotLocker{client: rc, ttl: snapshotLockTTL},
+		snapshotCfg:           snapCfg,
 		purger:                purger,
 		purgeRetention:        purgeRetention,
 		paramHistoryRetention: paramHistoryRetention,
 		snapshotKeepCount:     snapshotKeepLatestCount,
 		rc:                    rc,
-		checkers:              buildHealthCheckers(db, rc),
+		checkers:              checkers,
 		dlqElection:           dlqElection,
 		outboxRepo:            outboxRepo,
 		outboxDispatcher:      compositeDispatcher,
@@ -516,6 +536,7 @@ type workerDeps struct {
 	invalidators          []service.PostScoringInvalidator
 	broadcaster           LeaderboardBroadcaster
 	snapshotLocker        SnapshotLocker
+	snapshotCfg           snapshotConfig
 	purger                repository.Purger
 	purgeRetention        time.Duration
 	paramHistoryRetention time.Duration
@@ -544,6 +565,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 			invalidators: deps.invalidators,
 			broadcaster:  deps.broadcaster,
 			locker:       deps.snapshotLocker,
+			snapshot:     deps.snapshotCfg,
 		}, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 

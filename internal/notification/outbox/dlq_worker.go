@@ -29,7 +29,7 @@ type dlqRepository interface {
 }
 
 // dlqWriter is the outbox-write contract for DLQWorker.
-// It matches the Write method of *outbox.Writer.
+// It matches the Write method of *outbox.PoolWriter.
 type dlqWriter interface {
 	Write(ctx context.Context, eventType notification.EventType, aggregateType, aggregateID string, payload any) error
 }

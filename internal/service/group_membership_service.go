@@ -11,6 +11,40 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/clock"
 )
 
+// GroupMembershipService manages user membership in Quinielas.
+//
+// Join resolves the invite code and creates a pending join request inside a
+// single repository transaction - the user is NOT active until any existing
+// active member calls ApproveJoin. ListByQuiniela returns the full roster.
+// ListByUser returns all groups a user belongs to, regardless of status.
+//
+// ApproveJoin promotes a pending request to active. Any active member of the
+// quiniela may approve - there is no admin-only gate. After approval the group
+// status is synchronised: if active member count reaches MinMembersForActive
+// the quiniela transitions from inactive to active.
+//
+// Leave lets a user remove themselves from a quiniela. Only the user themselves
+// may call this; no admin or owner can remove another member. After leaving,
+// the group status is re-evaluated and may become inactive.
+//
+// MarkPaid is called exclusively by the payment system after a transaction is
+// confirmed. It must never be exposed as a direct API action - callers cannot
+// mark themselves as paid. For free groups (entry_fee = 0), paid is set to
+// true automatically at join time and this method is never invoked.
+type GroupMembershipService interface {
+	Join(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error)
+	// JoinWithBalance joins the quiniela and immediately deducts the entry fee
+	// from the user's balance, marking the membership as paid in one atomic
+	// step. Returns Conflict when the user has insufficient available balance
+	// or when the quiniela has no entry fee.
+	JoinWithBalance(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error)
+	ApproveJoin(ctx context.Context, quinielaID, membershipID, approverUserID int) (*domain.GroupMembership, error)
+	Leave(ctx context.Context, quinielaID, callerUserID int) error
+	MarkPaid(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
+	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.GroupMembership, error)
+	ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error)
+}
+
 // groupMembershipService is the concrete implementation of GroupMembershipService.
 type groupMembershipService struct {
 	quinielaRepo repository.QuinielaRepository
