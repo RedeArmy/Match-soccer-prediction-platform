@@ -538,7 +538,13 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
 	deps.bus.Subscribe(ctx, events.EventMatchFinished,
-		newMatchFinishedHandler(deps.scorer, deps.snapshotter, deps.predRepo, deps.invalidators, deps.broadcaster, deps.snapshotLocker, log))
+		newMatchFinishedHandler(deps.scorer, postScoringDeps{
+			snapshotter:  deps.snapshotter,
+			predRepo:     deps.predRepo,
+			invalidators: deps.invalidators,
+			broadcaster:  deps.broadcaster,
+			locker:       deps.snapshotLocker,
+		}, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
 	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, log)
