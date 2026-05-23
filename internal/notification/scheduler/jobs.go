@@ -21,7 +21,7 @@ type ParamReader interface {
 }
 
 // OutboxWriter is the write-side contract consumed by scheduler jobs.
-// The production implementation is *outbox.Writer; tests may supply a stub.
+// The production implementation is *outbox.PoolWriter; tests may supply a stub.
 type OutboxWriter interface {
 	Write(ctx context.Context, eventType notification.EventType, aggregateType, aggregateID string, payload any) error
 	// WriteDedup inserts an outbox row only when no row with the same dedupKey

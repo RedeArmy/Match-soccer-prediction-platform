@@ -402,3 +402,53 @@ func TestWriter_WriteDedup_SecondInsert_ReturnsNotWritten(t *testing.T) {
 		t.Errorf("outbox rows with dedup_key: got %d; want 1 (no duplicate inserted)", count)
 	}
 }
+
+// ── Synthetic-event rejection tests ──────────────────────────────────────────
+//
+// rejectSynthetic runs before any DB interaction, so these tests do not need
+// a real transaction and exercise the guard for all three write entry-points.
+
+func TestWriter_Write_SyntheticEvent_ReturnsError(t *testing.T) {
+	t.Parallel()
+	w := outbox.NewWriter(testPool)
+	err := w.Write(context.Background(),
+		notification.EventLeaderboardUpdated,
+		"quiniela", "1",
+		nil,
+	)
+	if err == nil {
+		t.Fatal("Write: expected error for synthetic event, got nil")
+	}
+}
+
+func TestWriter_WriteInTx_SyntheticEvent_ReturnsError(t *testing.T) {
+	t.Parallel()
+	w := outbox.NewWriter(testPool)
+	// tx is nil — rejectSynthetic returns before tx is used, so no panic.
+	err := w.WriteInTx(context.Background(),
+		nil,
+		notification.EventLeaderboardUpdated,
+		"quiniela", "1",
+		nil,
+	)
+	if err == nil {
+		t.Fatal("WriteInTx: expected error for synthetic event, got nil")
+	}
+}
+
+func TestWriter_WriteDedup_SyntheticEvent_ReturnsError(t *testing.T) {
+	t.Parallel()
+	w := outbox.NewWriter(testPool)
+	written, err := w.WriteDedup(context.Background(),
+		"synthetic-test",
+		notification.EventLeaderboardUpdated,
+		"quiniela", "1",
+		nil,
+	)
+	if err == nil {
+		t.Fatal("WriteDedup: expected error for synthetic event, got nil")
+	}
+	if written {
+		t.Error("WriteDedup: written should be false when error is returned")
+	}
+}

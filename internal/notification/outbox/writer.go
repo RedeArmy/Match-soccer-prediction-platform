@@ -19,14 +19,45 @@ package outbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
+
+// Writer is the write-side contract for the transactional outbox.
+// *PoolWriter satisfies this interface. Inject Writer rather than *PoolWriter
+// in services so that unit tests can substitute a stub without a real database.
+type Writer interface {
+	Write(ctx context.Context, eventType notification.EventType, aggregateType, aggregateID string, payload any) error
+	WriteBatch(ctx context.Context, events []BatchEvent) error
+	WriteDedup(ctx context.Context, dedupKey string, eventType notification.EventType, aggregateType, aggregateID string, payload any) (bool, error)
+	WriteInTx(ctx context.Context, tx TxExecer, eventType notification.EventType, aggregateType, aggregateID string, payload any) error
+}
+
+// TxExecer is the minimal SQL-execution capability required by WriteInTx.
+// It is satisfied by pgx.Tx and pgxpool.Pool, so callers that already hold a
+// pgx.Tx need not change their code, and callers that do not use pgx at all
+// need not import it just to obtain this interface.
+type TxExecer interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
+// rejectSynthetic returns an error if eventType is a synthetic event that must
+// not be stored in the outbox. This guard prevents a common misuse pattern
+// where a new engineer adds a synthetic EventType to an outbox.Write call.
+// See ADR 0002 for the synthetic-vs-persisted event decision.
+func rejectSynthetic(eventType notification.EventType) error {
+	if _, ok := notification.SyntheticEvents[eventType]; ok {
+		return fmt.Errorf("outbox: %q is a synthetic event and must not be written to the outbox; see ADR 0002", eventType)
+	}
+	return nil
+}
 
 // insertOutboxSQL inserts a single outbox row.  ON CONFLICT DO NOTHING silently
 // skips the insert when a pending row for the same (aggregate_type,
@@ -53,33 +84,40 @@ ON CONFLICT DO NOTHING
 RETURNING id
 `
 
-// Writer is the write-side of the transactional outbox.
+// PoolWriter is the pool-backed write-side of the transactional outbox.
 // Construct one with NewWriter and share it across services; it is safe for
 // concurrent use.
-type Writer struct {
+type PoolWriter struct {
 	pool *pgxpool.Pool
 }
 
-// NewWriter constructs a Writer backed by the given connection pool.
-func NewWriter(pool *pgxpool.Pool) *Writer {
-	return &Writer{pool: pool}
+// NewWriter constructs a PoolWriter backed by the given connection pool.
+func NewWriter(pool *pgxpool.Pool) *PoolWriter {
+	return &PoolWriter{pool: pool}
 }
 
-// WriteInTx inserts an outbox row using the provided pgx.Tx, making the
+// WriteInTx inserts an outbox row using the provided TxExecer, making the
 // notification intent durable within the same atomic commit as the domain
 // change.  This is the preferred path for true at-least-once delivery.
+//
+// tx must be a value obtained from the same connection that holds the domain
+// write transaction (e.g. pgx.Tx from pgxpool.Pool.Begin). Passing a
+// pgx.Tx directly satisfies TxExecer without any additional imports.
 //
 // eventType identifies the notification event (see notification.EventType).
 // aggregateType and aggregateID describe the entity that changed (e.g.
 // "withdrawal", "42").  payload must be JSON-serialisable; use one of the
 // typed payload structs from the notification package.
-func (w *Writer) WriteInTx(
+func (w *PoolWriter) WriteInTx(
 	ctx context.Context,
-	tx pgx.Tx,
+	tx TxExecer,
 	eventType notification.EventType,
 	aggregateType, aggregateID string,
 	payload any,
 ) error {
+	if err := rejectSynthetic(eventType); err != nil {
+		return err
+	}
 	entry, err := notification.NewOutboxEntry(eventType, aggregateType, aggregateID, payload)
 	if err != nil {
 		return err
@@ -115,7 +153,7 @@ type BatchEvent struct {
 //
 // For full end-to-end atomicity (domain write + outbox writes in the same
 // commit) use WriteInTx with the caller's existing transaction instead.
-func (w *Writer) WriteBatch(ctx context.Context, events []BatchEvent) error {
+func (w *PoolWriter) WriteBatch(ctx context.Context, events []BatchEvent) error {
 	if len(events) == 0 {
 		return nil
 	}
@@ -144,13 +182,16 @@ func (w *Writer) WriteBatch(ctx context.Context, events []BatchEvent) error {
 //
 // The dedup protection covers the lifetime of the outbox row: once the row is
 // purged from the table the same key can be re-used on a future send.
-func (w *Writer) WriteDedup(
+func (w *PoolWriter) WriteDedup(
 	ctx context.Context,
 	dedupKey string,
 	eventType notification.EventType,
 	aggregateType, aggregateID string,
 	payload any,
 ) (written bool, err error) {
+	if err := rejectSynthetic(eventType); err != nil {
+		return false, err
+	}
 	entry, err := notification.NewOutboxEntry(eventType, aggregateType, aggregateID, payload)
 	if err != nil {
 		return false, err
@@ -181,12 +222,15 @@ func (w *Writer) WriteDedup(
 // Use this path only when the calling service does not expose its internal
 // pgx.Tx.  If the process crashes between the domain commit and this insert the
 // event is silently lost.  Prefer WriteInTx wherever possible.
-func (w *Writer) Write(
+func (w *PoolWriter) Write(
 	ctx context.Context,
 	eventType notification.EventType,
 	aggregateType, aggregateID string,
 	payload any,
 ) error {
+	if err := rejectSynthetic(eventType); err != nil {
+		return err
+	}
 	entry, err := notification.NewOutboxEntry(eventType, aggregateType, aggregateID, payload)
 	if err != nil {
 		return err
@@ -204,3 +248,5 @@ func (w *Writer) Write(
 	}
 	return nil
 }
+
+var _ Writer = (*PoolWriter)(nil)

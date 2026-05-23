@@ -282,8 +282,9 @@ func IsKnockoutPhase(phase MatchPhase) bool {
 // AllParamKeys returns every ParamKey* string value declared across the domain
 // package. It is the single authoritative list used by constraint-coverage tests
 // and by cmd/validate-params to verify that every constant is registered and
-// seeded.  Order is stable and matches the declaration order in the constants
-// files (constants.go, constants_notify.go, constants_worker.go).
+// seeded. Order is stable and matches the declaration order in the constants
+// files (constants.go, constants_notify.go, constants_worker.go,
+// constants_api.go, constants_payment.go).
 func AllParamKeys() []string {
 	return []string{
 		// Scoring

@@ -9,6 +9,19 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
 
+// PostScoringInvalidator is the contract for any cache layer that holds data
+// derived from prediction scores. The scoring worker calls InvalidateAfterScoring
+// once per MatchFinished event, after ScoreMatch succeeds, so subsequent reads
+// within the same Redis cluster see fresh point totals without waiting for
+// natural TTL expiry.
+//
+// Implementations must be non-fatal: cache errors must be logged and swallowed,
+// never returned, because scoring has already committed and a brief period of
+// stale cache is preferable to blocking the event pipeline.
+type PostScoringInvalidator interface {
+	InvalidateAfterScoring(ctx context.Context, quinielaIDs []int)
+}
+
 // PostScoringCacheFlush implements PostScoringInvalidator using a cache.Store.
 // It is intended for the scoring worker, which runs in a separate process from
 // the API server and therefore cannot call the API server's in-process cache

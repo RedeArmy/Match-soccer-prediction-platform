@@ -13,9 +13,30 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// BankTransferService manages the upload-and-review lifecycle for Guatemalan
+// bank transfer proofs.
+//
+// Upload stores the file metadata in the database (the caller has already
+// written the bytes to the FileStore). ApproveTransfer atomically marks the
+// proof as approved and credits the user's balance.
+type BankTransferService interface {
+	// Upload creates a pending proof record.
+	Upload(ctx context.Context, userID, amountCents int, currency, storageKey, contentType string, fileSize int) (*domain.BankTransferProof, error)
+	// GetByID returns the proof or nil when not found.
+	GetByID(ctx context.Context, id int) (*domain.BankTransferProof, error)
+	// ListByUser returns all proofs for a user.
+	ListByUser(ctx context.Context, userID int) ([]*domain.BankTransferProof, error)
+	// ListPending returns all pending proofs for admin review.
+	ListPending(ctx context.Context) ([]*domain.BankTransferProof, error)
+	// ApproveTransfer atomically approves the proof and credits the user's balance.
+	ApproveTransfer(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error)
+	// RejectTransfer transitions a pending proof to rejected.
+	RejectTransfer(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error)
+}
+
 type bankTransferService struct {
 	proofRepo    repository.BankTransferProofRepository
-	outboxWriter *outbox.Writer
+	outboxWriter outbox.Writer
 	audit        AuditLogger
 	log          *zap.Logger
 }
@@ -23,7 +44,7 @@ type bankTransferService struct {
 // NewBankTransferService constructs a BankTransferService.
 func NewBankTransferService(
 	proofRepo repository.BankTransferProofRepository,
-	outboxWriter *outbox.Writer,
+	outboxWriter outbox.Writer,
 	audit AuditLogger,
 	log *zap.Logger,
 ) BankTransferService {

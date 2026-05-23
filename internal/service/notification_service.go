@@ -6,6 +6,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// Notifier dispatches notifications in response to domain events.
+//
+// Notify is a fire-and-forget operation: failures are logged but not returned
+// to the caller because notification delivery is best-effort and must not
+// block or fail the primary operation that triggered the event.
+type Notifier interface {
+	Notify(ctx context.Context, userID int, message string) error
+}
+
 // notificationService is the concrete implementation of Notifier.
 //
 // The current implementation is a no-op logger stub. It satisfies the

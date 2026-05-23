@@ -31,6 +31,55 @@ func (e *cacheEntry) valid() bool {
 	return time.Now().Before(e.expiresAt)
 }
 
+// MutationHookRegisterer is an optional extension of SystemParamService that
+// allows callers to register post-mutation callbacks. Each hook is called
+// synchronously after a successful Set or BulkSet for the matching key, and
+// after the in-process cache has been evicted. Wiring code uses a type
+// assertion to check for support; the hook is silently skipped on
+// implementations that do not implement this interface.
+type MutationHookRegisterer interface {
+	RegisterMutationHook(key string, fn func(ctx context.Context))
+}
+
+// SystemParamService provides typed, cached access to runtime-configurable
+// key-value settings stored in the system_params table.
+//
+// All Get* helpers return a typed value and fall back to their defaultVal
+// argument when the key is absent or the stored string cannot be parsed.
+// This means callers never receive an error from a missing param - the domain
+// constant is always the fallback, so the system degrades gracefully.
+//
+// Set invalidates the in-memory cache entry for the affected key immediately,
+// guaranteeing that the next read within the same process sees the new value.
+type SystemParamService interface {
+	Get(ctx context.Context, key string) (*domain.SystemParam, error)
+	GetAll(ctx context.Context) ([]*domain.SystemParam, error)
+	GetByCategory(ctx context.Context, cat string) ([]*domain.SystemParam, error)
+	Set(ctx context.Context, key, value string, actorID int) (*domain.SystemParam, error)
+	// GetString returns the raw string value, falling back to defaultVal.
+	GetString(ctx context.Context, key, defaultVal string) string
+	// GetInt parses the value as a base-10 integer, falling back to defaultVal.
+	GetInt(ctx context.Context, key string, defaultVal int) int
+	// GetDuration parses the value as a time.Duration string (e.g. "5m"),
+	// falling back to defaultVal.
+	GetDuration(ctx context.Context, key string, defaultVal time.Duration) time.Duration
+	// GetBool parses the value as a boolean, falling back to defaultVal.
+	GetBool(ctx context.Context, key string, defaultVal bool) bool
+	// BulkSet updates multiple parameters in a single repository call.
+	// Each key-value pair is upserted atomically. actorID is recorded as
+	// the editor for the audit trail.
+	BulkSet(ctx context.Context, params map[string]string, actorID int) error
+	// ResetToDefault restores the operational value of key to the immutable
+	// default_value set by the seeding migration. The cache entry is evicted
+	// and any registered mutation hooks are fired, identical to Set.
+	// Returns ErrNotFound when key does not exist.
+	ResetToDefault(ctx context.Context, key string, actorID int) (*domain.SystemParam, error)
+	// GetHistory returns the mutation history for key in reverse-chronological
+	// order with cursor-based pagination. Returns an empty slice when no history
+	// repository is wired (WithParamHistory was not used at construction).
+	GetHistory(ctx context.Context, key string, p repository.CursorPage) ([]*domain.SystemParamHistory, string, error)
+}
+
 // systemParamService is the concrete implementation of SystemParamService.
 // All reads go through an in-memory cache. is_runtime = TRUE params use a
 // shorter 30 s TTL so runtime changes propagate within one cache window per

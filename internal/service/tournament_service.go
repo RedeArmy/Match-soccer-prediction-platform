@@ -11,6 +11,31 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// TournamentService manages real-time group standings and bracket slot
+// administration for the FIFA World Cup.
+//
+// GetAllStandings and GetGroupStanding compute standings in real time from
+// finished group-stage matches; no separate persistence is needed.
+//
+// CreateSlot and ConfirmSlot are admin-only operations gated by RequireRole
+// middleware. Slots represent named bracket positions (e.g. "winner_group_a")
+// that the admin fills in once FIFA announces team advancement.
+type TournamentService interface {
+	// GetAllStandings returns standings for every group keyed by group label.
+	GetAllStandings(ctx context.Context) (map[string][]*domain.GroupStanding, error)
+	// GetGroupStanding returns standings for a single group.
+	// Returns Validation when group is empty; NotFound when the group has no matches.
+	GetGroupStanding(ctx context.Context, group string) ([]*domain.GroupStanding, error)
+	// CreateSlot creates a new named bracket position. label must be unique.
+	// Returns Validation when label is empty.
+	CreateSlot(ctx context.Context, label string) (*domain.TournamentSlot, error)
+	// ConfirmSlot sets the advancing team for the given slot.
+	// Returns Validation when team is empty; NotFound when the slot does not exist.
+	ConfirmSlot(ctx context.Context, slotID, adminID int, team string) (*domain.TournamentSlot, error)
+	// ListSlots returns all bracket position slots.
+	ListSlots(ctx context.Context) ([]*domain.TournamentSlot, error)
+}
+
 // tournamentService is the concrete implementation of TournamentService.
 type tournamentService struct {
 	matchRepo      repository.MatchRepository

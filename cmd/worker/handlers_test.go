@@ -339,12 +339,10 @@ func TestPostScoringWork_SnapshotSuccess_LogsInfo(t *testing.T) {
 }
 
 func TestPostScoringWork_SnapshotError_LogsWarn(t *testing.T) {
-	snapshotRetryBase = 0
-	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
-
 	predRepo := &stubWorkerPredRepo{ids: []int{10}}
 	snap := &stubSnapshotter{err: errors.New("snapshot failed")}
-	postScoringWork(context.Background(), 5, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
+	cfg := snapshotConfig{retryBase: 0, maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts, concurrency: 1}
+	postScoringWork(context.Background(), 5, postScoringDeps{snapshotter: snap, predRepo: predRepo, snapshot: cfg}, zap.NewNop())
 }
 
 func TestPostScoringWork_CallsInvalidators(t *testing.T) {
@@ -374,11 +372,9 @@ func TestMatchFinishedHandler_WithSnapshot_ScoresAndSnapshots(t *testing.T) {
 // ── retrySnapshot ─────────────────────────────────────────────────────────────
 
 func TestRetrySnapshot_FirstAttemptSucceeds_CalledOnce(t *testing.T) {
-	snapshotRetryBase = 0
-	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
-
 	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
-	retrySnapshot(context.Background(), 5, 10, snap, zap.NewNop())
+	cfg := snapshotConfig{retryBase: 0, maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts}
+	retrySnapshot(context.Background(), 5, 10, snap, cfg, zap.NewNop())
 
 	if snap.calls != 1 {
 		t.Errorf("expected 1 call on immediate success, got %d", snap.calls)
@@ -386,15 +382,13 @@ func TestRetrySnapshot_FirstAttemptSucceeds_CalledOnce(t *testing.T) {
 }
 
 func TestRetrySnapshot_SucceedsOnSecondAttempt_RetriesOnce(t *testing.T) {
-	snapshotRetryBase = 0
-	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
-
 	snap := &countingSnapshotter{
 		succeedAt: 2,
 		snap:      &domain.LeaderboardSnapshot{ID: 1},
 		err:       errors.New("transient"),
 	}
-	retrySnapshot(context.Background(), 5, 10, snap, zap.NewNop())
+	cfg := snapshotConfig{retryBase: 0, maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts}
+	retrySnapshot(context.Background(), 5, 10, snap, cfg, zap.NewNop())
 
 	if snap.calls != 2 {
 		t.Errorf("expected 2 calls (1 fail + 1 success), got %d", snap.calls)
@@ -402,26 +396,22 @@ func TestRetrySnapshot_SucceedsOnSecondAttempt_RetriesOnce(t *testing.T) {
 }
 
 func TestRetrySnapshot_AllAttemptsFail_LogsAndReturns(t *testing.T) {
-	snapshotRetryBase = 0
-	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
-
 	snap := &countingSnapshotter{succeedAt: 0, err: errors.New("db down")}
-	retrySnapshot(context.Background(), 5, 10, snap, zap.NewNop())
+	cfg := snapshotConfig{retryBase: 0, maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts}
+	retrySnapshot(context.Background(), 5, 10, snap, cfg, zap.NewNop())
 
-	if snap.calls != maxSnapshotAttempts {
-		t.Errorf("expected %d calls on total failure, got %d", maxSnapshotAttempts, snap.calls)
+	if snap.calls != domain.DefaultWorkerSnapshotMaxAttempts {
+		t.Errorf("expected %d calls on total failure, got %d", domain.DefaultWorkerSnapshotMaxAttempts, snap.calls)
 	}
 }
 
 func TestRetrySnapshot_ContextCancelled_StopsEarly(t *testing.T) {
-	snapshotRetryBase = time.Hour // would block forever without context cancellation
-	t.Cleanup(func() { snapshotRetryBase = 100 * time.Millisecond })
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancelled
 
 	snap := &countingSnapshotter{succeedAt: 0, err: errors.New("transient")}
-	retrySnapshot(ctx, 5, 10, snap, zap.NewNop())
+	cfg := snapshotConfig{retryBase: time.Hour, maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts}
+	retrySnapshot(ctx, 5, 10, snap, cfg, zap.NewNop())
 
 	// First attempt always runs; retry sleep is skipped because ctx is done.
 	if snap.calls < 1 {
@@ -468,25 +458,19 @@ func (s *countingSnapshotter) SnapshotForMatch(_ context.Context, _, _ int) (*do
 // ── snapshotSem (global weighted semaphore) ───────────────────────────────────
 
 func TestPostScoringWork_WithSemaphore_SnapshotsAllQuinielas(t *testing.T) {
-	old := snapshotSem
-	snapshotSem = &localSnapshotSem{semaphore.NewWeighted(2)}
-	t.Cleanup(func() { snapshotSem = old })
-
-	oldBase := snapshotRetryBase
-	snapshotRetryBase = 0
-	t.Cleanup(func() { snapshotRetryBase = oldBase })
-
 	predRepo := &stubWorkerPredRepo{ids: []int{1, 2, 3}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	postScoringWork(context.Background(), 5, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
+	cfg := snapshotConfig{
+		sem:         &localSnapshotSem{semaphore.NewWeighted(2)},
+		retryBase:   0,
+		maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts,
+		concurrency: 4,
+	}
+	postScoringWork(context.Background(), 5, postScoringDeps{snapshotter: snap, predRepo: predRepo, snapshot: cfg}, zap.NewNop())
 	// All 3 quinielas must be snapshotted despite the semaphore limiting concurrency to 2.
 }
 
 func TestPostScoringWork_WithSemaphore_ContextCancelled_SkipsSnapshot(t *testing.T) {
-	old := snapshotSem
-	snapshotSem = &localSnapshotSem{semaphore.NewWeighted(1)}
-	t.Cleanup(func() { snapshotSem = old })
-
 	// Pre-cancel the context so gctx (derived inside postScoringWork) is
 	// immediately cancelled; snapshotSem.Acquire(gctx, 1) then returns
 	// context.Canceled and the goroutine exits via the "return nil" path.
@@ -495,7 +479,12 @@ func TestPostScoringWork_WithSemaphore_ContextCancelled_SkipsSnapshot(t *testing
 
 	predRepo := &stubWorkerPredRepo{ids: []int{10, 20}}
 	snap := &countingSnapshotter{succeedAt: 0, err: errors.New("should not reach")}
-	postScoringWork(ctx, 5, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
+	cfg := snapshotConfig{
+		sem:         &localSnapshotSem{semaphore.NewWeighted(1)},
+		maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts,
+		concurrency: 4,
+	}
+	postScoringWork(ctx, 5, postScoringDeps{snapshotter: snap, predRepo: predRepo, snapshot: cfg}, zap.NewNop())
 	if snap.calls != 0 {
 		t.Errorf("SnapshotForMatch calls: got %d; want 0 (context cancelled before acquire)", snap.calls)
 	}
@@ -532,7 +521,8 @@ func (l acquireFailUnlockLocker) Unlock(_ context.Context, _, _ int) error { ret
 
 func TestRunSnapshot_NilLocker_RunsSnapshot(t *testing.T) {
 	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
-	runSnapshot(context.Background(), 5, 10, snap, nil, zap.NewNop())
+	cfg := snapshotConfig{maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts}
+	runSnapshot(context.Background(), 5, 10, snap, nil, cfg, zap.NewNop())
 	if snap.calls != 1 {
 		t.Errorf("expected 1 snapshot call with nil locker, got %d", snap.calls)
 	}
@@ -542,7 +532,8 @@ func TestRunSnapshot_LockError_DegradesToLocalAndRunsSnapshot(t *testing.T) {
 	// A TryLock error must degrade gracefully: log a warning and still run the
 	// snapshot under the in-process semaphore (best-effort distributed lock).
 	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
-	runSnapshot(context.Background(), 5, 10, snap, errorLocker{err: errors.New("redis down")}, zap.NewNop())
+	cfg := snapshotConfig{maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts}
+	runSnapshot(context.Background(), 5, 10, snap, errorLocker{err: errors.New("redis down")}, cfg, zap.NewNop())
 	if snap.calls != 1 {
 		t.Errorf("expected 1 snapshot call when lock fails, got %d", snap.calls)
 	}
@@ -551,7 +542,8 @@ func TestRunSnapshot_LockError_DegradesToLocalAndRunsSnapshot(t *testing.T) {
 func TestRunSnapshot_LockNotAcquired_SkipsSnapshot(t *testing.T) {
 	// Another replica holds the lock; this replica must not run the snapshot.
 	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
-	runSnapshot(context.Background(), 5, 10, snap, refuseLocker{}, zap.NewNop())
+	cfg := snapshotConfig{maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts}
+	runSnapshot(context.Background(), 5, 10, snap, refuseLocker{}, cfg, zap.NewNop())
 	if snap.calls != 0 {
 		t.Errorf("expected 0 snapshot calls when lock refused, got %d", snap.calls)
 	}
@@ -562,7 +554,8 @@ func TestRunSnapshot_UnlockFails_SnapshotStillRuns(t *testing.T) {
 	// because scoring already committed before runSnapshot was called.
 	snap := &countingSnapshotter{succeedAt: 1, snap: &domain.LeaderboardSnapshot{ID: 1}}
 	locker := acquireFailUnlockLocker{unlockErr: errors.New("redis del failed")}
-	runSnapshot(context.Background(), 5, 10, snap, locker, zap.NewNop())
+	cfg := snapshotConfig{maxAttempts: domain.DefaultWorkerSnapshotMaxAttempts}
+	runSnapshot(context.Background(), 5, 10, snap, locker, cfg, zap.NewNop())
 	if snap.calls != 1 {
 		t.Errorf("expected 1 snapshot call when unlock fails, got %d", snap.calls)
 	}

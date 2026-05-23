@@ -9,7 +9,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
-	"github.com/rede/world-cup-quiniela/pkg/codegen"
+	"github.com/rede/world-cup-quiniela/pkg/randcode"
 )
 
 const (
@@ -220,7 +220,7 @@ func newGroupAuthz(mr repository.GroupMembershipRepository) GroupAuthz {
 // ── QuinielaService tests ─────────────────────────────────────────────────────
 
 func newQuinielaSvc(qr *stubQuinielaRepo, authz GroupAuthz) QuinielaService {
-	return NewQuinielaService(qr, authz, &noopSystemParamService{}, &noopAuditLogger{}, codegen.Fixed{Code: "AAAAAAAAAA"})
+	return NewQuinielaService(qr, authz, &noopSystemParamService{}, &noopAuditLogger{}, randcode.Fixed{Code: "AAAAAAAAAA"})
 }
 
 func TestQuinielaService_Create_ValidQuiniela_ReturnsNil(t *testing.T) {
