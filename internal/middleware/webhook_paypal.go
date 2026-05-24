@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -49,7 +50,10 @@ func DefaultPayPalCertFetcher() CertFetcher {
 }
 
 var defaultPayPalFetcher = &cachedCertFetcher{
-	client: &http.Client{Timeout: 10 * time.Second},
+	client: &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	},
 }
 
 type cachedCertFetcher struct {

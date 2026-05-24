@@ -17,12 +17,17 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // ParamReader is the subset of SystemParamService consumed by AdminDispatcher.
@@ -83,7 +88,10 @@ func NewAdminDispatcher(cfg Config) *AdminDispatcher {
 		fromAddr:   cfg.FromAddr,
 		n8nURL:     cfg.N8nURL,
 		n8nSecret:  cfg.N8nSecret,
-		httpClient: &http.Client{Timeout: 5 * time.Second},
+		httpClient: &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 		log:        cfg.Log,
 		renderFn:   renderEmail,
 	}
@@ -91,14 +99,23 @@ func NewAdminDispatcher(cfg Config) *AdminDispatcher {
 
 // Dispatch implements outbox.Dispatcher.
 func (d *AdminDispatcher) Dispatch(ctx context.Context, entry *notification.OutboxEntry) error {
+	ctx, span := otel.Tracer("dispatcher").Start(ctx, "dispatcher.admin.dispatch")
+	span.SetAttributes(
+		attribute.String("event_type", string(entry.EventType)),
+		attribute.Int64("outbox_id", entry.ID),
+	)
+	defer span.End()
+
 	if !notification.IsAdminEvent(entry.EventType) {
 		// Phase 2 will handle user-facing events (push, in-app, SSE).
 		return nil
 	}
 
 	log := d.log.With(
-		zap.Int64("outbox_id", entry.ID),
-		zap.String("event_type", string(entry.EventType)),
+		append([]zap.Field{
+			zap.Int64("outbox_id", entry.ID),
+			zap.String("event_type", string(entry.EventType)),
+		}, tracing.LogFields(ctx)...)...,
 	)
 
 	recipients := d.resolveRecipients(ctx)
@@ -138,6 +155,8 @@ func (d *AdminDispatcher) Dispatch(ctx context.Context, entry *notification.Outb
 	d.writeLog(ctx, entry, recipients, subject, msgID, sendErr)
 
 	if sendErr != nil {
+		span.RecordError(sendErr)
+		span.SetStatus(codes.Error, "email delivery failed")
 		d.writeDLQ(ctx, entry, sendErr)
 		log.Error("admin email delivery failed",
 			zap.Strings("recipients", recipients),

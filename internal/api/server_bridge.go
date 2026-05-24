@@ -89,7 +89,7 @@ func (s *Server) listenAndBridge(ctx context.Context) error {
 			continue
 		}
 
-		s.notifHub.Broadcast(p.UserID, hub.Notification{
+		s.notifHub.Broadcast(ctx, p.UserID, hub.Notification{
 			ID:        p.ID,
 			UserID:    p.UserID,
 			EventType: p.EventType,
@@ -157,7 +157,7 @@ func (s *Server) runRedisBridge(ctx context.Context, rc redis.UniversalClient) {
 				s.log.Warn("redis bridge: failed to parse payload", zap.Error(err))
 				continue
 			}
-			s.notifHub.Broadcast(p.UserID, hub.Notification{
+			s.notifHub.Broadcast(ctx, p.UserID, hub.Notification{
 				ID:        p.ID,
 				UserID:    p.UserID,
 				EventType: p.EventType,
