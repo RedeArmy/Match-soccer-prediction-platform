@@ -99,4 +99,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("tracing.serviceName", "world-cup-quiniela")
 	v.SetDefault("tracing.serviceVersion", "1.0.0")
 	v.SetDefault("tracing.sampleRate", 1.0)
+
+	// metrics is disabled by default so development environments start
+	// without a Prometheus registry. Set WCQ_METRICS_ENABLED=true to
+	// expose /metrics for Prometheus scraping in production.
+	v.SetDefault("metrics.enabled", false)
+	v.SetDefault("metrics.namespace", "wcq")
 }

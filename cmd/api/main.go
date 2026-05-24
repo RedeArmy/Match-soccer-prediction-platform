@@ -109,6 +109,18 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		}
 	}()
 
+	metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
+	if err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := shutdownMetrics(flushCtx); err != nil {
+			log.Sugar().Warnf("metrics flush: %v", err)
+		}
+	}()
+
 	// The database connection is treated as optional at startup intentionally.
 	// The /health endpoint must remain reachable even when the database is
 	// temporarily unavailable - a common situation during rolling deployments
@@ -178,6 +190,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// Routes()) when Redis is not configured.
 	if rc != nil {
 		app.SetIdempotencyStore(idempotency.NewRedisStore(rc))
+	}
+
+	// Wire the /metrics endpoint when Prometheus metrics are enabled.
+	// When disabled, metricsHandler is nil and SetMetricsHandler is a no-op.
+	if metricsHandler != nil {
+		app.SetMetricsHandler(metricsHandler)
 	}
 
 	// setupCtx is context.WithoutCancel(ctx): OTel trace values are propagated

@@ -171,14 +171,14 @@ func TestHandleReadiness_NoCheckers_Returns200(t *testing.T) {
 // ── newHealthServer ───────────────────────────────────────────────────────────
 
 func TestNewHealthServer_HasCorrectAddr(t *testing.T) {
-	srv := newHealthServer("8081", nil, zap.NewNop())
+	srv := newHealthServer("8081", nil, nil, zap.NewNop())
 	if srv.Addr != ":8081" {
 		t.Errorf("expected Addr=:8081, got %q", srv.Addr)
 	}
 }
 
 func TestNewHealthServer_RegistersRoutes(t *testing.T) {
-	srv := newHealthServer("0", []health.Checker{&okChecker{checkerDB}}, zap.NewNop())
+	srv := newHealthServer("0", []health.Checker{&okChecker{checkerDB}}, nil, zap.NewNop())
 
 	cases := []struct {
 		path string

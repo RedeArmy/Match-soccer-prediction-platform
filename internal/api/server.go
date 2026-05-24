@@ -66,6 +66,10 @@ type Server struct {
 	// idemStore is the idempotency backing store. When non-nil (Redis available),
 	// reservations are shared across all replicas. Falls back to MemoryStore when nil.
 	idemStore idempotency.Store
+	// metricsHandler serves the Prometheus /metrics scrape endpoint. Nil when
+	// metrics are disabled (WCQ_METRICS_ENABLED=false); Routes() registers the
+	// endpoint only when non-nil.
+	metricsHandler http.Handler
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
@@ -85,6 +89,11 @@ func (s *Server) SetLimiterStore(store *middleware.LimiterStore) { s.limiterStor
 // (used when this method is never called) is only safe for single-process
 // deployments.
 func (s *Server) SetIdempotencyStore(store idempotency.Store) { s.idemStore = store }
+
+// SetMetricsHandler registers the Prometheus /metrics scrape handler. Call
+// this before Routes() so the endpoint is included in the routing table.
+// When handler is nil (metrics disabled) /metrics is not registered.
+func (s *Server) SetMetricsHandler(handler http.Handler) { s.metricsHandler = handler }
 
 // DrainAudit blocks until all in-flight audit log writes complete. Must be
 // called during graceful shutdown before closing the database connection pool

@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +24,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/migrations"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/metrics"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
@@ -55,6 +57,30 @@ func setupTracing(ctx context.Context, cfg *config.Config, log *zap.Logger) (fun
 		log.Info("tracing disabled (noop provider)")
 	}
 	return shutdown, nil
+}
+
+// setupMetrics initialises the global OTel MeterProvider backed by a Prometheus
+// exporter and returns the /metrics HTTP handler and a shutdown function.
+//
+// When metrics are disabled (cfg.Metrics.Enabled == false) the function installs
+// a noop MeterProvider and returns a nil handler — no Prometheus registry is
+// created and no /metrics route is registered.
+func setupMetrics(cfg *config.Config, log *zap.Logger) (http.Handler, func(context.Context) error, error) {
+	_, handler, shutdown, err := metrics.Setup(metrics.Config{
+		Enabled:   cfg.Metrics.Enabled,
+		Namespace: cfg.Metrics.Namespace,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("metrics: %w", err)
+	}
+	if cfg.Metrics.Enabled {
+		log.Info("metrics enabled",
+			zap.String("namespace", cfg.Metrics.Namespace),
+		)
+	} else {
+		log.Info("metrics disabled (noop provider)")
+	}
+	return handler, shutdown, nil
 }
 
 // setupEventBus constructs the appropriate events.Bus implementation based on
