@@ -34,10 +34,10 @@ type paymentObservabilityNotifier interface {
 // the request reached this handler without passing through the auth middleware,
 // which is treated as unauthorised.
 type PaymentWebhookHandler struct {
-	svc              service.WebhookPaymentService
-	log              *zap.Logger
-	notifier         paymentObservabilityNotifier // nil = disabled
-	paymentDuration  metric.Float64Histogram      // nil when not registered
+	svc             service.WebhookPaymentService
+	log             *zap.Logger
+	notifier        paymentObservabilityNotifier // nil = disabled
+	paymentDuration metric.Float64Histogram      // nil when not registered
 }
 
 // NewPaymentWebhookHandler constructs a PaymentWebhookHandler.
@@ -64,7 +64,10 @@ func (h *PaymentWebhookHandler) RegisterMetrics(meter metric.Meter) error {
 			0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1, 2.5, 5,
 		),
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("register payment histogram: %w", err)
+	}
+	return nil
 }
 
 // recurrentePaymentData holds the payment object nested inside a Recurrente event.

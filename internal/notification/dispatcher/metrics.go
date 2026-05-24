@@ -8,10 +8,10 @@ import (
 // and AdminDispatcher.  All fields are nil when RegisterMetrics has not been
 // called, so every call site guards with an existence check.
 type dispatcherInstruments struct {
-	events   metric.Int64Counter       // dispatcher_events_total
-	duration metric.Float64Histogram   // dispatcher_dispatch_duration_seconds
-	emails   metric.Int64Counter       // email_deliveries_total
-	pushes   metric.Int64Counter       // push_notifications_total (user only)
+	events   metric.Int64Counter     // dispatcher_events_total
+	duration metric.Float64Histogram // dispatcher_dispatch_duration_seconds
+	emails   metric.Int64Counter     // email_deliveries_total
+	pushes   metric.Int64Counter     // push_notifications_total (user only)
 }
 
 // newDispatcherInstruments allocates all instruments against meter.

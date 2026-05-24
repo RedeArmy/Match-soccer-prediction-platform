@@ -11,6 +11,31 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 )
 
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+// assertFloat64GaugeAllEqual fails if any data point of the named gauge in rm
+// differs from want. Extracted to keep individual test bodies below the
+// gocognit threshold.
+func assertFloat64GaugeAllEqual(t *testing.T, rm metricdata.ResourceMetrics, name string, want float64) {
+	t.Helper()
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != name {
+				continue
+			}
+			gd, ok := m.Data.(metricdata.Gauge[float64])
+			if !ok {
+				continue
+			}
+			for _, dp := range gd.DataPoints {
+				if dp.Value != want {
+					t.Errorf("%s: expected %v, got %v", name, want, dp.Value)
+				}
+			}
+		}
+	}
+}
+
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type stubDLQDepthReader struct {
@@ -177,19 +202,7 @@ func TestRegisterOldestPendingAgeGauge_EmptyQueue_ReturnsZero(t *testing.T) {
 	if err := reader.Collect(ctx, &rm); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	for _, sm := range rm.ScopeMetrics {
-		for _, m := range sm.Metrics {
-			if m.Name == "outbox.oldest_pending_age_seconds" {
-				if gd, ok := m.Data.(metricdata.Gauge[float64]); ok {
-					for _, dp := range gd.DataPoints {
-						if dp.Value != 0 {
-							t.Errorf("empty queue: expected age=0, got %v", dp.Value)
-						}
-					}
-				}
-			}
-		}
-	}
+	assertFloat64GaugeAllEqual(t, rm, "outbox.oldest_pending_age_seconds", 0)
 }
 
 // ── RegisterPendingGauge ──────────────────────────────────────────────────────

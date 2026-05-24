@@ -10,6 +10,36 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/breaker"
 )
 
+// collectBreakerStates reads the circuit_breaker.state gauge and returns a
+// map of backend name → state value. Extracted to keep test bodies flat.
+func collectBreakerStates(t *testing.T, reader sdkmetric.Reader) map[string]float64 {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("collect metrics: %v", err)
+	}
+	vals := map[string]float64{}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "circuit_breaker.state" {
+				continue
+			}
+			gd, ok := m.Data.(metricdata.Gauge[float64])
+			if !ok {
+				continue
+			}
+			for _, dp := range gd.DataPoints {
+				for _, attr := range dp.Attributes.ToSlice() {
+					if string(attr.Key) == "backend" {
+						vals[attr.Value.AsString()] = dp.Value
+					}
+				}
+			}
+		}
+	}
+	return vals
+}
+
 func TestRegisterGauge_ReportsCorrectState(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
@@ -21,33 +51,8 @@ func TestRegisterGauge_ReportsCorrectState(t *testing.T) {
 		t.Fatalf("RegisterGauge: %v", err)
 	}
 
-	collect := func() map[string]float64 {
-		var rm metricdata.ResourceMetrics
-		if err := reader.Collect(context.Background(), &rm); err != nil {
-			t.Fatalf("collect metrics: %v", err)
-		}
-		vals := map[string]float64{}
-		for _, sm := range rm.ScopeMetrics {
-			for _, m := range sm.Metrics {
-				if m.Name != "circuit_breaker.state" {
-					continue
-				}
-				if gd, ok := m.Data.(metricdata.Gauge[float64]); ok {
-					for _, dp := range gd.DataPoints {
-						for _, attr := range dp.Attributes.ToSlice() {
-							if string(attr.Key) == "backend" {
-								vals[attr.Value.AsString()] = dp.Value
-							}
-						}
-					}
-				}
-			}
-		}
-		return vals
-	}
-
 	// Closed state (0).
-	vals := collect()
+	vals := collectBreakerStates(t, reader)
 	if got := vals["db"]; got != float64(breaker.StateClosed) {
 		t.Errorf("closed state: got %v; want %v", got, float64(breaker.StateClosed))
 	}
@@ -56,7 +61,7 @@ func TestRegisterGauge_ReportsCorrectState(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		_ = b.Call(func() error { return errFake })
 	}
-	vals = collect()
+	vals = collectBreakerStates(t, reader)
 	if got := vals["db"]; got != float64(breaker.StateOpen) {
 		t.Errorf("open state: got %v; want %v", got, float64(breaker.StateOpen))
 	}

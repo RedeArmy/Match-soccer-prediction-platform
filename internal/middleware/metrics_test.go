@@ -38,6 +38,42 @@ func newMeterProvider(t *testing.T) (*sdkmetric.MeterProvider, sdkmetric.Reader)
 	return mp, reader
 }
 
+// assertNoRawRoutes fails the test if any http.route attribute in the collected
+// request duration histogram equals one of the forbidden raw-path values. Used
+// to verify that the middleware substitutes the chi route template for the URL.
+func assertNoRawRoutes(t *testing.T, rm metricdata.ResourceMetrics, forbidden ...string) {
+	t.Helper()
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "http.server.request.duration" {
+				continue
+			}
+			histo, ok := m.Data.(metricdata.Histogram[float64])
+			if !ok {
+				t.Fatal("expected Histogram[float64] data")
+			}
+			checkHistoRoutes(t, histo, forbidden)
+		}
+	}
+}
+
+func checkHistoRoutes(t *testing.T, histo metricdata.Histogram[float64], forbidden []string) {
+	t.Helper()
+	for _, dp := range histo.DataPoints {
+		for _, kv := range dp.Attributes.ToSlice() {
+			if string(kv.Key) != "http.route" {
+				continue
+			}
+			got := kv.Value.AsString()
+			for _, f := range forbidden {
+				if got == f {
+					t.Errorf("http.route should be route template, got raw path %q", got)
+				}
+			}
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -140,27 +176,7 @@ func TestNewMetrics_UsesChiRoutePattern(t *testing.T) {
 		t.Fatalf("collect: %v", err)
 	}
 
-	for _, sm := range rm.ScopeMetrics {
-		for _, m := range sm.Metrics {
-			if m.Name != "http.server.request.duration" {
-				continue
-			}
-			histo, ok := m.Data.(metricdata.Histogram[float64])
-			if !ok {
-				t.Fatal("expected Histogram[float64] data")
-			}
-			for _, dp := range histo.DataPoints {
-				for _, kv := range dp.Attributes.ToSlice() {
-					if string(kv.Key) == "http.route" {
-						got := kv.Value.AsString()
-						if got == "/items/1" || got == "/items/9999" {
-							t.Errorf("http.route should be template, got raw path %q", got)
-						}
-					}
-				}
-			}
-		}
-	}
+	assertNoRawRoutes(t, rm, "/items/1", "/items/9999")
 }
 
 // TestNewMetrics_FallsBackToRawPath verifies that when there is no chi context
