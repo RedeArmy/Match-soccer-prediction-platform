@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"go.uber.org/zap"
@@ -92,6 +93,26 @@ func TestSetupDB_InvalidDSN_ReturnsError(t *testing.T) {
 	_, err := setupDB(context.Background(), cfg, zap.NewNop())
 	if err == nil {
 		t.Fatal("expected error for invalid DSN, got nil")
+	}
+}
+
+// ── setupMetrics ──────────────────────────────────────────────────────────────
+
+func TestSetupMetrics_Enabled_LogsAndReturnsHandler(t *testing.T) {
+	cfg := &config.Config{Metrics: config.MetricsConfig{Enabled: true, Namespace: "test_setup_worker"}}
+
+	handler, shutdown, err := setupMetrics(cfg, zap.NewNop())
+
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if handler == nil {
+		t.Fatal("expected non-nil handler when metrics are enabled")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := shutdown(ctx); err != nil {
+		t.Fatalf("shutdown(enabled): %v", err)
 	}
 }
 

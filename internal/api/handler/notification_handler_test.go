@@ -271,7 +271,7 @@ func TestNotifHandler_GetStream_Connected_ReceivesEvent(t *testing.T) {
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		if scanner.Text() == "event: connected" {
-			h.Broadcast(callerID, hub.Notification{ID: 1, Title: "ping"})
+			h.Broadcast(context.Background(), callerID, hub.Notification{ID: 1, Title: "ping"})
 			return
 		}
 	}
@@ -318,7 +318,7 @@ func TestNotifHandler_GetStream_Broadcast_DeliverData(t *testing.T) {
 		line := scanner.Text()
 		if line == "event: connected" {
 			connected = true
-			h.Broadcast(callerID, hub.Notification{ID: 2, Title: "hello"})
+			h.Broadcast(context.Background(), callerID, hub.Notification{ID: 2, Title: "hello"})
 			continue
 		}
 		if connected && strings.HasPrefix(line, "data:") && strings.Contains(line, "hello") {

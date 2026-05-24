@@ -149,6 +149,10 @@ func main() {
 	log, err := logger.New(logger.Config{
 		Level:    cfg.Logger.Level,
 		Encoding: cfg.Logger.Encoding,
+		InitialFields: []zap.Field{
+			zap.String("service", cfg.Tracing.ServiceName+"-worker"),
+			zap.String("env", cfg.Environment),
+		},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger error: %v\n", err)
@@ -185,6 +189,18 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		defer cancel()
 		if err := shutdownTracing(flushCtx); err != nil {
 			log.Sugar().Warnf("tracing flush: %v", err)
+		}
+	}()
+
+	metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
+	if err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := shutdownMetrics(flushCtx); err != nil {
+			log.Sugar().Warnf("metrics flush: %v", err)
 		}
 	}()
 
@@ -447,6 +463,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		snapshotKeepCount:     snapshotKeepLatestCount,
 		rc:                    rc,
 		checkers:              checkers,
+		metricsHandler:        metricsHandler,
 		dlqElection:           dlqElection,
 		outboxRepo:            outboxRepo,
 		outboxDispatcher:      compositeDispatcher,
@@ -543,6 +560,7 @@ type workerDeps struct {
 	snapshotKeepCount     int
 	rc                    *redis.Client
 	checkers              []health.Checker
+	metricsHandler        http.Handler // nil when metrics are disabled
 	dlqElection           election.LeaderElection
 	outboxRepo            outbox.Repository
 	outboxDispatcher      outbox.Dispatcher
@@ -569,7 +587,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		}, log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
-	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, log)
+	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, deps.metricsHandler, log)
 
 	// srvErr receives a non-nil value only when the health server exits with an
 	// unexpected error. Buffered so the goroutine never blocks if startWorker
@@ -777,10 +795,13 @@ func monitorDLQ(ctx context.Context, rc *redis.Client, e election.LeaderElection
 
 // newHealthServer constructs the lightweight HTTP server that exposes liveness
 // and readiness probes for the worker process.
-func newHealthServer(port string, checkers []health.Checker, log *zap.Logger) *http.Server {
+func newHealthServer(port string, checkers []health.Checker, metricsHandler http.Handler, log *zap.Logger) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleLiveness)
 	mux.HandleFunc("/health/ready", health.ReadinessHandler(checkers))
+	if metricsHandler != nil {
+		mux.Handle("/metrics", metricsHandler)
+	}
 
 	return &http.Server{
 		Addr:         ":" + port,

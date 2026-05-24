@@ -15,6 +15,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // userContent holds the rendered title and body for a user-facing notification.
@@ -194,8 +195,10 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 	}
 
 	log := d.log.With(
-		zap.Int64("outbox_id", entry.ID),
-		zap.String("event_type", string(entry.EventType)),
+		append([]zap.Field{
+			zap.Int64("outbox_id", entry.ID),
+			zap.String("event_type", string(entry.EventType)),
+		}, tracing.LogFields(ctx)...)...,
 	)
 
 	if isBroadcastEvent(entry.EventType) {

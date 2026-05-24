@@ -5,9 +5,13 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 const (
@@ -122,15 +126,29 @@ func (w *Worker) poll(ctx context.Context) error {
 
 // process dispatches a single entry and marks it done or retries it.
 func (w *Worker) process(ctx context.Context, entry *notification.OutboxEntry) {
+	ctx, span := otel.Tracer("outbox").Start(ctx, "outbox.process")
+	span.SetAttributes(
+		attribute.String("event_type", string(entry.EventType)),
+		attribute.Int64("outbox_id", entry.ID),
+		attribute.String("aggregate_type", entry.AggregateType),
+		attribute.String("aggregate_id", entry.AggregateID),
+		attribute.Int("attempt", entry.Attempts),
+	)
+	defer span.End()
+
 	log := w.log.With(
-		zap.Int64("outbox_id", entry.ID),
-		zap.String("event_type", string(entry.EventType)),
-		zap.String("aggregate_type", entry.AggregateType),
-		zap.String("aggregate_id", entry.AggregateID),
-		zap.Int("attempt", entry.Attempts),
+		append([]zap.Field{
+			zap.Int64("outbox_id", entry.ID),
+			zap.String("event_type", string(entry.EventType)),
+			zap.String("aggregate_type", entry.AggregateType),
+			zap.String("aggregate_id", entry.AggregateID),
+			zap.Int("attempt", entry.Attempts),
+		}, tracing.LogFields(ctx)...)...,
 	)
 
 	if err := w.dispatcher.Dispatch(ctx, entry); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "dispatch failed")
 		log.Warn("outbox dispatch failed", zap.Error(err))
 		if entry.Attempts >= defaultMaxAttempts {
 			if mfErr := w.repo.MarkFailed(ctx, entry.ID, err.Error()); mfErr != nil {

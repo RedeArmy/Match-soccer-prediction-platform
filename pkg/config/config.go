@@ -28,6 +28,7 @@ type Config struct {
 	Worker      WorkerConfig   `mapstructure:"worker"`
 	Storage     StorageConfig  `mapstructure:"storage"`
 	Tracing     TracingConfig  `mapstructure:"tracing"`
+	Metrics     MetricsConfig  `mapstructure:"metrics"`
 	Email       EmailConfig    `mapstructure:"email"`
 	N8n         N8nConfig      `mapstructure:"n8n"`
 	WebPush     WebPushConfig  `mapstructure:"webPush"`
@@ -338,4 +339,22 @@ type TracingConfig struct {
 	// SampleRate is the fraction of traces to record (0.0–1.0).
 	// Default: 1.0 (record every trace). Reduce for high-traffic production.
 	SampleRate float64 `mapstructure:"sampleRate"`
+}
+
+// MetricsConfig controls Prometheus metrics collection via the OTel SDK.
+//
+// When Enabled is false (the default) a noop MeterProvider is registered:
+// all OTel Meter calls compile and run without side-effects, and no Prometheus
+// registry is created. This is appropriate for local development.
+//
+// For production, set WCQ_METRICS_ENABLED=true. The /metrics endpoint will
+// be registered and Prometheus can scrape it.
+type MetricsConfig struct {
+	// Enabled controls whether the Prometheus exporter is active.
+	// Default: false. Set WCQ_METRICS_ENABLED=true in production.
+	Enabled bool `mapstructure:"enabled"`
+	// Namespace is the metric name prefix applied to all instruments.
+	// Example: "wcq" → "wcq_notification_sse_connections".
+	// Defaults to "wcq" when empty.
+	Namespace string `mapstructure:"namespace"`
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 const (
@@ -146,10 +147,12 @@ func (w *DLQWorker) poll(ctx context.Context) {
 // and increments the attempt counter so the exponential back-off applies.
 func (w *DLQWorker) process(ctx context.Context, entry *domain.NotificationDLQEntry) {
 	log := w.log.With(
-		zap.Int64("dlq_id", entry.ID),
-		zap.String("event_type", entry.EventType),
-		zap.String("channel", entry.Channel),
-		zap.Int("attempts", entry.Attempts),
+		append([]zap.Field{
+			zap.Int64("dlq_id", entry.ID),
+			zap.String("event_type", entry.EventType),
+			zap.String("channel", entry.Channel),
+			zap.Int("attempts", entry.Attempts),
+		}, tracing.LogFields(ctx)...)...,
 	)
 
 	if err := w.writer.Write(
