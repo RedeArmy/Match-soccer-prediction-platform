@@ -420,6 +420,9 @@ func (r *failOnUpdateRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*domai
 func (r *failOnUpdateRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, error) {
 	return nil, nil
 }
+func (r *failOnUpdateRepo) InsertScoringBatch(_ context.Context, _ []domain.PredictionScoreLog) error {
+	return nil
+}
 
 // TestScoreMatch_Idempotent_ReplayProducesSameScores verifies the DLQ-replay
 // safety guarantee: a second call to ScoreMatch for the same match must produce
@@ -456,6 +459,84 @@ func TestScoreMatch_Idempotent_ReplayProducesSameScores(t *testing.T) {
 		if firstRun[p.ID] != *p.Points {
 			t.Errorf("prediction %d: first run=%d replay=%d (not idempotent)", p.ID, firstRun[p.ID], *p.Points)
 		}
+	}
+}
+
+// ── Scoring log ───────────────────────────────────────────────────────────────
+
+// recordingPredRepo extends stubPredRepo to capture InsertScoringBatch calls.
+type recordingPredRepo struct {
+	stubPredRepo
+	logErr  error
+	logRows []domain.PredictionScoreLog
+}
+
+func (r *recordingPredRepo) InsertScoringBatch(_ context.Context, entries []domain.PredictionScoreLog) error {
+	r.logRows = append(r.logRows, entries...)
+	return r.logErr
+}
+
+func TestScoreMatch_WritesAuditLog_AfterSuccessfulScoring(t *testing.T) {
+	home, away := 2, 1
+	match := &domain.Match{
+		ID: 10, Status: domain.MatchStatusFinished,
+		HomeScore: &home, AwayScore: &away, Phase: domain.PhaseGroupStage,
+	}
+	existingPts := 3
+	preds := []*domain.Prediction{
+		{ID: 1, UserID: 7, MatchID: 10, HomeScore: 2, AwayScore: 1, Points: &existingPts}, // re-score: old=3
+		{ID: 2, UserID: 8, MatchID: 10, HomeScore: 0, AwayScore: 0},                       // first score: old=nil
+	}
+	predRepo := &recordingPredRepo{stubPredRepo: stubPredRepo{list: preds}}
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, &stubScoringRuleRepo{}, &noopSystemParamService{}, zap.NewNop())
+
+	if err := svc.ScoreMatch(context.Background(), 10); err != nil {
+		t.Fatalf("ScoreMatch: %v", err)
+	}
+	if len(predRepo.logRows) != 2 {
+		t.Fatalf("expected 2 log rows, got %d", len(predRepo.logRows))
+	}
+
+	// Row for prediction 1: re-score, old_points captured from pred.Points.
+	row1 := predRepo.logRows[0]
+	if row1.PredictionID != 1 {
+		t.Errorf("row[0] prediction_id: got %d, want 1", row1.PredictionID)
+	}
+	if row1.OldPoints == nil || *row1.OldPoints != 3 {
+		t.Errorf("row[0] old_points: got %v, want *3", row1.OldPoints)
+	}
+	if row1.MatchID != 10 {
+		t.Errorf("row[0] match_id: got %d, want 10", row1.MatchID)
+	}
+	if row1.MatchPhase != domain.PhaseGroupStage {
+		t.Errorf("row[0] match_phase: got %q, want group_stage", row1.MatchPhase)
+	}
+
+	// Row for prediction 2: first scoring run, old_points must be nil.
+	row2 := predRepo.logRows[1]
+	if row2.OldPoints != nil {
+		t.Errorf("row[1] old_points: expected nil for first scoring, got %v", row2.OldPoints)
+	}
+}
+
+func TestScoreMatch_LogInsertFailure_ScoringStillSucceeds(t *testing.T) {
+	home, away := 1, 0
+	match := &domain.Match{
+		ID: 5, Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away,
+	}
+	preds := []*domain.Prediction{{ID: 1, UserID: 1, MatchID: 5, HomeScore: 1, AwayScore: 0}}
+	predRepo := &recordingPredRepo{
+		stubPredRepo: stubPredRepo{list: preds},
+		logErr:       errors.New("postgres unavailable"),
+	}
+	svc := NewScoringService(&stubMatchRepo{match: match}, predRepo, &stubScoringRuleRepo{}, &noopSystemParamService{}, zap.NewNop())
+
+	// Scoring must succeed even when the log insert fails.
+	if err := svc.ScoreMatch(context.Background(), 5); err != nil {
+		t.Fatalf("ScoreMatch must not propagate log error, got: %v", err)
+	}
+	if len(predRepo.updated) != 1 {
+		t.Errorf("expected points to be written despite log failure, updated=%d", len(predRepo.updated))
 	}
 }
 

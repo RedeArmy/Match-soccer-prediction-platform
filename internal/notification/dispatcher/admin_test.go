@@ -161,7 +161,7 @@ func TestAdminDispatcher_RenderError_ReturnsError(t *testing.T) {
 	d := newDispatcher(log, "admin@test.com", mailer, logRepo, dlqRepo, "", "")
 
 	renderErr := errors.New("template execution failure")
-	restore := dispatcher.SetRenderEmailFn(func(_ *notification.OutboxEntry) (string, string, error) {
+	restore := dispatcher.SetRenderEmailFn(d, func(_ *notification.OutboxEntry) (string, string, error) {
 		return "", "", renderErr
 	})
 	defer restore()

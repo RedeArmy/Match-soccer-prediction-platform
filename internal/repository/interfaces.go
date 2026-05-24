@@ -179,6 +179,11 @@ type PredictionRepository interface {
 	// GlobalLeaderboard returns the top `limit` users ranked by total scored
 	// points across all quinielas. Used by the admin global leaderboard endpoint.
 	GlobalLeaderboard(ctx context.Context, limit int) ([]*domain.GlobalLeaderboardEntry, error)
+	// InsertScoringBatch writes one audit row to prediction_score_log for each
+	// entry in the slice. All rows are inserted in a single UNNEST statement.
+	// A batch failure is non-fatal: the scoring service logs the error and
+	// proceeds because the score updates have already been committed.
+	InsertScoringBatch(ctx context.Context, entries []domain.PredictionScoreLog) error
 }
 
 // QuinielaRepository defines the persistence operations for the Quiniela

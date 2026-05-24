@@ -85,10 +85,6 @@ var baseTemplate = template.Must(template.New("base").Parse(`<!DOCTYPE html>
 </body>
 </html>`))
 
-// renderEmailFn is the function used to render admin/system email templates.
-// Replaced in tests to inject render failures without depending on broken templates.
-var renderEmailFn = renderEmail
-
 // renderEmail returns the email subject and HTML body for the given outbox entry.
 // For unknown event types a generic template is used so no admin alert is silently dropped.
 func renderEmail(entry *notification.OutboxEntry) (subject, html string, err error) {

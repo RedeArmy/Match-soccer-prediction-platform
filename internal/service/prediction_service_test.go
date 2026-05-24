@@ -98,6 +98,9 @@ func (r *stubPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*domain.Gl
 func (r *stubPredRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, error) {
 	return nil, r.err
 }
+func (r *stubPredRepo) InsertScoringBatch(_ context.Context, _ []domain.PredictionScoreLog) error {
+	return r.err
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

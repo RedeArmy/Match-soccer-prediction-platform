@@ -55,6 +55,7 @@ type AdminDispatcher struct {
 	n8nSecret  string // empty sends unsigned requests (warns at construction)
 	httpClient *http.Client
 	log        *zap.Logger
+	renderFn   func(*notification.OutboxEntry) (string, string, error)
 }
 
 // Config bundles the constructor arguments for AdminDispatcher.
@@ -84,6 +85,7 @@ func NewAdminDispatcher(cfg Config) *AdminDispatcher {
 		n8nSecret:  cfg.N8nSecret,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 		log:        cfg.Log,
+		renderFn:   renderEmail,
 	}
 }
 
@@ -114,7 +116,7 @@ func (d *AdminDispatcher) Dispatch(ctx context.Context, entry *notification.Outb
 	var subject, html string
 	if err := withRenderTimeout(ctx, renderTimeout, func() error {
 		var e error
-		subject, html, e = renderEmailFn(entry)
+		subject, html, e = d.renderFn(entry)
 		return e
 	}); err != nil {
 		log.Error("failed to render admin email template",

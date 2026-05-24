@@ -140,11 +140,66 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 	}
 
 	cfg := s.configForPhase(ctx, match.Phase)
+
+	// Capture the current points before the update so the log can record the
+	// old→new transition. Repositories are not required to preserve the in-memory
+	// slice after an update, so we read the pointers now.
+	oldPts := make(map[int]*int, len(predictions))
+	for _, pred := range predictions {
+		oldPts[pred.ID] = pred.Points
+	}
+
 	points := make(map[int]int, len(predictions))
 	for _, pred := range predictions {
 		points[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore, match.WinMethod, cfg)
 	}
-	return s.predRepo.UpdateManyPoints(ctx, points)
+	if err := s.predRepo.UpdateManyPoints(ctx, points); err != nil {
+		return err
+	}
+	s.writeScoringLog(ctx, predictions, oldPts, points, match, cfg)
+	return nil
+}
+
+// writeScoringLog inserts one audit record per prediction into prediction_score_log.
+// It is called after UpdateManyPoints succeeds; a failure here is logged and
+// swallowed so the scoring outcome is never rolled back for a logging error.
+func (s *scoringService) writeScoringLog(
+	ctx context.Context,
+	predictions []*domain.Prediction,
+	oldPts map[int]*int,
+	newPoints map[int]int,
+	match *domain.Match,
+	cfg scoringConfig,
+) {
+	entries := make([]domain.PredictionScoreLog, 0, len(predictions))
+	for _, pred := range predictions {
+		entries = append(entries, domain.PredictionScoreLog{
+			PredictionID:      pred.ID,
+			MatchID:           pred.MatchID,
+			UserID:            pred.UserID,
+			OldPoints:         oldPts[pred.ID],
+			NewPoints:         newPoints[pred.ID],
+			MatchHomeScore:    *match.HomeScore,
+			MatchAwayScore:    *match.AwayScore,
+			MatchWinMethod:    match.WinMethod,
+			MatchPhase:        match.Phase,
+			PredHomeScore:     pred.HomeScore,
+			PredAwayScore:     pred.AwayScore,
+			PredWinMethod:     pred.PredictedWinMethod,
+			CfgExactScore:     cfg.exactScore,
+			CfgCorrectOutcome: cfg.correctOutcome,
+			CfgGoalDiff:       cfg.goalDifference,
+			CfgExtraTimeBonus: cfg.extraTimeBonus,
+			CfgPenaltiesBonus: cfg.penaltiesBonus,
+		})
+	}
+	if err := s.predRepo.InsertScoringBatch(ctx, entries); err != nil {
+		s.log.Warn("scoring log: batch insert failed (non-fatal)",
+			zap.Int("match_id", match.ID),
+			zap.Int("entry_count", len(entries)),
+			zap.Error(err),
+		)
+	}
 }
 
 // calculatePoints applies the scoring rules from scoringConfig.
