@@ -10,10 +10,11 @@ var EmailBuildersForTest = emailBuilders
 // assert it contains only known EventTypes from the catalog.
 var BroadcastEventsForTest = broadcastEvents
 
-// SetRenderEmailFn replaces the package-level renderEmailFn for the duration
-// of a test. Call the returned restore function in a defer to reset it.
-func SetRenderEmailFn(fn func(*notification.OutboxEntry) (string, string, error)) (restore func()) {
-	prev := renderEmailFn
-	renderEmailFn = fn
-	return func() { renderEmailFn = prev }
+// SetRenderEmailFn replaces the renderFn on d for the duration of a test.
+// Call the returned restore function in a defer to reset it.
+// Per-instance injection eliminates the shared-global race between parallel tests.
+func SetRenderEmailFn(d *AdminDispatcher, fn func(*notification.OutboxEntry) (string, string, error)) (restore func()) {
+	prev := d.renderFn
+	d.renderFn = fn
+	return func() { d.renderFn = prev }
 }
