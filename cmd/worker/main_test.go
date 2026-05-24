@@ -197,6 +197,21 @@ func TestNewHealthServer_RegistersRoutes(t *testing.T) {
 	}
 }
 
+func TestNewHealthServer_WithMetricsHandler_RegistersMetricsRoute(t *testing.T) {
+	stub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := newHealthServer("0", nil, stub, zap.NewNop())
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 from /metrics route, got %d", w.Code)
+	}
+}
+
 // ── run ───────────────────────────────────────────────────────────────────────
 
 func TestRun_EventBusUnreachable_ReturnsError(t *testing.T) {

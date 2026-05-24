@@ -206,6 +206,27 @@ func TestSetupEventBus_RedisCleanupDoubleClose_LogsWarn(t *testing.T) {
 	cleanup() // second call: redisClient.Close() returns error → logs Warn
 }
 
+// ── setupMetrics ──────────────────────────────────────────────────────────────
+
+func TestSetupMetrics_Enabled_LogsAndReturnsHandler(t *testing.T) {
+	log := newTestLogger(t)
+	cfg := &config.Config{Metrics: config.MetricsConfig{Enabled: true, Namespace: "test_setup_api"}}
+
+	handler, shutdown, err := setupMetrics(cfg, log)
+
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if handler == nil {
+		t.Fatal("expected non-nil handler when metrics are enabled")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := shutdown(ctx); err != nil {
+		t.Fatalf("shutdown(enabled): %v", err)
+	}
+}
+
 // ── run ───────────────────────────────────────────────────────────────────────
 
 // TestRun_ImmediateShutdown_ReturnsNil exercises the full startup -> graceful
@@ -310,6 +331,24 @@ func TestRun_PortInUse_ReturnsServerError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "server") {
 		t.Errorf("expected error to mention server, got: %v", err)
+	}
+}
+
+// TestRun_WithMetricsEnabled_ImmediateShutdown covers the metricsHandler != nil
+// branch inside run(): when metrics are enabled, SetMetricsHandler is called
+// to wire the /metrics endpoint.
+func TestRun_WithMetricsEnabled_ImmediateShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: "0"},
+		EventBus: config.EventBusConfig{Driver: "in_memory"},
+		Metrics:  config.MetricsConfig{Enabled: true, Namespace: "test_run_api"},
+	}
+
+	if err := run(ctx, cfg, zap.NewNop()); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
 	}
 }
 
