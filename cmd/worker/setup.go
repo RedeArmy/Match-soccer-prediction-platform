@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
@@ -20,6 +21,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/observability"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/logger"
 	"github.com/rede/world-cup-quiniela/pkg/metrics"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
@@ -58,15 +60,17 @@ func setupTracing(ctx context.Context, cfg *config.Config, log *zap.Logger) (fun
 // setupDB opens a connection pool to the primary PostgreSQL database.
 //
 // setupMetrics initialises the global OTel MeterProvider backed by a Prometheus
-// exporter. The /metrics handler is registered on the worker's health server mux
-// when metrics are enabled.
-func setupMetrics(cfg *config.Config, log *zap.Logger) (http.Handler, func(context.Context) error, error) {
-	_, handler, shutdown, err := metrics.Setup(metrics.Config{
+// exporter and returns the meter, the /metrics HTTP handler, and a shutdown function.
+// The /metrics handler is registered on the worker's health server mux when metrics
+// are enabled. The returned meter is always non-nil (noop when disabled) so callers
+// can create instruments unconditionally.
+func setupMetrics(cfg *config.Config, log *zap.Logger) (metric.Meter, http.Handler, func(context.Context) error, error) {
+	meter, handler, shutdown, err := metrics.Setup(metrics.Config{
 		Enabled:   cfg.Metrics.Enabled,
 		Namespace: cfg.Metrics.Namespace,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("metrics: %w", err)
+		return nil, nil, nil, fmt.Errorf("metrics: %w", err)
 	}
 	if cfg.Metrics.Enabled {
 		log.Info("metrics enabled",
@@ -75,7 +79,7 @@ func setupMetrics(cfg *config.Config, log *zap.Logger) (http.Handler, func(conte
 	} else {
 		log.Info("metrics disabled (noop provider)")
 	}
-	return handler, shutdown, nil
+	return meter, handler, shutdown, nil
 }
 
 // Unlike the API server's setupDB, this function intentionally does NOT run
@@ -187,6 +191,22 @@ func tracingStatus(cfg *config.Config) string {
 		return "enabled → " + cfg.Tracing.OTLPEndpoint
 	}
 	return "disabled (noop)"
+}
+
+// wireLogLevelCounters attaches OTel counters for warn and error log entries
+// to the logger. Mirrors the API server helper so both processes export the
+// same metric names. When metrics are disabled meter is a noop.
+func wireLogLevelCounters(log *zap.Logger, meter metric.Meter) *zap.Logger {
+	warnCtr, _ := meter.Int64Counter("log.warnings",
+		metric.WithDescription("Total Warn-level log entries emitted by the worker"),
+	)
+	errCtr, _ := meter.Int64Counter("log.errors",
+		metric.WithDescription("Total Error-level and above log entries emitted by the worker"),
+	)
+	return logger.WithLevelCounters(log,
+		func() { warnCtr.Add(context.Background(), 1) },
+		func() { errCtr.Add(context.Background(), 1) },
+	)
 }
 
 // maskDSN redacts credentials from a PostgreSQL connection string for safe

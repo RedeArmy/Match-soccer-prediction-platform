@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -190,6 +193,13 @@ func NewUserDispatcher(cfg UserDispatcherConfig) *UserDispatcher {
 
 // Dispatch implements outbox.Dispatcher.
 func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.OutboxEntry) error {
+	ctx, span := otel.Tracer("dispatcher").Start(ctx, "dispatcher.user.dispatch")
+	span.SetAttributes(
+		attribute.String("event_type", string(entry.EventType)),
+		attribute.Int64("outbox_id", entry.ID),
+	)
+	defer span.End()
+
 	if notification.IsAdminEvent(entry.EventType) {
 		return nil
 	}
@@ -202,7 +212,12 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 	)
 
 	if isBroadcastEvent(entry.EventType) {
-		return d.dispatchBroadcast(ctx, entry, log)
+		if err := d.dispatchBroadcast(ctx, entry, log); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "broadcast dispatch failed")
+			return err
+		}
+		return nil
 	}
 
 	userID, ok := resolveRecipient(entry)
@@ -211,7 +226,12 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 		return nil
 	}
 
-	return d.deliverToUser(ctx, entry, userID, fmt.Sprintf("outbox-%d", entry.ID), log)
+	if err := d.deliverToUser(ctx, entry, userID, fmt.Sprintf("outbox-%d", entry.ID), log); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "user delivery failed")
+		return err
+	}
+	return nil
 }
 
 // deliverToUser persists, SSE-notifies, and optionally push/email-delivers a

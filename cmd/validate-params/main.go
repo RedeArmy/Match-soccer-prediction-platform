@@ -55,6 +55,8 @@ type paramSpec struct {
 //   - 000106_system_params_history              (+1)
 //   - 000107_seed_scheduler_interval_params     (+5)
 //   - 000108_seed_render_timeout_param          (+1)
+//   - 000110_seed_notify_dlq_replay_params      (+4)
+//   - 000111_seed_notify_outbox_params          (+5)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -201,6 +203,19 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyWorkerSchedPushPruneIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPushPruneIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	// Email render timeout (migration 000108); runtime — takes effect within 30 s cache window.
 	{key: domain.ParamKeyNotifyRenderTimeoutMs, defaultValue: strconv.Itoa(domain.DefaultNotifyRenderTimeoutMs), paramType: "int", category: "notify", isRuntime: true},
+
+	// Notification DLQ replay worker (migration 000110); not runtime — worker restart required.
+	{key: domain.ParamKeyNotifyDLQReplayBatchSize, defaultValue: strconv.Itoa(domain.DefaultNotifyDLQReplayBatchSize), paramType: "int", category: "notify", isRuntime: false},
+	{key: domain.ParamKeyNotifyDLQReplayPollIntervalSec, defaultValue: strconv.Itoa(domain.DefaultNotifyDLQReplayPollIntervalSec), paramType: "int", category: "notify", isRuntime: false},
+	{key: domain.ParamKeyNotifyDLQReplayMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultNotifyDLQReplayMaxAttempts), paramType: "int", category: "notify", isRuntime: false},
+	{key: domain.ParamKeyNotifyDLQReplayAlertThreshold, defaultValue: strconv.Itoa(domain.DefaultNotifyDLQReplayAlertThreshold), paramType: "int", category: "notify", isRuntime: false},
+
+	// Notification outbox dispatch worker (migration 000111); not runtime — worker restart required.
+	{key: domain.ParamKeyNotifyOutboxBatchSize, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxBatchSize), paramType: "int", category: "notify", isRuntime: false},
+	{key: domain.ParamKeyNotifyOutboxPollIntervalSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxPollIntervalSec), paramType: "int", category: "notify", isRuntime: false},
+	{key: domain.ParamKeyNotifyOutboxLockDurationSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxLockDurationSec), paramType: "int", category: "notify", isRuntime: false},
+	{key: domain.ParamKeyNotifyOutboxMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxMaxAttempts), paramType: "int", category: "notify", isRuntime: false},
+	{key: domain.ParamKeyNotifyOutboxLagAlertThresholdSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxLagAlertThresholdSec), paramType: "int", category: "notify", isRuntime: false},
 }
 
 type dbParam struct {

@@ -53,6 +53,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/notification/scheduler"
+	"github.com/rede/world-cup-quiniela/internal/observability"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/config"
@@ -192,10 +193,11 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		}
 	}()
 
-	metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
+	meter, metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
 	if err != nil {
 		return fmt.Errorf("metrics: %w", err)
 	}
+	log = wireLogLevelCounters(log, meter)
 	defer func() {
 		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
@@ -324,6 +326,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 
 	// ── Notification subsystem ────────────────────────────────────────────────
+
+	outboxBatchSize := params.GetInt(ctx, domain.ParamKeyNotifyOutboxBatchSize, domain.DefaultNotifyOutboxBatchSize)
+	outboxPollInterval := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyOutboxPollIntervalSec, domain.DefaultNotifyOutboxPollIntervalSec)) * time.Second
+	outboxLockDuration := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyOutboxLockDurationSec, domain.DefaultNotifyOutboxLockDurationSec)) * time.Second
+	outboxMaxAttempts := params.GetInt(ctx, domain.ParamKeyNotifyOutboxMaxAttempts, domain.DefaultNotifyOutboxMaxAttempts)
+	outboxLagThreshold := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyOutboxLagAlertThresholdSec, domain.DefaultNotifyOutboxLagAlertThresholdSec)) * time.Second
 
 	outboxRepo := outbox.NewPostgresRepository(db)
 	outboxWriter := outbox.NewWriter(db)
@@ -472,6 +480,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		dlqElection:           dlqElection,
 		outboxRepo:            outboxRepo,
 		outboxDispatcher:      compositeDispatcher,
+		outboxNotifier:        setupObservabilityNotifier(cfg, log),
+		outboxBatchSize:       outboxBatchSize,
+		outboxPollInterval:    outboxPollInterval,
+		outboxLockDuration:    outboxLockDuration,
+		outboxMaxAttempts:     outboxMaxAttempts,
+		outboxLagThreshold:    outboxLagThreshold,
 		dlqReplayWorker:       dlqReplayWorker,
 		notifScheduler:        notifScheduler,
 	}, log)
@@ -569,6 +583,12 @@ type workerDeps struct {
 	dlqElection           election.LeaderElection
 	outboxRepo            outbox.Repository
 	outboxDispatcher      outbox.Dispatcher
+	outboxNotifier        *observability.Notifier
+	outboxBatchSize       int
+	outboxPollInterval    time.Duration
+	outboxLockDuration    time.Duration
+	outboxMaxAttempts     int
+	outboxLagThreshold    time.Duration
 	dlqReplayWorker       *outbox.DLQWorker
 	notifScheduler        *scheduler.Scheduler
 }
@@ -634,7 +654,14 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	// Outbox worker — polls domain_outbox and dispatches admin/system notifications.
 	var outboxDone sync.WaitGroup
 	if deps.outboxRepo != nil && deps.outboxDispatcher != nil {
-		outboxWorker := outbox.NewWorker(deps.outboxRepo, deps.outboxDispatcher, log)
+		outboxWorker := outbox.NewWorker(deps.outboxRepo, deps.outboxDispatcher, log,
+			outbox.WithBatchSize(deps.outboxBatchSize),
+			outbox.WithPollInterval(deps.outboxPollInterval),
+			outbox.WithLockDuration(deps.outboxLockDuration),
+			outbox.WithMaxAttempts(deps.outboxMaxAttempts),
+			outbox.WithOutboxLagThreshold(deps.outboxLagThreshold),
+			outbox.WithOutboxNotifier(deps.outboxNotifier),
+		)
 		outboxDone.Add(1)
 		go func() {
 			defer outboxDone.Done()

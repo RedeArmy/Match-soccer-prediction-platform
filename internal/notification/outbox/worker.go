@@ -10,15 +10,16 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 const (
-	defaultBatchSize    = 50
-	defaultPollInterval = 2 * time.Second
-	defaultLockDuration = 5 * time.Minute
-	defaultMaxAttempts  = 5
+	defaultBatchSize    = domain.DefaultNotifyOutboxBatchSize
+	defaultPollInterval = domain.DefaultNotifyOutboxPollIntervalSec * time.Second
+	defaultLockDuration = domain.DefaultNotifyOutboxLockDurationSec * time.Second
+	defaultMaxAttempts  = domain.DefaultNotifyOutboxMaxAttempts
 )
 
 // Dispatcher is the delivery interface called by the Worker for each claimed
@@ -27,6 +28,16 @@ const (
 type Dispatcher interface {
 	Dispatch(ctx context.Context, entry *notification.OutboxEntry) error
 }
+
+// outboxLagNotifier is the narrow interface consumed by Worker for alerting
+// when outbox processing lags behind the ingest rate. The concrete type is
+// *observability.Notifier; the interface keeps the outbox package import-free
+// of the observability layer.
+type outboxLagNotifier interface {
+	NotifyOutboxLag(ctx context.Context, lagSeconds float64, pendingCount int64)
+}
+
+const defaultLagAlertThreshold = domain.DefaultNotifyOutboxLagAlertThresholdSec * time.Second
 
 // Worker polls domain_outbox and dispatches entries to the configured
 // Dispatcher.  Run blocks until ctx is cancelled; it is safe to run as a
@@ -37,12 +48,15 @@ type Dispatcher interface {
 // SELECT FOR UPDATE SKIP LOCKED in ClaimBatch guarantees each entry is
 // processed by exactly one instance at a time.
 type Worker struct {
-	repo         Repository
-	dispatcher   Dispatcher
-	log          *zap.Logger
-	batchSize    int
-	pollInterval time.Duration
-	lockDuration time.Duration
+	repo              Repository
+	dispatcher        Dispatcher
+	log               *zap.Logger
+	batchSize         int
+	pollInterval      time.Duration
+	lockDuration      time.Duration
+	maxAttempts       int
+	lagNotifier       outboxLagNotifier
+	lagAlertThreshold time.Duration
 }
 
 // WorkerOption is a functional option for Worker.
@@ -64,16 +78,37 @@ func WithLockDuration(d time.Duration) WorkerOption {
 	return func(w *Worker) { w.lockDuration = d }
 }
 
+// WithMaxAttempts overrides the maximum number of dispatch attempts before an
+// outbox entry is permanently marked failed.
+func WithMaxAttempts(n int) WorkerOption {
+	return func(w *Worker) { w.maxAttempts = n }
+}
+
+// WithOutboxNotifier wires an observability.Notifier so that the Worker fires
+// an n8n webhook whenever claimed entries are older than the lag alert
+// threshold. Pass nil to disable (identical to omitting this option).
+func WithOutboxNotifier(n outboxLagNotifier) WorkerOption {
+	return func(w *Worker) { w.lagNotifier = n }
+}
+
+// WithOutboxLagThreshold overrides the age threshold above which a pending
+// entry triggers a NotifyOutboxLag alert. Defaults to 30 s.
+func WithOutboxLagThreshold(d time.Duration) WorkerOption {
+	return func(w *Worker) { w.lagAlertThreshold = d }
+}
+
 // NewWorker constructs a Worker.  dispatcher is called for every entry the
 // worker claims; pass a NoopDispatcher for Phase 0.
 func NewWorker(repo Repository, dispatcher Dispatcher, log *zap.Logger, opts ...WorkerOption) *Worker {
 	w := &Worker{
-		repo:         repo,
-		dispatcher:   dispatcher,
-		log:          log,
-		batchSize:    defaultBatchSize,
-		pollInterval: defaultPollInterval,
-		lockDuration: defaultLockDuration,
+		repo:              repo,
+		dispatcher:        dispatcher,
+		log:               log,
+		batchSize:         defaultBatchSize,
+		pollInterval:      defaultPollInterval,
+		lockDuration:      defaultLockDuration,
+		maxAttempts:       defaultMaxAttempts,
+		lagAlertThreshold: defaultLagAlertThreshold,
 	}
 	for _, o := range opts {
 		o(w)
@@ -118,10 +153,30 @@ func (w *Worker) poll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	w.checkLag(ctx, entries)
 	for _, entry := range entries {
 		w.process(ctx, entry)
 	}
 	return nil
+}
+
+// checkLag fires NotifyOutboxLag when the oldest entry in the claimed batch
+// has been waiting longer than lagAlertThreshold. Using CreatedAt (original
+// enqueue time) rather than ScheduledAt avoids false negatives on retry
+// entries whose scheduled_at has been bumped forward by exponential backoff.
+func (w *Worker) checkLag(ctx context.Context, entries []*notification.OutboxEntry) {
+	if w.lagNotifier == nil || len(entries) == 0 {
+		return
+	}
+	oldest := entries[0]
+	for _, e := range entries[1:] {
+		if e.CreatedAt.Before(oldest.CreatedAt) {
+			oldest = e
+		}
+	}
+	if lag := time.Since(oldest.CreatedAt); lag > w.lagAlertThreshold {
+		w.lagNotifier.NotifyOutboxLag(ctx, lag.Seconds(), int64(len(entries)))
+	}
 }
 
 // process dispatches a single entry and marks it done or retries it.
@@ -150,12 +205,12 @@ func (w *Worker) process(ctx context.Context, entry *notification.OutboxEntry) {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "dispatch failed")
 		log.Warn("outbox dispatch failed", zap.Error(err))
-		if entry.Attempts >= defaultMaxAttempts {
+		if entry.Attempts >= w.maxAttempts {
 			if mfErr := w.repo.MarkFailed(ctx, entry.ID, err.Error()); mfErr != nil {
 				log.Error("failed to mark outbox entry as failed", zap.Error(mfErr))
 			} else {
 				log.Error("outbox entry exhausted max attempts — marked failed",
-					zap.Int("max_attempts", defaultMaxAttempts),
+					zap.Int("max_attempts", w.maxAttempts),
 				)
 			}
 			return

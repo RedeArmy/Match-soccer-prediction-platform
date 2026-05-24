@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -120,8 +123,14 @@ func (s *scoringService) configForPhase(ctx context.Context, phase domain.MatchP
 // rolled back, preventing the partial-scoring state where some predictions on
 // the same match show a score and others show nil.
 func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
+	ctx, span := otel.Tracer("scoring").Start(ctx, "scoring.score_match")
+	span.SetAttributes(attribute.Int("match_id", matchID))
+	defer span.End()
+
 	match, err := s.matchRepo.GetByID(ctx, matchID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "match lookup failed")
 		return err
 	}
 	if match == nil {
@@ -136,11 +145,18 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 
 	predictions, err := s.predRepo.ListByMatch(ctx, matchID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "predictions lookup failed")
 		return err
 	}
 	if len(predictions) == 0 {
 		return nil
 	}
+
+	span.SetAttributes(
+		attribute.Int("prediction_count", len(predictions)),
+		attribute.String("match_phase", string(match.Phase)),
+	)
 
 	cfg := s.configForPhase(ctx, match.Phase)
 
@@ -157,6 +173,8 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 		points[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore, match.WinMethod, cfg)
 	}
 	if err := s.predRepo.UpdateManyPoints(ctx, points); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "points update failed")
 		return err
 	}
 	s.writeScoringLog(ctx, predictions, oldPts, points, match, cfg)

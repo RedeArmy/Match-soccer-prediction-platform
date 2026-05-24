@@ -431,6 +431,17 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyWorkerSchedStaleEscalationIntervalSec: true,
 		domain.ParamKeyWorkerSchedPushPruneIntervalSec:       true,
 		domain.ParamKeyNotifyRenderTimeoutMs:                 true,
+		// Added by migration 000110
+		domain.ParamKeyNotifyDLQReplayBatchSize:       true,
+		domain.ParamKeyNotifyDLQReplayPollIntervalSec: true,
+		domain.ParamKeyNotifyDLQReplayMaxAttempts:     true,
+		domain.ParamKeyNotifyDLQReplayAlertThreshold:  true,
+		// Added by migration 000111
+		domain.ParamKeyNotifyOutboxBatchSize:            true,
+		domain.ParamKeyNotifyOutboxPollIntervalSec:      true,
+		domain.ParamKeyNotifyOutboxLockDurationSec:      true,
+		domain.ParamKeyNotifyOutboxMaxAttempts:          true,
+		domain.ParamKeyNotifyOutboxLagAlertThresholdSec: true,
 	}
 
 	for _, spec := range allParams {
@@ -496,7 +507,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 84 // Update when adding new system parameters (+1 render timeout from 000108)
+	const expectedCount = 93 // Update when adding new system parameters (+4 dlq replay from 000110, +5 outbox worker from 000111)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

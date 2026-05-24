@@ -104,11 +104,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 	defer flushShutdown(ctx, shutdownTracing, "tracing", log)
 
-	metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
+	meter, metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
 	if err != nil {
 		return fmt.Errorf("metrics: %w", err)
 	}
 	defer flushShutdown(ctx, shutdownMetrics, "metrics", log)
+	log = wireLogLevelCounters(log, meter)
 
 	// The database connection is treated as optional at startup intentionally.
 	// The /health endpoint must remain reachable even when the database is

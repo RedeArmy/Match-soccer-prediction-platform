@@ -396,5 +396,11 @@ func AllParamKeys() []string {
 		ParamKeyNotifyDLQReplayPollIntervalSec,
 		ParamKeyNotifyDLQReplayMaxAttempts,
 		ParamKeyNotifyDLQReplayAlertThreshold,
+		// Notification outbox worker (migration 000111)
+		ParamKeyNotifyOutboxBatchSize,
+		ParamKeyNotifyOutboxPollIntervalSec,
+		ParamKeyNotifyOutboxLockDurationSec,
+		ParamKeyNotifyOutboxMaxAttempts,
+		ParamKeyNotifyOutboxLagAlertThresholdSec,
 	}
 }
