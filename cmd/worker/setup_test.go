@@ -101,7 +101,7 @@ func TestSetupDB_InvalidDSN_ReturnsError(t *testing.T) {
 func TestSetupMetrics_Enabled_LogsAndReturnsHandler(t *testing.T) {
 	cfg := &config.Config{Metrics: config.MetricsConfig{Enabled: true, Namespace: "test_setup_worker"}}
 
-	handler, shutdown, err := setupMetrics(cfg, zap.NewNop())
+	_, handler, shutdown, err := setupMetrics(cfg, zap.NewNop())
 
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)

@@ -305,3 +305,145 @@ func TestNewPostgresRepository(t *testing.T) {
 		t.Fatal("expected non-nil Repository")
 	}
 }
+
+// TestWorker_WithMaxAttempts verifies that WithMaxAttempts(1) causes an entry
+// to be marked failed on the very first dispatch failure (no retries).
+// Not parallel: shares the database table.
+func TestWorker_WithMaxAttempts(t *testing.T) {
+	truncateOutbox(t)
+	ctx := context.Background()
+
+	log := zaptest.NewLogger(t)
+	repo := outbox.NewPostgresRepository(testPool)
+	alwaysFail := &stubDispatcher{
+		failFor: map[string]int{string(notification.EventPaymentFailed): 999},
+	}
+
+	w := outbox.NewWorker(repo, alwaysFail, log,
+		outbox.WithBatchSize(10),
+		outbox.WithPollInterval(20*time.Millisecond),
+		outbox.WithLockDuration(30*time.Second),
+		outbox.WithMaxAttempts(1), // fail immediately on first error
+	)
+
+	writer := outbox.NewWriter(testPool)
+	if err := writer.Write(ctx,
+		notification.EventPaymentFailed,
+		"payment_record", "max1_1",
+		notification.PaymentPayload{UserID: 4, PaymentID: 11},
+	); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+
+	runCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	w.Run(runCtx)
+
+	var status string
+	if err := testPool.QueryRow(ctx,
+		`SELECT status FROM domain_outbox LIMIT 1`,
+	).Scan(&status); err != nil {
+		t.Fatalf("fetch status: %v", err)
+	}
+	if status != "failed" {
+		t.Errorf("expected status 'failed' after 1 attempt; got %q", status)
+	}
+}
+
+// stubLagNotifier records NotifyOutboxLag calls for testing.
+type stubLagNotifier struct {
+	calls atomic.Int64
+}
+
+func (s *stubLagNotifier) NotifyOutboxLag(_ context.Context, _ float64, _ int64) {
+	s.calls.Add(1)
+}
+
+// TestWorker_LagBelowThreshold_NoAlert verifies that NotifyOutboxLag is NOT
+// called when the entry lag is below the configured threshold.
+// Not parallel: shares the database table.
+func TestWorker_LagBelowThreshold_NoAlert(t *testing.T) {
+	truncateOutbox(t)
+	ctx := context.Background()
+
+	log := zaptest.NewLogger(t)
+	repo := outbox.NewPostgresRepository(testPool)
+	notifier := &stubLagNotifier{}
+	dispatcher := &stubDispatcher{}
+
+	// Threshold of 1 h: a freshly inserted entry will never exceed this.
+	w := outbox.NewWorker(repo, dispatcher, log,
+		outbox.WithBatchSize(10),
+		outbox.WithPollInterval(50*time.Millisecond),
+		outbox.WithLockDuration(30*time.Second),
+		outbox.WithOutboxNotifier(notifier),
+		outbox.WithOutboxLagThreshold(1*time.Hour),
+	)
+
+	writer := outbox.NewWriter(testPool)
+	if err := writer.Write(ctx,
+		notification.EventAccountWelcome,
+		"user", "lag_below_1",
+		notification.AccountWelcomePayload{UserID: 11, UserName: "tester2"},
+	); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+
+	runCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	w.Run(runCtx)
+
+	if notifier.calls.Load() != 0 {
+		t.Errorf("expected 0 NotifyOutboxLag calls below threshold; got %d", notifier.calls.Load())
+	}
+}
+
+// TestWorker_WithOutboxNotifier_TriggersLagAlert verifies that WithOutboxNotifier
+// wires the notifier and that WithOutboxLagThreshold(0) fires the alert on the
+// next poll when there is a pending entry. It also seeds two entries with
+// differing created_at values so checkLag's oldest-finding loop is exercised.
+// Not parallel: shares the database table.
+func TestWorker_WithOutboxNotifier_TriggersLagAlert(t *testing.T) {
+	truncateOutbox(t)
+	ctx := context.Background()
+
+	log := zaptest.NewLogger(t)
+	repo := outbox.NewPostgresRepository(testPool)
+	notifier := &stubLagNotifier{}
+	dispatcher := &stubDispatcher{}
+
+	w := outbox.NewWorker(repo, dispatcher, log,
+		outbox.WithBatchSize(10),
+		outbox.WithPollInterval(50*time.Millisecond),
+		outbox.WithLockDuration(30*time.Second),
+		outbox.WithOutboxNotifier(notifier),
+		outbox.WithOutboxLagThreshold(0), // any entry triggers the alert
+	)
+
+	writer := outbox.NewWriter(testPool)
+	for _, id := range []string{"lag_alert_1", "lag_alert_2"} {
+		if err := writer.Write(ctx,
+			notification.EventAccountWelcome,
+			"user", id,
+			notification.AccountWelcomePayload{UserID: 10, UserName: "tester"},
+		); err != nil {
+			t.Fatalf("seed write %s: %v", id, err)
+		}
+	}
+	// Make the second entry older so that when ClaimBatch returns rows in id order
+	// (lag_alert_1 first, lag_alert_2 second), the inner oldest-check triggers
+	// e.CreatedAt.Before(oldest.CreatedAt) = true and the assignment is covered.
+	if _, err := testPool.Exec(ctx,
+		"UPDATE domain_outbox SET created_at = created_at - interval '1 minute' WHERE aggregate_id = 'lag_alert_2'",
+	); err != nil {
+		t.Fatalf("backdate created_at: %v", err)
+	}
+
+	runCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	w.Run(runCtx)
+
+	if notifier.calls.Load() == 0 {
+		t.Error("expected NotifyOutboxLag to be called at least once; got 0 calls")
+	}
+}

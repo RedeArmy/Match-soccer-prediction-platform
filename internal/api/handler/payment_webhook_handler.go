@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +15,14 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// paymentObservabilityNotifier is the narrow slice of ObservabilityNotifier
+// consumed by PaymentWebhookHandler. The interface isolates the handler from
+// the concrete observability package, keeping the import graph acyclic.
+type paymentObservabilityNotifier interface {
+	NotifyPaymentError(ctx context.Context, provider, errorCode, userID, amount string)
+	NotifyBalanceCredited(ctx context.Context, userID, amountCents int, source string)
+}
+
 // PaymentWebhookHandler handles incoming payment confirmation webhooks from
 // Recurrente and PayPal. Signature verification is performed by upstream
 // middleware (middleware.RecurrenteWebhookAuth, middleware.PayPalWebhookAuth),
@@ -22,13 +31,21 @@ import (
 // the request reached this handler without passing through the auth middleware,
 // which is treated as unauthorised.
 type PaymentWebhookHandler struct {
-	svc service.WebhookPaymentService
-	log *zap.Logger
+	svc      service.WebhookPaymentService
+	log      *zap.Logger
+	notifier paymentObservabilityNotifier // nil = disabled
 }
 
 // NewPaymentWebhookHandler constructs a PaymentWebhookHandler.
 func NewPaymentWebhookHandler(svc service.WebhookPaymentService, log *zap.Logger) *PaymentWebhookHandler {
 	return &PaymentWebhookHandler{svc: svc, log: log}
+}
+
+// SetNotifier wires an ObservabilityNotifier for payment error and credit
+// events. Call this before the handler serves any requests (i.e. at
+// composition time in buildHandlers). Passing nil disables notifications.
+func (h *PaymentWebhookHandler) SetNotifier(n paymentObservabilityNotifier) {
+	h.notifier = n
 }
 
 // recurrentePaymentData holds the payment object nested inside a Recurrente event.
@@ -91,10 +108,17 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 			zap.Int("user_id", d.UserID),
 			zap.Error(err),
 		)
+		if h.notifier != nil {
+			h.notifier.NotifyPaymentError(r.Context(), "recurrente", err.Error(),
+				strconv.Itoa(d.UserID), strconv.Itoa(d.AmountCents))
+		}
 		writeError(w, r, h.log, err)
 		return
 	}
 
+	if h.notifier != nil {
+		h.notifier.NotifyBalanceCredited(r.Context(), d.UserID, d.AmountCents, "recurrente")
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -186,10 +210,17 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 			zap.String("intent_token", intentToken),
 			zap.Error(err),
 		)
+		if h.notifier != nil {
+			h.notifier.NotifyPaymentError(r.Context(), "paypal", err.Error(),
+				"", strconv.Itoa(webhookAmountCents))
+		}
 		writeError(w, r, h.log, err)
 		return
 	}
 
+	if h.notifier != nil && webhookAmountCents > 0 {
+		h.notifier.NotifyBalanceCredited(r.Context(), 0, webhookAmountCents, "paypal")
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

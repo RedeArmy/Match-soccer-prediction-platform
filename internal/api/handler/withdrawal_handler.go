@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -13,15 +14,28 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// withdrawalObservabilityNotifier is the narrow slice of ObservabilityNotifier
+// consumed by WithdrawalHandler.
+type withdrawalObservabilityNotifier interface {
+	NotifyPayoutApproved(ctx context.Context, userID, amountCents int, method, adminID string)
+}
+
 // WithdrawalHandler handles user withdrawal request endpoints.
 type WithdrawalHandler struct {
-	svc service.WithdrawalService
-	log *zap.Logger
+	svc      service.WithdrawalService
+	log      *zap.Logger
+	notifier withdrawalObservabilityNotifier // nil = disabled
 }
 
 // NewWithdrawalHandler constructs a WithdrawalHandler.
 func NewWithdrawalHandler(svc service.WithdrawalService, log *zap.Logger) *WithdrawalHandler {
 	return &WithdrawalHandler{svc: svc, log: log}
+}
+
+// SetNotifier wires an ObservabilityNotifier for payout-approved events.
+// Call at composition time (buildHandlers) before any requests are served.
+func (h *WithdrawalHandler) SetNotifier(n withdrawalObservabilityNotifier) {
+	h.notifier = n
 }
 
 type createWithdrawalRequest struct {
@@ -186,6 +200,10 @@ func (h *WithdrawalHandler) AdminApprove(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
+	}
+	if h.notifier != nil {
+		h.notifier.NotifyPayoutApproved(r.Context(), result.UserID, result.AmountCents,
+			string(result.Method), strconv.Itoa(caller.ID))
 	}
 	writeJSON(w, http.StatusOK, withdrawalToResponse(result))
 }

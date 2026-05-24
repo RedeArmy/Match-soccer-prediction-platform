@@ -303,7 +303,9 @@ func TestE2E_GroupManagement_JoinApproveLeave(t *testing.T) {
 		fmt.Sprintf("/api/v1/groups/%d/members", group.ID), ownerToken, nil)
 	assertStatus(t, rec, http.StatusOK, "list members after join")
 	var afterJoin struct {
-		Data []struct{ Status string `json:"status"` } `json:"data"`
+		Data []struct {
+			Status string `json:"status"`
+		} `json:"data"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&afterJoin); err != nil {
 		t.Fatalf("decode list-members: %v", err)
@@ -322,7 +324,9 @@ func TestE2E_GroupManagement_JoinApproveLeave(t *testing.T) {
 		fmt.Sprintf("/api/v1/groups/%d/members", group.ID), ownerToken, nil)
 	assertStatus(t, rec, http.StatusOK, "list members after leave")
 	var afterLeave struct {
-		Data []struct{ Status string `json:"status"` } `json:"data"`
+		Data []struct {
+			Status string `json:"status"`
+		} `json:"data"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&afterLeave); err != nil {
 		t.Fatalf("decode list-members after leave: %v", err)

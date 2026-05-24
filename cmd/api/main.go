@@ -104,11 +104,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 	defer flushShutdown(ctx, shutdownTracing, "tracing", log)
 
-	metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
+	meter, metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
 	if err != nil {
 		return fmt.Errorf("metrics: %w", err)
 	}
 	defer flushShutdown(ctx, shutdownMetrics, "metrics", log)
+	log = wireLogLevelCounters(log, meter)
 
 	// The database connection is treated as optional at startup intentionally.
 	// The /health endpoint must remain reachable even when the database is
@@ -184,6 +185,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// Wire the /metrics endpoint. SetMetricsHandler is nil-safe: when metrics
 	// are disabled metricsHandler is nil and Routes() omits the /metrics route.
 	app.SetMetricsHandler(metricsHandler)
+
+	// Wire the observability notifier. Disabled when WCQ_N8N_BASEURL is empty.
+	app.SetNotifier(setupObservabilityNotifier(cfg, log))
 
 	// setupCtx is context.WithoutCancel(ctx): OTel trace values are propagated
 	// to startup DB reads while SIGTERM cannot abort them.

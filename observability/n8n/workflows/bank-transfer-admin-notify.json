@@ -1,0 +1,58 @@
+{
+  "name": "Bank Transfer Admin Notify",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "transfer-uploaded",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "transfer-uploaded"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\nconst amountFormatted = (payload.amount_claimed_cents / 100).toFixed(2);\n\nreturn [{\n  json: {\n    subject: `[ACTION REQUIRED] Bank transfer proof uploaded — Q${amountFormatted}`,\n    body: `A user has uploaded a bank transfer proof requiring admin review.\\n\\nUser ID: ${payload.user_id}\\nAmount claimed: Q${amountFormatted} GTQ\\nFile key: ${payload.file_url}\\nUploaded at: ${payload.timestamp}\\n\\nLog in to the admin panel to review and approve or reject this transfer.`,\n    user_id: payload.user_id,\n    amount_claimed_cents: payload.amount_claimed_cents,\n    file_url: payload.file_url,\n    timestamp: payload.timestamp\n  }\n}];"
+      },
+      "id": "format-notification",
+      "name": "Format Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$env.ADMIN_EMAIL}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "send-email",
+      "name": "Send Admin Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{"node": "Format Notification", "type": "main", "index": 0}]
+      ]
+    },
+    "Format Notification": {
+      "main": [
+        [{"node": "Send Admin Email", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["payments", "admin", "bank-transfer"]
+}

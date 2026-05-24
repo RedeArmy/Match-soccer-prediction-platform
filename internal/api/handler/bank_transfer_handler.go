@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -37,6 +38,12 @@ func decodeJSONOptional(r *http.Request, v any) error {
 	return nil
 }
 
+// bankTransferObservabilityNotifier is the narrow slice of ObservabilityNotifier
+// consumed by BankTransferHandler.
+type bankTransferObservabilityNotifier interface {
+	NotifyTransferUploaded(ctx context.Context, userID, amountClaimedCents int, fileURL string)
+}
+
 // BankTransferHandler handles bank transfer proof upload and admin review.
 type BankTransferHandler struct {
 	svc       service.BankTransferService
@@ -45,6 +52,7 @@ type BankTransferHandler struct {
 	minAmount int   // cents; payment.bank_transfer_min_amount_cents
 	maxAmount int   // cents; payment.bank_transfer_max_amount_cents
 	log       *zap.Logger
+	notifier  bankTransferObservabilityNotifier // nil = disabled
 }
 
 // NewBankTransferHandler constructs a BankTransferHandler.
@@ -75,6 +83,12 @@ func NewBankTransferHandler(
 		maxAmount: maxAmountCents,
 		log:       log,
 	}
+}
+
+// SetNotifier wires an ObservabilityNotifier for transfer-uploaded events.
+// Call at composition time (buildHandlers) before any requests are served.
+func (h *BankTransferHandler) SetNotifier(n bankTransferObservabilityNotifier) {
+	h.notifier = n
 }
 
 // Upload handles POST /api/v1/bank-transfers.
@@ -164,6 +178,9 @@ func (h *BankTransferHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.notifier != nil {
+		h.notifier.NotifyTransferUploaded(r.Context(), caller.ID, amountCents, storageKey)
+	}
 	writeJSON(w, http.StatusCreated, bankTransferToResponse(proof))
 }
 

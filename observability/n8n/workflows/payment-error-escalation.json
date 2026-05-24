@@ -1,0 +1,58 @@
+{
+  "name": "Payment Error Escalation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-error",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "payment-error"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\nconst userInfo = payload.user_id ? `User ID: ${payload.user_id}` : 'User ID: unknown';\nconst amountInfo = payload.amount ? `Amount: ${payload.amount} (minor units)` : '';\n\nreturn [{\n  json: {\n    subject: `[ALERT] Payment error via ${payload.provider}: ${payload.error_code}`,\n    body: `A payment processing error occurred.\\nProvider: ${payload.provider}\\nError: ${payload.error_code}\\n${userInfo}\\n${amountInfo}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nCheck the payment logs and verify the user's balance was not affected.`,\n    provider: payload.provider,\n    error_code: payload.error_code,\n    user_id: payload.user_id,\n    amount: payload.amount,\n    trace_id: payload.trace_id\n  }\n}];"
+      },
+      "id": "format-alert",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$env.ADMIN_EMAIL}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "send-email",
+      "name": "Send Email Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{"node": "Format Alert", "type": "main", "index": 0}]
+      ]
+    },
+    "Format Alert": {
+      "main": [
+        [{"node": "Send Email Alert", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["observability", "payments", "alerting"]
+}
