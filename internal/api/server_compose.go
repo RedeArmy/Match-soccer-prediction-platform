@@ -175,15 +175,19 @@ func (s *Server) buildHandlers(
 	}
 	// Wrap the file store with a circuit breaker. Failure threshold and cooldown
 	// are read from system_params at startup (is_runtime=FALSE: restart required).
-	resiStore := storage.NewResilientFileStore(
-		fileStore,
-		breaker.New(
-			"file-store",
-			params.GetInt(ctx, domain.ParamKeyBreakerFileStoreMaxFails, domain.DefaultBreakerFileStoreMaxFails),
-			time.Duration(params.GetInt(ctx, domain.ParamKeyBreakerFileStoreCooldownSec, domain.DefaultBreakerFileStoreCooldownSec))*time.Second,
-		),
-		s.log,
+	fileStoreBreaker := breaker.New(
+		"file-store",
+		params.GetInt(ctx, domain.ParamKeyBreakerFileStoreMaxFails, domain.DefaultBreakerFileStoreMaxFails),
+		time.Duration(params.GetInt(ctx, domain.ParamKeyBreakerFileStoreCooldownSec, domain.DefaultBreakerFileStoreCooldownSec))*time.Second,
 	)
+	if s.notifier != nil {
+		fileStoreBreaker.SetOnStateChange(func(name string, from, to breaker.State, openedAt time.Time) {
+			if to == breaker.StateOpen {
+				s.notifier.NotifyCircuitBreakerOpen(context.Background(), name, to.String(), openedAt)
+			}
+		})
+	}
+	resiStore := storage.NewResilientFileStore(fileStore, fileStoreBreaker, s.log)
 	fileStore = resiStore
 	// Register a health checker so /health/ready reflects live storage state.
 	// The checker bypasses the circuit breaker to probe the provider directly
@@ -207,7 +211,7 @@ func (s *Server) buildHandlers(
 	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, intentRepo, auditSvc, s.log)
 	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, outboxWriter, auditSvc, s.log)
 
-	return appHandlers{
+	h := appHandlers{
 		notification: handler.NewNotificationHandler(handler.NotificationHandlerConfig{
 			NotifRepo:         notifRepo,
 			PrefRepo:          prefRepo,
@@ -244,4 +248,14 @@ func (s *Server) buildHandlers(
 		adminNotifDLQ:      handler.NewAdminNotificationDLQHandler(repository.NewPostgresNotificationDLQRepository(s.db), s.log),
 		adminSSEStats:      handler.NewAdminSSEStatsHandler(s.notifHub, s.log),
 	}
+
+	// Wire observability notifier into payment-path handlers. Each handler
+	// defines its own narrow interface so the import graph stays acyclic.
+	if s.notifier != nil {
+		h.bankTransfer.SetNotifier(s.notifier)
+		h.paymentWebhook.SetNotifier(s.notifier)
+		h.withdrawal.SetNotifier(s.notifier)
+	}
+
+	return h
 }

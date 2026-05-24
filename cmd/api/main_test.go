@@ -212,7 +212,7 @@ func TestSetupMetrics_Enabled_LogsAndReturnsHandler(t *testing.T) {
 	log := newTestLogger(t)
 	cfg := &config.Config{Metrics: config.MetricsConfig{Enabled: true, Namespace: "test_setup_api"}}
 
-	handler, shutdown, err := setupMetrics(cfg, log)
+	_, handler, shutdown, err := setupMetrics(cfg, log)
 
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)

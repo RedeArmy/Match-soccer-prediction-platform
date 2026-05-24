@@ -17,14 +17,17 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/database"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/observability"
 	"github.com/rede/world-cup-quiniela/migrations"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/logger"
 	"github.com/rede/world-cup-quiniela/pkg/metrics"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
@@ -73,18 +76,20 @@ func setupTracing(ctx context.Context, cfg *config.Config, log *zap.Logger) (fun
 }
 
 // setupMetrics initialises the global OTel MeterProvider backed by a Prometheus
-// exporter and returns the /metrics HTTP handler and a shutdown function.
+// exporter and returns the meter, the /metrics HTTP handler, and a shutdown function.
 //
 // When metrics are disabled (cfg.Metrics.Enabled == false) the function installs
 // a noop MeterProvider and returns a nil handler — no Prometheus registry is
-// created and no /metrics route is registered.
-func setupMetrics(cfg *config.Config, log *zap.Logger) (http.Handler, func(context.Context) error, error) {
-	_, handler, shutdown, err := metrics.Setup(metrics.Config{
+// created and no /metrics route is registered. The returned meter is always
+// non-nil (noop meter when disabled) so callers can create instruments
+// unconditionally.
+func setupMetrics(cfg *config.Config, log *zap.Logger) (metric.Meter, http.Handler, func(context.Context) error, error) {
+	meter, handler, shutdown, err := metrics.Setup(metrics.Config{
 		Enabled:   cfg.Metrics.Enabled,
 		Namespace: cfg.Metrics.Namespace,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("metrics: %w", err)
+		return nil, nil, nil, fmt.Errorf("metrics: %w", err)
 	}
 	if cfg.Metrics.Enabled {
 		log.Info("metrics enabled",
@@ -93,7 +98,7 @@ func setupMetrics(cfg *config.Config, log *zap.Logger) (http.Handler, func(conte
 	} else {
 		log.Info("metrics disabled (noop provider)")
 	}
-	return handler, shutdown, nil
+	return meter, handler, shutdown, nil
 }
 
 // setupEventBus constructs the appropriate events.Bus implementation based on
@@ -204,6 +209,22 @@ func setupDB(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool
 	return pool, nil
 }
 
+// setupObservabilityNotifier constructs the observability Notifier from config.
+// When WCQ_N8N_BASEURL is empty the notifier is disabled (all methods no-op).
+func setupObservabilityNotifier(cfg *config.Config, log *zap.Logger) *observability.Notifier {
+	n := observability.New(observability.NotifierConfig{
+		BaseURL: cfg.N8n.BaseURL,
+		Secret:  cfg.N8n.WebhookSecret,
+		Log:     log,
+	})
+	if n.Enabled() {
+		log.Info("observability notifier enabled", zap.String("n8n_base_url", cfg.N8n.BaseURL))
+	} else {
+		log.Info("observability notifier disabled (WCQ_N8N_BASEURL not set)")
+	}
+	return n
+}
+
 // logStartupBanner emits a structured summary of the application configuration
 // immediately after logger initialisation. This makes critical settings visible
 // at the top of the log stream rather than buried in startup messages, and
@@ -241,6 +262,23 @@ func tracingStatus(cfg *config.Config) string {
 		return "enabled → " + cfg.Tracing.OTLPEndpoint
 	}
 	return "disabled (noop)"
+}
+
+// wireLogLevelCounters attaches OTel counters for warn and error log entries
+// to the logger. The counters are exported via Prometheus so that unexpected
+// spikes in warning or error rates can trigger alerts without log parsing.
+// When metrics are disabled meter is a noop and the counters are no-ops too.
+func wireLogLevelCounters(log *zap.Logger, meter metric.Meter) *zap.Logger {
+	warnCtr, _ := meter.Int64Counter("log.warnings",
+		metric.WithDescription("Total Warn-level log entries emitted by the API server"),
+	)
+	errCtr, _ := meter.Int64Counter("log.errors",
+		metric.WithDescription("Total Error-level and above log entries emitted by the API server"),
+	)
+	return logger.WithLevelCounters(log,
+		func() { warnCtr.Add(context.Background(), 1) },
+		func() { errCtr.Add(context.Background(), 1) },
+	)
 }
 
 // maskDSN redacts credentials from a PostgreSQL connection string for safe

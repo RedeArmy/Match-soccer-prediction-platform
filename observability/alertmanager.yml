@@ -1,0 +1,61 @@
+global:
+  resolve_timeout: 5m
+  # How long to wait before sending a resolved notification.
+  http_config:
+    follow_redirects: true
+
+route:
+  # Default receiver catches everything not matched by child routes.
+  receiver: n8n-default
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+
+  routes:
+    # Critical alerts (payment failures, DLQ overflow) get a dedicated receiver
+    # so they can be routed to a higher-priority n8n workflow.
+    - matchers:
+        - severity = "critical"
+      receiver: n8n-critical
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+
+    # Circuit-breaker alerts route to a dedicated workflow.
+    - matchers:
+        - alertname =~ "CircuitBreaker.*"
+      receiver: n8n-circuit-breaker
+      group_wait: 15s
+
+receivers:
+  - name: n8n-default
+    webhook_configs:
+      - url: "http://n8n:5678/webhook/prometheus-alert-relay"
+        send_resolved: true
+        http_config:
+          bearer_token: ""
+        max_alerts: 10
+
+  - name: n8n-critical
+    webhook_configs:
+      - url: "http://n8n:5678/webhook/prometheus-alert-relay"
+        send_resolved: true
+        http_config:
+          bearer_token: ""
+        max_alerts: 5
+
+  - name: n8n-circuit-breaker
+    webhook_configs:
+      - url: "http://n8n:5678/webhook/circuit-breaker"
+        send_resolved: true
+        http_config:
+          bearer_token: ""
+
+inhibit_rules:
+  # Silence warning alerts when a critical alert for the same alertname fires.
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: ["alertname"]

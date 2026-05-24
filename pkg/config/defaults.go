@@ -105,4 +105,12 @@ func setDefaults(v *viper.Viper) {
 	// expose /metrics for Prometheus scraping in production.
 	v.SetDefault("metrics.enabled", false)
 	v.SetDefault("metrics.namespace", "wcq")
+
+	// n8n: admin webhook URL (used by AdminDispatcher for system.* events).
+	// n8n: base URL for ObservabilityNotifier (empty disables operational alerts).
+	// n8n: API key for admin observability proxy endpoints.
+	v.SetDefault("n8n.webhookURL", "")
+	v.SetDefault("n8n.webhookSecret", "")
+	v.SetDefault("n8n.baseURL", "")
+	v.SetDefault("n8n.apiKey", "")
 }

@@ -33,3 +33,19 @@ func WithHook(logger *zap.Logger, level zapcore.Level, fn func()) *zap.Logger {
 	})
 	return logger.WithOptions(hook)
 }
+
+// WithLevelCounters attaches two hooks that call onWarn for Warn-level entries
+// and onError for Error, DPanic, Panic, and Fatal entries. Use these to drive
+// Prometheus counters so that unexpected spikes in error or warning rates can
+// trigger alerts without requiring log parsing.
+func WithLevelCounters(logger *zap.Logger, onWarn, onError func()) *zap.Logger {
+	return logger.WithOptions(zap.Hooks(func(entry zapcore.Entry) error {
+		switch {
+		case entry.Level == zapcore.WarnLevel:
+			onWarn()
+		case entry.Level >= zapcore.ErrorLevel:
+			onError()
+		}
+		return nil
+	}))
+}

@@ -14,11 +14,19 @@ import (
 )
 
 const (
-	dlqDefaultBatchSize      = 20
-	dlqDefaultPollInterval   = 30 * time.Second
-	dlqDefaultMaxAttempts    = 5
-	dlqDefaultAlertThreshold = 50
+	dlqDefaultBatchSize      = domain.DefaultNotifyDLQReplayBatchSize
+	dlqDefaultPollInterval   = domain.DefaultNotifyDLQReplayPollIntervalSec * time.Second
+	dlqDefaultMaxAttempts    = domain.DefaultNotifyDLQReplayMaxAttempts
+	dlqDefaultAlertThreshold = domain.DefaultNotifyDLQReplayAlertThreshold
 )
+
+// dlqOverflowNotifier is the narrow interface consumed by DLQWorker for
+// operational alerting when the unresolved DLQ depth exceeds the threshold.
+// The concrete type is *observability.Notifier; the interface breaks the
+// import cycle and keeps the outbox package free of infrastructure.
+type dlqOverflowNotifier interface {
+	NotifyDLQOverflow(ctx context.Context, depth, threshold int64)
+}
 
 // dlqRepository is the persistence contract consumed by DLQWorker.
 // The production implementation is *repository.postgresNotificationDLQRepository.
@@ -53,6 +61,9 @@ type DLQWorker struct {
 	batchSize      int
 	maxAttempts    int
 	alertThreshold int64
+	// notifier fires an n8n webhook when the unresolved DLQ count exceeds
+	// alertThreshold. nil disables the operational alert (logs-only mode).
+	notifier dlqOverflowNotifier
 }
 
 // DLQWorkerOption is a functional option for DLQWorker.
@@ -78,6 +89,14 @@ func WithDLQMaxAttempts(n int) DLQWorkerOption {
 // worker emits an Error-level log line on each poll cycle.
 func WithDLQAlertThreshold(n int64) DLQWorkerOption {
 	return func(w *DLQWorker) { w.alertThreshold = n }
+}
+
+// WithDLQNotifier wires an observability.Notifier so that DLQWorker fires an
+// n8n webhook whenever the unresolved DLQ count exceeds the alert threshold.
+// The call is fire-and-forget and never blocks the poll loop.
+// Pass nil to disable (identical to omitting this option).
+func WithDLQNotifier(n dlqOverflowNotifier) DLQWorkerOption {
+	return func(w *DLQWorker) { w.notifier = n }
 }
 
 // NewDLQWorker constructs a DLQWorker.
@@ -130,6 +149,9 @@ func (w *DLQWorker) poll(ctx context.Context) {
 			zap.Int64("unresolved", total),
 			zap.Int64("threshold", w.alertThreshold),
 		)
+		if w.notifier != nil {
+			w.notifier.NotifyDLQOverflow(ctx, total, w.alertThreshold)
+		}
 	}
 
 	entries, err := w.repo.ClaimBatch(ctx, w.batchSize, w.maxAttempts)

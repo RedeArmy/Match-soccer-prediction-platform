@@ -25,6 +25,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
+	"github.com/rede/world-cup-quiniela/internal/observability"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
@@ -70,6 +71,10 @@ type Server struct {
 	// metrics are disabled (WCQ_METRICS_ENABLED=false); Routes() registers the
 	// endpoint only when non-nil.
 	metricsHandler http.Handler
+	// notifier ships structured JSON events to n8n webhooks for operational
+	// alerting. Nil until SetNotifier is called; buildHandlers injects it into
+	// the payment-path handlers that trigger observability events.
+	notifier *observability.Notifier
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
@@ -94,6 +99,11 @@ func (s *Server) SetIdempotencyStore(store idempotency.Store) { s.idemStore = st
 // this before Routes() so the endpoint is included in the routing table.
 // When handler is nil (metrics disabled) /metrics is not registered.
 func (s *Server) SetMetricsHandler(handler http.Handler) { s.metricsHandler = handler }
+
+// SetNotifier wires the observability Notifier for operational alerting via
+// n8n webhooks. Call before Routes() so buildHandlers can inject it into the
+// payment-path handlers. When n is nil, all notification calls are no-ops.
+func (s *Server) SetNotifier(n *observability.Notifier) { s.notifier = n }
 
 // DrainAudit blocks until all in-flight audit log writes complete. Must be
 // called during graceful shutdown before closing the database connection pool

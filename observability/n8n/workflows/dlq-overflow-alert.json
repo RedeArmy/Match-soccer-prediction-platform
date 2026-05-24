@@ -1,0 +1,82 @@
+{
+  "name": "DLQ Overflow Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dlq-overflow",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "dlq-overflow"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.dlq_depth}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-depth",
+      "name": "Check DLQ Depth",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\nreturn [{\n  json: {\n    subject: `[ALERT] Notification DLQ overflow: ${payload.dlq_depth} unresolved entries`,\n    body: `DLQ depth ${payload.dlq_depth} exceeds threshold ${payload.threshold}.\\nTimestamp: ${payload.timestamp}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nAction required: review notification_dlq table and replay or discard stuck entries.`,\n    dlq_depth: payload.dlq_depth,\n    threshold: payload.threshold,\n    timestamp: payload.timestamp,\n    trace_id: payload.trace_id\n  }\n}];"
+      },
+      "id": "format-alert",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$env.ADMIN_EMAIL}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "send-email",
+      "name": "Send Email Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{"node": "Check DLQ Depth", "type": "main", "index": 0}]
+      ]
+    },
+    "Check DLQ Depth": {
+      "main": [
+        [{"node": "Format Alert", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Format Alert": {
+      "main": [
+        [{"node": "Send Email Alert", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["observability", "alerting", "dlq"]
+}

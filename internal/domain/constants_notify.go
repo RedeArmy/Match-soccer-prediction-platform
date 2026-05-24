@@ -82,6 +82,53 @@ const (
 	// (5 s) is generous for pure-CPU template execution; lower it when profiling
 	// shows renders complete in <100 ms in production. is_runtime=TRUE.
 	DefaultNotifyRenderTimeoutMs = 5_000 // notify.render_timeout_ms
+
+	// Notification outbox worker (is_runtime=FALSE: worker restart required).
+	// These constants mirror the outbox.Worker option defaults so that the domain
+	// package is the single source of truth for tunable operational values.
+
+	// DefaultNotifyOutboxBatchSize is the maximum number of domain_outbox rows
+	// claimed and dispatched per poll cycle.
+	DefaultNotifyOutboxBatchSize = 50 // notify.outbox_batch_size
+
+	// DefaultNotifyOutboxPollIntervalSec is the seconds between successive outbox
+	// poll cycles. Lower values reduce notification latency at the cost of more
+	// idle database round-trips.
+	DefaultNotifyOutboxPollIntervalSec = 2 // notify.outbox_poll_interval_sec
+
+	// DefaultNotifyOutboxLockDurationSec is the seconds a claimed outbox row is
+	// held before the stale-lock recovery job reclaims it. Must be longer than
+	// the worst-case dispatch time (including retries) for a single entry.
+	DefaultNotifyOutboxLockDurationSec = 300 // notify.outbox_lock_duration_sec — 5 min
+
+	// DefaultNotifyOutboxMaxAttempts is the maximum dispatch attempts for a single
+	// outbox entry before it is marked as permanently failed.
+	DefaultNotifyOutboxMaxAttempts = 5 // notify.outbox_max_attempts
+
+	// DefaultNotifyOutboxLagAlertThresholdSec is the outbox lag in seconds above
+	// which the worker fires a NotifyOutboxLag alert on each poll cycle.
+	DefaultNotifyOutboxLagAlertThresholdSec = 30 // notify.outbox_lag_alert_threshold_sec
+
+	// Notification DLQ replay worker (is_runtime=FALSE: worker restart required).
+	// These constants mirror the outbox.DLQWorker option defaults so that the
+	// domain package is the single source of truth for tunable operational values.
+
+	// DefaultNotifyDLQReplayBatchSize is the maximum number of notification_dlq
+	// entries claimed per poll cycle.
+	DefaultNotifyDLQReplayBatchSize = 20 // notify.dlq_replay_batch_size
+
+	// DefaultNotifyDLQReplayPollIntervalSec is the seconds between successive
+	// DLQ replay poll cycles. Lower values recover from failures faster at the
+	// cost of more idle database round-trips.
+	DefaultNotifyDLQReplayPollIntervalSec = 30 // notify.dlq_replay_poll_interval_sec
+
+	// DefaultNotifyDLQReplayMaxAttempts is the maximum number of replay attempts
+	// for a single DLQ entry before it is permanently abandoned.
+	DefaultNotifyDLQReplayMaxAttempts = 5 // notify.dlq_replay_max_attempts
+
+	// DefaultNotifyDLQReplayAlertThreshold is the unresolved-entry count above
+	// which the DLQ worker fires an n8n overflow alert on each poll cycle.
+	DefaultNotifyDLQReplayAlertThreshold = 50 // notify.dlq_replay_alert_threshold
 )
 
 // Notification system parameter keys.
@@ -172,4 +219,37 @@ const (
 	// so the outbox worker retries the entry rather than stalling indefinitely.
 	// is_runtime=TRUE: new value takes effect within the 30 s param cache window.
 	ParamKeyNotifyRenderTimeoutMs = "notify.render_timeout_ms"
+
+	// Notification outbox worker knobs (is_runtime=FALSE: worker restart required).
+
+	// ParamKeyNotifyOutboxBatchSize is the number of domain_outbox entries claimed
+	// per poll cycle by the outbox dispatch worker.
+	ParamKeyNotifyOutboxBatchSize = "notify.outbox_batch_size"
+	// ParamKeyNotifyOutboxPollIntervalSec is the seconds between outbox poll cycles.
+	// Increase to reduce idle DB load; decrease to lower notification latency.
+	ParamKeyNotifyOutboxPollIntervalSec = "notify.outbox_poll_interval_sec"
+	// ParamKeyNotifyOutboxLockDurationSec is the seconds a claimed outbox row is
+	// locked before the stale-lock recovery job reclaims it.
+	ParamKeyNotifyOutboxLockDurationSec = "notify.outbox_lock_duration_sec"
+	// ParamKeyNotifyOutboxMaxAttempts is the maximum dispatch attempts per outbox
+	// entry before it is permanently marked failed.
+	ParamKeyNotifyOutboxMaxAttempts = "notify.outbox_max_attempts"
+	// ParamKeyNotifyOutboxLagAlertThresholdSec is the lag age in seconds above which
+	// the outbox worker fires a NotifyOutboxLag alert.
+	ParamKeyNotifyOutboxLagAlertThresholdSec = "notify.outbox_lag_alert_threshold_sec"
+
+	// Notification DLQ replay worker knobs (is_runtime=FALSE: worker restart required).
+
+	// ParamKeyNotifyDLQReplayBatchSize is the number of notification_dlq entries
+	// claimed per poll cycle by the DLQ replay worker.
+	ParamKeyNotifyDLQReplayBatchSize = "notify.dlq_replay_batch_size"
+	// ParamKeyNotifyDLQReplayPollIntervalSec is the seconds between DLQ replay
+	// poll cycles. Increase to reduce idle DB load; decrease to recover faster.
+	ParamKeyNotifyDLQReplayPollIntervalSec = "notify.dlq_replay_poll_interval_sec"
+	// ParamKeyNotifyDLQReplayMaxAttempts is the maximum replay attempts per
+	// notification_dlq entry before it is permanently abandoned.
+	ParamKeyNotifyDLQReplayMaxAttempts = "notify.dlq_replay_max_attempts"
+	// ParamKeyNotifyDLQReplayAlertThreshold is the unresolved DLQ count above
+	// which an n8n overflow alert is fired on each poll cycle.
+	ParamKeyNotifyDLQReplayAlertThreshold = "notify.dlq_replay_alert_threshold"
 )
