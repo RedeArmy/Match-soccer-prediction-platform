@@ -185,6 +185,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// are disabled metricsHandler is nil and Routes() omits the /metrics route.
 	app.SetMetricsHandler(metricsHandler)
 
+	// Wire the observability notifier. Disabled when WCQ_N8N_BASEURL is empty.
+	app.SetNotifier(setupObservabilityNotifier(cfg, log))
+
 	// setupCtx is context.WithoutCancel(ctx): OTel trace values are propagated
 	// to startup DB reads while SIGTERM cannot abort them.
 	srv := &http.Server{

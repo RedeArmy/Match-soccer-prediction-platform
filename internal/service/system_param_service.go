@@ -420,6 +420,12 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyPushDigestThreshold: {1, 100},    // at least 1 push before digest
 	// Email render budget (migration 000108).
 	domain.ParamKeyNotifyRenderTimeoutMs: {100, 30_000}, // 100 ms – 30 s
+
+	// Notification DLQ replay worker (migration 000110, is_runtime=FALSE).
+	domain.ParamKeyNotifyDLQReplayBatchSize:       {1, 500},    // 1 – 500 entries per poll
+	domain.ParamKeyNotifyDLQReplayPollIntervalSec: {5, 3_600},  // 5 s – 1 hour
+	domain.ParamKeyNotifyDLQReplayMaxAttempts:     {1, 20},     // 1 – 20 replay attempts
+	domain.ParamKeyNotifyDLQReplayAlertThreshold:  {1, 10_000}, // 1 – 10 000 unresolved entries
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

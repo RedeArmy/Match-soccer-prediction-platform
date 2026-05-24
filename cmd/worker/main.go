@@ -392,7 +392,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 
 	compositeDispatcher := dispatcher.NewCompositeDispatcher(adminDispatcher, userDispatcher)
 
-	dlqReplayWorker := outbox.NewDLQWorker(dlqRepo, outboxWriter, log)
+	dlqReplayWorker := outbox.NewDLQWorker(dlqRepo, outboxWriter, log,
+		outbox.WithDLQBatchSize(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayBatchSize, domain.DefaultNotifyDLQReplayBatchSize)),
+		outbox.WithDLQPollInterval(time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayPollIntervalSec, domain.DefaultNotifyDLQReplayPollIntervalSec))*time.Second),
+		outbox.WithDLQMaxAttempts(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayMaxAttempts, domain.DefaultNotifyDLQReplayMaxAttempts)),
+		outbox.WithDLQAlertThreshold(int64(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayAlertThreshold, domain.DefaultNotifyDLQReplayAlertThreshold))),
+		outbox.WithDLQNotifier(setupObservabilityNotifier(cfg, log)))
 
 	// Notification scheduler: prediction deadline reminders, admin digests,
 	// match result alerts, and stale-operation escalation.

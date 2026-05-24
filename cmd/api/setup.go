@@ -23,6 +23,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/database"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/observability"
 	"github.com/rede/world-cup-quiniela/migrations"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/metrics"
@@ -202,6 +203,22 @@ func setupDB(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool
 	}
 	log.Sugar().Info("database connection established")
 	return pool, nil
+}
+
+// setupObservabilityNotifier constructs the observability Notifier from config.
+// When WCQ_N8N_BASEURL is empty the notifier is disabled (all methods no-op).
+func setupObservabilityNotifier(cfg *config.Config, log *zap.Logger) *observability.Notifier {
+	n := observability.New(observability.NotifierConfig{
+		BaseURL: cfg.N8n.BaseURL,
+		Secret:  cfg.N8n.WebhookSecret,
+		Log:     log,
+	})
+	if n.Enabled() {
+		log.Info("observability notifier enabled", zap.String("n8n_base_url", cfg.N8n.BaseURL))
+	} else {
+		log.Info("observability notifier disabled (WCQ_N8N_BASEURL not set)")
+	}
+	return n
 }
 
 // logStartupBanner emits a structured summary of the application configuration

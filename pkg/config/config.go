@@ -56,21 +56,34 @@ type EmailConfig struct {
 	UnsubscribeSecret string `mapstructure:"unsubscribeSecret"`
 }
 
-// N8nConfig holds the webhook URL for the n8n automation platform.
+// N8nConfig holds the configuration for the n8n automation platform.
 //
-// When WebhookURL is empty the n8n integration is disabled and system-level
-// alerts are delivered via email only.
+// The config splits concerns into two layers:
+//   - AdminDispatcher (system.* outbox events) uses WebhookURL as a single
+//     endpoint for dispatching admin notifications.
+//   - ObservabilityNotifier uses BaseURL to construct per-event webhook paths
+//     (e.g. BaseURL + "/webhook/dlq-overflow") for operational alerting.
 //
-// Set via WCQ_N8N_WEBHOOKURL.
+// Both layers sign requests with WebhookSecret when set.
 type N8nConfig struct {
-	// WebhookURL is the n8n webhook endpoint that receives system-level alert
-	// notifications.  An empty value disables the integration.
+	// WebhookURL is the full n8n webhook endpoint that AdminDispatcher uses for
+	// system.* outbox events. An empty value disables the admin dispatcher
+	// integration. Set via WCQ_N8N_WEBHOOKURL.
 	WebhookURL string `mapstructure:"webhookURL"`
-	// WebhookSecret is the shared secret used to sign outgoing n8n webhook
-	// requests via HMAC-SHA256 (header X-Signature: sha256=<hex>).
-	// An empty value sends unsigned requests and logs a startup warning.
+	// WebhookSecret is the shared HMAC-SHA256 signing key stamped in the
+	// X-Signature header of all outgoing n8n requests. An empty value sends
+	// unsigned requests and logs a startup warning.
 	// Set via WCQ_N8N_WEBHOOKSECRET.
 	WebhookSecret string `mapstructure:"webhookSecret"`
+	// BaseURL is the n8n base URL consumed by ObservabilityNotifier to
+	// construct specific webhook paths per event type (e.g. "http://n8n:5678").
+	// When empty, all observability notifications are disabled.
+	// Set via WCQ_N8N_BASEURL.
+	BaseURL string `mapstructure:"baseURL"`
+	// APIKey is the n8n API key used to call n8n's REST API for the admin
+	// observability endpoints under /api/admin/observability/n8n/*.
+	// Set via WCQ_N8N_APIKEY.
+	APIKey string `mapstructure:"apiKey"`
 }
 
 // WebPushConfig holds secrets required for RFC 8292 Web Push via VAPID.

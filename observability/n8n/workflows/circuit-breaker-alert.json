@@ -1,0 +1,82 @@
+{
+  "name": "Circuit Breaker Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "circuit-breaker",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "circuit-breaker"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.state}}",
+              "operation": "equals",
+              "value2": "open"
+            }
+          ]
+        }
+      },
+      "id": "check-state",
+      "name": "Is Circuit Open?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\nreturn [{\n  json: {\n    subject: `[ALERT] Circuit breaker OPEN: ${payload.backend}`,\n    body: `The ${payload.backend} circuit breaker has opened.\\nState: ${payload.state}\\nOpened at: ${payload.last_trip_at}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nStorage operations via ${payload.backend} are degraded until the circuit recovers.`,\n    backend: payload.backend,\n    state: payload.state,\n    last_trip_at: payload.last_trip_at,\n    trace_id: payload.trace_id\n  }\n}];"
+      },
+      "id": "format-alert",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$env.ADMIN_EMAIL}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "send-email",
+      "name": "Send Email Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{"node": "Is Circuit Open?", "type": "main", "index": 0}]
+      ]
+    },
+    "Is Circuit Open?": {
+      "main": [
+        [{"node": "Format Alert", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Format Alert": {
+      "main": [
+        [{"node": "Send Email Alert", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["observability", "alerting", "circuit-breaker"]
+}

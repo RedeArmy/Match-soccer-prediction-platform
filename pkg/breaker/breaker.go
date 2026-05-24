@@ -54,6 +54,15 @@ func (s State) String() string {
 	}
 }
 
+// StateChangeHook is invoked after every state transition.
+// It is called synchronously inside record() with the mutex released, so it
+// must not call back into the same Breaker. The hook is best-effort: panics
+// are recovered silently to prevent a misbehaving hook from crashing the
+// process. name is the breaker's identifier; from and to are the previous and
+// new states; openedAt is the instant the circuit entered StateOpen (zero
+// when transitioning to StateClosed).
+type StateChangeHook func(name string, from, to State, openedAt time.Time)
+
 // Breaker is a concurrency-safe circuit breaker. The zero value is not usable;
 // construct with New.
 type Breaker struct {
@@ -65,6 +74,7 @@ type Breaker struct {
 	state            State
 	consecutiveFails int
 	openedAt         time.Time
+	onStateChange    StateChangeHook // nil means no hook; called with mu released
 }
 
 // New returns a Breaker that opens after maxFails consecutive failures and
@@ -84,6 +94,15 @@ func New(name string, maxFails int, openFor time.Duration) *Breaker {
 
 // Name returns the breaker's name.
 func (b *Breaker) Name() string { return b.name }
+
+// SetOnStateChange registers a hook that fires after every state transition.
+// Safe to call at any time after construction. Passing nil clears the hook.
+// The hook must not call back into the same Breaker (deadlock risk).
+func (b *Breaker) SetOnStateChange(hook StateChangeHook) {
+	b.mu.Lock()
+	b.onStateChange = hook
+	b.mu.Unlock()
+}
 
 // CurrentState returns the current state of the breaker. It is safe for
 // concurrent use but the state may change between this call and the next.
@@ -131,15 +150,30 @@ func (b *Breaker) resolveState() State {
 // returned an error. Must be called after every Call that was allowed.
 func (b *Breaker) record(err error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
+	prev := b.state
 	if err == nil {
 		b.consecutiveFails = 0
 		b.state = StateClosed
-		return
+	} else {
+		b.consecutiveFails++
+		b.openedAt = time.Now()
+		if b.state == StateHalfOpen || b.consecutiveFails >= b.maxFails {
+			b.state = StateOpen
+		}
 	}
-	b.consecutiveFails++
-	b.openedAt = time.Now()
-	if b.state == StateHalfOpen || b.consecutiveFails >= b.maxFails {
-		b.state = StateOpen
+	next := b.state
+	hook := b.onStateChange
+	openedAt := b.openedAt
+	b.mu.Unlock()
+
+	if hook != nil && prev != next {
+		safeCallHook(hook, b.name, prev, next, openedAt)
 	}
+}
+
+// safeCallHook invokes hook, recovering any panic so a misbehaving hook
+// cannot bring down the process.
+func safeCallHook(hook StateChangeHook, name string, from, to State, openedAt time.Time) {
+	defer func() { _ = recover() }()
+	hook(name, from, to, openedAt)
 }

@@ -1,0 +1,82 @@
+{
+  "name": "Prometheus Alert Relay",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prometheus-alert-relay",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "prometheus-alert-relay"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Alertmanager sends an array of alerts in the 'alerts' field.\nconst body = $input.first().json;\nconst alerts = body.alerts || [];\nconst firing = alerts.filter(a => a.status === 'firing');\nconst resolved = alerts.filter(a => a.status === 'resolved');\n\nif (alerts.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\nconst lines = alerts.map(a => {\n  const name = a.labels?.alertname || 'unknown';\n  const severity = a.labels?.severity || 'info';\n  const summary = a.annotations?.summary || a.annotations?.description || '';\n  const status = a.status === 'firing' ? '🔴 FIRING' : '✅ RESOLVED';\n  return `${status} [${severity.toUpperCase()}] ${name}: ${summary}`;\n});\n\nconst subject = firing.length > 0\n  ? `[Prometheus] ${firing.length} alert(s) firing`\n  : `[Prometheus] ${resolved.length} alert(s) resolved`;\n\nreturn [{\n  json: {\n    subject,\n    body: lines.join('\\n\\n'),\n    skip: false\n  }\n}];"
+      },
+      "id": "process-alerts",
+      "name": "Process Alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.skip}}",
+              "operation": "equal",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "should-send",
+      "name": "Has Alerts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$env.ADMIN_EMAIL}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "send-email",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{"node": "Process Alerts", "type": "main", "index": 0}]
+      ]
+    },
+    "Process Alerts": {
+      "main": [
+        [{"node": "Has Alerts?", "type": "main", "index": 0}]
+      ]
+    },
+    "Has Alerts?": {
+      "main": [
+        [{"node": "Send Alert Email", "type": "main", "index": 0}],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["observability", "prometheus", "alertmanager"]
+}

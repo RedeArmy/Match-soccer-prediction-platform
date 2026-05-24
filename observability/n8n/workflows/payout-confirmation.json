@@ -1,0 +1,58 @@
+{
+  "name": "Payout Confirmation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payout-approved",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "payout-approved"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\nconst amountFormatted = (payload.amount_cents / 100).toFixed(2);\n\nreturn [{\n  json: {\n    subject: `Payout approved — Q${amountFormatted} via ${payload.method}`,\n    body: `A withdrawal request has been approved.\\n\\nUser ID: ${payload.user_id}\\nAmount: Q${amountFormatted} GTQ\\nMethod: ${payload.method}\\nApproved by Admin ID: ${payload.admin_id}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nProceed with the transfer through the ${payload.method} payment channel.`,\n    user_id: payload.user_id,\n    amount_cents: payload.amount_cents,\n    method: payload.method,\n    admin_id: payload.admin_id,\n    trace_id: payload.trace_id\n  }\n}];"
+      },
+      "id": "format-confirmation",
+      "name": "Format Confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$env.ADMIN_EMAIL}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "send-email",
+      "name": "Send Confirmation Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{"node": "Format Confirmation", "type": "main", "index": 0}]
+      ]
+    },
+    "Format Confirmation": {
+      "main": [
+        [{"node": "Send Confirmation Email", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["payments", "withdrawals", "payout"]
+}
