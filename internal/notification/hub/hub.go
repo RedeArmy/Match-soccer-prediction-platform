@@ -30,6 +30,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -120,6 +122,10 @@ func (h *Hub) Connect(userID int) (<-chan Notification, func()) {
 
 // Broadcast delivers n to every open connection for userID.
 //
+// ctx is used to start a child span so the broadcast appears in the trace of
+// the caller (e.g. the pg_notify or Redis bridge goroutine). Pass
+// context.Background() when no parent trace is available.
+//
 // Send behaviour:
 //   - Successful send: resets the connection's consecutive-drop counter to 0.
 //   - Full buffer (slow consumer): increments the counter and records a drop.
@@ -130,7 +136,10 @@ func (h *Hub) Connect(userID int) (<-chan Notification, func()) {
 // Eviction is safe under concurrent cleanup: whichever of the two acquires the
 // write lock first performs the deletion and close; the second finds the entry
 // absent and skips.
-func (h *Hub) Broadcast(userID int, n Notification) {
+func (h *Hub) Broadcast(ctx context.Context, userID int, n Notification) {
+	_, span := otel.Tracer("hub").Start(ctx, "hub.broadcast")
+	span.SetAttributes(attribute.Int("user_id", userID))
+	defer span.End()
 	// Snapshot channels under the read lock so that a concurrent cleanup()
 	// cannot modify the inner map while we iterate.
 	h.mu.RLock()

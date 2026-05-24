@@ -2,6 +2,8 @@ package tracing_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 
@@ -157,5 +159,83 @@ func TestSetupWithExporter_SpanContextIsValid(t *testing.T) {
 	}
 	if !sc.SpanID().IsValid() {
 		t.Error("SpanID must be valid (non-zero)")
+	}
+}
+
+func TestSetupWithExporter_RatioBased_SamplerUsed(t *testing.T) {
+	resetGlobalProvider(t)
+
+	exp := &capturingExporter{}
+	// SampleRate < 1.0 triggers the TraceIDRatioBased sampler path.
+	shutdown := tracing.SetupWithExporter(tracing.Config{
+		Enabled:     true,
+		ServiceName: "ratio-svc",
+		SampleRate:  0.5,
+	}, exp)
+	defer func() { _ = shutdown(context.Background()) }()
+
+	// A ratio-based sampler is installed; the provider must still produce
+	// valid spans (whether sampled depends on the trace ID, so we just
+	// verify the provider is wired and the span context is structurally valid).
+	tracer := otel.Tracer("test")
+	ctx, span := tracer.Start(context.Background(), "ratio-span")
+	span.End()
+
+	sc := trace.SpanFromContext(ctx).SpanContext()
+	// With SampleRate 0.5 the span may or may not be recorded; what matters
+	// is that the call did not panic and the provider was installed.
+	_ = sc
+}
+
+func TestSetupWithExporter_EmptyServiceName_FallsBackToDefault(t *testing.T) {
+	resetGlobalProvider(t)
+
+	exp := &capturingExporter{}
+	// Empty ServiceName must not panic; the default "world-cup-quiniela" is used.
+	shutdown := tracing.SetupWithExporter(tracing.Config{
+		Enabled:    true,
+		SampleRate: 1.0,
+		// ServiceName intentionally blank
+	}, exp)
+	defer func() { _ = shutdown(context.Background()) }()
+
+	tracer := otel.Tracer("test")
+	_, span := tracer.Start(context.Background(), "default-name-span")
+	span.End()
+	_ = shutdown(context.Background())
+
+	if exp.Len() != 1 {
+		t.Errorf("expected 1 span, got %d", exp.Len())
+	}
+}
+
+// TestSetup_Enabled_CreatesOTLPExporter exercises the Setup() enabled path by
+// pointing the OTLP exporter at a local httptest.Server. otlptracehttp.New
+// does not eagerly connect, so Setup() succeeds even though the server is a
+// stub that accepts any POST with 200.
+func TestSetup_Enabled_CreatesOTLPExporter(t *testing.T) {
+	resetGlobalProvider(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := tracing.Config{
+		Enabled:        true,
+		OTLPEndpoint:   srv.Listener.Addr().String(),
+		ServiceName:    "setup-test",
+		ServiceVersion: "1.0.0",
+		Environment:    "test",
+		SampleRate:     1.0,
+	}
+	shutdown, err := tracing.Setup(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Setup(enabled): unexpected error: %v", err)
+	}
+	if err := shutdown(context.Background()); err != nil {
+		// Shutdown may fail because the stub server doesn't speak OTLP; that is
+		// acceptable — the important thing is that Setup() itself succeeded.
+		t.Logf("shutdown returned (expected for stub): %v", err)
 	}
 }

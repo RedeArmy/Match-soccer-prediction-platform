@@ -9,6 +9,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // MatchScorer calculates and persists points for all predictions on a
@@ -85,8 +86,10 @@ func (s *scoringService) configForPhase(ctx context.Context, phase domain.MatchP
 	rule, err := s.ruleRepo.GetByPhase(ctx, phase)
 	if err != nil {
 		s.log.Warn("scoring_rules lookup failed — falling back to global config",
-			zap.String("phase", string(phase)),
-			zap.Error(err),
+			append([]zap.Field{
+				zap.String("phase", string(phase)),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...,
 		)
 		return s.loadGlobalConfig(ctx)
 	}
@@ -195,9 +198,11 @@ func (s *scoringService) writeScoringLog(
 	}
 	if err := s.predRepo.InsertScoringBatch(ctx, entries); err != nil {
 		s.log.Warn("scoring log: batch insert failed (non-fatal)",
-			zap.Int("match_id", match.ID),
-			zap.Int("entry_count", len(entries)),
-			zap.Error(err),
+			append([]zap.Field{
+				zap.Int("match_id", match.ID),
+				zap.Int("entry_count", len(entries)),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...,
 		)
 	}
 }

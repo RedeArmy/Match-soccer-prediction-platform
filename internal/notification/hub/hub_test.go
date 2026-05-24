@@ -27,7 +27,7 @@ func TestHub_ConnectAndReceive(t *testing.T) {
 	ch, cleanup := h.Connect(1)
 	defer cleanup()
 
-	h.Broadcast(1, makeNotif(1, 1))
+	h.Broadcast(context.Background(), 1, makeNotif(1, 1))
 
 	select {
 	case n := <-ch:
@@ -57,7 +57,7 @@ func TestHub_Disconnect_CleanedUp(t *testing.T) {
 	}
 
 	// Broadcast to a user with no connections is a safe no-op.
-	h.Broadcast(2, makeNotif(2, 2))
+	h.Broadcast(context.Background(), 2, makeNotif(2, 2))
 	conns, _, _ := h.Metrics()
 	if conns != 0 {
 		t.Errorf("connections after cleanup: got %d; want 0", conns)
@@ -90,7 +90,7 @@ func TestHub_MultipleConnectionsSameUser(t *testing.T) {
 	defer c1()
 	defer c2()
 
-	h.Broadcast(4, makeNotif(10, 4))
+	h.Broadcast(context.Background(), 4, makeNotif(10, 4))
 
 	got := 0
 	deadline := time.After(200 * time.Millisecond)
@@ -117,7 +117,7 @@ func TestHub_BroadcastDroppedWhenFull(t *testing.T) {
 	n := makeNotif(0, 5)
 	for i := 0; i < 33; i++ {
 		n.ID = int64(i)
-		h.Broadcast(5, n)
+		h.Broadcast(context.Background(), 5, n)
 	}
 
 	_, _, dropped := h.Metrics()
@@ -134,7 +134,7 @@ func TestHub_BroadcastToWrongUser(t *testing.T) {
 	ch, cleanup := h.Connect(6)
 	defer cleanup()
 
-	h.Broadcast(99, makeNotif(1, 99)) // different user — ch must not receive it
+	h.Broadcast(context.Background(), 99, makeNotif(1, 99)) // different user — ch must not receive it
 
 	select {
 	case n := <-ch:
@@ -182,7 +182,7 @@ func TestHub_RegisterMetrics_NoopMeter_RegistersAndCallbacks(t *testing.T) {
 	// Produce some observable state so callbacks have non-zero values to report.
 	_, c1 := h.Connect(100)
 	defer c1()
-	h.Broadcast(100, makeNotif(1, 100))
+	h.Broadcast(context.Background(), 100, makeNotif(1, 100))
 
 	meter := noop.NewMeterProvider().Meter("test")
 	if err := h.RegisterMetrics(meter); err != nil {
@@ -231,7 +231,7 @@ func TestHub_RaceCondition_500Concurrent(t *testing.T) {
 		uid := u
 		go func() {
 			defer wg.Done()
-			h.Broadcast(uid, makeNotif(int64(uid), uid))
+			h.Broadcast(context.Background(), uid, makeNotif(int64(uid), uid))
 		}()
 	}
 	wg.Wait()
@@ -266,7 +266,7 @@ func TestHub_RegisterMetrics_CallbacksExecuted(t *testing.T) {
 	h := hub.New()
 	_, c1 := h.Connect(200)
 	defer c1()
-	h.Broadcast(200, makeNotif(1, 200))
+	h.Broadcast(context.Background(), 200, makeNotif(1, 200))
 
 	meter := provider.Meter("hub-test")
 	if err := h.RegisterMetrics(meter); err != nil {
@@ -310,7 +310,7 @@ func TestHub_DeadClientEviction_ClosesChannelAfterThreshold(t *testing.T) {
 	// evicts the connection. evictAfterDrops = 5, so 32 + 5 sends suffice.
 	for i := 0; i < 32+hub.EvictAfterDrops; i++ {
 		n.ID = int64(i)
-		h.Broadcast(20, n)
+		h.Broadcast(context.Background(), 20, n)
 	}
 
 	// Channel must be closed by the hub.
@@ -354,7 +354,7 @@ func TestHub_DeadClientEviction_CleanupIsNoopAfterEviction(t *testing.T) {
 	n := makeNotif(0, 21)
 	for i := 0; i < 32+hub.EvictAfterDrops; i++ {
 		n.ID = int64(i)
-		h.Broadcast(21, n)
+		h.Broadcast(context.Background(), 21, n)
 	}
 
 	// cleanup must not panic even though the hub closed the channel already.
@@ -381,14 +381,14 @@ func TestHub_DropCounterResets_OnSuccessfulSend(t *testing.T) {
 	// Drive 4 drops (one under the threshold).
 	for i := 0; i < 32+hub.EvictAfterDrops-1; i++ {
 		n.ID = int64(i)
-		h.Broadcast(22, n)
+		h.Broadcast(context.Background(), 22, n)
 	}
 
 	// Drain the channel so the next send succeeds and resets the counter.
 	for len(ch) > 0 {
 		<-ch
 	}
-	h.Broadcast(22, makeNotif(999, 22)) // successful send → counter reset to 0
+	h.Broadcast(context.Background(), 22, makeNotif(999, 22)) // successful send → counter reset to 0
 	// Drain the single buffered item so the second batch starts from an empty buffer.
 	for len(ch) > 0 {
 		<-ch
@@ -397,7 +397,7 @@ func TestHub_DropCounterResets_OnSuccessfulSend(t *testing.T) {
 	// Another evictAfterDrops-1 drops must NOT evict the connection.
 	for i := 0; i < 32+hub.EvictAfterDrops-1; i++ {
 		n.ID = int64(i)
-		h.Broadcast(22, n)
+		h.Broadcast(context.Background(), 22, n)
 	}
 
 	conns, _, _ := h.Metrics()

@@ -27,6 +27,15 @@ import (
 type Config struct {
 	Level    string
 	Encoding string
+	// InitialFields are attached to every log entry produced by the logger.
+	// Use them for process-level fields such as service name and environment
+	// that should appear on all lines without being repeated at every call site.
+	// Example:
+	//   InitialFields: []zap.Field{
+	//       zap.String("service", "world-cup-quiniela"),
+	//       zap.String("env", "production"),
+	//   }
+	InitialFields []zap.Field
 }
 
 // New constructs a *zap.Logger from the provided Config.
@@ -68,5 +77,12 @@ func New(cfg Config) (*zap.Logger, error) {
 		zapCfg.EncoderConfig = zap.NewDevelopmentEncoderConfig()
 	}
 
-	return zapCfg.Build()
+	log, err := zapCfg.Build()
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg.InitialFields) > 0 {
+		log = log.With(cfg.InitialFields...)
+	}
+	return log, nil
 }

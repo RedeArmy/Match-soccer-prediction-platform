@@ -11,6 +11,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 
 	_ "github.com/rede/world-cup-quiniela/docs" // registers the Swagger spec at init time
@@ -61,6 +62,9 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// Infrastructure endpoints - not versioned, no authentication required.
 	r.Get("/health", s.handleHealth)
 	r.Get("/health/ready", s.handleReadiness)
+	if s.metricsHandler != nil {
+		r.Handle("/metrics", s.metricsHandler)
+	}
 	r.Get("/swagger/*", httpSwagger.Handler(
 		httpSwagger.URL("/swagger/doc.json"),
 		httpSwagger.DeepLinking(true),
@@ -145,6 +149,9 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// Keeping the start out of Routes() prevents goroutine leaks in tests that
 	// call Routes() on a Server they then discard without a matching Stop call.
 	s.notifHub = hub.New()
+	if err := s.notifHub.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
+		s.log.Warn("hub.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
+	}
 
 	h := s.buildHandlers(ctx, repos, paramSvc, scorer)
 

@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +19,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/database"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/metrics"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
@@ -54,6 +56,27 @@ func setupTracing(ctx context.Context, cfg *config.Config, log *zap.Logger) (fun
 
 // setupDB opens a connection pool to the primary PostgreSQL database.
 //
+// setupMetrics initialises the global OTel MeterProvider backed by a Prometheus
+// exporter. The /metrics handler is registered on the worker's health server mux
+// when metrics are enabled.
+func setupMetrics(cfg *config.Config, log *zap.Logger) (http.Handler, func(context.Context) error, error) {
+	_, handler, shutdown, err := metrics.Setup(metrics.Config{
+		Enabled:   cfg.Metrics.Enabled,
+		Namespace: cfg.Metrics.Namespace,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("metrics: %w", err)
+	}
+	if cfg.Metrics.Enabled {
+		log.Info("metrics enabled",
+			zap.String("namespace", cfg.Metrics.Namespace),
+		)
+	} else {
+		log.Info("metrics disabled (noop provider)")
+	}
+	return handler, shutdown, nil
+}
+
 // Unlike the API server's setupDB, this function intentionally does NOT run
 // database migrations. Migrations are applied exclusively by the API server,
 // which holds a PostgreSQL advisory lock during the operation. If the worker

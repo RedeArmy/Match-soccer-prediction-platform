@@ -27,7 +27,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -51,6 +50,10 @@ func main() {
 	log, err := logger.New(logger.Config{
 		Level:    cfg.Logger.Level,
 		Encoding: cfg.Logger.Encoding,
+		InitialFields: []zap.Field{
+			zap.String("service", cfg.Tracing.ServiceName),
+			zap.String("env", cfg.Environment),
+		},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger error: %v\n", err)
@@ -99,15 +102,13 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	if err != nil {
 		return fmt.Errorf("tracing: %w", err)
 	}
-	defer func() {
-		// context.WithoutCancel inherits the OTel span values from ctx without
-		// being affected by the cancellation that already fired (SIGTERM).
-		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		if err := shutdownTracing(flushCtx); err != nil {
-			log.Sugar().Warnf("tracing flush: %v", err)
-		}
-	}()
+	defer flushShutdown(ctx, shutdownTracing, "tracing", log)
+
+	metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
+	if err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+	defer flushShutdown(ctx, shutdownMetrics, "metrics", log)
 
 	// The database connection is treated as optional at startup intentionally.
 	// The /health endpoint must remain reachable even when the database is
@@ -179,6 +180,10 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	if rc != nil {
 		app.SetIdempotencyStore(idempotency.NewRedisStore(rc))
 	}
+
+	// Wire the /metrics endpoint. SetMetricsHandler is nil-safe: when metrics
+	// are disabled metricsHandler is nil and Routes() omits the /metrics route.
+	app.SetMetricsHandler(metricsHandler)
 
 	// setupCtx is context.WithoutCancel(ctx): OTel trace values are propagated
 	// to startup DB reads while SIGTERM cannot abort them.
