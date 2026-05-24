@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -51,16 +52,17 @@ type ParamReader interface {
 //  7. For system.* events: fires the optional n8n webhook (best-effort),
 //     signed with HMAC-SHA256 when n8nSecret is configured.
 type AdminDispatcher struct {
-	params     ParamReader
-	logRepo    repository.AdminNotificationLogCreator
-	dlqRepo    repository.NotificationDLQEntryCreator
-	mailer     infraemail.Sender
-	fromAddr   string
-	n8nURL     string // empty disables webhook
-	n8nSecret  string // empty sends unsigned requests (warns at construction)
-	httpClient *http.Client
-	log        *zap.Logger
-	renderFn   func(*notification.OutboxEntry) (string, string, error)
+	params      ParamReader
+	logRepo     repository.AdminNotificationLogCreator
+	dlqRepo     repository.NotificationDLQEntryCreator
+	mailer      infraemail.Sender
+	fromAddr    string
+	n8nURL      string // empty disables webhook
+	n8nSecret   string // empty sends unsigned requests (warns at construction)
+	httpClient  *http.Client
+	log         *zap.Logger
+	renderFn    func(*notification.OutboxEntry) (string, string, error)
+	instruments dispatcherInstruments
 }
 
 // Config bundles the constructor arguments for AdminDispatcher.
@@ -110,6 +112,8 @@ func (d *AdminDispatcher) Dispatch(ctx context.Context, entry *notification.Outb
 		// Phase 2 will handle user-facing events (push, in-app, SSE).
 		return nil
 	}
+
+	start := time.Now()
 
 	log := d.log.With(
 		append([]zap.Field{
@@ -163,6 +167,7 @@ func (d *AdminDispatcher) Dispatch(ctx context.Context, entry *notification.Outb
 			zap.String("subject", subject),
 			zap.Error(sendErr),
 		)
+		d.recordAdminDispatch(ctx, entry, time.Since(start), "failed")
 		return fmt.Errorf("dispatcher: email: %w", sendErr)
 	}
 
@@ -172,12 +177,37 @@ func (d *AdminDispatcher) Dispatch(ctx context.Context, entry *notification.Outb
 		zap.String("resend_msg_id", msgID),
 	)
 
+	d.recordAdminDispatch(ctx, entry, time.Since(start), "success")
+
 	// n8n webhook is best-effort for system-level alerts; never blocks delivery.
 	if d.n8nURL != "" && isSystemEvent(entry.EventType) {
 		d.notifyN8n(ctx, entry, log)
 	}
 
 	return nil
+}
+
+func (d *AdminDispatcher) recordAdminDispatch(ctx context.Context, entry *notification.OutboxEntry, elapsed time.Duration, status string) {
+	if d.instruments.events == nil {
+		return
+	}
+	et := string(entry.EventType)
+	d.instruments.events.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("event_type", et),
+			attribute.String("status", status),
+		),
+	)
+	d.instruments.duration.Record(ctx, elapsed.Seconds(),
+		metric.WithAttributes(attribute.String("event_type", et)),
+	)
+	emailStatus := "sent"
+	if status == "failed" {
+		emailStatus = "failed"
+	}
+	d.instruments.emails.Add(ctx, 1,
+		metric.WithAttributes(attribute.String("status", emailStatus)),
+	)
 }
 
 // resolveRecipients parses the notify.admin_emails system param into a slice

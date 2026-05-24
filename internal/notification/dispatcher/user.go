@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -141,6 +142,7 @@ type UserDispatcher struct {
 	memberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
 	digestGate        notification.Recorder                     // nil disables digest (all pushes sent individually)
 	log               *zap.Logger
+	instruments       dispatcherInstruments
 }
 
 // UserDispatcherConfig bundles constructor arguments for UserDispatcher.
@@ -204,6 +206,8 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 		return nil
 	}
 
+	start := time.Now()
+
 	log := d.log.With(
 		append([]zap.Field{
 			zap.Int64("outbox_id", entry.ID),
@@ -215,23 +219,44 @@ func (d *UserDispatcher) Dispatch(ctx context.Context, entry *notification.Outbo
 		if err := d.dispatchBroadcast(ctx, entry, log); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "broadcast dispatch failed")
+			d.recordDispatch(ctx, entry, time.Since(start), "failed")
 			return err
 		}
+		d.recordDispatch(ctx, entry, time.Since(start), "success")
 		return nil
 	}
 
 	userID, ok := resolveRecipient(entry)
 	if !ok {
 		log.Warn("user dispatcher: cannot resolve recipient; skipping")
+		d.recordDispatch(ctx, entry, time.Since(start), "dropped")
 		return nil
 	}
 
 	if err := d.deliverToUser(ctx, entry, userID, fmt.Sprintf("outbox-%d", entry.ID), log); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "user delivery failed")
+		d.recordDispatch(ctx, entry, time.Since(start), "failed")
 		return err
 	}
+	d.recordDispatch(ctx, entry, time.Since(start), "success")
 	return nil
+}
+
+func (d *UserDispatcher) recordDispatch(ctx context.Context, entry *notification.OutboxEntry, elapsed time.Duration, status string) {
+	if d.instruments.events == nil {
+		return
+	}
+	et := string(entry.EventType)
+	d.instruments.events.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("event_type", et),
+			attribute.String("status", status),
+		),
+	)
+	d.instruments.duration.Record(ctx, elapsed.Seconds(),
+		metric.WithAttributes(attribute.String("event_type", et)),
+	)
 }
 
 // deliverToUser persists, SSE-notifies, and optionally push/email-delivers a

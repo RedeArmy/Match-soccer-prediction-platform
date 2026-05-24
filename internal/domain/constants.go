@@ -402,5 +402,8 @@ func AllParamKeys() []string {
 		ParamKeyNotifyOutboxLockDurationSec,
 		ParamKeyNotifyOutboxMaxAttempts,
 		ParamKeyNotifyOutboxLagAlertThresholdSec,
+		// Observability alerting thresholds (migration 000112)
+		ParamKeyNotifyOutboxLagCriticalSec,
+		ParamKeyNotifyDLQWarningThreshold,
 	}
 }

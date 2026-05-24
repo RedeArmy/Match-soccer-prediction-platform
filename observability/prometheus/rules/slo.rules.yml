@@ -1,0 +1,268 @@
+---
+# World Cup Quiniela — SLO alert rules
+#
+# Metric names produced by the OTel Prometheus exporter (no namespace prefix):
+#   http_server_request_duration_seconds — histogram, labels: http_request_method,
+#       http_route, http_response_status_code
+#   log_errors_total / log_warnings_total — counters wired to zap hooks
+#   notification_sse_connections        — replica-local gauge
+
+groups:
+
+  # ---------------------------------------------------------------------------
+  # HTTP latency SLOs
+  #   warning  : p99 > 500 ms sustained for 5 minutes
+  #   critical : p99 > 1 s   sustained for 5 minutes
+  # ---------------------------------------------------------------------------
+  - name: wcq.slo.latency
+    interval: 1m
+    rules:
+
+      - alert: WCQHighP99LatencyWarning
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, http_route) (
+              rate(http_server_request_duration_seconds_bucket[5m])
+            )
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "API p99 latency above 500 ms"
+          description: >
+            Route {{ $labels.http_route }} p99 latency is
+            {{ $value | humanizeDuration }}, which exceeds the 500 ms warning
+            threshold.
+
+      - alert: WCQHighP99LatencyCritical
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, http_route) (
+              rate(http_server_request_duration_seconds_bucket[5m])
+            )
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "API p99 latency above 1 s"
+          description: >
+            Route {{ $labels.http_route }} p99 latency is
+            {{ $value | humanizeDuration }}, exceeding the critical 1 s SLO.
+
+      - alert: WCQHighP95LatencyWarning
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (
+              rate(http_server_request_duration_seconds_bucket[5m])
+            )
+          ) > 0.25
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "API p95 latency above 250 ms"
+          description: >
+            Global p95 latency is {{ $value | humanizeDuration }}, exceeding
+            the 250 ms warning threshold.
+
+  # ---------------------------------------------------------------------------
+  # HTTP error-rate SLOs
+  #   warning  : 5xx rate > 1 % over 5 minutes
+  #   critical : 5xx rate > 5 % over 5 minutes
+  # ---------------------------------------------------------------------------
+  - name: wcq.slo.errors
+    interval: 1m
+    rules:
+
+      - alert: WCQHighServerErrorRateWarning
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+          /
+          sum(rate(http_server_request_duration_seconds_count[5m]))
+          > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "API 5xx error rate above 1 %"
+          description: >
+            The 5-minute 5xx error rate is
+            {{ $value | humanizePercentage }}, exceeding the 1 % warning SLO.
+
+      - alert: WCQHighServerErrorRateCritical
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+          /
+          sum(rate(http_server_request_duration_seconds_count[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "API 5xx error rate above 5 %"
+          description: >
+            The 5-minute 5xx error rate is
+            {{ $value | humanizePercentage }}, which is critical. Immediate
+            investigation required.
+
+  # ---------------------------------------------------------------------------
+  # Availability SLOs
+  # ---------------------------------------------------------------------------
+  - name: wcq.slo.availability
+    interval: 30s
+    rules:
+
+      - alert: WCQAPIDown
+        expr: up{job="quiniela-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Quiniela API target is down"
+          description: >
+            Prometheus cannot scrape the quiniela-api job. The process may have
+            crashed or the /metrics endpoint is unreachable.
+
+      - alert: WCQWorkerDown
+        expr: up{job="quiniela-worker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Quiniela Worker target is down"
+          description: >
+            Prometheus cannot scrape the quiniela-worker job. Event processing
+            and notification delivery have halted.
+
+  # ---------------------------------------------------------------------------
+  # Application log signals
+  #   A sustained spike in error-level log entries usually indicates an
+  #   unhandled exception or infrastructure degradation before HTTP error
+  #   rates become visible.
+  # ---------------------------------------------------------------------------
+  - name: wcq.slo.logs
+    interval: 1m
+    rules:
+
+      - alert: WCQHighErrorLogRateWarning
+        expr: sum(rate(log_errors_total[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Application logging more than 1 error/s"
+          description: >
+            The application is emitting {{ $value | humanize }} error-level log
+            entries per second over the last 5 minutes. This often precedes an
+            increase in HTTP 5xx responses.
+
+      - alert: WCQHighErrorLogRateCritical
+        expr: sum(rate(log_errors_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Application logging more than 10 errors/s"
+          description: >
+            The application is emitting {{ $value | humanize }} error-level log
+            entries per second. Escalation is required.
+
+  # ---------------------------------------------------------------------------
+  # Notification outbox lag
+  #   The outbox worker reports lag via the n8n notifier when a pending entry
+  #   exceeds the configured threshold. This rule catches cases where the
+  #   worker itself stops reporting entirely (no metric updates).
+  # ---------------------------------------------------------------------------
+  - name: wcq.slo.outbox
+    interval: 1m
+    rules:
+
+      - alert: WCQNotificationSSEConnectionsDrop
+        expr: notification_sse_connections < 0
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "SSE connection gauge went negative (instrumentation bug)"
+          description: >
+            notification_sse_connections reported {{ $value }} which should
+            never be negative. Likely an eviction accounting error.
+
+  # ---------------------------------------------------------------------------
+  # Business signals
+  #   Covers the application-layer metrics added in G-01 through G-08:
+  #   outbox backlog, circuit breaker state, and payment processing SLO.
+  # ---------------------------------------------------------------------------
+  - name: wcq.slo.business
+    interval: 1m
+    rules:
+
+      - alert: WCQOutboxBacklogHigh
+        expr: outbox_pending_events > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Outbox pending-event backlog above 100"
+          description: >
+            outbox_pending_events is {{ $value }}, which has exceeded the 100-row
+            warning threshold for 5 consecutive minutes. The notification worker
+            may be falling behind or encountering repeated delivery failures.
+
+      - alert: WCQOutboxBacklogCritical
+        expr: outbox_pending_events > 500
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Outbox pending-event backlog above 500 — notification delivery at risk"
+          description: >
+            outbox_pending_events is {{ $value }}. At this depth, user-facing
+            notifications (emails, pushes) are significantly delayed. Immediate
+            investigation of the outbox worker is required.
+
+      - alert: WCQCircuitBreakerOpen
+        expr: circuit_breaker_state == 1
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Circuit breaker {{ $labels.backend }} is open"
+          description: >
+            The {{ $labels.backend }} circuit breaker has been in the open state
+            for over 1 minute. Requests to this backend are being rejected
+            immediately. Check the backend's health and review recent error logs.
+
+      - alert: WCQPaymentProcessingSlowWarning
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, provider) (
+              rate(payment_processing_duration_seconds_bucket[5m])
+            )
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Payment webhook p99 processing time above 2 s ({{ $labels.provider }})"
+          description: >
+            Provider {{ $labels.provider }} payment webhook p99 processing time
+            is {{ $value | humanizeDuration }}, exceeding the 2 s warning
+            threshold. This may indicate slow downstream API responses or
+            database contention during credit operations.

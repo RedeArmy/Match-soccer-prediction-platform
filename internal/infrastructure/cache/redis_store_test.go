@@ -8,6 +8,8 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
@@ -249,5 +251,86 @@ func TestRedisStore_FlushByPrefix_ScanError_ReturnsWrappedError(t *testing.T) {
 
 	if err := st.FlushByPrefix(context.Background(), "leaderboard:"); err == nil {
 		t.Fatal("expected error when Redis is unavailable, got nil")
+	}
+}
+
+// ── RegisterMetrics ───────────────────────────────────────────────────────────
+
+func TestRedisStore_RegisterMetrics_Succeeds(t *testing.T) {
+	t.Parallel()
+	_, st := newTestStore(t)
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := st.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+}
+
+func TestRedisStore_RegisterMetrics_HitCounterIncrements(t *testing.T) {
+	t.Parallel()
+	_, st := newTestStore(t)
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := st.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	ctx := context.Background()
+	_ = st.Set(ctx, "hit-key", "v", time.Minute)
+	var dest string
+	_ = st.Get(ctx, "hit-key", &dest) // cache hit
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(ctx, &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	hits := int64(0)
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name == "redis.cache.hits" {
+				if sd, ok := m.Data.(metricdata.Sum[int64]); ok {
+					for _, dp := range sd.DataPoints {
+						hits += dp.Value
+					}
+				}
+			}
+		}
+	}
+	if hits != 1 {
+		t.Errorf("expected 1 hit; got %d", hits)
+	}
+}
+
+func TestRedisStore_RegisterMetrics_MissCounterIncrements(t *testing.T) {
+	t.Parallel()
+	_, st := newTestStore(t)
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := st.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	ctx := context.Background()
+	var dest string
+	_ = st.Get(ctx, "no-such-key", &dest) // cache miss
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(ctx, &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	misses := int64(0)
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name == "redis.cache.misses" {
+				if sd, ok := m.Data.(metricdata.Sum[int64]); ok {
+					for _, dp := range sd.DataPoints {
+						misses += dp.Value
+					}
+				}
+			}
+		}
+	}
+	if misses != 1 {
+		t.Errorf("expected 1 miss; got %d", misses)
 	}
 }

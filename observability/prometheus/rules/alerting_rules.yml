@@ -1,0 +1,202 @@
+---
+# World Cup Quiniela — Operational alert rules
+#
+# Metric names (OTel → Prometheus bridge, dots → underscores):
+#   outbox_dlq_depth                      Int64ObservableGauge
+#   outbox_oldest_pending_age_seconds     Float64ObservableGauge
+#   outbox_pending_events                 Int64ObservableGauge
+#   circuit_breaker_state                 Float64ObservableGauge  (label: backend)
+#   payment_processing_duration_seconds   Float64Histogram        (labels: provider, status)
+#   http_server_request_duration_seconds  Float64Histogram        (labels: method, route, status_code)
+#   notification_sse_dropped_total        Int64ObservableCounter
+#
+# Alertmanager routing (alertmanager.yml):
+#   severity=critical, workflow=payment-error-escalation → n8n-payment-escalation
+#   alertname =~ "WCQCircuitBreaker.*"                   → n8n-circuit-breaker
+#   severity=critical (catch-all)                        → n8n-critical
+#   everything else                                      → n8n-default
+
+groups:
+
+  # ---------------------------------------------------------------------------
+  # DLQ depth
+  #   The notification DLQ (notification_dlq table) holds dispatch entries that
+  #   have exhausted retries.  A non-zero depth means notifications are being
+  #   permanently lost unless the DLQ replay worker resolves them.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.dlq
+    interval: 30s
+    rules:
+
+      - alert: WCQDLQDepthWarning
+        expr: outbox_dlq_depth > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Notification DLQ depth above 10"
+          description: >
+            outbox_dlq_depth is {{ $value | humanize }}, exceeding 10 for 5
+            consecutive minutes.  The DLQ replay worker may be failing to
+            re-inject entries into the dispatch pipeline.  Check worker logs
+            and the notification_dlq table.
+
+      - alert: WCQDLQDepthCritical
+        expr: outbox_dlq_depth > 50
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Notification DLQ critical — permanent notification loss"
+          description: >
+            outbox_dlq_depth is {{ $value | humanize }}.  At this depth, user
+            notifications (emails, push messages) are being permanently
+            discarded.  Immediate investigation of the DLQ replay worker and
+            the downstream email/push providers is required.
+
+  # ---------------------------------------------------------------------------
+  # Outbox processing lag
+  #   outbox_oldest_pending_age_seconds is the age of the oldest due-but-unprocessed
+  #   row.  A sustained lag means the worker is overloaded or the dispatch
+  #   pipeline is blocked.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.outbox
+    interval: 30s
+    rules:
+
+      - alert: WCQOutboxLagHigh
+        expr: outbox_oldest_pending_age_seconds > 30
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Outbox processing lag above 30 s"
+          description: >
+            The oldest pending-due outbox entry is
+            {{ $value | humanizeDuration }} old, exceeding the 30 s lag
+            warning threshold.  The outbox worker may be overloaded or
+            encountering repeated dispatch failures.
+
+      - alert: WCQOutboxLagCritical
+        expr: outbox_oldest_pending_age_seconds > 300
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Outbox processing lag above 5 min — notifications severely delayed"
+          description: >
+            The oldest pending outbox entry is {{ $value | humanizeDuration }}
+            old.  User-facing notifications are significantly delayed.  Verify
+            that the worker process is running and the database is reachable.
+
+  # ---------------------------------------------------------------------------
+  # Circuit breaker
+  #   circuit_breaker_state: 0=closed, 1=open, 2=half-open.
+  #   Alerts route to the dedicated n8n circuit-breaker workflow (see
+  #   alertmanager.yml) so on-call can investigate without navigating through
+  #   the generic alert relay.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.circuit_breaker
+    interval: 30s
+    rules:
+
+      - alert: WCQCircuitBreakerOpen
+        expr: circuit_breaker_state == 1
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Circuit breaker {{ $labels.backend }} open for > 60 s"
+          description: >
+            The {{ $labels.backend }} circuit breaker has remained open for
+            over 60 seconds.  Calls to this backend are being rejected
+            immediately.  Check the backend health and review error logs.  The
+            breaker will attempt recovery after the configured cooldown period.
+
+  # ---------------------------------------------------------------------------
+  # Payment error rate
+  #   Derives the error rate from the payment_processing_duration_seconds
+  #   histogram (labels: provider, status).  The alert routes to the dedicated
+  #   n8n payment-error-escalation workflow via the workflow label.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.payment
+    interval: 30s
+    rules:
+
+      - alert: WCQPaymentErrorRateHigh
+        expr: |
+          (
+            sum(rate(payment_processing_duration_seconds_count{status="failed"}[5m]))
+            /
+            sum(rate(payment_processing_duration_seconds_count[5m]))
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          workflow: payment-error-escalation
+        annotations:
+          summary: "Payment webhook error rate above 1 %"
+          description: >
+            {{ $value | humanizePercentage }} of payment webhook calls have
+            failed over the last 5 minutes, exceeding the 1 % error rate SLO.
+            Check the Recurrente/PayPal webhook handler logs and downstream
+            service availability.
+
+  # ---------------------------------------------------------------------------
+  # HTTP 5xx error rate
+  #   Fires on the global error rate (all routes combined).  Route-level
+  #   breakdown is available in the Grafana SLO dashboard.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.http
+    interval: 30s
+    rules:
+
+      - alert: WCQHTTP5xxRateHigh
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_server_request_duration_seconds_count[5m]))
+          ) > 0.005
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "HTTP 5xx error rate above 0.5 %"
+          description: >
+            The 5-minute HTTP 5xx error rate is
+            {{ $value | humanizePercentage }}, exceeding the 0.5 % threshold.
+            Review server logs for recurring error patterns and check the
+            per-route breakdown in the Grafana SLO dashboard.
+
+  # ---------------------------------------------------------------------------
+  # SSE hub broadcast drops
+  #   notification_sse_dropped_total counts events discarded because a client's
+  #   buffer was full.  Any drop in a 1-minute window is an early warning that
+  #   slow clients are falling behind.  For: 0m means the alert fires
+  #   immediately on the first non-zero increase.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.sse
+    interval: 30s
+    rules:
+
+      - alert: WCQSSEBroadcastDrops
+        expr: increase(notification_sse_dropped_total[1m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "SSE broadcast drops detected in the last minute"
+          description: >
+            {{ $value | humanize }} SSE event(s) were dropped in the last
+            minute due to full client buffers.  Slow or stalled SSE clients
+            may be connected.  Monitor notification_sse_evicted_total to see
+            whether the hub is evicting them automatically.

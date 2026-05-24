@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -157,6 +159,15 @@ func (d *UserDispatcher) deliverEmail(
 			zap.Error(sendErr),
 		)
 		d.writeDLQEntry(ctx, entry, userID, "email", sendErr)
+		if d.instruments.emails != nil {
+			d.instruments.emails.Add(ctx, 1,
+				metric.WithAttributes(attribute.String("status", "failed")))
+		}
+		return
+	}
+	if d.instruments.emails != nil {
+		d.instruments.emails.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("status", "sent")))
 	}
 }
 

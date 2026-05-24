@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/middleware"
@@ -31,9 +34,10 @@ type paymentObservabilityNotifier interface {
 // the request reached this handler without passing through the auth middleware,
 // which is treated as unauthorised.
 type PaymentWebhookHandler struct {
-	svc      service.WebhookPaymentService
-	log      *zap.Logger
-	notifier paymentObservabilityNotifier // nil = disabled
+	svc              service.WebhookPaymentService
+	log              *zap.Logger
+	notifier         paymentObservabilityNotifier // nil = disabled
+	paymentDuration  metric.Float64Histogram      // nil when not registered
 }
 
 // NewPaymentWebhookHandler constructs a PaymentWebhookHandler.
@@ -46,6 +50,21 @@ func NewPaymentWebhookHandler(svc service.WebhookPaymentService, log *zap.Logger
 // composition time in buildHandlers). Passing nil disables notifications.
 func (h *PaymentWebhookHandler) SetNotifier(n paymentObservabilityNotifier) {
 	h.notifier = n
+}
+
+// RegisterMetrics wires a payment processing duration histogram.  Call once
+// after construction; safe to skip when metrics are disabled.
+func (h *PaymentWebhookHandler) RegisterMetrics(meter metric.Meter) error {
+	var err error
+	h.paymentDuration, err = meter.Float64Histogram(
+		"payment.processing.duration",
+		metric.WithDescription("Duration of payment webhook processing by provider and status."),
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(
+			0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1, 2.5, 5,
+		),
+	)
+	return err
 }
 
 // recurrentePaymentData holds the payment object nested inside a Recurrente event.
@@ -102,6 +121,7 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 		return
 	}
 
+	start := time.Now()
 	if err := h.svc.CreditFromRecurrente(r.Context(), d.UserID, d.AmountCents, d.Currency, d.Reference); err != nil {
 		h.log.Error("recurrente webhook: failed to credit balance",
 			zap.String("reference", d.Reference),
@@ -112,10 +132,12 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 			h.notifier.NotifyPaymentError(r.Context(), "recurrente", err.Error(),
 				strconv.Itoa(d.UserID), strconv.Itoa(d.AmountCents))
 		}
+		h.recordPayment(r.Context(), "recurrente", "failed", time.Since(start))
 		writeError(w, r, h.log, err)
 		return
 	}
 
+	h.recordPayment(r.Context(), "recurrente", "success", time.Since(start))
 	if h.notifier != nil {
 		h.notifier.NotifyBalanceCredited(r.Context(), d.UserID, d.AmountCents, "recurrente")
 	}
@@ -204,6 +226,7 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 		webhookAmountCents = 0
 	}
 
+	start := time.Now()
 	if err := h.svc.ResolveAndCreditPayPalIntent(r.Context(), intentToken, captureID, webhookAmountCents); err != nil {
 		h.log.Error("paypal webhook: failed to resolve intent and credit balance",
 			zap.String("capture_id", captureID),
@@ -214,14 +237,28 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 			h.notifier.NotifyPaymentError(r.Context(), "paypal", err.Error(),
 				"", strconv.Itoa(webhookAmountCents))
 		}
+		h.recordPayment(r.Context(), "paypal", "failed", time.Since(start))
 		writeError(w, r, h.log, err)
 		return
 	}
 
+	h.recordPayment(r.Context(), "paypal", "success", time.Since(start))
 	if h.notifier != nil && webhookAmountCents > 0 {
 		h.notifier.NotifyBalanceCredited(r.Context(), 0, webhookAmountCents, "paypal")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *PaymentWebhookHandler) recordPayment(ctx context.Context, provider, status string, elapsed time.Duration) {
+	if h.paymentDuration == nil {
+		return
+	}
+	h.paymentDuration.Record(ctx, elapsed.Seconds(),
+		metric.WithAttributes(
+			attribute.String("provider", provider),
+			attribute.String("status", status),
+		),
+	)
 }
 
 // paypalAmountToCents converts a PayPal decimal amount string (e.g. "12.50",

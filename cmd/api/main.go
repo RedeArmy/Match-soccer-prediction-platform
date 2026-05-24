@@ -166,7 +166,11 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		})
 		defer rc.Close() //nolint:errcheck
 		checkers = append(checkers, health.NewRedisChecker(rc))
-		cacheStore = cache.NewRedisStore(rc)
+		rs := cache.NewRedisStore(rc)
+		if err := rs.RegisterMetrics(meter); err != nil {
+			log.Warn("redis cache metrics registration failed", zap.Error(err))
+		}
+		cacheStore = rs
 	}
 
 	// The api.Server owns the routing table and receives all shared

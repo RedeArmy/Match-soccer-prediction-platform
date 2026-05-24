@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const resendBaseURL = "https://api.resend.com"
@@ -49,7 +51,8 @@ func NewResendClientWithBaseURL(apiKey, baseURL string) *ResendClient {
 		apiKey:  apiKey,
 		baseURL: baseURL,
 		http: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout:   10 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		},
 	}
 }

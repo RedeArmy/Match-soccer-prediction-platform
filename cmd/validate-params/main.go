@@ -57,6 +57,7 @@ type paramSpec struct {
 //   - 000108_seed_render_timeout_param          (+1)
 //   - 000110_seed_notify_dlq_replay_params      (+4)
 //   - 000111_seed_notify_outbox_params          (+5)
+//   - 000112_seed_observability_alert_params    (+2)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -216,6 +217,11 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyNotifyOutboxLockDurationSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxLockDurationSec), paramType: "int", category: "notify", isRuntime: false},
 	{key: domain.ParamKeyNotifyOutboxMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxMaxAttempts), paramType: "int", category: "notify", isRuntime: false},
 	{key: domain.ParamKeyNotifyOutboxLagAlertThresholdSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxLagAlertThresholdSec), paramType: "int", category: "notify", isRuntime: false},
+
+	// Observability alerting thresholds (migration 000112); runtime — adjustable without restart
+	// to tune Prometheus alert sensitivity without rolling a new worker build.
+	{key: domain.ParamKeyNotifyOutboxLagCriticalSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxLagCriticalSec), paramType: "int", category: "notify", isRuntime: true},
+	{key: domain.ParamKeyNotifyDLQWarningThreshold, defaultValue: strconv.Itoa(domain.DefaultNotifyDLQWarningThreshold), paramType: "int", category: "notify", isRuntime: true},
 }
 
 type dbParam struct {

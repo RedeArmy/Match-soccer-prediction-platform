@@ -109,6 +109,11 @@ const (
 	// which the worker fires a NotifyOutboxLag alert on each poll cycle.
 	DefaultNotifyOutboxLagAlertThresholdSec = 30 // notify.outbox_lag_alert_threshold_sec
 
+	// DefaultNotifyOutboxLagCriticalSec is the outbox lag in seconds above which
+	// Prometheus fires WCQOutboxLagCritical (alerting_rules.yml). Must be greater
+	// than DefaultNotifyOutboxLagAlertThresholdSec (warning = 30 s).
+	DefaultNotifyOutboxLagCriticalSec = 300 // notify.outbox_lag_critical_sec — 5 minutes
+
 	// Notification DLQ replay worker (is_runtime=FALSE: worker restart required).
 	// These constants mirror the outbox.DLQWorker option defaults so that the
 	// domain package is the single source of truth for tunable operational values.
@@ -129,6 +134,11 @@ const (
 	// DefaultNotifyDLQReplayAlertThreshold is the unresolved-entry count above
 	// which the DLQ worker fires an n8n overflow alert on each poll cycle.
 	DefaultNotifyDLQReplayAlertThreshold = 50 // notify.dlq_replay_alert_threshold
+
+	// DefaultNotifyDLQWarningThreshold is the unresolved DLQ entry count above
+	// which Prometheus fires WCQDLQDepthWarning (alerting_rules.yml). Must be
+	// less than DefaultNotifyDLQReplayAlertThreshold (critical = 50).
+	DefaultNotifyDLQWarningThreshold = 10 // notify.dlq_warning_threshold
 )
 
 // Notification system parameter keys.
@@ -237,6 +247,9 @@ const (
 	// ParamKeyNotifyOutboxLagAlertThresholdSec is the lag age in seconds above which
 	// the outbox worker fires a NotifyOutboxLag alert.
 	ParamKeyNotifyOutboxLagAlertThresholdSec = "notify.outbox_lag_alert_threshold_sec"
+	// ParamKeyNotifyOutboxLagCriticalSec is the lag age in seconds above which
+	// Prometheus fires WCQOutboxLagCritical (alerting_rules.yml).
+	ParamKeyNotifyOutboxLagCriticalSec = "notify.outbox_lag_critical_sec"
 
 	// Notification DLQ replay worker knobs (is_runtime=FALSE: worker restart required).
 
@@ -252,4 +265,7 @@ const (
 	// ParamKeyNotifyDLQReplayAlertThreshold is the unresolved DLQ count above
 	// which an n8n overflow alert is fired on each poll cycle.
 	ParamKeyNotifyDLQReplayAlertThreshold = "notify.dlq_replay_alert_threshold"
+	// ParamKeyNotifyDLQWarningThreshold is the unresolved DLQ entry count above
+	// which Prometheus fires WCQDLQDepthWarning (alerting_rules.yml).
+	ParamKeyNotifyDLQWarningThreshold = "notify.dlq_warning_threshold"
 )

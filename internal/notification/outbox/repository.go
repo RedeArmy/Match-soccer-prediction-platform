@@ -39,6 +39,15 @@ type Repository interface {
 	// their locked_until timestamp.  This recovers entries left behind by a
 	// crashed worker instance.  Returns the number of rows unlocked.
 	UnlockStale(ctx context.Context) (int64, error)
+
+	// CountPending returns the number of rows in 'pending' status that are due
+	// for processing (scheduled_at <= NOW()).  Used to expose an outbox lag gauge.
+	CountPending(ctx context.Context) (int64, error)
+
+	// OldestPendingAgeSecs returns the age in seconds of the oldest pending-due
+	// row (scheduled_at <= NOW()). Returns 0 when the queue is empty.
+	// Used to expose a processing-lag gauge for alerting on worker stalls.
+	OldestPendingAgeSecs(ctx context.Context) (float64, error)
 }
 
 // -- PostgreSQL implementation --
@@ -137,6 +146,34 @@ WHERE  status       = 'processing'
 		return 0, apperrors.Internal(err)
 	}
 	return tag.RowsAffected(), nil
+}
+
+func (r *postgresRepository) CountPending(ctx context.Context) (int64, error) {
+	const q = `
+SELECT COUNT(*)
+FROM   domain_outbox
+WHERE  status       = 'pending'
+  AND  scheduled_at <= NOW()
+`
+	var n int64
+	if err := r.pool.QueryRow(ctx, q).Scan(&n); err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return n, nil
+}
+
+func (r *postgresRepository) OldestPendingAgeSecs(ctx context.Context) (float64, error) {
+	const q = `
+SELECT COALESCE(EXTRACT(EPOCH FROM (NOW() - MIN(scheduled_at))), 0)
+FROM   domain_outbox
+WHERE  status       = 'pending'
+  AND  scheduled_at <= NOW()
+`
+	var age float64
+	if err := r.pool.QueryRow(ctx, q).Scan(&age); err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return age, nil
 }
 
 // execOne runs a single-row UPDATE and returns Internal when the query fails.
