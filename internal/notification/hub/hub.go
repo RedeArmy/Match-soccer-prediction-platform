@@ -8,11 +8,18 @@
 // counter is incremented — the SSE client will resynchronise via the
 // Last-Event-ID mechanism.
 //
+// Dead-client eviction: each connEntry tracks consecutive failed sends. When
+// the count reaches evictAfterDrops, the hub closes the channel and removes the
+// entry under its write lock. The SSE handler detects the closed channel via
+// "case n, ok := <-ch: if !ok { return }" and terminates the goroutine cleanly.
+// The HTTP connection's defer-cleanup is a no-op for already-evicted entries
+// because the map deletion is guarded by the same mutex.
+//
 // Design constraints:
 //   - Zero external dependencies.
 //   - Buffered channels of size 32 per connection.
 //   - 30-second heartbeat is the responsibility of the SSE handler, not the hub.
-//   - RWMutex: read lock (shared) for Broadcast; write lock for Connect/Disconnect.
+//   - RWMutex: read lock (shared) for Broadcast; write lock for Connect/Disconnect/Evict.
 //   - Supports ≥ 500 concurrent connections without data races (-race clean).
 package hub
 
@@ -26,7 +33,10 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-const chanBufSize = 32
+const (
+	chanBufSize     = 32
+	evictAfterDrops = 5
+)
 
 // Notification is the value delivered to SSE clients.
 type Notification struct {
@@ -39,10 +49,22 @@ type Notification struct {
 	CreatedAt string `json:"created_at"` // RFC3339
 }
 
+// connEntry holds the channel and backpressure state for a single SSE connection.
+type connEntry struct {
+	ch    chan Notification
+	drops atomic.Int32 // consecutive failed non-blocking sends; resets on success
+}
+
+// connSnapshot is the data captured under the read lock for a single connection.
+type connSnapshot struct {
+	connID string
+	entry  *connEntry
+}
+
 // Hub is a thread-safe registry of SSE client channels.
 type Hub struct {
 	mu      sync.RWMutex
-	clients map[int]map[string]chan Notification
+	clients map[int]map[string]*connEntry
 	metrics hubMetrics
 }
 
@@ -50,25 +72,30 @@ type hubMetrics struct {
 	connections atomic.Int64
 	broadcasts  atomic.Int64
 	dropped     atomic.Int64
+	evicted     atomic.Int64
 }
 
 // New constructs an empty Hub ready for use.
 func New() *Hub {
-	return &Hub{clients: make(map[int]map[string]chan Notification)}
+	return &Hub{clients: make(map[int]map[string]*connEntry)}
 }
 
 // Connect registers a new SSE connection for userID.
 // It returns a receive-only channel and a cleanup function the caller must
 // invoke (typically via defer) when the HTTP connection closes.
+//
+// The cleanup is safe to call even after the hub has evicted the connection:
+// a missing map entry means eviction already closed the channel and decremented
+// the connections counter, so the cleanup becomes a no-op.
 func (h *Hub) Connect(userID int) (<-chan Notification, func()) {
 	connID := newConnID()
-	ch := make(chan Notification, chanBufSize)
+	e := &connEntry{ch: make(chan Notification, chanBufSize)}
 
 	h.mu.Lock()
 	if h.clients[userID] == nil {
-		h.clients[userID] = make(map[string]chan Notification)
+		h.clients[userID] = make(map[string]*connEntry)
 	}
-	h.clients[userID][connID] = ch
+	h.clients[userID][connID] = e
 	h.mu.Unlock()
 
 	h.metrics.connections.Add(1)
@@ -76,46 +103,83 @@ func (h *Hub) Connect(userID int) (<-chan Notification, func()) {
 	cleanup := func() {
 		h.mu.Lock()
 		if conns, ok := h.clients[userID]; ok {
-			delete(conns, connID)
-			if len(conns) == 0 {
-				delete(h.clients, userID)
+			if _, exists := conns[connID]; exists {
+				delete(conns, connID)
+				if len(conns) == 0 {
+					delete(h.clients, userID)
+				}
+				close(e.ch)
+				h.metrics.connections.Add(-1)
 			}
+			// Entry absent: hub already evicted it (closed channel, decremented counter).
 		}
 		h.mu.Unlock()
-		h.metrics.connections.Add(-1)
-		close(ch)
 	}
-	return ch, cleanup
+	return e.ch, cleanup
 }
 
 // Broadcast delivers n to every open connection for userID.
-// If a connection's buffer is full the notification is dropped for that
-// connection and the dropped metric is incremented.
+//
+// Send behaviour:
+//   - Successful send: resets the connection's consecutive-drop counter to 0.
+//   - Full buffer (slow consumer): increments the counter and records a drop.
+//     When the counter reaches evictAfterDrops the connection is evicted under
+//     the write lock: its channel is closed, its entry removed, and the
+//     connections metric is decremented.
+//
+// Eviction is safe under concurrent cleanup: whichever of the two acquires the
+// write lock first performs the deletion and close; the second finds the entry
+// absent and skips.
 func (h *Hub) Broadcast(userID int, n Notification) {
 	// Snapshot channels under the read lock so that a concurrent cleanup()
-	// cannot modify the inner map while we iterate.  Sending to the buffered
-	// channels happens after the lock is released to keep the critical section
-	// short; the channels themselves are goroutine-safe.
+	// cannot modify the inner map while we iterate.
 	h.mu.RLock()
 	conns := h.clients[userID]
 	if len(conns) == 0 {
 		h.mu.RUnlock()
 		return
 	}
-	snapshot := make([]chan Notification, 0, len(conns))
-	for _, ch := range conns {
-		snapshot = append(snapshot, ch)
+	snapshot := make([]connSnapshot, 0, len(conns))
+	for cid, e := range conns {
+		snapshot = append(snapshot, connSnapshot{connID: cid, entry: e})
 	}
 	h.mu.RUnlock()
 
 	h.metrics.broadcasts.Add(1)
-	for _, ch := range snapshot {
+
+	var toEvict []string
+	for _, s := range snapshot {
 		select {
-		case ch <- n:
+		case s.entry.ch <- n:
+			s.entry.drops.Store(0) // reset consecutive-drop counter on success
 		default:
 			h.metrics.dropped.Add(1)
+			if s.entry.drops.Add(1) >= evictAfterDrops {
+				toEvict = append(toEvict, s.connID)
+			}
 		}
 	}
+
+	if len(toEvict) == 0 {
+		return
+	}
+
+	h.mu.Lock()
+	conns = h.clients[userID]
+	for _, cid := range toEvict {
+		if e, ok := conns[cid]; ok {
+			delete(conns, cid)
+			close(e.ch)
+			h.metrics.connections.Add(-1)
+			h.metrics.evicted.Add(1)
+		}
+		// Entry absent: cleanup() raced ahead or a prior Broadcast iteration
+		// already evicted it; both are safe no-ops here.
+	}
+	if len(conns) == 0 {
+		delete(h.clients, userID)
+	}
+	h.mu.Unlock()
 }
 
 // HasLocalConnection reports whether userID has at least one open SSE
@@ -144,6 +208,7 @@ func (h *Hub) Metrics() (connections, broadcasts, dropped int64) {
 //   - notification.sse.connections   (UpDownCounter) current open SSE connections
 //   - notification.sse.broadcasts    (Counter) cumulative Broadcast calls
 //   - notification.sse.dropped       (Counter) cumulative dropped events
+//   - notification.sse.evicted       (Counter) cumulative dead-client evictions
 //
 // In a multi-replica deployment, Prometheus aggregates per-replica gauges so
 // operators can observe both the per-instance count and the cluster total via
@@ -182,6 +247,18 @@ func (h *Hub) RegisterMetrics(meter metric.Meter) error {
 		metric.WithDescription("Cumulative SSE events dropped due to full client buffers since process start."),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
 			o.Observe(h.metrics.dropped.Load())
+			return nil
+		}),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = meter.Int64ObservableCounter(
+		"notification.sse.evicted",
+		metric.WithDescription("Cumulative SSE connections evicted for exceeding the consecutive-drop threshold."),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			o.Observe(h.metrics.evicted.Load())
 			return nil
 		}),
 	)

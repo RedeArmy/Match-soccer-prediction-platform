@@ -1474,3 +1474,139 @@ func TestPredictionRepository_Upsert_NilPredictedWinMethod_RemainsNil(t *testing
 		t.Errorf("expected nil PredictedWinMethod for group-stage prediction, got %q", *got.PredictedWinMethod)
 	}
 }
+
+// ── PredictionRepository - InsertScoringBatch ─────────────────────────────────
+
+func TestPredictionRepository_InsertScoringBatch_EmptyEntries_IsNoop(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	if err := repo.InsertScoringBatch(context.Background(), nil); err != nil {
+		t.Errorf("nil batch: expected nil error, got %v", err)
+	}
+	if err := repo.InsertScoringBatch(context.Background(), []domain.PredictionScoreLog{}); err != nil {
+		t.Errorf("empty slice: expected nil error, got %v", err)
+	}
+
+	var count int
+	if err := testDB.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM prediction_score_log").Scan(&count); err != nil {
+		t.Fatalf("count query: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 rows for empty batch, got %d", count)
+	}
+}
+
+func TestPredictionRepository_InsertScoringBatch_SingleEntry_NilOptionals(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatch(t)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	entries := []domain.PredictionScoreLog{
+		{
+			PredictionID:      p.ID,
+			MatchID:           m.ID,
+			UserID:            u.ID,
+			OldPoints:         nil,
+			NewPoints:         5,
+			MatchHomeScore:    3,
+			MatchAwayScore:    1,
+			MatchWinMethod:    nil,
+			MatchPhase:        domain.PhaseGroupStage,
+			PredHomeScore:     2,
+			PredAwayScore:     1,
+			PredWinMethod:     nil,
+			CfgExactScore:     5,
+			CfgCorrectOutcome: 2,
+			CfgGoalDiff:       1,
+			CfgExtraTimeBonus: 1,
+			CfgPenaltiesBonus: 1,
+		},
+	}
+	if err := predRepo.InsertScoringBatch(context.Background(), entries); err != nil {
+		t.Fatalf("InsertScoringBatch: %v", err)
+	}
+
+	var newPts int
+	var oldPts *int
+	if err := testDB.QueryRow(context.Background(),
+		"SELECT new_points, old_points FROM prediction_score_log WHERE prediction_id = $1",
+		p.ID).Scan(&newPts, &oldPts); err != nil {
+		t.Fatalf("query log row: %v", err)
+	}
+	if newPts != 5 {
+		t.Errorf("new_points: got %d, want 5", newPts)
+	}
+	if oldPts != nil {
+		t.Errorf("old_points: got %v, want nil", *oldPts)
+	}
+}
+
+func TestPredictionRepository_InsertScoringBatch_WithWinMethodsAndOldPoints(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m := seedMatchWithPhase(t, domain.PhaseRoundOf16)
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 1}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	oldPts := 2
+	matchWM := domain.WinMethodExtraTime
+	predWM := domain.WinMethodExtraTime
+	entries := []domain.PredictionScoreLog{
+		{
+			PredictionID:      p.ID,
+			MatchID:           m.ID,
+			UserID:            u.ID,
+			OldPoints:         &oldPts,
+			NewPoints:         6,
+			MatchHomeScore:    1,
+			MatchAwayScore:    1,
+			MatchWinMethod:    &matchWM,
+			MatchPhase:        domain.PhaseRoundOf16,
+			PredHomeScore:     1,
+			PredAwayScore:     1,
+			PredWinMethod:     &predWM,
+			CfgExactScore:     5,
+			CfgCorrectOutcome: 2,
+			CfgGoalDiff:       1,
+			CfgExtraTimeBonus: 1,
+			CfgPenaltiesBonus: 1,
+		},
+	}
+	if err := predRepo.InsertScoringBatch(context.Background(), entries); err != nil {
+		t.Fatalf("InsertScoringBatch: %v", err)
+	}
+
+	var newPts int
+	var gotOldPts *int
+	var gotMatchWM, gotPredWM *string
+	if err := testDB.QueryRow(context.Background(),
+		`SELECT new_points, old_points, match_win_method, pred_win_method
+		   FROM prediction_score_log WHERE prediction_id = $1`,
+		p.ID).Scan(&newPts, &gotOldPts, &gotMatchWM, &gotPredWM); err != nil {
+		t.Fatalf("query log row: %v", err)
+	}
+	if newPts != 6 {
+		t.Errorf("new_points: got %d, want 6", newPts)
+	}
+	if gotOldPts == nil || *gotOldPts != 2 {
+		t.Errorf("old_points: got %v, want 2", gotOldPts)
+	}
+	if gotMatchWM == nil || *gotMatchWM != string(domain.WinMethodExtraTime) {
+		t.Errorf("match_win_method: got %v, want extra_time", gotMatchWM)
+	}
+	if gotPredWM == nil || *gotPredWM != string(domain.WinMethodExtraTime) {
+		t.Errorf("pred_win_method: got %v, want extra_time", gotPredWM)
+	}
+}

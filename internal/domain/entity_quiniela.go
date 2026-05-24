@@ -143,6 +143,34 @@ type Prediction struct {
 	UpdatedAt          time.Time
 }
 
+// PredictionScoreLog is an immutable audit record written each time ScoreMatch
+// recalculates points for a prediction. It captures the full scoring context —
+// match result, prediction submitted, and active scoring config — so that any
+// points dispute can be reconstructed from this table alone.
+//
+// OldPoints is nil on the first scoring run; subsequent re-scores set it to
+// the value that was overwritten. The delta (new_points - COALESCE(old_points,0))
+// is computed by the database as a generated column.
+type PredictionScoreLog struct {
+	PredictionID      int
+	MatchID           int
+	UserID            int
+	OldPoints         *int // nil on first scoring
+	NewPoints         int
+	MatchHomeScore    int
+	MatchAwayScore    int
+	MatchWinMethod    *WinMethod // nil for group-stage fixtures
+	MatchPhase        MatchPhase
+	PredHomeScore     int
+	PredAwayScore     int
+	PredWinMethod     *WinMethod // nil when user did not guess a win method
+	CfgExactScore     int
+	CfgCorrectOutcome int
+	CfgGoalDiff       int
+	CfgExtraTimeBonus int
+	CfgPenaltiesBonus int
+}
+
 // LeaderboardEntry pairs a quiniela participant with their aggregated score.
 // It is a read-only projection used exclusively by the ranking service and the
 // leaderboard API response; it is never persisted to the database.

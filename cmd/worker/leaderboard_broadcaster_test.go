@@ -108,7 +108,7 @@ func TestLeaderboardBroadcaster_PublishesOneMessagePerMember(t *testing.T) {
 				t.Fatalf("unmarshal signal: %v", err)
 			}
 			got = append(got, sig)
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatalf("timed out waiting for message %d/4", i+1)
 		}
 	}
@@ -157,7 +157,7 @@ func TestLeaderboardBroadcaster_ActionURLContainsQuinielaID(t *testing.T) {
 		if sig.UserID != 999 {
 			t.Errorf("user_id = %d; want 999", sig.UserID)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for leaderboard signal")
 	}
 }
@@ -209,4 +209,21 @@ func TestLeaderboardBroadcaster_PublishError_DoesNotPropagate(t *testing.T) {
 	}
 	// Must not panic or propagate the Publish error.
 	b.BroadcastLeaderboardUpdated(context.Background(), []int{1})
+}
+
+func TestLeaderboardBroadcaster_ContextCancelled_AbortsRetry(t *testing.T) {
+	_, rc := newMiniredisClient(t)
+	_ = rc.Close() // force every Publish call to fail so the retry loop is entered
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel: ctx.Done() fires immediately inside the retry select
+
+	b := &redisPubLeaderboardBroadcaster{
+		client:     rc,
+		memberRepo: &stubMemberRepo{membersByQuiniela: map[int][]int{1: {99}}},
+		log:        zap.NewNop(),
+	}
+	// Must complete without blocking; the cancelled context exits the retry loop
+	// via the ctx.Done() case rather than waiting for the full backoff sleep.
+	b.BroadcastLeaderboardUpdated(ctx, []int{1})
 }

@@ -543,4 +543,85 @@ func (r *PostgresPredictionRepository) GlobalLeaderboard(ctx context.Context, li
 	return entries, nil
 }
 
+// InsertScoringBatch writes one row to prediction_score_log per entry using a
+// single UNNEST INSERT statement. The log is best-effort: callers must not
+// treat an error here as a scoring failure.
+func (r *PostgresPredictionRepository) InsertScoringBatch(ctx context.Context, entries []domain.PredictionScoreLog) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	predIDs := make([]int, len(entries))
+	matchIDs := make([]int, len(entries))
+	userIDs := make([]int, len(entries))
+	oldPts := make([]*int, len(entries))
+	newPts := make([]int, len(entries))
+	mHome := make([]int, len(entries))
+	mAway := make([]int, len(entries))
+	mWin := make([]*string, len(entries))
+	mPhase := make([]string, len(entries))
+	pHome := make([]int, len(entries))
+	pAway := make([]int, len(entries))
+	pWin := make([]*string, len(entries))
+	cfgExact := make([]int, len(entries))
+	cfgOutcome := make([]int, len(entries))
+	cfgGoalDiff := make([]int, len(entries))
+	cfgET := make([]int, len(entries))
+	cfgPen := make([]int, len(entries))
+
+	for i, e := range entries {
+		predIDs[i] = e.PredictionID
+		matchIDs[i] = e.MatchID
+		userIDs[i] = e.UserID
+		oldPts[i] = e.OldPoints
+		newPts[i] = e.NewPoints
+		mHome[i] = e.MatchHomeScore
+		mAway[i] = e.MatchAwayScore
+		if e.MatchWinMethod != nil {
+			s := string(*e.MatchWinMethod)
+			mWin[i] = &s
+		}
+		mPhase[i] = string(e.MatchPhase)
+		pHome[i] = e.PredHomeScore
+		pAway[i] = e.PredAwayScore
+		if e.PredWinMethod != nil {
+			s := string(*e.PredWinMethod)
+			pWin[i] = &s
+		}
+		cfgExact[i] = e.CfgExactScore
+		cfgOutcome[i] = e.CfgCorrectOutcome
+		cfgGoalDiff[i] = e.CfgGoalDiff
+		cfgET[i] = e.CfgExtraTimeBonus
+		cfgPen[i] = e.CfgPenaltiesBonus
+	}
+
+	if _, err := r.db.Exec(ctx, `
+		INSERT INTO prediction_score_log (
+			prediction_id, match_id, user_id,
+			old_points, new_points,
+			match_home_score, match_away_score, match_win_method, match_phase,
+			pred_home_score,  pred_away_score,  pred_win_method,
+			cfg_exact_score,  cfg_correct_outcome, cfg_goal_diff,
+			cfg_extra_time_bonus, cfg_penalties_bonus
+		)
+		SELECT * FROM UNNEST(
+			$1::int[], $2::int[], $3::int[],
+			$4::smallint[], $5::smallint[],
+			$6::smallint[], $7::smallint[], $8::text[], $9::text[],
+			$10::smallint[], $11::smallint[], $12::text[],
+			$13::smallint[], $14::smallint[], $15::smallint[],
+			$16::smallint[], $17::smallint[]
+		)`,
+		predIDs, matchIDs, userIDs,
+		oldPts, newPts,
+		mHome, mAway, mWin, mPhase,
+		pHome, pAway, pWin,
+		cfgExact, cfgOutcome, cfgGoalDiff,
+		cfgET, cfgPen,
+	); err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
 var _ PredictionRepository = (*PostgresPredictionRepository)(nil)
