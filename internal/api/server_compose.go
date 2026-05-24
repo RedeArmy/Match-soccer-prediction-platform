@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
@@ -189,6 +190,9 @@ func (s *Server) buildHandlers(
 	}
 	resiStore := storage.NewResilientFileStore(fileStore, fileStoreBreaker, s.log)
 	fileStore = resiStore
+	if err := breaker.RegisterGauge(otel.GetMeterProvider().Meter("wcq"), fileStoreBreaker); err != nil {
+		s.log.Warn("breaker.RegisterGauge(file-store) failed", zap.Error(err))
+	}
 	// Register a health checker so /health/ready reflects live storage state.
 	// The checker bypasses the circuit breaker to probe the provider directly
 	// when the circuit is closed, and reports "degraded" immediately when open.

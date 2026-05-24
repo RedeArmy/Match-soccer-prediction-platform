@@ -8,6 +8,8 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
@@ -27,6 +29,26 @@ func newTestStore(t *testing.T) (*miniredis.Miniredis, *cache.RedisStore) {
 	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rc.Close() })
 	return mr, cache.NewRedisStore(rc)
+}
+
+// sumInt64Counter sums all data-point values for the named Int64 Sum metric in rm.
+func sumInt64Counter(rm metricdata.ResourceMetrics, name string) int64 {
+	var total int64
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != name {
+				continue
+			}
+			sd, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				continue
+			}
+			for _, dp := range sd.DataPoints {
+				total += dp.Value
+			}
+		}
+	}
+	return total
 }
 
 // ── ErrCacheMiss ──────────────────────────────────────────────────────────────
@@ -249,5 +271,91 @@ func TestRedisStore_FlushByPrefix_ScanError_ReturnsWrappedError(t *testing.T) {
 
 	if err := st.FlushByPrefix(context.Background(), "leaderboard:"); err == nil {
 		t.Fatal("expected error when Redis is unavailable, got nil")
+	}
+}
+
+// ── RegisterMetrics ───────────────────────────────────────────────────────────
+
+func TestRedisStore_RegisterMetrics_Succeeds(t *testing.T) {
+	t.Parallel()
+	_, st := newTestStore(t)
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := st.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+}
+
+func TestRedisStore_RegisterMetrics_HitCounterIncrements(t *testing.T) {
+	t.Parallel()
+	_, st := newTestStore(t)
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := st.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	ctx := context.Background()
+	_ = st.Set(ctx, "hit-key", "v", time.Minute)
+	var dest string
+	_ = st.Get(ctx, "hit-key", &dest) // cache hit
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(ctx, &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if hits := sumInt64Counter(rm, "redis.cache.hits"); hits != 1 {
+		t.Errorf("expected 1 hit; got %d", hits)
+	}
+}
+
+func TestRedisStore_RegisterMetrics_MissCounterIncrements(t *testing.T) {
+	t.Parallel()
+	_, st := newTestStore(t)
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := st.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	ctx := context.Background()
+	var dest string
+	_ = st.Get(ctx, "no-such-key", &dest) // cache miss
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(ctx, &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if misses := sumInt64Counter(rm, "redis.cache.misses"); misses != 1 {
+		t.Errorf("expected 1 miss; got %d", misses)
+	}
+}
+
+// TestRedisStore_RegisterMetrics_CorruptedJSON_IncrementsMissCounter verifies
+// that the misses counter is incremented when Get encounters a key whose stored
+// value is not valid JSON, even when metrics are registered.  Without this test
+// the s.misses.Add call inside the corrupted-JSON branch stays uncovered.
+func TestRedisStore_RegisterMetrics_CorruptedJSON_IncrementsMissCounter(t *testing.T) {
+	t.Parallel()
+	mr, st := newTestStore(t)
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := st.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	mr.Set("corrupt-key", "not-valid-json")
+
+	var dest map[string]string
+	if err := st.Get(context.Background(), "corrupt-key", &dest); !errors.Is(err, cache.ErrCacheMiss) {
+		t.Fatalf("expected ErrCacheMiss for corrupted value, got %v", err)
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if misses := sumInt64Counter(rm, "redis.cache.misses"); misses != 1 {
+		t.Errorf("corrupted-JSON miss: expected misses=1; got %d", misses)
 	}
 }

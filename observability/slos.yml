@@ -1,0 +1,230 @@
+# World Cup Quiniela — SLO definitions
+#
+# Format: Sloth v1 (https://sloth.dev)
+#   sloth generate -i observability/slos.yml \
+#                  -o observability/prometheus/rules/slo_burn_rate.yml
+#
+# Sloth generates multi-window, multi-burn-rate recording rules and alert rules
+# from these definitions, implementing the Google SRE workbook error-budget
+# burn model.  The generated file is committed alongside this source; re-run
+# the command whenever an SLO objective or SLI query changes.
+#
+# Window convention: 7-day rolling window for budget consumption; 30-day
+# targets align with monthly reporting.
+#
+# SLO naming:
+#   <service>-<operation>-<dimension>
+#   dimension: availability | latency
+#
+# Alertmanager labels:
+#   page_alert   → severity=critical  → n8n-critical / n8n-payment-escalation
+#   ticket_alert → severity=warning   → n8n-default
+
+version: "prometheus/v1"
+service: "quiniela"
+labels:
+  owner: "platform"
+  tier: "1"
+
+slos:
+
+  # ── Payment webhook ─────────────────────────────────────────────────────────
+  #
+  # Covers both /webhooks/recurrente and /webhooks/paypal.
+  # Sources: payment_processing_duration_seconds{provider, status}
+  #
+  # Buckets available for latency SLI (ms):
+  #   5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000
+  # Target p99 < 2 s → le="2.5" is the closest bucket above 2 s.
+
+  - name: "payment-webhook-availability"
+    objective: 99.9
+    description: >
+      99.9 % of payment webhook calls (Recurrente and PayPal) must complete
+      without a server-side error (status != "failed").  A failed call means
+      the user's balance was not credited and manual intervention is required.
+    sli:
+      events:
+        error_query: >-
+          sum(rate(payment_processing_duration_seconds_count{status="failed"}[{{.window}}]))
+        total_query: >-
+          sum(rate(payment_processing_duration_seconds_count[{{.window}}]))
+    alerting:
+      name: QuinielaPaymentWebhookAvailability
+      annotations:
+        summary: "Payment webhook availability SLO burn"
+        runbook: "Check /webhooks/recurrente and /webhooks/paypal handler logs; verify Recurrente/PayPal reachability."
+      page_alert:
+        labels:
+          severity: critical
+          workflow: payment-error-escalation
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "payment-webhook-latency"
+    objective: 99.9
+    description: >
+      99.9 % of payment webhook calls must complete in under 2.5 s (nearest
+      histogram bucket above the 2 s target).  Slow processing indicates
+      database contention or sluggish downstream payment API responses.
+    sli:
+      events:
+        # "error" = request that exceeded the latency target (inverted bucket)
+        error_query: >-
+          sum(rate(payment_processing_duration_seconds_count[{{.window}}]))
+          - sum(rate(payment_processing_duration_seconds_bucket{le="2.5"}[{{.window}}]))
+        total_query: >-
+          sum(rate(payment_processing_duration_seconds_count[{{.window}}]))
+    alerting:
+      name: QuinielaPaymentWebhookLatency
+      annotations:
+        summary: "Payment webhook latency SLO burn"
+        runbook: "Check payment_processing_duration_seconds p99 by provider; review DB query plans for credit operations."
+      page_alert:
+        labels:
+          severity: critical
+          workflow: payment-error-escalation
+      ticket_alert:
+        labels:
+          severity: warning
+
+  # ── Balance read ────────────────────────────────────────────────────────────
+  #
+  # Covers GET /api/v1/users/me/balance.
+  # The balance is served from a cached ledger aggregate; p99 < 100 ms is
+  # achievable without hitting the database on cache-warm paths.
+  #
+  # Bucket: le="0.1" (100 ms boundary exists in the http.server.request.duration
+  # histogram: 0.005, 0.010, 0.025, 0.050, 0.100, 0.250 …)
+
+  - name: "balance-read-availability"
+    objective: 99.95
+    description: >
+      99.95 % of GET /api/v1/users/me/balance requests must return a non-5xx
+      response.  This endpoint is critical for users to verify their balance
+      before entering a group.
+    sli:
+      events:
+        error_query: >-
+          sum(rate(http_server_request_duration_seconds_count{
+            http_route="/api/v1/users/me/balance",
+            http_response_status_code=~"5.."
+          }[{{.window}}]))
+        total_query: >-
+          sum(rate(http_server_request_duration_seconds_count{
+            http_route="/api/v1/users/me/balance"
+          }[{{.window}}]))
+    alerting:
+      name: QuinielaBalanceReadAvailability
+      annotations:
+        summary: "Balance read availability SLO burn"
+        runbook: "Check balance handler logs and Redis cache health; verify ledger aggregate query."
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "balance-read-latency"
+    objective: 99.95
+    description: >
+      99.95 % of GET /api/v1/users/me/balance requests must complete in under
+      100 ms.  Latency above 100 ms on cache-warm paths indicates Redis
+      slowness or lock contention on the balance aggregate.
+    sli:
+      events:
+        error_query: >-
+          sum(rate(http_server_request_duration_seconds_count{
+            http_route="/api/v1/users/me/balance"
+          }[{{.window}}]))
+          - sum(rate(http_server_request_duration_seconds_bucket{
+            http_route="/api/v1/users/me/balance",
+            le="0.1"
+          }[{{.window}}]))
+        total_query: >-
+          sum(rate(http_server_request_duration_seconds_count{
+            http_route="/api/v1/users/me/balance"
+          }[{{.window}}]))
+    alerting:
+      name: QuinielaBalanceReadLatency
+      annotations:
+        summary: "Balance read latency SLO burn"
+        runbook: "Check Redis hit rate (redis_cache_hits_total / total); profile balance aggregate query if cache is warm."
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  # ── Admin API ────────────────────────────────────────────────────────────────
+  #
+  # Covers all routes under /api/v1/admin/**.
+  # Admin routes handle match management, user moderation, and payment
+  # approvals.  A lower latency target (500 ms) is acceptable because admin
+  # operations are infrequent and involve database writes.
+  #
+  # Bucket: le="0.5" (500 ms boundary exists in the histogram).
+
+  - name: "admin-api-availability"
+    objective: 99.9
+    description: >
+      99.9 % of requests to /api/v1/admin/** must return a non-5xx response.
+      Admin operations affect match data, user bans, and payment approvals;
+      failures have direct business impact and require an audit trail.
+    sli:
+      events:
+        error_query: >-
+          sum(rate(http_server_request_duration_seconds_count{
+            http_route=~"/api/v1/admin/.*",
+            http_response_status_code=~"5.."
+          }[{{.window}}]))
+        total_query: >-
+          sum(rate(http_server_request_duration_seconds_count{
+            http_route=~"/api/v1/admin/.*"
+          }[{{.window}}]))
+    alerting:
+      name: QuinielaAdminAPIAvailability
+      annotations:
+        summary: "Admin API availability SLO burn"
+        runbook: "Check admin handler logs; verify database connectivity and role-check middleware."
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "admin-api-latency"
+    objective: 99.9
+    description: >
+      99.9 % of requests to /api/v1/admin/** must complete in under 500 ms.
+      Admin writes involve auditing and outbox insertion; latency above 500 ms
+      indicates database slowness or missing indexes on the admin queries.
+    sli:
+      events:
+        error_query: >-
+          sum(rate(http_server_request_duration_seconds_count{
+            http_route=~"/api/v1/admin/.*"
+          }[{{.window}}]))
+          - sum(rate(http_server_request_duration_seconds_bucket{
+            http_route=~"/api/v1/admin/.*",
+            le="0.5"
+          }[{{.window}}]))
+        total_query: >-
+          sum(rate(http_server_request_duration_seconds_count{
+            http_route=~"/api/v1/admin/.*"
+          }[{{.window}}]))
+    alerting:
+      name: QuinielaAdminAPILatency
+      annotations:
+        summary: "Admin API latency SLO burn"
+        runbook: "Profile slow admin queries with EXPLAIN ANALYZE; check audit-log insert and outbox write latency."
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

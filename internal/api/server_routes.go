@@ -58,6 +58,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	r.Use(middleware.Recover(s.log))
 	r.Use(middleware.RequestLogger(s.log))
 	r.Use(middleware.CORS(s.cfg.CORS.AllowedOrigins))
+	r.Use(middleware.NewMetrics(otel.GetMeterProvider().Meter("wcq")))
 
 	// Infrastructure endpoints - not versioned, no authentication required.
 	r.Get("/health", s.handleHealth)
@@ -155,6 +156,13 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 
 	h := s.buildHandlers(ctx, repos, paramSvc, scorer)
 
+	// Register per-handler metrics after construction so every handler that
+	// exposes OTel instruments is wired to the global meter.
+	meter := otel.GetMeterProvider().Meter("wcq")
+	if err := h.paymentWebhook.RegisterMetrics(meter); err != nil {
+		s.log.Warn("paymentWebhook.RegisterMetrics failed", zap.Error(err))
+	}
+
 	// Webhook endpoints — authenticated via provider-specific signatures, not Clerk JWT.
 	// Must be registered before the /api/v1 subrouter so they receive no auth middleware.
 	// Each provider uses its own signature scheme:
@@ -178,6 +186,9 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	certFetcher := middleware.BreakerCertFetcher(middleware.DefaultPayPalCertFetcher(), paypalCertBreaker, s.log)
 	r.With(middleware.PayPalWebhookAuth(s.cfg.Payment.PayPalWebhookID, certFetcher, s.log)).
 		Post("/webhooks/paypal", h.paymentWebhook.HandlePayPal)
+	if err := breaker.RegisterGauge(meter, paypalCertBreaker); err != nil {
+		s.log.Warn("breaker.RegisterGauge(paypal-cert) failed", zap.Error(err))
+	}
 
 	// One-click email unsubscribe — no Clerk auth required; the signed token
 	// provides its own authentication (see internal/notification/unsubscribe).

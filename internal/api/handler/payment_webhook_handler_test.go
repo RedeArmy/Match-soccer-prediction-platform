@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
@@ -225,5 +228,57 @@ func TestWebhookHandler_PayPal_MalformedAmount_StillReturns204(t *testing.T) {
 	rec := postJSON(t, router, "/webhooks/paypal", payload)
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("expected 204 even with malformed amount (non-fatal), got %d", rec.Code)
+	}
+}
+
+// ── RegisterMetrics ───────────────────────────────────────────────────────────
+
+func TestPaymentWebhookHandler_RegisterMetrics_Succeeds(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+	h := handler.NewPaymentWebhookHandler(&stubWebhookPaymentSvc{}, zaptest.NewLogger(t))
+	if err := h.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+}
+
+func TestPaymentWebhookHandler_RegisterMetrics_RecordsDurationOnSuccess(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+	h := handler.NewPaymentWebhookHandler(&stubWebhookPaymentSvc{}, zaptest.NewLogger(t))
+	if err := h.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("POST /webhooks/recurrente", stampVerifiedBody(http.HandlerFunc(h.HandleRecurrente)))
+
+	payload := map[string]any{
+		"event_type": "payment.confirmed",
+		"data": map[string]any{
+			"reference":    "ref-x",
+			"amount_cents": 1000,
+			"currency":     "GTQ",
+			"user_id":      1,
+		},
+	}
+	postJSON(t, mux, "/webhooks/recurrente", payload)
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	found := false
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name == "payment.processing.duration" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected 'payment.processing.duration' histogram after request")
 	}
 }

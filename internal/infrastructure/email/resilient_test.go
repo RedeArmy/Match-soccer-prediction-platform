@@ -29,6 +29,17 @@ func newTestTracer() (*tracetest.SpanRecorder, *sdktrace.TracerProvider) {
 	return rec, tp
 }
 
+// findSpan returns the first span with the given name, or nil if not found.
+// ResilientSender creates "email.Send"; otelhttp transport creates "HTTP POST".
+func findSpan(spans []sdktrace.ReadOnlySpan, name string) sdktrace.ReadOnlySpan {
+	for _, s := range spans {
+		if s.Name() == name {
+			return s
+		}
+	}
+	return nil
+}
+
 func TestResilientSender_Success_RecordsOkSpan(t *testing.T) {
 	t.Parallel()
 
@@ -54,12 +65,12 @@ func TestResilientSender_Success_RecordsOkSpan(t *testing.T) {
 		t.Errorf("msgID: got %q; want %q", msgID, "msg-ok")
 	}
 
-	spans := rec.Ended()
-	if len(spans) != 1 {
-		t.Fatalf("spans: got %d; want 1", len(spans))
+	span := findSpan(rec.Ended(), "email.Send")
+	if span == nil {
+		t.Fatal("expected an 'email.Send' span; none found")
 	}
-	if spans[0].Status().Code != codes.Ok {
-		t.Errorf("span status: got %v; want Ok", spans[0].Status().Code)
+	if span.Status().Code != codes.Ok {
+		t.Errorf("span status: got %v; want Ok", span.Status().Code)
 	}
 }
 
@@ -81,12 +92,12 @@ func TestResilientSender_GenuineError_PropagatesAndRecordsErrorSpan(t *testing.T
 		t.Fatal("expected error for 500 response; got nil")
 	}
 
-	spans := rec.Ended()
-	if len(spans) != 1 {
-		t.Fatalf("spans: got %d; want 1", len(spans))
+	span := findSpan(rec.Ended(), "email.Send")
+	if span == nil {
+		t.Fatal("expected an 'email.Send' span; none found")
 	}
-	if spans[0].Status().Code != codes.Error {
-		t.Errorf("span status: got %v; want Error", spans[0].Status().Code)
+	if span.Status().Code != codes.Error {
+		t.Errorf("span status: got %v; want Error", span.Status().Code)
 	}
 }
 
@@ -273,12 +284,12 @@ func TestResilientSender_OTelAttributes_ToAndSubject(t *testing.T) {
 	}
 	_, _ = s.Send(context.Background(), msg)
 
-	spans := rec.Ended()
-	if len(spans) != 1 {
-		t.Fatalf("spans: got %d; want 1", len(spans))
+	span := findSpan(rec.Ended(), "email.Send")
+	if span == nil {
+		t.Fatal("expected an 'email.Send' span; none found")
 	}
 	attrs := make(map[string]string)
-	for _, a := range spans[0].Attributes() {
+	for _, a := range span.Attributes() {
 		attrs[string(a.Key)] = a.Value.AsString()
 	}
 	if got := attrs["email.to"]; got != "alice@test.com,bob@test.com" {

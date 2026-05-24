@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	wp "github.com/SherClockHolmes/webpush-go"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Message is the payload delivered to a Web Push endpoint.
@@ -42,7 +43,9 @@ type VAPIDClient struct {
 
 // NewVAPIDClient constructs a VAPIDClient.
 func NewVAPIDClient(publicKey, privateKey, subject string) *VAPIDClient {
-	return newVAPIDClientWithHTTP(publicKey, privateKey, subject, &http.Client{})
+	return newVAPIDClientWithHTTP(publicKey, privateKey, subject, &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	})
 }
 
 // newVAPIDClientWithHTTP constructs a VAPIDClient using the provided HTTP client.

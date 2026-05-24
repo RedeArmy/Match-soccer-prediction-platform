@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // RedisStore implements Store using Redis GET/SET/DEL commands with JSON
@@ -18,6 +19,8 @@ import (
 // does not block waiting for a slow Redis round-trip.
 type RedisStore struct {
 	client *redis.Client
+	hits   metric.Int64Counter // nil when metrics not registered
+	misses metric.Int64Counter
 }
 
 // NewRedisStore constructs a RedisStore backed by the provided client.
@@ -27,11 +30,32 @@ func NewRedisStore(client *redis.Client) *RedisStore {
 	return &RedisStore{client: client}
 }
 
+// RegisterMetrics wires hit/miss counters into the provided meter.  Call once
+// after construction; safe to skip in tests or when metrics are disabled.
+func (s *RedisStore) RegisterMetrics(meter metric.Meter) error {
+	var err error
+	s.hits, err = meter.Int64Counter(
+		"redis.cache.hits",
+		metric.WithDescription("Number of Redis cache hits (key found and decoded successfully)."),
+	)
+	if err != nil {
+		return err
+	}
+	s.misses, err = meter.Int64Counter(
+		"redis.cache.misses",
+		metric.WithDescription("Number of Redis cache misses (key absent, expired, or undecodeable)."),
+	)
+	return err
+}
+
 // Get retrieves the value stored under key and JSON-unmarshals it into dest.
 // Returns ErrCacheMiss when the key does not exist or has expired.
 func (s *RedisStore) Get(ctx context.Context, key string, dest interface{}) error {
 	raw, err := s.client.Get(ctx, key).Bytes()
 	if errors.Is(err, redis.Nil) {
+		if s.misses != nil {
+			s.misses.Add(ctx, 1)
+		}
 		return ErrCacheMiss
 	}
 	if err != nil {
@@ -40,7 +64,13 @@ func (s *RedisStore) Get(ctx context.Context, key string, dest interface{}) erro
 	if err := json.Unmarshal(raw, dest); err != nil {
 		// Corrupted or schema-changed cached value - treat as a miss so the
 		// caller can repopulate with the current schema.
+		if s.misses != nil {
+			s.misses.Add(ctx, 1)
+		}
 		return ErrCacheMiss
+	}
+	if s.hits != nil {
+		s.hits.Add(ctx, 1)
 	}
 	return nil
 }
