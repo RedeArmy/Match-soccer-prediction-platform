@@ -81,19 +81,19 @@ func NewAdminDispatcher(cfg Config) *AdminDispatcher {
 		cfg.Log.Warn("n8n webhook: WCQ_N8N_WEBHOOKSECRET not set — requests will be unsigned; any caller who discovers the URL can inject events")
 	}
 	return &AdminDispatcher{
-		params:     cfg.Params,
-		logRepo:    cfg.LogRepo,
-		dlqRepo:    cfg.DLQRepo,
-		mailer:     cfg.Mailer,
-		fromAddr:   cfg.FromAddr,
-		n8nURL:     cfg.N8nURL,
-		n8nSecret:  cfg.N8nSecret,
+		params:    cfg.Params,
+		logRepo:   cfg.LogRepo,
+		dlqRepo:   cfg.DLQRepo,
+		mailer:    cfg.Mailer,
+		fromAddr:  cfg.FromAddr,
+		n8nURL:    cfg.N8nURL,
+		n8nSecret: cfg.N8nSecret,
 		httpClient: &http.Client{
 			Timeout:   5 * time.Second,
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		},
-		log:        cfg.Log,
-		renderFn:   renderEmail,
+		log:      cfg.Log,
+		renderFn: renderEmail,
 	}
 }
 
