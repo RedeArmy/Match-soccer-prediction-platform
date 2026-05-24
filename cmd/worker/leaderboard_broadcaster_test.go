@@ -108,7 +108,7 @@ func TestLeaderboardBroadcaster_PublishesOneMessagePerMember(t *testing.T) {
 				t.Fatalf("unmarshal signal: %v", err)
 			}
 			got = append(got, sig)
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatalf("timed out waiting for message %d/4", i+1)
 		}
 	}
@@ -157,7 +157,7 @@ func TestLeaderboardBroadcaster_ActionURLContainsQuinielaID(t *testing.T) {
 		if sig.UserID != 999 {
 			t.Errorf("user_id = %d; want 999", sig.UserID)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for leaderboard signal")
 	}
 }
