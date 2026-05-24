@@ -14,7 +14,7 @@ import (
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // checkFloat64GaugeDataPoints validates every data point in m against want.
-func checkFloat64GaugeDataPoints(t *testing.T, m metricdata.Metric, name string, want float64) {
+func checkFloat64GaugeDataPoints(t *testing.T, m metricdata.Metrics, name string, want float64) {
 	t.Helper()
 	gd, ok := m.Data.(metricdata.Gauge[float64])
 	if !ok {
