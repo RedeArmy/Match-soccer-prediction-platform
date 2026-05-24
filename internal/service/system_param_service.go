@@ -428,11 +428,11 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyDLQReplayAlertThreshold:  {1, 10_000}, // 1 – 10 000 unresolved entries
 
 	// Notification outbox dispatch worker (migration 000111, is_runtime=FALSE).
-	domain.ParamKeyNotifyOutboxBatchSize:             {1, 1_000}, // 1 – 1 000 rows per poll
-	domain.ParamKeyNotifyOutboxPollIntervalSec:       {1, 3_600}, // 1 s – 1 hour
-	domain.ParamKeyNotifyOutboxLockDurationSec:       {30, 3_600}, // 30 s – 1 hour
-	domain.ParamKeyNotifyOutboxMaxAttempts:           {1, 20},    // 1 – 20 dispatch attempts
-	domain.ParamKeyNotifyOutboxLagAlertThresholdSec:  {1, 3_600}, // 1 s – 1 hour
+	domain.ParamKeyNotifyOutboxBatchSize:            {1, 1_000},  // 1 – 1 000 rows per poll
+	domain.ParamKeyNotifyOutboxPollIntervalSec:      {1, 3_600},  // 1 s – 1 hour
+	domain.ParamKeyNotifyOutboxLockDurationSec:      {30, 3_600}, // 30 s – 1 hour
+	domain.ParamKeyNotifyOutboxMaxAttempts:          {1, 20},     // 1 – 20 dispatch attempts
+	domain.ParamKeyNotifyOutboxLagAlertThresholdSec: {1, 3_600},  // 1 s – 1 hour
 }
 
 // paramStringValidator validates a string system-param value for a specific key.
