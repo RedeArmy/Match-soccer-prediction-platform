@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -27,6 +28,18 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/metrics"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
+
+// flushShutdown calls shutdown with a 5-second deadline and logs any failure.
+// It is used as a deferred cleanup for tracing and metrics providers: by the
+// time it fires, ctx is already cancelled, so context.WithoutCancel is required
+// to obtain a deadline-capable parent without inheriting the cancellation.
+func flushShutdown(ctx context.Context, shutdown func(context.Context) error, label string, log *zap.Logger) {
+	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := shutdown(flushCtx); err != nil {
+		log.Sugar().Warnf("%s flush: %v", label, err)
+	}
+}
 
 // setupTracing initialises the global OpenTelemetry TracerProvider and returns
 // a shutdown function that flushes pending spans on process exit.
