@@ -149,6 +149,10 @@ func main() {
 	log, err := logger.New(logger.Config{
 		Level:    cfg.Logger.Level,
 		Encoding: cfg.Logger.Encoding,
+		InitialFields: []zap.Field{
+			zap.String("service", cfg.Tracing.ServiceName+"-worker"),
+			zap.String("env", cfg.Environment),
+		},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger error: %v\n", err)
