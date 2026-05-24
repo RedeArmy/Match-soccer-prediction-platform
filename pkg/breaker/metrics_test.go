@@ -10,8 +10,22 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/breaker"
 )
 
+// backendStatesFromGauge extracts backend → state values from a single gauge
+// data set. Kept separate so collectBreakerStates stays below gocognit limit.
+func backendStatesFromGauge(gd metricdata.Gauge[float64]) map[string]float64 {
+	vals := map[string]float64{}
+	for _, dp := range gd.DataPoints {
+		for _, attr := range dp.Attributes.ToSlice() {
+			if string(attr.Key) == "backend" {
+				vals[attr.Value.AsString()] = dp.Value
+			}
+		}
+	}
+	return vals
+}
+
 // collectBreakerStates reads the circuit_breaker.state gauge and returns a
-// map of backend name → state value. Extracted to keep test bodies flat.
+// map of backend name → state value.
 func collectBreakerStates(t *testing.T, reader sdkmetric.Reader) map[string]float64 {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -28,12 +42,8 @@ func collectBreakerStates(t *testing.T, reader sdkmetric.Reader) map[string]floa
 			if !ok {
 				continue
 			}
-			for _, dp := range gd.DataPoints {
-				for _, attr := range dp.Attributes.ToSlice() {
-					if string(attr.Key) == "backend" {
-						vals[attr.Value.AsString()] = dp.Value
-					}
-				}
+			for k, v := range backendStatesFromGauge(gd) {
+				vals[k] = v
 			}
 		}
 	}
