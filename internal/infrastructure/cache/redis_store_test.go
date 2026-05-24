@@ -334,3 +334,44 @@ func TestRedisStore_RegisterMetrics_MissCounterIncrements(t *testing.T) {
 		t.Errorf("expected 1 miss; got %d", misses)
 	}
 }
+
+// TestRedisStore_RegisterMetrics_CorruptedJSON_IncrementsMissCounter verifies
+// that the misses counter is incremented when Get encounters a key whose stored
+// value is not valid JSON, even when metrics are registered.  Without this test
+// the s.misses.Add call inside the corrupted-JSON branch stays uncovered.
+func TestRedisStore_RegisterMetrics_CorruptedJSON_IncrementsMissCounter(t *testing.T) {
+	t.Parallel()
+	mr, st := newTestStore(t)
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := st.RegisterMetrics(mp.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	mr.Set("corrupt-key", "not-valid-json")
+
+	var dest map[string]string
+	if err := st.Get(context.Background(), "corrupt-key", &dest); !errors.Is(err, cache.ErrCacheMiss) {
+		t.Fatalf("expected ErrCacheMiss for corrupted value, got %v", err)
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	misses := int64(0)
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name == "redis.cache.misses" {
+				if sd, ok := m.Data.(metricdata.Sum[int64]); ok {
+					for _, dp := range sd.DataPoints {
+						misses += dp.Value
+					}
+				}
+			}
+		}
+	}
+	if misses != 1 {
+		t.Errorf("corrupted-JSON miss: expected misses=1; got %d", misses)
+	}
+}
