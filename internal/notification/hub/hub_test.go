@@ -2,10 +2,12 @@ package hub_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -401,5 +403,57 @@ func TestHub_DropCounterResets_OnSuccessfulSend(t *testing.T) {
 	conns, _, _ := h.Metrics()
 	if conns != 1 {
 		t.Errorf("connection should still be alive after counter reset; connections=%d", conns)
+	}
+}
+
+// ── RegisterMetrics error paths ───────────────────────────────────────────────
+
+// meterFailAt wraps noop.Meter and returns an error on the Nth registration
+// call (across Int64ObservableUpDownCounter and Int64ObservableCounter).
+// Used to exercise the error-propagation branches inside RegisterMetrics.
+type meterFailAt struct {
+	noop.Meter
+	failOnCall int
+	cur        int
+}
+
+func (m *meterFailAt) Int64ObservableUpDownCounter(name string, opts ...metric.Int64ObservableUpDownCounterOption) (metric.Int64ObservableUpDownCounter, error) {
+	m.cur++
+	if m.cur == m.failOnCall {
+		return noop.Int64ObservableUpDownCounter{}, errors.New("mock: meter registration error")
+	}
+	return m.Meter.Int64ObservableUpDownCounter(name, opts...)
+}
+
+func (m *meterFailAt) Int64ObservableCounter(name string, opts ...metric.Int64ObservableCounterOption) (metric.Int64ObservableCounter, error) {
+	m.cur++
+	if m.cur == m.failOnCall {
+		return noop.Int64ObservableCounter{}, errors.New("mock: meter registration error")
+	}
+	return m.Meter.Int64ObservableCounter(name, opts...)
+}
+
+// TestHub_RegisterMetrics_RegistrationError_Propagates verifies that an error
+// returned by the meter on any of the first three instrument registrations is
+// propagated back to the caller rather than silently swallowed.
+func TestHub_RegisterMetrics_RegistrationError_Propagates(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		failOnCall int
+	}{
+		{"connections_updown_counter", 1},
+		{"broadcasts_counter", 2},
+		{"dropped_counter", 3},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := hub.New()
+			if err := h.RegisterMetrics(&meterFailAt{failOnCall: tc.failOnCall}); err == nil {
+				t.Errorf("%s: expected error from meter registration failure, got nil", tc.name)
+			}
+		})
 	}
 }
