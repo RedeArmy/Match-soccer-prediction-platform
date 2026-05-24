@@ -13,6 +13,20 @@ import (
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+// checkFloat64GaugeDataPoints validates every data point in m against want.
+func checkFloat64GaugeDataPoints(t *testing.T, m metricdata.Metric, name string, want float64) {
+	t.Helper()
+	gd, ok := m.Data.(metricdata.Gauge[float64])
+	if !ok {
+		return
+	}
+	for _, dp := range gd.DataPoints {
+		if dp.Value != want {
+			t.Errorf("%s: expected %v, got %v", name, want, dp.Value)
+		}
+	}
+}
+
 // assertFloat64GaugeAllEqual fails if any data point of the named gauge in rm
 // differs from want. Extracted to keep individual test bodies below the
 // gocognit threshold.
@@ -23,17 +37,27 @@ func assertFloat64GaugeAllEqual(t *testing.T, rm metricdata.ResourceMetrics, nam
 			if m.Name != name {
 				continue
 			}
-			gd, ok := m.Data.(metricdata.Gauge[float64])
-			if !ok {
-				continue
-			}
-			for _, dp := range gd.DataPoints {
-				if dp.Value != want {
-					t.Errorf("%s: expected %v, got %v", name, want, dp.Value)
-				}
-			}
+			checkFloat64GaugeDataPoints(t, m, name, want)
 		}
 	}
+}
+
+// findInt64GaugeValue returns the first data-point value and true for the
+// named int64 Gauge in rm, or 0 and false when the metric is absent.
+func findInt64GaugeValue(rm metricdata.ResourceMetrics, name string) (int64, bool) {
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != name {
+				continue
+			}
+			gd, ok := m.Data.(metricdata.Gauge[int64])
+			if !ok || len(gd.DataPoints) == 0 {
+				return 0, false
+			}
+			return gd.DataPoints[0].Value, true
+		}
+	}
+	return 0, false
 }
 
 // ── stubs ─────────────────────────────────────────────────────────────────────
@@ -116,21 +140,13 @@ func TestRegisterDLQDepthGauge_Succeeds(t *testing.T) {
 	if err := reader.Collect(ctx, &rm); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	found := false
-	for _, sm := range rm.ScopeMetrics {
-		for _, m := range sm.Metrics {
-			if m.Name == "outbox.dlq_depth" {
-				found = true
-				if gd, ok := m.Data.(metricdata.Gauge[int64]); ok {
-					if len(gd.DataPoints) == 0 || gd.DataPoints[0].Value != 3 {
-						t.Errorf("expected dlq_depth=3, got %+v", gd.DataPoints)
-					}
-				}
-			}
-		}
-	}
-	if !found {
+	val, ok := findInt64GaugeValue(rm, "outbox.dlq_depth")
+	if !ok {
 		t.Error("expected 'outbox.dlq_depth' gauge to be present after collection")
+		return
+	}
+	if val != 3 {
+		t.Errorf("expected dlq_depth=3, got %d", val)
 	}
 }
 

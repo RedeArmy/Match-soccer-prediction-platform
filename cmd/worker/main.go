@@ -183,28 +183,14 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	if err != nil {
 		return fmt.Errorf("tracing: %w", err)
 	}
-	defer func() {
-		// context.WithoutCancel inherits the OTel span values from ctx without
-		// being affected by the cancellation that already fired (SIGTERM).
-		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		if err := shutdownTracing(flushCtx); err != nil {
-			log.Sugar().Warnf("tracing flush: %v", err)
-		}
-	}()
+	defer flushShutdown(ctx, shutdownTracing, "tracing", log)
 
 	meter, metricsHandler, shutdownMetrics, err := setupMetrics(cfg, log)
 	if err != nil {
 		return fmt.Errorf("metrics: %w", err)
 	}
 	log = wireLogLevelCounters(log, meter)
-	defer func() {
-		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		if err := shutdownMetrics(flushCtx); err != nil {
-			log.Sugar().Warnf("metrics flush: %v", err)
-		}
-	}()
+	defer flushShutdown(ctx, shutdownMetrics, "metrics", log)
 
 	// Validate the event bus driver before establishing any connections.
 	// Failing here surfaces a misconfiguration error without incurring the

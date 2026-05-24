@@ -159,15 +159,15 @@ func (d *UserDispatcher) deliverEmail(
 			zap.Error(sendErr),
 		)
 		d.writeDLQEntry(ctx, entry, userID, "email", sendErr)
-		if d.instruments.emails != nil {
-			d.instruments.emails.Add(ctx, 1,
-				metric.WithAttributes(attribute.String("status", "failed")))
-		}
+		d.recordEmailMetric(ctx, "failed")
 		return
 	}
+	d.recordEmailMetric(ctx, "sent")
+}
+
+func (d *UserDispatcher) recordEmailMetric(ctx context.Context, status string) {
 	if d.instruments.emails != nil {
-		d.instruments.emails.Add(ctx, 1,
-			metric.WithAttributes(attribute.String("status", "sent")))
+		d.instruments.emails.Add(ctx, 1, metric.WithAttributes(attribute.String("status", status)))
 	}
 }
 

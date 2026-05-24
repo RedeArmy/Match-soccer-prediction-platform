@@ -31,6 +31,26 @@ func newTestStore(t *testing.T) (*miniredis.Miniredis, *cache.RedisStore) {
 	return mr, cache.NewRedisStore(rc)
 }
 
+// sumInt64Counter sums all data-point values for the named Int64 Sum metric in rm.
+func sumInt64Counter(rm metricdata.ResourceMetrics, name string) int64 {
+	var total int64
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != name {
+				continue
+			}
+			sd, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				continue
+			}
+			for _, dp := range sd.DataPoints {
+				total += dp.Value
+			}
+		}
+	}
+	return total
+}
+
 // ── ErrCacheMiss ──────────────────────────────────────────────────────────────
 
 func TestErrCacheMiss_Error_ReturnsCacheMiss(t *testing.T) {
@@ -284,19 +304,7 @@ func TestRedisStore_RegisterMetrics_HitCounterIncrements(t *testing.T) {
 	if err := reader.Collect(ctx, &rm); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	hits := int64(0)
-	for _, sm := range rm.ScopeMetrics {
-		for _, m := range sm.Metrics {
-			if m.Name == "redis.cache.hits" {
-				if sd, ok := m.Data.(metricdata.Sum[int64]); ok {
-					for _, dp := range sd.DataPoints {
-						hits += dp.Value
-					}
-				}
-			}
-		}
-	}
-	if hits != 1 {
+	if hits := sumInt64Counter(rm, "redis.cache.hits"); hits != 1 {
 		t.Errorf("expected 1 hit; got %d", hits)
 	}
 }
@@ -318,19 +326,7 @@ func TestRedisStore_RegisterMetrics_MissCounterIncrements(t *testing.T) {
 	if err := reader.Collect(ctx, &rm); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	misses := int64(0)
-	for _, sm := range rm.ScopeMetrics {
-		for _, m := range sm.Metrics {
-			if m.Name == "redis.cache.misses" {
-				if sd, ok := m.Data.(metricdata.Sum[int64]); ok {
-					for _, dp := range sd.DataPoints {
-						misses += dp.Value
-					}
-				}
-			}
-		}
-	}
-	if misses != 1 {
+	if misses := sumInt64Counter(rm, "redis.cache.misses"); misses != 1 {
 		t.Errorf("expected 1 miss; got %d", misses)
 	}
 }
@@ -359,19 +355,7 @@ func TestRedisStore_RegisterMetrics_CorruptedJSON_IncrementsMissCounter(t *testi
 	if err := reader.Collect(context.Background(), &rm); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	misses := int64(0)
-	for _, sm := range rm.ScopeMetrics {
-		for _, m := range sm.Metrics {
-			if m.Name == "redis.cache.misses" {
-				if sd, ok := m.Data.(metricdata.Sum[int64]); ok {
-					for _, dp := range sd.DataPoints {
-						misses += dp.Value
-					}
-				}
-			}
-		}
-	}
-	if misses != 1 {
+	if misses := sumInt64Counter(rm, "redis.cache.misses"); misses != 1 {
 		t.Errorf("corrupted-JSON miss: expected misses=1; got %d", misses)
 	}
 }
