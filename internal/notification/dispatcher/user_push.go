@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -130,6 +132,10 @@ func (d *UserDispatcher) sendPushToSubscription(ctx context.Context, entry *noti
 			zap.Int64("sub_id", sub.ID),
 			zap.Error(err),
 		)
+		if d.instruments.pushes != nil {
+			d.instruments.pushes.Add(ctx, 1,
+				metric.WithAttributes(attribute.String("status", "failed")))
+		}
 		return
 	}
 	// HTTP 404 and 410 both signal that the endpoint no longer exists at the
@@ -148,7 +154,15 @@ func (d *UserDispatcher) sendPushToSubscription(ctx context.Context, entry *noti
 			d.writeDLQEntry(ctx, entry, userID, "push",
 				fmt.Errorf("HTTP %d: subscription %d expired", code, sub.ID))
 		}
+		if d.instruments.pushes != nil {
+			d.instruments.pushes.Add(ctx, 1,
+				metric.WithAttributes(attribute.String("status", "failed")))
+		}
 		return
+	}
+	if d.instruments.pushes != nil {
+		d.instruments.pushes.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("status", "sent")))
 	}
 	// Successful delivery. Update last_used_at as best-effort metadata so
 	// cleanup jobs can identify stale subscriptions. Fire-and-forget: a slow or

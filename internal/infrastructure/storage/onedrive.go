@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 )
 
@@ -56,8 +58,13 @@ func NewOneDriveFileStore(ctx context.Context, cfg Config) (*OneDriveFileStore, 
 		Scopes: []string{"https://graph.microsoft.com/.default"},
 	}
 
+	// Inject an OTel-instrumented base transport so token fetches and Graph API
+	// calls appear as outbound spans in distributed traces.
+	otelCtx := context.WithValue(ctx, oauth2.HTTPClient, &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	})
 	return &OneDriveFileStore{
-		client:  cc.Client(ctx),
+		client:  cc.Client(otelCtx),
 		driveID: cfg.OneDriveDriveID,
 		baseURL: graphBaseURL,
 	}, nil

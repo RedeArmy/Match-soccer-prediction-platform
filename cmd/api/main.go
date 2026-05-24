@@ -166,7 +166,11 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		})
 		defer rc.Close() //nolint:errcheck
 		checkers = append(checkers, health.NewRedisChecker(rc))
-		cacheStore = cache.NewRedisStore(rc)
+		rs := cache.NewRedisStore(rc)
+		if err := rs.RegisterMetrics(meter); err != nil {
+			log.Warn("redis cache metrics registration failed", zap.Error(err))
+		}
+		cacheStore = rs
 	}
 
 	// The api.Server owns the routing table and receives all shared
@@ -202,11 +206,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// Prefer the Redis Pub/Sub bridge when Redis is available: reconnections
 	// are transparent (< 100 ms) and no long-lived database connection is held.
 	// Fall back to the pg_notify bridge for single-server deployments.
-	if rc != nil {
-		app.StartRedisBridge(ctx, rc)
-	} else {
-		app.StartPgNotifyBridge(ctx)
-	}
+	startNotifyBridge(ctx, app, rc)
 
 	srvErr := make(chan error, 1)
 	go func() {
@@ -257,4 +257,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 
 	log.Sugar().Info("server stopped")
 	return nil
+}
+
+func startNotifyBridge(ctx context.Context, app *api.Server, rc *redis.Client) {
+	if rc != nil {
+		app.StartRedisBridge(ctx, rc)
+	} else {
+		app.StartPgNotifyBridge(ctx)
+	}
 }

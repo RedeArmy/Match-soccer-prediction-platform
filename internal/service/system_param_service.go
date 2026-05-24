@@ -433,6 +433,10 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyOutboxLockDurationSec:      {30, 3_600}, // 30 s – 1 hour
 	domain.ParamKeyNotifyOutboxMaxAttempts:          {1, 20},     // 1 – 20 dispatch attempts
 	domain.ParamKeyNotifyOutboxLagAlertThresholdSec: {1, 3_600},  // 1 s – 1 hour
+
+	// Observability alerting thresholds (migration 000112, is_runtime=TRUE).
+	domain.ParamKeyNotifyOutboxLagCriticalSec: {1, 86_400}, // 1 s – 24 hours
+	domain.ParamKeyNotifyDLQWarningThreshold:  {1, 10_000}, // 1 – 10 000 unresolved entries
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

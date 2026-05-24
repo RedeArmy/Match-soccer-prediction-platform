@@ -641,3 +641,38 @@ func TestUserDispatcher_PushGone_DoesNotUpdateLastUsedAt(t *testing.T) {
 		// expected: no update on Gone
 	}
 }
+
+// TestUserDispatcher_BroadcastFanOut_ZeroQuinielaID_Skipped verifies that a
+// broadcast event whose decoded payload carries quiniela_id=0 is silently
+// skipped rather than fan-out attempted.  This exercises the warning branch
+// inside dispatchBroadcast that is only reachable when the payload is
+// syntactically valid JSON but semantically missing the group identifier.
+func TestUserDispatcher_BroadcastFanOut_ZeroQuinielaID_Skipped(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	lister := &stubMemberLister{memberIDs: []int{1, 2, 3}}
+
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:    notifRepo,
+		PrefRepo:     &stubPrefRepo{err: errors.New("no pref")},
+		PushRepo:     &stubPushRepo{},
+		DLQRepo:      &recordingDLQRepo{},
+		Hub:          hub.New(),
+		Pusher:       infrapush.NoopSender{},
+		MemberLister: lister,
+		Log:          zap.NewNop(),
+	})
+
+	entry := makeEntry(t, notification.EventGroupMemberJoined, notification.GroupJoinPayload{
+		QuinielaID: 0, // zero quiniela_id triggers the warn+return guard
+		UserID:     1,
+	})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch returned unexpected error: %v", err)
+	}
+	if notifRepo.createCount != 0 {
+		t.Errorf("expected 0 notifications when quiniela_id=0; got %d", notifRepo.createCount)
+	}
+}
