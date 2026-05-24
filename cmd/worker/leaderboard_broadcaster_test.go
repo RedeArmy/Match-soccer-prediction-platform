@@ -79,9 +79,15 @@ func TestLeaderboardBroadcaster_EmptyQuinielaIDs_PublishesNothing(t *testing.T) 
 func TestLeaderboardBroadcaster_PublishesOneMessagePerMember(t *testing.T) {
 	_, rc := newMiniredisClient(t)
 
-	// subscribe before broadcasting so no message is missed
+	// Subscribe and wait for the server-side SUBSCRIBE acknowledgement before
+	// broadcasting. Without this Receive call the PUBLISH may race with the
+	// SUBSCRIBE handshake under load (coverage builds, parallel CI), causing
+	// miniredis to deliver 0 receivers and the messages to be silently dropped.
 	pubsub := rc.Subscribe(context.Background(), "user_notifications")
 	t.Cleanup(func() { _ = pubsub.Close() })
+	if _, err := pubsub.Receive(context.Background()); err != nil {
+		t.Fatalf("subscribe confirmation: %v", err)
+	}
 	received := pubsub.Channel()
 
 	members := map[int][]int{
@@ -133,6 +139,9 @@ func TestLeaderboardBroadcaster_ActionURLContainsQuinielaID(t *testing.T) {
 	_, rc := newMiniredisClient(t)
 	pubsub := rc.Subscribe(context.Background(), "user_notifications")
 	t.Cleanup(func() { _ = pubsub.Close() })
+	if _, err := pubsub.Receive(context.Background()); err != nil {
+		t.Fatalf("subscribe confirmation: %v", err)
+	}
 	received := pubsub.Channel()
 
 	b := &redisPubLeaderboardBroadcaster{
