@@ -11,6 +11,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // BankTransferService manages the upload-and-review lifecycle for Guatemalan
@@ -178,10 +179,11 @@ func (s *bankTransferService) writeOutbox(
 	}
 	if err := s.outboxWriter.Write(ctx, eventType, aggregateType, aggregateID, payload); err != nil {
 		s.log.Warn("outbox write failed (best-effort)",
-			zap.String("event_type", string(eventType)),
-			zap.String("aggregate_id", aggregateID),
-			zap.Error(err),
-		)
+			append([]zap.Field{
+				zap.String("event_type", string(eventType)),
+				zap.String("aggregate_id", aggregateID),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...)
 	}
 }
 
