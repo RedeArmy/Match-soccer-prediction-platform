@@ -15,7 +15,9 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/breaker"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
+	"github.com/rede/world-cup-quiniela/pkg/promclient"
 	"github.com/rede/world-cup-quiniela/pkg/randcode"
+	"github.com/rede/world-cup-quiniela/pkg/tempoclient"
 )
 
 // coreRepos bundles the five shared repository instances constructed once in
@@ -58,6 +60,10 @@ type appHandlers struct {
 	adminNotifTemplate *handler.AdminNotificationTemplateHandler
 	adminNotifDLQ      *handler.AdminNotificationDLQHandler
 	adminSSEStats      *handler.AdminSSEStatsHandler
+	adminObservability *handler.AdminObservabilityHandler
+	adminObsCircuit    *handler.AdminCircuitBreakersHandler
+	adminObsDLQ        *handler.AdminObservabilityDLQHandler
+	adminN8n           *handler.AdminN8nHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -255,6 +261,28 @@ func (s *Server) buildHandlers(
 		adminNotifDLQ:      handler.NewAdminNotificationDLQHandler(repository.NewPostgresNotificationDLQRepository(s.db), s.log),
 		adminSSEStats:      handler.NewAdminSSEStatsHandler(s.notifHub, s.log),
 	}
+
+	// ── Phase 9 observability handlers ───────────────────────────────────────
+	notifDLQRepo := repository.NewPostgresNotificationDLQRepository(s.db)
+	h.adminObsDLQ = handler.NewAdminObservabilityDLQHandler(dlqSvc, notifDLQRepo, s.log)
+
+	var promQ handler.PromQuerier
+	if s.cfg.Observability.PrometheusURL != "" {
+		promQ = promclient.New(s.cfg.Observability.PrometheusURL)
+	}
+	var tempoQ handler.TempoQuerier
+	if s.cfg.Observability.TempoURL != "" {
+		tempoQ = tempoclient.New(s.cfg.Observability.TempoURL)
+	}
+	h.adminObservability = handler.NewAdminObservabilityHandler(promQ, tempoQ, s.notifHub, s.log)
+
+	if s.breakerRegistry == nil {
+		s.breakerRegistry = breaker.NewRegistry()
+	}
+	s.breakerRegistry.Register(fileStoreBreaker)
+	h.adminObsCircuit = handler.NewAdminCircuitBreakersHandler(s.breakerRegistry, s.log)
+
+	h.adminN8n = handler.NewAdminN8nHandler(s.cfg.N8n.BaseURL, s.cfg.N8n.APIKey, s.log)
 
 	// Wire observability notifier into payment-path handlers. Each handler
 	// defines its own narrow interface so the import graph stays acyclic.
