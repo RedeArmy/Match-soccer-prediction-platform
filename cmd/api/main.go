@@ -28,12 +28,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/api"
-	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
@@ -145,36 +143,15 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		checkers = append(checkers, health.NewDBChecker(db))
 	}
 
-	// The cache store is constructed once and shared between the health
-	// checker, the event bus (if redis driver), and the cached service
-	// decorators. A dedicated client is used for caching to avoid contention
-	// with the long-lived XREADGROUP connections of the event bus.
-	//
-	// rc is declared outside the if block so it is visible when wiring the
-	// Redis-backed idempotency store below.
-	// cacheStore defaults to an in-process MemoryStore so the composition root
-	// never passes nil to service constructors. The MemoryStore is not suitable
-	// for multi-replica production deployments (invalidations are local and
-	// entries never expire), but it provides correct single-replica behaviour
-	// when Redis is not configured.
-	var rc *redis.Client
-	cacheStore := cache.Store(cache.NewMemoryStore())
-	if cfg.Redis.Addr != "" {
-		rc = redis.NewClient(&redis.Options{
-			Addr:     cfg.Redis.Addr,
-			Password: cfg.Redis.Password,
-			DB:       cfg.Redis.DB,
-		})
+	// wireRedis constructs the Redis client, RedisStore cache, and health checker
+	// when cfg.Redis.Addr is set; returns nil + MemoryStore otherwise.
+	// The client, store, and checker are registered here rather than inside
+	// wireRedis so that the defer and checker append remain visible at the call
+	// site alongside the other lifecycle operations in run.
+	rc, cacheStore, redisChecker := wireRedis(cfg, log, meter)
+	if rc != nil {
 		defer rc.Close() //nolint:errcheck
-		if err := redisotel.InstrumentTracing(rc); err != nil {
-			log.Warn("redisotel: tracing instrumentation failed", zap.Error(err))
-		}
-		checkers = append(checkers, health.NewRedisChecker(rc))
-		rs := cache.NewRedisStore(rc)
-		if err := rs.RegisterMetrics(meter); err != nil {
-			log.Warn("redis cache metrics registration failed", zap.Error(err))
-		}
-		cacheStore = rs
+		checkers = append(checkers, redisChecker)
 	}
 
 	// The api.Server owns the routing table and receives all shared

@@ -131,7 +131,7 @@ func (s *Server) buildHandlers(
 	groupAuthz := service.NewGroupAuthzService(repos.member)
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{})
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
-	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, clock.Real{}, s.log,
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, s.log,
 		service.WithGroupMembershipOutboxWriter(outboxWriter))
 
 	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, repos.member, tiebreakerRepo, tiebreakerConfigRepo, s.log)
