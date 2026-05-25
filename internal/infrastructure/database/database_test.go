@@ -50,6 +50,7 @@ func TestNewPool_ContextCancelledDuringBackoff_ReturnsError(t *testing.T) {
 // ── Migrate ───────────────────────────────────────────────────────────────────
 
 func TestMigrate_AppliesPendingMigrations(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
@@ -58,6 +59,7 @@ func TestMigrate_AppliesPendingMigrations(t *testing.T) {
 }
 
 func TestMigrate_IdempotentOnSecondCall(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
@@ -87,6 +89,10 @@ func TestMigrate_InvalidDSN_ReturnsError(t *testing.T) {
 // Phase 2 — down:    all rollbacks execute, users table is dropped.
 // Phase 3 — up again: schema is fully restorable from a clean state.
 func TestMigrateRoundtrip_UpDownUp(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("migration roundtrip is covered by the dedicated test-migrate-roundtrip CI job")
+	}
 	dsn := testutil.SetupPostgres(t)
 	ctx := context.Background()
 
@@ -135,6 +141,7 @@ func TestMigrateRoundtrip_UpDownUp(t *testing.T) {
 // ── Seed ─────────────────────────────────────────────────────────────────────
 
 func TestSeed_InsertsFixtures(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 
 	// Schema must exist before seeding.
@@ -176,6 +183,7 @@ func TestSeed_InsertsFixtures(t *testing.T) {
 }
 
 func TestSeed_StadiumsTableMissing_ReturnsError(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
@@ -221,6 +229,7 @@ func newMigratedPool(t *testing.T) *pgxpool.Pool {
 }
 
 func TestSeed_CountriesTableMissing_ReturnsError(t *testing.T) {
+	t.Parallel()
 	pool := newMigratedPool(t)
 	if _, err := pool.Exec(context.Background(), "DROP TABLE IF EXISTS countries CASCADE"); err != nil {
 		t.Fatalf("drop countries: %v", err)
@@ -231,6 +240,7 @@ func TestSeed_CountriesTableMissing_ReturnsError(t *testing.T) {
 }
 
 func TestSeed_CitiesTableMissing_ReturnsError(t *testing.T) {
+	t.Parallel()
 	pool := newMigratedPool(t)
 	if _, err := pool.Exec(context.Background(), "DROP TABLE IF EXISTS cities CASCADE"); err != nil {
 		t.Fatalf("drop cities: %v", err)
@@ -241,6 +251,7 @@ func TestSeed_CitiesTableMissing_ReturnsError(t *testing.T) {
 }
 
 func TestSeed_MatchesTableMissing_ReturnsError(t *testing.T) {
+	t.Parallel()
 	pool := newMigratedPool(t)
 	if _, err := pool.Exec(context.Background(), "DROP TABLE IF EXISTS matches CASCADE"); err != nil {
 		t.Fatalf("drop matches: %v", err)
@@ -261,6 +272,7 @@ func baselineSQLPath() string {
 // ── ApplyBaseline ─────────────────────────────────────────────────────────────
 
 func TestApplyBaseline_CreatesSchema(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 	pool, err := database.NewPool(context.Background(), database.Config{
 		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
@@ -288,6 +300,7 @@ func TestApplyBaseline_CreatesSchema(t *testing.T) {
 }
 
 func TestApplyBaseline_InvalidSQL_ReturnsError(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 	pool, err := database.NewPool(context.Background(), database.Config{
 		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
@@ -305,6 +318,7 @@ func TestApplyBaseline_InvalidSQL_ReturnsError(t *testing.T) {
 // ── MarkMigrationsApplied ────────────────────────────────────────────────────
 
 func TestMarkMigrationsApplied_InsertsVersionRows(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 	pool, err := database.NewPool(context.Background(), database.Config{
 		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
@@ -329,6 +343,7 @@ func TestMarkMigrationsApplied_InsertsVersionRows(t *testing.T) {
 }
 
 func TestMarkMigrationsApplied_Idempotent(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 	pool, err := database.NewPool(context.Background(), database.Config{
 		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
@@ -348,6 +363,7 @@ func TestMarkMigrationsApplied_Idempotent(t *testing.T) {
 }
 
 func TestMarkMigrationsApplied_DirtyFlagFalse(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 	pool, err := database.NewPool(context.Background(), database.Config{
 		DSN: dsn, MaxOpenConns: 3, MaxIdleConns: 1, ConnMaxLifetime: time.Minute,
@@ -374,6 +390,7 @@ func TestMarkMigrationsApplied_DirtyFlagFalse(t *testing.T) {
 // ── MigrateFresh ─────────────────────────────────────────────────────────────
 
 func TestMigrateFresh_FullBootstrap(t *testing.T) {
+	t.Parallel()
 	baselineFile := baselineSQLPath()
 	if _, err := os.Stat(baselineFile); os.IsNotExist(err) {
 		t.Skip("baseline schema.sql not present; run cmd/genschema first")
@@ -446,6 +463,7 @@ func TestMigrateFresh_InvalidDSN_ReturnsError(t *testing.T) {
 }
 
 func TestSeed_IdempotentOnSecondCall(t *testing.T) {
+	t.Parallel()
 	dsn := testutil.SetupPostgres(t)
 
 	if err := database.Migrate(dsn, migrations.FS); err != nil {
