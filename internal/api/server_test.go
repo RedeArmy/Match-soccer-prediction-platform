@@ -30,6 +30,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/pkg/breaker"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
 )
@@ -413,4 +414,10 @@ func TestRoutes_WithNonNilCache_MatchRouteRegistered(t *testing.T) {
 	if rec.Code == http.StatusNotFound {
 		t.Errorf("expected route to be registered with non-nil cache, got 404")
 	}
+}
+
+func TestServer_SetBreakerRegistry_DoesNotPanic(t *testing.T) {
+	srv := newTestServer(t)
+	reg := breaker.NewRegistry()
+	srv.SetBreakerRegistry(reg)
 }

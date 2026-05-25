@@ -118,3 +118,19 @@ func TestAdminObservabilityDLQ_NoOldestAt(t *testing.T) {
 		t.Errorf("expected no oldest_at when nil")
 	}
 }
+
+func TestAdminObservabilityDLQ_NotifCountError_GracefulDegradation(t *testing.T) {
+	eventDLQ := &stubDLQSvc{stats: []service.DLQStat{}}
+	notif := &stubNotifDLQRepo{countErr: errTestObs}
+
+	w := do(newObsDLQRouter(eventDLQ, notif), http.MethodGet, "/observability/dlq", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (graceful degradation on notif count error), got %d", w.Code)
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	notifications, _ := resp["notifications"].(map[string]any)
+	if notifications["unresolved_count"] != float64(0) {
+		t.Errorf("expected unresolved_count=0 on error, got %v", notifications["unresolved_count"])
+	}
+}
