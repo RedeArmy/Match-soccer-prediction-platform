@@ -362,15 +362,10 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	digestWindowSec := int64(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestWindowSec, domain.DefaultNotifyPushDigestWindowSec))
 	digestThreshold := int32(params.GetInt(ctx, domain.ParamKeyNotifyPushDigestThreshold, domain.DefaultNotifyPushDigestThreshold))
 
-	// Wire the cluster-aware digest gate when Redis is available so that the
-	// per-user push threshold is enforced across all worker replicas. Fall back
-	// to the in-memory gate for single-process deployments (development, CI).
-	var digestGate notification.Recorder
-	if rc != nil {
-		digestGate = notification.NewRedisPushDigestGate(rc, digestWindowSec, digestThreshold)
-	} else {
-		digestGate = notification.NewPushDigestGate(digestWindowSec, digestThreshold)
-	}
+	// The worker rejects non-redis event bus drivers before reaching this point,
+	// so rc is always non-nil here. The cluster-aware digest gate enforces the
+	// per-user push threshold across all worker replicas via Redis.
+	digestGate := notification.Recorder(notification.NewRedisPushDigestGate(rc, digestWindowSec, digestThreshold))
 
 	userDispatcher := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
 		NotifRepo:         notifRepo,
