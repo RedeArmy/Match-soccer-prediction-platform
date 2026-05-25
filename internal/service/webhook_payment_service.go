@@ -9,6 +9,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // WebhookPaymentService processes confirmed payment notifications from
@@ -125,11 +126,12 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 	// been verified by the upstream middleware.
 	if webhookAmountCents > 0 && webhookAmountCents != intent.AmountCents {
 		s.log.Warn("paypal webhook: declared amount differs from intent amount",
-			zap.Int("webhook_amount_cents", webhookAmountCents),
-			zap.Int("intent_amount_cents", intent.AmountCents),
-			zap.String("intent_token", intentToken),
-			zap.String("capture_id", captureID),
-		)
+			append([]zap.Field{
+				zap.Int("webhook_amount_cents", webhookAmountCents),
+				zap.Int("intent_amount_cents", intent.AmountCents),
+				zap.String("intent_token", intentToken),
+				zap.String("capture_id", captureID),
+			}, tracing.LogFields(ctx)...)...)
 	}
 
 	resType := "payment_intent"

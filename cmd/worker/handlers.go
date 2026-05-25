@@ -14,6 +14,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/dsem"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // snapshotConfig holds the snapshot tuning parameters read from system_params
@@ -101,9 +102,10 @@ func newMatchStartedHandler(log *zap.Logger) func(context.Context, events.Envelo
 		ms, err := decodePayload[events.MatchStarted](env)
 		if err != nil {
 			log.Error("worker: cannot decode MatchStarted payload",
-				zap.String("event_type", string(env.Type)),
-				zap.Error(err),
-			)
+				append([]zap.Field{
+					zap.String("event_type", string(env.Type)),
+					zap.Error(err),
+				}, tracing.LogFields(ctx)...)...)
 			return nil
 		}
 
@@ -150,17 +152,19 @@ func newMatchFinishedHandler(
 			// A payload that cannot be decoded will never succeed on retry.
 			// Log, then return nil so the bus does not route it to the DLQ.
 			log.Error("worker: cannot decode MatchFinished payload",
-				zap.String("event_type", string(env.Type)),
-				zap.Error(err),
-			)
+				append([]zap.Field{
+					zap.String("event_type", string(env.Type)),
+					zap.Error(err),
+				}, tracing.LogFields(ctx)...)...)
 			return nil
 		}
 
 		if err := scorer.ScoreMatch(ctx, mf.MatchID); err != nil {
 			log.Error("worker: scoring failed after MatchFinished event",
-				zap.Int("match_id", mf.MatchID),
-				zap.Error(err),
-			)
+				append([]zap.Field{
+					zap.Int("match_id", mf.MatchID),
+					zap.Error(err),
+				}, tracing.LogFields(ctx)...)...)
 			// Return the error so the bus retries and, if all attempts fail,
 			// pushes the event to the dead-letter queue for manual replay.
 			return fmt.Errorf("score match %d: %w", mf.MatchID, err)
@@ -202,9 +206,10 @@ func postScoringWork(
 	quinielaIDs, err := deps.predRepo.ListQuinielaIDsByMatch(ctx, matchID)
 	if err != nil {
 		log.Warn("worker: could not fetch quiniela IDs after scoring",
-			zap.Int("match_id", matchID),
-			zap.Error(err),
-		)
+			append([]zap.Field{
+				zap.Int("match_id", matchID),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...)
 		return
 	}
 	if len(quinielaIDs) == 0 {
@@ -271,10 +276,11 @@ func runSnapshot(
 		switch {
 		case err != nil:
 			log.Warn("worker: snapshot lock unavailable, proceeding without distributed lock",
-				zap.Int("match_id", matchID),
-				zap.Int("quiniela_id", quinielaID),
-				zap.Error(err),
-			)
+				append([]zap.Field{
+					zap.Int("match_id", matchID),
+					zap.Int("quiniela_id", quinielaID),
+					zap.Error(err),
+				}, tracing.LogFields(ctx)...)...)
 		case !ok:
 			log.Debug("worker: snapshot already claimed by another replica, skipping",
 				zap.Int("match_id", matchID),
@@ -321,20 +327,22 @@ func retrySnapshot(
 			return
 		} else if attempt == maxAttempts {
 			log.Warn("worker: leaderboard snapshot failed after all retries",
-				zap.Int("match_id", matchID),
-				zap.Int("quiniela_id", quinielaID),
-				zap.Int("attempts", attempt),
-				zap.Error(err),
-			)
+				append([]zap.Field{
+					zap.Int("match_id", matchID),
+					zap.Int("quiniela_id", quinielaID),
+					zap.Int("attempts", attempt),
+					zap.Error(err),
+				}, tracing.LogFields(ctx)...)...)
 			return
 		} else {
 			log.Warn("worker: leaderboard snapshot failed, retrying",
-				zap.Int("match_id", matchID),
-				zap.Int("quiniela_id", quinielaID),
-				zap.Int("attempt", attempt),
-				zap.Duration("backoff", backoff),
-				zap.Error(err),
-			)
+				append([]zap.Field{
+					zap.Int("match_id", matchID),
+					zap.Int("quiniela_id", quinielaID),
+					zap.Int("attempt", attempt),
+					zap.Duration("backoff", backoff),
+					zap.Error(err),
+				}, tracing.LogFields(ctx)...)...)
 		}
 		select {
 		case <-ctx.Done():

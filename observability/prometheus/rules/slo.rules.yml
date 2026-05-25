@@ -235,19 +235,6 @@ groups:
             notifications (emails, pushes) are significantly delayed. Immediate
             investigation of the outbox worker is required.
 
-      - alert: WCQCircuitBreakerOpen
-        expr: circuit_breaker_state == 1
-        for: 1m
-        labels:
-          severity: warning
-          team: platform
-        annotations:
-          summary: "Circuit breaker {{ $labels.backend }} is open"
-          description: >
-            The {{ $labels.backend }} circuit breaker has been in the open state
-            for over 1 minute. Requests to this backend are being rejected
-            immediately. Check the backend's health and review recent error logs.
-
       - alert: WCQPaymentProcessingSlowWarning
         expr: |
           histogram_quantile(0.99,

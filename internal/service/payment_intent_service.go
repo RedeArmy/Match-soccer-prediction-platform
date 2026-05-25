@@ -12,6 +12,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // PaymentIntentCreator manages server-generated payment intents used as
@@ -61,10 +62,11 @@ func (s *paymentIntentService) Create(ctx context.Context, userID, amountCents i
 
 	if err := s.intentRepo.Create(ctx, intent); err != nil {
 		s.log.Error("payment intent: failed to create",
-			zap.Int("user_id", userID),
-			zap.Int("amount_cents", amountCents),
-			zap.Error(err),
-		)
+			append([]zap.Field{
+				zap.Int("user_id", userID),
+				zap.Int("amount_cents", amountCents),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...)
 		return nil, err
 	}
 	return intent, nil

@@ -10,6 +10,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // Audit policy
@@ -229,11 +230,12 @@ func (s *auditService) writeWithRetry(baseCtx context.Context, entry *domain.Aud
 			return
 		}
 		s.log.Warn("audit log: failed to persist entry",
-			zap.String("action", action),
-			zap.Int("attempt", attempt),
-			zap.Int("max_attempts", maxAttempts),
-			zap.Error(err),
-		)
+			append([]zap.Field{
+				zap.String("action", action),
+				zap.Int("attempt", attempt),
+				zap.Int("max_attempts", maxAttempts),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...)
 		if attempt < maxAttempts {
 			time.Sleep(retryDelay)
 		}
@@ -241,10 +243,11 @@ func (s *auditService) writeWithRetry(baseCtx context.Context, entry *domain.Aud
 	// All retries exhausted: the entry is permanently lost. Emit a structured
 	// error that log-aggregation alert rules can match on audit_lost=true.
 	s.log.Error("audit log: entry permanently lost after all retry attempts",
-		zap.String("action", action),
-		zap.Int64("in_flight", s.inFlight.Load()),
-		zap.Bool("audit_lost", true),
-	)
+		append([]zap.Field{
+			zap.String("action", action),
+			zap.Int64("in_flight", s.inFlight.Load()),
+			zap.Bool("audit_lost", true),
+		}, tracing.LogFields(baseCtx)...)...)
 }
 
 // ListAuditLogs returns audit log entries matching the given filters with
