@@ -393,6 +393,10 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyBreakerFileStoreMaxFails:    {1, 100},   // at least 1 failure to open
 	domain.ParamKeyBreakerFileStoreCooldownSec: {1, 3_600}, // 1 s – 1 hour
 
+	// Circuit breaker: Redis cache (is_runtime=FALSE; restart required)
+	domain.ParamKeyBreakerCacheMaxFails:    {1, 100},   // at least 1 failure to open
+	domain.ParamKeyBreakerCacheCooldownSec: {1, 3_600}, // 1 s – 1 hour
+
 	// DB transaction retry policy (is_runtime=FALSE; restart required)
 	domain.ParamKeyTxRetryMaxAttempts: {1, 20},     // at least 1 attempt; 20 is very generous
 	domain.ParamKeyTxRetryBaseDelayMs: {1, 10_000}, // 1 ms – 10 s base backoff

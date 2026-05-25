@@ -354,6 +354,8 @@ func AllParamKeys() []string {
 		ParamKeyBreakerPaypalCertCooldownSec,
 		ParamKeyBreakerFileStoreMaxFails,
 		ParamKeyBreakerFileStoreCooldownSec,
+		ParamKeyBreakerCacheMaxFails,
+		ParamKeyBreakerCacheCooldownSec,
 		// Repository / TX retry
 		ParamKeyTxRetryMaxAttempts,
 		ParamKeyTxRetryBaseDelayMs,

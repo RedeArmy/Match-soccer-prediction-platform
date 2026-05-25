@@ -28,6 +28,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
@@ -165,6 +166,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 			DB:       cfg.Redis.DB,
 		})
 		defer rc.Close() //nolint:errcheck
+		if err := redisotel.InstrumentTracing(rc); err != nil {
+			log.Warn("redisotel: tracing instrumentation failed", zap.Error(err))
+		}
 		checkers = append(checkers, health.NewRedisChecker(rc))
 		rs := cache.NewRedisStore(rc)
 		if err := rs.RegisterMetrics(meter); err != nil {

@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
@@ -45,6 +48,16 @@ type GroupMembershipService interface {
 	ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error)
 }
 
+// GroupMembershipOption configures optional behaviour of groupMembershipService.
+type GroupMembershipOption func(*groupMembershipService)
+
+// WithGroupMembershipOutboxWriter enables outbox-based fan-out notifications for
+// EventGroupMemberJoined and EventGroupMemberLeft. When nil, no outbox entries
+// are written (silent no-op).
+func WithGroupMembershipOutboxWriter(w outbox.Writer) GroupMembershipOption {
+	return func(s *groupMembershipService) { s.outboxWriter = w }
+}
+
 // groupMembershipService is the concrete implementation of GroupMembershipService.
 type groupMembershipService struct {
 	quinielaRepo repository.QuinielaRepository
@@ -55,12 +68,14 @@ type groupMembershipService struct {
 	paymentSvc   PaymentService
 	clock        clock.Nower
 	log          *zap.Logger
+	outboxWriter outbox.Writer // nil ⇒ fan-out events not published
 }
 
 // NewGroupMembershipService constructs a groupMembershipService.
 // GroupAuthz is derived from memberRepo so callers do not need to wire it
 // separately; the same repository is always the source of truth for both
 // data operations and permission checks within this service.
+// Pass WithGroupMembershipOutboxWriter to enable member-joined/left fan-out events.
 func NewGroupMembershipService(
 	quinielaRepo repository.QuinielaRepository,
 	memberRepo repository.GroupMembershipRepository,
@@ -69,8 +84,9 @@ func NewGroupMembershipService(
 	paymentSvc PaymentService,
 	clk clock.Nower,
 	log *zap.Logger,
+	opts ...GroupMembershipOption,
 ) GroupMembershipService {
-	return &groupMembershipService{
+	svc := &groupMembershipService{
 		quinielaRepo: quinielaRepo,
 		memberRepo:   memberRepo,
 		authz:        NewGroupAuthzService(memberRepo),
@@ -80,6 +96,10 @@ func NewGroupMembershipService(
 		clock:        clk,
 		log:          log,
 	}
+	for _, o := range opts {
+		o(svc)
+	}
+	return svc
 }
 
 // Join resolves invite_code to a Quiniela and creates a pending join request.
@@ -171,6 +191,7 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 		"quiniela_id":  quinielaID,
 		"approved_uid": m.UserID,
 	})
+	s.writeMembershipEvent(ctx, notification.EventGroupMemberJoined, quinielaID, m.UserID, m.ID)
 	return m, nil
 }
 
@@ -194,18 +215,26 @@ func (s *groupMembershipService) Leave(ctx context.Context, quinielaID, callerUs
 			return err
 		}
 		if successor != nil {
-			return s.memberRepo.LeaveMembershipAndTransferOwnership(
+			if err := s.memberRepo.LeaveMembershipAndTransferOwnership(
 				ctx,
 				quinielaID,
 				callerUserID,
 				successor.ID,
 				s.clock.Now(),
 				minMembers,
-			)
+			); err != nil {
+				return err
+			}
+			s.writeMembershipEvent(ctx, notification.EventGroupMemberLeft, quinielaID, callerUserID, m.ID)
+			return nil
 		}
 	}
 
-	return s.memberRepo.LeaveMembership(ctx, quinielaID, callerUserID, s.clock.Now(), minMembers)
+	if err := s.memberRepo.LeaveMembership(ctx, quinielaID, callerUserID, s.clock.Now(), minMembers); err != nil {
+		return err
+	}
+	s.writeMembershipEvent(ctx, notification.EventGroupMemberLeft, quinielaID, callerUserID, m.ID)
+	return nil
 }
 
 // MarkPaid flips the paid flag to true for the given membership. It is
@@ -229,6 +258,44 @@ func (s *groupMembershipService) ListByQuiniela(ctx context.Context, quinielaID 
 
 func (s *groupMembershipService) ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error) {
 	return s.memberRepo.ListByUser(ctx, userID)
+}
+
+// writeMembershipEvent publishes an outbox fan-out event for group membership
+// changes. It looks up the quiniela to include name and owner_id in the
+// payload, which the UserDispatcher needs for notification content rendering.
+// Errors are logged and swallowed — the domain operation already committed and
+// a best-effort notification failure must not roll it back.
+func (s *groupMembershipService) writeMembershipEvent(
+	ctx context.Context,
+	eventType notification.EventType,
+	quinielaID, actorUserID, membershipID int,
+) {
+	if s.outboxWriter == nil {
+		return
+	}
+	quiniela, err := s.quinielaRepo.GetByID(ctx, quinielaID)
+	if err != nil || quiniela == nil {
+		s.log.Warn("membership: quiniela lookup for outbox event failed (best-effort)",
+			zap.String("event_type", string(eventType)),
+			zap.Int("quiniela_id", quinielaID),
+			zap.Error(err),
+		)
+		quiniela = &domain.Quiniela{ID: quinielaID}
+	}
+	payload := notification.GroupJoinPayload{
+		QuinielaID:   quiniela.ID,
+		QuinielaName: quiniela.Name,
+		MembershipID: membershipID,
+		UserID:       actorUserID,
+		OwnerID:      quiniela.OwnerID,
+	}
+	if wErr := s.outboxWriter.Write(ctx, eventType, "quiniela", fmt.Sprintf("%d", quinielaID), payload); wErr != nil {
+		s.log.Warn("membership: outbox write failed (best-effort)",
+			zap.String("event_type", string(eventType)),
+			zap.Int("quiniela_id", quinielaID),
+			zap.Error(wErr),
+		)
+	}
 }
 
 // enforce compile-time interface satisfaction.

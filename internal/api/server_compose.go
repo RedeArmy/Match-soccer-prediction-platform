@@ -9,6 +9,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -99,6 +100,13 @@ func (s *Server) buildHandlers(
 	matchTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyCacheMatchTTL, domain.DefaultCacheMatchTTLSeconds)) * time.Second
 	leaderboardTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyCacheLeaderboardTTL, domain.DefaultCacheLeaderboardTTLSeconds)) * time.Second
 
+	// Wrap the Redis cache with a circuit breaker so that repeated Redis errors
+	// (network partition, OOM kill) degrade cache operations silently to miss/no-op,
+	// keeping the service layer functional against PostgreSQL. The wrapping happens
+	// here, before any service that uses s.cache, so all decorators share the same
+	// resilient view.
+	cacheStore := s.buildResilientCache(ctx, params)
+
 	auditSvc := service.NewAuditService(auditLogRepo, auditTimeout, s.log)
 	// Store auditSvc on the server so the shutdown path can call Drain() to
 	// wait for in-flight audit writes before closing the database pool.
@@ -113,19 +121,22 @@ func (s *Server) buildHandlers(
 	)
 
 	matchSvc := service.NewMatchService(repos.match, s.bus, scorer, auditSvc, s.log)
-	if s.cache != nil {
-		matchSvc = service.NewCachedMatchService(matchSvc, s.cache, matchTTL, s.log)
+	if cacheStore != nil {
+		matchSvc = service.NewCachedMatchService(matchSvc, cacheStore, matchTTL, s.log)
 	}
+
+	outboxWriter := outbox.NewWriter(s.db)
 
 	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.Real{}, s.log)
 	groupAuthz := service.NewGroupAuthzService(repos.member)
 	quinielaSvc := service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{})
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
-	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, clock.Real{}, s.log)
+	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, clock.Real{}, s.log,
+		service.WithGroupMembershipOutboxWriter(outboxWriter))
 
 	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, repos.member, tiebreakerRepo, tiebreakerConfigRepo, s.log)
-	if s.cache != nil {
-		cachedRanker := service.NewCachedRankingService(ranker, s.cache, leaderboardTTL, s.log)
+	if cacheStore != nil {
+		cachedRanker := service.NewCachedRankingService(ranker, cacheStore, leaderboardTTL, s.log)
 		// When an admin changes cache.leaderboard_ttl_seconds, update the active
 		// TTL for future cache writes and flush all existing leaderboard entries so
 		// the change takes effect immediately rather than after natural expiry.
@@ -146,7 +157,7 @@ func (s *Server) buildHandlers(
 		service.AdminReadRepos{
 			Pred: repos.pred, User: repos.user, Quiniela: quinielaRepo,
 			Payment: paymentRepo, Tiebreaker: tiebreakerRepo, Snapshot: snapRepo,
-			GlobalCache: s.cache,
+			GlobalCache: cacheStore,
 		},
 		params, s.log,
 	)
@@ -209,8 +220,6 @@ func (s *Server) buildHandlers(
 	maxUploadBytes := int64(params.GetInt(ctx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
 	minTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMinAmountCents, domain.DefaultBankTransferMinAmountCents)
 	maxTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMaxAmountCents, domain.DefaultBankTransferMaxAmountCents)
-
-	outboxWriter := outbox.NewWriter(s.db)
 
 	tmplCacheTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyTemplateCacheTTLSec, domain.DefaultNotifyTemplateCacheTTLSec)) * time.Second
 	tmplRepo := repository.NewPostgresNotificationTemplateRepository(s.db, tmplCacheTTL)
@@ -293,4 +302,41 @@ func (s *Server) buildHandlers(
 	}
 
 	return h
+}
+
+// buildResilientCache wraps s.cache with a circuit breaker when the underlying
+// store is a *cache.RedisStore. If Redis is unavailable the breaker opens and
+// all cache operations degrade to cache-miss / silent no-op, so the service
+// layer continues to work directly against PostgreSQL.
+//
+// When s.cache is not a RedisStore (e.g. MemoryStore in tests or single-node
+// deployments without Redis) the original store is returned unchanged.
+func (s *Server) buildResilientCache(ctx context.Context, params service.SystemParamService) cache.Store {
+	rs, ok := s.cache.(*cache.RedisStore)
+	if !ok {
+		return s.cache
+	}
+
+	cb := breaker.New(
+		"redis-cache",
+		params.GetInt(ctx, domain.ParamKeyBreakerCacheMaxFails, domain.DefaultBreakerCacheMaxFails),
+		time.Duration(params.GetInt(ctx, domain.ParamKeyBreakerCacheCooldownSec, domain.DefaultBreakerCacheCooldownSec))*time.Second,
+	)
+	if s.notifier != nil {
+		cb.SetOnStateChange(func(name string, from, to breaker.State, openedAt time.Time) {
+			if to == breaker.StateOpen {
+				s.notifier.NotifyCircuitBreakerOpen(context.Background(), name, to.String(), openedAt)
+			}
+		})
+	}
+	if err := breaker.RegisterGauge(otel.GetMeterProvider().Meter("wcq"), cb); err != nil {
+		s.log.Warn("breaker.RegisterGauge(redis-cache) failed", zap.Error(err))
+	}
+
+	if s.breakerRegistry == nil {
+		s.breakerRegistry = breaker.NewRegistry()
+	}
+	s.breakerRegistry.Register(cb)
+
+	return cache.NewResilientStore(rs, cb, s.log)
 }

@@ -6,10 +6,18 @@
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 #
-# Environment variables (optional overrides):
-#   N8N_ENCRYPTION_KEY   — n8n encryption key for stored credentials
-#   N8N_BASIC_AUTH_USER  — n8n UI basic-auth username (default: admin)
-#   N8N_BASIC_AUTH_PASS  — n8n UI basic-auth password (default: changeme)
+# Required environment variables (set in .env or shell):
+#   WCQ_OBSERVABILITY_PROMETHEUSURL=http://prometheus:9090
+#   WCQ_OBSERVABILITY_TEMPOURL=http://tempo:3200
+#   WCQ_N8N_BASEURL=http://n8n:5678
+#   WCQ_N8N_APIKEY=<n8n API key from n8n UI Settings → API Keys>
+#   WCQ_N8N_WEBHOOKURL=http://n8n:5678/webhook
+#
+# Optional overrides:
+#   GRAFANA_ADMIN_PASSWORD — Grafana admin password (default: admin)
+#   N8N_ENCRYPTION_KEY     — n8n encryption key for stored credentials
+#   N8N_BASIC_AUTH_USER    — n8n UI basic-auth username (default: admin)
+#   N8N_BASIC_AUTH_PASS    — n8n UI basic-auth password (default: changeme)
 
 services:
   prometheus:
@@ -24,6 +32,7 @@ services:
       - "127.0.0.1:9090:9090"
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     networks:
       - quiniela_net
@@ -42,6 +51,7 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/dashboards:/etc/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     networks:
       - quiniela_net
@@ -77,17 +87,6 @@ services:
     networks:
       - quiniela_net
 
-  jaeger:
-    image: jaegertracing/all-in-one:1.58
-    restart: unless-stopped
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
-    ports:
-      - "127.0.0.1:16686:16686"  # Jaeger UI
-      - "127.0.0.1:14268:14268"  # Jaeger HTTP collector
-    networks:
-      - quiniela_net
-
   n8n:
     image: n8nio/n8n:1.49.0
     restart: unless-stopped
@@ -107,6 +106,17 @@ services:
       - "127.0.0.1:5678:5678"
     volumes:
       - n8n_data:/home/node/.n8n
+    networks:
+      - quiniela_net
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.58
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"  # Jaeger UI
+      - "127.0.0.1:14268:14268"  # Jaeger HTTP collector
     networks:
       - quiniela_net
 

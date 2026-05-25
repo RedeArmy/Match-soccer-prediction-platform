@@ -816,6 +816,15 @@ definitions:
       user_id:
         type: integer
     type: object
+  internal_api_handler.activeConnectionsResponse:
+    properties:
+      broadcasts:
+        type: integer
+      connections:
+        type: integer
+      dropped:
+        type: integer
+    type: object
   internal_api_handler.banRequest:
     properties:
       reason:
@@ -850,6 +859,22 @@ definitions:
         additionalProperties:
           type: string
         type: object
+    type: object
+  internal_api_handler.circuitBreakerEntry:
+    properties:
+      name:
+        type: string
+      opened_at:
+        type: string
+      state:
+        type: string
+    type: object
+  internal_api_handler.circuitBreakersResponse:
+    properties:
+      breakers:
+        items:
+          $ref: '#/definitions/internal_api_handler.circuitBreakerEntry'
+        type: array
     type: object
   internal_api_handler.createGroupRequest:
     properties:
@@ -893,9 +918,70 @@ definitions:
           type: string
         type: object
     type: object
+  internal_api_handler.eventBusDLQEntry:
+    properties:
+      count:
+        type: integer
+      event_type:
+        type: string
+      oldest_at:
+        type: string
+    type: object
+  internal_api_handler.executionsResponse:
+    properties:
+      configured:
+        type: boolean
+      executions:
+        items:
+          $ref: '#/definitions/internal_api_handler.n8nExecution'
+        type: array
+    type: object
   internal_api_handler.joinGroupRequest:
     properties:
       invite_code:
+        type: string
+    type: object
+  internal_api_handler.metricsSummaryResponse:
+    properties:
+      configured:
+        type: boolean
+      error_rate_5xx:
+        type: number
+      p95_latency_seconds:
+        type: number
+      request_rate_per_sec:
+        type: number
+    type: object
+  internal_api_handler.n8nExecution:
+    properties:
+      finished:
+        type: boolean
+      id:
+        type: string
+      mode:
+        type: string
+      startedAt:
+        type: string
+      status:
+        type: string
+      stoppedAt:
+        type: string
+      workflowId:
+        type: string
+      workflowName:
+        type: string
+    type: object
+  internal_api_handler.n8nWorkflow:
+    properties:
+      active:
+        type: boolean
+      createdAt:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      updatedAt:
         type: string
     type: object
   internal_api_handler.notifDLQEntryResponse:
@@ -997,10 +1083,47 @@ definitions:
       predicted_win_method:
         type: string
     type: object
+  internal_api_handler.tracingErrorEntry:
+    properties:
+      duration_ms:
+        type: integer
+      root_service_name:
+        type: string
+      root_trace_name:
+        type: string
+      start_time_unix_nano:
+        type: string
+      trace_id:
+        type: string
+    type: object
+  internal_api_handler.tracingRecentErrorsResponse:
+    properties:
+      configured:
+        type: boolean
+      errors:
+        items:
+          $ref: '#/definitions/internal_api_handler.tracingErrorEntry'
+        type: array
+    type: object
   internal_api_handler.transferOwnershipRequest:
     properties:
       new_owner_user_id:
         type: integer
+    type: object
+  internal_api_handler.unifiedDLQResponse:
+    properties:
+      event_bus:
+        properties:
+          entries:
+            items:
+              $ref: '#/definitions/internal_api_handler.eventBusDLQEntry'
+            type: array
+        type: object
+      notifications:
+        properties:
+          unresolved_count:
+            type: integer
+        type: object
     type: object
   internal_api_handler.updateGroupSettingsRequest:
     properties:
@@ -1053,6 +1176,15 @@ definitions:
       title_tmpl:
         type: string
     type: object
+  internal_api_handler.workflowsResponse:
+    properties:
+      configured:
+        type: boolean
+      workflows:
+        items:
+          $ref: '#/definitions/internal_api_handler.n8nWorkflow'
+        type: array
+    type: object
 host: localhost:8080
 info:
   contact: {}
@@ -1102,6 +1234,14 @@ paths:
         in: query
         name: resource_id
         type: integer
+      - description: Return entries created at or after this RFC3339 timestamp
+        in: query
+        name: created_after
+        type: string
+      - description: Return entries created at or before this RFC3339 timestamp
+        in: query
+        name: created_before
+        type: string
       - description: Max records per page (default 50, max 200)
         in: query
         name: limit
@@ -2266,6 +2406,283 @@ paths:
       summary: Rollback to a previous template version
       tags:
       - admin-notification-templates
+  /api/v1/admin/notifications/sse/stats:
+    get:
+      description: Returns per-replica SSE connection count, cumulative broadcasts,
+        and dropped events from the notification hub. Aggregate across replicas in
+        Prometheus for cluster-wide totals.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              broadcasts:
+                description: Cumulative broadcasts since process start
+                type: integer
+              connections:
+                description: Current open SSE connections on this replica
+                type: integer
+              dropped:
+                description: Cumulative events dropped due to full client buffers
+                type: integer
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: SSE hub stats (per-replica)
+      tags:
+      - admin-observability
+  /api/v1/admin/observability/active-connections:
+    get:
+      description: Returns per-replica SSE connection count, cumulative broadcasts,
+        and
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.activeConnectionsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Active SSE connections
+      tags:
+      - admin-observability
+  /api/v1/admin/observability/circuit-breakers:
+    get:
+      description: Returns the current state (closed/open/half-open) and, for open
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.circuitBreakersResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Circuit breaker states
+      tags:
+      - admin-observability
+  /api/v1/admin/observability/dlq:
+    get:
+      description: Returns a combined view of the event-bus DLQ (Redis Streams) and
+        the
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.unifiedDLQResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Unified DLQ stats
+      tags:
+      - admin-observability
+  /api/v1/admin/observability/audit-log:
+    get:
+      description: Returns a paginated audit-log for the observability dashboard.
+        Accepts the same query parameters as /admin/audit-log (limit, offset, actor_user_id,
+        action, resource_type). Backed by the same handler as /admin/audit-log.
+      parameters:
+      - description: Maximum rows to return (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              entries:
+                items:
+                  properties:
+                    action:
+                      type: string
+                    actor_user_id:
+                      type: integer
+                    created_at:
+                      type: string
+                    id:
+                      type: integer
+                    metadata:
+                      type: object
+                    resource_id:
+                      type: integer
+                    resource_type:
+                      type: string
+                  type: object
+                type: array
+              total:
+                type: integer
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Audit log (observability dashboard view)
+      tags:
+      - admin-observability
+  /api/v1/admin/observability/metrics/summary:
+    get:
+      description: Returns the current HTTP request rate, 5xx error rate, and p95
+        latency
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.metricsSummaryResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Observability metrics summary
+      tags:
+      - admin-observability
+  /api/v1/admin/observability/n8n/executions/recent:
+    get:
+      description: Returns the 20 most recent n8n workflow executions via the n8n
+        REST API.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.executionsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "502":
+          description: n8n unreachable
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Recent n8n executions
+      tags:
+      - admin-observability
+  /api/v1/admin/observability/n8n/workflows:
+    get:
+      description: Returns the list of n8n workflows via the n8n REST API.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.workflowsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "502":
+          description: n8n unreachable
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: n8n workflow list
+      tags:
+      - admin-observability
+  /api/v1/admin/observability/tracing/recent-errors:
+    get:
+      description: Returns up to 50 traces containing error spans from the last 15
+        minutes,
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.tracingRecentErrorsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Recent error traces
+      tags:
+      - admin-observability
   /api/v1/admin/payments:
     get:
       description: Returns a paginated list of all payment records. Supports optional
