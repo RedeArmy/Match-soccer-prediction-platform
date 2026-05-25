@@ -15,38 +15,6 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/admin/notifications/sse/stats": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns per-replica SSE connection count, cumulative broadcasts, and dropped events. Aggregate across replicas for cluster-wide totals.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin",
-                    "notifications"
-                ],
-                "summary": "SSE hub stats",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.sseStatsResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/admin/audit-log": {
             "get": {
                 "security": [
@@ -1893,6 +1861,38 @@ const docTemplate = `{
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/notifications/sse/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns per-replica SSE connection count, cumulative broadcasts, and dropped events. Aggregate across replicas for cluster-wide totals.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "notifications"
+                ],
+                "summary": "SSE hub stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.sseStatsResponse"
                         }
                     },
                     "500": {
