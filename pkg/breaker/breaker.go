@@ -95,6 +95,14 @@ func New(name string, maxFails int, openFor time.Duration) *Breaker {
 // Name returns the breaker's name.
 func (b *Breaker) Name() string { return b.name }
 
+// OpenedAt returns the time the breaker last transitioned to StateOpen.
+// Returns the zero time when the breaker has never been opened.
+func (b *Breaker) OpenedAt() time.Time {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.openedAt
+}
+
 // SetOnStateChange registers a hook that fires after every state transition.
 // Safe to call at any time after construction. Passing nil clears the hook.
 // The hook must not call back into the same Breaker (deadlock risk).

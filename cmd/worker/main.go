@@ -271,6 +271,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	)
 
 	cacheStore := cache.NewRedisStore(rc)
+	if err := cacheStore.RegisterMetrics(meter); err != nil {
+		log.Warn("worker: cacheStore.RegisterMetrics failed", zap.Error(err))
+	}
 	invalidators := []service.PostScoringInvalidator{
 		service.NewPostScoringCacheFlush(cacheStore, log),
 	}

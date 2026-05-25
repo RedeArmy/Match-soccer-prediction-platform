@@ -1,6 +1,10 @@
 package repository
 
-import "github.com/rede/world-cup-quiniela/internal/domain"
+import (
+	"time"
+
+	"github.com/rede/world-cup-quiniela/internal/domain"
+)
 
 const (
 	// unboundedLimit is the internal sentinel value for Pagination.Limit that
@@ -50,6 +54,10 @@ type AuditLogFilters struct {
 	Action       *string
 	ResourceType *string
 	ResourceID   *int
+	// CreatedAfter restricts results to entries created at or after this time.
+	CreatedAfter *time.Time
+	// CreatedBefore restricts results to entries created at or before this time.
+	CreatedBefore *time.Time
 }
 
 // PaymentFilters narrows a payment_records query.

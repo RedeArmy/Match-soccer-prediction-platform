@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -40,6 +41,8 @@ func NewAdminAuditHandler(svc service.AuditReader, log *zap.Logger) *AdminAuditH
 // @Param        action         query     string  false  "Filter by action string (e.g. admin_user.banned)"
 // @Param        resource_type  query     string  false  "Filter by resource type (e.g. membership, payment_record)"
 // @Param        resource_id    query     int     false  "Filter by resource ID"
+// @Param        created_after  query     string  false  "Return entries created at or after this RFC3339 timestamp"
+// @Param        created_before query     string  false  "Return entries created at or before this RFC3339 timestamp"
 // @Param        limit          query     int     false  "Max records per page (default 50, max 200)"
 // @Param        cursor         query     string  false  "Opaque cursor from previous response next_cursor field"
 // @Success      200            {object}  handler.CursorPaged[handler.AuditLogResponse]
@@ -60,6 +63,22 @@ func (h *AdminAuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if q := r.URL.Query().Get("resource_type"); q != "" {
 		f.ResourceType = &q
+	}
+	if q := r.URL.Query().Get("created_after"); q != "" {
+		t, err := time.Parse(time.RFC3339, q)
+		if err != nil {
+			writeError(w, r, h.log, apperrors.Validation("created_after must be RFC3339"))
+			return
+		}
+		f.CreatedAfter = &t
+	}
+	if q := r.URL.Query().Get("created_before"); q != "" {
+		t, err := time.Parse(time.RFC3339, q)
+		if err != nil {
+			writeError(w, r, h.log, apperrors.Validation("created_before must be RFC3339"))
+			return
+		}
+		f.CreatedBefore = &t
 	}
 
 	entries, nextCursor, err := h.svc.ListAuditLogs(r.Context(), f, p)
