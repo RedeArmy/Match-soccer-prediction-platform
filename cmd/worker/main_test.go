@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/election"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/observability"
 	"github.com/rede/world-cup-quiniela/internal/testutil"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
@@ -426,7 +428,7 @@ func TestMonitorDLQ_NilClient_ReturnsImmediately(t *testing.T) {
 	// a Redis connection (e.g. unit tests). Verifies the guard fires correctly.
 	// A nil tickC is safe here because the function returns before reaching the
 	// select loop.
-	monitorDLQ(context.Background(), nil, nil, nil, zap.NewNop())
+	monitorDLQ(context.Background(), nil, nil, nil, nil, zap.NewNop())
 }
 
 func TestMonitorDLQ_NonEmptyQueue_LogsError(t *testing.T) {
@@ -452,7 +454,7 @@ func TestMonitorDLQ_NonEmptyQueue_LogsError(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorDLQ(ctx, rc, nil, tickC, zap.NewNop())
+		monitorDLQ(ctx, rc, nil, tickC, nil, zap.NewNop())
 		close(done)
 	}()
 
@@ -480,7 +482,7 @@ func TestMonitorDLQ_EmptyQueue_LogsDebug(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorDLQ(ctx, rc, nil, tickC, zap.NewNop())
+		monitorDLQ(ctx, rc, nil, tickC, nil, zap.NewNop())
 		close(done)
 	}()
 
@@ -502,7 +504,7 @@ func TestMonitorDLQ_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	monitorDLQ(ctx, rc, nil, nil, zap.NewNop())
+	monitorDLQ(ctx, rc, nil, nil, nil, zap.NewNop())
 }
 
 func TestMonitorDLQ_ElectionLost_SkipsTick(t *testing.T) {
@@ -540,7 +542,7 @@ func TestMonitorDLQ_ElectionLost_SkipsTick(t *testing.T) {
 	monitor := election.NewRedisLeaderElection(rcMonitor, testDLQLeaderKey, 5*time.Second, zap.NewNop())
 	done := make(chan struct{})
 	go func() {
-		monitorDLQ(ctx, rcMonitor, monitor, tickC, zap.NewNop())
+		monitorDLQ(ctx, rcMonitor, monitor, tickC, nil, zap.NewNop())
 		close(done)
 	}()
 
@@ -567,7 +569,7 @@ func TestMonitorDLQ_ElectionWon_ExecutesScan(t *testing.T) {
 	e := election.NewRedisLeaderElection(rc, testDLQLeaderKey, 5*time.Second, zap.NewNop())
 	done := make(chan struct{})
 	go func() {
-		monitorDLQ(ctx, rc, e, tickC, zap.NewNop())
+		monitorDLQ(ctx, rc, e, tickC, nil, zap.NewNop())
 		close(done)
 	}()
 
@@ -576,6 +578,49 @@ func TestMonitorDLQ_ElectionWon_ExecutesScan(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestCheckDLQEvent_NonNilNotifier_FiresWebhook(t *testing.T) {
+	// Verify that checkDLQEvent calls notifier.NotifyDLQOverflow when the DLQ
+	// key is non-empty. The notifier fires its HTTP POST in a background
+	// goroutine, so we wait on a channel with a timeout instead of sleeping.
+	var called atomic.Bool
+	webhookReceived := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/dlq-overflow") {
+			called.Store(true)
+			webhookReceived <- struct{}{}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	notifier := observability.New(observability.NotifierConfig{
+		BaseURL: srv.URL,
+		Log:     zap.NewNop(),
+	})
+
+	mr := miniredis.RunT(t)
+	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rc.Close() })
+
+	dlqKey := "dlq:" + string(events.EventMatchFinished)
+	if _, err := mr.Lpush(dlqKey, "payload"); err != nil {
+		t.Fatalf("seed DLQ: %v", err)
+	}
+
+	checkDLQEvent(context.Background(), rc, events.EventMatchFinished, notifier, zap.NewNop())
+
+	select {
+	case <-webhookReceived:
+		// success: webhook was posted
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for DLQ overflow webhook from checkDLQEvent")
+	}
+
+	if !called.Load() {
+		t.Error("expected notifier.NotifyDLQOverflow to have been called")
+	}
 }
 
 // ── monitorPurge ──────────────────────────────────────────────────────────────

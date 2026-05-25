@@ -1,0 +1,297 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "annotations": { "list": [] },
+  "description": "Payment flow health: processing duration, provider success rates, and error analysis.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Summary",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Payment webhook events processed per second across all providers.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(payment_processing_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "Events/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Payment Event Rate",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Percentage of payment events that completed with status=success.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red", "value": null },
+            { "color": "yellow", "value": 90 },
+            { "color": "green", "value": 99 }
+          ]},
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "options": { "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 * sum(rate(payment_processing_duration_seconds_count{status=\"success\"}[$__rate_interval])) / sum(rate(payment_processing_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "Success %",
+          "refId": "A"
+        }
+      ],
+      "title": "Payment Success Rate",
+      "type": "gauge"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "95th-percentile end-to-end payment processing time across all providers.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 3 }
+          ]},
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(payment_processing_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ],
+      "title": "p95 Processing Duration",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Number of payment errors in the selected time window.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 1 }
+          ]},
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["sum"] }, "textMode": "auto" },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(payment_processing_duration_seconds_count{status!=\"success\"}[$__range]))",
+          "legendFormat": "Errors",
+          "refId": "A"
+        }
+      ],
+      "title": "Payment Errors (window total)",
+      "type": "stat"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 6,
+      "title": "Processing Duration",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "p50, p95, and p99 processing duration across all payment providers.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2 }, "unit": "s" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 7,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(payment_processing_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(payment_processing_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(payment_processing_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Processing Duration Percentiles",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "p95 processing duration broken down by payment provider.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 1, "fillOpacity": 5 }, "unit": "s" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 8,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le, provider) (rate(payment_processing_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95 {{ provider }}",
+          "refId": "A"
+        }
+      ],
+      "title": "p95 Duration by Provider",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 9,
+      "title": "Volumes & Status",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Payment event throughput by provider and outcome status.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 1, "fillOpacity": 10 }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 10,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (provider, status) (rate(payment_processing_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "{{ provider }} / {{ status }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Payment Rate by Provider & Status",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Per-provider success rate percentage over time. A sustained drop below 99% warrants investigation.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2 }, "unit": "percent", "min": 0, "max": 100 }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 11,
+      "options": { "legend": { "calcs": ["mean", "min"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "asc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 * sum by (provider) (rate(payment_processing_duration_seconds_count{status=\"success\"}[$__rate_interval])) / sum by (provider) (rate(payment_processing_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "{{ provider }} success %",
+          "refId": "A"
+        }
+      ],
+      "title": "Success Rate by Provider",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 12,
+      "title": "Error Analysis",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Payment error rate (non-success events) per provider. Each spike here triggers an n8n payment-error-escalation workflow.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 1, "fillOpacity": 20 }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "id": 13,
+      "options": { "legend": { "calcs": ["mean", "max", "sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (provider) (rate(payment_processing_duration_seconds_count{status!=\"success\"}[$__rate_interval]))",
+          "legendFormat": "{{ provider }} errors/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Payment Errors by Provider",
+      "type": "timeseries"
+    }
+
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["wcq", "observability", "payment"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "WCQ — Payment Flows",
+  "uid": "wcq-payment-flows",
+  "version": 1
+}

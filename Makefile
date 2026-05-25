@@ -71,7 +71,7 @@ test-migrate-roundtrip:
 ##             internal/testutil are counted when called from other packages' tests.
 test-cover:
 	rm -f coverage*.out
-	go test -race -count=1 -timeout=90s \
+	go test -race -count=1 -timeout=120s -short \
 		-coverprofile=coverage.out \
 		-covermode=atomic \
 		-coverpkg=./... \

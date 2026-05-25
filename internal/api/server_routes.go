@@ -149,7 +149,8 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// StartPgNotifyBridge(), called from cmd/api/main.go after Routes() returns.
 	// Keeping the start out of Routes() prevents goroutine leaks in tests that
 	// call Routes() on a Server they then discard without a matching Stop call.
-	s.notifHub = hub.New()
+	sseChanBufSize := paramSvc.GetInt(ctx, domain.ParamKeyNotifySSEChanBufSize, domain.DefaultNotifySSEChanBufSize)
+	s.notifHub = hub.NewWithBufSize(sseChanBufSize)
 	if err := s.notifHub.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
 		s.log.Warn("hub.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
 	}
@@ -189,6 +190,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	if err := breaker.RegisterGauge(meter, paypalCertBreaker); err != nil {
 		s.log.Warn("breaker.RegisterGauge(paypal-cert) failed", zap.Error(err))
 	}
+	s.breakerRegistry.Register(paypalCertBreaker)
 
 	// One-click email unsubscribe — no Clerk auth required; the signed token
 	// provides its own authentication (see internal/notification/unsubscribe).
@@ -436,6 +438,18 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 
 			// SSE hub observability — per-replica counters; aggregate in Prometheus for cluster totals
 			r.Get("/notifications/sse/stats", h.adminSSEStats.Stats)
+
+			// Observability dashboard endpoints
+			r.Route("/observability", func(r chi.Router) {
+				r.Get("/metrics/summary", h.adminObservability.MetricsSummary)
+				r.Get("/tracing/recent-errors", h.adminObservability.TracingRecentErrors)
+				r.Get("/active-connections", h.adminObservability.ActiveConnections)
+				r.Get("/dlq", h.adminObsDLQ.Stats)
+				r.Get("/audit-log", h.adminAudit.List)
+				r.Get("/circuit-breakers", h.adminObsCircuit.List)
+				r.Get("/n8n/workflows", h.adminN8n.Workflows)
+				r.Get("/n8n/executions/recent", h.adminN8n.RecentExecutions)
+			})
 
 			// Notification content templates (DB-backed, operator-editable)
 			const tmplByKey = "/notification-templates/{event_type}/{locale}"

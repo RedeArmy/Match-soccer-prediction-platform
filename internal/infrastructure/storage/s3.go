@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // S3FileStore implements FileStore against any S3-compatible object storage
@@ -37,8 +39,10 @@ func NewS3FileStore(ctx context.Context, cfg Config) (*S3FileStore, error) {
 		return nil, fmt.Errorf("storage: S3Region is required for s3 driver")
 	}
 
+	otelClient := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 	opts := []func(*awsconfig.LoadOptions) error{
 		awsconfig.WithRegion(cfg.S3Region),
+		awsconfig.WithHTTPClient(otelClient),
 	}
 	if cfg.S3AccessKeyID != "" && cfg.S3SecretKey != "" {
 		opts = append(opts, awsconfig.WithCredentialsProvider(

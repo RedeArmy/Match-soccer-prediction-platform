@@ -393,6 +393,10 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyBreakerFileStoreMaxFails:    {1, 100},   // at least 1 failure to open
 	domain.ParamKeyBreakerFileStoreCooldownSec: {1, 3_600}, // 1 s – 1 hour
 
+	// Circuit breaker: Redis cache (is_runtime=FALSE; restart required)
+	domain.ParamKeyBreakerCacheMaxFails:    {1, 100},   // at least 1 failure to open
+	domain.ParamKeyBreakerCacheCooldownSec: {1, 3_600}, // 1 s – 1 hour
+
 	// DB transaction retry policy (is_runtime=FALSE; restart required)
 	domain.ParamKeyTxRetryMaxAttempts: {1, 20},     // at least 1 attempt; 20 is very generous
 	domain.ParamKeyTxRetryBaseDelayMs: {1, 10_000}, // 1 ms – 10 s base backoff
@@ -437,6 +441,10 @@ var paramIntConstraints = map[string]paramIntRange{
 	// Observability alerting thresholds (migration 000112, is_runtime=TRUE).
 	domain.ParamKeyNotifyOutboxLagCriticalSec: {1, 86_400}, // 1 s – 24 hours
 	domain.ParamKeyNotifyDLQWarningThreshold:  {1, 10_000}, // 1 – 10 000 unresolved entries
+
+	// Phase 7 infrastructure params (migration 000113, is_runtime=FALSE).
+	domain.ParamKeyNotifySSEChanBufSize:              {8, 1_024},   // 8 – 1 024 slots per connection
+	domain.ParamKeyNotifyOutboxStaleLockThresholdSec: {60, 86_400}, // 60 s – 24 hours
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

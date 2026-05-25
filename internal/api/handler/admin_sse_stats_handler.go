@@ -40,7 +40,7 @@ type sseStatsResponse struct {
 //	@Success		200	{object}	sseStatsResponse
 //	@Failure		500	{object}	handler.ErrorResponse
 //	@Security		BearerAuth
-//	@Router			/admin/notifications/sse/stats [get]
+//	@Router			/api/v1/admin/notifications/sse/stats [get]
 func (h *AdminSSEStatsHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	connections, broadcasts, dropped := h.hub.Metrics()
 	writeJSON(w, http.StatusOK, sseStatsResponse{

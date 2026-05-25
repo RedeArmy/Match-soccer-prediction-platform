@@ -15,7 +15,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (84 total) ──────────────────────────────────────
+	// ── ParamKey* enumeration (97 total) ──────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":     ParamKeyScoringExactScore,
@@ -128,9 +128,18 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifyDLQReplayPollIntervalSec": ParamKeyNotifyDLQReplayPollIntervalSec,
 		"ParamKeyNotifyDLQReplayMaxAttempts":     ParamKeyNotifyDLQReplayMaxAttempts,
 		"ParamKeyNotifyDLQReplayAlertThreshold":  ParamKeyNotifyDLQReplayAlertThreshold,
+		// Notification outbox worker (migration 000111)
+		"ParamKeyNotifyOutboxBatchSize":            ParamKeyNotifyOutboxBatchSize,
+		"ParamKeyNotifyOutboxPollIntervalSec":      ParamKeyNotifyOutboxPollIntervalSec,
+		"ParamKeyNotifyOutboxLockDurationSec":      ParamKeyNotifyOutboxLockDurationSec,
+		"ParamKeyNotifyOutboxMaxAttempts":          ParamKeyNotifyOutboxMaxAttempts,
+		"ParamKeyNotifyOutboxLagAlertThresholdSec": ParamKeyNotifyOutboxLagAlertThresholdSec,
 		// Observability alerting thresholds (migration 000112)
 		"ParamKeyNotifyOutboxLagCriticalSec": ParamKeyNotifyOutboxLagCriticalSec,
 		"ParamKeyNotifyDLQWarningThreshold":  ParamKeyNotifyDLQWarningThreshold,
+		// Phase 7 infrastructure params (migration 000113)
+		"ParamKeyNotifySSEChanBufSize":              ParamKeyNotifySSEChanBufSize,
+		"ParamKeyNotifyOutboxStaleLockThresholdSec": ParamKeyNotifyOutboxStaleLockThresholdSec,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -239,9 +248,18 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultNotifyDLQReplayPollIntervalSec": DefaultNotifyDLQReplayPollIntervalSec,
 		"DefaultNotifyDLQReplayMaxAttempts":     DefaultNotifyDLQReplayMaxAttempts,
 		"DefaultNotifyDLQReplayAlertThreshold":  DefaultNotifyDLQReplayAlertThreshold,
+		// Notification outbox worker (migration 000111)
+		"DefaultNotifyOutboxBatchSize":            DefaultNotifyOutboxBatchSize,
+		"DefaultNotifyOutboxPollIntervalSec":      DefaultNotifyOutboxPollIntervalSec,
+		"DefaultNotifyOutboxLockDurationSec":      DefaultNotifyOutboxLockDurationSec,
+		"DefaultNotifyOutboxMaxAttempts":          DefaultNotifyOutboxMaxAttempts,
+		"DefaultNotifyOutboxLagAlertThresholdSec": DefaultNotifyOutboxLagAlertThresholdSec,
 		// Observability alerting thresholds (migration 000112)
 		"DefaultNotifyOutboxLagCriticalSec": DefaultNotifyOutboxLagCriticalSec,
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
+		// Phase 7 infrastructure params (migration 000113)
+		"DefaultNotifySSEChanBufSize":              DefaultNotifySSEChanBufSize,
+		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 		// String defaults — not in the int defaults map; documented separately.
 		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
 		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
@@ -249,7 +267,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 90 // update when adding a new ParamKey* constant
+		const expectedCount = 97 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -257,7 +275,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 79 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +2 observability alerting)
+		const expectedCount = 86 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -406,9 +424,18 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyNotifyDLQReplayPollIntervalSec", ParamKeyNotifyDLQReplayPollIntervalSec, "notify"},
 		{"ParamKeyNotifyDLQReplayMaxAttempts", ParamKeyNotifyDLQReplayMaxAttempts, "notify"},
 		{"ParamKeyNotifyDLQReplayAlertThreshold", ParamKeyNotifyDLQReplayAlertThreshold, "notify"},
+		// Notification outbox worker (migration 000111)
+		{"ParamKeyNotifyOutboxBatchSize", ParamKeyNotifyOutboxBatchSize, "notify"},
+		{"ParamKeyNotifyOutboxPollIntervalSec", ParamKeyNotifyOutboxPollIntervalSec, "notify"},
+		{"ParamKeyNotifyOutboxLockDurationSec", ParamKeyNotifyOutboxLockDurationSec, "notify"},
+		{"ParamKeyNotifyOutboxMaxAttempts", ParamKeyNotifyOutboxMaxAttempts, "notify"},
+		{"ParamKeyNotifyOutboxLagAlertThresholdSec", ParamKeyNotifyOutboxLagAlertThresholdSec, "notify"},
 		// Observability alerting thresholds (migration 000112)
 		{"ParamKeyNotifyOutboxLagCriticalSec", ParamKeyNotifyOutboxLagCriticalSec, "notify"},
 		{"ParamKeyNotifyDLQWarningThreshold", ParamKeyNotifyDLQWarningThreshold, "notify"},
+		// Phase 7 infrastructure params (migration 000113)
+		{"ParamKeyNotifySSEChanBufSize", ParamKeyNotifySSEChanBufSize, "notify"},
+		{"ParamKeyNotifyOutboxStaleLockThresholdSec", ParamKeyNotifyOutboxStaleLockThresholdSec, "notify"},
 	}
 
 	for _, tc := range paramKeys {
@@ -509,6 +536,7 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyPredictionMissingLeadMin":        DefaultNotifyPredictionMissingLeadMin,
 		"DefaultNotifyBankTransferQueueDepthThreshold": DefaultNotifyBankTransferQueueDepthThreshold,
 		"DefaultNotifySSEHeartbeatIntervalSec":         DefaultNotifySSEHeartbeatIntervalSec,
+		"DefaultNotifySSEChanBufSize":                  DefaultNotifySSEChanBufSize,
 		"DefaultNotifyWebPushTTLSec":                   DefaultNotifyWebPushTTLSec,
 		"DefaultNotifyPushSubRetentionDays":            DefaultNotifyPushSubRetentionDays,
 		"DefaultNotifyPushDigestWindowSec":             DefaultNotifyPushDigestWindowSec,
@@ -526,9 +554,17 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyDLQReplayPollIntervalSec": DefaultNotifyDLQReplayPollIntervalSec,
 		"DefaultNotifyDLQReplayMaxAttempts":     DefaultNotifyDLQReplayMaxAttempts,
 		"DefaultNotifyDLQReplayAlertThreshold":  DefaultNotifyDLQReplayAlertThreshold,
+		// Notification outbox worker (migration 000111)
+		"DefaultNotifyOutboxBatchSize":            DefaultNotifyOutboxBatchSize,
+		"DefaultNotifyOutboxPollIntervalSec":      DefaultNotifyOutboxPollIntervalSec,
+		"DefaultNotifyOutboxLockDurationSec":      DefaultNotifyOutboxLockDurationSec,
+		"DefaultNotifyOutboxMaxAttempts":          DefaultNotifyOutboxMaxAttempts,
+		"DefaultNotifyOutboxLagAlertThresholdSec": DefaultNotifyOutboxLagAlertThresholdSec,
 		// Observability alerting thresholds (migration 000112)
 		"DefaultNotifyOutboxLagCriticalSec": DefaultNotifyOutboxLagCriticalSec,
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
+		// Phase 7 infrastructure params
+		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 	}
 
 	for name, value := range defaults {
@@ -659,7 +695,7 @@ func allSystemParamKeys() []string { return AllParamKeys() }
 // TestSystemParamsMigrationCoverage verifies that every ParamKey* constant
 // declared in the domain package is seeded in at least one migration file.
 // It reads all *.up.sql files, tracks INSERT and DELETE operations on
-// system_params, and asserts the net set covers all 90 constants.
+// system_params, and asserts the net set covers all 97 constants.
 //
 // This prevents the Go constants ↔ DB seed invariant from drifting silently:
 // adding a constant without a migration, or removing a constant without a

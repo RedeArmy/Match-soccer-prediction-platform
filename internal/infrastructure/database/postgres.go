@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -96,6 +97,7 @@ func NewPool(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 	// application code to manage named prepared statements explicitly.
 	// The cache is per-connection; pgxpool handles the lifecycle transparently.
 	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+	poolCfg.ConnConfig.Tracer = otelpgx.NewTracer()
 
 	// Attempt to create the pool and ping the database with exponential
 	// backoff. Fresh environments (new pods, CI containers starting postgres
