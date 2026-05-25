@@ -311,6 +311,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	defer electionCancel()
 	dlqElection, err := election.NewPgLeaderElection(electionCtx, cfg.Database.DSN, dlqMonitorLockID, log)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil // lifecycle context cancelled during startup — treat as clean shutdown
+		}
 		return fmt.Errorf("leader election: %w", err)
 	}
 
