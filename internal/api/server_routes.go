@@ -149,7 +149,8 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// StartPgNotifyBridge(), called from cmd/api/main.go after Routes() returns.
 	// Keeping the start out of Routes() prevents goroutine leaks in tests that
 	// call Routes() on a Server they then discard without a matching Stop call.
-	s.notifHub = hub.New()
+	sseChanBufSize := paramSvc.GetInt(ctx, domain.ParamKeyNotifySSEChanBufSize, domain.DefaultNotifySSEChanBufSize)
+	s.notifHub = hub.NewWithBufSize(sseChanBufSize)
 	if err := s.notifHub.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
 		s.log.Warn("hub.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
 	}

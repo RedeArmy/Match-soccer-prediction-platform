@@ -176,8 +176,11 @@ func (s *Server) buildHandlers(
 	}
 	// Wrap the file store with a circuit breaker. Failure threshold and cooldown
 	// are read from system_params at startup (is_runtime=FALSE: restart required).
+	// The breaker name includes the active driver so per-backend metrics and alert
+	// labels are unambiguous when the storage driver is changed between deploys.
+	fileBreakerName := "file-store-" + s.cfg.Storage.Driver
 	fileStoreBreaker := breaker.New(
-		"file-store",
+		fileBreakerName,
 		params.GetInt(ctx, domain.ParamKeyBreakerFileStoreMaxFails, domain.DefaultBreakerFileStoreMaxFails),
 		time.Duration(params.GetInt(ctx, domain.ParamKeyBreakerFileStoreCooldownSec, domain.DefaultBreakerFileStoreCooldownSec))*time.Second,
 	)
@@ -196,7 +199,7 @@ func (s *Server) buildHandlers(
 	// Register a health checker so /health/ready reflects live storage state.
 	// The checker bypasses the circuit breaker to probe the provider directly
 	// when the circuit is closed, and reports "degraded" immediately when open.
-	s.checkers = append(s.checkers, storage.NewChecker("file-store", resiStore))
+	s.checkers = append(s.checkers, storage.NewChecker(fileBreakerName, resiStore))
 	maxUploadBytes := int64(params.GetInt(ctx, domain.ParamKeyPaymentMaxUploadBytes, domain.DefaultPaymentMaxUploadBytes))
 	minTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMinAmountCents, domain.DefaultBankTransferMinAmountCents)
 	maxTransferCents := params.GetInt(ctx, domain.ParamKeyBankTransferMaxAmountCents, domain.DefaultBankTransferMaxAmountCents)

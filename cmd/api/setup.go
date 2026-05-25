@@ -155,6 +155,10 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 		} else {
 			log.Sugar().Info("event bus: using in_memory driver (single-replica only)")
 		}
+		if !cfg.IsDevelopment() {
+			log.Error("event bus: in_memory driver active in non-development environment — set WCQ_EVENTBUS_DRIVER=redis",
+				zap.String("environment", cfg.Environment))
+		}
 		// InMemoryBus holds no external connections or goroutines, so there is
 		// nothing to close on shutdown. The no-op cleanup keeps the call-site
 		// pattern uniform: the caller always defers closeBus() without needing

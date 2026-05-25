@@ -457,3 +457,25 @@ func TestHub_RegisterMetrics_RegistrationError_Propagates(t *testing.T) {
 		})
 	}
 }
+
+func TestHub_NewWithBufSize_ZeroFallsBackToDefault(t *testing.T) {
+	t.Parallel()
+	// NewWithBufSize(0) must fall back to the default buffer size rather than
+	// creating a zero-capacity channel that would deadlock every Broadcast.
+	h := hub.NewWithBufSize(0)
+
+	ch, cleanup := h.Connect(1)
+	defer cleanup()
+
+	n := hub.Notification{ID: 1, UserID: 1, EventType: "test", Title: "T", Body: "B", CreatedAt: "2026-01-01T00:00:00Z"}
+	h.Broadcast(context.Background(), 1, n)
+
+	select {
+	case got := <-ch:
+		if got.ID != 1 {
+			t.Errorf("expected notification ID 1, got %d", got.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for notification from zero-buf-size hub")
+	}
+}

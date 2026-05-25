@@ -306,6 +306,26 @@ func TestNewPostgresRepository(t *testing.T) {
 	}
 }
 
+// TestNewPostgresRepository_WithStaleLockThreshold verifies that the
+// WithStaleLockThreshold option is accepted and the repo remains functional.
+// The custom threshold is exercised by calling UnlockStale, which passes the
+// duration directly to the SQL query.
+func TestNewPostgresRepository_WithStaleLockThreshold(t *testing.T) {
+	truncateOutbox(t)
+	repo := outbox.NewPostgresRepository(testPool, outbox.WithStaleLockThreshold(30*time.Second))
+	if repo == nil {
+		t.Fatal("expected non-nil Repository with custom stale-lock threshold")
+	}
+	// UnlockStale on an empty table must succeed (0 rows affected, no error).
+	n, err := repo.UnlockStale(context.Background())
+	if err != nil {
+		t.Fatalf("UnlockStale with custom threshold: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 rows unlocked on empty table, got %d", n)
+	}
+}
+
 // TestWorker_WithMaxAttempts verifies that WithMaxAttempts(1) causes an entry
 // to be marked failed on the very first dispatch failure (no retries).
 // Not parallel: shares the database table.
