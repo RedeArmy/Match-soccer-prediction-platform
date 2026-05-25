@@ -10,6 +10,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
@@ -696,5 +698,234 @@ func TestGroupMembershipService_ListByQuiniela_RepoError_Propagates(t *testing.T
 	_, err := svc.ListByQuiniela(context.Background(), 1)
 	if err == nil {
 		t.Error("expected error from ListByQuiniela, got nil")
+	}
+}
+
+// ── JoinWithBalance ───────────────────────────────────────────────────────────
+
+func TestGroupMembershipService_JoinWithBalance_Success(t *testing.T) {
+	q := quinielaWithCode(1, "PAIDCODE")
+	q.EntryFee = 200
+	q.Currency = "GTQ"
+
+	// joinMembership is returned by RequestJoinByInviteCode (pending join).
+	// membership is returned by DebitBalanceAndMarkPaid (paid/active after debit).
+	joinMem := pendingMembership(3, 1, 42)
+	now := time.Now()
+	paidMem := &domain.GroupMembership{
+		ID: 5, QuinielaID: 1, UserID: 42,
+		Status: domain.MembershipActive, Paid: true, JoinedAt: &now,
+	}
+	mr := &stubMemberRepo{
+		joinQuiniela:   q,
+		joinMembership: joinMem,
+		membership:     paidMem,
+	}
+
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		mr,
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		clock.Real{},
+		zap.NewNop(),
+	)
+
+	m, err := svc.JoinWithBalance(context.Background(), "PAIDCODE", 42)
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if m == nil {
+		t.Fatal("expected membership, got nil")
+	}
+}
+
+func TestGroupMembershipService_JoinWithBalance_NoEntryFee_ReturnsConflict(t *testing.T) {
+	q := quinielaWithCode(1, "FREECODE")
+	q.EntryFee = 0
+	mr := &stubMemberRepo{joinQuiniela: q}
+
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		mr,
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		clock.Real{},
+		zap.NewNop(),
+	)
+
+	_, err := svc.JoinWithBalance(context.Background(), "FREECODE", 42)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict for free group, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_JoinWithBalance_RepoJoinError_Propagates(t *testing.T) {
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: nil},
+		&stubMemberRepo{},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		clock.Real{},
+		zap.NewNop(),
+	)
+
+	_, err := svc.JoinWithBalance(context.Background(), "BAD", 42)
+	if err == nil {
+		t.Error("expected error when repo cannot find invite code")
+	}
+}
+
+func TestGroupMembershipService_JoinWithBalance_DebitError_Propagates(t *testing.T) {
+	q := quinielaWithCode(1, "PAIDCODE")
+	q.EntryFee = 100
+	mr := &stubMemberRepo{joinQuiniela: q, err: errors.New("insufficient balance")}
+
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		mr,
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		clock.Real{},
+		zap.NewNop(),
+	)
+
+	_, err := svc.JoinWithBalance(context.Background(), "PAIDCODE", 42)
+	if err == nil {
+		t.Error("expected error when DebitBalanceAndMarkPaid fails")
+	}
+}
+
+// ── writeMembershipEvent ──────────────────────────────────────────────────────
+
+// stubOutboxWriter is a minimal outbox.Writer for testing membership fan-out.
+type stubOutboxWriter struct {
+	err    error
+	writes int
+}
+
+func (w *stubOutboxWriter) Write(_ context.Context, _ notification.EventType, _, _ string, _ any) error {
+	w.writes++
+	return w.err
+}
+func (w *stubOutboxWriter) WriteBatch(_ context.Context, _ []outbox.BatchEvent) error { return nil }
+func (w *stubOutboxWriter) WriteDedup(_ context.Context, _ string, _ notification.EventType, _, _ string, _ any) (bool, error) {
+	return true, nil
+}
+func (w *stubOutboxWriter) WriteInTx(_ context.Context, _ outbox.TxExecer, _ notification.EventType, _, _ string, _ any) error {
+	return nil
+}
+
+func TestGroupMembershipService_ApproveJoin_WithOutboxWriter_WritesEvent(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	q := quinielaWithCode(1, "CODE")
+	outboxW := &stubOutboxWriter{}
+
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			activeCount:    1,
+		},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		clock.Real{},
+		zap.NewNop(),
+		WithGroupMembershipOutboxWriter(outboxW),
+	)
+
+	if _, err := svc.ApproveJoin(context.Background(), 1, 99, 10); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outboxW.writes != 1 {
+		t.Errorf("expected 1 outbox write, got %d", outboxW.writes)
+	}
+}
+
+func TestGroupMembershipService_Leave_WithOutboxWriter_WritesEvent(t *testing.T) {
+	q := quinielaWithCode(1, "CODE")
+	outboxW := &stubOutboxWriter{}
+
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{membership: activeMembership(1, 42)},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		clock.Real{},
+		zap.NewNop(),
+		WithGroupMembershipOutboxWriter(outboxW),
+	)
+
+	if err := svc.Leave(context.Background(), 1, 42); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outboxW.writes != 1 {
+		t.Errorf("expected 1 outbox write, got %d", outboxW.writes)
+	}
+}
+
+func TestGroupMembershipService_WriteMembershipEvent_QuinielaError_BestEffort(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	outboxW := &stubOutboxWriter{}
+
+	// quinielaRepo returns an error — writeMembershipEvent falls back to stub quiniela.
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{err: errors.New("quiniela db error")},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			activeCount:    1,
+		},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		clock.Real{},
+		zap.NewNop(),
+		WithGroupMembershipOutboxWriter(outboxW),
+	)
+
+	// Should NOT return an error even if quiniela lookup fails (best-effort).
+	if _, err := svc.ApproveJoin(context.Background(), 1, 99, 10); err != nil {
+		t.Fatalf("expected success despite quiniela lookup error, got: %v", err)
+	}
+	// Outbox write should still be attempted with fallback quiniela.
+	if outboxW.writes != 1 {
+		t.Errorf("expected 1 outbox write, got %d", outboxW.writes)
+	}
+}
+
+func TestGroupMembershipService_WriteMembershipEvent_OutboxWriteError_BestEffort(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	q := quinielaWithCode(1, "CODE")
+	outboxW := &stubOutboxWriter{err: errors.New("outbox unavailable")}
+
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			activeCount:    1,
+		},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		clock.Real{},
+		zap.NewNop(),
+		WithGroupMembershipOutboxWriter(outboxW),
+	)
+
+	// Should NOT return an error even if outbox write fails (best-effort).
+	if _, err := svc.ApproveJoin(context.Background(), 1, 99, 10); err != nil {
+		t.Fatalf("expected success despite outbox write error, got: %v", err)
 	}
 }

@@ -207,3 +207,77 @@ func TestAuditLogRepository_List_ZeroLimitReturnsError(t *testing.T) {
 		t.Error("expected error for zero CursorPage.Limit, got nil")
 	}
 }
+
+func TestAuditLogRepository_List_CreatedAfterFilter(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	// Insert 3 entries sequentially.
+	for range 3 {
+		e := &domain.AuditLog{Action: "filter_after_test"}
+		if err := repo.Create(context.Background(), e); err != nil {
+			t.Fatalf(fmtUnexpectedErr, err)
+		}
+	}
+
+	// Retrieve all to find the ID boundary.
+	all, _, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.CursorPage{Limit: 1000})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(all) < 2 {
+		t.Fatalf("expected at least 2 entries, got %d", len(all))
+	}
+
+	// Use the created_at of the newest entry as the lower bound.
+	cutoff := all[0].CreatedAt
+	results, _, err := repo.List(
+		context.Background(),
+		repository.AuditLogFilters{CreatedAfter: &cutoff},
+		repository.CursorPage{Limit: 1000},
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	for _, entry := range results {
+		if entry.CreatedAt.Before(cutoff) {
+			t.Errorf("entry %d has created_at %v before cutoff %v", entry.ID, entry.CreatedAt, cutoff)
+		}
+	}
+}
+
+func TestAuditLogRepository_List_CreatedBeforeFilter(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresAuditLogRepository(testDB)
+
+	for range 3 {
+		e := &domain.AuditLog{Action: "filter_before_test"}
+		if err := repo.Create(context.Background(), e); err != nil {
+			t.Fatalf(fmtUnexpectedErr, err)
+		}
+	}
+
+	all, _, err := repo.List(context.Background(), repository.AuditLogFilters{}, repository.CursorPage{Limit: 1000})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(all) < 2 {
+		t.Fatalf("expected at least 2 entries, got %d", len(all))
+	}
+
+	// Use the created_at of the oldest entry as the upper bound.
+	cutoff := all[len(all)-1].CreatedAt
+	results, _, err := repo.List(
+		context.Background(),
+		repository.AuditLogFilters{CreatedBefore: &cutoff},
+		repository.CursorPage{Limit: 1000},
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	for _, entry := range results {
+		if entry.CreatedAt.After(cutoff) {
+			t.Errorf("entry %d has created_at %v after cutoff %v", entry.ID, entry.CreatedAt, cutoff)
+		}
+	}
+}

@@ -138,3 +138,58 @@ func TestAdminN8nHandler_Workflows_InvalidJSON(t *testing.T) {
 		t.Errorf("expected 500 on invalid JSON from n8n, got %d", w.Code)
 	}
 }
+
+func TestAdminN8nHandler_Workflows_NilData_ReturnsEmptySlice(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// data field is absent — envelope.Data will be nil after decode.
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	w := do(newN8nRouter(srv.URL, "test-key"), http.MethodGet, "/n8n/workflows", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["configured"] != true {
+		t.Errorf("expected configured=true")
+	}
+	workflows, _ := resp["workflows"].([]any)
+	if len(workflows) != 0 {
+		t.Errorf("expected empty workflows slice, got %d", len(workflows))
+	}
+}
+
+func TestAdminN8nHandler_Executions_NilData_ReturnsEmptySlice(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	w := do(newN8nRouter(srv.URL, "test-key"), http.MethodGet, "/n8n/executions/recent", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["configured"] != true {
+		t.Errorf("expected configured=true")
+	}
+	execs, _ := resp["executions"].([]any)
+	if len(execs) != 0 {
+		t.Errorf("expected empty executions slice, got %d", len(execs))
+	}
+}
+
+func TestAdminN8nHandler_Workflows_BuildRequestError(t *testing.T) {
+	// "://invalid" triggers http.NewRequestWithContext to fail (invalid URL scheme).
+	w := do(newN8nRouter("://invalid", "key"), http.MethodGet, "/n8n/workflows", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 when request cannot be built, got %d", w.Code)
+	}
+}
