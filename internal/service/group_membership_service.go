@@ -58,6 +58,12 @@ func WithGroupMembershipOutboxWriter(w outbox.Writer) GroupMembershipOption {
 	return func(s *groupMembershipService) { s.outboxWriter = w }
 }
 
+// WithGroupMembershipClock overrides the clock used for membership timestamps.
+// Defaults to clock.Real{}. Intended for tests that require a fixed point in time.
+func WithGroupMembershipClock(clk clock.Nower) GroupMembershipOption {
+	return func(s *groupMembershipService) { s.clock = clk }
+}
+
 // groupMembershipService is the concrete implementation of GroupMembershipService.
 type groupMembershipService struct {
 	quinielaRepo repository.QuinielaRepository
@@ -76,13 +82,13 @@ type groupMembershipService struct {
 // separately; the same repository is always the source of truth for both
 // data operations and permission checks within this service.
 // Pass WithGroupMembershipOutboxWriter to enable member-joined/left fan-out events.
+// Pass WithGroupMembershipClock to override the clock (defaults to clock.Real{}).
 func NewGroupMembershipService(
 	quinielaRepo repository.QuinielaRepository,
 	memberRepo repository.GroupMembershipRepository,
 	params SystemParamService,
 	audit AuditLogger,
 	paymentSvc PaymentService,
-	clk clock.Nower,
 	log *zap.Logger,
 	opts ...GroupMembershipOption,
 ) GroupMembershipService {
@@ -93,7 +99,7 @@ func NewGroupMembershipService(
 		params:       params,
 		audit:        audit,
 		paymentSvc:   paymentSvc,
-		clock:        clk,
+		clock:        clock.Real{},
 		log:          log,
 	}
 	for _, o := range opts {
