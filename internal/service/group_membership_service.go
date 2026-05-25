@@ -12,6 +12,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // GroupMembershipService manages user membership in Quinielas.
@@ -131,10 +132,11 @@ func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, us
 func (s *groupMembershipService) createPendingPayment(ctx context.Context, quiniela *domain.Quiniela, userID int) {
 	if _, err := s.paymentSvc.CreateRecord(ctx, quiniela.ID, userID, quiniela.EntryFee, quiniela.Currency, ""); err != nil {
 		s.log.Warn("membership: failed to create pending payment record on join",
-			zap.Int("quiniela_id", quiniela.ID),
-			zap.Int("user_id", userID),
-			zap.Error(err),
-		)
+			append([]zap.Field{
+				zap.Int("quiniela_id", quiniela.ID),
+				zap.Int("user_id", userID),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...)
 	}
 }
 
@@ -282,10 +284,11 @@ func (s *groupMembershipService) writeMembershipEvent(
 	quiniela, err := s.quinielaRepo.GetByID(ctx, quinielaID)
 	if err != nil || quiniela == nil {
 		s.log.Warn("membership: quiniela lookup for outbox event failed (best-effort)",
-			zap.String("event_type", string(eventType)),
-			zap.Int("quiniela_id", quinielaID),
-			zap.Error(err),
-		)
+			append([]zap.Field{
+				zap.String("event_type", string(eventType)),
+				zap.Int("quiniela_id", quinielaID),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...)
 		quiniela = &domain.Quiniela{ID: quinielaID}
 	}
 	payload := notification.GroupJoinPayload{
@@ -297,10 +300,11 @@ func (s *groupMembershipService) writeMembershipEvent(
 	}
 	if wErr := s.outboxWriter.Write(ctx, eventType, "quiniela", fmt.Sprintf("%d", quinielaID), payload); wErr != nil {
 		s.log.Warn("membership: outbox write failed (best-effort)",
-			zap.String("event_type", string(eventType)),
-			zap.Int("quiniela_id", quinielaID),
-			zap.Error(wErr),
-		)
+			append([]zap.Field{
+				zap.String("event_type", string(eventType)),
+				zap.Int("quiniela_id", quinielaID),
+				zap.Error(wErr),
+			}, tracing.LogFields(ctx)...)...)
 	}
 }
 

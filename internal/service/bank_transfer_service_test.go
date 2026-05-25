@@ -45,6 +45,10 @@ func newBankTransferSvc(repo *bankTransferProofRepoStub) BankTransferService {
 	return NewBankTransferService(repo, nil, &noopAuditLogger{}, zap.NewNop())
 }
 
+func newBankTransferSvcWithOutbox(repo *bankTransferProofRepoStub, w *stubOutboxWriter) BankTransferService {
+	return NewBankTransferService(repo, w, &noopAuditLogger{}, zap.NewNop())
+}
+
 // ── Upload ────────────────────────────────────────────────────────────────────
 
 func TestBankTransferService_Upload_HappyPath_ReturnsProof(t *testing.T) {
@@ -209,5 +213,23 @@ func TestBankTransferService_RejectTransfer_RepoErrorPropagates(t *testing.T) {
 	_, err := svc.RejectTransfer(context.Background(), 2, 99, "reason")
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+// ── writeOutbox ───────────────────────────────────────────────────────────────
+
+func TestBankTransferService_Upload_OutboxWriteError_StillReturnsProof(t *testing.T) {
+	w := &stubOutboxWriter{err: errors.New("outbox unavailable")}
+	svc := newBankTransferSvcWithOutbox(&bankTransferProofRepoStub{}, w)
+
+	got, err := svc.Upload(context.Background(), 1, 5000, "GTQ", "key", "image/jpeg", 1024)
+	if err != nil {
+		t.Fatalf("expected nil error even when outbox write fails, got %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected proof, got nil")
+	}
+	if w.writes != 1 {
+		t.Errorf("expected 1 outbox write attempt, got %d", w.writes)
 	}
 }
