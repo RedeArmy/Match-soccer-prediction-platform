@@ -445,6 +445,12 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		// Added by migration 000112
 		domain.ParamKeyNotifyOutboxLagCriticalSec: true,
 		domain.ParamKeyNotifyDLQWarningThreshold:  true,
+		// Added by migration 000113
+		domain.ParamKeyNotifySSEChanBufSize:              true,
+		domain.ParamKeyNotifyOutboxStaleLockThresholdSec: true,
+		// Added by migration 000114
+		domain.ParamKeyBreakerCacheMaxFails:    true,
+		domain.ParamKeyBreakerCacheCooldownSec: true,
 	}
 
 	for _, spec := range allParams {
@@ -510,7 +516,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 95 // Update when adding new system parameters (+4 dlq replay from 000110, +5 outbox worker from 000111, +2 observability alerting from 000112)
+	const expectedCount = 99 // Update when adding new system parameters (+4 dlq replay from 000110, +5 outbox worker from 000111, +2 observability alerting from 000112, +2 infra tuning from 000113, +2 cache breaker from 000114)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

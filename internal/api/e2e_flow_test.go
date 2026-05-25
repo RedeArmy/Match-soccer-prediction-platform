@@ -99,7 +99,8 @@ func cleanE2ETables(t *testing.T) {
 	_, err := e2eDB.Exec(context.Background(),
 		`TRUNCATE leaderboard_snapshots, payment_records, audit_log, system_params,
 		         tournament_slots, tiebreaker_config, group_memberships, tiebreakers,
-		         predictions, quinielas, matches, stadiums, users RESTART IDENTITY CASCADE`)
+		         prediction_score_log, predictions, quinielas, matches, stadiums,
+		         users RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("clean e2e tables: %v", err)
 	}

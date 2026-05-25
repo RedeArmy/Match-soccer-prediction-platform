@@ -15,38 +15,6 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/admin/notifications/sse/stats": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns per-replica SSE connection count, cumulative broadcasts, and dropped events. Aggregate across replicas for cluster-wide totals.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin",
-                    "notifications"
-                ],
-                "summary": "SSE hub stats",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.sseStatsResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/admin/audit-log": {
             "get": {
                 "security": [
@@ -85,6 +53,18 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "Filter by resource ID",
                         "name": "resource_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Return entries created at or after this RFC3339 timestamp",
+                        "name": "created_after",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Return entries created at or before this RFC3339 timestamp",
+                        "name": "created_before",
                         "in": "query"
                     },
                     {
@@ -1879,6 +1859,327 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/notifications/sse/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns per-replica SSE connection count, cumulative broadcasts, and dropped events. Aggregate across replicas for cluster-wide totals.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "notifications"
+                ],
+                "summary": "SSE hub stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.sseStatsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/observability/active-connections": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns per-replica SSE connection count, cumulative broadcasts, and",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-observability"
+                ],
+                "summary": "Active SSE connections",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.activeConnectionsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/observability/circuit-breakers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the current state (closed/open/half-open) and, for open",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-observability"
+                ],
+                "summary": "Circuit breaker states",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.circuitBreakersResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/observability/dlq": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a combined view of the event-bus DLQ (Redis Streams) and the",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-observability"
+                ],
+                "summary": "Unified DLQ stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.unifiedDLQResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/observability/metrics/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the current HTTP request rate, 5xx error rate, and p95 latency",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-observability"
+                ],
+                "summary": "Observability metrics summary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.metricsSummaryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/observability/n8n/executions/recent": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the 20 most recent n8n workflow executions via the n8n REST API.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-observability"
+                ],
+                "summary": "Recent n8n executions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.executionsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "n8n unreachable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/observability/n8n/workflows": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the list of n8n workflows via the n8n REST API.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-observability"
+                ],
+                "summary": "n8n workflow list",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.workflowsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "n8n unreachable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/observability/tracing/recent-errors": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns up to 50 traces containing error spans from the last 15 minutes,",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-observability"
+                ],
+                "summary": "Recent error traces",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.tracingRecentErrorsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -6485,6 +6786,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.activeConnectionsResponse": {
+            "type": "object",
+            "properties": {
+                "broadcasts": {
+                    "type": "integer"
+                },
+                "connections": {
+                    "type": "integer"
+                },
+                "dropped": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.banRequest": {
             "type": "object",
             "properties": {
@@ -6536,6 +6851,31 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api_handler.circuitBreakerEntry": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "opened_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.circuitBreakersResponse": {
+            "type": "object",
+            "properties": {
+                "breakers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.circuitBreakerEntry"
                     }
                 }
             }
@@ -6605,10 +6945,104 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.eventBusDLQEntry": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "oldest_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.executionsResponse": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "executions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.n8nExecution"
+                    }
+                }
+            }
+        },
         "internal_api_handler.joinGroupRequest": {
             "type": "object",
             "properties": {
                 "invite_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.metricsSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "error_rate_5xx": {
+                    "type": "number"
+                },
+                "p95_latency_seconds": {
+                    "type": "number"
+                },
+                "request_rate_per_sec": {
+                    "type": "number"
+                }
+            }
+        },
+        "internal_api_handler.n8nExecution": {
+            "type": "object",
+            "properties": {
+                "finished": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "startedAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "stoppedAt": {
+                    "type": "string"
+                },
+                "workflowId": {
+                    "type": "string"
+                },
+                "workflowName": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.n8nWorkflow": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updatedAt": {
                     "type": "string"
                 }
             }
@@ -6767,11 +7201,69 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.tracingErrorEntry": {
+            "type": "object",
+            "properties": {
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "root_service_name": {
+                    "type": "string"
+                },
+                "root_trace_name": {
+                    "type": "string"
+                },
+                "start_time_unix_nano": {
+                    "type": "string"
+                },
+                "trace_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.tracingRecentErrorsResponse": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.tracingErrorEntry"
+                    }
+                }
+            }
+        },
         "internal_api_handler.transferOwnershipRequest": {
             "type": "object",
             "properties": {
                 "new_owner_user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.unifiedDLQResponse": {
+            "type": "object",
+            "properties": {
+                "event_bus": {
+                    "type": "object",
+                    "properties": {
+                        "entries": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.eventBusDLQEntry"
+                            }
+                        }
+                    }
+                },
+                "notifications": {
+                    "type": "object",
+                    "properties": {
+                        "unresolved_count": {
+                            "type": "integer"
+                        }
+                    }
                 }
             }
         },
@@ -6851,6 +7343,20 @@ const docTemplate = `{
                 },
                 "title_tmpl": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.workflowsResponse": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "workflows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.n8nWorkflow"
+                    }
                 }
             }
         }

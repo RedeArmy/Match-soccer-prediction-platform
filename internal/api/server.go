@@ -27,6 +27,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
 	"github.com/rede/world-cup-quiniela/internal/observability"
 	"github.com/rede/world-cup-quiniela/internal/service"
+	"github.com/rede/world-cup-quiniela/pkg/breaker"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
 	"github.com/rede/world-cup-quiniela/pkg/idempotency"
@@ -75,6 +76,10 @@ type Server struct {
 	// alerting. Nil until SetNotifier is called; buildHandlers injects it into
 	// the payment-path handlers that trigger observability events.
 	notifier *observability.Notifier
+	// breakerRegistry holds all active circuit breakers registered at startup.
+	// Nil until SetBreakerRegistry is called; the observability circuit-breakers
+	// endpoint uses it to report current breaker states.
+	breakerRegistry *breaker.Registry
 }
 
 // SetDLQService wires an optional DLQService for the admin /dlq endpoints.
@@ -104,6 +109,10 @@ func (s *Server) SetMetricsHandler(handler http.Handler) { s.metricsHandler = ha
 // n8n webhooks. Call before Routes() so buildHandlers can inject it into the
 // payment-path handlers. When n is nil, all notification calls are no-ops.
 func (s *Server) SetNotifier(n *observability.Notifier) { s.notifier = n }
+
+// SetBreakerRegistry registers the circuit breaker registry so the admin
+// observability endpoints can enumerate breaker states. Call before Routes().
+func (s *Server) SetBreakerRegistry(r *breaker.Registry) { s.breakerRegistry = r }
 
 // DrainAudit blocks until all in-flight audit log writes complete. Must be
 // called during graceful shutdown before closing the database connection pool

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -40,7 +42,9 @@ func NewGDriveFileStore(ctx context.Context, cfg Config) (*GDriveFileStore, erro
 		return nil, fmt.Errorf("storage: GDriveFolderID is required for gdrive driver")
 	}
 
+	otelClient := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 	var opts []option.ClientOption
+	opts = append(opts, option.WithHTTPClient(otelClient))
 	if cfg.GDriveCredentialsJSON != "" {
 		creds, err := google.CredentialsFromJSONWithType(
 			ctx,

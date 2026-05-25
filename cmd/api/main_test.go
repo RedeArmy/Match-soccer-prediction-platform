@@ -12,18 +12,25 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"go.opentelemetry.io/otel/metric"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/testutil"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
+
+func noopMeter() metric.Meter {
+	return metricnoop.NewMeterProvider().Meter("test")
+}
 
 const fmtUnexpectedErr = "unexpected error: %v"
 
@@ -355,6 +362,91 @@ func TestRun_WithMetricsEnabled_ImmediateShutdown(t *testing.T) {
 // TestRun_WithValidDB_ImmediateShutdown covers the db != nil branches: the
 // deferred pool close and the DB health-checker creation. A pre-cancelled
 // context keeps the test fast - no HTTP traffic is required.
+// ── Setup utility functions ───────────────────────────────────────────────────
+
+func TestMaskDSN_EmptyString_ReturnsNotConfigured(t *testing.T) {
+	if got := maskDSN(""); got != "not configured" {
+		t.Errorf("expected 'not configured', got %q", got)
+	}
+}
+
+func TestMaskDSN_StandardDSN_MasksCredentials(t *testing.T) {
+	dsn := "postgres://user:secret@localhost:5432/mydb"
+	got := maskDSN(dsn)
+	if strings.Contains(got, "user") || strings.Contains(got, "secret") {
+		t.Errorf("maskDSN did not mask credentials: %q", got)
+	}
+	if !strings.Contains(got, "@localhost:5432/mydb") {
+		t.Errorf("maskDSN should preserve host and db parts: %q", got)
+	}
+}
+
+func TestMaskDSN_NoAtSign_ReturnsMasked(t *testing.T) {
+	got := maskDSN("postgres://localhost/mydb")
+	if got != "***masked***" {
+		t.Errorf("expected '***masked***' for DSN without @, got %q", got)
+	}
+}
+
+func TestMaskDSN_NoScheme_ReturnsMasked(t *testing.T) {
+	got := maskDSN("localhost:5432/mydb")
+	if got != "***masked***" {
+		t.Errorf("expected '***masked***' for DSN without scheme, got %q", got)
+	}
+}
+
+func TestTracingStatus_Enabled_ReturnsEndpoint(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tracing.Enabled = true
+	cfg.Tracing.OTLPEndpoint = "http://tempo:4318"
+	got := tracingStatus(cfg)
+	if !strings.Contains(got, "http://tempo:4318") {
+		t.Errorf("expected endpoint in status, got %q", got)
+	}
+}
+
+func TestTracingStatus_Disabled_ReturnsDisabled(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tracing.Enabled = false
+	got := tracingStatus(cfg)
+	if got != "disabled (noop)" {
+		t.Errorf("expected 'disabled (noop)', got %q", got)
+	}
+}
+
+func TestLogStartupBanner_DoesNotPanic(t *testing.T) {
+	log := newTestLogger(t)
+	cfg := &config.Config{}
+	cfg.Environment = "test"
+	cfg.EventBus.Driver = "in_memory"
+	cfg.Server.Port = "8080"
+	cfg.Database.DSN = "postgres://user:pass@localhost/db"
+	logStartupBanner(cfg, log)
+}
+
+func TestWireLogLevelCounters_ReturnsLogger(t *testing.T) {
+	log := newTestLogger(t)
+	// noop meter (no OTel provider configured in tests)
+	result := wireLogLevelCounters(log, noopMeter())
+	if result == nil {
+		t.Fatal("expected non-nil logger")
+	}
+}
+
+func TestFlushShutdown_NoError_LogsNothing(t *testing.T) {
+	log := newTestLogger(t)
+	flushShutdown(context.Background(), func(ctx context.Context) error {
+		return nil
+	}, "test", log)
+}
+
+func TestFlushShutdown_ErrorPath_LogsWarn(t *testing.T) {
+	log := newTestLogger(t)
+	flushShutdown(context.Background(), func(ctx context.Context) error {
+		return fmt.Errorf("flush failed")
+	}, "test", log)
+}
+
 func TestRun_WithValidDB_ImmediateShutdown(t *testing.T) {
 	dsn := testutil.SetupPostgres(t)
 	ctx, cancel := context.WithCancel(context.Background())

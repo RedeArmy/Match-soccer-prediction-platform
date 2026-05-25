@@ -58,6 +58,7 @@ type paramSpec struct {
 //   - 000110_seed_notify_dlq_replay_params      (+4)
 //   - 000111_seed_notify_outbox_params          (+5)
 //   - 000112_seed_observability_alert_params    (+2)
+//   - 000113_seed_phase7_infra_params           (+2)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -146,6 +147,10 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyBreakerFileStoreMaxFails, defaultValue: strconv.Itoa(domain.DefaultBreakerFileStoreMaxFails), paramType: "int", category: "breaker", isRuntime: false},
 	{key: domain.ParamKeyBreakerFileStoreCooldownSec, defaultValue: strconv.Itoa(domain.DefaultBreakerFileStoreCooldownSec), paramType: "int", category: "breaker", isRuntime: false},
 
+	// Circuit breaker: Redis cache — not runtime: restart required.
+	{key: domain.ParamKeyBreakerCacheMaxFails, defaultValue: strconv.Itoa(domain.DefaultBreakerCacheMaxFails), paramType: "int", category: "breaker", isRuntime: false},
+	{key: domain.ParamKeyBreakerCacheCooldownSec, defaultValue: strconv.Itoa(domain.DefaultBreakerCacheCooldownSec), paramType: "int", category: "breaker", isRuntime: false},
+
 	// DB transaction retry policy — not runtime: restart required.
 	{key: domain.ParamKeyTxRetryMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultTxRetryMaxAttempts), paramType: "int", category: "repository", isRuntime: false},
 	{key: domain.ParamKeyTxRetryBaseDelayMs, defaultValue: strconv.Itoa(domain.DefaultTxRetryBaseDelayMs), paramType: "int", category: "repository", isRuntime: false},
@@ -222,6 +227,10 @@ var allParams = []paramSpec{
 	// to tune Prometheus alert sensitivity without rolling a new worker build.
 	{key: domain.ParamKeyNotifyOutboxLagCriticalSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxLagCriticalSec), paramType: "int", category: "notify", isRuntime: true},
 	{key: domain.ParamKeyNotifyDLQWarningThreshold, defaultValue: strconv.Itoa(domain.DefaultNotifyDLQWarningThreshold), paramType: "int", category: "notify", isRuntime: true},
+
+	// Phase 7 infrastructure params (migration 000113); not runtime — restart required.
+	{key: domain.ParamKeyNotifySSEChanBufSize, defaultValue: strconv.Itoa(domain.DefaultNotifySSEChanBufSize), paramType: "int", category: "notify", isRuntime: false},
+	{key: domain.ParamKeyNotifyOutboxStaleLockThresholdSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxStaleLockThresholdSec), paramType: "int", category: "notify", isRuntime: false},
 }
 
 type dbParam struct {

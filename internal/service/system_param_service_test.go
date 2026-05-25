@@ -942,6 +942,44 @@ func TestValidateParamConstraints_NotifyParams(t *testing.T) {
 	}
 }
 
+// TestValidateParamConstraints_Phase7InfraParams validates range enforcement for
+// the two infrastructure-tuning params introduced by migration 000113.
+func TestValidateParamConstraints_Phase7InfraParams(t *testing.T) {
+	cases := []struct {
+		key          string
+		belowMin     string
+		aboveMax     string
+		validDefault string
+	}{
+		{
+			key:          domain.ParamKeyNotifySSEChanBufSize,
+			belowMin:     "7",    // below 8-slot minimum
+			aboveMax:     "1025", // above 1 024-slot maximum
+			validDefault: "64",   // default
+		},
+		{
+			key:          domain.ParamKeyNotifyOutboxStaleLockThresholdSec,
+			belowMin:     "59",    // below 60 s minimum
+			aboveMax:     "86401", // above 24 h maximum
+			validDefault: "600",   // 10 min default
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			if err := validateParamConstraints(tc.key, tc.belowMin, domain.SystemParamTypeInt); err == nil {
+				t.Errorf("value %s should be rejected (below min), got nil", tc.belowMin)
+			}
+			if err := validateParamConstraints(tc.key, tc.aboveMax, domain.SystemParamTypeInt); err == nil {
+				t.Errorf("value %s should be rejected (above max), got nil", tc.aboveMax)
+			}
+			if err := validateParamConstraints(tc.key, tc.validDefault, domain.SystemParamTypeInt); err != nil {
+				t.Errorf("default value %s should be accepted, got: %v", tc.validDefault, err)
+			}
+		})
+	}
+}
+
 // ── stubHistoryRepo ───────────────────────────────────────────────────────────
 
 type stubHistoryRepo struct {

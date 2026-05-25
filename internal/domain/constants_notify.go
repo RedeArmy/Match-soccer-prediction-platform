@@ -37,6 +37,11 @@ const (
 	// SSE delivery: interval in seconds between keep-alive heartbeat frames.
 	DefaultNotifySSEHeartbeatIntervalSec = 30 // notify.sse_heartbeat_interval_sec
 
+	// SSE per-connection channel buffer size. Larger values tolerate bursty
+	// event rates at the cost of additional heap allocation per connection.
+	// is_runtime=FALSE: restart required (applied once at Hub construction).
+	DefaultNotifySSEChanBufSize = 64 // notify.sse_chan_buf_size
+
 	// Web Push delivery TTL: how long (in seconds) the push service should
 	// retain an undelivered message.
 	DefaultNotifyWebPushTTLSec = 86400 // notify.web_push_ttl_sec — 24 hours
@@ -86,6 +91,12 @@ const (
 	// Notification outbox worker (is_runtime=FALSE: worker restart required).
 	// These constants mirror the outbox.Worker option defaults so that the domain
 	// package is the single source of truth for tunable operational values.
+
+	// DefaultNotifyOutboxStaleLockThresholdSec is the seconds a domain_outbox
+	// row may remain in 'processing' status past its locked_until timestamp
+	// before the stale-lock recovery job reclaims it. Must exceed the longest
+	// expected dispatch time including retries (default: 10 minutes = 600 s).
+	DefaultNotifyOutboxStaleLockThresholdSec = 600 // notify.outbox_stale_lock_threshold_sec
 
 	// DefaultNotifyOutboxBatchSize is the maximum number of domain_outbox rows
 	// claimed and dispatched per poll cycle.
@@ -181,6 +192,9 @@ const (
 	// ParamKeyNotifySSEHeartbeatIntervalSec is the interval in seconds between
 	// keep-alive heartbeat frames on an open SSE connection.
 	ParamKeyNotifySSEHeartbeatIntervalSec = "notify.sse_heartbeat_interval_sec"
+	// ParamKeyNotifySSEChanBufSize is the per-connection channel buffer size for
+	// the SSE hub. is_runtime=FALSE: restart required.
+	ParamKeyNotifySSEChanBufSize = "notify.sse_chan_buf_size"
 	// ParamKeyNotifyWebPushTTLSec is the Web Push message time-to-live in seconds.
 	ParamKeyNotifyWebPushTTLSec = "notify.web_push_ttl_sec"
 	// ParamKeyNotifyPushIconURL is the URL of the notification icon (192×192 px PNG).
@@ -231,6 +245,11 @@ const (
 	ParamKeyNotifyRenderTimeoutMs = "notify.render_timeout_ms"
 
 	// Notification outbox worker knobs (is_runtime=FALSE: worker restart required).
+
+	// ParamKeyNotifyOutboxStaleLockThresholdSec is the seconds a 'processing'
+	// domain_outbox row may remain past locked_until before the recovery job
+	// reclaims it. is_runtime=FALSE: worker restart required.
+	ParamKeyNotifyOutboxStaleLockThresholdSec = "notify.outbox_stale_lock_threshold_sec"
 
 	// ParamKeyNotifyOutboxBatchSize is the number of domain_outbox entries claimed
 	// per poll cycle by the outbox dispatch worker.

@@ -354,6 +354,8 @@ func AllParamKeys() []string {
 		ParamKeyBreakerPaypalCertCooldownSec,
 		ParamKeyBreakerFileStoreMaxFails,
 		ParamKeyBreakerFileStoreCooldownSec,
+		ParamKeyBreakerCacheMaxFails,
+		ParamKeyBreakerCacheCooldownSec,
 		// Repository / TX retry
 		ParamKeyTxRetryMaxAttempts,
 		ParamKeyTxRetryBaseDelayMs,
@@ -405,5 +407,8 @@ func AllParamKeys() []string {
 		// Observability alerting thresholds (migration 000112)
 		ParamKeyNotifyOutboxLagCriticalSec,
 		ParamKeyNotifyDLQWarningThreshold,
+		// Phase 7 infrastructure params (migration 000113)
+		ParamKeyNotifySSEChanBufSize,
+		ParamKeyNotifyOutboxStaleLockThresholdSec,
 	}
 }

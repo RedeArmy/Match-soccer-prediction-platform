@@ -16,22 +16,41 @@ import "time"
 // accessing a global - makes every component's requirements visible and
 // verifiable without running the full application.
 type Config struct {
-	Environment string         `mapstructure:"environment"`
-	Server      ServerConfig   `mapstructure:"server"`
-	Database    DatabaseConfig `mapstructure:"database"`
-	Redis       RedisConfig    `mapstructure:"redis"`
-	EventBus    EventBusConfig `mapstructure:"eventBus"`
-	Logger      LoggerConfig   `mapstructure:"logger"`
-	CORS        CORSConfig     `mapstructure:"cors"`
-	Clerk       ClerkConfig    `mapstructure:"clerk"`
-	Payment     PaymentConfig  `mapstructure:"payment"`
-	Worker      WorkerConfig   `mapstructure:"worker"`
-	Storage     StorageConfig  `mapstructure:"storage"`
-	Tracing     TracingConfig  `mapstructure:"tracing"`
-	Metrics     MetricsConfig  `mapstructure:"metrics"`
-	Email       EmailConfig    `mapstructure:"email"`
-	N8n         N8nConfig      `mapstructure:"n8n"`
-	WebPush     WebPushConfig  `mapstructure:"webPush"`
+	Environment   string              `mapstructure:"environment"`
+	Server        ServerConfig        `mapstructure:"server"`
+	Database      DatabaseConfig      `mapstructure:"database"`
+	Redis         RedisConfig         `mapstructure:"redis"`
+	EventBus      EventBusConfig      `mapstructure:"eventBus"`
+	Logger        LoggerConfig        `mapstructure:"logger"`
+	CORS          CORSConfig          `mapstructure:"cors"`
+	Clerk         ClerkConfig         `mapstructure:"clerk"`
+	Payment       PaymentConfig       `mapstructure:"payment"`
+	Worker        WorkerConfig        `mapstructure:"worker"`
+	Storage       StorageConfig       `mapstructure:"storage"`
+	Tracing       TracingConfig       `mapstructure:"tracing"`
+	Metrics       MetricsConfig       `mapstructure:"metrics"`
+	Email         EmailConfig         `mapstructure:"email"`
+	N8n           N8nConfig           `mapstructure:"n8n"`
+	WebPush       WebPushConfig       `mapstructure:"webPush"`
+	Observability ObservabilityConfig `mapstructure:"observability"`
+}
+
+// ObservabilityConfig holds the base URLs for the observability backends
+// (Prometheus, Tempo) used by the admin observability endpoints under
+// /api/v1/admin/observability/.
+//
+// Both fields are optional: when empty, the corresponding endpoints return
+// an unconfigured response rather than an error, so the admin UI degrades
+// gracefully in environments where these backends are not deployed.
+type ObservabilityConfig struct {
+	// PrometheusURL is the base URL of the Prometheus HTTP API
+	// (e.g. "http://prometheus:9090"). Used by GET /admin/observability/metrics/summary.
+	// Set via WCQ_OBSERVABILITY_PROMETHEUSURL.
+	PrometheusURL string `mapstructure:"prometheusURL"`
+	// TempoURL is the base URL of the Grafana Tempo HTTP API
+	// (e.g. "http://tempo:3200"). Used by GET /admin/observability/tracing/recent-errors.
+	// Set via WCQ_OBSERVABILITY_TEMPOURL.
+	TempoURL string `mapstructure:"tempoURL"`
 }
 
 // EmailConfig holds credentials for the transactional email provider (Resend).

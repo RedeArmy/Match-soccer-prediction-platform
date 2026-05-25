@@ -150,6 +150,12 @@ func (r *PostgresAuditLogRepository) List(ctx context.Context, f AuditLogFilters
 	if f.ResourceID != nil {
 		wb.add("resource_id = $%d", *f.ResourceID)
 	}
+	if f.CreatedAfter != nil {
+		wb.add("created_at >= $%d", *f.CreatedAfter)
+	}
+	if f.CreatedBefore != nil {
+		wb.add("created_at <= $%d", *f.CreatedBefore)
+	}
 
 	args := wb.args
 	n := wb.next()

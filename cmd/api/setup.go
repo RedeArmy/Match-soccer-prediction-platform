@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/extra/redisotel/v9"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
@@ -27,6 +29,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/observability"
 	"github.com/rede/world-cup-quiniela/migrations"
 	"github.com/rede/world-cup-quiniela/pkg/config"
+	"github.com/rede/world-cup-quiniela/pkg/health"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 	"github.com/rede/world-cup-quiniela/pkg/metrics"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
@@ -155,6 +158,10 @@ func setupEventBus(ctx context.Context, cfg *config.Config, log *zap.Logger) (ev
 		} else {
 			log.Sugar().Info("event bus: using in_memory driver (single-replica only)")
 		}
+		if !cfg.IsDevelopment() {
+			log.Error("event bus: in_memory driver active in non-development environment — set WCQ_EVENTBUS_DRIVER=redis",
+				zap.String("environment", cfg.Environment))
+		}
 		// InMemoryBus holds no external connections or goroutines, so there is
 		// nothing to close on shutdown. The no-op cleanup keeps the call-site
 		// pattern uniform: the caller always defers closeBus() without needing
@@ -262,6 +269,28 @@ func tracingStatus(cfg *config.Config) string {
 		return "enabled → " + cfg.Tracing.OTLPEndpoint
 	}
 	return "disabled (noop)"
+}
+
+// wireRedis constructs a Redis client, a RedisStore cache, and a health checker
+// when cfg.Redis.Addr is configured. When Redis is not configured, rc is nil and
+// store is a MemoryStore. The caller is responsible for closing rc when non-nil.
+func wireRedis(cfg *config.Config, log *zap.Logger, meter metric.Meter) (*redis.Client, cache.Store, health.Checker) {
+	if cfg.Redis.Addr == "" {
+		return nil, cache.NewMemoryStore(), nil
+	}
+	rc := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	if err := redisotel.InstrumentTracing(rc); err != nil {
+		log.Warn("redisotel: tracing instrumentation failed", zap.Error(err))
+	}
+	rs := cache.NewRedisStore(rc)
+	if err := rs.RegisterMetrics(meter); err != nil {
+		log.Warn("redis cache metrics registration failed", zap.Error(err))
+	}
+	return rc, rs, health.NewRedisChecker(rc)
 }
 
 // wireLogLevelCounters attaches OTel counters for warn and error log entries
