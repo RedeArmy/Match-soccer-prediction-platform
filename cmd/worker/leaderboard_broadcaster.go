@@ -12,6 +12,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 const (
@@ -118,9 +119,10 @@ func (b *redisPubLeaderboardBroadcaster) broadcastForQuiniela(ctx context.Contex
 	memberIDs, err := b.memberRepo.ListActiveMemberIDsByGroup(ctx, quinielaID)
 	if err != nil {
 		b.log.Warn("leaderboard broadcaster: fetch members failed",
-			zap.Int("quiniela_id", quinielaID),
-			zap.Error(err),
-		)
+			append([]zap.Field{
+				zap.Int("quiniela_id", quinielaID),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...)
 		return
 	}
 	if len(memberIDs) == 0 {
@@ -154,19 +156,21 @@ func (b *redisPubLeaderboardBroadcaster) publishWithRetry(ctx context.Context, p
 		}
 		if attempt == publishMaxAttempts {
 			b.log.Warn("leaderboard broadcaster: redis publish failed after retries",
-				zap.Int("user_id", uid),
-				zap.Int("quiniela_id", quinielaID),
-				zap.Int("attempts", publishMaxAttempts),
-				zap.Error(err),
-			)
+				append([]zap.Field{
+					zap.Int("user_id", uid),
+					zap.Int("quiniela_id", quinielaID),
+					zap.Int("attempts", publishMaxAttempts),
+					zap.Error(err),
+				}, tracing.LogFields(ctx)...)...)
 			return
 		}
 		b.log.Debug("leaderboard broadcaster: redis publish retry",
-			zap.Int("user_id", uid),
-			zap.Int("quiniela_id", quinielaID),
-			zap.Int("attempt", attempt),
-			zap.Error(err),
-		)
+			append([]zap.Field{
+				zap.Int("user_id", uid),
+				zap.Int("quiniela_id", quinielaID),
+				zap.Int("attempt", attempt),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...)
 		select {
 		case <-ctx.Done():
 			return

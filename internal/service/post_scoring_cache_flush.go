@@ -7,6 +7,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // PostScoringInvalidator is the contract for any cache layer that holds data
@@ -59,7 +60,8 @@ func (f *PostScoringCacheFlush) InvalidateAfterScoring(ctx context.Context, quin
 		}
 	}
 	if err := f.store.Delete(ctx, keys...); err != nil {
-		f.log.Warn("post-scoring leaderboard cache invalidation failed", zap.Error(err))
+		f.log.Warn("post-scoring leaderboard cache invalidation failed",
+			append([]zap.Field{zap.Error(err)}, tracing.LogFields(ctx)...)...)
 	}
 
 	// Flush all global_leaderboard:{limit} variants in one SCAN+DEL pass.
@@ -68,7 +70,8 @@ func (f *PostScoringCacheFlush) InvalidateAfterScoring(ctx context.Context, quin
 		return
 	}
 	if err := pf.FlushByPrefix(ctx, "global_leaderboard:"); err != nil {
-		f.log.Warn("post-scoring global leaderboard cache invalidation failed", zap.Error(err))
+		f.log.Warn("post-scoring global leaderboard cache invalidation failed",
+			append([]zap.Field{zap.Error(err)}, tracing.LogFields(ctx)...)...)
 	}
 }
 

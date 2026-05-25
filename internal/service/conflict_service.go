@@ -10,6 +10,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // ConflictTypeSummary aggregates detected conflicts for a single conflict type.
@@ -115,12 +116,14 @@ func paginate[T any](s []T, p repository.Pagination) []T {
 func (s *conflictService) appendGroupOwnerConflicts(ctx context.Context, now time.Time, out []domain.Conflict) []domain.Conflict {
 	groupIDs, err := s.memberRepo.ListGroupIDsWithoutOwner(ctx)
 	if err != nil {
-		s.log.Warn("conflict: failed to list groups without owner", zap.Error(err))
+		s.log.Warn("conflict: failed to list groups without owner",
+			append([]zap.Field{zap.Error(err)}, tracing.LogFields(ctx)...)...)
 		return out
 	}
 	quinielas, err := s.quinielaRepo.ListByIDs(ctx, groupIDs)
 	if err != nil {
-		s.log.Warn("conflict: failed to load quiniela details for ownerless groups", zap.Error(err))
+		s.log.Warn("conflict: failed to load quiniela details for ownerless groups",
+			append([]zap.Field{zap.Error(err)}, tracing.LogFields(ctx)...)...)
 	}
 	nameByID := make(map[int]string, len(quinielas))
 	for _, q := range quinielas {
@@ -141,7 +144,8 @@ func (s *conflictService) appendGroupOwnerConflicts(ctx context.Context, now tim
 func (s *conflictService) appendStalePaymentConflicts(ctx context.Context, now time.Time, threshold time.Time, out []domain.Conflict) []domain.Conflict {
 	stalePayments, err := s.paymentRepo.ListStale(ctx, threshold)
 	if err != nil {
-		s.log.Warn("conflict: failed to list stale payments", zap.Error(err))
+		s.log.Warn("conflict: failed to list stale payments",
+			append([]zap.Field{zap.Error(err)}, tracing.LogFields(ctx)...)...)
 		return out
 	}
 	for _, p := range stalePayments {
@@ -166,7 +170,8 @@ func (s *conflictService) appendStalePaymentConflicts(ctx context.Context, now t
 func (s *conflictService) appendStaleMembershipConflicts(ctx context.Context, now time.Time, threshold time.Time, out []domain.Conflict) []domain.Conflict {
 	staleMemberships, err := s.memberRepo.ListStalePending(ctx, threshold)
 	if err != nil {
-		s.log.Warn("conflict: failed to list stale memberships", zap.Error(err))
+		s.log.Warn("conflict: failed to list stale memberships",
+			append([]zap.Field{zap.Error(err)}, tracing.LogFields(ctx)...)...)
 		return out
 	}
 	for _, m := range staleMemberships {
@@ -220,12 +225,13 @@ func (s *conflictService) ConflictSummary(ctx context.Context) (*ConflictSummary
 			logLevel = s.log.Error
 		}
 		logLevel("conflict backlog approaching or exceeding scan limit",
-			zap.Int("total_unresolved", totalUnresolved),
-			zap.Int("max_scan", maxScan),
-			zap.Int("alert_threshold", alertThreshold),
-			zap.Bool("limit_reached", limitReached),
-			zap.Float64("percentage", float64(totalUnresolved)/float64(maxScan)*100),
-		)
+			append([]zap.Field{
+				zap.Int("total_unresolved", totalUnresolved),
+				zap.Int("max_scan", maxScan),
+				zap.Int("alert_threshold", alertThreshold),
+				zap.Bool("limit_reached", limitReached),
+				zap.Float64("percentage", float64(totalUnresolved)/float64(maxScan)*100),
+			}, tracing.LogFields(ctx)...)...)
 	}
 
 	type agg struct {
@@ -282,10 +288,11 @@ func (s *conflictService) ResolveConflict(ctx context.Context, conflictType stri
 	if action == "auto_fix" {
 		if err := s.autoFix(ctx, conflictType, entityID, adminID); err != nil {
 			s.log.Warn("conflict: auto_fix failed",
-				zap.String("type", conflictType),
-				zap.Int("entity_id", entityID),
-				zap.Error(err),
-			)
+				append([]zap.Field{
+					zap.String("type", conflictType),
+					zap.Int("entity_id", entityID),
+					zap.Error(err),
+				}, tracing.LogFields(ctx)...)...)
 		}
 		s.audit.Log(ctx, &adminID, &role, domain.AuditActionConflictAutoResolved, &resType, &entityID, map[string]any{
 			"conflict_type": conflictType,

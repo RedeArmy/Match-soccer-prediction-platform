@@ -11,6 +11,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // MatchService defines operations on the Match entity.
@@ -124,7 +125,8 @@ func (s *matchService) StartMatch(ctx context.Context, id int) (*domain.Match, e
 			KickoffAt: m.KickoffAt,
 		},
 	}); err != nil {
-		s.log.Error("failed to publish MatchStarted event", zap.Int("match_id", id), zap.Error(err))
+		s.log.Error("failed to publish MatchStarted event",
+			append([]zap.Field{zap.Int("match_id", id), zap.Error(err)}, tracing.LogFields(ctx)...)...)
 	}
 	return m, nil
 }
@@ -181,10 +183,10 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 		},
 	}); err != nil {
 		s.log.Error("failed to publish MatchFinished event; falling back to synchronous scoring",
-			zap.Int("match_id", id), zap.Error(err))
+			append([]zap.Field{zap.Int("match_id", id), zap.Error(err)}, tracing.LogFields(ctx)...)...)
 		if scoreErr := s.scorer.ScoreMatch(ctx, m.ID); scoreErr != nil {
 			s.log.Error("synchronous fallback scoring failed - predictions for this match may be unscored",
-				zap.Int("match_id", id), zap.Error(scoreErr))
+				append([]zap.Field{zap.Int("match_id", id), zap.Error(scoreErr)}, tracing.LogFields(ctx)...)...)
 		}
 	}
 	return m, nil

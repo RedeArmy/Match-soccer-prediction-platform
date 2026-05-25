@@ -286,6 +286,21 @@ func TestStartMatch_FinishedMatch_ReturnsValidationError(t *testing.T) {
 	}
 }
 
+func TestStartMatch_PublishFails_StillReturnsMatch(t *testing.T) {
+	match := &domain.Match{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
+		Status: domain.MatchStatusScheduled, KickoffAt: time.Now()}
+	pub := &stubPublisher{err: errors.New("redis unavailable")}
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
+
+	result, err := svc.StartMatch(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("expected nil error even when publish fails, got %v", err)
+	}
+	if result.Status != domain.MatchStatusLive {
+		t.Errorf("expected live status, got %s", result.Status)
+	}
+}
+
 // ── CreateMatch ───────────────────────────────────────────────────────────────
 
 func TestCreateMatch_ValidMatch_ReturnsNil(t *testing.T) {
