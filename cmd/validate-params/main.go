@@ -147,6 +147,10 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyBreakerFileStoreMaxFails, defaultValue: strconv.Itoa(domain.DefaultBreakerFileStoreMaxFails), paramType: "int", category: "breaker", isRuntime: false},
 	{key: domain.ParamKeyBreakerFileStoreCooldownSec, defaultValue: strconv.Itoa(domain.DefaultBreakerFileStoreCooldownSec), paramType: "int", category: "breaker", isRuntime: false},
 
+	// Circuit breaker: Redis cache — not runtime: restart required.
+	{key: domain.ParamKeyBreakerCacheMaxFails, defaultValue: strconv.Itoa(domain.DefaultBreakerCacheMaxFails), paramType: "int", category: "breaker", isRuntime: false},
+	{key: domain.ParamKeyBreakerCacheCooldownSec, defaultValue: strconv.Itoa(domain.DefaultBreakerCacheCooldownSec), paramType: "int", category: "breaker", isRuntime: false},
+
 	// DB transaction retry policy — not runtime: restart required.
 	{key: domain.ParamKeyTxRetryMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultTxRetryMaxAttempts), paramType: "int", category: "repository", isRuntime: false},
 	{key: domain.ParamKeyTxRetryBaseDelayMs, defaultValue: strconv.Itoa(domain.DefaultTxRetryBaseDelayMs), paramType: "int", category: "repository", isRuntime: false},

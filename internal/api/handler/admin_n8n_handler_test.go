@@ -113,3 +113,28 @@ func TestAdminN8nHandler_Executions_N8nDown(t *testing.T) {
 		t.Errorf("expected 500 when n8n is down, got %d", w.Code)
 	}
 }
+
+func TestAdminN8nHandler_Workflows_NonOKStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	w := do(newN8nRouter(srv.URL, "key"), http.MethodGet, "/n8n/workflows", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on non-200 from n8n, got %d", w.Code)
+	}
+}
+
+func TestAdminN8nHandler_Workflows_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`not-json`))
+	}))
+	defer srv.Close()
+
+	w := do(newN8nRouter(srv.URL, "key"), http.MethodGet, "/n8n/workflows", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on invalid JSON from n8n, got %d", w.Code)
+	}
+}

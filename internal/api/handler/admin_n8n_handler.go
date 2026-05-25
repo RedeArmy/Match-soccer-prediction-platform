@@ -8,9 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
 // errN8nUnavailable wraps an upstream n8n communication error as an
@@ -35,8 +37,11 @@ func NewAdminN8nHandler(baseURL, apiKey string, log *zap.Logger) *AdminN8nHandle
 	return &AdminN8nHandler{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
-		http:    &http.Client{Timeout: 10 * time.Second},
-		log:     log,
+		http: &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
+		log: log,
 	}
 }
 
@@ -109,7 +114,7 @@ func (h *AdminN8nHandler) Workflows(w http.ResponseWriter, r *http.Request) {
 
 	var envelope n8nWorkflowsEnvelope
 	if err := h.doGet(r.Context(), "/api/v1/workflows", &envelope); err != nil {
-		h.log.Warn("n8n: workflows fetch failed", zap.Error(err))
+		h.log.Warn("n8n: workflows fetch failed", append(tracing.LogFields(r.Context()), zap.Error(err))...)
 		writeError(w, r, h.log, errN8nUnavailable(err))
 		return
 	}
@@ -165,7 +170,7 @@ func (h *AdminN8nHandler) RecentExecutions(w http.ResponseWriter, r *http.Reques
 
 	var envelope n8nExecutionsEnvelope
 	if err := h.doGet(r.Context(), "/api/v1/executions?limit=20", &envelope); err != nil {
-		h.log.Warn("n8n: executions fetch failed", zap.Error(err))
+		h.log.Warn("n8n: executions fetch failed", append(tracing.LogFields(r.Context()), zap.Error(err))...)
 		writeError(w, r, h.log, errN8nUnavailable(err))
 		return
 	}

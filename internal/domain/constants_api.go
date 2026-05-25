@@ -33,6 +33,13 @@ const (
 	// Handlers return 500 immediately rather than waiting for a network timeout.
 	DefaultBreakerFileStoreMaxFails    = 5  // breaker.file_store_max_fails
 	DefaultBreakerFileStoreCooldownSec = 30 // breaker.file_store_cooldown_sec
+
+	// Circuit breaker: Redis cache.
+	// Opens after 5 consecutive cache errors; stays open for 30 s.
+	// While open, service calls bypass the cache and hit the database directly,
+	// preventing a Redis outage from returning errors to end users.
+	DefaultBreakerCacheMaxFails    = 5  // breaker.cache_max_fails
+	DefaultBreakerCacheCooldownSec = 30 // breaker.cache_cooldown_sec
 )
 
 // API, authentication, and circuit-breaker system parameter keys.
@@ -79,4 +86,13 @@ const (
 	// ParamKeyBreakerFileStoreCooldownSec is the seconds the file-store circuit
 	// stays open before allowing a single trial request.
 	ParamKeyBreakerFileStoreCooldownSec = "breaker.file_store_cooldown_sec"
+
+	// Circuit breaker: Redis cache (is_runtime=FALSE: restart required).
+	// ParamKeyBreakerCacheMaxFails is the number of consecutive cache errors before
+	// the cache circuit opens. While open, all cache operations are bypassed so
+	// services continue to work against the database.
+	ParamKeyBreakerCacheMaxFails = "breaker.cache_max_fails"
+	// ParamKeyBreakerCacheCooldownSec is the seconds the cache circuit stays open
+	// before allowing a single trial request.
+	ParamKeyBreakerCacheCooldownSec = "breaker.cache_cooldown_sec"
 )
