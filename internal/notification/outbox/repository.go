@@ -52,16 +52,31 @@ type Repository interface {
 
 // -- PostgreSQL implementation --
 
-const staleThreshold = 10 * time.Minute
+const defaultStaleThreshold = 10 * time.Minute
+
+// RepositoryOption is a functional option for NewPostgresRepository.
+type RepositoryOption func(*postgresRepository)
+
+// WithStaleLockThreshold overrides the duration after which a 'processing' row
+// is considered abandoned and reclaimed by UnlockStale. Defaults to 10 minutes.
+func WithStaleLockThreshold(d time.Duration) RepositoryOption {
+	return func(r *postgresRepository) { r.staleThreshold = d }
+}
 
 // postgresRepository is the PostgreSQL-backed implementation of Repository.
 type postgresRepository struct {
-	pool *pgxpool.Pool
+	pool           *pgxpool.Pool
+	staleThreshold time.Duration
 }
 
 // NewPostgresRepository constructs a PostgreSQL-backed Repository.
-func NewPostgresRepository(pool *pgxpool.Pool) Repository {
-	return &postgresRepository{pool: pool}
+// Callers may pass RepositoryOption values to override defaults.
+func NewPostgresRepository(pool *pgxpool.Pool, opts ...RepositoryOption) Repository {
+	r := &postgresRepository{pool: pool, staleThreshold: defaultStaleThreshold}
+	for _, o := range opts {
+		o(r)
+	}
+	return r
 }
 
 func (r *postgresRepository) ClaimBatch(ctx context.Context, limit int, lockDuration time.Duration) ([]*notification.OutboxEntry, error) {
@@ -141,7 +156,7 @@ SET    status       = 'pending',
 WHERE  status       = 'processing'
   AND  locked_until < NOW() - $1::interval
 `
-	tag, err := r.pool.Exec(ctx, q, staleThreshold.String())
+	tag, err := r.pool.Exec(ctx, q, r.staleThreshold.String())
 	if err != nil {
 		return 0, apperrors.Internal(err)
 	}

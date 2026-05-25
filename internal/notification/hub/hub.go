@@ -36,8 +36,8 @@ import (
 )
 
 const (
-	chanBufSize     = 32
-	evictAfterDrops = 5
+	defaultChanBufSize = 32
+	evictAfterDrops    = 5
 )
 
 // Notification is the value delivered to SSE clients.
@@ -65,9 +65,10 @@ type connSnapshot struct {
 
 // Hub is a thread-safe registry of SSE client channels.
 type Hub struct {
-	mu      sync.RWMutex
-	clients map[int]map[string]*connEntry
-	metrics hubMetrics
+	mu          sync.RWMutex
+	clients     map[int]map[string]*connEntry
+	metrics     hubMetrics
+	chanBufSize int
 }
 
 type hubMetrics struct {
@@ -77,9 +78,23 @@ type hubMetrics struct {
 	evicted     atomic.Int64
 }
 
-// New constructs an empty Hub ready for use.
+// New constructs an empty Hub with the default channel buffer size (32).
 func New() *Hub {
-	return &Hub{clients: make(map[int]map[string]*connEntry)}
+	return NewWithBufSize(defaultChanBufSize)
+}
+
+// NewWithBufSize constructs an empty Hub with the given per-connection channel
+// buffer size. The caller is responsible for choosing a value appropriate for
+// the expected event rate; 32 is sufficient for most deployments. Values ≤ 0
+// fall back to the default.
+func NewWithBufSize(n int) *Hub {
+	if n <= 0 {
+		n = defaultChanBufSize
+	}
+	return &Hub{
+		clients:     make(map[int]map[string]*connEntry),
+		chanBufSize: n,
+	}
 }
 
 // Connect registers a new SSE connection for userID.
@@ -91,7 +106,7 @@ func New() *Hub {
 // the connections counter, so the cleanup becomes a no-op.
 func (h *Hub) Connect(userID int) (<-chan Notification, func()) {
 	connID := newConnID()
-	e := &connEntry{ch: make(chan Notification, chanBufSize)}
+	e := &connEntry{ch: make(chan Notification, h.chanBufSize)}
 
 	h.mu.Lock()
 	if h.clients[userID] == nil {

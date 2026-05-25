@@ -319,7 +319,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	outboxMaxAttempts := params.GetInt(ctx, domain.ParamKeyNotifyOutboxMaxAttempts, domain.DefaultNotifyOutboxMaxAttempts)
 	outboxLagThreshold := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyOutboxLagAlertThresholdSec, domain.DefaultNotifyOutboxLagAlertThresholdSec)) * time.Second
 
-	outboxRepo := outbox.NewPostgresRepository(db)
+	staleLockThreshold := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyOutboxStaleLockThresholdSec, domain.DefaultNotifyOutboxStaleLockThresholdSec)) * time.Second
+	outboxRepo := outbox.NewPostgresRepository(db, outbox.WithStaleLockThreshold(staleLockThreshold))
 	outboxWriter := outbox.NewWriter(db)
 
 	adminLogRepo := repository.NewPostgresAdminNotificationLogRepository(db)
@@ -642,7 +643,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	go func() {
 		defer dlqDone.Done()
 		defer ticker.Stop()
-		monitorDLQ(ctx, deps.rc, deps.dlqElection, ticker.C, log)
+		monitorDLQ(ctx, deps.rc, deps.dlqElection, ticker.C, deps.outboxNotifier, log)
 	}()
 
 	var purgeDone sync.WaitGroup
@@ -785,7 +786,7 @@ func monitorPurge(ctx context.Context, purger repository.Purger, retention, para
 //
 // If rc is nil (e.g. in unit tests where Redis is not available), the function
 // returns immediately - DLQ monitoring is best-effort and must not block startup.
-func monitorDLQ(ctx context.Context, rc *redis.Client, e election.LeaderElection, tickC <-chan time.Time, log *zap.Logger) {
+func monitorDLQ(ctx context.Context, rc *redis.Client, e election.LeaderElection, tickC <-chan time.Time, notifier *observability.Notifier, log *zap.Logger) {
 	if rc == nil {
 		return
 	}
@@ -803,28 +804,38 @@ func monitorDLQ(ctx context.Context, rc *redis.Client, e election.LeaderElection
 				continue
 			}
 			for _, et := range monitoredEvents {
-				dlqKey := "dlq:" + string(et)
-				n, err := rc.LLen(ctx, dlqKey).Result()
-				if err != nil {
-					log.Warn("worker: DLQ monitor: LLEN failed",
-						zap.String("dlq_key", dlqKey),
-						zap.Error(err),
-					)
-					continue
-				}
-				if n > 0 {
-					log.Error("worker: dead-letter queue is non-empty - manual replay required",
-						zap.String("dlq_key", dlqKey),
-						zap.String("event_type", string(et)),
-						zap.Int64("dlq_size", n),
-					)
-				} else {
-					log.Debug("worker: DLQ monitor: queue is empty",
-						zap.String("dlq_key", dlqKey),
-					)
-				}
+				checkDLQEvent(ctx, rc, et, notifier, log)
 			}
 		}
+	}
+}
+
+// checkDLQEvent reads the length of one DLQ key and logs (and notifies) when
+// it is non-empty. Extracted from monitorDLQ to keep that function's cognitive
+// complexity within the project ceiling.
+func checkDLQEvent(ctx context.Context, rc *redis.Client, et events.EventType, notifier *observability.Notifier, log *zap.Logger) {
+	dlqKey := "dlq:" + string(et)
+	n, err := rc.LLen(ctx, dlqKey).Result()
+	if err != nil {
+		log.Warn("worker: DLQ monitor: LLEN failed",
+			zap.String("dlq_key", dlqKey),
+			zap.Error(err),
+		)
+		return
+	}
+	if n > 0 {
+		log.Error("worker: dead-letter queue is non-empty - manual replay required",
+			zap.String("dlq_key", dlqKey),
+			zap.String("event_type", string(et)),
+			zap.Int64("dlq_size", n),
+		)
+		if notifier != nil {
+			notifier.NotifyDLQOverflow(ctx, n, 0)
+		}
+	} else {
+		log.Debug("worker: DLQ monitor: queue is empty",
+			zap.String("dlq_key", dlqKey),
+		)
 	}
 }
 
