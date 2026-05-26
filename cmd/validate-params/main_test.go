@@ -451,6 +451,18 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		// Added by migration 000114
 		domain.ParamKeyBreakerCacheMaxFails:    true,
 		domain.ParamKeyBreakerCacheCooldownSec: true,
+		// Added by migrations 000121 + 000125
+		domain.ParamKeyKYCTier1DepositLimitCents:      true,
+		domain.ParamKeyKYCTier2DepositLimitCents:      true,
+		domain.ParamKeyKYCTier2PayoutLimitCents:       true,
+		domain.ParamKeyKYCAMLThresholdCents:           true,
+		domain.ParamKeyKYCReviewIntervalDays:          true,
+		domain.ParamKeyKYCMaxDocUploadBytes:           true,
+		domain.ParamKeyKYCTier1DepositVelocityCents:  true,
+		domain.ParamKeyKYCTier2DepositVelocityCents:  true,
+		domain.ParamKeyKYCTier1WithdrawalVelocityCents: true,
+		domain.ParamKeyKYCTier2WithdrawalVelocityCents: true,
+		domain.ParamKeyKYCRiskDashboardCacheTTLSec:    true,
 	}
 
 	for _, spec := range allParams {
@@ -503,6 +515,8 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 		"repository": true,
 		// Added by migration 000087
 		"notify": true,
+		// Added by migrations 000121 + 000125
+		"kyc": true,
 	}
 
 	for _, spec := range allParams {
@@ -516,7 +530,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 99 // Update when adding new system parameters (+4 dlq replay from 000110, +5 outbox worker from 000111, +2 observability alerting from 000112, +2 infra tuning from 000113, +2 cache breaker from 000114)
+	const expectedCount = 110 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}
