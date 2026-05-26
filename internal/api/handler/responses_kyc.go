@@ -50,15 +50,15 @@ type KYCDocumentResponse struct {
 
 // KYCEventResponse is a single immutable event from the KYC audit trail.
 type KYCEventResponse struct {
-	ID          int64          `json:"id"`
-	EventType   string         `json:"event_type"`
-	ActorID     *int           `json:"actor_id,omitempty"`
-	OldStatus   *string        `json:"old_status,omitempty"`
-	NewStatus   string         `json:"new_status"`
-	Reason      string         `json:"reason,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
-	TraceID     string         `json:"trace_id,omitempty"`
-	CreatedAt   string         `json:"created_at"`
+	ID        int64          `json:"id"`
+	EventType string         `json:"event_type"`
+	ActorID   *int           `json:"actor_id,omitempty"`
+	OldStatus *string        `json:"old_status,omitempty"`
+	NewStatus string         `json:"new_status"`
+	Reason    string         `json:"reason,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	TraceID   string         `json:"trace_id,omitempty"`
+	CreatedAt string         `json:"created_at"`
 }
 
 // KYCRequirementsResponse describes the documents still needed for the next tier.
