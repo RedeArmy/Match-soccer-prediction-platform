@@ -123,6 +123,11 @@ type AuditService interface {
 	// failing database; expose this in health checks or metrics to detect
 	// goroutine pile-up before it exhausts memory.
 	InFlight() int64
+	// Dropped returns the cumulative count of audit entries permanently lost
+	// since process start. A non-zero value means the audit trail has gaps
+	// and warrants investigation. Expose this counter in health checks or
+	// Prometheus scraping so alert rules can page on-call when it increments.
+	Dropped() int64
 }
 
 // auditService is the concrete implementation of AuditLogger.
@@ -136,6 +141,10 @@ type auditService struct {
 	// inFlight counts goroutines currently executing. Exposed via InFlight()
 	// for health checks and metrics exporters.
 	inFlight atomic.Int64
+	// dropped counts audit entries permanently lost (panic during write, all
+	// retries exhausted, and synchronous fallback also failed). Exposed via
+	// Dropped() for health checks and Prometheus scraping.
+	dropped atomic.Int64
 }
 
 // NewAuditService constructs an auditService backed by the given repository.
@@ -197,11 +206,40 @@ func (s *auditService) Log(
 		defer s.inFlight.Add(-1)
 		defer func() {
 			if r := recover(); r != nil {
-				s.log.Error("audit: goroutine panic recovered — entry permanently lost",
+				s.log.Error("audit: goroutine panic recovered — attempting synchronous fallback",
 					zap.String("action", action),
 					zap.Any("panic", r),
-					zap.Bool("audit_lost", true),
 				)
+				// Attempt one synchronous write with a fresh context so a
+				// transient panic caused by a bad connection does not
+				// permanently lose the entry. Track success via a flag so
+				// that both a returned error and a secondary panic are treated
+				// as failures — the inner recover() swallows the secondary
+				// panic, leaving the flag false in either failure case.
+				fallbackOK := false
+				func() {
+					defer func() { _ = recover() }() // protect against double-panic
+					ctx, cancel := context.WithTimeout(context.Background(), s.writeTimeout)
+					defer cancel()
+					if err := s.repo.Create(ctx, entry); err == nil {
+						fallbackOK = true
+					}
+				}()
+				if fallbackOK {
+					s.log.Warn("audit: synchronous fallback succeeded after panic",
+						zap.String("action", action),
+					)
+				} else {
+					// Both the goroutine write and the synchronous fallback
+					// failed. Increment the dropped counter so Prometheus
+					// alert rules can detect audit-trail gaps.
+					s.dropped.Add(1)
+					s.log.Error("audit: entry permanently lost — goroutine panic and fallback both failed",
+						zap.String("action", action),
+						zap.Bool("audit_lost", true),
+						zap.Int64("dropped_total", s.dropped.Load()),
+					)
+				}
 			}
 		}()
 		s.writeWithRetry(detached, entry, action)
@@ -277,6 +315,13 @@ func (s *auditService) Drain() {
 // InFlight returns the number of audit goroutines currently executing.
 func (s *auditService) InFlight() int64 {
 	return s.inFlight.Load()
+}
+
+// Dropped returns the cumulative count of audit entries permanently lost since
+// process start. Each increment means a goroutine panicked AND the synchronous
+// fallback write also failed. Alert when this counter is non-zero.
+func (s *auditService) Dropped() int64 {
+	return s.dropped.Load()
 }
 
 var _ AuditService = (*auditService)(nil)

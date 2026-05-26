@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // knownLogLevels is the set of level strings accepted by the zap logger factory.
@@ -114,6 +115,9 @@ func validateProductionConfig(cfg *Config) error {
 			cfg.Environment,
 		)
 	}
+	if err := validateCORSOrigins(cfg.CORS.AllowedOrigins, cfg.Environment); err != nil {
+		return err
+	}
 	return validateStorageDriver(cfg.Storage)
 }
 
@@ -161,6 +165,26 @@ func validateOneDriveConfig(s StorageConfig) error {
 	}
 	if s.OneDriveDriveID == "" {
 		return errors.New("storage.onedriveDriveID must not be empty when storage.driver=onedrive (WCQ_STORAGE_ONEDRIVEDRIVEID)")
+	}
+	return nil
+}
+
+// validateCORSOrigins rejects localhost origins in non-development environments.
+// An empty allowed-origins list is accepted (it means no CORS — safe for API-only
+// deployments behind a same-origin frontend or a gateway that strips the header).
+// Listing a localhost origin in production is almost always a misconfiguration:
+// browsers enforce same-origin policy correctly, so the real risk is confusion
+// during incident response when engineers assume CORS is configured for prod clients.
+func validateCORSOrigins(origins []string, env string) error {
+	for _, o := range origins {
+		if strings.Contains(o, "localhost") || strings.Contains(o, "127.0.0.1") {
+			return fmt.Errorf(
+				"cors.allowedOrigins contains a localhost origin %q in environment %q; "+
+					"localhost origins are only permitted when environment=development. "+
+					"Remove it or set WCQ_ENVIRONMENT=development for local runs",
+				o, env,
+			)
+		}
 	}
 	return nil
 }

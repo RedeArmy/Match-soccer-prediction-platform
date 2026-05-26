@@ -389,6 +389,9 @@ func TestLoadWorker_InvalidLogLevel_ReturnsError(t *testing.T) {
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 
+// TestLoad_CORSDefault_IsEmpty verifies the secure default: no origins are
+// allowed by default, forcing operators to explicitly opt in to CORS.
+// Updated from the old default of ["http://localhost:3000"] — see DT-25.
 func TestLoad_CORSDefault_IsSingleLocalhostOrigin(t *testing.T) {
 	setRequiredEnv(t)
 
@@ -396,10 +399,8 @@ func TestLoad_CORSDefault_IsSingleLocalhostOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
 	}
-
-	want := []string{"http://localhost:3000"}
-	if len(cfg.CORS.AllowedOrigins) != len(want) || cfg.CORS.AllowedOrigins[0] != want[0] {
-		t.Errorf("CORS.AllowedOrigins default: expected %v, got %v", want, cfg.CORS.AllowedOrigins)
+	if len(cfg.CORS.AllowedOrigins) != 0 {
+		t.Errorf("CORS.AllowedOrigins default: expected empty list, got %v", cfg.CORS.AllowedOrigins)
 	}
 }
 
@@ -649,5 +650,84 @@ func TestLoad_DatabasePoolOverride_ConnMaxLifetimeJitter(t *testing.T) {
 	}
 	if cfg.Database.ConnMaxLifetimeJitter != time.Minute {
 		t.Errorf("Database.ConnMaxLifetimeJitter: expected 1m, got %v", cfg.Database.ConnMaxLifetimeJitter)
+	}
+}
+
+// ── CORS default and validation tests ─────────────────────────────────────────
+
+// setProductionCORSBase sets all non-CORS production requirements so that CORS
+// validation tests can observe only the CORS-specific error.
+func setProductionCORSBase(t *testing.T) {
+	t.Helper()
+	t.Setenv(envServerPort, "8080")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_testsecret")
+	setProductionPaymentEnv(t)
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	setProductionStorageEnv(t)
+}
+
+// TestLoad_CORSDefault_IsEmpty verifies that the default CORS allowed-origins
+// list is empty and does not contain any localhost origins.
+func TestLoad_CORSDefault_IsEmpty(t *testing.T) {
+	setRequiredEnv(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if len(cfg.CORS.AllowedOrigins) != 0 {
+		t.Errorf("CORS default: expected empty list, got %v", cfg.CORS.AllowedOrigins)
+	}
+}
+
+// TestLoad_CORSLocalhostOrigin_InProduction_ReturnsError verifies that listing
+// a localhost origin in a production environment is rejected by validation.
+func TestLoad_CORSLocalhostOrigin_InProduction_ReturnsError(t *testing.T) {
+	setProductionCORSBase(t)
+	t.Setenv("WCQ_CORS_ALLOWEDORIGINS", "http://localhost:3000")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for localhost CORS origin in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "localhost") {
+		t.Errorf("expected error to mention 'localhost', got: %v", err)
+	}
+}
+
+// TestLoad_CORSLocalhostOrigin_InDevelopment_IsAccepted verifies that localhost
+// origins are permitted in the development environment.
+func TestLoad_CORSLocalhostOrigin_InDevelopment_IsAccepted(t *testing.T) {
+	setRequiredEnv(t) // sets environment=dev
+	t.Setenv("WCQ_CORS_ALLOWEDORIGINS", "http://localhost:3000")
+
+	_, err := config.Load()
+	if err != nil {
+		t.Fatalf("expected no error for localhost CORS in development, got: %v", err)
+	}
+}
+
+// TestLoad_CORSEmptyList_InProduction_IsAccepted verifies that an empty CORS
+// list is a valid production configuration (API-only or gateway-terminated deployments).
+func TestLoad_CORSEmptyList_InProduction_IsAccepted(t *testing.T) {
+	setProductionCORSBase(t)
+	// WCQ_CORS_ALLOWEDORIGINS not set — relies on the empty default.
+
+	_, err := config.Load()
+	if err != nil {
+		t.Fatalf("expected no error for empty CORS list in production, got: %v", err)
+	}
+}
+
+// TestLoad_CORSProductionOrigin_InProduction_IsAccepted verifies that
+// non-localhost origins are accepted in production.
+func TestLoad_CORSProductionOrigin_InProduction_IsAccepted(t *testing.T) {
+	setProductionCORSBase(t)
+	t.Setenv("WCQ_CORS_ALLOWEDORIGINS", "https://app.quinielamundial.gt")
+
+	_, err := config.Load()
+	if err != nil {
+		t.Fatalf("expected no error for production CORS origin, got: %v", err)
 	}
 }
