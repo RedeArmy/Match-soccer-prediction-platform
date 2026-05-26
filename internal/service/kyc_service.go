@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -17,15 +18,16 @@ import (
 
 // SubmitKYCRequest carries user-provided identity data for a KYC submission.
 type SubmitKYCRequest struct {
-	FullName       string
-	DateOfBirth    *time.Time
-	Nationality    string
-	DocumentType   domain.KYCDocumentType
-	DocumentNumber string
-	AddressLine    string
-	City           string
-	Country        string
-	PostalCode     string
+	FullName          string
+	DateOfBirth       *time.Time
+	Nationality       string
+	DocumentType      domain.KYCDocumentType
+	DocumentNumber    string
+	AddressLine       string
+	City              string
+	Country           string
+	PostalCode        string
+	DeviceFingerprint string // optional; SHA-256 hex from X-Device-Fingerprint header
 }
 
 // UploadDocRequest carries metadata for a new KYC document upload.
@@ -91,6 +93,13 @@ type KYCService interface {
 	// ReleaseFrozenBalance clears the balance freeze for a user after the
 	// admin confirms the KYC review is satisfactory.
 	ReleaseFrozenBalance(ctx context.Context, userID, adminID int) error
+	// GetRiskDashboard returns aggregated KYC risk metrics. Results are cached
+	// for DefaultKYCRiskDashboardCacheTTLSecs seconds when a cache.Store is wired.
+	GetRiskDashboard(ctx context.Context) (*domain.KYCRiskDashboardStats, error)
+	// RecalculateRiskScore computes and persists a 0–100 risk score for the
+	// given user's profile. Returns the new score. Safe to call on any financial
+	// event; idempotent when the profile hasn't changed.
+	RecalculateRiskScore(ctx context.Context, userID int) (int, error)
 
 	// ── Internal ──────────────────────────────────────────────────────────
 	// FreezeBalance is called by payment services when a prize credit for a
@@ -111,9 +120,13 @@ type kycService struct {
 	params      SystemParamService
 	audit       AuditLogger
 	log         *zap.Logger
+	metrics     *KYCMetrics
+	cache       cache.Store                        // optional; nil disables risk-dashboard caching
+	ledger      repository.BalanceLedgerRepository // optional; nil skips deposit velocity in risk score
 }
 
-// NewKYCService constructs a KYCService.
+// NewKYCService constructs a KYCService. Pass a non-nil KYCMetrics (variadic)
+// to activate OTel instrumentation; nil is safe and skips all recording.
 func NewKYCService(
 	profileRepo repository.KYCProfileRepository,
 	docRepo repository.KYCDocumentRepository,
@@ -121,8 +134,9 @@ func NewKYCService(
 	params SystemParamService,
 	audit AuditLogger,
 	log *zap.Logger,
+	metrics ...*KYCMetrics,
 ) KYCService {
-	return &kycService{
+	svc := &kycService{
 		profileRepo: profileRepo,
 		docRepo:     docRepo,
 		eventRepo:   eventRepo,
@@ -130,7 +144,19 @@ func NewKYCService(
 		audit:       audit,
 		log:         log,
 	}
+	if len(metrics) > 0 {
+		svc.metrics = metrics[0]
+	}
+	return svc
 }
+
+// SetCache wires a cache.Store for risk-dashboard caching. Called once at
+// startup; nil means no caching (acceptable in tests).
+func (s *kycService) SetCache(store cache.Store) { s.cache = store }
+
+// SetLedger wires the ledger repo for deposit-velocity scoring.
+// Called once at startup; nil omits the deposit-velocity component.
+func (s *kycService) SetLedger(ledger repository.BalanceLedgerRepository) { s.ledger = ledger }
 
 func (s *kycService) GetProfile(ctx context.Context, userID int) (*domain.KYCProfile, error) {
 	return s.profileRepo.GetByUserID(ctx, userID)
@@ -158,22 +184,51 @@ func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCReques
 		return nil, apperrors.Conflict("your KYC profile is currently under review")
 	}
 
+	dupExists, err := s.profileRepo.ExistsByDocumentIdentity(ctx, req.DocumentType, req.DocumentNumber, req.DateOfBirth, userID)
+	if err != nil {
+		return nil, err
+	}
+	if dupExists {
+		if s.metrics != nil {
+			s.metrics.RecordFraudFlag(ctx, "duplicate_identity")
+		}
+		return nil, apperrors.Conflict("this identity document is already associated with another account")
+	}
+
+	if req.DeviceFingerprint != "" {
+		devCount, err := s.profileRepo.CountAccountsByDeviceFingerprint(ctx, req.DeviceFingerprint, userID)
+		if err != nil {
+			return nil, err
+		}
+		if devCount > 0 {
+			if s.metrics != nil {
+				s.metrics.RecordFraudFlag(ctx, "device_fingerprint_collision")
+			}
+			return nil, apperrors.Conflict("this device is already associated with another verified account")
+		}
+	}
+
 	now := time.Now()
 	dt := req.DocumentType
+	var devFP *string
+	if req.DeviceFingerprint != "" {
+		devFP = &req.DeviceFingerprint
+	}
 	profile := &domain.KYCProfile{
-		UserID:         userID,
-		Status:         domain.KYCStatusPending,
-		Tier:           domain.KYCTierUnverified,
-		FullName:       req.FullName,
-		DateOfBirth:    req.DateOfBirth,
-		Nationality:    req.Nationality,
-		DocumentType:   &dt,
-		DocumentNumber: req.DocumentNumber,
-		AddressLine:    req.AddressLine,
-		City:           req.City,
-		Country:        req.Country,
-		PostalCode:     req.PostalCode,
-		SubmittedAt:    &now,
+		UserID:            userID,
+		Status:            domain.KYCStatusPending,
+		Tier:              domain.KYCTierUnverified,
+		FullName:          req.FullName,
+		DateOfBirth:       req.DateOfBirth,
+		Nationality:       req.Nationality,
+		DocumentType:      &dt,
+		DocumentNumber:    req.DocumentNumber,
+		AddressLine:       req.AddressLine,
+		City:              req.City,
+		Country:           req.Country,
+		PostalCode:        req.PostalCode,
+		DeviceFingerprint: devFP,
+		SubmittedAt:       &now,
 	}
 	if existing != nil {
 		profile.Tier = existing.Tier
@@ -202,6 +257,9 @@ func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCReques
 	s.audit.Log(ctx, &userID, nil,
 		domain.AuditActionKYCSubmitted, &resType, &resID, nil)
 
+	if s.metrics != nil {
+		s.metrics.RecordSubmission(ctx, "success")
+	}
 	return profile, nil
 }
 
@@ -334,6 +392,9 @@ func (s *kycService) Approve(ctx context.Context, profileID, adminID int, tier d
 	s.audit.Log(ctx, &adminID, &role,
 		domain.AuditActionKYCApproved, &resType, &profileID,
 		map[string]any{"tier": int(tier)})
+	if s.metrics != nil && profile.SubmittedAt != nil {
+		s.metrics.RecordReviewDuration(ctx, time.Since(*profile.SubmittedAt).Seconds(), "approved")
+	}
 	return nil
 }
 
@@ -366,6 +427,9 @@ func (s *kycService) Reject(ctx context.Context, profileID, adminID int, reason 
 	s.audit.Log(ctx, &adminID, &role,
 		domain.AuditActionKYCRejected, &resType, &profileID,
 		map[string]any{"reason": reason})
+	if s.metrics != nil && profile.SubmittedAt != nil {
+		s.metrics.RecordReviewDuration(ctx, time.Since(*profile.SubmittedAt).Seconds(), "rejected")
+	}
 	return nil
 }
 
@@ -512,6 +576,90 @@ func traceIDFromCtx(ctx context.Context) string {
 
 func (s *kycService) ListDueForReview(ctx context.Context) ([]*domain.KYCProfile, error) {
 	return s.profileRepo.ListDueForReview(ctx, time.Now())
+}
+
+// riskScoreWeights are the additive risk factors for the 0–100 score.
+// Higher tier = lower base risk; flags and velocity add to the score.
+const (
+	riskWeightTierUnverified  = 30
+	riskWeightTierOne         = 20
+	riskWeightTierTwo         = 10
+	riskWeightTierThree       = 0
+	riskWeightPEP             = 25
+	riskWeightSanctions       = 35
+	riskWeightDepositVelocity = 20 // deposits last 24h exceed AML threshold
+	riskWeightFrozenBalance   = 15
+)
+
+func (s *kycService) RecalculateRiskScore(ctx context.Context, userID int) (int, error) {
+	profile, err := s.profileRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if profile == nil {
+		return 0, apperrors.NotFound("kyc profile not found")
+	}
+
+	score := 0
+	switch profile.Tier {
+	case domain.KYCTierUnverified:
+		score += riskWeightTierUnverified
+	case domain.KYCTierOne:
+		score += riskWeightTierOne
+	case domain.KYCTierTwo:
+		score += riskWeightTierTwo
+	case domain.KYCTierThree:
+		score += riskWeightTierThree
+	}
+	if profile.PEPFlag {
+		score += riskWeightPEP
+	}
+	if profile.SanctionsFlag {
+		score += riskWeightSanctions
+	}
+	if profile.BalanceFrozen {
+		score += riskWeightFrozenBalance
+	}
+	if s.ledger != nil {
+		threshold := s.params.GetInt(ctx, domain.ParamKeyKYCAMLThresholdCents, domain.DefaultKYCAMLThresholdCents)
+		creditKinds := []domain.BalanceLedgerKind{
+			domain.LedgerKindBankTransfer,
+			domain.LedgerKindWebhookRecurrente,
+			domain.LedgerKindWebhookPayPal,
+			domain.LedgerKindPrize,
+		}
+		sum, err := s.ledger.SumTransactionsByUserAndPeriod(ctx, userID, creditKinds, time.Now().Add(-24*time.Hour))
+		if err != nil {
+			s.log.Warn("risk score: ledger sum failed, skipping velocity component", zap.Error(err))
+		} else if sum >= int64(threshold) {
+			score += riskWeightDepositVelocity
+		}
+	}
+	if score > 100 {
+		score = 100
+	}
+
+	if err := s.profileRepo.UpdateRiskScore(ctx, profile.ID, score); err != nil {
+		return 0, err
+	}
+	return score, nil
+}
+
+func (s *kycService) GetRiskDashboard(ctx context.Context) (*domain.KYCRiskDashboardStats, error) {
+	if s.cache != nil {
+		if v, ok := cacheGet[*domain.KYCRiskDashboardStats](ctx, s.cache, domain.CacheKeyKYCRiskDashboard, s.log); ok {
+			return v, nil
+		}
+	}
+	stats, err := s.profileRepo.RiskDashboardStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.cache != nil {
+		ttl := time.Duration(domain.DefaultKYCRiskDashboardCacheTTLSecs) * time.Second
+		cacheSet(ctx, s.cache, domain.CacheKeyKYCRiskDashboard, stats, ttl, s.log)
+	}
+	return stats, nil
 }
 
 var _ KYCService = (*kycService)(nil)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -39,6 +40,16 @@ type KYCGate interface {
 	// kyc.aml_threshold_cents system parameter (default Q25,000). The caller
 	// must write an audit event; the transaction itself is never blocked.
 	ExceedsAMLThreshold(ctx context.Context, amountCents int) (bool, error)
+	// ExceedsCumulativeAMLThreshold returns true when the user's cumulative
+	// credit transactions in the last 24 hours plus amountCents meet or exceed
+	// the AML threshold. Non-blocking: caller must write an audit event.
+	ExceedsCumulativeAMLThreshold(ctx context.Context, userID, amountCents int) (bool, error)
+	// CheckDepositVelocity returns apperrors.Forbidden when userID has exceeded
+	// the rolling 24-hour deposit limit for their KYC tier. Blocking check.
+	CheckDepositVelocity(ctx context.Context, userID, amountCents int) error
+	// CheckWithdrawalVelocity returns apperrors.Forbidden when userID has exceeded
+	// the rolling 24-hour withdrawal limit for their KYC tier. Blocking check.
+	CheckWithdrawalVelocity(ctx context.Context, userID, amountCents int) error
 }
 
 // kycGate is the production implementation of KYCGate.
@@ -50,12 +61,22 @@ type KYCGate interface {
 type kycGate struct {
 	userRepo repository.UserRepository
 	params   SystemParamService
+	metrics  *KYCMetrics
+	ledger   repository.BalanceLedgerRepository // optional; nil disables cumulative checks
 }
 
 // NewKYCGate constructs a KYCGate backed by the given repositories.
 func NewKYCGate(userRepo repository.UserRepository, params SystemParamService) KYCGate {
 	return &kycGate{userRepo: userRepo, params: params}
 }
+
+// SetLedger wires the ledger repository for cumulative AML checks.
+// Called once at startup; nil disables cumulative checking (safe in tests).
+func (g *kycGate) SetLedger(ledger repository.BalanceLedgerRepository) { g.ledger = ledger }
+
+// SetMetrics wires the OTel instruments into the gate. Called once at startup
+// after RegisterKYCMetrics; safe to skip in tests (nil metrics is a no-op).
+func (g *kycGate) SetMetrics(m *KYCMetrics) { g.metrics = m }
 
 func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) error {
 	tier, err := g.tierFor(ctx, userID)
@@ -66,6 +87,9 @@ func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) 
 	// (Tier 2+). Tier 0 and Tier 1 (phone only) are insufficient because AML
 	// regulations require identity confirmation before any payout is processed.
 	if tier < domain.KYCTierTwo {
+		if g.metrics != nil {
+			g.metrics.RecordGateBlock(ctx, "withdrawal", "tier_insufficient")
+		}
 		return apperrors.Forbidden(
 			"Para retirar fondos debes completar la verificación de identidad. " +
 				"Los residentes en Guatemala deben enviar su DPI vigente; " +
@@ -77,6 +101,9 @@ func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) 
 	if tier == domain.KYCTierTwo {
 		cap := g.intParam(ctx, domain.ParamKeyKYCTier2PayoutLimitCents, domain.DefaultKYCTier2PayoutLimitCents)
 		if amountCents > cap {
+			if g.metrics != nil {
+				g.metrics.RecordGateBlock(ctx, "withdrawal", "cap_exceeded")
+			}
 			return apperrors.Forbidden(fmt.Sprintf(
 				"El monto de retiro (Q%.2f) supera el límite de tu nivel de verificación actual (Q%.2f). "+
 					"Completa la verificación KYC completa para acceder a límites mayores.",
@@ -107,6 +134,9 @@ func (g *kycGate) CheckDeposit(ctx context.Context, userID, amountCents int) err
 		return nil // Tier 3: no limit
 	}
 	if amountCents > cap {
+		if g.metrics != nil {
+			g.metrics.RecordGateBlock(ctx, "deposit", "cap_exceeded")
+		}
 		return apperrors.Forbidden(fmt.Sprintf(
 			"El monto del depósito (Q%.2f) supera el límite permitido para tu nivel actual (Q%.2f). "+
 				"Completa la verificación de identidad para acceder a límites mayores.",
@@ -168,6 +198,112 @@ func (g *kycGate) intParam(ctx context.Context, key string, defaultVal int) int 
 func (g *kycGate) ExceedsAMLThreshold(ctx context.Context, amountCents int) (bool, error) {
 	threshold := g.intParam(ctx, domain.ParamKeyKYCAMLThresholdCents, domain.DefaultKYCAMLThresholdCents)
 	return amountCents >= threshold, nil
+}
+
+func (g *kycGate) CheckDepositVelocity(ctx context.Context, userID, amountCents int) error {
+	if g.ledger == nil {
+		return nil
+	}
+	tier, err := g.tierFor(ctx, userID)
+	if err != nil {
+		return err
+	}
+	var cap int
+	switch tier {
+	case domain.KYCTierUnverified, domain.KYCTierOne:
+		cap = g.intParam(ctx, domain.ParamKeyKYCTier1DepositVelocityCents, domain.DefaultKYCTier1DepositVelocityCents)
+	case domain.KYCTierTwo:
+		cap = g.intParam(ctx, domain.ParamKeyKYCTier2DepositVelocityCents, domain.DefaultKYCTier2DepositVelocityCents)
+	default:
+		return nil // Tier 3: no velocity limit
+	}
+	creditKinds := []domain.BalanceLedgerKind{
+		domain.LedgerKindBankTransfer,
+		domain.LedgerKindWebhookRecurrente,
+		domain.LedgerKindWebhookPayPal,
+	}
+	sum, err := g.ledger.SumTransactionsByUserAndPeriod(ctx, userID, creditKinds, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		return err
+	}
+	if (sum + int64(amountCents)) > int64(cap) {
+		if g.metrics != nil {
+			g.metrics.RecordGateBlock(ctx, "deposit", "velocity_exceeded")
+		}
+		return apperrors.Forbidden(fmt.Sprintf(
+			"El depósito supera el límite de velocidad de 24 horas para tu nivel de verificación actual (Q%.2f/día). "+
+				"Completa la verificación KYC completa para acceder a límites mayores.",
+			float64(cap)/100,
+		))
+	}
+	return nil
+}
+
+func (g *kycGate) CheckWithdrawalVelocity(ctx context.Context, userID, amountCents int) error {
+	if g.ledger == nil {
+		return nil
+	}
+	tier, err := g.tierFor(ctx, userID)
+	if err != nil {
+		return err
+	}
+	var cap int
+	switch tier {
+	case domain.KYCTierUnverified, domain.KYCTierOne:
+		cap = g.intParam(ctx, domain.ParamKeyKYCTier1WithdrawalVelocityCents, domain.DefaultKYCTier1WithdrawalVelocityCents)
+	case domain.KYCTierTwo:
+		cap = g.intParam(ctx, domain.ParamKeyKYCTier2WithdrawalVelocityCents, domain.DefaultKYCTier2WithdrawalVelocityCents)
+	default:
+		return nil // Tier 3: no velocity limit
+	}
+	if cap == 0 {
+		if g.metrics != nil {
+			g.metrics.RecordGateBlock(ctx, "withdrawal", "velocity_no_allowance")
+		}
+		return apperrors.Forbidden(
+			"Tu nivel de verificación actual no permite retiros. Completa la verificación de identidad para habilitar retiros.",
+		)
+	}
+	withdrawalKinds := []domain.BalanceLedgerKind{
+		domain.LedgerKindWithdrawalDeduct,
+	}
+	sum, err := g.ledger.SumTransactionsByUserAndPeriod(ctx, userID, withdrawalKinds, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		return err
+	}
+	if (sum + int64(amountCents)) > int64(cap) {
+		if g.metrics != nil {
+			g.metrics.RecordGateBlock(ctx, "withdrawal", "velocity_exceeded")
+		}
+		return apperrors.Forbidden(fmt.Sprintf(
+			"El retiro supera el límite de velocidad de 24 horas para tu nivel de verificación actual (Q%.2f/día). "+
+				"Completa la verificación KYC completa para acceder a límites mayores.",
+			float64(cap)/100,
+		))
+	}
+	return nil
+}
+
+func (g *kycGate) ExceedsCumulativeAMLThreshold(ctx context.Context, userID, amountCents int) (bool, error) {
+	threshold := g.intParam(ctx, domain.ParamKeyKYCAMLThresholdCents, domain.DefaultKYCAMLThresholdCents)
+	if amountCents >= threshold {
+		return true, nil
+	}
+	if g.ledger == nil {
+		return false, nil
+	}
+	creditKinds := []domain.BalanceLedgerKind{
+		domain.LedgerKindBankTransfer,
+		domain.LedgerKindWebhookRecurrente,
+		domain.LedgerKindWebhookPayPal,
+		domain.LedgerKindPrize,
+	}
+	since := time.Now().Add(-24 * time.Hour)
+	sum, err := g.ledger.SumTransactionsByUserAndPeriod(ctx, userID, creditKinds, since)
+	if err != nil {
+		return false, err
+	}
+	return (sum + int64(amountCents)) >= int64(threshold), nil
 }
 
 var _ KYCGate = (*kycGate)(nil)
