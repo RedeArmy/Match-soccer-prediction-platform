@@ -233,3 +233,26 @@ func TestBankTransferService_Upload_OutboxWriteError_StillReturnsProof(t *testin
 		t.Errorf("expected 1 outbox write attempt, got %d", w.writes)
 	}
 }
+
+// ── AML threshold gate ────────────────────────────────────────────────────────
+
+// amlTriggerGate embeds NoopKYCGate and overrides ExceedsAMLThreshold to always
+// return true, exercising the AML audit-log path in Upload and Create without
+// blocking the transaction.
+type amlTriggerGate struct{ NoopKYCGate }
+
+func (g amlTriggerGate) ExceedsAMLThreshold(_ context.Context, _ int) (bool, error) {
+	return true, nil
+}
+
+func TestBankTransferService_Upload_AMLThresholdExceeded_StillReturnsProof(t *testing.T) {
+	svc := NewBankTransferService(&bankTransferProofRepoStub{}, amlTriggerGate{}, nil, &noopAuditLogger{}, zap.NewNop())
+
+	got, err := svc.Upload(context.Background(), 1, 5000, "GTQ", "bank-transfers/1/abc.jpg", "image/jpeg", 1024)
+	if err != nil {
+		t.Fatalf("expected proof despite AML flag, got err=%v", err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil proof")
+	}
+}

@@ -405,3 +405,99 @@ func TestKYCGate_ExceedsCumulative_LedgerError_Propagates(t *testing.T) {
 		t.Error("expected ledger error to propagate")
 	}
 }
+
+// ── SetMetrics ────────────────────────────────────────────────────────────────
+
+func TestKYCGate_SetMetrics_AcceptsNilAndNonNil(t *testing.T) {
+	g := NewKYCGate(&kycUserRepoStub{user: &domain.User{ID: 1}}, &noopSystemParamService{}).(*kycGate)
+	g.SetMetrics(nil)
+	g.SetMetrics(newTestMetrics(t))
+}
+
+// ── CheckWithdrawal with metrics ─────────────────────────────────────────────
+
+func TestKYCGate_CheckWithdrawal_TierInsufficient_WithMetrics(t *testing.T) {
+	u := &domain.User{ID: 1, KYCTier: domain.KYCTierUnverified}
+	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
+	g.SetMetrics(newTestMetrics(t))
+	err := g.CheckWithdrawal(context.Background(), 1, 1000)
+	if err == nil || !isForbidden(err) {
+		t.Fatalf("expected Forbidden for Tier 0 with metrics, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckWithdrawal_CapExceeded_WithMetrics(t *testing.T) {
+	u := &domain.User{ID: 1, KYCTier: domain.KYCTierTwo}
+	g := NewKYCGate(&kycUserRepoStub{user: u}, &paramReturning{value: "100000"}).(*kycGate)
+	g.SetMetrics(newTestMetrics(t))
+	err := g.CheckWithdrawal(context.Background(), 1, 200_000)
+	if err == nil || !isForbidden(err) {
+		t.Fatalf("expected Forbidden for cap exceeded with metrics, got %v", err)
+	}
+}
+
+// ── CheckDeposit with metrics ─────────────────────────────────────────────────
+
+func TestKYCGate_CheckDeposit_CapExceeded_WithMetrics(t *testing.T) {
+	u := &domain.User{ID: 1, KYCTier: domain.KYCTierUnverified}
+	g := NewKYCGate(&kycUserRepoStub{user: u}, &paramReturning{value: "50000"}).(*kycGate)
+	g.SetMetrics(newTestMetrics(t))
+	err := g.CheckDeposit(context.Background(), 1, 100_000)
+	if err == nil || !isForbidden(err) {
+		t.Fatalf("expected Forbidden for deposit cap exceeded with metrics, got %v", err)
+	}
+}
+
+// ── intParam ──────────────────────────────────────────────────────────────────
+
+func TestKYCGate_intParam_UnparsableValue_ReturnsDefault(t *testing.T) {
+	u := &domain.User{ID: 1, KYCTier: domain.KYCTierUnverified}
+	g := NewKYCGate(&kycUserRepoStub{user: u}, &paramReturning{value: "not-a-number"}).(*kycGate)
+	// CheckDeposit calls intParam; with an unparseable param the gate falls back
+	// to the default cap, so a small deposit within that default must pass.
+	if err := g.CheckDeposit(context.Background(), 1, 1_000); err != nil {
+		t.Errorf("expected nil using default cap when param is unparseable, got %v", err)
+	}
+}
+
+// ── CheckWithdrawalVelocity with ledger and metrics ───────────────────────────
+
+func TestKYCGate_CheckWithdrawalVelocity_LedgerError_Propagates(t *testing.T) {
+	u := &domain.User{ID: 1, KYCTier: domain.KYCTierTwo}
+	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
+	g.SetLedger(&ledgerSumStub{err: errors.New("db fail")})
+	if err := g.CheckWithdrawalVelocity(context.Background(), 1, 1_000); err == nil {
+		t.Error("expected ledger error to propagate")
+	}
+}
+
+func TestKYCGate_CheckWithdrawalVelocity_NoAllowance_WithMetrics(t *testing.T) {
+	u := &domain.User{ID: 1, KYCTier: domain.KYCTierOne}
+	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
+	g.SetLedger(&ledgerSumStub{sum: 0})
+	g.SetMetrics(newTestMetrics(t))
+	err := g.CheckWithdrawalVelocity(context.Background(), 1, 1)
+	if err == nil || !isForbidden(err) {
+		t.Errorf("expected Forbidden for Tier 1 with no withdrawal allowance, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckWithdrawalVelocity_VelocityExceeded_WithMetrics(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierTwo, int64(domain.DefaultKYCTier2WithdrawalVelocityCents))
+	gate.SetMetrics(newTestMetrics(t))
+	err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1)
+	if err == nil || !isForbidden(err) {
+		t.Errorf("expected Forbidden when velocity exceeded with metrics, got %v", err)
+	}
+}
+
+// ── CheckDepositVelocity with metrics ─────────────────────────────────────────
+
+func TestKYCGate_CheckDepositVelocity_VelocityExceeded_WithMetrics(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierUnverified, int64(domain.DefaultKYCTier1DepositVelocityCents))
+	gate.SetMetrics(newTestMetrics(t))
+	err := gate.CheckDepositVelocity(context.Background(), 1, 1)
+	if err == nil || !isForbidden(err) {
+		t.Errorf("expected Forbidden when deposit velocity exceeded with metrics, got %v", err)
+	}
+}

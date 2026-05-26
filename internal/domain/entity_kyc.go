@@ -61,15 +61,12 @@ const (
 	KYCDocProofOfFunds KYCDocumentType = "proof_of_funds"
 )
 
-// KYCProfileType distinguishes individual (user) from organisational (org)
-// KYC/KYB profiles when referencing kyc_documents.
+// KYCProfileType identifies the profile table referenced by kyc_documents and kyc_events.
 type KYCProfileType string
 
 const (
 	// KYCProfileTypeUser is an individual user KYC profile.
 	KYCProfileTypeUser KYCProfileType = "user"
-	// KYCProfileTypeOrg is an organisational KYB profile.
-	KYCProfileTypeOrg KYCProfileType = "org"
 )
 
 // ── KYC event type ────────────────────────────────────────────────────────────
@@ -141,37 +138,11 @@ type KYCProfile struct {
 	UpdatedAt         time.Time
 }
 
-// ── KYB profile (organisational) ─────────────────────────────────────────────
-
-// KYBProfile holds the identity verification data for a quiniela organiser.
-//
-// An organiser is a regular user who creates and manages paid quinielas.
-// KYB is required before any organiser payout is processed.
-type KYBProfile struct {
-	ID                 int
-	UserID             int // the platform user who represents the organisation
-	Status             KYCStatus
-	Tier               KYCTier
-	LegalName          string
-	TaxID              string // RFC (Guatemala/MX) or equivalent
-	RegistrationNumber string
-	Jurisdiction       string // ISO 3166-1 alpha-2 country code
-	IncorporationDate  *time.Time
-	UBOName            string // Ultimate Beneficial Owner
-	UBODocumentNumber  string
-	SubmittedAt        *time.Time
-	ReviewedAt         *time.Time
-	ReviewedBy         *int
-	RejectionReason    string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-}
-
 // ── KYC document ─────────────────────────────────────────────────────────────
 
-// KYCDocument records one uploaded identity document attached to a KYC/KYB
-// profile. Binary content is never stored in the database; StorageKey is an
-// opaque reference into the configured FileStore (e.g. "kyc/2026/05/abc.pdf").
+// KYCDocument records one uploaded identity document attached to a KYC profile.
+// Binary content is never stored in the database; StorageKey is an opaque
+// reference into the configured FileStore (e.g. "kyc/2026/05/abc.pdf").
 //
 // FileHash is the hex-encoded SHA-256 digest of the raw file bytes, computed
 // by the handler before the file is streamed to the FileStore. It enables

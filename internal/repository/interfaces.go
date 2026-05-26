@@ -931,28 +931,3 @@ type NotificationTemplateRepository interface {
 	// different pair.
 	GetHistoryEntry(ctx context.Context, id int64, eventType, locale string) (*domain.NotificationTemplateHistory, error)
 }
-
-// KYBRepository manages KYB (Know Your Business) profiles for quiniela organisers.
-// One profile row exists per user; it is created on first submission and updated on
-// resubmission (after rejection). The full status-transition history is captured in
-// kyc_events with profile_type='org'.
-type KYBRepository interface {
-	// Create inserts a new KYB profile. profile.ID is populated on success.
-	Create(ctx context.Context, profile *domain.KYBProfile) error
-	// GetByUserID returns the KYB profile for userID, or nil when none exists.
-	GetByUserID(ctx context.Context, userID int) (*domain.KYBProfile, error)
-	// GetByID returns the KYB profile by primary key, or nil when not found.
-	GetByID(ctx context.Context, id int) (*domain.KYBProfile, error)
-	// UpdateStatus transitions the profile's status and records review metadata.
-	// reviewerID may be 0 (stored as NULL) for system-initiated transitions.
-	UpdateStatus(ctx context.Context, id int, status domain.KYCStatus, reviewerID int, reason string) error
-	// ListPending returns profiles in pending or under_review state, ordered by
-	// submitted_at ASC (oldest first), with offset-based pagination.
-	ListPending(ctx context.Context, limit, offset int) ([]*domain.KYBProfile, error)
-	// CountByStatus returns the count of profiles for each KYCStatus value.
-	CountByStatus(ctx context.Context) (map[domain.KYCStatus]int64, error)
-	// ExistsByTaxIDAndJurisdiction returns true when an approved or pending
-	// profile already exists with the same tax_id and jurisdiction, excluding
-	// the given userID. Used for duplicate-entity detection on Submit.
-	ExistsByTaxIDAndJurisdiction(ctx context.Context, taxID, jurisdiction string, excludeUserID int) (bool, error)
-}

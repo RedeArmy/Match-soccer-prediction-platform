@@ -15,11 +15,13 @@ import (
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type kycProfileRepoStub struct {
-	profile   *domain.KYCProfile
-	profiles  []*domain.KYCProfile
-	frozen    []*domain.FrozenBalanceSummary
-	dupExists bool
-	err       error
+	profile         *domain.KYCProfile
+	profiles        []*domain.KYCProfile
+	frozen          []*domain.FrozenBalanceSummary
+	dupExists       bool
+	err             error
+	updateStatusErr error // overrides err for UpdateStatus only
+	getByUserIDErr  error // overrides err for GetByUserID only
 }
 
 func (r *kycProfileRepoStub) Upsert(_ context.Context, p *domain.KYCProfile) error {
@@ -30,12 +32,18 @@ func (r *kycProfileRepoStub) Upsert(_ context.Context, p *domain.KYCProfile) err
 	return nil
 }
 func (r *kycProfileRepoStub) GetByUserID(_ context.Context, _ int) (*domain.KYCProfile, error) {
+	if r.getByUserIDErr != nil {
+		return nil, r.getByUserIDErr
+	}
 	return r.profile, r.err
 }
 func (r *kycProfileRepoStub) GetByID(_ context.Context, _ int) (*domain.KYCProfile, error) {
 	return r.profile, r.err
 }
 func (r *kycProfileRepoStub) UpdateStatus(_ context.Context, _ int, _ domain.KYCStatus, _ int, _ string) error {
+	if r.updateStatusErr != nil {
+		return r.updateStatusErr
+	}
 	return r.err
 }
 func (r *kycProfileRepoStub) UpdateTier(_ context.Context, _ int, _ domain.KYCTier, _ *time.Time) error {
@@ -656,5 +664,309 @@ func TestKYCService_Escalate_RepoError_Propagates(t *testing.T) {
 	svc := newKYCSvc(&kycProfileRepoStub{err: errors.New("db fail")}, &kycDocRepoStub{}, &kycEventRepoStub{})
 	if err := svc.Escalate(context.Background(), 1, 99, "reason"); err == nil {
 		t.Fatal("expected repo error, got nil")
+	}
+}
+
+// ── fingerprintErrorStub ──────────────────────────────────────────────────────
+
+type fingerprintErrorStub struct {
+	kycProfileRepoStub
+}
+
+func (r *fingerprintErrorStub) CountAccountsByDeviceFingerprint(_ context.Context, _ string, _ int) (int64, error) {
+	return 0, errors.New("db fail")
+}
+
+// ── NewKYCService with metrics ────────────────────────────────────────────────
+
+func TestKYCService_NewKYCService_WithMetrics(t *testing.T) {
+	m := newTestMetrics(t)
+	svc := NewKYCService(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop(), m)
+	if svc == nil {
+		t.Fatal("expected non-nil service")
+	}
+}
+
+// ── validateSubmitRequest missing branch ─────────────────────────────────────
+
+func TestKYCService_Submit_MissingDocumentNumber_Validation(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName:     "Juan",
+		DocumentType: domain.KYCDocGovID,
+	})
+	if err == nil {
+		t.Fatal("expected validation error for missing document_number, got nil")
+	}
+}
+
+// ── checkDeviceFraud paths ────────────────────────────────────────────────────
+
+func TestKYCService_Submit_DeviceFraudRepoError_Propagates(t *testing.T) {
+	stub := &fingerprintErrorStub{}
+	svc := NewKYCService(stub, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+		DeviceFingerprint: "abc123",
+	})
+	if err == nil {
+		t.Fatal("expected error from fingerprint repo, got nil")
+	}
+}
+
+func TestKYCService_Submit_DeviceFraud_WithMetrics_RecordsFraudFlag(t *testing.T) {
+	m := newTestMetrics(t)
+	svc := NewKYCService(&fingerprintCollisionStub{}, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop(), m)
+	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+		DeviceFingerprint: "abc123",
+	})
+	if err == nil {
+		t.Fatal("expected conflict error from device fraud check, got nil")
+	}
+}
+
+// ── Submit additional paths ───────────────────────────────────────────────────
+
+type docIdentityErrStub struct {
+	kycProfileRepoStub
+}
+
+func (r *docIdentityErrStub) ExistsByDocumentIdentity(_ context.Context, _ domain.KYCDocumentType, _ string, _ *time.Time, _ int) (bool, error) {
+	return false, errors.New("db fail")
+}
+
+func TestKYCService_Submit_DocIdentityCheckError_Propagates(t *testing.T) {
+	stub := &docIdentityErrStub{}
+	svc := NewKYCService(stub, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+	})
+	if err == nil {
+		t.Fatal("expected error from document identity check, got nil")
+	}
+}
+
+func TestKYCService_Submit_DuplicateIdentity_WithMetrics(t *testing.T) {
+	m := newTestMetrics(t)
+	stub := &kycProfileRepoStub{dupExists: true}
+	svc := NewKYCService(stub, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop(), m)
+	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+	})
+	if err == nil {
+		t.Fatal("expected conflict error for duplicate identity, got nil")
+	}
+}
+
+func TestKYCService_Submit_CopiesTierFromExistingProfile(t *testing.T) {
+	existing := &domain.KYCProfile{
+		ID: 5, UserID: 1, Status: domain.KYCStatusApproved, Tier: domain.KYCTierTwo,
+	}
+	stub := &kycProfileRepoStub{profile: existing}
+	svc := newKYCSvc(stub, &kycDocRepoStub{}, &kycEventRepoStub{})
+	profile, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if profile.Tier != domain.KYCTierTwo {
+		t.Errorf("expected tier copied from existing (Tier2), got %v", profile.Tier)
+	}
+}
+
+func TestKYCService_Submit_WithDeviceFingerprint_SetsDevFP(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	profile, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+		DeviceFingerprint: "fp-abc123",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if profile.DeviceFingerprint == nil || *profile.DeviceFingerprint != "fp-abc123" {
+		t.Errorf("expected device fingerprint set, got %v", profile.DeviceFingerprint)
+	}
+}
+
+func TestKYCService_Submit_WithMetrics_RecordsSubmission(t *testing.T) {
+	m := newTestMetrics(t)
+	svc := NewKYCService(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop(), m)
+	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ── Approve with SubmittedAt and metrics ─────────────────────────────────────
+
+func TestKYCService_Approve_WithSubmittedAt_RecordsReviewDuration(t *testing.T) {
+	now := time.Now().Add(-time.Hour)
+	profile := &domain.KYCProfile{ID: 1, UserID: 10, Status: domain.KYCStatusPending, SubmittedAt: &now}
+	m := newTestMetrics(t)
+	svc := NewKYCService(&kycProfileRepoStub{profile: profile}, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop(), m)
+	if err := svc.Approve(context.Background(), 1, 99, domain.KYCTierTwo); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ── Reject error and metrics paths ───────────────────────────────────────────
+
+func TestKYCService_Reject_UpdateStatusError_Propagates(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, Status: domain.KYCStatusPending}
+	stub := &kycProfileRepoStub{profile: profile, updateStatusErr: errors.New("db fail")}
+	svc := newKYCSvc(stub, &kycDocRepoStub{}, &kycEventRepoStub{})
+	if err := svc.Reject(context.Background(), 1, 99, "reason"); err == nil {
+		t.Fatal("expected UpdateStatus error, got nil")
+	}
+}
+
+func TestKYCService_Reject_WithSubmittedAt_RecordsReviewDuration(t *testing.T) {
+	now := time.Now().Add(-time.Hour)
+	profile := &domain.KYCProfile{ID: 1, UserID: 10, Status: domain.KYCStatusPending, SubmittedAt: &now}
+	m := newTestMetrics(t)
+	svc := NewKYCService(&kycProfileRepoStub{profile: profile}, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop(), m)
+	if err := svc.Reject(context.Background(), 1, 99, "docs expired"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ── Escalate UpdateStatus error ───────────────────────────────────────────────
+
+func TestKYCService_Escalate_UpdateStatusError_Propagates(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, Status: domain.KYCStatusPending}
+	stub := &kycProfileRepoStub{profile: profile, updateStatusErr: errors.New("db fail")}
+	svc := newKYCSvc(stub, &kycDocRepoStub{}, &kycEventRepoStub{})
+	if err := svc.Escalate(context.Background(), 1, 99, "pep match"); err == nil {
+		t.Fatal("expected UpdateStatus error, got nil")
+	}
+}
+
+// ── RequestDocument repo error ────────────────────────────────────────────────
+
+func TestKYCService_RequestDocument_RepoError_Propagates(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{err: errors.New("db fail")}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	if err := svc.RequestDocument(context.Background(), 1, 99, domain.KYCDocGovID, "expired"); err == nil {
+		t.Fatal("expected repo error, got nil")
+	}
+}
+
+// ── ReleaseFrozenBalance GetByUserID error ────────────────────────────────────
+
+func TestKYCService_ReleaseFrozenBalance_GetByUserIDError_Propagates(t *testing.T) {
+	stub := &kycProfileRepoStub{getByUserIDErr: errors.New("db fail")}
+	svc := newKYCSvc(stub, &kycDocRepoStub{}, &kycEventRepoStub{})
+	if err := svc.ReleaseFrozenBalance(context.Background(), 1, 99); err == nil {
+		t.Fatal("expected GetByUserID error, got nil")
+	}
+}
+
+// ── FreezeBalance GetByUserID error ──────────────────────────────────────────
+
+func TestKYCService_FreezeBalance_GetByUserIDError_Propagates(t *testing.T) {
+	stub := &kycProfileRepoStub{getByUserIDErr: errors.New("db fail")}
+	svc := newKYCSvc(stub, &kycDocRepoStub{}, &kycEventRepoStub{})
+	if err := svc.FreezeBalance(context.Background(), 1, 50_000, "prize_win_freeze"); err == nil {
+		t.Fatal("expected GetByUserID error, got nil")
+	}
+}
+
+// ── appendEvent error is logged, not returned ────────────────────────────────
+
+func TestKYCService_AppendEvent_ErrorIsLoggedNotReturned(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{err: errors.New("event fail")})
+	// Submit calls appendEvent after a successful upsert; error must be swallowed.
+	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+	})
+	if err != nil {
+		t.Fatalf("expected nil when event repo fails (best-effort), got %v", err)
+	}
+}
+
+// ── RecalculateRiskScore additional tiers ─────────────────────────────────────
+
+func TestKYCService_RecalculateRiskScore_TierOne_NoFlags(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 1, Tier: domain.KYCTierOne}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: profile}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	score, err := svc.RecalculateRiskScore(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if score != riskWeightTierOne {
+		t.Errorf("expected score=%d for TierOne no flags, got %d", riskWeightTierOne, score)
+	}
+}
+
+func TestKYCService_RecalculateRiskScore_TierTwo_NoFlags(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 1, Tier: domain.KYCTierTwo}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: profile}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	score, err := svc.RecalculateRiskScore(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if score != riskWeightTierTwo {
+		t.Errorf("expected score=%d for TierTwo no flags, got %d", riskWeightTierTwo, score)
+	}
+}
+
+func TestKYCService_RecalculateRiskScore_WithLedger_AboveThreshold_AddsWeight(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 1, Tier: domain.KYCTierOne}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: profile}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	svc.(*kycService).SetLedger(&ledgerSumStub{sum: int64(domain.DefaultKYCAMLThresholdCents)})
+	score, err := svc.RecalculateRiskScore(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := riskWeightTierOne + riskWeightDepositVelocity
+	if score != expected {
+		t.Errorf("expected score=%d (tier1 + velocity), got %d", expected, score)
+	}
+}
+
+// ── GetRiskDashboard cache paths ──────────────────────────────────────────────
+
+func TestKYCService_GetRiskDashboard_CacheHit_ReturnsCachedValue(t *testing.T) {
+	stats := &domain.KYCRiskDashboardStats{
+		QueueDepth:       7,
+		TierDistribution: map[domain.KYCTier]int64{},
+	}
+	store := newStubCache()
+	store.seed(domain.CacheKeyKYCRiskDashboard, stats)
+
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	svc.(*kycService).SetCache(store)
+
+	got, err := svc.GetRiskDashboard(context.Background())
+	if err != nil || got == nil {
+		t.Fatalf("expected cache hit result, got %v err=%v", got, err)
+	}
+	if got.QueueDepth != 7 {
+		t.Errorf("expected QueueDepth=7 from cache, got %d", got.QueueDepth)
+	}
+}
+
+func TestKYCService_GetRiskDashboard_CacheMiss_SetsCache(t *testing.T) {
+	store := newStubCache()
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	svc.(*kycService).SetCache(store)
+
+	_, err := svc.GetRiskDashboard(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store.setCalls != 1 {
+		t.Errorf("expected 1 cache set call after miss, got %d", store.setCalls)
 	}
 }

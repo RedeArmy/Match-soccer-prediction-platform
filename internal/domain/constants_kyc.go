@@ -17,10 +17,7 @@ const (
 	// AuditActionAMLFlagged is written when a transaction meets or exceeds the
 	// kyc.aml_threshold_cents param. It is non-blocking: the transaction commits
 	// and the record is used for mandatory UAF reporting under Guatemalan law.
-	AuditActionAMLFlagged   = "kyc.aml_flagged"
-	AuditActionKYBSubmitted = "kyb.submitted"
-	AuditActionKYBApproved  = "kyb.approved"
-	AuditActionKYBRejected  = "kyb.rejected"
+	AuditActionAMLFlagged = "kyc.aml_flagged"
 )
 
 // KYC system_params keys — all values are runtime-editable via the admin API

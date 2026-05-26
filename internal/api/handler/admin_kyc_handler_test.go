@@ -441,3 +441,106 @@ func TestAdminKYCHandler_ListProfileEvents_WithEvents_Returns200(t *testing.T) {
 		t.Errorf(fmtExpect200, w.Code)
 	}
 }
+
+// ── decodeJSON error paths (bad body → 422) ───────────────────────────────────
+
+func TestAdminKYCHandler_Approve_BadJSON_Returns422(t *testing.T) {
+	svc := &stubKYCSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/profiles/1/approve", `{bad json`), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_Approve_TierZero_Returns422(t *testing.T) {
+	svc := &stubKYCSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/profiles/1/approve", `{"tier":0}`), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_Reject_BadJSON_Returns422(t *testing.T) {
+	svc := &stubKYCSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/profiles/1/reject", `{bad json`), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_Escalate_BadJSON_Returns422(t *testing.T) {
+	svc := &stubKYCSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/profiles/1/escalate", `{bad json`), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_RequestDocument_BadJSON_Returns422(t *testing.T) {
+	svc := &stubKYCSvc{}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/profiles/1/request-doc", `{bad json`), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+// ── VerifyDocument svc error ──────────────────────────────────────────────────
+
+func TestAdminKYCHandler_VerifyDocument_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/documents/42/verify", ""), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── ListDocumentsForProfile ListDocuments error ───────────────────────────────
+
+func TestAdminKYCHandler_ListDocumentsForProfile_ListDocsError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{profile: kycProfileFixture, listDocsErr: apperrors.Internal(nil)}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/profiles/1/documents", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── custom limit query params ─────────────────────────────────────────────────
+
+func TestAdminKYCHandler_ListQueue_CustomLimit_Returns200(t *testing.T) {
+	svc := &stubKYCSvc{}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/queue?limit=5", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_ListQueue_WithProfiles_Returns200(t *testing.T) {
+	svc := &stubKYCSvc{profiles: []*domain.KYCProfile{kycProfileFixture}}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/queue", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_ListDocumentsForProfile_WithDocuments_Returns200(t *testing.T) {
+	doc := &domain.KYCDocument{ID: 1, DocumentType: domain.KYCDocGovID}
+	svc := &stubKYCSvc{profile: kycProfileFixture, docs: []*domain.KYCDocument{doc}}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/profiles/1/documents", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_ListProfileEvents_CustomLimit_Returns200(t *testing.T) {
+	svc := &stubKYCSvc{}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/profiles/1/events?limit=10", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}

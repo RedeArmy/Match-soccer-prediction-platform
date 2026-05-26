@@ -347,13 +347,6 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 			r.Get("/events", h.kyc.ListEvents)
 		})
 
-		r.Route("/kyb", func(r chi.Router) {
-			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
-			r.Use(middleware.ResolveUser(repos.user, s.log))
-			r.Get("/status", h.kyb.GetStatus)
-			r.Post("/submit", h.kyb.Submit)
-		})
-
 		r.Route("/notifications", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
@@ -425,12 +418,6 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 			r.Post("/kyc/documents/{docID}/verify", h.adminKYC.VerifyDocument)
 			r.Get("/kyc/frozen-balances", h.adminKYC.ListFrozenBalances)
 			r.Post("/kyc/users/{userID}/release-freeze", h.adminKYC.ReleaseFrozenBalance)
-
-			// KYB review
-			r.Get("/kyb/queue", h.adminKYB.ListQueue)
-			r.Get("/kyb/profiles/{id}", h.adminKYB.GetProfile)
-			r.Post("/kyb/profiles/{id}/approve", h.adminKYB.Approve)
-			r.Post("/kyb/profiles/{id}/reject", h.adminKYB.Reject)
 
 			// Leaderboard & Predictions
 			r.Get("/leaderboard", h.adminLeaderboard.GlobalLeaderboard)

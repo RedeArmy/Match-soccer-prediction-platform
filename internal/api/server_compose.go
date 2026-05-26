@@ -67,8 +67,6 @@ type appHandlers struct {
 	adminN8n           *handler.AdminN8nHandler
 	kyc                *handler.KYCHandler
 	adminKYC           *handler.AdminKYCHandler
-	kyb                *handler.KYBHandler
-	adminKYB           *handler.AdminKYBHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -333,11 +331,6 @@ func (s *Server) buildHandlers(
 	h.adminKYC = handler.NewAdminKYCHandler(kycSvc, s.log)
 	prizeSvc = service.NewPrizeService(ledgerRepo, kycGate, kycSvc, s.notifier, s.log)
 	_ = prizeSvc // reserved for prize-disbursement callers; suppresses unused-variable error
-
-	kybRepo := repository.NewPostgresKYBRepository(s.db)
-	kybSvc := service.NewKYBService(kybRepo, kycEventRepo, auditSvc, nil, s.log)
-	h.kyb = handler.NewKYBHandler(kybSvc, s.log)
-	h.adminKYB = handler.NewAdminKYBHandler(kybSvc, s.log)
 
 	// Wire observability notifier into payment-path handlers. Each handler
 	// defines its own narrow interface so the import graph stays acyclic.

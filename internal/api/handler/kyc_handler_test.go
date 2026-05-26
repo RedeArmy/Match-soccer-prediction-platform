@@ -27,12 +27,16 @@ import (
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type stubKYCSvc struct {
-	profile *domain.KYCProfile
-	doc     *domain.KYCDocument
-	docs    []*domain.KYCDocument
-	events  []*domain.KYCEvent
-	frozen  []*domain.FrozenBalanceSummary
-	err     error
+	profile       *domain.KYCProfile
+	profiles      []*domain.KYCProfile
+	doc           *domain.KYCDocument
+	docs          []*domain.KYCDocument
+	events        []*domain.KYCEvent
+	frozen        []*domain.FrozenBalanceSummary
+	err           error
+	listEventsErr error // overrides err for ListEvents only
+	listDocsErr   error // overrides err for ListDocuments only
+	uploadDocErr  error // overrides err for UploadDocument only
 }
 
 func (s *stubKYCSvc) GetProfile(_ context.Context, _ int) (*domain.KYCProfile, error) {
@@ -42,9 +46,15 @@ func (s *stubKYCSvc) Submit(_ context.Context, _ int, _ service.SubmitKYCRequest
 	return s.profile, s.err
 }
 func (s *stubKYCSvc) UploadDocument(_ context.Context, _ int, _ service.UploadDocRequest) (*domain.KYCDocument, error) {
+	if s.uploadDocErr != nil {
+		return nil, s.uploadDocErr
+	}
 	return s.doc, s.err
 }
 func (s *stubKYCSvc) ListDocuments(_ context.Context, _ int) ([]*domain.KYCDocument, error) {
+	if s.listDocsErr != nil {
+		return nil, s.listDocsErr
+	}
 	return s.docs, s.err
 }
 func (s *stubKYCSvc) GetRequirements(_ context.Context, _ int) (*service.KYCRequirements, error) {
@@ -54,10 +64,13 @@ func (s *stubKYCSvc) GetRequirements(_ context.Context, _ int) (*service.KYCRequ
 	return &service.KYCRequirements{}, nil
 }
 func (s *stubKYCSvc) ListEvents(_ context.Context, _ int, _ domain.KYCProfileType, _ repository.CursorPage) ([]*domain.KYCEvent, string, error) {
+	if s.listEventsErr != nil {
+		return nil, "", s.listEventsErr
+	}
 	return s.events, "", s.err
 }
 func (s *stubKYCSvc) ListQueue(_ context.Context, _ repository.KYCProfileFilters, _ repository.Pagination) ([]*domain.KYCProfile, error) {
-	return nil, s.err
+	return s.profiles, s.err
 }
 func (s *stubKYCSvc) GetProfileByID(_ context.Context, _ int) (*domain.KYCProfile, error) {
 	return s.profile, s.err
@@ -416,6 +429,17 @@ func TestKYCHandler_ListDocuments_SvcError_Returns500(t *testing.T) {
 
 // ── Submit additional ─────────────────────────────────────────────────────────
 
+func TestKYCHandler_Submit_BadJSON_Returns422(t *testing.T) {
+	svc := &stubKYCSvc{}
+	req := httptest.NewRequest(http.MethodPost, "/kyc/submit", strings.NewReader(`{bad json`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
 func TestKYCHandler_Submit_SvcError_Returns500(t *testing.T) {
 	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
 	body := `{"full_name":"Juan","document_type":"gov_id","document_number":"1234"}`
@@ -450,5 +474,138 @@ func TestNewKYCStatusRouter_ZeroMaxUploadBytes_UsesDefault(t *testing.T) {
 	withKYCUser(r).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/status", nil))
 	if rec.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, rec.Code)
+	}
+}
+
+// ── Submit additional ─────────────────────────────────────────────────────────
+
+func TestKYCHandler_Submit_ValidDateOfBirth_Returns201(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 7, Status: domain.KYCStatusPending}
+	svc := &stubKYCSvc{profile: profile}
+	body := `{"full_name":"Juan","document_type":"gov_id","document_number":"1234","date_of_birth":"1990-03-15"}`
+	req := httptest.NewRequest(http.MethodPost, "/kyc/submit", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ── ListEvents additional ─────────────────────────────────────────────────────
+
+func TestKYCHandler_ListEvents_ServiceListEventsError_Returns500(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 7}
+	svc := &stubKYCSvc{profile: profile, listEventsErr: apperrors.Internal(nil)}
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/events", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+func TestKYCHandler_ListEvents_CustomLimit_Returns200(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 7}
+	svc := &stubKYCSvc{profile: profile}
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/events?limit=50", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, rec.Code)
+	}
+}
+
+func TestKYCHandler_ListEvents_WithProfileAndEvents_Returns200(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 7}
+	events := []*domain.KYCEvent{{ID: 1, EventType: domain.KYCEventSubmitted, NewStatus: domain.KYCStatusPending}}
+	svc := &stubKYCSvc{profile: profile, events: events}
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/events", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, rec.Code)
+	}
+}
+
+// ── UploadDocument additional ─────────────────────────────────────────────────
+
+func TestKYCHandler_UploadDocument_GetProfileError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	router := withKYCUser(kycUploadRouter(t, svc))
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", []byte("data"))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+func TestKYCHandler_UploadDocument_UnsupportedContentType_Returns422(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1}
+	svc := &stubKYCSvc{profile: profile}
+	router := withKYCUser(kycUploadRouter(t, svc))
+	req := buildKYCMultipart(t, "gov_id", "application/octet-stream", []byte("data"))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestKYCHandler_UploadDocument_NoFileField_Returns422(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1}
+	svc := &stubKYCSvc{profile: profile}
+	router := withKYCUser(kycUploadRouter(t, svc))
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("document_type", "gov_id")
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/kyc/documents", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestKYCHandler_UploadDocument_SvcError_Returns500(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1}
+	svc := &stubKYCSvc{profile: profile, uploadDocErr: apperrors.Internal(nil)}
+	router := withKYCUser(kycUploadRouter(t, svc))
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", []byte("fake-image-bytes"))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+func TestKYCHandler_UploadDocument_StorePutError_Returns500(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 7}
+	svc := &stubKYCSvc{profile: profile}
+	h := handler.NewKYCHandler(svc, &drainingFileStore{putErr: apperrors.Internal(nil)}, 10*1024*1024, zaptest.NewLogger(t))
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /kyc/documents", h.UploadDocument)
+	router := withKYCUser(mux)
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", []byte("fake-image-bytes"))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+func TestKYCHandler_UploadDocument_BodyTooLarge_Returns413(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 7}
+	svc := &stubKYCSvc{profile: profile}
+	// 1-byte limit forces ParseMultipartForm to fail with MaxBytesError.
+	h := handler.NewKYCHandler(svc, &drainingFileStore{}, 1, zaptest.NewLogger(t))
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /kyc/documents", h.UploadDocument)
+	router := withKYCUser(mux)
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", []byte("fake-image-bytes"))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413, got %d", rec.Code)
 	}
 }

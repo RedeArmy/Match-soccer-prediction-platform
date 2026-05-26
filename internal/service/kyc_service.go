@@ -54,7 +54,7 @@ type KYCRequirements struct {
 
 // ── Service interface ─────────────────────────────────────────────────────────
 
-// KYCService manages the full KYC/KYB lifecycle: user submissions, admin
+// KYCService manages the full KYC lifecycle: user submissions, admin
 // review queue, document management, and balance-freeze operations.
 type KYCService interface {
 	// ── User-facing ────────────────────────────────────────────────────────
