@@ -299,9 +299,9 @@ func TestAuditService_Log_PanicInRepo_FallbackSucceeds(t *testing.T) {
 		t.Errorf("expected Dropped() == 0 when fallback succeeded, got %d", got)
 	}
 	// Fallback write must have persisted the entry.
-	repo.stubAuditLogRepo.mu.Lock()
-	n := len(repo.stubAuditLogRepo.created)
-	repo.stubAuditLogRepo.mu.Unlock()
+	repo.mu.Lock()
+	n := len(repo.created)
+	repo.mu.Unlock()
 	if n != 1 {
 		t.Errorf("expected 1 audit entry persisted via fallback, got %d", n)
 	}

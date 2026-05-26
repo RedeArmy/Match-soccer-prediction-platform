@@ -338,13 +338,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	dlqRepo := repository.NewPostgresNotificationDLQRepository(db)
 
 	mailer, mailerErr := buildMailer(cfg.Email.ResendAPIKey)
-	if mailerErr != nil {
-		if cfg.IsDevelopment() {
-			log.Warn("worker: email sender degraded", zap.Error(mailerErr))
-		} else {
-			log.Fatal("worker: email sender not configured for production", zap.Error(mailerErr))
-		}
-	}
+	logOrFatal(cfg, log, mailerErr, "worker: email sender degraded", "worker: email sender not configured for production")
 
 	adminDispatcher := dispatcher.NewAdminDispatcher(dispatcher.Config{
 		Params:    params,
@@ -367,13 +361,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	vapidSubject := params.GetString(ctx, domain.ParamKeyNotifyWebPushVAPIDSubject, "")
 
 	pusher, pusherErr := buildPusher(vapidPublicKey, vapidPrivateKey, vapidSubject)
-	if pusherErr != nil {
-		if cfg.IsDevelopment() {
-			log.Warn("worker: push sender degraded", zap.Error(pusherErr))
-		} else {
-			log.Fatal("worker: push sender not configured for production", zap.Error(pusherErr))
-		}
-	}
+	logOrFatal(cfg, log, pusherErr, "worker: push sender degraded", "worker: push sender not configured for production")
 
 	tmplCacheTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyTemplateCacheTTLSec, domain.DefaultNotifyTemplateCacheTTLSec)) * time.Second
 	tmplRepo := repository.NewPostgresNotificationTemplateRepository(db, tmplCacheTTL)
@@ -513,6 +501,21 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		dlqReplayWorker:       dlqReplayWorker,
 		notifScheduler:        notifScheduler,
 	}, log)
+}
+
+// logOrFatal logs err at WARN level in development environments and at Fatal
+// level (os.Exit) in production. It is a no-op when err is nil.
+// This eliminates repeated nested if/else blocks at each sender construction
+// site, keeping cognitive complexity within the gocognit limit.
+func logOrFatal(cfg *config.Config, log *zap.Logger, err error, warnMsg, fatalMsg string) {
+	if err == nil {
+		return
+	}
+	if cfg.IsDevelopment() {
+		log.Warn(warnMsg, zap.Error(err))
+	} else {
+		log.Fatal(fatalMsg, zap.Error(err))
+	}
 }
 
 // buildMailer returns an email sender and a non-nil error when the Resend API
