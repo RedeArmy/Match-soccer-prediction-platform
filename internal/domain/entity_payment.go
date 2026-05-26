@@ -74,6 +74,7 @@ type BalanceLedger struct {
 	RefID        *int64  // primary key of the originating record
 	RefType      *string // "payment_record" | "bank_transfer_proof" | "withdrawal_request"
 	CreatedBy    *int    // nil = system / webhook
+	IPAddress    *string // originating client IP; nil for system/webhook-initiated entries
 	CreatedAt    time.Time
 }
 

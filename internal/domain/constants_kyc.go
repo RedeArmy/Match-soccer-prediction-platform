@@ -76,6 +76,33 @@ const (
 
 	// DefaultKYCMaxDocUploadBytes is 10,485,760 (10 MB per document).
 	DefaultKYCMaxDocUploadBytes = 10_485_760
+
+	// DefaultKYCRiskDashboardCacheTTLSecs is the number of seconds the risk
+	// dashboard response is cached. 60 seconds balances freshness against DB load.
+	DefaultKYCRiskDashboardCacheTTLSecs = 60
+)
+
+// CacheKeyKYCRiskDashboard is the cache key for the admin risk dashboard response.
+const CacheKeyKYCRiskDashboard = "kyc:risk_dashboard"
+
+// Velocity limit system_param keys — 24-hour rolling totals per KYC tier.
+const (
+	ParamKeyKYCTier1DepositVelocityCents    = "kyc.tier1_deposit_velocity_cents"
+	ParamKeyKYCTier2DepositVelocityCents    = "kyc.tier2_deposit_velocity_cents"
+	ParamKeyKYCTier1WithdrawalVelocityCents = "kyc.tier1_withdrawal_velocity_cents"
+	ParamKeyKYCTier2WithdrawalVelocityCents = "kyc.tier2_withdrawal_velocity_cents"
+)
+
+// Default velocity limits in centavos (Guatemala quetzales × 100).
+const (
+	// DefaultKYCTier1DepositVelocityCents is Q50,000 per 24h for Tier 0/1 users.
+	DefaultKYCTier1DepositVelocityCents = 5_000_000
+	// DefaultKYCTier2DepositVelocityCents is Q200,000 per 24h for Tier 2 users.
+	DefaultKYCTier2DepositVelocityCents = 20_000_000
+	// DefaultKYCTier1WithdrawalVelocityCents is Q0 (withdrawals blocked below Tier 2).
+	DefaultKYCTier1WithdrawalVelocityCents = 0
+	// DefaultKYCTier2WithdrawalVelocityCents is Q100,000 per 24h for Tier 2 users.
+	DefaultKYCTier2WithdrawalVelocityCents = 10_000_000
 )
 
 // KYCAllowedContentTypes lists the MIME types accepted for KYC document

@@ -130,6 +130,7 @@ type KYCProfile struct {
 	ReviewedBy        *int       // admin user ID
 	RejectionReason   string     // non-empty when status = rejected
 	RiskScore         int        // 0–100; recalculated on each financial event
+	DeviceFingerprint *string    // SHA-256 hex digest of the client's device fingerprint; nil if not submitted
 	PEPFlag           bool       // Politically Exposed Person
 	SanctionsFlag     bool       // matched against sanctions list
 	BalanceFrozen     bool       // true when balance is held pending KYC tier upgrade
@@ -224,4 +225,17 @@ type FrozenBalanceSummary struct {
 	FrozenAmountCents int
 	FrozenReason      string
 	FrozenSince       time.Time // profile updated_at when freeze was applied
+}
+
+// ── Risk dashboard ────────────────────────────────────────────────────────────
+
+// KYCRiskDashboardStats is the aggregate view returned by the admin risk
+// dashboard endpoint. All counts are computed in a single DB query.
+type KYCRiskDashboardStats struct {
+	QueueDepth              int64             `json:"queue_depth"`
+	AvgReviewTimeSecs       float64           `json:"avg_review_time_secs"`
+	TierDistribution        map[KYCTier]int64 `json:"tier_distribution"`
+	FrozenBalanceTotalCents int64             `json:"frozen_balance_total_cents"`
+	PEPFlagCount            int64             `json:"pep_flag_count"`
+	SanctionsFlagCount      int64             `json:"sanctions_flag_count"`
 }
