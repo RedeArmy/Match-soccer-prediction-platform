@@ -14,6 +14,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const msgInvalidProfileID = "invalid profile ID"
+
 // AdminKYCHandler serves admin KYC review endpoints.
 type AdminKYCHandler struct {
 	svc service.KYCService
@@ -55,7 +57,7 @@ func (h *AdminKYCHandler) ListQueue(w http.ResponseWriter, r *http.Request) {
 func (h *AdminKYCHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	profileID, err := strconv.Atoi(chi.URLParam(r, "profileID"))
 	if err != nil {
-		writeError(w, r, h.log, apperrors.Validation("invalid profile ID"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidProfileID))
 		return
 	}
 	profile, err := h.svc.GetProfileByID(r.Context(), profileID)
@@ -84,7 +86,7 @@ func (h *AdminKYCHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 	profileID, err := strconv.Atoi(chi.URLParam(r, "profileID"))
 	if err != nil {
-		writeError(w, r, h.log, apperrors.Validation("invalid profile ID"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidProfileID))
 		return
 	}
 	req, err := decodeJSON[approveKYCRequest](r)
@@ -117,7 +119,7 @@ func (h *AdminKYCHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	}
 	profileID, err := strconv.Atoi(chi.URLParam(r, "profileID"))
 	if err != nil {
-		writeError(w, r, h.log, apperrors.Validation("invalid profile ID"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidProfileID))
 		return
 	}
 	req, err := decodeJSON[rejectKYCRequest](r)
@@ -146,7 +148,7 @@ func (h *AdminKYCHandler) Escalate(w http.ResponseWriter, r *http.Request) {
 	}
 	profileID, err := strconv.Atoi(chi.URLParam(r, "profileID"))
 	if err != nil {
-		writeError(w, r, h.log, apperrors.Validation("invalid profile ID"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidProfileID))
 		return
 	}
 	req, err := decodeJSON[escalateKYCRequest](r)
@@ -176,7 +178,7 @@ func (h *AdminKYCHandler) RequestDocument(w http.ResponseWriter, r *http.Request
 	}
 	profileID, err := strconv.Atoi(chi.URLParam(r, "profileID"))
 	if err != nil {
-		writeError(w, r, h.log, apperrors.Validation("invalid profile ID"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidProfileID))
 		return
 	}
 	req, err := decodeJSON[requestDocKYCRequest](r)
@@ -215,7 +217,7 @@ func (h *AdminKYCHandler) VerifyDocument(w http.ResponseWriter, r *http.Request)
 func (h *AdminKYCHandler) ListDocumentsForProfile(w http.ResponseWriter, r *http.Request) {
 	profileID, err := strconv.Atoi(chi.URLParam(r, "profileID"))
 	if err != nil {
-		writeError(w, r, h.log, apperrors.Validation("invalid profile ID"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidProfileID))
 		return
 	}
 	profile, err := h.svc.GetProfileByID(r.Context(), profileID)
@@ -279,7 +281,7 @@ func (h *AdminKYCHandler) ReleaseFrozenBalance(w http.ResponseWriter, r *http.Re
 func (h *AdminKYCHandler) ListProfileEvents(w http.ResponseWriter, r *http.Request) {
 	profileID, err := strconv.Atoi(chi.URLParam(r, "profileID"))
 	if err != nil {
-		writeError(w, r, h.log, apperrors.Validation("invalid profile ID"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidProfileID))
 		return
 	}
 	limit := 50

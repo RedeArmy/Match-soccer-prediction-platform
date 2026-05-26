@@ -17,13 +17,13 @@ type KYCWinnerFreezeNotifier interface {
 	NotifyKYCWinnerFreeze(ctx context.Context, userID, amountCents int, traceID string)
 }
 
-// PrizeService credits prize winnings to a user's balance, inserting the KYC
+// PrizeCrediter credits prize winnings to a user's balance, inserting the KYC
 // freeze check mandated by Guatemalan SIB/UAF regulations before any credit.
 //
 // CreditPrize is the single authorised call site for LedgerKindPrize credits.
 // All prize-disbursement paths (quiniela finalisation, scoring completion jobs)
 // must route through this service so that the freeze guard can never be bypassed.
-type PrizeService interface {
+type PrizeCrediter interface {
 	// CreditPrize attempts to credit prizeCents to userID.
 	//
 	// When the user is below KYCTierTwo the credit is withheld: the balance is
@@ -47,7 +47,7 @@ type prizeService struct {
 	log      *zap.Logger
 }
 
-// NewPrizeService constructs a PrizeService.
+// NewPrizeService constructs a PrizeCrediter.
 // notifier may be nil when n8n is not configured.
 func NewPrizeService(
 	ledger repository.BalanceLedgerRepository,
@@ -55,7 +55,7 @@ func NewPrizeService(
 	kycSvc KYCService,
 	notifier KYCWinnerFreezeNotifier,
 	log *zap.Logger,
-) PrizeService {
+) PrizeCrediter {
 	return &prizeService{
 		ledger:   ledger,
 		kycGate:  kycGate,

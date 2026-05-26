@@ -12,6 +12,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const errKYCProfileNotFound = "kyc profile not found"
+
 // PostgresKYCProfileRepository is the PostgreSQL-backed implementation of KYCProfileRepository.
 type PostgresKYCProfileRepository struct {
 	db *pgxpool.Pool
@@ -111,7 +113,7 @@ func (r *PostgresKYCProfileRepository) UpdateStatus(ctx context.Context, profile
 		return apperrors.Internal(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("kyc profile not found")
+		return apperrors.NotFound(errKYCProfileNotFound)
 	}
 	return nil
 }
@@ -132,7 +134,7 @@ func (r *PostgresKYCProfileRepository) UpdateTier(ctx context.Context, userID in
 			return apperrors.Internal(err)
 		}
 		if tag.RowsAffected() == 0 {
-			return apperrors.NotFound("kyc profile not found")
+			return apperrors.NotFound(errKYCProfileNotFound)
 		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE users SET kyc_tier = $2, updated_at = NOW() WHERE id = $1
@@ -165,7 +167,7 @@ func (r *PostgresKYCProfileRepository) SetFrozen(ctx context.Context, userID int
 		return apperrors.Internal(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("kyc profile not found")
+		return apperrors.NotFound(errKYCProfileNotFound)
 	}
 	return nil
 }

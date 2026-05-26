@@ -52,6 +52,8 @@ type KYCGate interface {
 	CheckWithdrawalVelocity(ctx context.Context, userID, amountCents int) error
 }
 
+const msgKYCUpgradeForHigherLimits = "Completa la verificación KYC completa para acceder a límites mayores."
+
 // kycGate is the production implementation of KYCGate.
 //
 // It reads the user's kyc_tier from the users table (denormalised by
@@ -106,7 +108,7 @@ func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) 
 			}
 			return apperrors.Forbidden(fmt.Sprintf(
 				"El monto de retiro (Q%.2f) supera el límite de tu nivel de verificación actual (Q%.2f). "+
-					"Completa la verificación KYC completa para acceder a límites mayores.",
+					msgKYCUpgradeForHigherLimits,
 				float64(amountCents)/100,
 				float64(cap)/100,
 			))
@@ -232,7 +234,7 @@ func (g *kycGate) CheckDepositVelocity(ctx context.Context, userID, amountCents 
 		}
 		return apperrors.Forbidden(fmt.Sprintf(
 			"El depósito supera el límite de velocidad de 24 horas para tu nivel de verificación actual (Q%.2f/día). "+
-				"Completa la verificación KYC completa para acceder a límites mayores.",
+				msgKYCUpgradeForHigherLimits,
 			float64(cap)/100,
 		))
 	}
@@ -277,7 +279,7 @@ func (g *kycGate) CheckWithdrawalVelocity(ctx context.Context, userID, amountCen
 		}
 		return apperrors.Forbidden(fmt.Sprintf(
 			"El retiro supera el límite de velocidad de 24 horas para tu nivel de verificación actual (Q%.2f/día). "+
-				"Completa la verificación KYC completa para acceder a límites mayores.",
+				msgKYCUpgradeForHigherLimits,
 			float64(cap)/100,
 		))
 	}

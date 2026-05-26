@@ -14,6 +14,8 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+const errKYCProfileNotFound = "kyc profile not found"
+
 // ── Request/response value objects ───────────────────────────────────────────
 
 // SubmitKYCRequest carries user-provided identity data for a KYC submission.
@@ -392,7 +394,7 @@ func (s *kycService) Approve(ctx context.Context, profileID, adminID int, tier d
 		return err
 	}
 	if profile == nil {
-		return apperrors.NotFound("kyc profile not found")
+		return apperrors.NotFound(errKYCProfileNotFound)
 	}
 	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusApproved, adminID, ""); err != nil {
 		return err
@@ -432,7 +434,7 @@ func (s *kycService) Reject(ctx context.Context, profileID, adminID int, reason 
 		return err
 	}
 	if profile == nil {
-		return apperrors.NotFound("kyc profile not found")
+		return apperrors.NotFound(errKYCProfileNotFound)
 	}
 	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusRejected, adminID, reason); err != nil {
 		return err
@@ -464,7 +466,7 @@ func (s *kycService) Escalate(ctx context.Context, profileID, adminID int, reaso
 		return err
 	}
 	if profile == nil {
-		return apperrors.NotFound("kyc profile not found")
+		return apperrors.NotFound(errKYCProfileNotFound)
 	}
 	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusEscalated, adminID, ""); err != nil {
 		return err
@@ -493,7 +495,7 @@ func (s *kycService) RequestDocument(ctx context.Context, profileID, adminID int
 		return err
 	}
 	if profile == nil {
-		return apperrors.NotFound("kyc profile not found")
+		return apperrors.NotFound(errKYCProfileNotFound)
 	}
 	s.appendEvent(ctx, &domain.KYCEvent{
 		ProfileID:   profileID,
@@ -622,7 +624,7 @@ func (s *kycService) RecalculateRiskScore(ctx context.Context, userID int) (int,
 		return 0, err
 	}
 	if profile == nil {
-		return 0, apperrors.NotFound("kyc profile not found")
+		return 0, apperrors.NotFound(errKYCProfileNotFound)
 	}
 
 	score := 0
