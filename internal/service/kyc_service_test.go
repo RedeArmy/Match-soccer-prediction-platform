@@ -15,10 +15,11 @@ import (
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type kycProfileRepoStub struct {
-	profile  *domain.KYCProfile
-	profiles []*domain.KYCProfile
-	frozen   []*domain.FrozenBalanceSummary
-	err      error
+	profile   *domain.KYCProfile
+	profiles  []*domain.KYCProfile
+	frozen    []*domain.FrozenBalanceSummary
+	dupExists bool
+	err       error
 }
 
 func (r *kycProfileRepoStub) Upsert(_ context.Context, p *domain.KYCProfile) error {
@@ -51,6 +52,20 @@ func (r *kycProfileRepoStub) ListFrozen(_ context.Context) ([]*domain.FrozenBala
 }
 func (r *kycProfileRepoStub) ListDueForReview(_ context.Context, _ time.Time) ([]*domain.KYCProfile, error) {
 	return r.profiles, r.err
+}
+func (r *kycProfileRepoStub) CountReviewQueue(_ context.Context) (int64, error) { return 0, r.err }
+func (r *kycProfileRepoStub) SumFrozenAmountCents(_ context.Context) (int64, error) {
+	return 0, r.err
+}
+func (r *kycProfileRepoStub) RiskDashboardStats(_ context.Context) (*domain.KYCRiskDashboardStats, error) {
+	return &domain.KYCRiskDashboardStats{TierDistribution: map[domain.KYCTier]int64{}}, r.err
+}
+func (r *kycProfileRepoStub) ExistsByDocumentIdentity(_ context.Context, _ domain.KYCDocumentType, _ string, _ *time.Time, _ int) (bool, error) {
+	return r.dupExists, r.err
+}
+func (r *kycProfileRepoStub) UpdateRiskScore(_ context.Context, _ int, _ int) error { return r.err }
+func (r *kycProfileRepoStub) CountAccountsByDeviceFingerprint(_ context.Context, _ string, _ int) (int64, error) {
+	return 0, r.err
 }
 
 type kycDocRepoStub struct {
