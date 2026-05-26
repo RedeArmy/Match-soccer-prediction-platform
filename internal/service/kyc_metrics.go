@@ -77,43 +77,59 @@ func RegisterKYCMetrics(
 		return nil, fmt.Errorf("kyc metrics: gate_blocks_total: %w", err)
 	}
 
-	if profileQueueReader != nil {
-		m.QueueDepth, err = meter.Int64ObservableGauge(
-			"kyc.queue_depth",
-			metric.WithDescription("Current number of KYC profiles awaiting admin review (pending + under_review + escalated)."),
-			metric.WithInt64Callback(func(ctx context.Context, obs metric.Int64Observer) error {
-				n, err := profileQueueReader.CountReviewQueue(ctx)
-				if err != nil {
-					return nil
-				}
-				obs.Observe(n)
-				return nil
-			}),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("kyc metrics: queue_depth: %w", err)
-		}
+	if err := registerQueueDepthGauge(m, meter, profileQueueReader); err != nil {
+		return nil, err
 	}
-
-	if frozenReader != nil {
-		m.FrozenBalancesTotalGTQ, err = meter.Float64ObservableGauge(
-			"kyc.frozen_balances_total_gtq",
-			metric.WithDescription("Total value of frozen KYC balances across all accounts, expressed in GTQ."),
-			metric.WithFloat64Callback(func(ctx context.Context, obs metric.Float64Observer) error {
-				cents, err := frozenReader.SumFrozenAmountCents(ctx)
-				if err != nil {
-					return nil
-				}
-				obs.Observe(float64(cents) / 100)
-				return nil
-			}),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("kyc metrics: frozen_balances_total_gtq: %w", err)
-		}
+	if err := registerFrozenBalanceGauge(m, meter, frozenReader); err != nil {
+		return nil, err
 	}
-
 	return m, nil
+}
+
+func registerQueueDepthGauge(m *KYCMetrics, meter metric.Meter, reader KYCQueueDepthReader) error {
+	if reader == nil {
+		return nil
+	}
+	var err error
+	m.QueueDepth, err = meter.Int64ObservableGauge(
+		"kyc.queue_depth",
+		metric.WithDescription("Current number of KYC profiles awaiting admin review (pending + under_review + escalated)."),
+		metric.WithInt64Callback(func(ctx context.Context, obs metric.Int64Observer) error {
+			n, err := reader.CountReviewQueue(ctx)
+			if err != nil {
+				return nil
+			}
+			obs.Observe(n)
+			return nil
+		}),
+	)
+	if err != nil {
+		return fmt.Errorf("kyc metrics: queue_depth: %w", err)
+	}
+	return nil
+}
+
+func registerFrozenBalanceGauge(m *KYCMetrics, meter metric.Meter, reader KYCFrozenReader) error {
+	if reader == nil {
+		return nil
+	}
+	var err error
+	m.FrozenBalancesTotalGTQ, err = meter.Float64ObservableGauge(
+		"kyc.frozen_balances_total_gtq",
+		metric.WithDescription("Total value of frozen KYC balances across all accounts, expressed in GTQ."),
+		metric.WithFloat64Callback(func(ctx context.Context, obs metric.Float64Observer) error {
+			cents, err := reader.SumFrozenAmountCents(ctx)
+			if err != nil {
+				return nil
+			}
+			obs.Observe(float64(cents) / 100)
+			return nil
+		}),
+	)
+	if err != nil {
+		return fmt.Errorf("kyc metrics: frozen_balances_total_gtq: %w", err)
+	}
+	return nil
 }
 
 // RecordSubmission increments the submissions counter with the given outcome label.
