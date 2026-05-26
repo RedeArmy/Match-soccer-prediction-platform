@@ -65,6 +65,9 @@ func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents in
 	if err := s.kycGate.CheckDeposit(ctx, userID, amountCents); err != nil {
 		return nil, err
 	}
+	if err := s.kycGate.CheckDepositVelocity(ctx, userID, amountCents); err != nil {
+		return nil, err
+	}
 	if amountCents <= 0 {
 		return nil, apperrors.Validation("amount_cents must be positive")
 	}

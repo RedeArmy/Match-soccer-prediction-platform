@@ -74,6 +74,9 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 	if err := s.kycGate.CheckWithdrawal(ctx, userID, amountCents); err != nil {
 		return nil, err
 	}
+	if err := s.kycGate.CheckWithdrawalVelocity(ctx, userID, amountCents); err != nil {
+		return nil, err
+	}
 
 	minCents, maxCents, err := s.withdrawalLimits(ctx)
 	if err != nil {
