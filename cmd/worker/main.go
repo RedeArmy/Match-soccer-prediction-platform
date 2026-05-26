@@ -33,11 +33,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
@@ -258,6 +260,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		DB:       cfg.Redis.DB,
 	})
 	defer rc.Close() //nolint:errcheck
+	if err := redisotel.InstrumentTracing(rc); err != nil {
+		log.Warn("worker: redisotel: tracing instrumentation failed", zap.Error(err))
+	}
 
 	// snapshotSem: cluster-wide distributed semaphore via Redis.
 	// The worker validates WCQ_EVENTBUS_DRIVER=redis at startup so rc is always
@@ -332,7 +337,14 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	adminLogRepo := repository.NewPostgresAdminNotificationLogRepository(db)
 	dlqRepo := repository.NewPostgresNotificationDLQRepository(db)
 
-	mailer := buildMailer(cfg.Email.ResendAPIKey, log)
+	mailer, mailerErr := buildMailer(cfg.Email.ResendAPIKey)
+	if mailerErr != nil {
+		if cfg.IsDevelopment() {
+			log.Warn("worker: email sender degraded", zap.Error(mailerErr))
+		} else {
+			log.Fatal("worker: email sender not configured for production", zap.Error(mailerErr))
+		}
+	}
 
 	adminDispatcher := dispatcher.NewAdminDispatcher(dispatcher.Config{
 		Params:    params,
@@ -354,7 +366,14 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	vapidPrivateKey := cfg.WebPush.VAPIDPrivateKey
 	vapidSubject := params.GetString(ctx, domain.ParamKeyNotifyWebPushVAPIDSubject, "")
 
-	pusher := buildPusher(vapidPublicKey, vapidPrivateKey, vapidSubject, log)
+	pusher, pusherErr := buildPusher(vapidPublicKey, vapidPrivateKey, vapidSubject)
+	if pusherErr != nil {
+		if cfg.IsDevelopment() {
+			log.Warn("worker: push sender degraded", zap.Error(pusherErr))
+		} else {
+			log.Fatal("worker: push sender not configured for production", zap.Error(pusherErr))
+		}
+	}
 
 	tmplCacheTTL := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyTemplateCacheTTLSec, domain.DefaultNotifyTemplateCacheTTLSec)) * time.Second
 	tmplRepo := repository.NewPostgresNotificationTemplateRepository(db, tmplCacheTTL)
@@ -496,25 +515,45 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}, log)
 }
 
-// buildMailer returns an email sender: a real Resend client when the API key is
-// configured, or a no-op client that discards all messages otherwise.
-func buildMailer(resendAPIKey string, log *zap.Logger) infraemail.Sender {
+// buildMailer returns an email sender and a non-nil error when the Resend API
+// key is absent. The returned sender is always a valid (non-nil) value: when
+// the key is missing it is a NoopClient so the caller can decide whether to
+// degrade gracefully or treat the missing config as fatal.
+//
+// Callers in production environments should treat a non-nil error as fatal and
+// call log.Fatal; development environments may log a warning and continue.
+func buildMailer(resendAPIKey string) (infraemail.Sender, error) {
 	if resendAPIKey == "" {
-		log.Warn("WCQ_EMAIL_RESENDAPIKEY is not set — admin emails will be discarded (NoopClient)")
-		return infraemail.NoopClient{}
+		return infraemail.NoopClient{}, fmt.Errorf(
+			"WCQ_EMAIL_RESENDAPIKEY is not set — admin emails will be discarded; " +
+				"set WCQ_EMAIL_RESENDAPIKEY to a valid Resend API key in production",
+		)
 	}
-	return infraemail.NewResendClient(resendAPIKey)
+	return infraemail.NewResendClient(resendAPIKey), nil
 }
 
-// buildPusher returns a web-push sender: a real VAPID client when both keys are
-// present, or a no-op sender that silently drops pushes otherwise.
-func buildPusher(pubKey, privKey, subject string, log *zap.Logger) infrapush.Sender {
-	if pubKey == "" || privKey == "" {
-		log.Warn("web push: VAPID keys not configured — push notifications disabled (NoopSender)")
-		return infrapush.NoopSender{}
+// buildPusher returns a web-push sender and a non-nil error when any required
+// VAPID credential is absent. The returned sender is always valid: when keys
+// are missing it is a NoopSender. Callers decide whether the error is fatal.
+//
+// Required env vars: WCQ_WEBPUSH_VAPIDPRIVATEKEY (secret), plus
+// ParamKeyNotifyWebPushVAPIDPublicKey and ParamKeyNotifyWebPushVAPIDSubject
+// from system_params.
+func buildPusher(pubKey, privKey, subject string) (infrapush.Sender, error) {
+	var missing []string
+	if pubKey == "" {
+		missing = append(missing, "ParamKeyNotifyWebPushVAPIDPublicKey (system_params)")
 	}
-	log.Info("web push: VAPID client active")
-	return infrapush.NewVAPIDClient(pubKey, privKey, subject)
+	if privKey == "" {
+		missing = append(missing, "WCQ_WEBPUSH_VAPIDPRIVATEKEY")
+	}
+	if len(missing) > 0 {
+		return infrapush.NoopSender{}, fmt.Errorf(
+			"web push disabled — missing VAPID credentials: %s",
+			strings.Join(missing, ", "),
+		)
+	}
+	return infrapush.NewVAPIDClient(pubKey, privKey, subject), nil
 }
 
 // makePushPruneJob returns the scheduler job that deletes inactive push
