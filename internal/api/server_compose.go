@@ -340,7 +340,9 @@ func (s *Server) buildKYCModule(
 	if cg, ok := kycGate.(interface{ SetMetrics(*service.KYCMetrics) }); ok {
 		cg.SetMetrics(kycMetrics)
 	}
-	if sl, ok := kycGate.(interface{ SetLedger(repository.BalanceLedgerRepository) }); ok {
+	if sl, ok := kycGate.(interface {
+		SetLedger(repository.BalanceLedgerRepository)
+	}); ok {
 		sl.SetLedger(ledgerRepo)
 	}
 
@@ -348,7 +350,9 @@ func (s *Server) buildKYCModule(
 	if sc, ok := kycSvc.(interface{ SetCache(cache.Store) }); ok {
 		sc.SetCache(s.cache)
 	}
-	if sl, ok := kycSvc.(interface{ SetLedger(repository.BalanceLedgerRepository) }); ok {
+	if sl, ok := kycSvc.(interface {
+		SetLedger(repository.BalanceLedgerRepository)
+	}); ok {
 		sl.SetLedger(ledgerRepo)
 	}
 
