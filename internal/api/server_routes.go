@@ -229,9 +229,12 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		r.Use(middleware.RateLimitByUserID(userRateStore, s.log))
 
 		// Admin-only match mutations are guarded by RequireRole. Read endpoints
-		// (List, Get) are accessible to all authenticated users.
+		// (List, Get) require ResolveUser so banned users are rejected before
+		// reaching the handler; the resolved domain.User is available in context
+		// for any future handler that needs caller identity.
 		r.Route("/matches", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
+			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Get("/", h.match.ListMatches)
 			r.Get("/{id}", h.match.GetMatch)
 			r.With(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin)).Post("/", h.match.CreateMatch)
@@ -288,12 +291,13 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		})
 
 		// Tournament: real-time standings (all authenticated users) and bracket
-		// slot management (admin only). The GET endpoints do not require a
-		// resolved domain.User. Admin mutations use RequireRole, which now stores
-		// the resolved user in context so ConfirmSlot can read caller.ID without
-		// an extra database query.
+		// slot management (admin only). ResolveUser is applied at the subrouter
+		// level so banned users are rejected on GET routes as well as admin
+		// mutations. resolveRequestUser caches the user in context, so admin
+		// mutations that use RequireRole do not pay a second database round-trip.
 		r.Route("/tournament", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
+			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Get("/standings", h.tournament.GetAllStandings)
 			r.Get("/standings/{group}", h.tournament.GetGroupStanding)
 			r.Get("/slots", h.tournament.ListSlots)
