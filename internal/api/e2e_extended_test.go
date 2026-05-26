@@ -31,6 +31,20 @@ func seedE2EBalance(t *testing.T, userID, cents int) {
 	}
 }
 
+// setE2EKYCTier sets a user's kyc_tier directly in e2eDB.
+// Call this in any test that exercises a money-movement endpoint after the
+// KYC gate was introduced: withdrawals require tier ≥ 2, and high-value
+// deposits are capped per tier. Without it the gate returns 403 FORBIDDEN.
+func setE2EKYCTier(t *testing.T, userID int, tier domain.KYCTier) {
+	t.Helper()
+	_, err := e2eDB.Exec(context.Background(),
+		`UPDATE users SET kyc_tier = $1 WHERE id = $2`, int(tier), userID,
+	)
+	if err != nil {
+		t.Fatalf("setE2EKYCTier user %d tier %d: %v", userID, tier, err)
+	}
+}
+
 // newE2EServerUnlimited is like newE2EServer but injects an unlimited rate
 // limiter so flows that issue many sequential requests for the same user never
 // hit 429 responses during testing.
@@ -62,6 +76,7 @@ func TestE2E_WithdrawalLifecycle_ApproveAndProcess(t *testing.T) {
 	_ = seedE2EUser(t, "admin@e2e.test", "e2e-admin", domain.RoleAdmin)
 	userID := seedE2EUser(t, "user@e2e.test", "e2e-user", domain.RoleUser)
 	seedE2EBalance(t, userID, 50_000) // 500 GTQ available
+	setE2EKYCTier(t, userID, domain.KYCTierTwo)
 
 	adminToken := signJWT("e2e-admin")
 	userToken := signJWT("e2e-user")
@@ -168,6 +183,7 @@ func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
 	const totalBalance = 50_000
 	const withdrawalAmount = 20_000
 	seedE2EBalance(t, userID, totalBalance)
+	setE2EKYCTier(t, userID, domain.KYCTierTwo)
 
 	adminToken := signJWT("e2e-admin")
 	userToken := signJWT("e2e-user")

@@ -29,6 +29,7 @@ func TestE2E_Withdrawal_InsufficientBalance(t *testing.T) {
 
 	userID := seedE2EUser(t, "poor@e2e.test", "e2e-poor-user", domain.RoleUser)
 	seedE2EBalance(t, userID, 5_000) // 50 GTQ available
+	setE2EKYCTier(t, userID, domain.KYCTierTwo)
 	userToken := signJWT("e2e-poor-user")
 
 	// Request 100 GTQ — twice the available 50 GTQ.
@@ -66,8 +67,9 @@ func TestE2E_Withdrawal_ZeroBalanceUser(t *testing.T) {
 	jwksURL, signJWT := testJWKSServer(t)
 	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
 
-	_ = seedE2EUser(t, "zero@e2e.test", "e2e-zero-user", domain.RoleUser)
+	zeroUserID := seedE2EUser(t, "zero@e2e.test", "e2e-zero-user", domain.RoleUser)
 	// No seedE2EBalance call → balance_cents = 0 by default.
+	setE2EKYCTier(t, zeroUserID, domain.KYCTierTwo)
 	userToken := signJWT("e2e-zero-user")
 
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/withdrawals", userToken,
@@ -289,7 +291,9 @@ func TestE2E_ScoringChain_PointsAndLeaderboardConsistent(t *testing.T) {
 	rec = doRequest(t, h, http.MethodPost, "/api/v1/groups/join", p2Token,
 		jsonBody(t, map[string]any{"invite_code": group.InviteCode}))
 	assertStatus(t, rec, http.StatusOK, "p2 join")
-	var p2Membership struct{ ID int `json:"id"` }
+	var p2Membership struct {
+		ID int `json:"id"`
+	}
 	json.NewDecoder(rec.Body).Decode(&p2Membership)
 
 	rec = doRequest(t, h, http.MethodPost,
@@ -306,7 +310,9 @@ func TestE2E_ScoringChain_PointsAndLeaderboardConsistent(t *testing.T) {
 			"kickoff_at": kickoff.Format(time.RFC3339Nano),
 		}))
 	assertStatus(t, rec, http.StatusCreated, "create match")
-	var matchResp struct{ ID int `json:"id"` }
+	var matchResp struct {
+		ID int `json:"id"`
+	}
 	json.NewDecoder(rec.Body).Decode(&matchResp)
 
 	// Player 1 predicts exact score (2-0); player 2 predicts correct outcome (3-0).
