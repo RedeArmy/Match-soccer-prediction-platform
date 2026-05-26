@@ -4,11 +4,51 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
+
+// ledgerSumStub is a minimal BalanceLedgerRepository whose SumTransactionsByUserAndPeriod
+// returns a configurable total. All other methods are no-ops.
+type ledgerSumStub struct {
+	sum int64
+	err error
+}
+
+func (s *ledgerSumStub) Credit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
+	return nil
+}
+func (s *ledgerSumStub) CreditIdempotent(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ string) (bool, error) {
+	return true, nil
+}
+func (s *ledgerSumStub) Debit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
+	return nil
+}
+func (s *ledgerSumStub) Reserve(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
+	return nil
+}
+func (s *ledgerSumStub) ReleaseReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
+	return nil
+}
+func (s *ledgerSumStub) CommitReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
+	return nil
+}
+func (s *ledgerSumStub) ListByUser(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
+	return nil, nil
+}
+func (s *ledgerSumStub) SumTransactionsByUserAndPeriod(_ context.Context, _ int, _ []domain.BalanceLedgerKind, _ time.Time) (int64, error) {
+	return s.sum, s.err
+}
+
+func newKYCGateWithLedger(tier domain.KYCTier, ledgerSum int64) *kycGate {
+	u := &domain.User{ID: 1, KYCTier: tier}
+	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
+	g.SetLedger(&ledgerSumStub{sum: ledgerSum})
+	return g
+}
 
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
@@ -240,5 +280,128 @@ func TestKYCGate_ExceedsAMLThreshold_AboveDefault_ReturnsTrue(t *testing.T) {
 	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), domain.DefaultKYCAMLThresholdCents+1)
 	if err != nil || !exceeds {
 		t.Errorf("expected true above threshold, got exceeds=%v err=%v", exceeds, err)
+	}
+}
+
+// ── CheckDepositVelocity ──────────────────────────────────────────────────────
+
+func TestKYCGate_CheckDepositVelocity_NoLedger_Allowed(t *testing.T) {
+	gate := newKYCGate(domain.KYCTierUnverified)
+	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000_000); err != nil {
+		t.Errorf("expected nil without ledger, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckDepositVelocity_Tier0_BelowCap_Allowed(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierUnverified, 0)
+	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000); err != nil {
+		t.Errorf("expected nil below cap, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckDepositVelocity_Tier0_ExceedsCap_Blocked(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierUnverified, int64(domain.DefaultKYCTier1DepositVelocityCents))
+	err := gate.CheckDepositVelocity(context.Background(), 1, 1)
+	if err == nil || !isForbidden(err) {
+		t.Errorf("expected forbidden when velocity cap exceeded, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckDepositVelocity_Tier2_BelowCap_Allowed(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierTwo, 0)
+	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000); err != nil {
+		t.Errorf("expected nil below tier2 cap, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckDepositVelocity_Tier3_Unlimited(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierThree, int64(domain.DefaultKYCTier2DepositVelocityCents)*100)
+	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000_000); err != nil {
+		t.Errorf("expected nil for Tier 3 (unlimited), got %v", err)
+	}
+}
+
+func TestKYCGate_CheckDepositVelocity_LedgerError_Propagates(t *testing.T) {
+	u := &domain.User{ID: 1, KYCTier: domain.KYCTierOne}
+	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
+	g.SetLedger(&ledgerSumStub{err: errors.New("db fail")})
+	if err := g.CheckDepositVelocity(context.Background(), 1, 100); err == nil {
+		t.Error("expected ledger error to propagate")
+	}
+}
+
+// ── CheckWithdrawalVelocity ───────────────────────────────────────────────────
+
+func TestKYCGate_CheckWithdrawalVelocity_NoLedger_Allowed(t *testing.T) {
+	gate := newKYCGate(domain.KYCTierTwo)
+	if err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1_000); err != nil {
+		t.Errorf("expected nil without ledger, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckWithdrawalVelocity_Tier0_AlwaysBlocked(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierUnverified, 0)
+	err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1)
+	if err == nil || !isForbidden(err) {
+		t.Errorf("expected forbidden for Tier 0 (cap=0), got %v", err)
+	}
+}
+
+func TestKYCGate_CheckWithdrawalVelocity_Tier2_BelowCap_Allowed(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierTwo, 0)
+	if err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1_000); err != nil {
+		t.Errorf("expected nil below tier2 cap, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckWithdrawalVelocity_Tier2_ExceedsCap_Blocked(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierTwo, int64(domain.DefaultKYCTier2WithdrawalVelocityCents))
+	err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1)
+	if err == nil || !isForbidden(err) {
+		t.Errorf("expected forbidden when velocity cap exceeded, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckWithdrawalVelocity_Tier3_Unlimited(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierThree, int64(domain.DefaultKYCTier2WithdrawalVelocityCents)*100)
+	if err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1_000_000); err != nil {
+		t.Errorf("expected nil for Tier 3 (unlimited), got %v", err)
+	}
+}
+
+// ── ExceedsCumulativeAMLThreshold ─────────────────────────────────────────────
+
+func TestKYCGate_ExceedsCumulative_NoLedger_BelowSingle_ReturnsFalse(t *testing.T) {
+	gate := newKYCGate(domain.KYCTierTwo)
+	exceeds, err := gate.ExceedsCumulativeAMLThreshold(context.Background(), 1, 1_000)
+	if err != nil || exceeds {
+		t.Errorf("expected false below threshold with no ledger, got exceeds=%v err=%v", exceeds, err)
+	}
+}
+
+func TestKYCGate_ExceedsCumulative_SingleTransactionAtThreshold_ReturnsTrue(t *testing.T) {
+	gate := newKYCGateWithLedger(domain.KYCTierTwo, 0)
+	exceeds, err := gate.ExceedsCumulativeAMLThreshold(context.Background(), 1, domain.DefaultKYCAMLThresholdCents)
+	if err != nil || !exceeds {
+		t.Errorf("expected true at threshold, got exceeds=%v err=%v", exceeds, err)
+	}
+}
+
+func TestKYCGate_ExceedsCumulative_RollingWindowPushesOverThreshold_ReturnsTrue(t *testing.T) {
+	half := int64(domain.DefaultKYCAMLThresholdCents / 2)
+	gate := newKYCGateWithLedger(domain.KYCTierTwo, half)
+	exceeds, err := gate.ExceedsCumulativeAMLThreshold(context.Background(), 1, int(half)+1)
+	if err != nil || !exceeds {
+		t.Errorf("expected true when rolling sum + amount >= threshold, got exceeds=%v err=%v", exceeds, err)
+	}
+}
+
+func TestKYCGate_ExceedsCumulative_LedgerError_Propagates(t *testing.T) {
+	u := &domain.User{ID: 1, KYCTier: domain.KYCTierTwo}
+	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
+	g.SetLedger(&ledgerSumStub{err: errors.New("db fail")})
+	_, err := g.ExceedsCumulativeAMLThreshold(context.Background(), 1, 1_000)
+	if err == nil {
+		t.Error("expected ledger error to propagate")
 	}
 }

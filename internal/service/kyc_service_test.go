@@ -356,3 +356,98 @@ func TestKYCService_ReleaseFrozenBalance_HappyPath(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+// ── GetProfile ────────────────────────────────────────────────────────────────
+
+func TestKYCService_GetProfile_ReturnsProfile(t *testing.T) {
+	existing := &domain.KYCProfile{ID: 1, UserID: 7}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: existing}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	got, err := svc.GetProfile(context.Background(), 7)
+	if err != nil || got == nil || got.ID != 1 {
+		t.Errorf("expected profile id=1, got %v err=%v", got, err)
+	}
+}
+
+func TestKYCService_GetProfile_NilWhenNotFound(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{profile: nil}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	got, err := svc.GetProfile(context.Background(), 99)
+	if err != nil || got != nil {
+		t.Errorf("expected nil profile, got %v err=%v", got, err)
+	}
+}
+
+// ── ListDocuments ─────────────────────────────────────────────────────────────
+
+func TestKYCService_ListDocuments_ReturnsDocs(t *testing.T) {
+	docs := []*domain.KYCDocument{{ID: 10}, {ID: 11}}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: &domain.KYCProfile{ID: 1, UserID: 3}},
+		&kycDocRepoStub{docs: docs}, &kycEventRepoStub{})
+	got, err := svc.ListDocuments(context.Background(), 3)
+	if err != nil || len(got) != 2 {
+		t.Errorf("expected 2 documents, got %d err=%v", len(got), err)
+	}
+}
+
+func TestKYCService_ListDocuments_ProfileNotFound_ReturnsEmpty(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{profile: nil}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	got, err := svc.ListDocuments(context.Background(), 99)
+	if err != nil || len(got) != 0 {
+		t.Errorf("expected empty list, got %d err=%v", len(got), err)
+	}
+}
+
+// ── GetRiskDashboard ──────────────────────────────────────────────────────────
+
+func TestKYCService_GetRiskDashboard_ReturnsStats(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	stats, err := svc.GetRiskDashboard(context.Background())
+	if err != nil || stats == nil {
+		t.Errorf("expected stats, got nil err=%v", err)
+	}
+}
+
+func TestKYCService_GetRiskDashboard_RepoError_Propagates(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{err: errors.New("db fail")}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	_, err := svc.GetRiskDashboard(context.Background())
+	if err == nil {
+		t.Error("expected error from repo, got nil")
+	}
+}
+
+// ── RecalculateRiskScore ──────────────────────────────────────────────────────
+
+func TestKYCService_RecalculateRiskScore_HappyPath(t *testing.T) {
+	existing := &domain.KYCProfile{
+		ID:     1,
+		UserID: 4,
+		Tier:   domain.KYCTierTwo,
+		Status: domain.KYCStatusApproved,
+	}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: existing}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	score, err := svc.RecalculateRiskScore(context.Background(), 4)
+	if err != nil || score < 0 || score > 100 {
+		t.Errorf("expected score in [0,100], got %d err=%v", score, err)
+	}
+}
+
+func TestKYCService_RecalculateRiskScore_ProfileNotFound_ReturnsNotFound(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{profile: nil}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	_, err := svc.RecalculateRiskScore(context.Background(), 99)
+	if err == nil {
+		t.Error("expected not-found error for missing profile, got nil")
+	}
+}
+
+func TestKYCService_RecalculateRiskScore_PEPFlag_IncreasesScore(t *testing.T) {
+	base := &domain.KYCProfile{ID: 1, UserID: 5, Tier: domain.KYCTierThree}
+	pep := &domain.KYCProfile{ID: 2, UserID: 6, Tier: domain.KYCTierThree, PEPFlag: true}
+
+	svcBase := newKYCSvc(&kycProfileRepoStub{profile: base}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	svcPEP := newKYCSvc(&kycProfileRepoStub{profile: pep}, &kycDocRepoStub{}, &kycEventRepoStub{})
+
+	baseScore, _ := svcBase.RecalculateRiskScore(context.Background(), 5)
+	pepScore, _ := svcPEP.RecalculateRiskScore(context.Background(), 6)
+	if pepScore <= baseScore {
+		t.Errorf("PEP flag should increase risk score: base=%d pep=%d", baseScore, pepScore)
+	}
+}

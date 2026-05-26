@@ -445,6 +445,20 @@ var paramIntConstraints = map[string]paramIntRange{
 	// Phase 7 infrastructure params (migration 000113, is_runtime=FALSE).
 	domain.ParamKeyNotifySSEChanBufSize:              {8, 1_024},   // 8 – 1 024 slots per connection
 	domain.ParamKeyNotifyOutboxStaleLockThresholdSec: {60, 86_400}, // 60 s – 24 hours
+
+	// KYC / AML per-transaction caps (migration 000121, is_runtime=TRUE).
+	domain.ParamKeyKYCTier1DepositLimitCents: {100_000, 500_000_000},   // Q1 000 – Q5 000 000
+	domain.ParamKeyKYCTier2DepositLimitCents: {100_000, 1_000_000_000}, // Q1 000 – Q10 000 000
+	domain.ParamKeyKYCTier2PayoutLimitCents:  {100_000, 1_000_000_000}, // Q1 000 – Q10 000 000
+	domain.ParamKeyKYCAMLThresholdCents:      {100_000, 2_000_000_000}, // Q1 000 – Q20 000 000 (UAF threshold)
+	domain.ParamKeyKYCReviewIntervalDays:     {30, 1_825},              // 30 days – 5 years
+	domain.ParamKeyKYCMaxDocUploadBytes:      {102_400, 52_428_800},    // 100 KB – 50 MB
+
+	// KYC / AML velocity limits — 24-hour rolling totals (migration 000124, is_runtime=TRUE).
+	domain.ParamKeyKYCTier1DepositVelocityCents:    {0, 50_000_000},        // Q0 (blocked) – Q500 000 /24 h
+	domain.ParamKeyKYCTier2DepositVelocityCents:    {100_000, 500_000_000}, // Q1 000 – Q5 000 000 /24 h
+	domain.ParamKeyKYCTier1WithdrawalVelocityCents: {0, 50_000_000},        // Q0 (blocked) – Q500 000 /24 h
+	domain.ParamKeyKYCTier2WithdrawalVelocityCents: {0, 500_000_000},       // Q0 (blocked) – Q5 000 000 /24 h
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

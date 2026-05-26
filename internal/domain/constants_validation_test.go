@@ -140,6 +140,17 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// Phase 7 infrastructure params (migration 000113)
 		"ParamKeyNotifySSEChanBufSize":              ParamKeyNotifySSEChanBufSize,
 		"ParamKeyNotifyOutboxStaleLockThresholdSec": ParamKeyNotifyOutboxStaleLockThresholdSec,
+		// KYC / AML (migrations 000121, 000124)
+		"ParamKeyKYCTier1DepositLimitCents":       ParamKeyKYCTier1DepositLimitCents,
+		"ParamKeyKYCTier2DepositLimitCents":       ParamKeyKYCTier2DepositLimitCents,
+		"ParamKeyKYCTier2PayoutLimitCents":        ParamKeyKYCTier2PayoutLimitCents,
+		"ParamKeyKYCAMLThresholdCents":            ParamKeyKYCAMLThresholdCents,
+		"ParamKeyKYCReviewIntervalDays":           ParamKeyKYCReviewIntervalDays,
+		"ParamKeyKYCMaxDocUploadBytes":            ParamKeyKYCMaxDocUploadBytes,
+		"ParamKeyKYCTier1DepositVelocityCents":    ParamKeyKYCTier1DepositVelocityCents,
+		"ParamKeyKYCTier2DepositVelocityCents":    ParamKeyKYCTier2DepositVelocityCents,
+		"ParamKeyKYCTier1WithdrawalVelocityCents": ParamKeyKYCTier1WithdrawalVelocityCents,
+		"ParamKeyKYCTier2WithdrawalVelocityCents": ParamKeyKYCTier2WithdrawalVelocityCents,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -260,6 +271,17 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// Phase 7 infrastructure params (migration 000113)
 		"DefaultNotifySSEChanBufSize":              DefaultNotifySSEChanBufSize,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
+		// KYC / AML (migrations 000121, 000124)
+		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
+		"DefaultKYCTier2DepositLimitCents":       DefaultKYCTier2DepositLimitCents,
+		"DefaultKYCTier2PayoutLimitCents":        DefaultKYCTier2PayoutLimitCents,
+		"DefaultKYCAMLThresholdCents":            DefaultKYCAMLThresholdCents,
+		"DefaultKYCReviewIntervalDays":           DefaultKYCReviewIntervalDays,
+		"DefaultKYCMaxDocUploadBytes":            DefaultKYCMaxDocUploadBytes,
+		"DefaultKYCTier1DepositVelocityCents":    DefaultKYCTier1DepositVelocityCents,
+		"DefaultKYCTier2DepositVelocityCents":    DefaultKYCTier2DepositVelocityCents,
+		"DefaultKYCTier1WithdrawalVelocityCents": DefaultKYCTier1WithdrawalVelocityCents,
+		"DefaultKYCTier2WithdrawalVelocityCents": DefaultKYCTier2WithdrawalVelocityCents,
 		// String defaults — not in the int defaults map; documented separately.
 		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
 		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
@@ -267,7 +289,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 97 // update when adding a new ParamKey* constant
+		const expectedCount = 107 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -275,7 +297,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 86 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra)
+		const expectedCount = 96 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -436,6 +458,17 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		// Phase 7 infrastructure params (migration 000113)
 		{"ParamKeyNotifySSEChanBufSize", ParamKeyNotifySSEChanBufSize, "notify"},
 		{"ParamKeyNotifyOutboxStaleLockThresholdSec", ParamKeyNotifyOutboxStaleLockThresholdSec, "notify"},
+		// KYC / AML (migrations 000121, 000124)
+		{"ParamKeyKYCTier1DepositLimitCents", ParamKeyKYCTier1DepositLimitCents, "kyc"},
+		{"ParamKeyKYCTier2DepositLimitCents", ParamKeyKYCTier2DepositLimitCents, "kyc"},
+		{"ParamKeyKYCTier2PayoutLimitCents", ParamKeyKYCTier2PayoutLimitCents, "kyc"},
+		{"ParamKeyKYCAMLThresholdCents", ParamKeyKYCAMLThresholdCents, "kyc"},
+		{"ParamKeyKYCReviewIntervalDays", ParamKeyKYCReviewIntervalDays, "kyc"},
+		{"ParamKeyKYCMaxDocUploadBytes", ParamKeyKYCMaxDocUploadBytes, "kyc"},
+		{"ParamKeyKYCTier1DepositVelocityCents", ParamKeyKYCTier1DepositVelocityCents, "kyc"},
+		{"ParamKeyKYCTier2DepositVelocityCents", ParamKeyKYCTier2DepositVelocityCents, "kyc"},
+		{"ParamKeyKYCTier1WithdrawalVelocityCents", ParamKeyKYCTier1WithdrawalVelocityCents, "kyc"},
+		{"ParamKeyKYCTier2WithdrawalVelocityCents", ParamKeyKYCTier2WithdrawalVelocityCents, "kyc"},
 	}
 
 	for _, tc := range paramKeys {
@@ -565,6 +598,16 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
+		// KYC / AML (migrations 000121, 000124)
+		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
+		"DefaultKYCTier2DepositLimitCents":       DefaultKYCTier2DepositLimitCents,
+		"DefaultKYCTier2PayoutLimitCents":        DefaultKYCTier2PayoutLimitCents,
+		"DefaultKYCAMLThresholdCents":            DefaultKYCAMLThresholdCents,
+		"DefaultKYCReviewIntervalDays":           DefaultKYCReviewIntervalDays,
+		"DefaultKYCMaxDocUploadBytes":            DefaultKYCMaxDocUploadBytes,
+		"DefaultKYCTier1DepositVelocityCents":    DefaultKYCTier1DepositVelocityCents,
+		"DefaultKYCTier2DepositVelocityCents":    DefaultKYCTier2DepositVelocityCents,
+		"DefaultKYCTier2WithdrawalVelocityCents": DefaultKYCTier2WithdrawalVelocityCents,
 	}
 
 	for name, value := range defaults {
@@ -585,6 +628,8 @@ func TestZeroValuedDefaultsAreIntentional(t *testing.T) {
 		// Per-phase scoring_rules can override these for knockout rounds.
 		"DefaultScoringExtraTimeBonus": DefaultScoringExtraTimeBonus,
 		"DefaultScoringPenaltiesBonus": DefaultScoringPenaltiesBonus,
+		// Tier 0/1 withdrawals are fully blocked; velocity cap is 0 by design.
+		"DefaultKYCTier1WithdrawalVelocityCents": DefaultKYCTier1WithdrawalVelocityCents,
 	}
 	for name, value := range zeroDefaults {
 		t.Run(name, func(t *testing.T) {
@@ -695,7 +740,7 @@ func allSystemParamKeys() []string { return AllParamKeys() }
 // TestSystemParamsMigrationCoverage verifies that every ParamKey* constant
 // declared in the domain package is seeded in at least one migration file.
 // It reads all *.up.sql files, tracks INSERT and DELETE operations on
-// system_params, and asserts the net set covers all 97 constants.
+// system_params, and asserts the net set covers all 107 constants.
 //
 // This prevents the Go constants ↔ DB seed invariant from drifting silently:
 // adding a constant without a migration, or removing a constant without a
