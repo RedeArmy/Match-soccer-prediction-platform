@@ -1,0 +1,53 @@
+{
+  "name": "KYC Submission — Admin Notify",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kyc-submitted",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "kyc-sub-webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "kyc-submitted"
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    subject: `[KYC] New submission requires review — User ${p.user_id}`,\n    body: `A user has submitted a KYC profile for review.\\n\\nUser ID: ${p.user_id}\\nProfile ID: ${p.profile_id}\\nSubmitted at: ${p.submitted_at}\\nTrace ID: ${p.trace_id}\\n\\nLog in to the admin panel to review: ${process.env.ADMIN_BASE_URL}/admin/kyc/queue`\n  }\n}];"
+      },
+      "id": "kyc-sub-format",
+      "name": "Format Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$env.ADMIN_EMAIL}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "kyc-sub-email",
+      "name": "Send Admin Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Format Email", "type": "main", "index": 0}]]
+    },
+    "Format Email": {
+      "main": [[{"node": "Send Admin Email", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "tags": ["kyc", "compliance"]
+}

@@ -1,0 +1,272 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "annotations": { "list": [] },
+  "description": "KYC/AML compliance overview: review queue depth, tier distribution, frozen balances, fraud flags, and gate blocks.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Queue & Review Health",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Number of profiles currently in under_review status. Polled from the database every 60s.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "red", "value": 50 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "expr": "kyc_review_queue_depth",
+          "legendFormat": "Queue depth",
+          "refId": "A"
+        }
+      ],
+      "title": "Review Queue Depth",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Total frozen balance in quetzales across all frozen accounts.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100000 },
+              { "color": "red", "value": 500000 }
+            ]
+          },
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "expr": "kyc_frozen_balance_cents / 100",
+          "legendFormat": "Frozen GTQ",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Frozen Balance (GTQ)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "KYC submissions per minute (rolling 5m window).",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "value" },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "expr": "rate(kyc_submissions_total[5m])",
+          "legendFormat": "Submissions/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Submission Rate",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Gate blocks per minute — money-movement requests blocked by KYC tier checks.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "value" },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "expr": "rate(kyc_gate_blocks_total[5m])",
+          "legendFormat": "Blocks/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Gate Block Rate",
+      "type": "stat"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 10,
+      "title": "Review Duration",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Histogram of time from submission to review decision (approved or rejected).",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 11,
+      "options": {
+        "bucketOffset": 0,
+        "fillOpacity": 80,
+        "gradientMode": "none",
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(kyc_review_duration_seconds_bucket[1h]))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.90, rate(kyc_review_duration_seconds_bucket[1h]))",
+          "legendFormat": "p90",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(kyc_review_duration_seconds_bucket[1h]))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Review Duration Percentiles (p50 / p90 / p99)",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Review outcomes: approved vs rejected over time.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 12,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "expr": "rate(kyc_review_duration_seconds_count{decision=\"approved\"}[5m])",
+          "legendFormat": "Approved/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(kyc_review_duration_seconds_count{decision=\"rejected\"}[5m])",
+          "legendFormat": "Rejected/s",
+          "refId": "B"
+        }
+      ],
+      "title": "Approval vs Rejection Rate",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 20,
+      "title": "Fraud Signals",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Cumulative fraud flag events by type (PEP, sanctions, duplicate identity).",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 21,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "expr": "rate(kyc_fraud_flags_total[1h])",
+          "legendFormat": "{{flag_type}} / hour",
+          "refId": "A"
+        }
+      ],
+      "title": "Fraud Flag Rate by Type",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Gate blocks breakdown by operation (withdrawal, deposit) and reason (tier_insufficient, cap_exceeded).",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 22,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "expr": "rate(kyc_gate_blocks_total[5m])",
+          "legendFormat": "{{operation}} — {{reason}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Gate Blocks by Operation & Reason",
+      "type": "timeseries"
+    }
+
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["kyc", "compliance", "aml"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "KYC / AML Overview",
+  "uid": "kyc-overview",
+  "version": 1
+}

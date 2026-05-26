@@ -37,20 +37,24 @@ type BankTransferService interface {
 
 type bankTransferService struct {
 	proofRepo    repository.BankTransferProofRepository
+	kycGate      KYCGate
 	outboxWriter outbox.Writer
 	audit        AuditLogger
 	log          *zap.Logger
 }
 
 // NewBankTransferService constructs a BankTransferService.
+// kycGate enforces deposit tier-limits; pass NoopKYCGate{} in tests.
 func NewBankTransferService(
 	proofRepo repository.BankTransferProofRepository,
+	kycGate KYCGate,
 	outboxWriter outbox.Writer,
 	audit AuditLogger,
 	log *zap.Logger,
 ) BankTransferService {
 	return &bankTransferService{
 		proofRepo:    proofRepo,
+		kycGate:      kycGate,
 		outboxWriter: outboxWriter,
 		audit:        audit,
 		log:          log,
@@ -58,6 +62,12 @@ func NewBankTransferService(
 }
 
 func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents int, currency, storageKey, contentType string, fileSize int) (*domain.BankTransferProof, error) {
+	if err := s.kycGate.CheckDeposit(ctx, userID, amountCents); err != nil {
+		return nil, err
+	}
+	if err := s.kycGate.CheckDepositVelocity(ctx, userID, amountCents); err != nil {
+		return nil, err
+	}
 	if amountCents <= 0 {
 		return nil, apperrors.Validation("amount_cents must be positive")
 	}
@@ -88,6 +98,14 @@ func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents in
 		"currency":     proof.Currency,
 		"file_size":    fileSize,
 	})
+
+	if exceeds, _ := s.kycGate.ExceedsAMLThreshold(ctx, amountCents); exceeds {
+		s.audit.Log(ctx, &userID, nil, domain.AuditActionAMLFlagged, &resType, &proofID, map[string]any{
+			"amount_cents": amountCents,
+			"currency":     proof.Currency,
+			"operation":    "deposit",
+		})
+	}
 
 	s.writeOutbox(ctx, notification.EventAdminBankTransferPending,
 		"bank_transfer_proof", strconv.FormatInt(proof.ID, 10),

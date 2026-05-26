@@ -81,7 +81,15 @@ func newWithdrawalSvc(wr *withdrawalReqRepoStub, pr *withdrawalParamRepo) Withdr
 	if pr == nil {
 		pr = &withdrawalParamRepo{}
 	}
-	return NewWithdrawalService(wr, pr, nil, &noopAuditLogger{}, zap.NewNop())
+	return NewWithdrawalService(wr, pr, NoopKYCGate{}, nil, &noopAuditLogger{}, zap.NewNop())
+}
+
+func newWithdrawalSvcWithAML(wr *withdrawalReqRepoStub) WithdrawalService {
+	return NewWithdrawalService(wr, &withdrawalParamRepo{}, amlTriggerGate{}, nil, &noopAuditLogger{}, zap.NewNop())
+}
+
+func newWithdrawalSvcWithOutbox(wr *withdrawalReqRepoStub, w *stubOutboxWriter) WithdrawalService {
+	return NewWithdrawalService(wr, &withdrawalParamRepo{}, NoopKYCGate{}, w, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
@@ -293,5 +301,37 @@ func TestWithdrawalService_ProcessWithdrawal_RepoErrorPropagates(t *testing.T) {
 	_, err := svc.ProcessWithdrawal(context.Background(), 999, 99)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+// ── AML flag audit log ────────────────────────────────────────────────────────
+
+func TestWithdrawalService_Create_AMLThresholdExceeded_StillReturnsRequest(t *testing.T) {
+	svc := newWithdrawalSvcWithAML(&withdrawalReqRepoStub{})
+
+	got, err := svc.Create(context.Background(), 1, domain.DefaultWithdrawalMinCents, "GTQ", domain.WithdrawalMethodBankGT, nil)
+	if err != nil {
+		t.Fatalf("expected request despite AML flag, got err=%v", err)
+	}
+	if got == nil || got.ID != 55 {
+		t.Errorf("expected request ID 55, got %v", got)
+	}
+}
+
+// ── writeOutbox error path ────────────────────────────────────────────────────
+
+func TestWithdrawalService_Create_OutboxWriteError_StillReturnsRequest(t *testing.T) {
+	w := &stubOutboxWriter{err: errors.New("outbox unavailable")}
+	svc := newWithdrawalSvcWithOutbox(&withdrawalReqRepoStub{}, w)
+
+	got, err := svc.Create(context.Background(), 1, domain.DefaultWithdrawalMinCents, "GTQ", domain.WithdrawalMethodBankGT, nil)
+	if err != nil {
+		t.Fatalf("expected nil error even when outbox write fails, got %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected request, got nil")
+	}
+	if w.writes != 1 {
+		t.Errorf("expected 1 outbox write attempt, got %d", w.writes)
 	}
 }

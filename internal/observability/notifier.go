@@ -33,6 +33,7 @@ const (
 	pathPayoutApproved   = "/webhook/payout-approved"
 	pathTransferUploaded = "/webhook/transfer-uploaded"
 	pathBalanceCredited  = "/webhook/balance-credited"
+	pathKYCWinnerFreeze  = "/webhook/kyc-winner-freeze"
 
 	defaultWebhookTimeout = 5 * time.Second
 )
@@ -231,6 +232,26 @@ func (n *Notifier) NotifyTransferUploaded(ctx context.Context, userID, amountCla
 		FileURL:            fileURL,
 		AmountClaimedCents: amountClaimedCents,
 		Timestamp:          time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// KYCWinnerFreezePayload is the body posted to /webhook/kyc-winner-freeze.
+type KYCWinnerFreezePayload struct {
+	UserID      int    `json:"user_id"`
+	AmountCents int    `json:"amount_cents"`
+	TraceID     string `json:"trace_id"`
+}
+
+// NotifyKYCWinnerFreeze fires a non-blocking POST to /webhook/kyc-winner-freeze.
+// Called when a prize credit is withheld pending KYC verification.
+func (n *Notifier) NotifyKYCWinnerFreeze(ctx context.Context, userID, amountCents int, traceID string) {
+	if !n.Enabled() {
+		return
+	}
+	n.fire(ctx, pathKYCWinnerFreeze, KYCWinnerFreezePayload{
+		UserID:      userID,
+		AmountCents: amountCents,
+		TraceID:     traceID,
 	})
 }
 

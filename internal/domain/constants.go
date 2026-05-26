@@ -410,5 +410,17 @@ func AllParamKeys() []string {
 		// Phase 7 infrastructure params (migration 000113)
 		ParamKeyNotifySSEChanBufSize,
 		ParamKeyNotifyOutboxStaleLockThresholdSec,
+		// KYC / AML (migrations 000121, 000124, 000125)
+		ParamKeyKYCTier1DepositLimitCents,
+		ParamKeyKYCTier2DepositLimitCents,
+		ParamKeyKYCTier2PayoutLimitCents,
+		ParamKeyKYCAMLThresholdCents,
+		ParamKeyKYCReviewIntervalDays,
+		ParamKeyKYCMaxDocUploadBytes,
+		ParamKeyKYCTier1DepositVelocityCents,
+		ParamKeyKYCTier2DepositVelocityCents,
+		ParamKeyKYCTier1WithdrawalVelocityCents,
+		ParamKeyKYCTier2WithdrawalVelocityCents,
+		ParamKeyKYCRiskDashboardCacheTTLSec,
 	}
 }

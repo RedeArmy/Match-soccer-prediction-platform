@@ -406,3 +406,57 @@ func TestNotifier_ConcurrentCalls_AllDelivered(t *testing.T) {
 		t.Errorf("expected %d deliveries, got %d", calls, ts.count())
 	}
 }
+
+// ── NotifyKYCWinnerFreeze ─────────────────────────────────────────────────────
+
+func TestNotifyKYCWinnerFreeze_Disabled_IsNoOp(t *testing.T) {
+	ts := &testServer{}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	n := newNotifier(t, "", "")
+	n.NotifyKYCWinnerFreeze(context.Background(), 42, 10000, "trace-abc")
+
+	time.Sleep(50 * time.Millisecond)
+	if ts.count() != 0 {
+		t.Errorf("expected 0 requests when disabled, got %d", ts.count())
+	}
+}
+
+func TestNotifyKYCWinnerFreeze_PostsToCorrectPath(t *testing.T) {
+	ts := &testServer{}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	n := newNotifier(t, srv.URL, "")
+	n.NotifyKYCWinnerFreeze(context.Background(), 42, 10000, "trace-abc")
+	ts.waitForCount(t, 1)
+
+	if got := ts.lastPath(); got != "/webhook/kyc-winner-freeze" {
+		t.Errorf("expected /webhook/kyc-winner-freeze, got %s", got)
+	}
+}
+
+func TestNotifyKYCWinnerFreeze_PayloadFields(t *testing.T) {
+	ts := &testServer{}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	n := newNotifier(t, srv.URL, "")
+	n.NotifyKYCWinnerFreeze(context.Background(), 7, 50000, "trace-xyz")
+	ts.waitForCount(t, 1)
+
+	var p observability.KYCWinnerFreezePayload
+	if err := json.Unmarshal([]byte(ts.lastBody()), &p); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if p.UserID != 7 {
+		t.Errorf("user_id: want 7, got %d", p.UserID)
+	}
+	if p.AmountCents != 50000 {
+		t.Errorf("amount_cents: want 50000, got %d", p.AmountCents)
+	}
+	if p.TraceID != "trace-xyz" {
+		t.Errorf("trace_id: want trace-xyz, got %q", p.TraceID)
+	}
+}
