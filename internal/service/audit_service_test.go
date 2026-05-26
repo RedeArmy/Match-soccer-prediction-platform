@@ -251,6 +251,70 @@ func TestAuditService_Log_PanicInRepo_DoesNotCrash(t *testing.T) {
 	}
 }
 
+// TestAuditService_Log_PanicInRepo_DropCounterIncrements verifies that when
+// both the goroutine write and the synchronous fallback fail (panicAuditLogRepo
+// panics on every call), Dropped() is incremented and Drain returns cleanly.
+func TestAuditService_Log_PanicInRepo_DropCounterIncrements(t *testing.T) {
+	repo := &panicAuditLogRepo{}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	svc.Log(context.Background(), nil, nil, "test.panic.drop", nil, nil, nil)
+	svc.Drain()
+
+	if got := svc.Dropped(); got != 1 {
+		t.Errorf("expected Dropped() == 1 after panic with failing fallback, got %d", got)
+	}
+}
+
+// oncePanicRepo panics on the first Create, then succeeds on subsequent calls.
+// This simulates a transient connection panic that the synchronous fallback can recover.
+type oncePanicRepo struct {
+	stubAuditLogRepo
+	calls int
+	mu    sync.Mutex
+}
+
+func (r *oncePanicRepo) Create(ctx context.Context, entry *domain.AuditLog) error {
+	r.mu.Lock()
+	r.calls++
+	first := r.calls == 1
+	r.mu.Unlock()
+	if first {
+		panic("simulated transient panic")
+	}
+	return r.stubAuditLogRepo.Create(ctx, entry)
+}
+
+// TestAuditService_Log_PanicInRepo_FallbackSucceeds verifies that when the
+// goroutine write panics but the synchronous fallback succeeds, Dropped() stays
+// at zero and the audit entry is persisted.
+func TestAuditService_Log_PanicInRepo_FallbackSucceeds(t *testing.T) {
+	repo := &oncePanicRepo{}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	svc.Log(context.Background(), nil, nil, "test.panic.fallback", nil, nil, nil)
+	svc.Drain()
+
+	if got := svc.Dropped(); got != 0 {
+		t.Errorf("expected Dropped() == 0 when fallback succeeded, got %d", got)
+	}
+	// Fallback write must have persisted the entry.
+	repo.mu.Lock()
+	n := len(repo.created)
+	repo.mu.Unlock()
+	if n != 1 {
+		t.Errorf("expected 1 audit entry persisted via fallback, got %d", n)
+	}
+}
+
+// TestAuditService_Dropped_ZeroAtStart verifies initial Dropped() value.
+func TestAuditService_Dropped_ZeroAtStart(t *testing.T) {
+	svc := NewAuditService(&stubAuditLogRepo{}, 5*time.Second, zap.NewNop())
+	if got := svc.Dropped(); got != 0 {
+		t.Errorf("expected Dropped() == 0 at start, got %d", got)
+	}
+}
+
 // ── InFlight tracking tests ───────────────────────────────────────────────────
 
 // blockingAuditLogRepo blocks Create until the release channel is closed,

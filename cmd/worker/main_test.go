@@ -17,10 +17,13 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/election"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/observability"
+	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/internal/testutil"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
@@ -283,8 +286,9 @@ func TestRun_FullStartup_ImmediateShutdown(t *testing.T) {
 	defer cancel()
 
 	cfg := &config.Config{
-		EventBus: config.EventBusConfig{Driver: driverRedis},
-		Redis:    config.RedisConfig{Addr: mr.Addr()},
+		Environment: "test",
+		EventBus:    config.EventBusConfig{Driver: driverRedis},
+		Redis:       config.RedisConfig{Addr: mr.Addr()},
 		Database: config.DatabaseConfig{
 			DSN:             dsn,
 			MaxOpenConns:    5,
@@ -731,5 +735,256 @@ func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
 	}
 	if purger.snapshotCalled != 1 {
 		t.Errorf("expected PurgeOldSnapshots called once despite error, got %d", purger.snapshotCalled)
+	}
+}
+
+// ── buildMailer tests (DT-26) ─────────────────────────────────────────────────
+
+func TestBuildMailer_WithAPIKey_ReturnsNoError(t *testing.T) {
+	sender, err := buildMailer("re_test_key_12345")
+	if err != nil {
+		t.Errorf("expected no error when API key is set, got: %v", err)
+	}
+	if sender == nil {
+		t.Fatal("expected non-nil sender")
+	}
+}
+
+func TestBuildMailer_EmptyAPIKey_ReturnsError(t *testing.T) {
+	sender, err := buildMailer("")
+	if err == nil {
+		t.Fatal("expected error for empty API key, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_EMAIL_RESENDAPIKEY") {
+		t.Errorf("expected error to name the missing env var, got: %v", err)
+	}
+	// Sender must still be valid (NoopClient) so callers can degrade gracefully.
+	if sender == nil {
+		t.Fatal("expected non-nil NoopClient even on error")
+	}
+}
+
+// ── buildPusher tests (DT-26) ─────────────────────────────────────────────────
+
+func TestBuildPusher_AllKeysSet_ReturnsNoError(t *testing.T) {
+	sender, err := buildPusher("pubKey", "privKey", "mailto:test@example.com")
+	if err != nil {
+		t.Errorf("expected no error when all VAPID keys are set, got: %v", err)
+	}
+	if sender == nil {
+		t.Fatal("expected non-nil sender")
+	}
+}
+
+func TestBuildPusher_MissingPublicKey_ReturnsError(t *testing.T) {
+	sender, err := buildPusher("", "privKey", "mailto:test@example.com")
+	if err == nil {
+		t.Fatal("expected error when public key is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "VAPIDPublicKey") {
+		t.Errorf("expected error to name the missing key, got: %v", err)
+	}
+	if sender == nil {
+		t.Fatal("expected non-nil NoopSender even on error")
+	}
+}
+
+func TestBuildPusher_MissingPrivateKey_ReturnsError(t *testing.T) {
+	sender, err := buildPusher("pubKey", "", "mailto:test@example.com")
+	if err == nil {
+		t.Fatal("expected error when private key is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_WEBPUSH_VAPIDPRIVATEKEY") {
+		t.Errorf("expected error to name the missing env var, got: %v", err)
+	}
+	if sender == nil {
+		t.Fatal("expected non-nil NoopSender even on error")
+	}
+}
+
+func TestBuildPusher_BothKeysMissing_ErrorMentionsBoth(t *testing.T) {
+	_, err := buildPusher("", "", "")
+	if err == nil {
+		t.Fatal("expected error when both keys are missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "VAPIDPublicKey") || !strings.Contains(err.Error(), "WCQ_WEBPUSH_VAPIDPRIVATEKEY") {
+		t.Errorf("expected error to mention both missing keys, got: %v", err)
+	}
+}
+
+// ── repoEmailResolver tests (DT-28) ──────────────────────────────────────────
+
+// stubUserRepoForWorker is a minimal stub for repository.UserRepository used
+// in worker-package tests (package main, not an external test package).
+type stubUserRepoForWorker struct {
+	user *domain.User
+	err  error
+}
+
+func (r *stubUserRepoForWorker) GetByID(_ context.Context, _ int) (*domain.User, error) {
+	return r.user, r.err
+}
+func (r *stubUserRepoForWorker) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
+	return r.user, r.err
+}
+func (r *stubUserRepoForWorker) Create(_ context.Context, _ *domain.User) error { return r.err }
+func (r *stubUserRepoForWorker) Update(_ context.Context, _ *domain.User) error { return r.err }
+func (r *stubUserRepoForWorker) Delete(_ context.Context, _ int) error          { return r.err }
+func (r *stubUserRepoForWorker) List(_ context.Context) ([]*domain.User, error) { return nil, r.err }
+func (r *stubUserRepoForWorker) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return nil, r.err
+}
+func (r *stubUserRepoForWorker) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
+	return nil, r.err
+}
+func (r *stubUserRepoForWorker) Unban(_ context.Context, _ int) error { return r.err }
+func (r *stubUserRepoForWorker) ListBanned(_ context.Context) ([]*domain.User, error) {
+	return nil, r.err
+}
+func (r *stubUserRepoForWorker) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.CursorPage) ([]*domain.User, string, error) {
+	return nil, "", r.err
+}
+func (r *stubUserRepoForWorker) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
+	return repository.UserStatusCounts{}, r.err
+}
+func (r *stubUserRepoForWorker) GetBalance(_ context.Context, _ int) (int, int, error) {
+	return 0, 0, r.err
+}
+
+var _ repository.UserRepository = (*stubUserRepoForWorker)(nil)
+
+func TestRepoEmailResolver_UserFound_ReturnsEmailAndName(t *testing.T) {
+	stub := &stubUserRepoForWorker{
+		user: &domain.User{ID: 1, Email: "alice@example.com", Name: "Alice"},
+	}
+	resolver := &repoEmailResolver{userRepo: stub}
+
+	email, name, err := resolver.ResolveEmailByID(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if email != "alice@example.com" {
+		t.Errorf("email: got %q, want %q", email, "alice@example.com")
+	}
+	if name != "Alice" {
+		t.Errorf("name: got %q, want %q", name, "Alice")
+	}
+}
+
+func TestRepoEmailResolver_UserNotFound_ReturnsError(t *testing.T) {
+	stub := &stubUserRepoForWorker{user: nil}
+	resolver := &repoEmailResolver{userRepo: stub}
+
+	_, _, err := resolver.ResolveEmailByID(context.Background(), 999)
+	if err == nil {
+		t.Fatal("expected error for non-existent user, got nil")
+	}
+	if !strings.Contains(err.Error(), "999") {
+		t.Errorf("expected error to include user ID, got: %v", err)
+	}
+}
+
+func TestRepoEmailResolver_RepoError_PropagatesError(t *testing.T) {
+	stub := &stubUserRepoForWorker{err: errors.New("database unavailable")}
+	resolver := &repoEmailResolver{userRepo: stub}
+
+	_, _, err := resolver.ResolveEmailByID(context.Background(), 5)
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+	if !strings.Contains(err.Error(), "database unavailable") {
+		t.Errorf("expected wrapped repo error, got: %v", err)
+	}
+}
+
+// ── makePushPruneJob tests (DT-29) ────────────────────────────────────────────
+
+// stubPushRepo is a minimal stub for repository.PushSubscriptionRepository
+// used to test makePushPruneJob without a real database.
+type stubPushRepo struct {
+	deleted int64
+	err     error
+}
+
+func (r *stubPushRepo) Create(_ context.Context, _ *domain.PushSubscription) error { return r.err }
+func (r *stubPushRepo) ListActiveByUser(_ context.Context, _ int) ([]*domain.PushSubscription, error) {
+	return nil, r.err
+}
+func (r *stubPushRepo) DeleteByEndpoint(_ context.Context, _ string) error { return r.err }
+func (r *stubPushRepo) MarkInactive(_ context.Context, _ int64) error      { return r.err }
+func (r *stubPushRepo) UpdateLastUsed(_ context.Context, _ int64) error    { return r.err }
+func (r *stubPushRepo) DeleteInactive(_ context.Context, _ time.Time) (int64, error) {
+	return r.deleted, r.err
+}
+
+// stubParamSvc is a minimal stub for service.SystemParamService.
+type stubParamSvc struct{}
+
+func (s *stubParamSvc) Get(_ context.Context, _ string) (*domain.SystemParam, error) { return nil, nil }
+func (s *stubParamSvc) GetAll(_ context.Context) ([]*domain.SystemParam, error)      { return nil, nil }
+func (s *stubParamSvc) GetByCategory(_ context.Context, _ string) ([]*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubParamSvc) Set(_ context.Context, _, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubParamSvc) GetString(_ context.Context, _, defaultVal string) string { return defaultVal }
+func (s *stubParamSvc) GetInt(_ context.Context, _ string, defaultVal int) int   { return defaultVal }
+func (s *stubParamSvc) GetDuration(_ context.Context, _ string, defaultVal time.Duration) time.Duration {
+	return defaultVal
+}
+func (s *stubParamSvc) GetBool(_ context.Context, _ string, defaultVal bool) bool { return defaultVal }
+func (s *stubParamSvc) BulkSet(_ context.Context, _ map[string]string, _ int) error {
+	return nil
+}
+func (s *stubParamSvc) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubParamSvc) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
+	return nil, "", nil
+}
+
+var _ service.SystemParamService = (*stubParamSvc)(nil)
+
+func TestMakePushPruneJob_SuccessWithDeletions_LogsCount(t *testing.T) {
+	pushRepo := &stubPushRepo{deleted: 5}
+	job := makePushPruneJob(&stubParamSvc{}, pushRepo, zap.NewNop())
+
+	if err := job(context.Background()); err != nil {
+		t.Errorf("expected nil error for successful prune, got %v", err)
+	}
+}
+
+func TestMakePushPruneJob_NoDeletions_ReturnsNil(t *testing.T) {
+	pushRepo := &stubPushRepo{deleted: 0}
+	job := makePushPruneJob(&stubParamSvc{}, pushRepo, zap.NewNop())
+
+	if err := job(context.Background()); err != nil {
+		t.Errorf("expected nil error when no records to prune, got %v", err)
+	}
+}
+
+func TestMakePushPruneJob_RepoError_ReturnsError(t *testing.T) {
+	pushRepo := &stubPushRepo{err: errors.New("db failure")}
+	job := makePushPruneJob(&stubParamSvc{}, pushRepo, zap.NewNop())
+
+	err := job(context.Background())
+	if err == nil {
+		t.Fatal("expected error when repo fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "db failure") {
+		t.Errorf("expected repo error to propagate, got: %v", err)
+	}
+}
+
+func TestMakePushPruneJob_CancelledContext_ReturnsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled before job runs
+
+	pushRepo := &stubPushRepo{err: context.Canceled}
+	job := makePushPruneJob(&stubParamSvc{}, pushRepo, zap.NewNop())
+
+	if err := job(ctx); err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
 	}
 }
