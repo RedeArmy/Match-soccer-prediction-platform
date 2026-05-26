@@ -244,6 +244,139 @@ func (r *PostgresKYCProfileRepository) ListDueForReview(ctx context.Context, thr
 	})
 }
 
+func (r *PostgresKYCProfileRepository) CountReviewQueue(ctx context.Context) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	var n int64
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM kyc_profiles WHERE status = 'under_review'`).Scan(&n)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return n, nil
+}
+
+func (r *PostgresKYCProfileRepository) SumFrozenAmountCents(ctx context.Context) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	var total int64
+	err := r.db.QueryRow(ctx, `SELECT COALESCE(SUM(frozen_amount_cents), 0) FROM kyc_profiles WHERE balance_frozen = TRUE`).Scan(&total)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return total, nil
+}
+
+func (r *PostgresKYCProfileRepository) CountAccountsByDeviceFingerprint(ctx context.Context, fingerprint string, excludeUserID int) (int64, error) {
+	if fingerprint == "" {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	var n int64
+	err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM kyc_profiles
+		  WHERE device_fingerprint = $1
+		    AND user_id <> $2
+		    AND status NOT IN ('rejected', 'unverified')`,
+		fingerprint, excludeUserID,
+	).Scan(&n)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return n, nil
+}
+
+func (r *PostgresKYCProfileRepository) UpdateRiskScore(ctx context.Context, profileID, score int) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	_, err := r.db.Exec(ctx,
+		`UPDATE kyc_profiles SET risk_score = $1, updated_at = NOW() WHERE id = $2`,
+		score, profileID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
+func (r *PostgresKYCProfileRepository) ExistsByDocumentIdentity(ctx context.Context, documentType domain.KYCDocumentType, documentNumber string, dateOfBirth *time.Time, excludeUserID int) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	const q = `
+	SELECT EXISTS (
+	  SELECT 1 FROM kyc_profiles
+	   WHERE document_type   = $1
+	     AND document_number = $2
+	     AND date_of_birth IS NOT DISTINCT FROM $3
+	     AND user_id        <> $4
+	     AND status NOT IN ('rejected', 'unverified')
+	)`
+	var exists bool
+	err := r.db.QueryRow(ctx, q, string(documentType), documentNumber, dateOfBirth, excludeUserID).Scan(&exists)
+	if err != nil {
+		return false, apperrors.Internal(err)
+	}
+	return exists, nil
+}
+
+func (r *PostgresKYCProfileRepository) RiskDashboardStats(ctx context.Context) (*domain.KYCRiskDashboardStats, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+
+	const q = `
+	WITH
+	  queue AS (
+	    SELECT COUNT(*) AS n FROM kyc_profiles WHERE status = 'under_review'
+	  ),
+	  avg_review AS (
+	    SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (reviewed_at - submitted_at))), 0) AS secs
+	      FROM kyc_profiles
+	     WHERE reviewed_at IS NOT NULL AND submitted_at IS NOT NULL
+	  ),
+	  frozen_sum AS (
+	    SELECT COALESCE(SUM(frozen_amount_cents), 0) AS total FROM kyc_profiles WHERE balance_frozen = TRUE
+	  ),
+	  fraud AS (
+	    SELECT
+	      COUNT(*) FILTER (WHERE pep_flag      = TRUE) AS pep,
+	      COUNT(*) FILTER (WHERE sanctions_flag = TRUE) AS sanctions
+	    FROM kyc_profiles
+	  ),
+	  tiers AS (
+	    SELECT tier, COUNT(*) AS cnt FROM kyc_profiles GROUP BY tier
+	  )
+	SELECT q.n, a.secs, fs.total, f.pep, f.sanctions
+	  FROM queue q, avg_review a, frozen_sum fs, fraud f`
+
+	var s domain.KYCRiskDashboardStats
+	var avgSecs float64
+	err := r.db.QueryRow(ctx, q).Scan(&s.QueueDepth, &avgSecs, &s.FrozenBalanceTotalCents, &s.PEPFlagCount, &s.SanctionsFlagCount)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	s.AvgReviewTimeSecs = avgSecs
+
+	// tier distribution — second query to avoid complex unnesting
+	trows, terr := r.db.Query(ctx, `SELECT tier, COUNT(*) FROM kyc_profiles GROUP BY tier`)
+	if terr != nil {
+		return nil, apperrors.Internal(terr)
+	}
+	defer trows.Close()
+	s.TierDistribution = make(map[domain.KYCTier]int64)
+	for trows.Next() {
+		var tier int
+		var cnt int64
+		if err := trows.Scan(&tier, &cnt); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		s.TierDistribution[domain.KYCTier(tier)] = cnt
+	}
+	if err := trows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return &s, nil
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const kycProfileCols = `

@@ -749,6 +749,10 @@ type BalanceLedgerRepository interface {
 	CommitReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error
 	// ListByUser returns ledger entries for userID ordered by created_at DESC.
 	ListByUser(ctx context.Context, userID int, p Pagination) ([]*domain.BalanceLedger, error)
+	// SumTransactionsByUserAndPeriod returns the total absolute value of ledger
+	// entries for userID with the given kinds since the given time. Used by
+	// KYCGate to detect cumulative AML reporting thresholds.
+	SumTransactionsByUserAndPeriod(ctx context.Context, userID int, kinds []domain.BalanceLedgerKind, since time.Time) (int64, error)
 }
 
 // BankTransferProofRepository manages bank transfer proof records and their
@@ -833,6 +837,25 @@ type KYCProfileRepository interface {
 	// ListDueForReview returns profiles whose next_review_at is before threshold
 	// and whose status is approved. Used by the scheduler to trigger re-verification reminders.
 	ListDueForReview(ctx context.Context, threshold time.Time) ([]*domain.KYCProfile, error)
+	// CountReviewQueue returns the number of profiles currently in under_review status.
+	// Uses the partial index idx_kyc_profiles_status.
+	CountReviewQueue(ctx context.Context) (int64, error)
+	// SumFrozenAmountCents returns the total frozen_amount_cents across all frozen profiles.
+	// Uses the partial index idx_kyc_profiles_frozen.
+	SumFrozenAmountCents(ctx context.Context) (int64, error)
+	// RiskDashboardStats returns aggregated KYC metrics for the admin risk dashboard.
+	// All counts are computed in a single query using CTEs.
+	RiskDashboardStats(ctx context.Context) (*domain.KYCRiskDashboardStats, error)
+	// ExistsByDocumentIdentity returns true when another user already has a non-rejected
+	// profile with the same (document_type, document_number, date_of_birth) triple.
+	// excludeUserID is the submitting user; their own prior submissions are excluded.
+	ExistsByDocumentIdentity(ctx context.Context, documentType domain.KYCDocumentType, documentNumber string, dateOfBirth *time.Time, excludeUserID int) (bool, error)
+	// UpdateRiskScore stores the computed risk score (0–100) on the profile.
+	UpdateRiskScore(ctx context.Context, profileID, score int) error
+	// CountAccountsByDeviceFingerprint returns the number of distinct non-rejected
+	// KYC profiles that share the given device fingerprint, excluding excludeUserID.
+	// Returns 0 when fingerprint is empty (fingerprint not submitted).
+	CountAccountsByDeviceFingerprint(ctx context.Context, fingerprint string, excludeUserID int) (int64, error)
 }
 
 // KYCDocumentRepository manages uploaded identity documents attached to KYC/KYB profiles.
@@ -907,4 +930,29 @@ type NotificationTemplateRepository interface {
 	// Returns apperrors.NotFound when absent or when the entry belongs to a
 	// different pair.
 	GetHistoryEntry(ctx context.Context, id int64, eventType, locale string) (*domain.NotificationTemplateHistory, error)
+}
+
+// KYBRepository manages KYB (Know Your Business) profiles for quiniela organisers.
+// One profile row exists per user; it is created on first submission and updated on
+// resubmission (after rejection). The full status-transition history is captured in
+// kyc_events with profile_type='org'.
+type KYBRepository interface {
+	// Create inserts a new KYB profile. profile.ID is populated on success.
+	Create(ctx context.Context, profile *domain.KYBProfile) error
+	// GetByUserID returns the KYB profile for userID, or nil when none exists.
+	GetByUserID(ctx context.Context, userID int) (*domain.KYBProfile, error)
+	// GetByID returns the KYB profile by primary key, or nil when not found.
+	GetByID(ctx context.Context, id int) (*domain.KYBProfile, error)
+	// UpdateStatus transitions the profile's status and records review metadata.
+	// reviewerID may be 0 (stored as NULL) for system-initiated transitions.
+	UpdateStatus(ctx context.Context, id int, status domain.KYCStatus, reviewerID int, reason string) error
+	// ListPending returns profiles in pending or under_review state, ordered by
+	// submitted_at ASC (oldest first), with offset-based pagination.
+	ListPending(ctx context.Context, limit, offset int) ([]*domain.KYBProfile, error)
+	// CountByStatus returns the count of profiles for each KYCStatus value.
+	CountByStatus(ctx context.Context) (map[domain.KYCStatus]int64, error)
+	// ExistsByTaxIDAndJurisdiction returns true when an approved or pending
+	// profile already exists with the same tax_id and jurisdiction, excluding
+	// the given userID. Used for duplicate-entity detection on Submit.
+	ExistsByTaxIDAndJurisdiction(ctx context.Context, taxID, jurisdiction string, excludeUserID int) (bool, error)
 }

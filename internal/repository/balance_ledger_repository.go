@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -44,7 +45,7 @@ func (r *PostgresBalanceLedgerRepository) Credit(ctx context.Context, userID, de
 		if err != nil {
 			return apperrors.Internal(err)
 		}
-		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: deltaCents, Kind: kind, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: creatorID})
+		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: deltaCents, Kind: kind, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: creatorID, IPAddress: ClientIPFromContext(ctx)})
 	})
 }
 
@@ -70,7 +71,7 @@ func (r *PostgresBalanceLedgerRepository) Debit(ctx context.Context, userID, del
 		if err != nil {
 			return apperrors.Internal(err)
 		}
-		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: -deltaCents, Kind: kind, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: creatorID})
+		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: -deltaCents, Kind: kind, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: creatorID, IPAddress: ClientIPFromContext(ctx)})
 	})
 }
 
@@ -169,6 +170,30 @@ func (r *PostgresBalanceLedgerRepository) ListByUser(ctx context.Context, userID
 	})
 }
 
+// SumTransactionsByUserAndPeriod returns the sum of ABS(delta_cents) for the
+// given user, limited to the specified kinds and created_at >= since.
+func (r *PostgresBalanceLedgerRepository) SumTransactionsByUserAndPeriod(ctx context.Context, userID int, kinds []domain.BalanceLedgerKind, since time.Time) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	kindStrs := make([]string, len(kinds))
+	for i, k := range kinds {
+		kindStrs[i] = string(k)
+	}
+	var total int64
+	err := r.db.QueryRow(ctx,
+		`SELECT COALESCE(SUM(ABS(delta_cents)), 0)
+		   FROM balance_ledger
+		  WHERE user_id    = $1
+		    AND kind       = ANY($2)
+		    AND created_at >= $3`,
+		userID, kindStrs, since,
+	).Scan(&total)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return total, nil
+}
+
 // ledgerRow holds the payload for a single balance_ledger INSERT.
 // Grouping these fields avoids exceeding the per-function parameter limit and
 // makes call sites self-documenting via named fields.
@@ -181,6 +206,7 @@ type ledgerRow struct {
 	RefType      string // "" → stored as NULL
 	Reference    string // "" → stored as NULL; non-empty values are unique (webhook idempotency key)
 	CreatorID    int    // 0 → stored as NULL (system/webhook origin)
+	IPAddress    string // "" → stored as NULL; client IP from context
 }
 
 // insertLedgerTx inserts one immutable balance_ledger row inside tx.
@@ -201,11 +227,15 @@ func insertLedgerTx(ctx context.Context, tx pgx.Tx, e ledgerRow) error {
 	if e.Reference != "" {
 		ref = &e.Reference
 	}
+	var ip *string
+	if e.IPAddress != "" {
+		ip = &e.IPAddress
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO balance_ledger
-		      (user_id, delta_cents, kind, balance_after, ref_id, ref_type, reference, created_by)
-		VALUES ($1,     $2,          $3,   $4,            $5,     $6,       $7,        $8)
-	`, e.UserID, e.DeltaCents, e.Kind, e.BalanceAfter, rid, rtype, ref, creator)
+		      (user_id, delta_cents, kind, balance_after, ref_id, ref_type, reference, created_by, ip_address)
+		VALUES ($1,     $2,          $3,   $4,            $5,     $6,       $7,        $8,          $9)
+	`, e.UserID, e.DeltaCents, e.Kind, e.BalanceAfter, rid, rtype, ref, creator, ip)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
@@ -313,3 +343,22 @@ func scanBalanceLedgerFields(s rowScanner) (*domain.BalanceLedger, error) {
 }
 
 var _ BalanceLedgerRepository = (*PostgresBalanceLedgerRepository)(nil)
+
+// ── IP address context helpers ────────────────────────────────────────────────
+// These live here (rather than in middleware) so that the repository can read
+// client IP from the context without importing the middleware package, which
+// itself imports repository — avoiding a circular dependency.
+
+type ipCtxKey struct{}
+
+// ContextWithClientIP stores the client IP in ctx for use by ledger writes.
+func ContextWithClientIP(ctx context.Context, ip string) context.Context {
+	return context.WithValue(ctx, ipCtxKey{}, ip)
+}
+
+// ClientIPFromContext returns the client IP stored by ContextWithClientIP.
+// Returns empty string when no IP is present (system / webhook-triggered paths).
+func ClientIPFromContext(ctx context.Context) string {
+	ip, _ := ctx.Value(ipCtxKey{}).(string)
+	return ip
+}
