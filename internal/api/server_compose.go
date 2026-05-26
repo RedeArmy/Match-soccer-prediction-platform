@@ -65,6 +65,8 @@ type appHandlers struct {
 	adminObsCircuit    *handler.AdminCircuitBreakersHandler
 	adminObsDLQ        *handler.AdminObservabilityDLQHandler
 	adminN8n           *handler.AdminN8nHandler
+	kyc                *handler.KYCHandler
+	adminKYC           *handler.AdminKYCHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -228,10 +230,11 @@ func (s *Server) buildHandlers(
 	pushRepo := repository.NewPostgresPushSubscriptionRepository(s.db)
 
 	balanceSvc := service.NewBalanceService(repos.user, ledgerRepo, s.log)
-	bankTransferSvc := service.NewBankTransferService(proofRepo, outboxWriter, auditSvc, s.log)
+	kycGate := service.NewKYCGate(repos.user, paramSvcWithAudit)
+	bankTransferSvc := service.NewBankTransferService(proofRepo, kycGate, outboxWriter, auditSvc, s.log)
 	paymentIntentSvc := service.NewPaymentIntentService(intentRepo, params, s.log)
 	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, intentRepo, auditSvc, s.log)
-	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, outboxWriter, auditSvc, s.log)
+	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, kycGate, outboxWriter, auditSvc, s.log)
 
 	h := appHandlers{
 		notification: handler.NewNotificationHandler(handler.NotificationHandlerConfig{
@@ -292,6 +295,14 @@ func (s *Server) buildHandlers(
 	h.adminObsCircuit = handler.NewAdminCircuitBreakersHandler(s.breakerRegistry, s.log)
 
 	h.adminN8n = handler.NewAdminN8nHandler(s.cfg.N8n.BaseURL, s.cfg.N8n.APIKey, s.log)
+
+	// ── KYC module ───────────────────────────────────────────────────────────
+	kycProfileRepo := repository.NewPostgresKYCProfileRepository(s.db)
+	kycDocRepo := repository.NewPostgresKYCDocumentRepository(s.db)
+	kycEventRepo := repository.NewPostgresKYCEventRepository(s.db)
+	kycSvc := service.NewKYCService(kycProfileRepo, kycDocRepo, kycEventRepo, auditSvc, s.log)
+	h.kyc = handler.NewKYCHandler(kycSvc, s.log)
+	h.adminKYC = handler.NewAdminKYCHandler(kycSvc, s.log)
 
 	// Wire observability notifier into payment-path handlers. Each handler
 	// defines its own narrow interface so the import graph stays acyclic.

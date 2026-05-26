@@ -42,11 +42,11 @@ func (r *bankTransferProofRepoStub) Reject(_ context.Context, _ int, _ int, _ st
 }
 
 func newBankTransferSvc(repo *bankTransferProofRepoStub) BankTransferService {
-	return NewBankTransferService(repo, nil, &noopAuditLogger{}, zap.NewNop())
+	return NewBankTransferService(repo, NoopKYCGate{}, nil, &noopAuditLogger{}, zap.NewNop())
 }
 
 func newBankTransferSvcWithOutbox(repo *bankTransferProofRepoStub, w *stubOutboxWriter) BankTransferService {
-	return NewBankTransferService(repo, w, &noopAuditLogger{}, zap.NewNop())
+	return NewBankTransferService(repo, NoopKYCGate{}, w, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────

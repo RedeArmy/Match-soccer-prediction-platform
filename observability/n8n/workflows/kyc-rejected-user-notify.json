@@ -1,0 +1,53 @@
+{
+  "name": "KYC Rejected — User Notify",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kyc-rejected",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "kyc-rej-webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "kyc-rejected"
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    to: p.user_email,\n    subject: 'Your identity verification could not be approved',\n    body: `We were unable to approve your identity verification submission.\\n\\nReason: ${p.rejection_reason || 'Please contact support for details.'}\\n\\nYou may resubmit with corrected information. Log in to your account: ${process.env.APP_BASE_URL}\\n\\nIf you believe this is an error, please contact our support team.`\n  }\n}];"
+      },
+      "id": "kyc-rej-format",
+      "name": "Format Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "kyc-rej-email",
+      "name": "Send User Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Format Email", "type": "main", "index": 0}]]
+    },
+    "Format Email": {
+      "main": [[{"node": "Send User Email", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "tags": ["kyc", "compliance", "user-notification"]
+}

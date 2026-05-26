@@ -42,15 +42,20 @@ type WithdrawalService interface {
 type withdrawalService struct {
 	withdrawalRepo repository.WithdrawalRequestRepository
 	paramRepo      repository.SystemParamRepository
+	kycGate        KYCGate
 	outboxWriter   outbox.Writer
 	audit          AuditLogger
 	log            *zap.Logger
 }
 
 // NewWithdrawalService constructs a WithdrawalService.
+// kycGate enforces identity-verification requirements before any payout is
+// created. Pass NoopKYCGate{} in tests or environments where enforcement is
+// intentionally disabled.
 func NewWithdrawalService(
 	withdrawalRepo repository.WithdrawalRequestRepository,
 	paramRepo repository.SystemParamRepository,
+	kycGate KYCGate,
 	outboxWriter outbox.Writer,
 	audit AuditLogger,
 	log *zap.Logger,
@@ -58,6 +63,7 @@ func NewWithdrawalService(
 	return &withdrawalService{
 		withdrawalRepo: withdrawalRepo,
 		paramRepo:      paramRepo,
+		kycGate:        kycGate,
 		outboxWriter:   outboxWriter,
 		audit:          audit,
 		log:            log,
@@ -65,6 +71,10 @@ func NewWithdrawalService(
 }
 
 func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int, currency string, method domain.WithdrawalMethod, payoutDetails map[string]string) (*domain.WithdrawalRequest, error) {
+	if err := s.kycGate.CheckWithdrawal(ctx, userID, amountCents); err != nil {
+		return nil, err
+	}
+
 	minCents, maxCents, err := s.withdrawalLimits(ctx)
 	if err != nil {
 		return nil, err

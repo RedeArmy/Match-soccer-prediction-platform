@@ -802,6 +802,64 @@ type WithdrawalRequestRepository interface {
 	MarkProcessedAndCommit(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
 }
 
+// KYCProfileRepository manages the identity-verification profile for each user.
+// One profile row exists per user; it is upserted in place on resubmission.
+// The full status-transition history is captured separately in KYCEventRepository.
+type KYCProfileRepository interface {
+	// Upsert creates the profile for a user if none exists, or updates the
+	// identity fields and resets status to pending on resubmission.
+	// profile.ID is populated on insert; UpdatedAt is set to now() by the DB.
+	Upsert(ctx context.Context, profile *domain.KYCProfile) error
+	// GetByUserID returns the profile for userID, or nil when none exists.
+	GetByUserID(ctx context.Context, userID int) (*domain.KYCProfile, error)
+	// GetByID returns the profile by primary key, or nil when not found.
+	GetByID(ctx context.Context, id int) (*domain.KYCProfile, error)
+	// UpdateStatus transitions the profile's status and records review metadata.
+	// reviewedBy may be 0 (stored as NULL) for system-initiated transitions.
+	// Returns apperrors.NotFound when the profile does not exist.
+	UpdateStatus(ctx context.Context, profileID int, newStatus domain.KYCStatus, reviewedBy int, rejectionReason string) error
+	// UpdateTier atomically updates tier on kyc_profiles and kyc_tier on users.
+	// Both columns must stay in sync; this method is the only write path for tier changes.
+	UpdateTier(ctx context.Context, userID int, tier domain.KYCTier) error
+	// SetFrozen sets or clears the balance-freeze columns for a profile.
+	// When frozen=false amountCents and reason are ignored; both are cleared.
+	SetFrozen(ctx context.Context, userID int, frozen bool, amountCents int, reason string) error
+	// ListPending returns profiles in the pending, under_review, or escalated
+	// state, ordered by submitted_at ASC (oldest first), with pagination.
+	ListPending(ctx context.Context, f KYCProfileFilters, p Pagination) ([]*domain.KYCProfile, error)
+	// ListFrozen returns profiles where balance_frozen = true, ordered by updated_at ASC.
+	ListFrozen(ctx context.Context) ([]*domain.FrozenBalanceSummary, error)
+	// ListDueForReview returns profiles whose next_review_at is before threshold
+	// and whose status is approved. Used by the scheduler to trigger re-verification reminders.
+	ListDueForReview(ctx context.Context, threshold time.Time) ([]*domain.KYCProfile, error)
+}
+
+// KYCDocumentRepository manages uploaded identity documents attached to KYC/KYB profiles.
+// Binary content is stored in the FileStore; this repository manages metadata only.
+type KYCDocumentRepository interface {
+	// Create inserts a new document metadata row.
+	// doc.ID is populated on success.
+	Create(ctx context.Context, doc *domain.KYCDocument) error
+	// GetByID returns the document by primary key, or nil when not found.
+	GetByID(ctx context.Context, id int64) (*domain.KYCDocument, error)
+	// ListByProfile returns all documents for a profile, ordered by uploaded_at DESC.
+	ListByProfile(ctx context.Context, profileID int, profileType domain.KYCProfileType) ([]*domain.KYCDocument, error)
+	// MarkVerified sets verified=true, verified_at=now(), and verified_by=adminID
+	// for the given document. Returns apperrors.NotFound when the document does not exist.
+	MarkVerified(ctx context.Context, docID int64, adminID int) error
+}
+
+// KYCEventRepository provides append-only access to the kyc_events audit table.
+// Rows are immutable once inserted; no UPDATE or DELETE is ever issued.
+type KYCEventRepository interface {
+	// Create inserts one immutable event record.
+	// event.ID and event.CreatedAt are populated by the database on INSERT.
+	Create(ctx context.Context, event *domain.KYCEvent) error
+	// ListByProfile returns events for a profile ordered by created_at ASC.
+	// The second return value is an opaque cursor for the next page; empty on the final page.
+	ListByProfile(ctx context.Context, profileID int, profileType domain.KYCProfileType, p CursorPage) ([]*domain.KYCEvent, string, error)
+}
+
 // PaymentIntentRepository manages server-generated payment intent records used
 // as opaque PayPal custom_id values.  The single-use token prevents a user
 // from substituting another user's ID in the PayPal order metadata.

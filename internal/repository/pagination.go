@@ -81,6 +81,12 @@ type PredictionAdminFilters struct {
 	QuinielaID *int
 }
 
+// KYCProfileFilters narrows a kyc_profiles query for admin listing.
+type KYCProfileFilters struct {
+	Status *domain.KYCStatus // nil = all active review states
+	Tier   *domain.KYCTier
+}
+
 // CursorPage carries parameters for keyset-based (cursor) listing.
 //
 // Keyset pagination eliminates the O(OFFSET) full-table scan of LIMIT/OFFSET

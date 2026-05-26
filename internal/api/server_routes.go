@@ -335,7 +335,17 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 			r.Get("/", h.withdrawal.ListMine)
 		})
 
-		r.Route("/notifications", func(r chi.Router) {
+		r.Route("/kyc", func(r chi.Router) {
+				r.Use(middleware.RequestBodyLimit(bodySizeLimit))
+				r.Use(middleware.ResolveUser(repos.user, s.log))
+				r.Get("/status", h.kyc.GetStatus)
+				r.Post("/submit", h.kyc.Submit)
+				r.Get("/requirements", h.kyc.GetRequirements)
+				r.Get("/documents", h.kyc.ListDocuments)
+				r.Get("/events", h.kyc.ListEvents)
+			})
+
+			r.Route("/notifications", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Get("/", h.notification.GetInbox)
@@ -392,6 +402,19 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 			r.Post("/withdrawals/{id}/approve", h.withdrawal.AdminApprove)
 			r.Post("/withdrawals/{id}/reject", h.withdrawal.AdminReject)
 			r.Post("/withdrawals/{id}/process", h.withdrawal.AdminProcess)
+
+			// KYC review
+			r.Get("/kyc/queue", h.adminKYC.ListQueue)
+			r.Get("/kyc/profiles/{profileID}", h.adminKYC.GetProfile)
+			r.Get("/kyc/profiles/{profileID}/documents", h.adminKYC.ListDocumentsForProfile)
+			r.Get("/kyc/profiles/{profileID}/events", h.adminKYC.ListProfileEvents)
+			r.Post("/kyc/profiles/{profileID}/approve", h.adminKYC.Approve)
+			r.Post("/kyc/profiles/{profileID}/reject", h.adminKYC.Reject)
+			r.Post("/kyc/profiles/{profileID}/escalate", h.adminKYC.Escalate)
+			r.Post("/kyc/profiles/{profileID}/request-doc", h.adminKYC.RequestDocument)
+			r.Post("/kyc/documents/{docID}/verify", h.adminKYC.VerifyDocument)
+			r.Get("/kyc/frozen-balances", h.adminKYC.ListFrozenBalances)
+			r.Post("/kyc/users/{userID}/release-freeze", h.adminKYC.ReleaseFrozenBalance)
 
 			// Leaderboard & Predictions
 			r.Get("/leaderboard", h.adminLeaderboard.GlobalLeaderboard)

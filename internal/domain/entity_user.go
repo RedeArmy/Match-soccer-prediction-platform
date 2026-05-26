@@ -23,8 +23,9 @@ type User struct {
 	BannedAt      *time.Time
 	BannedBy      *int
 	BanReason     string
-	BalanceCents  int // spendable funds in minor currency units; never negative
-	ReservedCents int // funds locked for pending withdrawal requests
+	BalanceCents  int     // spendable funds in minor currency units; never negative
+	ReservedCents int     // funds locked for pending withdrawal requests
+	KYCTier       KYCTier // denormalised from kyc_profiles.tier; updated by KYCService
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	DeletedAt     *time.Time // nil for active users; set when the record is soft-deleted

@@ -37,20 +37,24 @@ type BankTransferService interface {
 
 type bankTransferService struct {
 	proofRepo    repository.BankTransferProofRepository
+	kycGate      KYCGate
 	outboxWriter outbox.Writer
 	audit        AuditLogger
 	log          *zap.Logger
 }
 
 // NewBankTransferService constructs a BankTransferService.
+// kycGate enforces deposit tier-limits; pass NoopKYCGate{} in tests.
 func NewBankTransferService(
 	proofRepo repository.BankTransferProofRepository,
+	kycGate KYCGate,
 	outboxWriter outbox.Writer,
 	audit AuditLogger,
 	log *zap.Logger,
 ) BankTransferService {
 	return &bankTransferService{
 		proofRepo:    proofRepo,
+		kycGate:      kycGate,
 		outboxWriter: outboxWriter,
 		audit:        audit,
 		log:          log,
@@ -58,6 +62,9 @@ func NewBankTransferService(
 }
 
 func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents int, currency, storageKey, contentType string, fileSize int) (*domain.BankTransferProof, error) {
+	if err := s.kycGate.CheckDeposit(ctx, userID, amountCents); err != nil {
+		return nil, err
+	}
 	if amountCents <= 0 {
 		return nil, apperrors.Validation("amount_cents must be positive")
 	}
