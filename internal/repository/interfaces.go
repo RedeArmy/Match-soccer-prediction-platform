@@ -820,7 +820,8 @@ type KYCProfileRepository interface {
 	UpdateStatus(ctx context.Context, profileID int, newStatus domain.KYCStatus, reviewedBy int, rejectionReason string) error
 	// UpdateTier atomically updates tier on kyc_profiles and kyc_tier on users.
 	// Both columns must stay in sync; this method is the only write path for tier changes.
-	UpdateTier(ctx context.Context, userID int, tier domain.KYCTier) error
+	// nextReviewAt, when non-nil, sets the next mandatory re-verification date on kyc_profiles.
+	UpdateTier(ctx context.Context, userID int, tier domain.KYCTier, nextReviewAt *time.Time) error
 	// SetFrozen sets or clears the balance-freeze columns for a profile.
 	// When frozen=false amountCents and reason are ignored; both are cleared.
 	SetFrozen(ctx context.Context, userID int, frozen bool, amountCents int, reason string) error

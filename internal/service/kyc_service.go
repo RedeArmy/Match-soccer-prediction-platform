@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
@@ -92,19 +93,24 @@ type KYCService interface {
 	ReleaseFrozenBalance(ctx context.Context, userID, adminID int) error
 
 	// ── Internal ──────────────────────────────────────────────────────────
-	// FreezeBalance is called by payment services when a large prize credit
-	// triggers the win-freeze threshold for a Tier 0 or Tier 1 user.
+	// FreezeBalance is called by payment services when a prize credit for a
+	// Tier 0 or Tier 1 user must be held in escrow pending KYC approval.
 	FreezeBalance(ctx context.Context, userID, prizeCents int, reason string) error
+	// ListDueForReview returns approved profiles whose next_review_at is in the
+	// past, using time.Now() as the threshold. The scheduler calls this daily to
+	// trigger re-verification reminder notifications.
+	ListDueForReview(ctx context.Context) ([]*domain.KYCProfile, error)
 }
 
 // ── Implementation ────────────────────────────────────────────────────────────
 
 type kycService struct {
-	profileRepo  repository.KYCProfileRepository
-	docRepo      repository.KYCDocumentRepository
-	eventRepo    repository.KYCEventRepository
-	audit        AuditLogger
-	log          *zap.Logger
+	profileRepo repository.KYCProfileRepository
+	docRepo     repository.KYCDocumentRepository
+	eventRepo   repository.KYCEventRepository
+	params      SystemParamService
+	audit       AuditLogger
+	log         *zap.Logger
 }
 
 // NewKYCService constructs a KYCService.
@@ -112,6 +118,7 @@ func NewKYCService(
 	profileRepo repository.KYCProfileRepository,
 	docRepo repository.KYCDocumentRepository,
 	eventRepo repository.KYCEventRepository,
+	params SystemParamService,
 	audit AuditLogger,
 	log *zap.Logger,
 ) KYCService {
@@ -119,6 +126,7 @@ func NewKYCService(
 		profileRepo: profileRepo,
 		docRepo:     docRepo,
 		eventRepo:   eventRepo,
+		params:      params,
 		audit:       audit,
 		log:         log,
 	}
@@ -203,6 +211,13 @@ func (s *kycService) UploadDocument(ctx context.Context, userID int, req UploadD
 	}
 	if req.FileSize <= 0 {
 		return nil, apperrors.Validation("file_size must be positive")
+	}
+	maxBytes := s.params.GetInt(ctx, domain.ParamKeyKYCMaxDocUploadBytes, domain.DefaultKYCMaxDocUploadBytes)
+	if req.FileSize > maxBytes {
+		return nil, apperrors.Validation(fmt.Sprintf(
+			"document size (%d bytes) exceeds the maximum allowed (%d bytes)",
+			req.FileSize, maxBytes,
+		))
 	}
 	doc := &domain.KYCDocument{
 		ProfileID:    req.ProfileID,
@@ -299,7 +314,9 @@ func (s *kycService) Approve(ctx context.Context, profileID, adminID int, tier d
 	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusApproved, adminID, ""); err != nil {
 		return err
 	}
-	if err := s.profileRepo.UpdateTier(ctx, profile.UserID, tier); err != nil {
+	intervalDays := s.params.GetInt(ctx, domain.ParamKeyKYCReviewIntervalDays, domain.DefaultKYCReviewIntervalDays)
+	nextReview := time.Now().AddDate(0, 0, intervalDays)
+	if err := s.profileRepo.UpdateTier(ctx, profile.UserID, tier, &nextReview); err != nil {
 		return err
 	}
 	s.appendEvent(ctx, &domain.KYCEvent{
@@ -491,6 +508,10 @@ func traceIDFromCtx(ctx context.Context) string {
 		return ""
 	}
 	return sc.TraceID().String()
+}
+
+func (s *kycService) ListDueForReview(ctx context.Context) ([]*domain.KYCProfile, error) {
+	return s.profileRepo.ListDueForReview(ctx, time.Now())
 }
 
 var _ KYCService = (*kycService)(nil)

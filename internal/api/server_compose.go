@@ -300,7 +300,7 @@ func (s *Server) buildHandlers(
 	kycProfileRepo := repository.NewPostgresKYCProfileRepository(s.db)
 	kycDocRepo := repository.NewPostgresKYCDocumentRepository(s.db)
 	kycEventRepo := repository.NewPostgresKYCEventRepository(s.db)
-	kycSvc := service.NewKYCService(kycProfileRepo, kycDocRepo, kycEventRepo, auditSvc, s.log)
+	kycSvc := service.NewKYCService(kycProfileRepo, kycDocRepo, kycEventRepo, paramSvcWithAudit, auditSvc, s.log)
 	h.kyc = handler.NewKYCHandler(kycSvc, s.log)
 	h.adminKYC = handler.NewAdminKYCHandler(kycSvc, s.log)
 

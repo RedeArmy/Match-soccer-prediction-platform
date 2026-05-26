@@ -96,6 +96,14 @@ func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents in
 		"file_size":    fileSize,
 	})
 
+	if exceeds, _ := s.kycGate.ExceedsAMLThreshold(ctx, amountCents); exceeds {
+		s.audit.Log(ctx, &userID, nil, domain.AuditActionAMLFlagged, &resType, &proofID, map[string]any{
+			"amount_cents": amountCents,
+			"currency":     proof.Currency,
+			"operation":    "deposit",
+		})
+	}
+
 	s.writeOutbox(ctx, notification.EventAdminBankTransferPending,
 		"bank_transfer_proof", strconv.FormatInt(proof.ID, 10),
 		notification.AdminBankTransferPayload{

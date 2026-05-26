@@ -16,21 +16,29 @@ import (
 // user's current tier does not permit the requested operation. The caller
 // should surface this as HTTP 403 with the reason embedded in the response.
 //
-// CheckWinFreeze evaluates whether a large prize credit should be held in
-// escrow pending KYC completion. The caller (prize-credit path) is responsible
+// CheckWinFreeze evaluates whether a prize credit should be held in escrow
+// pending KYC completion. The caller (prize-credit path) is responsible
 // for calling KYCService.FreezeBalance when this returns shouldFreeze=true.
+//
+// ExceedsAMLThreshold is a non-blocking check: it returns true when the
+// amount meets or exceeds the Guatemalan UAF mandatory reporting threshold.
+// The caller must record an AML audit event but must not reject the transaction.
 type KYCGate interface {
 	// CheckWithdrawal returns nil when userID may withdraw amountCents.
 	// Returns apperrors.Forbidden with an explanation when blocked by KYC tier.
 	CheckWithdrawal(ctx context.Context, userID, amountCents int) error
 	// CheckDeposit returns nil when userID may receive a deposit of amountCents.
-	// Tier 0 users are blocked entirely; higher tiers have per-request caps.
+	// Tier 0 and Tier 1 share the Tier-1 per-transaction cap; higher tiers have
+	// their own caps; Tier 3 is unlimited. No tier is fully blocked from depositing.
 	CheckDeposit(ctx context.Context, userID, amountCents int) error
 	// CheckWinFreeze reports whether a prize credit should be frozen.
-	// Returns (true, reason, nil) when the prize exceeds the freeze threshold
-	// and the user is below the required tier. Returns (false, "", nil) when
-	// the prize can be credited freely.
+	// Returns (true, reason, nil) for any prize amount when the user is below
+	// Tier 2. Returns (false, "", nil) when the prize can be credited freely.
 	CheckWinFreeze(ctx context.Context, userID, prizeCents int) (bool, string, error)
+	// ExceedsAMLThreshold returns true when amountCents meets or exceeds the
+	// kyc.aml_threshold_cents system parameter (default Q25,000). The caller
+	// must write an audit event; the transaction itself is never blocked.
+	ExceedsAMLThreshold(ctx context.Context, amountCents int) (bool, error)
 }
 
 // kycGate is the production implementation of KYCGate.
@@ -155,6 +163,11 @@ func (g *kycGate) intParam(ctx context.Context, key string, defaultVal int) int 
 		return defaultVal
 	}
 	return v
+}
+
+func (g *kycGate) ExceedsAMLThreshold(ctx context.Context, amountCents int) (bool, error) {
+	threshold := g.intParam(ctx, domain.ParamKeyKYCAMLThresholdCents, domain.DefaultKYCAMLThresholdCents)
+	return amountCents >= threshold, nil
 }
 
 var _ KYCGate = (*kycGate)(nil)

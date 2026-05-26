@@ -117,16 +117,17 @@ func (r *PostgresKYCProfileRepository) UpdateStatus(ctx context.Context, profile
 }
 
 // UpdateTier atomically updates tier on kyc_profiles and kyc_tier on users.
-func (r *PostgresKYCProfileRepository) UpdateTier(ctx context.Context, userID int, tier domain.KYCTier) error {
+func (r *PostgresKYCProfileRepository) UpdateTier(ctx context.Context, userID int, tier domain.KYCTier, nextReviewAt *time.Time) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 	return withTx(ctx, r.db, "KYCProfileRepository.UpdateTier", func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `
 			UPDATE kyc_profiles
-			   SET tier       = $2,
-			       updated_at = NOW()
+			   SET tier           = $2,
+			       next_review_at = COALESCE($3, next_review_at),
+			       updated_at     = NOW()
 			 WHERE user_id = $1
-		`, userID, int(tier))
+		`, userID, int(tier), nextReviewAt)
 		if err != nil {
 			return apperrors.Internal(err)
 		}

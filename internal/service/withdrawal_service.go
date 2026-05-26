@@ -108,6 +108,14 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 		"method":       string(method),
 	})
 
+	if exceeds, _ := s.kycGate.ExceedsAMLThreshold(ctx, amountCents); exceeds {
+		s.audit.Log(ctx, &userID, nil, domain.AuditActionAMLFlagged, &resType, &reqID, map[string]any{
+			"amount_cents": amountCents,
+			"currency":     currency,
+			"operation":    "withdrawal",
+		})
+	}
+
 	s.writeOutbox(ctx, notification.EventAdminWithdrawalPending,
 		"withdrawal_request", strconv.Itoa(req.ID),
 		notification.AdminWithdrawalPayload{
