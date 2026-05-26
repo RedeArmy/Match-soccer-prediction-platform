@@ -422,14 +422,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// Notification scheduler: prediction deadline reminders, admin digests,
 	// match result alerts, and stale-operation escalation.
 	tzName := params.GetString(ctx, domain.ParamKeyNotifySchedulerTimezone, domain.DefaultNotifySchedulerTimezone)
-	schedulerLoc, tzErr := time.LoadLocation(tzName)
-	if tzErr != nil {
-		log.Warn("notification scheduler: invalid timezone, falling back to UTC",
-			zap.String("timezone", tzName),
-			zap.Error(tzErr),
-		)
-		schedulerLoc = time.UTC
-	}
+	schedulerLoc := resolveSchedulerLocation(tzName, log)
 	schedulerStore := repository.NewPostgresSchedulerStore(db)
 	jobs := scheduler.NewJobs(scheduler.JobsConfig{
 		Store:  schedulerStore,
@@ -501,6 +494,21 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		dlqReplayWorker:       dlqReplayWorker,
 		notifScheduler:        notifScheduler,
 	}, log)
+}
+
+// resolveSchedulerLocation parses tzName into a *time.Location. When the name
+// is not recognised by the operating system's timezone database it logs a
+// warning and returns time.UTC so the scheduler remains operational.
+func resolveSchedulerLocation(tzName string, log *zap.Logger) *time.Location {
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		log.Warn("notification scheduler: invalid timezone, falling back to UTC",
+			zap.String("timezone", tzName),
+			zap.Error(err),
+		)
+		return time.UTC
+	}
+	return loc
 }
 
 // logOrFatal logs err at WARN level in development environments and at Fatal
