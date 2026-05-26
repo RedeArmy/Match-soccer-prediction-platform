@@ -1,0 +1,53 @@
+{
+  "name": "KYC Queue Overflow — Operations Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kyc-queue-overflow",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "kyc-qo-webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "kyc-queue-overflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    subject: `[OPS] KYC review queue overloaded — ${p.queue_depth} pending profiles`,\n    body: `The KYC review queue has exceeded the overflow threshold.\\n\\nCurrent queue depth: ${p.queue_depth}\\nThreshold: ${p.threshold}\\nOldest submission: ${p.oldest_submitted_at}\\nTrace ID: ${p.trace_id}\\n\\nPlease assign additional compliance reviewers or escalate to operations management.\\n\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/queue`\n  }\n}];"
+      },
+      "id": "kyc-qo-format",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$env.OPS_EMAIL}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "kyc-qo-email",
+      "name": "Send Ops Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Format Alert", "type": "main", "index": 0 }]]
+    },
+    "Format Alert": {
+      "main": [[{ "node": "Send Ops Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["kyc", "ops", "queue"]
+}
