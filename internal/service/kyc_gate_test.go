@@ -23,17 +23,17 @@ func (r *kycUserRepoStub) GetByID(_ context.Context, _ int) (*domain.User, error
 func (r *kycUserRepoStub) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
 	return nil, nil
 }
-func (r *kycUserRepoStub) Create(_ context.Context, _ *domain.User) error         { return nil }
-func (r *kycUserRepoStub) Update(_ context.Context, _ *domain.User) error         { return nil }
-func (r *kycUserRepoStub) Delete(_ context.Context, _ int) error                  { return nil }
-func (r *kycUserRepoStub) List(_ context.Context) ([]*domain.User, error)         { return nil, nil }
+func (r *kycUserRepoStub) Create(_ context.Context, _ *domain.User) error { return nil }
+func (r *kycUserRepoStub) Update(_ context.Context, _ *domain.User) error { return nil }
+func (r *kycUserRepoStub) Delete(_ context.Context, _ int) error          { return nil }
+func (r *kycUserRepoStub) List(_ context.Context) ([]*domain.User, error) { return nil, nil }
 func (r *kycUserRepoStub) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
 	return nil, nil
 }
 func (r *kycUserRepoStub) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
 	return nil, nil
 }
-func (r *kycUserRepoStub) Unban(_ context.Context, _ int) error       { return nil }
+func (r *kycUserRepoStub) Unban(_ context.Context, _ int) error                 { return nil }
 func (r *kycUserRepoStub) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }
 func (r *kycUserRepoStub) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.CursorPage) ([]*domain.User, string, error) {
 	return nil, "", nil

@@ -336,16 +336,16 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		})
 
 		r.Route("/kyc", func(r chi.Router) {
-				r.Use(middleware.RequestBodyLimit(bodySizeLimit))
-				r.Use(middleware.ResolveUser(repos.user, s.log))
-				r.Get("/status", h.kyc.GetStatus)
-				r.Post("/submit", h.kyc.Submit)
-				r.Get("/requirements", h.kyc.GetRequirements)
-				r.Get("/documents", h.kyc.ListDocuments)
-				r.Get("/events", h.kyc.ListEvents)
-			})
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
+			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Get("/status", h.kyc.GetStatus)
+			r.Post("/submit", h.kyc.Submit)
+			r.Get("/requirements", h.kyc.GetRequirements)
+			r.Get("/documents", h.kyc.ListDocuments)
+			r.Get("/events", h.kyc.ListEvents)
+		})
 
-			r.Route("/notifications", func(r chi.Router) {
+		r.Route("/notifications", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
 			r.Get("/", h.notification.GetInbox)
