@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -106,8 +105,3 @@ func kycTraceID(ctx context.Context) string {
 	}
 	return sc.TraceID().String()
 }
-
-// ── Freeze-at-creation timestamp helper ──────────────────────────────────────
-
-// prizeTimestamp returns the current UTC time, extracted for testability.
-var prizeTimestamp = func() time.Time { return time.Now().UTC() }

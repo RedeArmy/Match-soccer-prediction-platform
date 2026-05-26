@@ -211,6 +211,7 @@ func (h *KYCHandler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxUploadBytes)
 	if err := r.ParseMultipartForm(h.maxUploadBytes); err != nil {
 		writeError(w, r, h.log, apperrors.RequestBodyTooLarge())
 		return

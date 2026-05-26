@@ -54,6 +54,7 @@ type submitKYBRequest struct {
 	UBODocumentNumber  string `json:"ubo_document_number"`
 }
 
+// Submit handles POST /api/v1/kyb/submit.
 func (h *KYBHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {
@@ -159,11 +160,11 @@ func (h *AdminKYBHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
 }
 
-// Reject handles POST /api/v1/admin/kyb/profiles/{id}/reject.
 type rejectKYBRequest struct {
 	Reason string `json:"reason"`
 }
 
+// Reject handles POST /api/v1/admin/kyb/profiles/{id}/reject.
 func (h *AdminKYBHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {

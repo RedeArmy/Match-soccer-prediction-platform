@@ -162,26 +162,60 @@ func (s *kycService) GetProfile(ctx context.Context, userID int) (*domain.KYCPro
 	return s.profileRepo.GetByUserID(ctx, userID)
 }
 
-func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCRequest) (*domain.KYCProfile, error) {
+func validateSubmitRequest(req SubmitKYCRequest) error {
 	if req.FullName == "" {
-		return nil, apperrors.Validation("full_name is required")
+		return apperrors.Validation("full_name is required")
 	}
 	if req.DocumentType == "" {
-		return nil, apperrors.Validation("document_type is required")
+		return apperrors.Validation("document_type is required")
 	}
 	if req.DocumentNumber == "" {
-		return nil, apperrors.Validation("document_number is required")
+		return apperrors.Validation("document_number is required")
+	}
+	return nil
+}
+
+func checkSubmitConflicts(existing *domain.KYCProfile) error {
+	if existing == nil {
+		return nil
+	}
+	if existing.Status == domain.KYCStatusPending {
+		return apperrors.Conflict("a KYC submission is already pending review")
+	}
+	if existing.Status == domain.KYCStatusUnderReview {
+		return apperrors.Conflict("your KYC profile is currently under review")
+	}
+	return nil
+}
+
+func (s *kycService) checkDeviceFraud(ctx context.Context, fingerprint string, userID int) error {
+	if fingerprint == "" {
+		return nil
+	}
+	devCount, err := s.profileRepo.CountAccountsByDeviceFingerprint(ctx, fingerprint, userID)
+	if err != nil {
+		return err
+	}
+	if devCount > 0 {
+		if s.metrics != nil {
+			s.metrics.RecordFraudFlag(ctx, "device_fingerprint_collision")
+		}
+		return apperrors.Conflict("this device is already associated with another verified account")
+	}
+	return nil
+}
+
+func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCRequest) (*domain.KYCProfile, error) {
+	if err := validateSubmitRequest(req); err != nil {
+		return nil, err
 	}
 
 	existing, err := s.profileRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil && existing.Status == domain.KYCStatusPending {
-		return nil, apperrors.Conflict("a KYC submission is already pending review")
-	}
-	if existing != nil && existing.Status == domain.KYCStatusUnderReview {
-		return nil, apperrors.Conflict("your KYC profile is currently under review")
+	if err := checkSubmitConflicts(existing); err != nil {
+		return nil, err
 	}
 
 	dupExists, err := s.profileRepo.ExistsByDocumentIdentity(ctx, req.DocumentType, req.DocumentNumber, req.DateOfBirth, userID)
@@ -195,17 +229,8 @@ func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCReques
 		return nil, apperrors.Conflict("this identity document is already associated with another account")
 	}
 
-	if req.DeviceFingerprint != "" {
-		devCount, err := s.profileRepo.CountAccountsByDeviceFingerprint(ctx, req.DeviceFingerprint, userID)
-		if err != nil {
-			return nil, err
-		}
-		if devCount > 0 {
-			if s.metrics != nil {
-				s.metrics.RecordFraudFlag(ctx, "device_fingerprint_collision")
-			}
-			return nil, apperrors.Conflict("this device is already associated with another verified account")
-		}
+	if err := s.checkDeviceFraud(ctx, req.DeviceFingerprint, userID); err != nil {
+		return nil, err
 	}
 
 	now := time.Now()

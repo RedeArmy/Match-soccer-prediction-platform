@@ -1,7 +1,7 @@
-// Package kyc defines the KYCProvider abstraction for identity verification
+// Package kyc defines the Provider interface for identity verification
 // and the ManualReviewAdapter that satisfies it using in-system admin review.
 //
-// KYCProvider is the seam between the compliance service layer and any
+// Provider is the seam between the compliance service layer and any
 // external identity-verification vendor (e.g. Veriff, Jumio, Persona).
 // All production code depends on the interface, never on a concrete vendor
 // SDK, so providers can be swapped or multi-vendored without touching
@@ -48,9 +48,9 @@ type VerificationResult struct {
 	ProviderRef string
 }
 
-// KYCProvider is the interface satisfied by any identity-verification backend.
+// Provider is the interface satisfied by any identity-verification backend.
 // Implementations must be safe for concurrent use by multiple goroutines.
-type KYCProvider interface {
+type Provider interface {
 	// Submit sends a verification request to the provider.
 	// Returns a provider-specific session/reference ID that can be used to
 	// poll for results or to correlate webhook callbacks.
@@ -65,7 +65,7 @@ type KYCProvider interface {
 	Name() string
 }
 
-// ManualReviewAdapter satisfies KYCProvider using in-system admin review.
+// ManualReviewAdapter satisfies Provider using in-system admin review.
 // It is the default provider: Submit records the session ID as the profile ID
 // and GetResult reads the latest profile status from the service layer via
 // the injected status reader.
@@ -109,5 +109,5 @@ func (a *ManualReviewAdapter) GetResult(_ context.Context, _ string) (*Verificat
 // Name identifies the adapter in logs and metrics.
 func (a *ManualReviewAdapter) Name() string { return "manual_review" }
 
-// Compile-time assertion: ManualReviewAdapter implements KYCProvider.
-var _ KYCProvider = (*ManualReviewAdapter)(nil)
+// Compile-time assertion: ManualReviewAdapter implements Provider.
+var _ Provider = (*ManualReviewAdapter)(nil)
