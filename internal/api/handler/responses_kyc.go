@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
@@ -184,6 +186,31 @@ func kycRequirementsToResponse(req *service.KYCRequirements) KYCRequirementsResp
 	return r
 }
 
+// KYCRiskDashboardResponse is returned by GET /api/v1/admin/kyc/risk-dashboard.
+type KYCRiskDashboardResponse struct {
+	QueueDepth              int64            `json:"queue_depth"`
+	AvgReviewTimeSecs       float64          `json:"avg_review_time_secs"`
+	TierDistribution        map[string]int64 `json:"tier_distribution"`
+	FrozenBalanceTotalCents int64            `json:"frozen_balance_total_cents"`
+	PEPFlagCount            int64            `json:"pep_flag_count"`
+	SanctionsFlagCount      int64            `json:"sanctions_flag_count"`
+}
+
+func riskDashboardToResponse(s *domain.KYCRiskDashboardStats) KYCRiskDashboardResponse {
+	tierDist := make(map[string]int64, len(s.TierDistribution))
+	for tier, cnt := range s.TierDistribution {
+		tierDist[fmt.Sprintf("%d", int(tier))] = cnt
+	}
+	return KYCRiskDashboardResponse{
+		QueueDepth:              s.QueueDepth,
+		AvgReviewTimeSecs:       s.AvgReviewTimeSecs,
+		TierDistribution:        tierDist,
+		FrozenBalanceTotalCents: s.FrozenBalanceTotalCents,
+		PEPFlagCount:            s.PEPFlagCount,
+		SanctionsFlagCount:      s.SanctionsFlagCount,
+	}
+}
+
 func frozenBalanceToResponse(s *domain.FrozenBalanceSummary) FrozenBalanceResponse {
 	return FrozenBalanceResponse{
 		UserID:            s.UserID,
@@ -195,4 +222,55 @@ func frozenBalanceToResponse(s *domain.FrozenBalanceSummary) FrozenBalanceRespon
 		FrozenReason:      s.FrozenReason,
 		FrozenSince:       s.FrozenSince.Format(timeFormat),
 	}
+}
+
+// KYBProfileResponse is returned by KYB status and admin endpoints.
+type KYBProfileResponse struct {
+	ID                 int     `json:"id"`
+	UserID             int     `json:"user_id"`
+	Status             string  `json:"status"`
+	Tier               int     `json:"tier"`
+	LegalName          string  `json:"legal_name"`
+	TaxID              string  `json:"tax_id"`
+	RegistrationNumber string  `json:"registration_number,omitempty"`
+	Jurisdiction       string  `json:"jurisdiction"`
+	IncorporationDate  *string `json:"incorporation_date,omitempty"`
+	UBOName            string  `json:"ubo_name"`
+	UBODocumentNumber  string  `json:"ubo_document_number,omitempty"`
+	SubmittedAt        *string `json:"submitted_at,omitempty"`
+	ReviewedAt         *string `json:"reviewed_at,omitempty"`
+	RejectionReason    string  `json:"rejection_reason,omitempty"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
+}
+
+func kybProfileToResponse(p *domain.KYBProfile) KYBProfileResponse {
+	r := KYBProfileResponse{
+		ID:                 p.ID,
+		UserID:             p.UserID,
+		Status:             string(p.Status),
+		Tier:               int(p.Tier),
+		LegalName:          p.LegalName,
+		TaxID:              p.TaxID,
+		RegistrationNumber: p.RegistrationNumber,
+		Jurisdiction:       p.Jurisdiction,
+		UBOName:            p.UBOName,
+		UBODocumentNumber:  p.UBODocumentNumber,
+		RejectionReason:    p.RejectionReason,
+		CreatedAt:          p.CreatedAt.Format(timeFormat),
+		UpdatedAt:          p.UpdatedAt.Format(timeFormat),
+	}
+	if p.IncorporationDate != nil {
+		s := p.IncorporationDate.Format("2006-01-02")
+		r.IncorporationDate = &s
+	}
+	if p.SubmittedAt != nil {
+		s := p.SubmittedAt.Format(timeFormat)
+		r.SubmittedAt = &s
+	}
+	if p.ReviewedAt != nil {
+		s := p.ReviewedAt.Format(timeFormat)
+		r.ReviewedAt = &s
+	}
+	return r
 }

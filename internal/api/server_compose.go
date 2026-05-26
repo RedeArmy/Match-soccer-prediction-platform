@@ -67,6 +67,8 @@ type appHandlers struct {
 	adminN8n           *handler.AdminN8nHandler
 	kyc                *handler.KYCHandler
 	adminKYC           *handler.AdminKYCHandler
+	kyb                *handler.KYBHandler
+	adminKYB           *handler.AdminKYBHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -231,7 +233,15 @@ func (s *Server) buildHandlers(
 
 	balanceSvc := service.NewBalanceService(repos.user, ledgerRepo, s.log)
 	kycGate := service.NewKYCGate(repos.user, paramSvcWithAudit)
+	if sl, ok := kycGate.(interface {
+		SetLedger(repository.BalanceLedgerRepository)
+	}); ok {
+		sl.SetLedger(ledgerRepo)
+	}
 	bankTransferSvc := service.NewBankTransferService(proofRepo, kycGate, outboxWriter, auditSvc, s.log)
+	// prizeSvc is constructed after kycSvc (below). The variable is declared here
+	// so that any future handler needing prize credits can reference it.
+	var prizeSvc service.PrizeService
 	paymentIntentSvc := service.NewPaymentIntentService(intentRepo, params, s.log)
 	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, intentRepo, auditSvc, s.log)
 	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, kycGate, outboxWriter, auditSvc, s.log)
@@ -300,9 +310,34 @@ func (s *Server) buildHandlers(
 	kycProfileRepo := repository.NewPostgresKYCProfileRepository(s.db)
 	kycDocRepo := repository.NewPostgresKYCDocumentRepository(s.db)
 	kycEventRepo := repository.NewPostgresKYCEventRepository(s.db)
-	kycSvc := service.NewKYCService(kycProfileRepo, kycDocRepo, kycEventRepo, paramSvcWithAudit, auditSvc, s.log)
-	h.kyc = handler.NewKYCHandler(kycSvc, s.log)
+	kycMaxUpload := int64(params.GetInt(ctx, domain.ParamKeyKYCMaxDocUploadBytes, domain.DefaultKYCMaxDocUploadBytes))
+	kycMetrics, err := service.RegisterKYCMetrics(otel.GetMeterProvider().Meter("wcq"), kycProfileRepo, kycProfileRepo)
+	if err != nil {
+		s.log.Warn("KYC OTel metrics registration failed", zap.Error(err))
+		kycMetrics = nil
+	}
+	// Inject metrics into kycGate (constructed earlier) via the optional interface.
+	if cg, ok := kycGate.(interface{ SetMetrics(*service.KYCMetrics) }); ok {
+		cg.SetMetrics(kycMetrics)
+	}
+	kycSvc := service.NewKYCService(kycProfileRepo, kycDocRepo, kycEventRepo, paramSvcWithAudit, auditSvc, s.log, kycMetrics)
+	if sc, ok := kycSvc.(interface{ SetCache(cache.Store) }); ok {
+		sc.SetCache(s.cache)
+	}
+	if sl, ok := kycSvc.(interface {
+		SetLedger(repository.BalanceLedgerRepository)
+	}); ok {
+		sl.SetLedger(ledgerRepo)
+	}
+	h.kyc = handler.NewKYCHandler(kycSvc, fileStore, kycMaxUpload, s.log)
 	h.adminKYC = handler.NewAdminKYCHandler(kycSvc, s.log)
+	prizeSvc = service.NewPrizeService(ledgerRepo, kycGate, kycSvc, s.notifier, s.log)
+	_ = prizeSvc // reserved for prize-disbursement callers; suppresses unused-variable error
+
+	kybRepo := repository.NewPostgresKYBRepository(s.db)
+	kybSvc := service.NewKYBService(kybRepo, kycEventRepo, auditSvc, nil, s.log)
+	h.kyb = handler.NewKYBHandler(kybSvc, s.log)
+	h.adminKYB = handler.NewAdminKYBHandler(kybSvc, s.log)
 
 	// Wire observability notifier into payment-path handlers. Each handler
 	// defines its own narrow interface so the import graph stays acyclic.

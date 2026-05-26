@@ -55,6 +55,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// Global middleware - applied to every request.
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
+	r.Use(middleware.StoreClientIP)
 	r.Use(middleware.Recover(s.log))
 	r.Use(middleware.RequestLogger(s.log))
 	r.Use(middleware.CORS(s.cfg.CORS.AllowedOrigins))
@@ -342,7 +343,15 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 			r.Post("/submit", h.kyc.Submit)
 			r.Get("/requirements", h.kyc.GetRequirements)
 			r.Get("/documents", h.kyc.ListDocuments)
+			r.Post("/documents", h.kyc.UploadDocument)
 			r.Get("/events", h.kyc.ListEvents)
+		})
+
+		r.Route("/kyb", func(r chi.Router) {
+			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
+			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Get("/status", h.kyb.GetStatus)
+			r.Post("/submit", h.kyb.Submit)
 		})
 
 		r.Route("/notifications", func(r chi.Router) {
@@ -404,6 +413,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 			r.Post("/withdrawals/{id}/process", h.withdrawal.AdminProcess)
 
 			// KYC review
+			r.Get("/kyc/risk-dashboard", h.adminKYC.RiskDashboard)
 			r.Get("/kyc/queue", h.adminKYC.ListQueue)
 			r.Get("/kyc/profiles/{profileID}", h.adminKYC.GetProfile)
 			r.Get("/kyc/profiles/{profileID}/documents", h.adminKYC.ListDocumentsForProfile)
@@ -415,6 +425,12 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 			r.Post("/kyc/documents/{docID}/verify", h.adminKYC.VerifyDocument)
 			r.Get("/kyc/frozen-balances", h.adminKYC.ListFrozenBalances)
 			r.Post("/kyc/users/{userID}/release-freeze", h.adminKYC.ReleaseFrozenBalance)
+
+			// KYB review
+			r.Get("/kyb/queue", h.adminKYB.ListQueue)
+			r.Get("/kyb/profiles/{id}", h.adminKYB.GetProfile)
+			r.Post("/kyb/profiles/{id}/approve", h.adminKYB.Approve)
+			r.Post("/kyb/profiles/{id}/reject", h.adminKYB.Reject)
 
 			// Leaderboard & Predictions
 			r.Get("/leaderboard", h.adminLeaderboard.GlobalLeaderboard)

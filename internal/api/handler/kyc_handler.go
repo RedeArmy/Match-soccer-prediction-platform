@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -8,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -16,13 +21,25 @@ import (
 
 // KYCHandler serves user-facing KYC endpoints.
 type KYCHandler struct {
-	svc service.KYCService
-	log *zap.Logger
+	svc            service.KYCService
+	fileStore      storage.FileStore
+	maxUploadBytes int64
+	log            *zap.Logger
 }
 
 // NewKYCHandler constructs a KYCHandler.
-func NewKYCHandler(svc service.KYCService, log *zap.Logger) *KYCHandler {
-	return &KYCHandler{svc: svc, log: log}
+// fileStore and maxUploadBytes are required for the document upload endpoint.
+// Pass maxUploadBytes = domain.DefaultKYCMaxDocUploadBytes when not configured at startup.
+func NewKYCHandler(svc service.KYCService, fileStore storage.FileStore, maxUploadBytes int64, log *zap.Logger) *KYCHandler {
+	if maxUploadBytes <= 0 {
+		maxUploadBytes = int64(domain.DefaultKYCMaxDocUploadBytes)
+	}
+	return &KYCHandler{
+		svc:            svc,
+		fileStore:      fileStore,
+		maxUploadBytes: maxUploadBytes,
+		log:            log,
+	}
 }
 
 // GetStatus handles GET /api/v1/kyc/status.
@@ -76,14 +93,15 @@ func (h *KYCHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	svcReq := service.SubmitKYCRequest{
-		FullName:       req.FullName,
-		Nationality:    req.Nationality,
-		DocumentType:   domain.KYCDocumentType(req.DocumentType),
-		DocumentNumber: req.DocumentNumber,
-		AddressLine:    req.AddressLine,
-		City:           req.City,
-		Country:        req.Country,
-		PostalCode:     req.PostalCode,
+		FullName:          req.FullName,
+		Nationality:       req.Nationality,
+		DocumentType:      domain.KYCDocumentType(req.DocumentType),
+		DocumentNumber:    req.DocumentNumber,
+		AddressLine:       req.AddressLine,
+		City:              req.City,
+		Country:           req.Country,
+		PostalCode:        req.PostalCode,
+		DeviceFingerprint: r.Header.Get("X-Device-Fingerprint"),
 	}
 	if req.DateOfBirth != "" {
 		dob, err := time.Parse("2006-01-02", req.DateOfBirth)
@@ -168,4 +186,89 @@ func (h *KYCHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		resp = append(resp, kycEventToResponse(e))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": resp, "next_cursor": next})
+}
+
+// UploadDocument handles POST /api/v1/kyc/documents.
+// Accepts a multipart/form-data upload with fields:
+//
+//	document_type (string) — one of: gov_id, selfie, proof_of_address, proof_of_funds
+//	file          (binary) — the identity document image or PDF
+func (h *KYCHandler) UploadDocument(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	// Guard: the user must have submitted a KYC profile before uploading.
+	profile, err := h.svc.GetProfile(r.Context(), caller.ID)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if profile == nil {
+		writeError(w, r, h.log, apperrors.Forbidden("ERR_KYC_PROFILE_REQUIRED: submit a KYC profile before uploading documents"))
+		return
+	}
+
+	if err := r.ParseMultipartForm(h.maxUploadBytes); err != nil {
+		writeError(w, r, h.log, apperrors.RequestBodyTooLarge())
+		return
+	}
+
+	rawDocType := r.FormValue("document_type")
+	docType := domain.KYCDocumentType(rawDocType)
+	switch docType {
+	case domain.KYCDocGovID, domain.KYCDocSelfie, domain.KYCDocProofOfAddress, domain.KYCDocProofOfFunds:
+		// valid
+	default:
+		writeError(w, r, h.log, apperrors.Validation(
+			"document_type must be one of: gov_id, selfie, proof_of_address, proof_of_funds",
+		))
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, r, h.log, apperrors.Validation("file is required"))
+		return
+	}
+	defer func() { _ = file.Close() }()
+
+	contentType := header.Header.Get("Content-Type")
+	if !domain.KYCAllowedContentTypes[contentType] {
+		writeError(w, r, h.log, apperrors.Validation(
+			"unsupported file type; allowed: image/jpeg, image/png, image/webp, application/pdf",
+		))
+		return
+	}
+
+	ext := extensionForContentType(contentType)
+	storageKey := fmt.Sprintf("kyc/%d/%s%s", caller.ID, generateID(), ext)
+
+	// Compute SHA-256 while streaming to the FileStore — single pass, no temp buffer.
+	hasher := sha256.New()
+	tee := io.TeeReader(file, hasher)
+	if err := h.fileStore.Put(r.Context(), storageKey, contentType, tee, header.Size); err != nil {
+		writeError(w, r, h.log, apperrors.Internal(err))
+		return
+	}
+	fileHash := hex.EncodeToString(hasher.Sum(nil))
+
+	doc, err := h.svc.UploadDocument(r.Context(), caller.ID, service.UploadDocRequest{
+		ProfileID:    profile.ID,
+		ProfileType:  domain.KYCProfileTypeUser,
+		DocumentType: docType,
+		StorageKey:   storageKey,
+		ContentType:  contentType,
+		FileSize:     int(header.Size),
+		FileHash:     fileHash,
+	})
+	if err != nil {
+		_ = h.fileStore.Delete(r.Context(), storageKey) // best-effort cleanup
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, kycDocumentToResponse(doc))
 }

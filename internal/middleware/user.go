@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"net"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -64,4 +65,18 @@ func UserFromContext(ctx context.Context) (*domain.User, bool) {
 // real JWT validation or database lookups.
 func ContextWithUser(ctx context.Context, user *domain.User) context.Context {
 	return context.WithValue(ctx, contextKeyUser, user)
+}
+
+// StoreClientIP extracts the host portion of r.RemoteAddr (already normalised
+// by chi's RealIP middleware) and stores it via repository.ContextWithClientIP.
+// Must be placed after chimiddleware.RealIP in the middleware chain.
+func StoreClientIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr // already host-only (no port)
+		}
+		ctx := repository.ContextWithClientIP(r.Context(), host)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }

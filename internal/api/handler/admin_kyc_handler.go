@@ -298,3 +298,13 @@ func (h *AdminKYCHandler) ListProfileEvents(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": resp, "next_cursor": next})
 }
+
+// RiskDashboard handles GET /api/v1/admin/kyc/risk-dashboard.
+func (h *AdminKYCHandler) RiskDashboard(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.svc.GetRiskDashboard(r.Context())
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, riskDashboardToResponse(stats))
+}
