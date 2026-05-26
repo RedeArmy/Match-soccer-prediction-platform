@@ -656,7 +656,7 @@ func (s *kycService) GetRiskDashboard(ctx context.Context) (*domain.KYCRiskDashb
 		return nil, err
 	}
 	if s.cache != nil {
-		ttl := time.Duration(domain.DefaultKYCRiskDashboardCacheTTLSecs) * time.Second
+		ttl := time.Duration(s.params.GetInt(ctx, domain.ParamKeyKYCRiskDashboardCacheTTLSec, domain.DefaultKYCRiskDashboardCacheTTLSecs)) * time.Second
 		cacheSet(ctx, s.cache, domain.CacheKeyKYCRiskDashboard, stats, ttl, s.log)
 	}
 	return stats, nil

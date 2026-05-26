@@ -459,6 +459,7 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyKYCTier2DepositVelocityCents:    {100_000, 500_000_000}, // Q1 000 – Q5 000 000 /24 h
 	domain.ParamKeyKYCTier1WithdrawalVelocityCents: {0, 50_000_000},        // Q0 (blocked) – Q500 000 /24 h
 	domain.ParamKeyKYCTier2WithdrawalVelocityCents: {0, 500_000_000},       // Q0 (blocked) – Q5 000 000 /24 h
+	domain.ParamKeyKYCRiskDashboardCacheTTLSec:     {10, 3_600},            // 10 s – 1 h
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

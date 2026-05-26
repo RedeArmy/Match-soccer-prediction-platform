@@ -53,6 +53,10 @@ const (
 	// ParamKeyKYCMaxDocUploadBytes is the maximum size in bytes for a single
 	// KYC document upload. Enforced by KYCService.UploadDocument.
 	ParamKeyKYCMaxDocUploadBytes = "kyc.max_doc_upload_bytes"
+
+	// ParamKeyKYCRiskDashboardCacheTTLSec is the number of seconds the admin
+	// risk dashboard response is cached. Seeded by migration 000125.
+	ParamKeyKYCRiskDashboardCacheTTLSec = "kyc.risk_dashboard_cache_ttl_sec"
 )
 
 // KYC system_params default values — match the seeds in migration 000121 so
@@ -79,6 +83,7 @@ const (
 
 	// DefaultKYCRiskDashboardCacheTTLSecs is the number of seconds the risk
 	// dashboard response is cached. 60 seconds balances freshness against DB load.
+	// Matches the seed in migration 000125.
 	DefaultKYCRiskDashboardCacheTTLSecs = 60
 )
 
