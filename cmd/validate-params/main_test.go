@@ -452,17 +452,17 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyBreakerCacheMaxFails:    true,
 		domain.ParamKeyBreakerCacheCooldownSec: true,
 		// Added by migrations 000121 + 000125
-		domain.ParamKeyKYCTier1DepositLimitCents:      true,
-		domain.ParamKeyKYCTier2DepositLimitCents:      true,
-		domain.ParamKeyKYCTier2PayoutLimitCents:       true,
-		domain.ParamKeyKYCAMLThresholdCents:           true,
-		domain.ParamKeyKYCReviewIntervalDays:          true,
-		domain.ParamKeyKYCMaxDocUploadBytes:           true,
-		domain.ParamKeyKYCTier1DepositVelocityCents:  true,
-		domain.ParamKeyKYCTier2DepositVelocityCents:  true,
+		domain.ParamKeyKYCTier1DepositLimitCents:       true,
+		domain.ParamKeyKYCTier2DepositLimitCents:       true,
+		domain.ParamKeyKYCTier2PayoutLimitCents:        true,
+		domain.ParamKeyKYCAMLThresholdCents:            true,
+		domain.ParamKeyKYCReviewIntervalDays:           true,
+		domain.ParamKeyKYCMaxDocUploadBytes:            true,
+		domain.ParamKeyKYCTier1DepositVelocityCents:    true,
+		domain.ParamKeyKYCTier2DepositVelocityCents:    true,
 		domain.ParamKeyKYCTier1WithdrawalVelocityCents: true,
 		domain.ParamKeyKYCTier2WithdrawalVelocityCents: true,
-		domain.ParamKeyKYCRiskDashboardCacheTTLSec:    true,
+		domain.ParamKeyKYCRiskDashboardCacheTTLSec:     true,
 	}
 
 	for _, spec := range allParams {
