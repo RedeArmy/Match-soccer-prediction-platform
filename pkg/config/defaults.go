@@ -58,7 +58,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("logger.level", "info")
 	v.SetDefault("logger.encoding", "json")
 
-	v.SetDefault("cors.allowedOrigins", []string{"http://localhost:3000"})
+	// cors.allowedOrigins intentionally defaults to empty. An empty list means
+	// the rs/cors middleware rejects all cross-origin requests, which is the
+	// safe production default. Deployments must set WCQ_CORS_ALLOWEDORIGINS
+	// explicitly. Localhost origins are permitted in development only and are
+	// rejected by validateProductionConfig when environment != "development".
+	v.SetDefault("cors.allowedOrigins", []string{})
 
 	v.SetDefault("clerk.jwksUrl", "")
 	v.SetDefault("clerk.webhookSecret", "")
