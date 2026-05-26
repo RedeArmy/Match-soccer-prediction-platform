@@ -75,6 +75,7 @@ type approveKYCRequest struct {
 	Tier int `json:"tier"` // 1, 2, or 3
 }
 
+// Approve handles POST /api/v1/admin/kyc/profiles/{profileID}/approve.
 func (h *AdminKYCHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	admin, ok := middleware.UserFromContext(r.Context())
 	if !ok {
@@ -107,6 +108,7 @@ type rejectKYCRequest struct {
 	Reason string `json:"reason"`
 }
 
+// Reject handles POST /api/v1/admin/kyc/profiles/{profileID}/reject.
 func (h *AdminKYCHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	admin, ok := middleware.UserFromContext(r.Context())
 	if !ok {
@@ -135,6 +137,7 @@ type escalateKYCRequest struct {
 	Reason string `json:"reason"`
 }
 
+// Escalate handles POST /api/v1/admin/kyc/profiles/{profileID}/escalate.
 func (h *AdminKYCHandler) Escalate(w http.ResponseWriter, r *http.Request) {
 	admin, ok := middleware.UserFromContext(r.Context())
 	if !ok {
@@ -164,6 +167,7 @@ type requestDocKYCRequest struct {
 	Reason       string `json:"reason"`
 }
 
+// RequestDocument handles POST /api/v1/admin/kyc/profiles/{profileID}/request-doc.
 func (h *AdminKYCHandler) RequestDocument(w http.ResponseWriter, r *http.Request) {
 	admin, ok := middleware.UserFromContext(r.Context())
 	if !ok {

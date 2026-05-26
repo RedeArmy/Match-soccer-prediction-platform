@@ -62,6 +62,7 @@ type submitKYCRequest struct {
 	PostalCode     string `json:"postal_code"`
 }
 
+// Submit handles POST /api/v1/kyc/submit.
 func (h *KYCHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
 	if !ok {

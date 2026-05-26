@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -48,7 +49,7 @@ func RegisterKYCMetrics(
 		metric.WithDescription("Total KYC profile submission attempts, labelled by outcome."),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kyc metrics: submissions_total: %w", err)
 	}
 
 	m.ReviewDurationSeconds, err = meter.Float64Histogram(
@@ -57,7 +58,7 @@ func RegisterKYCMetrics(
 		metric.WithExplicitBucketBoundaries(60, 300, 900, 3600, 14400, 86400),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kyc metrics: review_duration_seconds: %w", err)
 	}
 
 	m.FraudFlagsTotal, err = meter.Int64Counter(
@@ -65,7 +66,7 @@ func RegisterKYCMetrics(
 		metric.WithDescription("Number of PEP or sanctions flags set by an admin, labelled by flag_type."),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kyc metrics: fraud_flags_total: %w", err)
 	}
 
 	m.GateBlocksTotal, err = meter.Int64Counter(
@@ -73,7 +74,7 @@ func RegisterKYCMetrics(
 		metric.WithDescription("Money-movement operations blocked by KYCGate, labelled by operation and reason."),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kyc metrics: gate_blocks_total: %w", err)
 	}
 
 	if profileQueueReader != nil {
@@ -90,7 +91,7 @@ func RegisterKYCMetrics(
 			}),
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("kyc metrics: queue_depth: %w", err)
 		}
 	}
 
@@ -108,7 +109,7 @@ func RegisterKYCMetrics(
 			}),
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("kyc metrics: frozen_balances_total_gtq: %w", err)
 		}
 	}
 

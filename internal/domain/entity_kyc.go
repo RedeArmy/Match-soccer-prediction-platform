@@ -51,10 +51,14 @@ const (
 type KYCDocumentType string
 
 const (
-	KYCDocGovID          KYCDocumentType = "gov_id"           // national ID, passport, or driver's licence
-	KYCDocSelfie         KYCDocumentType = "selfie"           // liveness selfie
-	KYCDocProofOfAddress KYCDocumentType = "proof_of_address" // utility bill or bank statement
-	KYCDocProofOfFunds   KYCDocumentType = "proof_of_funds"   // bank statement or payslip
+	// KYCDocGovID is a national ID, passport, or driver's licence.
+	KYCDocGovID KYCDocumentType = "gov_id"
+	// KYCDocSelfie is a liveness selfie photograph.
+	KYCDocSelfie KYCDocumentType = "selfie"
+	// KYCDocProofOfAddress is a utility bill or bank statement.
+	KYCDocProofOfAddress KYCDocumentType = "proof_of_address"
+	// KYCDocProofOfFunds is a bank statement or payslip.
+	KYCDocProofOfFunds KYCDocumentType = "proof_of_funds"
 )
 
 // KYCProfileType distinguishes individual (user) from organisational (org)
@@ -62,8 +66,10 @@ const (
 type KYCProfileType string
 
 const (
+	// KYCProfileTypeUser is an individual user KYC profile.
 	KYCProfileTypeUser KYCProfileType = "user"
-	KYCProfileTypeOrg  KYCProfileType = "org"
+	// KYCProfileTypeOrg is an organisational KYB profile.
+	KYCProfileTypeOrg KYCProfileType = "org"
 )
 
 // ── KYC event type ────────────────────────────────────────────────────────────
@@ -72,16 +78,26 @@ const (
 type KYCEventType string
 
 const (
-	KYCEventSubmitted    KYCEventType = "submitted"
-	KYCEventUnderReview  KYCEventType = "under_review"
-	KYCEventApproved     KYCEventType = "approved"
-	KYCEventRejected     KYCEventType = "rejected"
-	KYCEventEscalated    KYCEventType = "escalated"
-	KYCEventExpired      KYCEventType = "expired"
-	KYCEventTierChanged  KYCEventType = "tier_changed"
+	// KYCEventSubmitted records a new or resubmitted profile.
+	KYCEventSubmitted KYCEventType = "submitted"
+	// KYCEventUnderReview records a profile entering manual review.
+	KYCEventUnderReview KYCEventType = "under_review"
+	// KYCEventApproved records an admin approval with tier assignment.
+	KYCEventApproved KYCEventType = "approved"
+	// KYCEventRejected records an admin rejection with reason.
+	KYCEventRejected KYCEventType = "rejected"
+	// KYCEventEscalated records escalation to senior compliance review.
+	KYCEventEscalated KYCEventType = "escalated"
+	// KYCEventExpired records a profile lapsing past its review date.
+	KYCEventExpired KYCEventType = "expired"
+	// KYCEventTierChanged records a manual tier adjustment.
+	KYCEventTierChanged KYCEventType = "tier_changed"
+	// KYCEventDocRequested records an admin request for additional documents.
 	KYCEventDocRequested KYCEventType = "doc_requested"
-	KYCEventFrozen       KYCEventType = "frozen"
-	KYCEventUnfrozen     KYCEventType = "unfrozen"
+	// KYCEventFrozen records a balance freeze pending KYC completion.
+	KYCEventFrozen KYCEventType = "frozen"
+	// KYCEventUnfrozen records the release of a frozen balance.
+	KYCEventUnfrozen KYCEventType = "unfrozen"
 )
 
 // ── KYC profile (individual) ──────────────────────────────────────────────────
@@ -96,32 +112,32 @@ const (
 // not yet reached the required tier to release funds (see KYCGate). It is
 // cleared by the admin via the release-frozen-balance endpoint after approval.
 type KYCProfile struct {
-	ID               int
-	UserID           int
-	Status           KYCStatus
-	Tier             KYCTier
-	FullName         string
-	DateOfBirth      *time.Time
-	Nationality      string
-	DocumentType     *KYCDocumentType
-	DocumentNumber   string
-	AddressLine      string
-	City             string
-	Country          string
-	PostalCode       string
-	SubmittedAt      *time.Time
-	ReviewedAt       *time.Time
-	ReviewedBy       *int   // admin user ID
-	RejectionReason  string // non-empty when status = rejected
-	RiskScore        int    // 0–100; recalculated on each financial event
-	PEPFlag          bool   // Politically Exposed Person
-	SanctionsFlag    bool   // matched against sanctions list
-	BalanceFrozen    bool   // true when balance is held pending KYC tier upgrade
-	FrozenAmountCents int   // amount frozen (0 when not frozen)
-	FrozenReason     string // human-readable freeze trigger description
-	NextReviewAt     *time.Time // periodic re-verification deadline
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                int
+	UserID            int
+	Status            KYCStatus
+	Tier              KYCTier
+	FullName          string
+	DateOfBirth       *time.Time
+	Nationality       string
+	DocumentType      *KYCDocumentType
+	DocumentNumber    string
+	AddressLine       string
+	City              string
+	Country           string
+	PostalCode        string
+	SubmittedAt       *time.Time
+	ReviewedAt        *time.Time
+	ReviewedBy        *int       // admin user ID
+	RejectionReason   string     // non-empty when status = rejected
+	RiskScore         int        // 0–100; recalculated on each financial event
+	PEPFlag           bool       // Politically Exposed Person
+	SanctionsFlag     bool       // matched against sanctions list
+	BalanceFrozen     bool       // true when balance is held pending KYC tier upgrade
+	FrozenAmountCents int        // amount frozen (0 when not frozen)
+	FrozenReason      string     // human-readable freeze trigger description
+	NextReviewAt      *time.Time // periodic re-verification deadline
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // ── KYB profile (organisational) ─────────────────────────────────────────────
@@ -132,7 +148,7 @@ type KYCProfile struct {
 // KYB is required before any organiser payout is processed.
 type KYBProfile struct {
 	ID                 int
-	UserID             int    // the platform user who represents the organisation
+	UserID             int // the platform user who represents the organisation
 	Status             KYCStatus
 	Tier               KYCTier
 	LegalName          string
@@ -187,7 +203,7 @@ type KYCEvent struct {
 	ProfileID   int
 	ProfileType KYCProfileType
 	EventType   KYCEventType
-	ActorID     *int   // nil = system
+	ActorID     *int // nil = system
 	OldStatus   *KYCStatus
 	NewStatus   KYCStatus
 	Reason      string

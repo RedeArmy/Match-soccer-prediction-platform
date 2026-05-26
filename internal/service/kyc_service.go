@@ -43,11 +43,11 @@ type UploadDocRequest struct {
 
 // KYCRequirements describes the documents still needed for the next tier.
 type KYCRequirements struct {
-	CurrentTier    domain.KYCTier
-	CurrentStatus  domain.KYCStatus
-	RequiredDocs   []domain.KYCDocumentType
-	SubmittedDocs  []domain.KYCDocumentType
-	MissingDocs    []domain.KYCDocumentType
+	CurrentTier   domain.KYCTier
+	CurrentStatus domain.KYCStatus
+	RequiredDocs  []domain.KYCDocumentType
+	SubmittedDocs []domain.KYCDocumentType
+	MissingDocs   []domain.KYCDocumentType
 }
 
 // ── Service interface ─────────────────────────────────────────────────────────

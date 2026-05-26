@@ -1,7 +1,7 @@
 package domain
 
-// ── KYC audit action constants ────────────────────────────────────────────────
-
+// KYC audit action constants — recorded in the audit_log table by KYCService
+// and money-movement services whenever a KYC lifecycle event occurs.
 const (
 	AuditActionKYCSubmitted    = "kyc.submitted"
 	AuditActionKYCUnderReview  = "kyc.under_review"
@@ -14,54 +14,69 @@ const (
 	AuditActionKYCDocRequested = "kyc.document_requested"
 	AuditActionKYCFrozen       = "kyc.balance_frozen"
 	AuditActionKYCUnfrozen     = "kyc.balance_unfrozen"
-	AuditActionAMLFlagged      = "kyc.aml_flagged"
-	AuditActionKYBSubmitted    = "kyb.submitted"
-	AuditActionKYBApproved     = "kyb.approved"
-	AuditActionKYBRejected     = "kyb.rejected"
+	// AuditActionAMLFlagged is written when a transaction meets or exceeds the
+	// kyc.aml_threshold_cents param. It is non-blocking: the transaction commits
+	// and the record is used for mandatory UAF reporting under Guatemalan law.
+	AuditActionAMLFlagged   = "kyc.aml_flagged"
+	AuditActionKYBSubmitted = "kyb.submitted"
+	AuditActionKYBApproved  = "kyb.approved"
+	AuditActionKYBRejected  = "kyb.rejected"
 )
 
-// ── KYC system parameter keys ─────────────────────────────────────────────────
-
+// KYC system_params keys — all values are runtime-editable via the admin API
+// without a server restart. Defaults are seeded by migration 000121.
 const (
-	// Tier 1 (phone verified): deposit cap shared with Tier 0.
-	// Tier 1 cannot withdraw — withdrawals require Tier 2+ (gov ID).
+	// ParamKeyKYCTier1DepositLimitCents is the per-transaction deposit cap
+	// (centavos) shared by Tier 0 (unverified) and Tier 1 (phone-verified) users.
+	// Tier 1 is fully blocked from withdrawals; only deposits apply.
 	ParamKeyKYCTier1DepositLimitCents = "kyc.tier1_deposit_limit_cents"
 
-	// Tier 2 (gov ID + selfie): deposit and per-request payout caps.
+	// ParamKeyKYCTier2DepositLimitCents is the per-transaction deposit cap
+	// (centavos) for Tier 2 (government ID + selfie approved) users.
 	ParamKeyKYCTier2DepositLimitCents = "kyc.tier2_deposit_limit_cents"
-	ParamKeyKYCTier2PayoutLimitCents  = "kyc.tier2_payout_limit_cents"
 
-	// AML reporting threshold (GTQ; transactions above this require UAF record).
+	// ParamKeyKYCTier2PayoutLimitCents is the per-request withdrawal cap
+	// (centavos) for Tier 2 users. Tier 3 is unlimited.
+	ParamKeyKYCTier2PayoutLimitCents = "kyc.tier2_payout_limit_cents"
+
+	// ParamKeyKYCAMLThresholdCents is the transaction amount (centavos) at or
+	// above which a UAF AML report is mandatory under Guatemalan law.
+	// Reaching the threshold writes an AuditActionAMLFlagged event; the
+	// transaction is never rejected on this basis alone.
 	ParamKeyKYCAMLThresholdCents = "kyc.aml_threshold_cents"
 
-	// Re-verification interval in days (Tier 2 and Tier 3 profiles).
+	// ParamKeyKYCReviewIntervalDays is the number of days after approval before
+	// a Tier 2 or Tier 3 profile is due for re-verification. Written to
+	// kyc_profiles.next_review_at by KYCService.Approve.
 	ParamKeyKYCReviewIntervalDays = "kyc.review_interval_days"
 
-	// Maximum document upload size in bytes.
+	// ParamKeyKYCMaxDocUploadBytes is the maximum size in bytes for a single
+	// KYC document upload. Enforced by KYCService.UploadDocument.
 	ParamKeyKYCMaxDocUploadBytes = "kyc.max_doc_upload_bytes"
 )
 
-// ── KYC system parameter defaults ────────────────────────────────────────────
-
+// KYC system_params default values — match the seeds in migration 000121 so
+// the gate is fully functional even before the first admin configuration change.
 const (
-	// Tier 0 and Tier 1 share this per-transaction deposit cap (Q2,500).
-	DefaultKYCTier1DepositLimitCents = 250_000 // 2,500 GTQ
+	// DefaultKYCTier1DepositLimitCents is Q2,500 (250,000 centavos).
+	DefaultKYCTier1DepositLimitCents = 250_000
 
-	// Tier 2 caps: Q15,000 per deposit and per withdrawal.
-	DefaultKYCTier2DepositLimitCents = 1_500_000 // 15,000 GTQ
-	DefaultKYCTier2PayoutLimitCents  = 1_500_000 // 15,000 GTQ
+	// DefaultKYCTier2DepositLimitCents is Q15,000 (1,500,000 centavos).
+	DefaultKYCTier2DepositLimitCents = 1_500_000
 
-	// Guatemalan UAF mandatory AML reporting threshold (Q25,000).
-	DefaultKYCAMLThresholdCents = 2_500_000 // 25,000 GTQ
+	// DefaultKYCTier2PayoutLimitCents is Q15,000 (1,500,000 centavos).
+	DefaultKYCTier2PayoutLimitCents = 1_500_000
 
-	// Annual re-verification for Tier 2 and Tier 3 profiles.
+	// DefaultKYCAMLThresholdCents is Q25,000 (2,500,000 centavos), the
+	// Guatemalan UAF mandatory reporting threshold.
+	DefaultKYCAMLThresholdCents = 2_500_000
+
+	// DefaultKYCReviewIntervalDays is 365 (annual re-verification).
 	DefaultKYCReviewIntervalDays = 365
 
-	// Maximum size per KYC document upload: 10 MB.
-	DefaultKYCMaxDocUploadBytes = 10_485_760 // 10 MB
+	// DefaultKYCMaxDocUploadBytes is 10,485,760 (10 MB per document).
+	DefaultKYCMaxDocUploadBytes = 10_485_760
 )
-
-// ── Allowed KYC document MIME types ──────────────────────────────────────────
 
 // KYCAllowedContentTypes lists the MIME types accepted for KYC document
 // uploads. The handler rejects any upload whose Content-Type is not in this

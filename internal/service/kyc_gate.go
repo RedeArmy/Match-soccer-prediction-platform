@@ -48,8 +48,8 @@ type KYCGate interface {
 // The param fallbacks match the migration 000121 seed values so the gate is
 // always functional even before the first admin KYC configuration change.
 type kycGate struct {
-	userRepo  repository.UserRepository
-	params    SystemParamService
+	userRepo repository.UserRepository
+	params   SystemParamService
 }
 
 // NewKYCGate constructs a KYCGate backed by the given repositories.
