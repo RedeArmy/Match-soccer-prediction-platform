@@ -368,3 +368,76 @@ func TestAdminKYCHandler_RiskDashboard_SvcError_Returns500(t *testing.T) {
 		t.Errorf(fmtExpect500, w.Code)
 	}
 }
+
+// ── SvcError coverage gaps ────────────────────────────────────────────────────
+
+func TestAdminKYCHandler_Reject_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/profiles/1/reject", `{"reason":"docs expired"}`), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_Escalate_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/profiles/1/escalate", `{"reason":"pep match"}`), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_RequestDocument_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/profiles/1/request-doc", `{"document_type":"gov_id","reason":"expired"}`), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+func TestAdminKYCHandler_ReleaseFrozenBalance_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyc/users/5/release-freeze", ""), adminCaller)
+	w := doReq(newAdminKYCRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_ListDocumentsForProfile_GetProfileError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/profiles/1/documents", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_ListProfileEvents_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/profiles/1/events", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── exercising converter loops ────────────────────────────────────────────────
+
+func TestAdminKYCHandler_ListFrozenBalances_WithSummaries_Returns200(t *testing.T) {
+	frozen := []*domain.FrozenBalanceSummary{{UserID: 3, FrozenAmountCents: 50_000, FrozenSince: time.Now()}}
+	svc := &stubKYCSvc{frozen: frozen}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/frozen-balances", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminKYCHandler_ListProfileEvents_WithEvents_Returns200(t *testing.T) {
+	events := []*domain.KYCEvent{{ID: 1, EventType: domain.KYCEventApproved, NewStatus: domain.KYCStatusApproved}}
+	svc := &stubKYCSvc{events: events}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/profiles/1/events", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}

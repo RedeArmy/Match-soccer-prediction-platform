@@ -252,3 +252,51 @@ func TestAdminKYBHandler_Reject_InvalidID_Returns422(t *testing.T) {
 		t.Errorf(fmtExpect422, w.Code)
 	}
 }
+
+// ── KYBHandler additional ─────────────────────────────────────────────────────
+func TestKYBHandler_Submit_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYBSvc{err: apperrors.Internal(nil)}
+	body := `{"legal_name":"Acme","tax_id":"CF1","jurisdiction":"GT","ubo_name":"Juan"}`
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/kyb/submit", body), adminCaller)
+	w := doReq(newKYBRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── AdminKYBHandler additional ────────────────────────────────────────────────
+
+func TestAdminKYBHandler_ListQueue_WithProfiles_Returns200(t *testing.T) {
+	profiles := []*domain.KYBProfile{{ID: 1, Status: domain.KYCStatusPending, CreatedAt: time.Now(), UpdatedAt: time.Now()}}
+	svc := &stubKYBSvc{profiles: profiles}
+	w := do(newAdminKYBRouter(svc), http.MethodGet, "/admin/kyb/queue", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminKYBHandler_Approve_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYBSvc{err: apperrors.Internal(nil)}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/admin/kyb/profiles/1/approve", ""), adminCaller)
+	w := doReq(newAdminKYBRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminKYBHandler_Reject_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYBSvc{err: apperrors.Internal(nil)}
+	req := withCaller(newAdminRequestJSON(http.MethodPost, "/admin/kyb/profiles/1/reject", `{"reason":"expired"}`), adminCaller)
+	w := doReq(newAdminKYBRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminKYBHandler_GetProfile_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYBSvc{err: apperrors.Internal(nil)}
+	w := do(newAdminKYBRouter(svc), http.MethodGet, "/admin/kyb/profiles/1", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}

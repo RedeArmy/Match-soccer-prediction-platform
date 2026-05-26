@@ -29,6 +29,9 @@ import (
 type stubKYCSvc struct {
 	profile *domain.KYCProfile
 	doc     *domain.KYCDocument
+	docs    []*domain.KYCDocument
+	events  []*domain.KYCEvent
+	frozen  []*domain.FrozenBalanceSummary
 	err     error
 }
 
@@ -42,7 +45,7 @@ func (s *stubKYCSvc) UploadDocument(_ context.Context, _ int, _ service.UploadDo
 	return s.doc, s.err
 }
 func (s *stubKYCSvc) ListDocuments(_ context.Context, _ int) ([]*domain.KYCDocument, error) {
-	return nil, s.err
+	return s.docs, s.err
 }
 func (s *stubKYCSvc) GetRequirements(_ context.Context, _ int) (*service.KYCRequirements, error) {
 	if s.err != nil {
@@ -51,7 +54,7 @@ func (s *stubKYCSvc) GetRequirements(_ context.Context, _ int) (*service.KYCRequ
 	return &service.KYCRequirements{}, nil
 }
 func (s *stubKYCSvc) ListEvents(_ context.Context, _ int, _ domain.KYCProfileType, _ repository.CursorPage) ([]*domain.KYCEvent, string, error) {
-	return nil, "", s.err
+	return s.events, "", s.err
 }
 func (s *stubKYCSvc) ListQueue(_ context.Context, _ repository.KYCProfileFilters, _ repository.Pagination) ([]*domain.KYCProfile, error) {
 	return nil, s.err
@@ -67,7 +70,7 @@ func (s *stubKYCSvc) RequestDocument(_ context.Context, _, _ int, _ domain.KYCDo
 }
 func (s *stubKYCSvc) VerifyDocument(_ context.Context, _ int64, _ int) error { return s.err }
 func (s *stubKYCSvc) ListFrozenBalances(_ context.Context) ([]*domain.FrozenBalanceSummary, error) {
-	return nil, s.err
+	return s.frozen, s.err
 }
 func (s *stubKYCSvc) ReleaseFrozenBalance(_ context.Context, _, _ int) error    { return s.err }
 func (s *stubKYCSvc) FreezeBalance(_ context.Context, _, _ int, _ string) error { return s.err }
@@ -369,5 +372,83 @@ func TestKYCHandler_ListEvents_Unauthenticated_Returns401(t *testing.T) {
 	newKYCStatusRouter(t, svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/events", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf(fmtExpect401, rec.Code)
+	}
+}
+
+func TestKYCHandler_ListEvents_WithEvents_Returns200(t *testing.T) {
+	svc := &stubKYCSvc{events: []*domain.KYCEvent{{ID: 1, EventType: domain.KYCEventSubmitted, NewStatus: domain.KYCStatusPending}}}
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/events", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, rec.Code)
+	}
+}
+
+func TestKYCHandler_ListEvents_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/events", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+// ── ListDocuments additional ──────────────────────────────────────────────────
+
+func TestKYCHandler_ListDocuments_WithDocs_Returns200(t *testing.T) {
+	docs := []*domain.KYCDocument{{ID: 10, DocumentType: domain.KYCDocGovID}}
+	svc := &stubKYCSvc{docs: docs}
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/documents", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, rec.Code)
+	}
+}
+
+func TestKYCHandler_ListDocuments_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/documents", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+// ── Submit additional ─────────────────────────────────────────────────────────
+
+func TestKYCHandler_Submit_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	body := `{"full_name":"Juan","document_type":"gov_id","document_number":"1234"}`
+	req := httptest.NewRequest(http.MethodPost, "/kyc/submit", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+// ── GetRequirements additional ────────────────────────────────────────────────
+
+func TestKYCHandler_GetRequirements_SvcError_Returns500(t *testing.T) {
+	svc := &stubKYCSvc{err: apperrors.Internal(nil)}
+	rec := httptest.NewRecorder()
+	authedKYCRouter(t, svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/requirements", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+// ── NewKYCHandler ─────────────────────────────────────────────────────────────
+
+func TestNewKYCStatusRouter_ZeroMaxUploadBytes_UsesDefault(t *testing.T) {
+	svc := &stubKYCSvc{}
+	h := handler.NewKYCHandler(svc, &drainingFileStore{}, 0, zaptest.NewLogger(t))
+	r := chi.NewRouter()
+	r.Get("/kyc/status", h.GetStatus)
+	rec := httptest.NewRecorder()
+	withKYCUser(r).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/kyc/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, rec.Code)
 	}
 }
