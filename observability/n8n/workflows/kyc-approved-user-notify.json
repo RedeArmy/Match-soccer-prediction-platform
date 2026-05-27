@@ -1,0 +1,53 @@
+{
+  "name": "KYC Approved — User Notify",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kyc-approved",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "kyc-app-webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "kyc-approved"
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $input.first().json;\nconst tierLabels = { 1: 'Tier 1 (Phone Verified)', 2: 'Tier 2 (ID + Selfie)', 3: 'Tier 3 (Full KYC)' };\nconst tierName = tierLabels[p.tier] || `Tier ${p.tier}`;\nreturn [{\n  json: {\n    to: p.user_email,\n    subject: `Your identity verification has been approved — ${tierName}`,\n    body: `Congratulations! Your KYC verification has been approved.\\n\\nVerification level: ${tierName}\\nApproved at: ${p.reviewed_at}\\n\\nYou can now use the platform features unlocked by your verification level.\\nLog in to your account: ${process.env.APP_BASE_URL}`\n  }\n}];"
+      },
+      "id": "kyc-app-format",
+      "name": "Format Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "kyc-app-email",
+      "name": "Send User Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Format Email", "type": "main", "index": 0}]]
+    },
+    "Format Email": {
+      "main": [[{"node": "Send User Email", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "tags": ["kyc", "compliance", "user-notification"]
+}

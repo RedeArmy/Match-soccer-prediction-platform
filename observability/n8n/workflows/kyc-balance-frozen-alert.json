@@ -1,0 +1,53 @@
+{
+  "name": "KYC Balance Frozen — Admin Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kyc-balance-frozen",
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "kyc-frz-webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "kyc-balance-frozen"
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $input.first().json;\nconst amountGTQ = (p.frozen_amount_cents / 100).toFixed(2);\nreturn [{\n  json: {\n    subject: `[COMPLIANCE] KYC balance frozen — Q${amountGTQ} GTQ (User ${p.user_id})`,\n    body: `A user's balance has been automatically frozen pending KYC verification.\\n\\nUser ID: ${p.user_id}\\nFrozen amount: Q${amountGTQ} GTQ\\nReason: ${p.reason}\\nTrace ID: ${p.trace_id}\\n\\nAction required: Review the user's KYC submission and release the freeze after approval.\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/frozen-balances`\n  }\n}];"
+      },
+      "id": "kyc-frz-format",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$env.COMPLIANCE_EMAIL}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.body}}"
+      },
+      "id": "kyc-frz-email",
+      "name": "Send Compliance Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Format Alert", "type": "main", "index": 0}]]
+    },
+    "Format Alert": {
+      "main": [[{"node": "Send Compliance Alert", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "tags": ["kyc", "compliance", "aml", "alert"]
+}

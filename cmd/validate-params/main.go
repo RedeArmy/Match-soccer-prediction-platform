@@ -59,6 +59,8 @@ type paramSpec struct {
 //   - 000111_seed_notify_outbox_params          (+5)
 //   - 000112_seed_observability_alert_params    (+2)
 //   - 000113_seed_phase7_infra_params           (+2)
+//   - 000121_seed_kyc_system_params             (+10)
+//   - 000125_seed_kyc_cache_ttl_param           (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -231,6 +233,21 @@ var allParams = []paramSpec{
 	// Phase 7 infrastructure params (migration 000113); not runtime — restart required.
 	{key: domain.ParamKeyNotifySSEChanBufSize, defaultValue: strconv.Itoa(domain.DefaultNotifySSEChanBufSize), paramType: "int", category: "notify", isRuntime: false},
 	{key: domain.ParamKeyNotifyOutboxStaleLockThresholdSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxStaleLockThresholdSec), paramType: "int", category: "notify", isRuntime: false},
+
+	// KYC/AML gate params (migrations 000121 + 000125); runtime — all limits are enforced
+	// per-request by KYCGate and propagate within the 30 s cache window.
+	{key: domain.ParamKeyKYCTier1DepositLimitCents, defaultValue: strconv.Itoa(domain.DefaultKYCTier1DepositLimitCents), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCTier2DepositLimitCents, defaultValue: strconv.Itoa(domain.DefaultKYCTier2DepositLimitCents), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCTier2PayoutLimitCents, defaultValue: strconv.Itoa(domain.DefaultKYCTier2PayoutLimitCents), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCAMLThresholdCents, defaultValue: strconv.Itoa(domain.DefaultKYCAMLThresholdCents), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCReviewIntervalDays, defaultValue: strconv.Itoa(domain.DefaultKYCReviewIntervalDays), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCMaxDocUploadBytes, defaultValue: strconv.Itoa(domain.DefaultKYCMaxDocUploadBytes), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCTier1DepositVelocityCents, defaultValue: strconv.Itoa(domain.DefaultKYCTier1DepositVelocityCents), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCTier2DepositVelocityCents, defaultValue: strconv.Itoa(domain.DefaultKYCTier2DepositVelocityCents), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCTier1WithdrawalVelocityCents, defaultValue: strconv.Itoa(domain.DefaultKYCTier1WithdrawalVelocityCents), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCTier2WithdrawalVelocityCents, defaultValue: strconv.Itoa(domain.DefaultKYCTier2WithdrawalVelocityCents), paramType: "int", category: "kyc", isRuntime: true},
+	// kyc.risk_dashboard_cache_ttl_sec has a mutation hook wired in migration 000125.
+	{key: domain.ParamKeyKYCRiskDashboardCacheTTLSec, defaultValue: strconv.Itoa(domain.DefaultKYCRiskDashboardCacheTTLSecs), paramType: "int", category: "kyc", isRuntime: true},
 }
 
 type dbParam struct {

@@ -27,7 +27,7 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 // password_hash was removed in migration 000010: authentication is delegated
 // to Clerk and no credential is stored in the application database.
 const (
-	userColumns     = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason, balance_cents, reserved_cents"
+	userColumns     = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason, balance_cents, reserved_cents, kyc_tier"
 	msgUserNotFound = "user not found"
 )
 
@@ -37,17 +37,19 @@ const (
 func scanUserFields(s rowScanner) (*domain.User, error) {
 	u := &domain.User{}
 	var clerkSubject *string // nullable in DB; empty string in domain when NULL
+	var kycTier int
 	if err := s.Scan(
 		&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject,
 		&u.CreatedAt, &u.UpdatedAt, &u.DeletedAt,
 		&u.BannedAt, &u.BannedBy, &u.BanReason,
-		&u.BalanceCents, &u.ReservedCents,
+		&u.BalanceCents, &u.ReservedCents, &kycTier,
 	); err != nil {
 		return nil, err
 	}
 	if clerkSubject != nil {
 		u.ClerkSubject = *clerkSubject
 	}
+	u.KYCTier = domain.KYCTier(kycTier)
 	return u, nil
 }
 

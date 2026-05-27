@@ -49,6 +49,9 @@ func (r *webhookLedgerRepoStub) CommitReservation(_ context.Context, _ int, _ in
 func (r *webhookLedgerRepoStub) ListByUser(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
 	return nil, nil
 }
+func (r *webhookLedgerRepoStub) SumTransactionsByUserAndPeriod(_ context.Context, _ int, _ []domain.BalanceLedgerKind, _ time.Time) (int64, error) {
+	return 0, nil
+}
 
 // webhookIntentRepoStub is the PaymentIntentRepository stub for service tests.
 type webhookIntentRepoStub struct {

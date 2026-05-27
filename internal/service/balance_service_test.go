@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -76,6 +77,9 @@ func (r *balanceLedgerRepoStub) ListByUser(_ context.Context, _ int, _ repositor
 }
 func (r *balanceLedgerRepoStub) CreditIdempotent(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ string) (bool, error) {
 	return true, nil
+}
+func (r *balanceLedgerRepoStub) SumTransactionsByUserAndPeriod(_ context.Context, _ int, _ []domain.BalanceLedgerKind, _ time.Time) (int64, error) {
+	return 0, r.err
 }
 
 func newBalanceSvc(ur *balanceSvcUserRepo, lr *balanceLedgerRepoStub) BalanceService {
