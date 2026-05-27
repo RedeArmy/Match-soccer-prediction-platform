@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
@@ -139,7 +142,7 @@ func TestPrizeService_CreditPrize_AboveThreshold_Freezes(t *testing.T) {
 	kycSvc := &prizeKYCSvcStub{}
 	notifier := &prizeNotifierStub{}
 
-	svc := NewPrizeService(ledger, gate, kycSvc, notifier, zap.NewNop())
+	svc := NewPrizeService(ledger, gate, kycSvc, nil, notifier, zap.NewNop())
 	credited, err := svc.CreditPrize(context.Background(), 42, 500_000, 1, "quiniela")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -170,7 +173,7 @@ func TestPrizeService_CreditPrize_BelowThreshold_Credits(t *testing.T) {
 	kycSvc := &prizeKYCSvcStub{}
 	notifier := &prizeNotifierStub{}
 
-	svc := NewPrizeService(ledger, gate, kycSvc, notifier, zap.NewNop())
+	svc := NewPrizeService(ledger, gate, kycSvc, nil, notifier, zap.NewNop())
 	credited, err := svc.CreditPrize(context.Background(), 42, 5_000, 1, "quiniela")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -189,5 +192,65 @@ func TestPrizeService_CreditPrize_BelowThreshold_Credits(t *testing.T) {
 	}
 	if notifier.fired {
 		t.Error("notifier was fired unexpectedly for non-frozen prize")
+	}
+}
+
+// ── outbox stub ───────────────────────────────────────────────────────────────
+
+type prizeOutboxStub struct {
+	written  bool
+	writeErr error
+}
+
+func (o *prizeOutboxStub) Write(_ context.Context, _ notification.EventType, _, _ string, _ any) error {
+	o.written = true
+	return o.writeErr
+}
+func (o *prizeOutboxStub) WriteBatch(_ context.Context, _ []outbox.BatchEvent) error { return nil }
+func (o *prizeOutboxStub) WriteDedup(_ context.Context, _ string, _ notification.EventType, _, _ string, _ any) (bool, error) {
+	return false, nil
+}
+func (o *prizeOutboxStub) WriteInTx(_ context.Context, _ outbox.TxExecer, _ notification.EventType, _, _ string, _ any) error {
+	return nil
+}
+
+// ── outbox path tests ─────────────────────────────────────────────────────────
+
+func TestPrizeService_CreditPrize_Freeze_UsesOutboxWhenSet(t *testing.T) {
+	ledger := &prizeLedgerStub{}
+	gate := &prizeKYCGateStub{shouldFreeze: true}
+	kycSvc := &prizeKYCSvcStub{}
+	notifier := &prizeNotifierStub{}
+	ob := &prizeOutboxStub{}
+
+	svc := NewPrizeService(ledger, gate, kycSvc, ob, notifier, zap.NewNop())
+	credited, err := svc.CreditPrize(context.Background(), 42, 500_000, 1, "quiniela")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if credited {
+		t.Error("expected credited=false when freeze is triggered")
+	}
+	if !ob.written {
+		t.Error("outbox.Write was not called when outboxWriter is set")
+	}
+	if notifier.fired {
+		t.Error("legacy notifier fired despite outboxWriter being set")
+	}
+}
+
+func TestPrizeService_CreditPrize_OutboxWriteError_DoesNotPropagate(t *testing.T) {
+	ledger := &prizeLedgerStub{}
+	gate := &prizeKYCGateStub{shouldFreeze: true}
+	kycSvc := &prizeKYCSvcStub{}
+	ob := &prizeOutboxStub{writeErr: errors.New("db timeout")}
+
+	svc := NewPrizeService(ledger, gate, kycSvc, ob, nil, zap.NewNop())
+	credited, err := svc.CreditPrize(context.Background(), 42, 500_000, 1, "quiniela")
+	if err != nil {
+		t.Fatalf("outbox write error must not propagate to caller; got: %v", err)
+	}
+	if credited {
+		t.Error("expected credited=false even when outbox write fails")
 	}
 }

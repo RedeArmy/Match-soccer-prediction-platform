@@ -79,6 +79,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyBreakerPaypalCertCooldownSec": ParamKeyBreakerPaypalCertCooldownSec,
 		"ParamKeyBreakerFileStoreMaxFails":     ParamKeyBreakerFileStoreMaxFails,
 		"ParamKeyBreakerFileStoreCooldownSec":  ParamKeyBreakerFileStoreCooldownSec,
+		"ParamKeyBreakerCacheMaxFails":         ParamKeyBreakerCacheMaxFails,
+		"ParamKeyBreakerCacheCooldownSec":      ParamKeyBreakerCacheCooldownSec,
 		// Repository / TX retry
 		"ParamKeyTxRetryMaxAttempts": ParamKeyTxRetryMaxAttempts,
 		"ParamKeyTxRetryBaseDelayMs": ParamKeyTxRetryBaseDelayMs,
@@ -225,6 +227,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultBreakerPaypalCertCooldownSec": DefaultBreakerPaypalCertCooldownSec,
 		"DefaultBreakerFileStoreMaxFails":     DefaultBreakerFileStoreMaxFails,
 		"DefaultBreakerFileStoreCooldownSec":  DefaultBreakerFileStoreCooldownSec,
+		"DefaultBreakerCacheMaxFails":         DefaultBreakerCacheMaxFails,
+		"DefaultBreakerCacheCooldownSec":      DefaultBreakerCacheCooldownSec,
 		// Repository / TX retry
 		"DefaultTxRetryMaxAttempts": DefaultTxRetryMaxAttempts,
 		"DefaultTxRetryBaseDelayMs": DefaultTxRetryBaseDelayMs,
@@ -291,7 +295,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 108 // update when adding a new ParamKey* constant
+		const expectedCount = 110 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -299,7 +303,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 97 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl)
+		const expectedCount = 99 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -312,6 +316,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 				t.Errorf("%s is defined but has an empty value", name)
 			}
 		}
+	})
+
+	t.Run("all_param_keys_in_AllParamKeys", func(t *testing.T) {
+		assertParamKeySync(t, paramKeys)
 	})
 
 	t.Run("no_duplicate_param_keys", func(t *testing.T) {
@@ -399,6 +407,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyBreakerPaypalCertCooldownSec", ParamKeyBreakerPaypalCertCooldownSec, "breaker"},
 		{"ParamKeyBreakerFileStoreMaxFails", ParamKeyBreakerFileStoreMaxFails, "breaker"},
 		{"ParamKeyBreakerFileStoreCooldownSec", ParamKeyBreakerFileStoreCooldownSec, "breaker"},
+		{"ParamKeyBreakerCacheMaxFails", ParamKeyBreakerCacheMaxFails, "breaker"},
+		{"ParamKeyBreakerCacheCooldownSec", ParamKeyBreakerCacheCooldownSec, "breaker"},
 		// Repository / TX retry
 		{"ParamKeyTxRetryMaxAttempts", ParamKeyTxRetryMaxAttempts, "repository"},
 		{"ParamKeyTxRetryBaseDelayMs", ParamKeyTxRetryBaseDelayMs, "repository"},
@@ -558,6 +568,8 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultBreakerPaypalCertCooldownSec": DefaultBreakerPaypalCertCooldownSec,
 		"DefaultBreakerFileStoreMaxFails":     DefaultBreakerFileStoreMaxFails,
 		"DefaultBreakerFileStoreCooldownSec":  DefaultBreakerFileStoreCooldownSec,
+		"DefaultBreakerCacheMaxFails":         DefaultBreakerCacheMaxFails,
+		"DefaultBreakerCacheCooldownSec":      DefaultBreakerCacheCooldownSec,
 		// Repository / TX retry
 		"DefaultTxRetryMaxAttempts": DefaultTxRetryMaxAttempts,
 		"DefaultTxRetryBaseDelayMs": DefaultTxRetryBaseDelayMs,
@@ -810,4 +822,27 @@ func collectSeededParams(t *testing.T, dir string) map[string]bool {
 		delete(seeded, k)
 	}
 	return seeded
+}
+
+// assertParamKeySync verifies that the enumeration map in TestSystemParamConstants_AllPaired
+// and AllParamKeys() contain exactly the same keys. Extracted to keep the parent
+// function below the gocognit threshold.
+func assertParamKeySync(t *testing.T, paramKeys map[string]string) {
+	t.Helper()
+	registered := make(map[string]bool, len(paramKeys))
+	for _, v := range paramKeys {
+		registered[v] = true
+	}
+	canonical := make(map[string]bool, len(AllParamKeys()))
+	for _, k := range AllParamKeys() {
+		canonical[k] = true
+		if !registered[k] {
+			t.Errorf("AllParamKeys() contains %q but it is missing from the paramKeys map in this test — add it and update expectedCount", k)
+		}
+	}
+	for name, v := range paramKeys {
+		if !canonical[v] {
+			t.Errorf("paramKeys[%q] = %q is not returned by AllParamKeys() — remove it from this test or add it to AllParamKeys()", name, v)
+		}
+	}
 }

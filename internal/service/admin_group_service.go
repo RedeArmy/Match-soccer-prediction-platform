@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"go.uber.org/zap"
 
@@ -48,15 +49,22 @@ type AdminGroupService interface {
 	// RecalculateLeaderboard triggers an immediate leaderboard snapshot for the
 	// given quiniela. Returns the newly created snapshot.
 	RecalculateLeaderboard(ctx context.Context, quinielaID, adminID int) (*domain.LeaderboardSnapshot, error)
+	// DistributePrizes credits the prize pool to each ranked winner in quinielaID.
+	// The prize pool is EntryFee * ActivePaidMembers divided equally among
+	// WinnerCount winners. Users below KYCTierTwo have their share frozen in
+	// escrow via KYCService.FreezeBalance instead of being credited immediately.
+	DistributePrizes(ctx context.Context, quinielaID, adminID int) error
 }
 
 // adminGroupService is the concrete implementation of AdminGroupService.
 type adminGroupService struct {
-	quinielaRepo repository.QuinielaRepository
-	memberRepo   repository.GroupMembershipRepository
-	snapshotter  Snapshotter
-	audit        AuditLogger
-	log          *zap.Logger
+	quinielaRepo  repository.QuinielaRepository
+	memberRepo    repository.GroupMembershipRepository
+	snapshotter   Snapshotter
+	ranker        Ranker
+	prizeCrediter PrizeCrediter // wired via SetPrizeCrediter after construction
+	audit         AuditLogger
+	log           *zap.Logger
 }
 
 // NewAdminGroupService constructs an adminGroupService.
@@ -64,6 +72,7 @@ func NewAdminGroupService(
 	quinielaRepo repository.QuinielaRepository,
 	memberRepo repository.GroupMembershipRepository,
 	snapshotter Snapshotter,
+	ranker Ranker,
 	audit AuditLogger,
 	log *zap.Logger,
 ) AdminGroupService {
@@ -71,10 +80,16 @@ func NewAdminGroupService(
 		quinielaRepo: quinielaRepo,
 		memberRepo:   memberRepo,
 		snapshotter:  snapshotter,
+		ranker:       ranker,
 		audit:        audit,
 		log:          log,
 	}
 }
+
+// SetPrizeCrediter wires the PrizeCrediter into the service. Called once at
+// startup after the KYC module is initialised; nil is safe (DistributePrizes
+// returns apperrors.Internal when prizeCrediter has not been set).
+func (s *adminGroupService) SetPrizeCrediter(pc PrizeCrediter) { s.prizeCrediter = pc }
 
 func (s *adminGroupService) DeleteGroup(ctx context.Context, quinielaID, adminID int) error {
 	if err := s.quinielaRepo.DeleteByAdmin(ctx, quinielaID, adminID); err != nil {
@@ -201,6 +216,58 @@ func (s *adminGroupService) RecalculateLeaderboard(ctx context.Context, quiniela
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role, domain.AuditActionLeaderboardRefreshed, &resType, &quinielaID, nil)
 	return snap, nil
+}
+
+// DistributePrizes credits each ranked winner their share of the prize pool.
+// Prize pool = EntryFee × ActivePaidMembers, split equally among WinnerCount winners.
+// Users below KYCTierTwo have their share frozen via PrizeCrediter (escrow path).
+func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, adminID int) error {
+	if s.prizeCrediter == nil {
+		return apperrors.Internal(fmt.Errorf("prize crediter not configured"))
+	}
+	q, err := s.quinielaRepo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return err
+	}
+	if q == nil {
+		return apperrors.NotFound("quiniela not found")
+	}
+	if q.EntryFee == 0 {
+		return apperrors.Conflict("quiniela has no entry fee; no prizes to distribute")
+	}
+	result, err := s.ranker.GetLeaderboard(ctx, quinielaID)
+	if err != nil {
+		return err
+	}
+	if !result.EligibleForPrizes || result.WinnerCount == 0 {
+		return apperrors.Conflict("quiniela is not eligible for prize distribution")
+	}
+	prizePool := q.EntryFee * result.ActivePaidMembers
+	prizePerWinner := prizePool / result.WinnerCount
+	var credited, frozen int
+	for _, entry := range result.Entries {
+		if !entry.PrizeWinner || entry.User == nil {
+			continue
+		}
+		applied, err := s.prizeCrediter.CreditPrize(ctx, entry.User.ID, prizePerWinner, int64(quinielaID), "quiniela")
+		if err != nil {
+			return fmt.Errorf("distribute prizes: user %d: %w", entry.User.ID, err)
+		}
+		if applied {
+			credited++
+		} else {
+			frozen++
+		}
+	}
+	resType := "quiniela"
+	role := domain.RoleAdmin
+	s.audit.Log(ctx, &adminID, &role, domain.AuditActionPrizesDistributed, &resType, &quinielaID, map[string]any{
+		"prize_pool_cents":   prizePool,
+		"prize_per_winner":   prizePerWinner,
+		"winners_credited":   credited,
+		"winners_frozen_kyc": frozen,
+	})
+	return nil
 }
 
 var _ AdminGroupService = (*adminGroupService)(nil)

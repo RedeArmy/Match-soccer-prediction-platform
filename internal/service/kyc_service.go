@@ -422,6 +422,9 @@ func (s *kycService) Approve(ctx context.Context, profileID, adminID int, tier d
 	if s.metrics != nil && profile.SubmittedAt != nil {
 		s.metrics.RecordReviewDuration(ctx, time.Since(*profile.SubmittedAt).Seconds(), "approved")
 	}
+	if s.cache != nil {
+		cacheDelete(ctx, s.cache, s.log, domain.CacheKeyKYCRiskDashboard)
+	}
 	return nil
 }
 
@@ -457,6 +460,9 @@ func (s *kycService) Reject(ctx context.Context, profileID, adminID int, reason 
 	if s.metrics != nil && profile.SubmittedAt != nil {
 		s.metrics.RecordReviewDuration(ctx, time.Since(*profile.SubmittedAt).Seconds(), "rejected")
 	}
+	if s.cache != nil {
+		cacheDelete(ctx, s.cache, s.log, domain.CacheKeyKYCRiskDashboard)
+	}
 	return nil
 }
 
@@ -486,6 +492,9 @@ func (s *kycService) Escalate(ctx context.Context, profileID, adminID int, reaso
 	s.audit.Log(ctx, &adminID, &role,
 		domain.AuditActionKYCEscalated, &resType, &profileID,
 		map[string]any{"reason": reason})
+	if s.cache != nil {
+		cacheDelete(ctx, s.cache, s.log, domain.CacheKeyKYCRiskDashboard)
+	}
 	return nil
 }
 
@@ -525,30 +534,32 @@ func (s *kycService) ListFrozenBalances(ctx context.Context) ([]*domain.FrozenBa
 }
 
 func (s *kycService) ReleaseFrozenBalance(ctx context.Context, userID, adminID int) error {
-	if err := s.profileRepo.SetFrozen(ctx, userID, false, 0, ""); err != nil {
-		return err
-	}
+	// Read profile first so we have profileID and status for the event/audit.
 	profile, err := s.profileRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		return err
 	}
-	profileID := 0
-	if profile != nil {
-		profileID = profile.ID
-		s.appendEvent(ctx, &domain.KYCEvent{
-			ProfileID:   profileID,
-			ProfileType: domain.KYCProfileTypeUser,
-			EventType:   domain.KYCEventUnfrozen,
-			ActorID:     &adminID,
-			OldStatus:   &profile.Status,
-			NewStatus:   profile.Status,
-			TraceID:     traceIDFromCtx(ctx),
-		})
+	if profile == nil {
+		return apperrors.NotFound(errKYCProfileNotFound)
 	}
+	// Atomically: read frozen amount, credit users.balance_cents, insert ledger
+	// row, clear freeze columns. Returns 0 when already unfrozen (idempotent).
+	if _, err := s.profileRepo.ReleaseAndCreditFrozen(ctx, userID, int64(profile.ID), "kyc_unfreeze"); err != nil {
+		return err
+	}
+	s.appendEvent(ctx, &domain.KYCEvent{
+		ProfileID:   profile.ID,
+		ProfileType: domain.KYCProfileTypeUser,
+		EventType:   domain.KYCEventUnfrozen,
+		ActorID:     &adminID,
+		OldStatus:   &profile.Status,
+		NewStatus:   profile.Status,
+		TraceID:     traceIDFromCtx(ctx),
+	})
 	resType := "kyc_profile"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role,
-		domain.AuditActionKYCUnfrozen, &resType, &profileID, nil)
+		domain.AuditActionKYCUnfrozen, &resType, &profile.ID, nil)
 	return nil
 }
 
@@ -576,8 +587,9 @@ func (s *kycService) FreezeBalance(ctx context.Context, userID, prizeCents int, 
 }
 
 // appendEvent is a best-effort helper that inserts a kyc_events row.
-// Failures are logged and swallowed so that a transient DB issue never rolls
-// back a primary domain operation that has already committed.
+// Failures are logged and counted (kyc.audit_event_drop_total) so that
+// a transient DB issue never rolls back a primary domain operation that
+// has already committed, but gaps in the audit trail remain observable.
 func (s *kycService) appendEvent(ctx context.Context, event *domain.KYCEvent) {
 	if event.Metadata == nil {
 		event.Metadata = map[string]any{}
@@ -588,6 +600,9 @@ func (s *kycService) appendEvent(ctx context.Context, event *domain.KYCEvent) {
 			zap.Int("profile_id", event.ProfileID),
 			zap.Error(err),
 		)
+		if s.metrics != nil {
+			s.metrics.AuditEventDropsTotal.Add(ctx, 1)
+		}
 	}
 }
 
@@ -668,6 +683,9 @@ func (s *kycService) RecalculateRiskScore(ctx context.Context, userID int) (int,
 
 	if err := s.profileRepo.UpdateRiskScore(ctx, profile.ID, score); err != nil {
 		return 0, err
+	}
+	if s.cache != nil {
+		cacheDelete(ctx, s.cache, s.log, domain.CacheKeyKYCRiskDashboard)
 	}
 	return score, nil
 }

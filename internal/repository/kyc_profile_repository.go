@@ -172,6 +172,79 @@ func (r *PostgresKYCProfileRepository) SetFrozen(ctx context.Context, userID int
 	return nil
 }
 
+// ReleaseAndCreditFrozen atomically:
+//  1. Locks the profile row and reads frozen_amount_cents.
+//  2. Credits users.balance_cents by that amount.
+//  3. Inserts a balance_ledger row (kind=prize).
+//  4. Clears the freeze columns on kyc_profiles.
+//
+// Returns 0, nil when balance_frozen is already false (idempotent).
+func (r *PostgresKYCProfileRepository) ReleaseAndCreditFrozen(ctx context.Context, userID int, refID int64, refType string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	var credited int
+	err := withTx(ctx, r.db, "KYCProfileRepository.ReleaseAndCreditFrozen", func(tx pgx.Tx) error {
+		var profileID, frozenCents int
+		err := tx.QueryRow(ctx, `
+			SELECT id, frozen_amount_cents
+			  FROM kyc_profiles
+			 WHERE user_id = $1 AND balance_frozen = TRUE
+			 FOR UPDATE
+		`, userID).Scan(&profileID, &frozenCents)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // already unfrozen — idempotent no-op
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if frozenCents == 0 {
+			// Mark unfrozen but nothing to credit.
+			_, err = tx.Exec(ctx, `
+				UPDATE kyc_profiles
+				   SET balance_frozen = FALSE, frozen_amount_cents = 0,
+				       frozen_reason = '', updated_at = NOW()
+				 WHERE user_id = $1
+			`, userID)
+			return err
+		}
+		var balanceAfter int
+		err = tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents = balance_cents + $2, updated_at = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING balance_cents
+		`, userID, frozenCents).Scan(&balanceAfter)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperrors.NotFound("user not found")
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if err := insertLedgerTx(ctx, tx, ledgerRow{
+			UserID:       userID,
+			DeltaCents:   frozenCents,
+			Kind:         domain.LedgerKindPrize,
+			BalanceAfter: balanceAfter,
+			RefID:        refID,
+			RefType:      refType,
+		}); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE kyc_profiles
+			   SET balance_frozen = FALSE, frozen_amount_cents = 0,
+			       frozen_reason = '', updated_at = NOW()
+			 WHERE user_id = $1
+		`, userID)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		credited = frozenCents
+		return nil
+	})
+	return credited, err
+}
+
 // ListPending returns profiles in active review states with optional filtering.
 func (r *PostgresKYCProfileRepository) ListPending(ctx context.Context, f KYCProfileFilters, p Pagination) ([]*domain.KYCProfile, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)

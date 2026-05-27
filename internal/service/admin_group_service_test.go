@@ -26,8 +26,27 @@ func (s *noopSnapshotter) SnapshotForMatch(_ context.Context, quinielaID, _ int)
 	return &domain.LeaderboardSnapshot{QuinielaID: quinielaID}, nil
 }
 
+// noopRanker implements Ranker for tests where leaderboard content is irrelevant.
+type noopRanker struct {
+	result *LeaderboardResult
+	err    error
+}
+
+func (r *noopRanker) GetLeaderboard(_ context.Context, _ int) (*LeaderboardResult, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	if r.result != nil {
+		return r.result, nil
+	}
+	return &LeaderboardResult{}, nil
+}
+func (r *noopRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) (*LeaderboardResult, error) {
+	return &LeaderboardResult{}, r.err
+}
+
 func newAdminGroupSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) AdminGroupService {
-	return NewAdminGroupService(qr, mr, &noopSnapshotter{}, &noopAuditLogger{}, zap.NewNop())
+	return NewAdminGroupService(qr, mr, &noopSnapshotter{}, &noopRanker{}, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── DeleteGroup ───────────────────────────────────────────────────────────────
@@ -122,7 +141,7 @@ func TestAdminGroupService_TransferOwnership_NewOwnerInactive_ReturnsNotFound(t 
 
 func TestAdminGroupService_TransferOwnership_TransferRolesError_Propagates(t *testing.T) {
 	newOwner := &domain.GroupMembership{ID: 20, UserID: 2, Status: domain.MembershipActive}
-	svc := NewAdminGroupService(&stubQuinielaRepo{}, &errOnTransferOwnershipRepo{newOwner: newOwner}, &noopSnapshotter{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminGroupService(&stubQuinielaRepo{}, &errOnTransferOwnershipRepo{newOwner: newOwner}, &noopSnapshotter{}, &noopRanker{}, &noopAuditLogger{}, zap.NewNop())
 
 	err := svc.TransferOwnership(context.Background(), 1, 2, 99)
 	if err == nil {
@@ -198,7 +217,7 @@ func TestAdminGroupService_RecalculateLeaderboard_HappyPath_ReturnsSnapshot(t *t
 
 func TestAdminGroupService_RecalculateLeaderboard_SnapshotterError_Propagates(t *testing.T) {
 	errSnap := &errSnapshotter{}
-	svc := NewAdminGroupService(&stubQuinielaRepo{}, &stubMemberRepo{}, errSnap, &noopAuditLogger{}, zap.NewNop())
+	svc := NewAdminGroupService(&stubQuinielaRepo{}, &stubMemberRepo{}, errSnap, &noopRanker{}, &noopAuditLogger{}, zap.NewNop())
 
 	_, err := svc.RecalculateLeaderboard(context.Background(), 5, 99)
 	if err == nil {
@@ -228,4 +247,98 @@ func (r *errOnTransferOwnershipRepo) GetByQuinielaAndUser(_ context.Context, _, 
 }
 func (r *errOnTransferOwnershipRepo) TransferOwnershipRoles(_ context.Context, _, _ int) error {
 	return errors.New("db error")
+}
+
+// ── DistributePrizes ──────────────────────────────────────────────────────────
+
+type stubPrizeCrediter struct {
+	credited bool
+	err      error
+}
+
+func (s *stubPrizeCrediter) CreditPrize(_ context.Context, _, _ int, _ int64, _ string) (bool, error) {
+	return s.credited, s.err
+}
+
+func newDistributeSvc(q *stubQuinielaRepo, ranker *noopRanker, prize *stubPrizeCrediter) AdminGroupService {
+	svc := NewAdminGroupService(q, &stubMemberRepo{}, &noopSnapshotter{}, ranker, &noopAuditLogger{}, zap.NewNop())
+	if prize != nil {
+		svc.(*adminGroupService).SetPrizeCrediter(prize)
+	}
+	return svc
+}
+
+func eligibleLeaderboard(userIDs ...int) *LeaderboardResult {
+	entries := make([]*domain.LeaderboardEntry, len(userIDs))
+	for i, uid := range userIDs {
+		entries[i] = &domain.LeaderboardEntry{User: &domain.User{ID: uid}, PrizeWinner: true}
+	}
+	return &LeaderboardResult{
+		Entries:           entries,
+		ActivePaidMembers: len(userIDs),
+		WinnerCount:       len(userIDs),
+		EligibleForPrizes: true,
+	}
+}
+
+func TestAdminGroupService_DistributePrizes_NoPrizeCrediter_ReturnsError(t *testing.T) {
+	q := &stubQuinielaRepo{quiniela: &domain.Quiniela{ID: 1, EntryFee: 1000}}
+	svc := newDistributeSvc(q, &noopRanker{}, nil) // no crediter wired
+	if err := svc.DistributePrizes(context.Background(), 1, 99); err == nil {
+		t.Fatal("expected error when prize crediter not configured, got nil")
+	}
+}
+
+func TestAdminGroupService_DistributePrizes_GroupNotFound_ReturnsNotFound(t *testing.T) {
+	q := &stubQuinielaRepo{quiniela: nil}
+	svc := newDistributeSvc(q, &noopRanker{}, &stubPrizeCrediter{credited: true})
+	if err := svc.DistributePrizes(context.Background(), 99, 1); err == nil {
+		t.Fatal("expected not-found, got nil")
+	}
+}
+
+func TestAdminGroupService_DistributePrizes_ZeroEntryFee_ReturnsConflict(t *testing.T) {
+	q := &stubQuinielaRepo{quiniela: &domain.Quiniela{ID: 1, EntryFee: 0}}
+	svc := newDistributeSvc(q, &noopRanker{}, &stubPrizeCrediter{credited: true})
+	if err := svc.DistributePrizes(context.Background(), 1, 1); err == nil {
+		t.Fatal("expected conflict for zero entry fee, got nil")
+	}
+}
+
+func TestAdminGroupService_DistributePrizes_NotEligible_ReturnsConflict(t *testing.T) {
+	q := &stubQuinielaRepo{quiniela: &domain.Quiniela{ID: 1, EntryFee: 1000}}
+	ranker := &noopRanker{result: &LeaderboardResult{EligibleForPrizes: false, WinnerCount: 0}}
+	svc := newDistributeSvc(q, ranker, &stubPrizeCrediter{credited: true})
+	if err := svc.DistributePrizes(context.Background(), 1, 1); err == nil {
+		t.Fatal("expected conflict for ineligible group, got nil")
+	}
+}
+
+func TestAdminGroupService_DistributePrizes_HappyPath_CreditApplied(t *testing.T) {
+	q := &stubQuinielaRepo{quiniela: &domain.Quiniela{ID: 1, EntryFee: 10_000}}
+	ranker := &noopRanker{result: eligibleLeaderboard(5, 7)}
+	svc := newDistributeSvc(q, ranker, &stubPrizeCrediter{credited: true})
+	if err := svc.DistributePrizes(context.Background(), 1, 99); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// KYC escrow path: Tier 0 user wins → CreditPrize returns (false, nil) meaning frozen.
+func TestAdminGroupService_DistributePrizes_Tier0Winner_PrizeFrozenInEscrow(t *testing.T) {
+	q := &stubQuinielaRepo{quiniela: &domain.Quiniela{ID: 2, EntryFee: 10_000}}
+	ranker := &noopRanker{result: eligibleLeaderboard(42)}
+	crediter := &stubPrizeCrediter{credited: false} // frozen, not credited directly
+	svc := newDistributeSvc(q, ranker, crediter)
+	if err := svc.DistributePrizes(context.Background(), 2, 99); err != nil {
+		t.Fatalf("unexpected error: prizes should succeed even when frozen via KYC escrow: %v", err)
+	}
+}
+
+func TestAdminGroupService_DistributePrizes_CreditError_Propagates(t *testing.T) {
+	q := &stubQuinielaRepo{quiniela: &domain.Quiniela{ID: 1, EntryFee: 10_000}}
+	ranker := &noopRanker{result: eligibleLeaderboard(5)}
+	svc := newDistributeSvc(q, ranker, &stubPrizeCrediter{err: errors.New("ledger fail")})
+	if err := svc.DistributePrizes(context.Background(), 1, 99); err == nil {
+		t.Fatal("expected credit error to propagate, got nil")
+	}
 }

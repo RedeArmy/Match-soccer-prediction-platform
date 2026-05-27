@@ -43,6 +43,7 @@ type WebhookPaymentService interface {
 type webhookPaymentService struct {
 	ledgerRepo repository.BalanceLedgerRepository
 	intentRepo repository.PaymentIntentRepository
+	kycGate    KYCGate // wired via SetKYCGate after construction; nil disables KYC checks
 	audit      AuditLogger
 	log        *zap.Logger
 }
@@ -62,9 +63,26 @@ func NewWebhookPaymentService(
 	}
 }
 
+// SetKYCGate wires the KYCGate into the service for deposit and AML checks.
+// Called once at startup after the KYC module is initialised. When nil,
+// CheckDeposit and AML flagging are skipped (safe for tests without a DB).
+func (s *webhookPaymentService) SetKYCGate(gate KYCGate) { s.kycGate = gate }
+
 func (s *webhookPaymentService) CreditFromRecurrente(ctx context.Context, userID, amountCents int, currency, reference string) error {
-	return s.creditDirect(ctx, userID, amountCents, currency, reference,
-		domain.LedgerKindWebhookRecurrente, domain.AuditActionWebhookPaymentCredit)
+	if s.kycGate != nil {
+		if err := s.kycGate.CheckDeposit(ctx, userID, amountCents); err != nil {
+			return err
+		}
+		if err := s.kycGate.CheckDepositVelocity(ctx, userID, amountCents); err != nil {
+			return err
+		}
+	}
+	if err := s.creditDirect(ctx, userID, amountCents, currency, reference,
+		domain.LedgerKindWebhookRecurrente, domain.AuditActionWebhookPaymentCredit); err != nil {
+		return err
+	}
+	s.recordAMLIfNeeded(ctx, userID, amountCents)
+	return nil
 }
 
 func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amountCents int, currency, reference string, kind domain.BalanceLedgerKind, action string) error {
@@ -108,6 +126,21 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 		return apperrors.Validation("capture ID is required")
 	}
 
+	if s.kycGate != nil {
+		pending, err := s.intentRepo.GetByToken(ctx, intentToken)
+		if err != nil {
+			return err
+		}
+		if pending != nil && pending.Status == domain.PaymentIntentPending {
+			if err := s.kycGate.CheckDeposit(ctx, pending.UserID, pending.AmountCents); err != nil {
+				return err
+			}
+			if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, pending.AmountCents); err != nil {
+				return err
+			}
+		}
+	}
+
 	intent, err := s.intentRepo.CaptureAndCredit(ctx, intentToken, captureID)
 	if errors.Is(err, repository.ErrPaymentIntentAlreadyCaptured) {
 		s.log.Debug("paypal webhook: idempotent re-delivery ignored",
@@ -143,7 +176,30 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 		"capture_id":   captureID,
 		"kind":         string(domain.LedgerKindWebhookPayPal),
 	})
+	s.recordAMLIfNeeded(ctx, intent.UserID, intent.AmountCents)
 	return nil
+}
+
+// recordAMLIfNeeded writes AuditActionAMLFlagged when either the single-
+// transaction or cumulative rolling-period AML threshold is exceeded.
+// Non-blocking: the credit is never reversed; only the audit record is created.
+func (s *webhookPaymentService) recordAMLIfNeeded(ctx context.Context, userID, amountCents int) {
+	if s.kycGate == nil {
+		return
+	}
+	resType := "user"
+	if exceeded, err := s.kycGate.ExceedsAMLThreshold(ctx, amountCents); err == nil && exceeded {
+		s.audit.Log(ctx, nil, nil, domain.AuditActionAMLFlagged, &resType, &userID, map[string]any{
+			"amount_cents":   amountCents,
+			"threshold_type": "single_transaction",
+		})
+	}
+	if exceeded, err := s.kycGate.ExceedsCumulativeAMLThreshold(ctx, userID, amountCents); err == nil && exceeded {
+		s.audit.Log(ctx, nil, nil, domain.AuditActionAMLFlagged, &resType, &userID, map[string]any{
+			"amount_cents":   amountCents,
+			"threshold_type": "cumulative",
+		})
+	}
 }
 
 var _ WebhookPaymentService = (*webhookPaymentService)(nil)

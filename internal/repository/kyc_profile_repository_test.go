@@ -571,3 +571,72 @@ func TestKYCProfileRepository_RiskDashboardStats_WithData(t *testing.T) {
 		t.Errorf("TierDistribution[0]: got %d, want 1", stats.TierDistribution[domain.KYCTierUnverified])
 	}
 }
+
+// ── ReleaseAndCreditFrozen ────────────────────────────────────────────────────
+
+func TestKYCProfileRepository_ReleaseAndCreditFrozen_CreditsBalanceAndClearsFreeze(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+	userRepo := repository.NewPostgresUserRepository(testDB)
+
+	const frozenCents = 50_000 // Q500
+	if err := repo.SetFrozen(context.Background(), u.ID, true, frozenCents, "prize_win"); err != nil {
+		t.Fatalf("SetFrozen: %v", err)
+	}
+
+	credited, err := repo.ReleaseAndCreditFrozen(context.Background(), u.ID, int64(p.ID), "kyc_unfreeze")
+	if err != nil {
+		t.Fatalf("ReleaseAndCreditFrozen: %v", err)
+	}
+	if credited != frozenCents {
+		t.Errorf("credited: got %d, want %d", credited, frozenCents)
+	}
+
+	// users.balance_cents must have been incremented.
+	balanceCents, _, err := userRepo.GetBalance(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if balanceCents != frozenCents {
+		t.Errorf("balance_cents: got %d, want %d", balanceCents, frozenCents)
+	}
+
+	// kyc_profiles freeze columns must be cleared.
+	got, _ := repo.GetByUserID(context.Background(), u.ID)
+	if got.BalanceFrozen {
+		t.Error("expected balance_frozen=false after release")
+	}
+	if got.FrozenAmountCents != 0 {
+		t.Errorf("frozen_amount_cents: got %d, want 0", got.FrozenAmountCents)
+	}
+
+	// A balance_ledger row with kind='prize' must exist.
+	var count int
+	err = testDB.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM balance_ledger WHERE user_id = $1 AND kind = 'prize'`, u.ID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("balance_ledger query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("balance_ledger rows: got %d, want 1", count)
+	}
+}
+
+func TestKYCProfileRepository_ReleaseAndCreditFrozen_NotFrozen_IdempotentNoOp(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	// Profile is not frozen — calling release must return 0, nil.
+	credited, err := repo.ReleaseAndCreditFrozen(context.Background(), u.ID, int64(p.ID), "kyc_unfreeze")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if credited != 0 {
+		t.Errorf("expected 0 credited for non-frozen profile, got %d", credited)
+	}
+}

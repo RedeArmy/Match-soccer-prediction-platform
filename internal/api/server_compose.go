@@ -153,7 +153,7 @@ func (s *Server) buildHandlers(
 	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, groupAuthz, tiebreakerRepo, auditSvc, s.log)
 	tournamentSvc := service.NewTournamentService(repos.match, tournamentRepo, params, auditSvc, s.log)
 	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
-	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, repos.member, snapshotter, auditSvc, s.log)
+	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, repos.member, snapshotter, ranker, auditSvc, s.log)
 	adminUserSvc := service.NewAdminUserService(repos.user, repos.member, paymentRepo, auditSvc, s.log)
 	adminReadSvc := service.NewAdminReadService(
 		service.AdminReadRepos{
@@ -300,8 +300,13 @@ func (s *Server) buildHandlers(
 	h.adminN8n = handler.NewAdminN8nHandler(s.cfg.N8n.BaseURL, s.cfg.N8n.APIKey, s.log)
 
 	// ── KYC module ───────────────────────────────────────────────────────────
-	h.kyc, h.adminKYC, prizeSvc = s.buildKYCModule(ctx, params, paramSvcWithAudit, auditSvc, kycGate, ledgerRepo, fileStore)
-	_ = prizeSvc // reserved for prize-disbursement callers; suppresses unused-variable error
+	h.kyc, h.adminKYC, prizeSvc = s.buildKYCModule(ctx, params, paramSvcWithAudit, auditSvc, kycGate, ledgerRepo, outboxWriter, fileStore)
+	if pc, ok := adminGroupSvc.(interface{ SetPrizeCrediter(service.PrizeCrediter) }); ok {
+		pc.SetPrizeCrediter(prizeSvc)
+	}
+	if wg, ok := webhookPaymentSvc.(interface{ SetKYCGate(service.KYCGate) }); ok {
+		wg.SetKYCGate(kycGate)
+	}
 
 	// Wire observability notifier into payment-path handlers. Each handler
 	// defines its own narrow interface so the import graph stays acyclic.
@@ -325,6 +330,7 @@ func (s *Server) buildKYCModule(
 	auditSvc service.AuditLogger,
 	kycGate service.KYCGate,
 	ledgerRepo repository.BalanceLedgerRepository,
+	outboxWriter outbox.Writer,
 	fileStore storage.FileStore,
 ) (*handler.KYCHandler, *handler.AdminKYCHandler, service.PrizeCrediter) {
 	kycProfileRepo := repository.NewPostgresKYCProfileRepository(s.db)
@@ -358,7 +364,7 @@ func (s *Server) buildKYCModule(
 
 	return handler.NewKYCHandler(kycSvc, fileStore, kycMaxUpload, s.log),
 		handler.NewAdminKYCHandler(kycSvc, s.log),
-		service.NewPrizeService(ledgerRepo, kycGate, kycSvc, s.notifier, s.log)
+		service.NewPrizeService(ledgerRepo, kycGate, kycSvc, outboxWriter, s.notifier, s.log)
 }
 
 // buildResilientCache wraps s.cache with a circuit breaker when the underlying
