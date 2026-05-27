@@ -346,30 +346,6 @@ func (r *PostgresKYCProfileRepository) SumFrozenAmountCents(ctx context.Context)
 	return total, nil
 }
 
-// Deprecated: CountAccountsByDeviceFingerprint is no longer called by application
-// code. Device fingerprinting was removed in favour of IP-based submission velocity
-// (CountRecentSubmissionsByIP). The column and this method are retained for 30 days
-// to confirm zero writes before the column is dropped in a future migration.
-func (r *PostgresKYCProfileRepository) CountAccountsByDeviceFingerprint(ctx context.Context, fingerprint string, excludeUserID int) (int64, error) {
-	if fingerprint == "" {
-		return 0, nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
-	defer cancel()
-	var n int64
-	err := r.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM kyc_profiles
-		  WHERE device_fingerprint = $1
-		    AND user_id <> $2
-		    AND status NOT IN ('rejected', 'unverified')`,
-		fingerprint, excludeUserID,
-	).Scan(&n)
-	if err != nil {
-		return 0, apperrors.Internal(err)
-	}
-	return n, nil
-}
-
 func (r *PostgresKYCProfileRepository) CountRecentSubmissionsByIP(ctx context.Context, ip string, since time.Time) (int64, error) {
 	if ip == "" {
 		return 0, nil
@@ -445,15 +421,18 @@ func (r *PostgresKYCProfileRepository) RiskDashboardStats(ctx context.Context) (
 	      COUNT(*) FILTER (WHERE sanctions_flag = TRUE) AS sanctions
 	    FROM kyc_profiles
 	  ),
+	  ip_velocity AS (
+	    SELECT COUNT(*) AS n FROM kyc_events WHERE event_type = 'ip_velocity_flag'
+	  ),
 	  tiers AS (
 	    SELECT tier, COUNT(*) AS cnt FROM kyc_profiles GROUP BY tier
 	  )
-	SELECT q.n, a.secs, fs.total, f.pep, f.sanctions
-	  FROM queue q, avg_review a, frozen_sum fs, fraud f`
+	SELECT q.n, a.secs, fs.total, f.pep, f.sanctions, iv.n
+	  FROM queue q, avg_review a, frozen_sum fs, fraud f, ip_velocity iv`
 
 	var s domain.KYCRiskDashboardStats
 	var avgSecs float64
-	err := r.db.QueryRow(ctx, q).Scan(&s.QueueDepth, &avgSecs, &s.FrozenBalanceTotalCents, &s.PEPFlagCount, &s.SanctionsFlagCount)
+	err := r.db.QueryRow(ctx, q).Scan(&s.QueueDepth, &avgSecs, &s.FrozenBalanceTotalCents, &s.PEPFlagCount, &s.SanctionsFlagCount, &s.IPVelocityFlagCount)
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}

@@ -221,6 +221,18 @@ func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCReques
 
 	if s.gate != nil {
 		if err := s.gate.CheckIPSubmissionVelocity(ctx, req.SubmissionIP); err != nil {
+			var profileID int
+			if existing != nil {
+				profileID = existing.ID
+			}
+			s.appendEvent(ctx, &domain.KYCEvent{
+				ProfileID:   profileID,
+				ProfileType: domain.KYCProfileTypeUser,
+				EventType:   domain.KYCEventIPVelocityFlag,
+				ActorID:     &userID,
+				Metadata:    map[string]any{"ip": req.SubmissionIP},
+				TraceID:     traceIDFromCtx(ctx),
+			})
 			return nil, err
 		}
 	}

@@ -550,7 +550,6 @@ func TestKYCService_VerifyDocument_RepoError_Propagates(t *testing.T) {
 	}
 }
 
-
 // ── RecalculateRiskScore ──────────────────────────────────────────────────────
 
 func TestKYCService_RecalculateRiskScore_TierUnverified(t *testing.T) {
@@ -721,6 +720,18 @@ func (g *ipVelocityGateStub) CheckIPSubmissionVelocity(_ context.Context, _ stri
 	return g.err
 }
 
+// trackingEventRepo records every event passed to Create for assertion in tests.
+type trackingEventRepo struct {
+	kycEventRepoStub
+	created []*domain.KYCEvent
+}
+
+func (r *trackingEventRepo) Create(_ context.Context, e *domain.KYCEvent) error {
+	e.ID = 99
+	r.created = append(r.created, e)
+	return r.err
+}
+
 func TestKYCService_Submit_IPVelocityBlocked_ReturnsError(t *testing.T) {
 	gate := &ipVelocityGateStub{err: apperrors.RateLimited("too many submissions")}
 	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
@@ -731,6 +742,30 @@ func TestKYCService_Submit_IPVelocityBlocked_ReturnsError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected rate-limit error from IP velocity gate, got nil")
+	}
+}
+
+func TestKYCService_Submit_IPVelocityBlocked_EmitsAuditEvent(t *testing.T) {
+	gate := &ipVelocityGateStub{err: apperrors.RateLimited("too many submissions")}
+	er := &trackingEventRepo{}
+	svc := NewKYCService(&kycProfileRepoStub{}, &kycDocRepoStub{}, er, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+	svc.(*kycService).SetGate(gate)
+	_, _ = svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+		SubmissionIP: "5.6.7.8",
+	})
+	if len(er.created) == 0 {
+		t.Fatal("expected ip_velocity_flag audit event, got none")
+	}
+	ev := er.created[0]
+	if ev.EventType != domain.KYCEventIPVelocityFlag {
+		t.Errorf("expected event_type=%q, got %q", domain.KYCEventIPVelocityFlag, ev.EventType)
+	}
+	if ev.ProfileType != domain.KYCProfileTypeUser {
+		t.Errorf("expected profile_type=%q, got %q", domain.KYCProfileTypeUser, ev.ProfileType)
+	}
+	if ip, _ := ev.Metadata["ip"].(string); ip != "5.6.7.8" {
+		t.Errorf("expected metadata.ip=5.6.7.8, got %q", ip)
 	}
 }
 
