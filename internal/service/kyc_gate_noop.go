@@ -17,5 +17,6 @@ func (NoopKYCGate) CheckWithdrawalVelocity(_ context.Context, _, _ int) error { 
 func (NoopKYCGate) CheckWinFreeze(_ context.Context, _, _ int) (bool, string, error) {
 	return false, "", nil
 }
+func (NoopKYCGate) CheckIPSubmissionVelocity(_ context.Context, _ string) error { return nil }
 
 var _ KYCGate = NoopKYCGate{}

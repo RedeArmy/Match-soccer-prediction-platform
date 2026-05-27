@@ -95,6 +95,8 @@ const (
 	KYCEventFrozen KYCEventType = "frozen"
 	// KYCEventUnfrozen records the release of a frozen balance.
 	KYCEventUnfrozen KYCEventType = "unfrozen"
+	// KYCEventIPVelocityFlag records a blocked submission due to IP velocity.
+	KYCEventIPVelocityFlag KYCEventType = "ip_velocity_flag"
 )
 
 // ── KYC profile (individual) ──────────────────────────────────────────────────
@@ -127,7 +129,7 @@ type KYCProfile struct {
 	ReviewedBy        *int       // admin user ID
 	RejectionReason   string     // non-empty when status = rejected
 	RiskScore         int        // 0–100; recalculated on each financial event
-	DeviceFingerprint *string    // SHA-256 hex digest of the client's device fingerprint; nil if not submitted
+	SubmissionIP      *string    // client IP at the time of KYC submission; nil if not recorded
 	PEPFlag           bool       // Politically Exposed Person
 	SanctionsFlag     bool       // matched against sanctions list
 	BalanceFrozen     bool       // true when balance is held pending KYC tier upgrade
@@ -209,4 +211,5 @@ type KYCRiskDashboardStats struct {
 	FrozenBalanceTotalCents int64             `json:"frozen_balance_total_cents"`
 	PEPFlagCount            int64             `json:"pep_flag_count"`
 	SanctionsFlagCount      int64             `json:"sanctions_flag_count"`
+	IPVelocityFlagCount     int64             `json:"ip_velocity_flag_count"`
 }

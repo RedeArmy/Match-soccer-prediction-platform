@@ -463,6 +463,9 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyKYCTier1WithdrawalVelocityCents: true,
 		domain.ParamKeyKYCTier2WithdrawalVelocityCents: true,
 		domain.ParamKeyKYCRiskDashboardCacheTTLSec:     true,
+		// Added by migration 000129
+		domain.ParamKeyKYCIPVelocityWindowMinutes:  true,
+		domain.ParamKeyKYCIPVelocityMaxSubmissions: true,
 	}
 
 	for _, spec := range allParams {
@@ -530,7 +533,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 110 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125)
+	const expectedCount = 112 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125, +2 ip velocity from 000129)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

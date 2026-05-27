@@ -27,6 +27,7 @@ const (
 	AuditActionMemberBulkRemoved    = "admin_group.member_bulk_removed"
 	AuditActionGroupBulkDeleted     = "admin_group.bulk_deleted"
 	AuditActionLeaderboardRefreshed = "admin_group.leaderboard_refreshed"
+	AuditActionPrizesDistributed    = "admin_group.prizes_distributed"
 	AuditActionScoringRuleUpdated   = "scoring_rule.updated"
 
 	// Balance and payment actions.

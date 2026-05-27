@@ -436,6 +436,132 @@ func TestKYCGate_CheckWithdrawal_CapExceeded_WithMetrics(t *testing.T) {
 	}
 }
 
+// ── CheckIPSubmissionVelocity ─────────────────────────────────────────────────
+
+type ipCountStub struct {
+	count int64
+	err   error
+}
+
+func newIPCountGate(count int64, err error) *kycGate {
+	g := NewKYCGate(&kycUserRepoStub{user: &domain.User{ID: 1}}, &noopSystemParamService{}).(*kycGate)
+	g.SetProfileRepo(&ipCountStub{count: count, err: err})
+	return g
+}
+
+func (s *ipCountStub) Upsert(_ context.Context, _ *domain.KYCProfile) error { return nil }
+func (s *ipCountStub) GetByUserID(_ context.Context, _ int) (*domain.KYCProfile, error) {
+	return nil, nil
+}
+func (s *ipCountStub) GetByID(_ context.Context, _ int) (*domain.KYCProfile, error) { return nil, nil }
+func (s *ipCountStub) UpdateStatus(_ context.Context, _ int, _ domain.KYCStatus, _ int, _ string) error {
+	return nil
+}
+func (s *ipCountStub) UpdateTier(_ context.Context, _ int, _ domain.KYCTier, _ *time.Time) error {
+	return nil
+}
+func (s *ipCountStub) SetFrozen(_ context.Context, _ int, _ bool, _ int, _ string) error { return nil }
+func (s *ipCountStub) ListPending(_ context.Context, _ repository.KYCProfileFilters, _ repository.Pagination) ([]*domain.KYCProfile, error) {
+	return nil, nil
+}
+func (s *ipCountStub) ListFrozen(_ context.Context) ([]*domain.FrozenBalanceSummary, error) {
+	return nil, nil
+}
+func (s *ipCountStub) ListDueForReview(_ context.Context, _ time.Time) ([]*domain.KYCProfile, error) {
+	return nil, nil
+}
+func (s *ipCountStub) CountReviewQueue(_ context.Context) (int64, error)     { return 0, nil }
+func (s *ipCountStub) SumFrozenAmountCents(_ context.Context) (int64, error) { return 0, nil }
+func (s *ipCountStub) RiskDashboardStats(_ context.Context) (*domain.KYCRiskDashboardStats, error) {
+	return &domain.KYCRiskDashboardStats{TierDistribution: map[domain.KYCTier]int64{}}, nil
+}
+func (s *ipCountStub) ExistsByDocumentIdentity(_ context.Context, _ domain.KYCDocumentType, _ string, _ *time.Time, _ int) (bool, error) {
+	return false, nil
+}
+func (s *ipCountStub) UpdateRiskScore(_ context.Context, _ int, _ int) error { return nil }
+func (s *ipCountStub) CountRecentSubmissionsByIP(_ context.Context, _ string, _ time.Time) (int64, error) {
+	return s.count, s.err
+}
+func (s *ipCountStub) ReleaseAndCreditFrozen(_ context.Context, _ int, _ int64, _ string) (int, error) {
+	return 0, nil
+}
+
+func isRateLimited(err error) bool {
+	var ae *apperrors.AppError
+	return errors.As(err, &ae) && ae.Code == apperrors.CodeRateLimited
+}
+
+func TestKYCGate_CheckIPSubmissionVelocity_EmptyIP_NoOp(t *testing.T) {
+	g := newIPCountGate(999, nil)
+	if err := g.CheckIPSubmissionVelocity(context.Background(), ""); err != nil {
+		t.Errorf("expected nil for empty IP, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckIPSubmissionVelocity_NilProfileRepo_NoOp(t *testing.T) {
+	g := NewKYCGate(&kycUserRepoStub{user: &domain.User{ID: 1}}, &noopSystemParamService{}).(*kycGate)
+	if err := g.CheckIPSubmissionVelocity(context.Background(), "1.2.3.4"); err != nil {
+		t.Errorf("expected nil with nil profileRepo, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckIPSubmissionVelocity_BelowLimit_Allowed(t *testing.T) {
+	// count=2, default max=3 → allowed
+	g := newIPCountGate(2, nil)
+	if err := g.CheckIPSubmissionVelocity(context.Background(), "1.2.3.4"); err != nil {
+		t.Errorf("expected nil below limit, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckIPSubmissionVelocity_AtLimit_RateLimited(t *testing.T) {
+	// count=3, default max=3 → blocked
+	g := newIPCountGate(3, nil)
+	err := g.CheckIPSubmissionVelocity(context.Background(), "1.2.3.4")
+	if err == nil || !isRateLimited(err) {
+		t.Errorf("expected RateLimited at limit, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckIPSubmissionVelocity_AboveLimit_RateLimited(t *testing.T) {
+	g := newIPCountGate(10, nil)
+	err := g.CheckIPSubmissionVelocity(context.Background(), "192.168.1.1")
+	if err == nil || !isRateLimited(err) {
+		t.Errorf("expected RateLimited above limit, got %v", err)
+	}
+}
+
+func TestKYCGate_CheckIPSubmissionVelocity_RepoError_Propagates(t *testing.T) {
+	g := newIPCountGate(0, errors.New("db fail"))
+	err := g.CheckIPSubmissionVelocity(context.Background(), "1.2.3.4")
+	if err == nil {
+		t.Error("expected repo error to propagate")
+	}
+}
+
+func TestKYCGate_CheckIPSubmissionVelocity_ZeroMaxParam_DisablesCheck(t *testing.T) {
+	// maxSub=0 disables the check entirely
+	g := NewKYCGate(&kycUserRepoStub{user: &domain.User{ID: 1}}, &paramReturning{value: "0"}).(*kycGate)
+	g.SetProfileRepo(&ipCountStub{count: 99, err: nil})
+	if err := g.CheckIPSubmissionVelocity(context.Background(), "1.2.3.4"); err != nil {
+		t.Errorf("expected nil when max_submissions=0 (disabled), got %v", err)
+	}
+}
+
+func TestKYCGate_CheckIPSubmissionVelocity_WithMetrics_RecordsFraudFlag(t *testing.T) {
+	g := newIPCountGate(10, nil)
+	g.SetMetrics(newTestMetrics(t))
+	err := g.CheckIPSubmissionVelocity(context.Background(), "1.2.3.4")
+	if err == nil || !isRateLimited(err) {
+		t.Errorf("expected RateLimited with metrics, got %v", err)
+	}
+}
+
+func TestKYCGate_SetProfileRepo_AcceptsNilAndNonNil(t *testing.T) {
+	g := NewKYCGate(&kycUserRepoStub{user: &domain.User{ID: 1}}, &noopSystemParamService{}).(*kycGate)
+	g.SetProfileRepo(nil)
+	g.SetProfileRepo(&ipCountStub{})
+}
+
 // ── CheckDeposit with metrics ─────────────────────────────────────────────────
 
 func TestKYCGate_CheckDeposit_CapExceeded_WithMetrics(t *testing.T) {

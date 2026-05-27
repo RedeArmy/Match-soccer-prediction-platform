@@ -194,6 +194,7 @@ type KYCRiskDashboardResponse struct {
 	FrozenBalanceTotalCents int64            `json:"frozen_balance_total_cents"`
 	PEPFlagCount            int64            `json:"pep_flag_count"`
 	SanctionsFlagCount      int64            `json:"sanctions_flag_count"`
+	IPVelocityFlagCount     int64            `json:"ip_velocity_flag_count"`
 }
 
 func riskDashboardToResponse(s *domain.KYCRiskDashboardStats) KYCRiskDashboardResponse {
@@ -208,6 +209,7 @@ func riskDashboardToResponse(s *domain.KYCRiskDashboardStats) KYCRiskDashboardRe
 		FrozenBalanceTotalCents: s.FrozenBalanceTotalCents,
 		PEPFlagCount:            s.PEPFlagCount,
 		SanctionsFlagCount:      s.SanctionsFlagCount,
+		IPVelocityFlagCount:     s.IPVelocityFlagCount,
 	}
 }
 

@@ -36,13 +36,13 @@ func (r *PostgresKYCProfileRepository) Upsert(ctx context.Context, p *domain.KYC
 			full_name, date_of_birth, nationality,
 			document_type, document_number,
 			address_line, city, country, postal_code,
-			submitted_at
+			submission_ip, submitted_at
 		) VALUES (
 			$1, $2, $3,
 			$4, $5, $6,
 			$7, $8,
 			$9, $10, $11, $12,
-			$13
+			$13::inet, $14
 		)
 		ON CONFLICT (user_id) DO UPDATE SET
 			status           = EXCLUDED.status,
@@ -55,16 +55,21 @@ func (r *PostgresKYCProfileRepository) Upsert(ctx context.Context, p *domain.KYC
 			city             = EXCLUDED.city,
 			country          = EXCLUDED.country,
 			postal_code      = EXCLUDED.postal_code,
+			submission_ip    = COALESCE(kyc_profiles.submission_ip, EXCLUDED.submission_ip),
 			submitted_at     = EXCLUDED.submitted_at,
 			updated_at       = NOW()
 		RETURNING id, created_at, updated_at
 	`
+	var ip *string
+	if p.SubmissionIP != nil && *p.SubmissionIP != "" {
+		ip = p.SubmissionIP
+	}
 	return r.db.QueryRow(ctx, q,
 		p.UserID, string(p.Status), int(p.Tier),
 		p.FullName, p.DateOfBirth, p.Nationality,
 		p.DocumentType, p.DocumentNumber,
 		p.AddressLine, p.City, p.Country, p.PostalCode,
-		p.SubmittedAt,
+		ip, p.SubmittedAt,
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -172,6 +177,79 @@ func (r *PostgresKYCProfileRepository) SetFrozen(ctx context.Context, userID int
 	return nil
 }
 
+// ReleaseAndCreditFrozen atomically:
+//  1. Locks the profile row and reads frozen_amount_cents.
+//  2. Credits users.balance_cents by that amount.
+//  3. Inserts a balance_ledger row (kind=prize).
+//  4. Clears the freeze columns on kyc_profiles.
+//
+// Returns 0, nil when balance_frozen is already false (idempotent).
+func (r *PostgresKYCProfileRepository) ReleaseAndCreditFrozen(ctx context.Context, userID int, refID int64, refType string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	var credited int
+	err := withTx(ctx, r.db, "KYCProfileRepository.ReleaseAndCreditFrozen", func(tx pgx.Tx) error {
+		var profileID, frozenCents int
+		err := tx.QueryRow(ctx, `
+			SELECT id, frozen_amount_cents
+			  FROM kyc_profiles
+			 WHERE user_id = $1 AND balance_frozen = TRUE
+			 FOR UPDATE
+		`, userID).Scan(&profileID, &frozenCents)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // already unfrozen — idempotent no-op
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if frozenCents == 0 {
+			// Mark unfrozen but nothing to credit.
+			_, err = tx.Exec(ctx, `
+				UPDATE kyc_profiles
+				   SET balance_frozen = FALSE, frozen_amount_cents = 0,
+				       frozen_reason = '', updated_at = NOW()
+				 WHERE user_id = $1
+			`, userID)
+			return err
+		}
+		var balanceAfter int
+		err = tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents = balance_cents + $2, updated_at = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING balance_cents
+		`, userID, frozenCents).Scan(&balanceAfter)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperrors.NotFound("user not found")
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if err := insertLedgerTx(ctx, tx, ledgerRow{
+			UserID:       userID,
+			DeltaCents:   frozenCents,
+			Kind:         domain.LedgerKindPrize,
+			BalanceAfter: balanceAfter,
+			RefID:        refID,
+			RefType:      refType,
+		}); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE kyc_profiles
+			   SET balance_frozen = FALSE, frozen_amount_cents = 0,
+			       frozen_reason = '', updated_at = NOW()
+			 WHERE user_id = $1
+		`, userID)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		credited = frozenCents
+		return nil
+	})
+	return credited, err
+}
+
 // ListPending returns profiles in active review states with optional filtering.
 func (r *PostgresKYCProfileRepository) ListPending(ctx context.Context, f KYCProfileFilters, p Pagination) ([]*domain.KYCProfile, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
@@ -268,8 +346,8 @@ func (r *PostgresKYCProfileRepository) SumFrozenAmountCents(ctx context.Context)
 	return total, nil
 }
 
-func (r *PostgresKYCProfileRepository) CountAccountsByDeviceFingerprint(ctx context.Context, fingerprint string, excludeUserID int) (int64, error) {
-	if fingerprint == "" {
+func (r *PostgresKYCProfileRepository) CountRecentSubmissionsByIP(ctx context.Context, ip string, since time.Time) (int64, error) {
+	if ip == "" {
 		return 0, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
@@ -277,10 +355,9 @@ func (r *PostgresKYCProfileRepository) CountAccountsByDeviceFingerprint(ctx cont
 	var n int64
 	err := r.db.QueryRow(ctx,
 		`SELECT COUNT(*) FROM kyc_profiles
-		  WHERE device_fingerprint = $1
-		    AND user_id <> $2
-		    AND status NOT IN ('rejected', 'unverified')`,
-		fingerprint, excludeUserID,
+		  WHERE submission_ip = $1::inet
+		    AND submitted_at >= $2`,
+		ip, since,
 	).Scan(&n)
 	if err != nil {
 		return 0, apperrors.Internal(err)
@@ -344,15 +421,18 @@ func (r *PostgresKYCProfileRepository) RiskDashboardStats(ctx context.Context) (
 	      COUNT(*) FILTER (WHERE sanctions_flag = TRUE) AS sanctions
 	    FROM kyc_profiles
 	  ),
+	  ip_velocity AS (
+	    SELECT COUNT(*) AS n FROM kyc_events WHERE event_type = 'ip_velocity_flag'
+	  ),
 	  tiers AS (
 	    SELECT tier, COUNT(*) AS cnt FROM kyc_profiles GROUP BY tier
 	  )
-	SELECT q.n, a.secs, fs.total, f.pep, f.sanctions
-	  FROM queue q, avg_review a, frozen_sum fs, fraud f`
+	SELECT q.n, a.secs, fs.total, f.pep, f.sanctions, iv.n
+	  FROM queue q, avg_review a, frozen_sum fs, fraud f, ip_velocity iv`
 
 	var s domain.KYCRiskDashboardStats
 	var avgSecs float64
-	err := r.db.QueryRow(ctx, q).Scan(&s.QueueDepth, &avgSecs, &s.FrozenBalanceTotalCents, &s.PEPFlagCount, &s.SanctionsFlagCount)
+	err := r.db.QueryRow(ctx, q).Scan(&s.QueueDepth, &avgSecs, &s.FrozenBalanceTotalCents, &s.PEPFlagCount, &s.SanctionsFlagCount, &s.IPVelocityFlagCount)
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
@@ -389,7 +469,7 @@ const kycProfileCols = `
 	submitted_at, reviewed_at, reviewed_by, rejection_reason,
 	risk_score, pep_flag, sanctions_flag,
 	balance_frozen, frozen_amount_cents, frozen_reason,
-	next_review_at, created_at, updated_at`
+	next_review_at, submission_ip, created_at, updated_at`
 
 const kycProfileSelectAll = `SELECT` + kycProfileCols + ` FROM kyc_profiles`
 const kycProfileSelectByUserID = kycProfileSelectAll + ` WHERE user_id = $1`
@@ -408,7 +488,7 @@ func scanKYCProfile(s rowScanner) (*domain.KYCProfile, error) {
 		&p.SubmittedAt, &p.ReviewedAt, &p.ReviewedBy, &p.RejectionReason,
 		&p.RiskScore, &p.PEPFlag, &p.SanctionsFlag,
 		&p.BalanceFrozen, &p.FrozenAmountCents, &p.FrozenReason,
-		&p.NextReviewAt, &p.CreatedAt, &p.UpdatedAt,
+		&p.NextReviewAt, &p.SubmissionIP, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
