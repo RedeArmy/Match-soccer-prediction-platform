@@ -61,6 +61,7 @@ type paramSpec struct {
 //   - 000113_seed_phase7_infra_params           (+2)
 //   - 000121_seed_kyc_system_params             (+10)
 //   - 000125_seed_kyc_cache_ttl_param           (+1)
+//   - 000129_seed_kyc_ip_velocity_params        (+2)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -248,6 +249,9 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyKYCTier2WithdrawalVelocityCents, defaultValue: strconv.Itoa(domain.DefaultKYCTier2WithdrawalVelocityCents), paramType: "int", category: "kyc", isRuntime: true},
 	// kyc.risk_dashboard_cache_ttl_sec has a mutation hook wired in migration 000125.
 	{key: domain.ParamKeyKYCRiskDashboardCacheTTLSec, defaultValue: strconv.Itoa(domain.DefaultKYCRiskDashboardCacheTTLSecs), paramType: "int", category: "kyc", isRuntime: true},
+	// KYC IP velocity (migration 000129); runtime — enforced per-request by CheckIPSubmissionVelocity.
+	{key: domain.ParamKeyKYCIPVelocityWindowMinutes, defaultValue: strconv.Itoa(domain.DefaultKYCIPVelocityWindowMinutes), paramType: "int", category: "kyc", isRuntime: true},
+	{key: domain.ParamKeyKYCIPVelocityMaxSubmissions, defaultValue: strconv.Itoa(domain.DefaultKYCIPVelocityMaxSubmissions), paramType: "int", category: "kyc", isRuntime: true},
 }
 
 type dbParam struct {

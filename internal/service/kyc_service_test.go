@@ -12,6 +12,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── stubs ─────────────────────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ func (r *kycProfileRepoStub) ExistsByDocumentIdentity(_ context.Context, _ domai
 	return r.dupExists, r.err
 }
 func (r *kycProfileRepoStub) UpdateRiskScore(_ context.Context, _ int, _ int) error { return r.err }
-func (r *kycProfileRepoStub) CountAccountsByDeviceFingerprint(_ context.Context, _ string, _ int) (int64, error) {
+func (r *kycProfileRepoStub) CountRecentSubmissionsByIP(_ context.Context, _ string, _ time.Time) (int64, error) {
 	return 0, r.err
 }
 func (r *kycProfileRepoStub) ReleaseAndCreditFrozen(_ context.Context, _ int, _ int64, _ string) (int, error) {
@@ -549,35 +550,6 @@ func TestKYCService_VerifyDocument_RepoError_Propagates(t *testing.T) {
 	}
 }
 
-// ── checkDeviceFraud ──────────────────────────────────────────────────────────
-
-func TestKYCService_Submit_WithDeviceFingerprint_DuplicateDevice_ReturnsConflict(t *testing.T) {
-	pr := &kycProfileRepoStub{}
-	pr.dupExists = false
-	// Use a custom stub that returns count > 0 for fingerprint check.
-	// We can't easily test checkDeviceFraud in isolation, so drive it through Submit
-	// by overriding the fingerprint counter inside the repo stub.
-	// This exercises the branch where devCount > 0.
-	dupPR := &fingerprintCollisionStub{kycProfileRepoStub: kycProfileRepoStub{}}
-	svc := NewKYCService(dupPR, &kycDocRepoStub{}, &kycEventRepoStub{}, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
-	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
-		FullName:          "Juan",
-		DocumentType:      domain.KYCDocGovID,
-		DocumentNumber:    "X",
-		DeviceFingerprint: "abc123",
-	})
-	if err == nil {
-		t.Fatal("expected conflict for device fingerprint collision, got nil")
-	}
-}
-
-type fingerprintCollisionStub struct {
-	kycProfileRepoStub
-}
-
-func (r *fingerprintCollisionStub) CountAccountsByDeviceFingerprint(_ context.Context, _ string, _ int) (int64, error) {
-	return 1, nil
-}
 
 // ── RecalculateRiskScore ──────────────────────────────────────────────────────
 
@@ -679,16 +651,6 @@ func TestKYCService_Escalate_RepoError_Propagates(t *testing.T) {
 	}
 }
 
-// ── fingerprintErrorStub ──────────────────────────────────────────────────────
-
-type fingerprintErrorStub struct {
-	kycProfileRepoStub
-}
-
-func (r *fingerprintErrorStub) CountAccountsByDeviceFingerprint(_ context.Context, _ string, _ int) (int64, error) {
-	return 0, errors.New("db fail")
-}
-
 // ── NewKYCService with metrics ────────────────────────────────────────────────
 
 func TestKYCService_NewKYCService_WithMetrics(t *testing.T) {
@@ -710,34 +672,6 @@ func TestKYCService_Submit_MissingDocumentNumber_Validation(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected validation error for missing document_number, got nil")
-	}
-}
-
-// ── checkDeviceFraud paths ────────────────────────────────────────────────────
-
-func TestKYCService_Submit_DeviceFraudRepoError_Propagates(t *testing.T) {
-	stub := &fingerprintErrorStub{}
-	svc := NewKYCService(stub, &kycDocRepoStub{}, &kycEventRepoStub{},
-		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
-	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
-		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
-		DeviceFingerprint: "abc123",
-	})
-	if err == nil {
-		t.Fatal("expected error from fingerprint repo, got nil")
-	}
-}
-
-func TestKYCService_Submit_DeviceFraud_WithMetrics_RecordsFraudFlag(t *testing.T) {
-	m := newTestMetrics(t)
-	svc := NewKYCService(&fingerprintCollisionStub{}, &kycDocRepoStub{}, &kycEventRepoStub{},
-		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop(), m)
-	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
-		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
-		DeviceFingerprint: "abc123",
-	})
-	if err == nil {
-		t.Fatal("expected conflict error from device fraud check, got nil")
 	}
 }
 
@@ -776,6 +710,71 @@ func TestKYCService_Submit_DuplicateIdentity_WithMetrics(t *testing.T) {
 	}
 }
 
+// ── IP velocity gate ─────────────────────────────────────────────────────────
+
+type ipVelocityGateStub struct {
+	NoopKYCGate
+	err error
+}
+
+func (g *ipVelocityGateStub) CheckIPSubmissionVelocity(_ context.Context, _ string) error {
+	return g.err
+}
+
+func TestKYCService_Submit_IPVelocityBlocked_ReturnsError(t *testing.T) {
+	gate := &ipVelocityGateStub{err: apperrors.RateLimited("too many submissions")}
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	svc.(*kycService).SetGate(gate)
+	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+		SubmissionIP: "1.2.3.4",
+	})
+	if err == nil {
+		t.Fatal("expected rate-limit error from IP velocity gate, got nil")
+	}
+}
+
+func TestKYCService_Submit_IPVelocityAllowed_Succeeds(t *testing.T) {
+	gate := &ipVelocityGateStub{err: nil}
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	svc.(*kycService).SetGate(gate)
+	profile, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+		SubmissionIP: "1.2.3.4",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if profile == nil {
+		t.Fatal("expected non-nil profile")
+	}
+}
+
+func TestKYCService_Submit_NilGate_DoesNotPanic(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	// gate is nil by default — must not panic
+	_, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error with nil gate: %v", err)
+	}
+}
+
+func TestKYCService_Submit_SetsSubmissionIP(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	profile, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
+		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
+		SubmissionIP: "10.0.0.1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if profile.SubmissionIP == nil || *profile.SubmissionIP != "10.0.0.1" {
+		t.Errorf("expected SubmissionIP=10.0.0.1, got %v", profile.SubmissionIP)
+	}
+}
+
 func TestKYCService_Submit_CopiesTierFromExistingProfile(t *testing.T) {
 	existing := &domain.KYCProfile{
 		ID: 5, UserID: 1, Status: domain.KYCStatusApproved, Tier: domain.KYCTierTwo,
@@ -790,20 +789,6 @@ func TestKYCService_Submit_CopiesTierFromExistingProfile(t *testing.T) {
 	}
 	if profile.Tier != domain.KYCTierTwo {
 		t.Errorf("expected tier copied from existing (Tier2), got %v", profile.Tier)
-	}
-}
-
-func TestKYCService_Submit_WithDeviceFingerprint_SetsDevFP(t *testing.T) {
-	svc := newKYCSvc(&kycProfileRepoStub{}, &kycDocRepoStub{}, &kycEventRepoStub{})
-	profile, err := svc.Submit(context.Background(), 1, SubmitKYCRequest{
-		FullName: "Juan", DocumentType: domain.KYCDocGovID, DocumentNumber: "X",
-		DeviceFingerprint: "fp-abc123",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if profile.DeviceFingerprint == nil || *profile.DeviceFingerprint != "fp-abc123" {
-		t.Errorf("expected device fingerprint set, got %v", profile.DeviceFingerprint)
 	}
 }
 

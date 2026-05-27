@@ -64,8 +64,9 @@ func (g *prizeKYCGateStub) ExceedsAMLThreshold(_ context.Context, _ int) (bool, 
 func (g *prizeKYCGateStub) ExceedsCumulativeAMLThreshold(_ context.Context, _, _ int) (bool, error) {
 	return false, nil
 }
-func (g *prizeKYCGateStub) CheckDepositVelocity(_ context.Context, _, _ int) error    { return nil }
-func (g *prizeKYCGateStub) CheckWithdrawalVelocity(_ context.Context, _, _ int) error { return nil }
+func (g *prizeKYCGateStub) CheckDepositVelocity(_ context.Context, _, _ int) error      { return nil }
+func (g *prizeKYCGateStub) CheckWithdrawalVelocity(_ context.Context, _, _ int) error   { return nil }
+func (g *prizeKYCGateStub) CheckIPSubmissionVelocity(_ context.Context, _ string) error { return nil }
 
 type prizeKYCSvcStub struct {
 	frozen   bool

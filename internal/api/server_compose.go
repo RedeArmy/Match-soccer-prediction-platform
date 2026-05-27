@@ -351,6 +351,11 @@ func (s *Server) buildKYCModule(
 	}); ok {
 		sl.SetLedger(ledgerRepo)
 	}
+	if sp, ok := kycGate.(interface {
+		SetProfileRepo(repository.KYCProfileRepository)
+	}); ok {
+		sp.SetProfileRepo(kycProfileRepo)
+	}
 
 	kycSvc := service.NewKYCService(kycProfileRepo, kycDocRepo, kycEventRepo, paramSvcWithAudit, auditSvc, s.log, kycMetrics)
 	if sc, ok := kycSvc.(interface{ SetCache(cache.Store) }); ok {
@@ -360,6 +365,11 @@ func (s *Server) buildKYCModule(
 		SetLedger(repository.BalanceLedgerRepository)
 	}); ok {
 		sl.SetLedger(ledgerRepo)
+	}
+	if sg, ok := kycSvc.(interface {
+		SetGate(service.KYCGate)
+	}); ok {
+		sg.SetGate(kycGate)
 	}
 
 	return handler.NewKYCHandler(kycSvc, fileStore, kycMaxUpload, s.log),

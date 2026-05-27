@@ -20,16 +20,16 @@ const errKYCProfileNotFound = "kyc profile not found"
 
 // SubmitKYCRequest carries user-provided identity data for a KYC submission.
 type SubmitKYCRequest struct {
-	FullName          string
-	DateOfBirth       *time.Time
-	Nationality       string
-	DocumentType      domain.KYCDocumentType
-	DocumentNumber    string
-	AddressLine       string
-	City              string
-	Country           string
-	PostalCode        string
-	DeviceFingerprint string // optional; SHA-256 hex from X-Device-Fingerprint header
+	FullName       string
+	DateOfBirth    *time.Time
+	Nationality    string
+	DocumentType   domain.KYCDocumentType
+	DocumentNumber string
+	AddressLine    string
+	City           string
+	Country        string
+	PostalCode     string
+	SubmissionIP   string // client IP from request context; empty string is safe
 }
 
 // UploadDocRequest carries metadata for a new KYC document upload.
@@ -125,6 +125,7 @@ type kycService struct {
 	metrics     *KYCMetrics
 	cache       cache.Store                        // optional; nil disables risk-dashboard caching
 	ledger      repository.BalanceLedgerRepository // optional; nil skips deposit velocity in risk score
+	gate        KYCGate                            // optional; nil disables IP velocity check on Submit
 }
 
 // NewKYCService constructs a KYCService. Pass a non-nil KYCMetrics (variadic)
@@ -155,6 +156,10 @@ func NewKYCService(
 // SetCache wires a cache.Store for risk-dashboard caching. Called once at
 // startup; nil means no caching (acceptable in tests).
 func (s *kycService) SetCache(store cache.Store) { s.cache = store }
+
+// SetGate wires the KYCGate for IP velocity checking on KYC submission.
+// Called once at startup; nil disables the check (acceptable in tests).
+func (s *kycService) SetGate(gate KYCGate) { s.gate = gate }
 
 // SetLedger wires the ledger repo for deposit-velocity scoring.
 // Called once at startup; nil omits the deposit-velocity component.
@@ -190,23 +195,6 @@ func checkSubmitConflicts(existing *domain.KYCProfile) error {
 	return nil
 }
 
-func (s *kycService) checkDeviceFraud(ctx context.Context, fingerprint string, userID int) error {
-	if fingerprint == "" {
-		return nil
-	}
-	devCount, err := s.profileRepo.CountAccountsByDeviceFingerprint(ctx, fingerprint, userID)
-	if err != nil {
-		return err
-	}
-	if devCount > 0 {
-		if s.metrics != nil {
-			s.metrics.RecordFraudFlag(ctx, "device_fingerprint_collision")
-		}
-		return apperrors.Conflict("this device is already associated with another verified account")
-	}
-	return nil
-}
-
 func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCRequest) (*domain.KYCProfile, error) {
 	if err := validateSubmitRequest(req); err != nil {
 		return nil, err
@@ -231,31 +219,33 @@ func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCReques
 		return nil, apperrors.Conflict("this identity document is already associated with another account")
 	}
 
-	if err := s.checkDeviceFraud(ctx, req.DeviceFingerprint, userID); err != nil {
-		return nil, err
+	if s.gate != nil {
+		if err := s.gate.CheckIPSubmissionVelocity(ctx, req.SubmissionIP); err != nil {
+			return nil, err
+		}
 	}
 
 	now := time.Now()
 	dt := req.DocumentType
-	var devFP *string
-	if req.DeviceFingerprint != "" {
-		devFP = &req.DeviceFingerprint
+	var submissionIP *string
+	if req.SubmissionIP != "" {
+		submissionIP = &req.SubmissionIP
 	}
 	profile := &domain.KYCProfile{
-		UserID:            userID,
-		Status:            domain.KYCStatusPending,
-		Tier:              domain.KYCTierUnverified,
-		FullName:          req.FullName,
-		DateOfBirth:       req.DateOfBirth,
-		Nationality:       req.Nationality,
-		DocumentType:      &dt,
-		DocumentNumber:    req.DocumentNumber,
-		AddressLine:       req.AddressLine,
-		City:              req.City,
-		Country:           req.Country,
-		PostalCode:        req.PostalCode,
-		DeviceFingerprint: devFP,
-		SubmittedAt:       &now,
+		UserID:         userID,
+		Status:         domain.KYCStatusPending,
+		Tier:           domain.KYCTierUnverified,
+		FullName:       req.FullName,
+		DateOfBirth:    req.DateOfBirth,
+		Nationality:    req.Nationality,
+		DocumentType:   &dt,
+		DocumentNumber: req.DocumentNumber,
+		AddressLine:    req.AddressLine,
+		City:           req.City,
+		Country:        req.Country,
+		PostalCode:     req.PostalCode,
+		SubmissionIP:   submissionIP,
+		SubmittedAt:    &now,
 	}
 	if existing != nil {
 		profile.Tier = existing.Tier

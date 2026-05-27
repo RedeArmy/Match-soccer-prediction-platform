@@ -233,7 +233,8 @@ func (g *webhookKYCGateStub) ExceedsCumulativeAMLThreshold(_ context.Context, _,
 func (g *webhookKYCGateStub) CheckDepositVelocity(_ context.Context, _, _ int) error {
 	return g.velocityErr
 }
-func (g *webhookKYCGateStub) CheckWithdrawalVelocity(_ context.Context, _, _ int) error { return nil }
+func (g *webhookKYCGateStub) CheckWithdrawalVelocity(_ context.Context, _, _ int) error   { return nil }
+func (g *webhookKYCGateStub) CheckIPSubmissionVelocity(_ context.Context, _ string) error { return nil }
 
 // multiSpyAuditLogger accumulates every Log call so tests can assert on multiple events.
 type multiSpyAuditLogger struct {

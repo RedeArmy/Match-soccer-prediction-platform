@@ -50,6 +50,10 @@ type KYCGate interface {
 	// CheckWithdrawalVelocity returns apperrors.Forbidden when userID has exceeded
 	// the rolling 24-hour withdrawal limit for their KYC tier. Blocking check.
 	CheckWithdrawalVelocity(ctx context.Context, userID, amountCents int) error
+	// CheckIPSubmissionVelocity returns apperrors.RateLimited when the given IP
+	// has submitted more KYC profiles within the velocity window than the
+	// kyc.ip_velocity_max_submissions param allows. Empty ip is a no-op.
+	CheckIPSubmissionVelocity(ctx context.Context, ip string) error
 }
 
 const msgKYCUpgradeForHigherLimits = "Completa la verificación KYC completa para acceder a límites mayores."
@@ -61,10 +65,11 @@ const msgKYCUpgradeForHigherLimits = "Completa la verificación KYC completa par
 // The param fallbacks match the migration 000121 seed values so the gate is
 // always functional even before the first admin KYC configuration change.
 type kycGate struct {
-	userRepo repository.UserRepository
-	params   SystemParamService
-	metrics  *KYCMetrics
-	ledger   repository.BalanceLedgerRepository // optional; nil disables cumulative checks
+	userRepo    repository.UserRepository
+	params      SystemParamService
+	metrics     *KYCMetrics
+	ledger      repository.BalanceLedgerRepository // optional; nil disables cumulative checks
+	profileRepo repository.KYCProfileRepository    // optional; nil disables IP velocity check
 }
 
 // NewKYCGate constructs a KYCGate backed by the given repositories.
@@ -79,6 +84,10 @@ func (g *kycGate) SetLedger(ledger repository.BalanceLedgerRepository) { g.ledge
 // SetMetrics wires the OTel instruments into the gate. Called once at startup
 // after RegisterKYCMetrics; safe to skip in tests (nil metrics is a no-op).
 func (g *kycGate) SetMetrics(m *KYCMetrics) { g.metrics = m }
+
+// SetProfileRepo wires the KYC profile repository for IP velocity checks.
+// Called once at startup; nil disables CheckIPSubmissionVelocity (safe in tests).
+func (g *kycGate) SetProfileRepo(repo repository.KYCProfileRepository) { g.profileRepo = repo }
 
 func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) error {
 	tier, err := g.tierFor(ctx, userID)
@@ -306,6 +315,32 @@ func (g *kycGate) ExceedsCumulativeAMLThreshold(ctx context.Context, userID, amo
 		return false, err
 	}
 	return (sum + int64(amountCents)) >= int64(threshold), nil
+}
+
+func (g *kycGate) CheckIPSubmissionVelocity(ctx context.Context, ip string) error {
+	if ip == "" || g.profileRepo == nil {
+		return nil
+	}
+	maxSub := g.intParam(ctx, domain.ParamKeyKYCIPVelocityMaxSubmissions, domain.DefaultKYCIPVelocityMaxSubmissions)
+	if maxSub <= 0 {
+		return nil
+	}
+	windowMins := g.intParam(ctx, domain.ParamKeyKYCIPVelocityWindowMinutes, domain.DefaultKYCIPVelocityWindowMinutes)
+	since := time.Now().Add(-time.Duration(windowMins) * time.Minute)
+	count, err := g.profileRepo.CountRecentSubmissionsByIP(ctx, ip, since)
+	if err != nil {
+		return err
+	}
+	if count >= int64(maxSub) {
+		if g.metrics != nil {
+			g.metrics.RecordFraudFlag(ctx, "ip_velocity")
+		}
+		return apperrors.RateLimited(fmt.Sprintf(
+			"Demasiados intentos de verificación desde esta red. Espera %d minutos antes de intentarlo de nuevo.",
+			windowMins,
+		))
+	}
+	return nil
 }
 
 var _ KYCGate = (*kycGate)(nil)

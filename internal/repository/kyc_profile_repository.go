@@ -36,13 +36,13 @@ func (r *PostgresKYCProfileRepository) Upsert(ctx context.Context, p *domain.KYC
 			full_name, date_of_birth, nationality,
 			document_type, document_number,
 			address_line, city, country, postal_code,
-			submitted_at
+			submission_ip, submitted_at
 		) VALUES (
 			$1, $2, $3,
 			$4, $5, $6,
 			$7, $8,
 			$9, $10, $11, $12,
-			$13
+			$13::inet, $14
 		)
 		ON CONFLICT (user_id) DO UPDATE SET
 			status           = EXCLUDED.status,
@@ -55,16 +55,21 @@ func (r *PostgresKYCProfileRepository) Upsert(ctx context.Context, p *domain.KYC
 			city             = EXCLUDED.city,
 			country          = EXCLUDED.country,
 			postal_code      = EXCLUDED.postal_code,
+			submission_ip    = COALESCE(kyc_profiles.submission_ip, EXCLUDED.submission_ip),
 			submitted_at     = EXCLUDED.submitted_at,
 			updated_at       = NOW()
 		RETURNING id, created_at, updated_at
 	`
+	var ip *string
+	if p.SubmissionIP != nil && *p.SubmissionIP != "" {
+		ip = p.SubmissionIP
+	}
 	return r.db.QueryRow(ctx, q,
 		p.UserID, string(p.Status), int(p.Tier),
 		p.FullName, p.DateOfBirth, p.Nationality,
 		p.DocumentType, p.DocumentNumber,
 		p.AddressLine, p.City, p.Country, p.PostalCode,
-		p.SubmittedAt,
+		ip, p.SubmittedAt,
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -341,6 +346,10 @@ func (r *PostgresKYCProfileRepository) SumFrozenAmountCents(ctx context.Context)
 	return total, nil
 }
 
+// Deprecated: CountAccountsByDeviceFingerprint is no longer called by application
+// code. Device fingerprinting was removed in favour of IP-based submission velocity
+// (CountRecentSubmissionsByIP). The column and this method are retained for 30 days
+// to confirm zero writes before the column is dropped in a future migration.
 func (r *PostgresKYCProfileRepository) CountAccountsByDeviceFingerprint(ctx context.Context, fingerprint string, excludeUserID int) (int64, error) {
 	if fingerprint == "" {
 		return 0, nil
@@ -354,6 +363,25 @@ func (r *PostgresKYCProfileRepository) CountAccountsByDeviceFingerprint(ctx cont
 		    AND user_id <> $2
 		    AND status NOT IN ('rejected', 'unverified')`,
 		fingerprint, excludeUserID,
+	).Scan(&n)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return n, nil
+}
+
+func (r *PostgresKYCProfileRepository) CountRecentSubmissionsByIP(ctx context.Context, ip string, since time.Time) (int64, error) {
+	if ip == "" {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	var n int64
+	err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM kyc_profiles
+		  WHERE submission_ip = $1::inet
+		    AND submitted_at >= $2`,
+		ip, since,
 	).Scan(&n)
 	if err != nil {
 		return 0, apperrors.Internal(err)
@@ -462,7 +490,7 @@ const kycProfileCols = `
 	submitted_at, reviewed_at, reviewed_by, rejection_reason,
 	risk_score, pep_flag, sanctions_flag,
 	balance_frozen, frozen_amount_cents, frozen_reason,
-	next_review_at, created_at, updated_at`
+	next_review_at, submission_ip, created_at, updated_at`
 
 const kycProfileSelectAll = `SELECT` + kycProfileCols + ` FROM kyc_profiles`
 const kycProfileSelectByUserID = kycProfileSelectAll + ` WHERE user_id = $1`
@@ -481,7 +509,7 @@ func scanKYCProfile(s rowScanner) (*domain.KYCProfile, error) {
 		&p.SubmittedAt, &p.ReviewedAt, &p.ReviewedBy, &p.RejectionReason,
 		&p.RiskScore, &p.PEPFlag, &p.SanctionsFlag,
 		&p.BalanceFrozen, &p.FrozenAmountCents, &p.FrozenReason,
-		&p.NextReviewAt, &p.CreatedAt, &p.UpdatedAt,
+		&p.NextReviewAt, &p.SubmissionIP, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

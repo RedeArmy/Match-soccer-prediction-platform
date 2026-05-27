@@ -852,10 +852,9 @@ type KYCProfileRepository interface {
 	ExistsByDocumentIdentity(ctx context.Context, documentType domain.KYCDocumentType, documentNumber string, dateOfBirth *time.Time, excludeUserID int) (bool, error)
 	// UpdateRiskScore stores the computed risk score (0–100) on the profile.
 	UpdateRiskScore(ctx context.Context, profileID, score int) error
-	// CountAccountsByDeviceFingerprint returns the number of distinct non-rejected
-	// KYC profiles that share the given device fingerprint, excluding excludeUserID.
-	// Returns 0 when fingerprint is empty (fingerprint not submitted).
-	CountAccountsByDeviceFingerprint(ctx context.Context, fingerprint string, excludeUserID int) (int64, error)
+	// CountRecentSubmissionsByIP returns the number of KYC submissions from ip
+	// since the given cutoff time. Returns 0 when ip is empty.
+	CountRecentSubmissionsByIP(ctx context.Context, ip string, since time.Time) (int64, error)
 	// ReleaseAndCreditFrozen atomically reads the frozen amount from the profile,
 	// credits it to users.balance_cents, records a balance_ledger row with
 	// kind=LedgerKindPrize, and clears the freeze columns — all in one transaction.
