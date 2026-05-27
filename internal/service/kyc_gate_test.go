@@ -470,7 +470,7 @@ func (s *ipCountStub) ListFrozen(_ context.Context) ([]*domain.FrozenBalanceSumm
 func (s *ipCountStub) ListDueForReview(_ context.Context, _ time.Time) ([]*domain.KYCProfile, error) {
 	return nil, nil
 }
-func (s *ipCountStub) CountReviewQueue(_ context.Context) (int64, error)    { return 0, nil }
+func (s *ipCountStub) CountReviewQueue(_ context.Context) (int64, error)     { return 0, nil }
 func (s *ipCountStub) SumFrozenAmountCents(_ context.Context) (int64, error) { return 0, nil }
 func (s *ipCountStub) RiskDashboardStats(_ context.Context) (*domain.KYCRiskDashboardStats, error) {
 	return &domain.KYCRiskDashboardStats{TierDistribution: map[domain.KYCTier]int64{}}, nil
