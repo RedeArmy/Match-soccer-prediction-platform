@@ -255,9 +255,9 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 		}
 		if applied {
 			credited++
-		} else {
-			frozen++
+			continue
 		}
+		frozen++
 	}
 	resType := "quiniela"
 	role := domain.RoleAdmin

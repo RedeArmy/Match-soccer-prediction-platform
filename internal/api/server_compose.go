@@ -139,13 +139,7 @@ func (s *Server) buildHandlers(
 	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, repos.member, tiebreakerRepo, tiebreakerConfigRepo, s.log)
 	if cacheStore != nil {
 		cachedRanker := service.NewCachedRankingService(ranker, cacheStore, leaderboardTTL, s.log)
-		// When an admin changes cache.leaderboard_ttl_seconds, update the active
-		// TTL for future cache writes and flush all existing leaderboard entries so
-		// the change takes effect immediately rather than after natural expiry.
-		if mh, ok := paramSvcWithAudit.(service.MutationHookRegisterer); ok {
-			mh.RegisterMutationHook(domain.ParamKeyCacheLeaderboardTTL,
-				leaderboardTTLHook(paramSvcWithAudit, cachedRanker))
-		}
+		s.wireLeaderboardTTLHook(paramSvcWithAudit, cachedRanker)
 		ranker = cachedRanker
 	}
 
@@ -317,6 +311,16 @@ func (s *Server) buildHandlers(
 	}
 
 	return h
+}
+
+// wireLeaderboardTTLHook registers a mutation hook so that when an admin
+// changes cache.leaderboard_ttl_seconds, the active TTL is updated and all
+// existing leaderboard cache entries are flushed immediately.
+func (s *Server) wireLeaderboardTTLHook(paramSvc service.SystemParamService, ranker *service.CachedRankingService) {
+	if mh, ok := paramSvc.(service.MutationHookRegisterer); ok {
+		mh.RegisterMutationHook(domain.ParamKeyCacheLeaderboardTTL,
+			leaderboardTTLHook(paramSvc, ranker))
+	}
 }
 
 // buildKYCModule wires all KYC repositories, services, OTel instruments, and

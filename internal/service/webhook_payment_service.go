@@ -126,19 +126,8 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 		return apperrors.Validation("capture ID is required")
 	}
 
-	if s.kycGate != nil {
-		pending, err := s.intentRepo.GetByToken(ctx, intentToken)
-		if err != nil {
-			return err
-		}
-		if pending != nil && pending.Status == domain.PaymentIntentPending {
-			if err := s.kycGate.CheckDeposit(ctx, pending.UserID, pending.AmountCents); err != nil {
-				return err
-			}
-			if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, pending.AmountCents); err != nil {
-				return err
-			}
-		}
+	if err := s.checkKYCGateForToken(ctx, intentToken); err != nil {
+		return err
 	}
 
 	intent, err := s.intentRepo.CaptureAndCredit(ctx, intentToken, captureID)
@@ -178,6 +167,26 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 	})
 	s.recordAMLIfNeeded(ctx, intent.UserID, intent.AmountCents)
 	return nil
+}
+
+// checkKYCGateForToken fetches the pending intent identified by token and runs
+// CheckDeposit + CheckDepositVelocity when the intent exists and is still
+// pending. It is a no-op when s.kycGate is nil.
+func (s *webhookPaymentService) checkKYCGateForToken(ctx context.Context, token string) error {
+	if s.kycGate == nil {
+		return nil
+	}
+	pending, err := s.intentRepo.GetByToken(ctx, token)
+	if err != nil {
+		return err
+	}
+	if pending == nil || pending.Status != domain.PaymentIntentPending {
+		return nil
+	}
+	if err := s.kycGate.CheckDeposit(ctx, pending.UserID, pending.AmountCents); err != nil {
+		return err
+	}
+	return s.kycGate.CheckDepositVelocity(ctx, pending.UserID, pending.AmountCents)
 }
 
 // recordAMLIfNeeded writes AuditActionAMLFlagged when either the single-

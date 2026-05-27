@@ -219,22 +219,8 @@ func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCReques
 		return nil, apperrors.Conflict("this identity document is already associated with another account")
 	}
 
-	if s.gate != nil {
-		if err := s.gate.CheckIPSubmissionVelocity(ctx, req.SubmissionIP); err != nil {
-			var profileID int
-			if existing != nil {
-				profileID = existing.ID
-			}
-			s.appendEvent(ctx, &domain.KYCEvent{
-				ProfileID:   profileID,
-				ProfileType: domain.KYCProfileTypeUser,
-				EventType:   domain.KYCEventIPVelocityFlag,
-				ActorID:     &userID,
-				Metadata:    map[string]any{"ip": req.SubmissionIP},
-				TraceID:     traceIDFromCtx(ctx),
-			})
-			return nil, err
-		}
+	if err := s.checkIPVelocity(ctx, userID, req.SubmissionIP, existing); err != nil {
+		return nil, err
 	}
 
 	now := time.Now()
@@ -584,6 +570,31 @@ func (s *kycService) FreezeBalance(ctx context.Context, userID, prizeCents int, 
 			TraceID:     traceIDFromCtx(ctx),
 			Metadata:    map[string]any{"frozen_amount_cents": prizeCents},
 		})
+	}
+	return nil
+}
+
+// checkIPVelocity calls the gate's IP velocity check and, on block, appends a
+// KYCEventIPVelocityFlag audit event before returning the rate-limit error.
+// It is a no-op when s.gate is nil or ip is empty.
+func (s *kycService) checkIPVelocity(ctx context.Context, userID int, ip string, existing *domain.KYCProfile) error {
+	if s.gate == nil {
+		return nil
+	}
+	if err := s.gate.CheckIPSubmissionVelocity(ctx, ip); err != nil {
+		var profileID int
+		if existing != nil {
+			profileID = existing.ID
+		}
+		s.appendEvent(ctx, &domain.KYCEvent{
+			ProfileID:   profileID,
+			ProfileType: domain.KYCProfileTypeUser,
+			EventType:   domain.KYCEventIPVelocityFlag,
+			ActorID:     &userID,
+			Metadata:    map[string]any{"ip": ip},
+			TraceID:     traceIDFromCtx(ctx),
+		})
+		return err
 	}
 	return nil
 }
