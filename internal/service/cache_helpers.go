@@ -34,3 +34,11 @@ func cacheSet(ctx context.Context, store cache.Store, key string, value any, ttl
 		log.Warn("cache set failed", zap.String("key", key), zap.Error(err))
 	}
 }
+
+// cacheDelete removes one or more keys. Failures are logged as warnings and
+// swallowed: a stale cache entry causes a single extra DB read, not corruption.
+func cacheDelete(ctx context.Context, store cache.Store, log *zap.Logger, keys ...string) {
+	if err := store.Delete(ctx, keys...); err != nil {
+		log.Warn("cache delete failed", zap.Strings("keys", keys), zap.Error(err))
+	}
+}

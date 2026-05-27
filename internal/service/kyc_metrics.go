@@ -30,6 +30,9 @@ type KYCMetrics struct {
 	// GateBlocksTotal counts money-movement operations blocked by KYCGate,
 	// labelled by operation=deposit|withdrawal and reason=tier_too_low|amount_exceeds_cap.
 	GateBlocksTotal metric.Int64Counter
+	// AuditEventDropsTotal counts kyc_events rows that could not be persisted
+	// because of a transient DB error.  Non-zero values indicate audit gaps.
+	AuditEventDropsTotal metric.Int64Counter
 }
 
 // RegisterKYCMetrics creates and registers all KYC OTel instruments on meter.
@@ -75,6 +78,14 @@ func RegisterKYCMetrics(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("kyc metrics: gate_blocks_total: %w", err)
+	}
+
+	m.AuditEventDropsTotal, err = meter.Int64Counter(
+		"kyc.audit_event_drop_total",
+		metric.WithDescription("kyc_events rows permanently lost due to DB errors; non-zero indicates audit gaps."),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("kyc metrics: audit_event_drop_total: %w", err)
 	}
 
 	if err := registerQueueDepthGauge(m, meter, profileQueueReader); err != nil {

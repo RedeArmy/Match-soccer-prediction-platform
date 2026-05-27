@@ -66,6 +66,9 @@ func (r *webhookIntentRepoStub) Create(_ context.Context, intent *domain.Payment
 	return nil
 }
 
+func (r *webhookIntentRepoStub) GetByToken(_ context.Context, _ string) (*domain.PaymentIntent, error) {
+	return r.intent, nil
+}
 func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, _, _ string) (*domain.PaymentIntent, error) {
 	return r.intent, r.captureErr
 }
@@ -203,5 +206,126 @@ func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_AmountMismatchDoesNo
 	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{intent: intent})
 	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-MISMATCH", 2000); err != nil {
 		t.Fatalf("amount mismatch must not return an error, got %v", err)
+	}
+}
+
+// ── KYC gate integration ──────────────────────────────────────────────────────
+
+// webhookKYCGateStub is a configurable KYCGate stub for webhook payment tests.
+type webhookKYCGateStub struct {
+	depositErr         error
+	velocityErr        error
+	amlExceeded        bool
+	cumulativeExceeded bool
+}
+
+func (g *webhookKYCGateStub) CheckWithdrawal(_ context.Context, _, _ int) error { return nil }
+func (g *webhookKYCGateStub) CheckDeposit(_ context.Context, _, _ int) error    { return g.depositErr }
+func (g *webhookKYCGateStub) CheckWinFreeze(_ context.Context, _, _ int) (bool, string, error) {
+	return false, "", nil
+}
+func (g *webhookKYCGateStub) ExceedsAMLThreshold(_ context.Context, _ int) (bool, error) {
+	return g.amlExceeded, nil
+}
+func (g *webhookKYCGateStub) ExceedsCumulativeAMLThreshold(_ context.Context, _, _ int) (bool, error) {
+	return g.cumulativeExceeded, nil
+}
+func (g *webhookKYCGateStub) CheckDepositVelocity(_ context.Context, _, _ int) error {
+	return g.velocityErr
+}
+func (g *webhookKYCGateStub) CheckWithdrawalVelocity(_ context.Context, _, _ int) error   { return nil }
+func (g *webhookKYCGateStub) CheckIPSubmissionVelocity(_ context.Context, _ string) error { return nil }
+
+// multiSpyAuditLogger accumulates every Log call so tests can assert on multiple events.
+type multiSpyAuditLogger struct {
+	actions []string
+	meta    []map[string]any
+}
+
+func (s *multiSpyAuditLogger) Log(_ context.Context, _ *int, _ *domain.UserRole, action string, _ *string, _ *int, metadata map[string]any) {
+	s.actions = append(s.actions, action)
+	s.meta = append(s.meta, metadata)
+}
+
+func newWebhookPaymentSvcWithGate(ledger *webhookLedgerRepoStub, intent *webhookIntentRepoStub, gate *webhookKYCGateStub) WebhookPaymentService {
+	if intent == nil {
+		intent = &webhookIntentRepoStub{}
+	}
+	svc := NewWebhookPaymentService(ledger, intent, &noopAuditLogger{}, zap.NewNop())
+	if gate != nil {
+		svc.(*webhookPaymentService).SetKYCGate(gate)
+	}
+	return svc
+}
+
+func TestWebhookPaymentService_CreditFromRecurrente_KYCDepositBlocked_CreditNotApplied(t *testing.T) {
+	ledger := &webhookLedgerRepoStub{}
+	gate := &webhookKYCGateStub{depositErr: errors.New("tier too low")}
+	svc := newWebhookPaymentSvcWithGate(ledger, nil, gate)
+	if err := svc.CreditFromRecurrente(context.Background(), 5, 5000, "GTQ", "REF-KYC"); err == nil {
+		t.Fatal("expected KYC gate error, got nil")
+	}
+	if ledger.capturedKind != "" {
+		t.Errorf("credit must NOT be applied when gate blocks, got kind=%q", ledger.capturedKind)
+	}
+}
+
+func TestWebhookPaymentService_CreditFromRecurrente_KYCVelocityBlocked_CreditNotApplied(t *testing.T) {
+	ledger := &webhookLedgerRepoStub{}
+	gate := &webhookKYCGateStub{velocityErr: errors.New("velocity exceeded")}
+	svc := newWebhookPaymentSvcWithGate(ledger, nil, gate)
+	if err := svc.CreditFromRecurrente(context.Background(), 5, 5000, "GTQ", "REF-VEL"); err == nil {
+		t.Fatal("expected velocity gate error, got nil")
+	}
+	if ledger.capturedKind != "" {
+		t.Errorf("credit must NOT be applied when velocity gate blocks, got kind=%q", ledger.capturedKind)
+	}
+}
+
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_KYCDepositBlocked_CreditNotApplied(t *testing.T) {
+	pending := &domain.PaymentIntent{
+		ID: 1, UserID: 7, AmountCents: 5000,
+		Status: domain.PaymentIntentPending,
+	}
+	intent := &webhookIntentRepoStub{intent: pending}
+	gate := &webhookKYCGateStub{depositErr: errors.New("tier too low")}
+	svc := newWebhookPaymentSvcWithGate(&webhookLedgerRepoStub{}, intent, gate)
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-KYC", 5000); err == nil {
+		t.Fatal("expected KYC gate error for PayPal, got nil")
+	}
+}
+
+func newWebhookPaymentSvcWithGateAndAudit(ledger *webhookLedgerRepoStub, intent *webhookIntentRepoStub, gate *webhookKYCGateStub, audit *multiSpyAuditLogger) WebhookPaymentService {
+	if intent == nil {
+		intent = &webhookIntentRepoStub{}
+	}
+	svc := NewWebhookPaymentService(ledger, intent, audit, zap.NewNop())
+	if gate != nil {
+		svc.(*webhookPaymentService).SetKYCGate(gate)
+	}
+	return svc
+}
+
+func TestWebhookPaymentService_CreditFromRecurrente_CumulativeAML_AuditFlagged(t *testing.T) {
+	ledger := &webhookLedgerRepoStub{}
+	gate := &webhookKYCGateStub{cumulativeExceeded: true}
+	audit := &multiSpyAuditLogger{}
+	svc := newWebhookPaymentSvcWithGateAndAudit(ledger, nil, gate, audit)
+
+	if err := svc.CreditFromRecurrente(context.Background(), 5, 5000, "GTQ", "REF-CUMUL"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	foundCumulative := false
+	for i, action := range audit.actions {
+		if action == domain.AuditActionAMLFlagged {
+			if tt, ok := audit.meta[i]["threshold_type"]; ok && tt == "cumulative" {
+				foundCumulative = true
+				break
+			}
+		}
+	}
+	if !foundCumulative {
+		t.Errorf("expected AuditActionAMLFlagged with threshold_type=cumulative; got actions=%v", audit.actions)
 	}
 }

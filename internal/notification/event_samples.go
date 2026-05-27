@@ -274,6 +274,11 @@ func buildEventSamples() map[EventType]json.RawMessage {
 		EventSystemFileStoreUnavailable: enc(SystemAlertPayload{
 			Component: sampleAlertComponent, Detail: sampleAlertDetail, Severity: "critical",
 		}),
+
+		// ── KYC compliance events ─────────────────────────────────────────────────
+		EventKYCWinnerFreeze: enc(KYCWinnerFreezePayload{
+			UserID: 1, AmountCents: 50_000, TraceID: "00-abc123-def456-01",
+		}),
 	}
 }
 

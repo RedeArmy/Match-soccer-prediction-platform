@@ -93,15 +93,15 @@ func (h *KYCHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	svcReq := service.SubmitKYCRequest{
-		FullName:          req.FullName,
-		Nationality:       req.Nationality,
-		DocumentType:      domain.KYCDocumentType(req.DocumentType),
-		DocumentNumber:    req.DocumentNumber,
-		AddressLine:       req.AddressLine,
-		City:              req.City,
-		Country:           req.Country,
-		PostalCode:        req.PostalCode,
-		DeviceFingerprint: r.Header.Get("X-Device-Fingerprint"),
+		FullName:       req.FullName,
+		Nationality:    req.Nationality,
+		DocumentType:   domain.KYCDocumentType(req.DocumentType),
+		DocumentNumber: req.DocumentNumber,
+		AddressLine:    req.AddressLine,
+		City:           req.City,
+		Country:        req.Country,
+		PostalCode:     req.PostalCode,
+		SubmissionIP:   repository.ClientIPFromContext(r.Context()),
 	}
 	if req.DateOfBirth != "" {
 		dob, err := time.Parse("2006-01-02", req.DateOfBirth)

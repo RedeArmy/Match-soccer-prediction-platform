@@ -376,3 +376,22 @@ func (h *AdminGroupHandler) RecalculateLeaderboard(w http.ResponseWriter, r *htt
 	}
 	writeJSON(w, http.StatusOK, snapshotToResponse(snap))
 }
+
+// DistributePrizes handles POST /api/v1/admin/groups/{id}/distribute-prizes.
+func (h *AdminGroupHandler) DistributePrizes(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil || id <= 0 {
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidGroupID))
+		return
+	}
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	if err := h.svc.DistributePrizes(r.Context(), id, caller.ID); err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "prizes_distributed"})
+}

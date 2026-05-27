@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
@@ -40,28 +43,33 @@ type PrizeCrediter interface {
 }
 
 type prizeService struct {
-	ledger   repository.BalanceLedgerRepository
-	kycGate  KYCGate
-	kycSvc   KYCService
-	notifier KYCWinnerFreezeNotifier // may be nil
-	log      *zap.Logger
+	ledger       repository.BalanceLedgerRepository
+	kycGate      KYCGate
+	kycSvc       KYCService
+	outboxWriter outbox.Writer           // may be nil; nil falls back to legacy notifier
+	notifier     KYCWinnerFreezeNotifier // legacy; used only when outboxWriter is nil
+	log          *zap.Logger
 }
 
 // NewPrizeService constructs a PrizeCrediter.
+// outboxWriter should be the transactional outbox writer; pass nil to fall back
+// to the legacy fire-and-forget notifier for backward compatibility.
 // notifier may be nil when n8n is not configured.
 func NewPrizeService(
 	ledger repository.BalanceLedgerRepository,
 	kycGate KYCGate,
 	kycSvc KYCService,
+	outboxWriter outbox.Writer,
 	notifier KYCWinnerFreezeNotifier,
 	log *zap.Logger,
 ) PrizeCrediter {
 	return &prizeService{
-		ledger:   ledger,
-		kycGate:  kycGate,
-		kycSvc:   kycSvc,
-		notifier: notifier,
-		log:      log,
+		ledger:       ledger,
+		kycGate:      kycGate,
+		kycSvc:       kycSvc,
+		outboxWriter: outboxWriter,
+		notifier:     notifier,
+		log:          log,
 	}
 }
 
@@ -77,10 +85,7 @@ func (s *prizeService) CreditPrize(ctx context.Context, userID, prizeCents int, 
 		}
 
 		traceID := kycTraceID(ctx)
-
-		if s.notifier != nil {
-			s.notifier.NotifyKYCWinnerFreeze(ctx, userID, prizeCents, traceID)
-		}
+		s.notifyKYCWinnerFreeze(ctx, userID, prizeCents, traceID)
 
 		s.log.Info("prize.freeze: balance frozen pending KYC verification",
 			zap.Int("user_id", userID),
@@ -94,6 +99,29 @@ func (s *prizeService) CreditPrize(ctx context.Context, userID, prizeCents int, 
 		return false, err
 	}
 	return true, nil
+}
+
+// notifyKYCWinnerFreeze writes a kyc.winner_freeze event to the outbox (preferred)
+// or falls back to the legacy fire-and-forget notifier when no outbox writer is set.
+func (s *prizeService) notifyKYCWinnerFreeze(ctx context.Context, userID, prizeCents int, traceID string) {
+	if s.outboxWriter != nil {
+		payload := notification.KYCWinnerFreezePayload{
+			UserID:      userID,
+			AmountCents: prizeCents,
+			TraceID:     traceID,
+		}
+		aggregateID := fmt.Sprintf("%d", userID)
+		if err := s.outboxWriter.Write(ctx, notification.EventKYCWinnerFreeze, "user", aggregateID, payload); err != nil {
+			s.log.Warn("prize.freeze: outbox write failed; winner freeze notification may be delayed",
+				zap.Int("user_id", userID),
+				zap.Error(err),
+			)
+		}
+		return
+	}
+	if s.notifier != nil {
+		s.notifier.NotifyKYCWinnerFreeze(ctx, userID, prizeCents, traceID)
+	}
 }
 
 // kycTraceID extracts the W3C trace ID from the context span, or returns an

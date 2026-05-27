@@ -54,6 +54,13 @@ func TestNoopKYCGate_CheckWinFreeze_NeverFreezes(t *testing.T) {
 	}
 }
 
+func TestNoopKYCGate_CheckIPSubmissionVelocity_AlwaysNil(t *testing.T) {
+	gate := NoopKYCGate{}
+	if err := gate.CheckIPSubmissionVelocity(context.Background(), "1.2.3.4"); err != nil {
+		t.Errorf("expected nil, got %v", err)
+	}
+}
+
 func TestNoopKYCGate_ImplementsKYCGate(t *testing.T) {
 	var _ KYCGate = NoopKYCGate{}
 }

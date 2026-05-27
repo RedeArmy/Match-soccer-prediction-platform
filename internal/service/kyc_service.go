@@ -20,16 +20,16 @@ const errKYCProfileNotFound = "kyc profile not found"
 
 // SubmitKYCRequest carries user-provided identity data for a KYC submission.
 type SubmitKYCRequest struct {
-	FullName          string
-	DateOfBirth       *time.Time
-	Nationality       string
-	DocumentType      domain.KYCDocumentType
-	DocumentNumber    string
-	AddressLine       string
-	City              string
-	Country           string
-	PostalCode        string
-	DeviceFingerprint string // optional; SHA-256 hex from X-Device-Fingerprint header
+	FullName       string
+	DateOfBirth    *time.Time
+	Nationality    string
+	DocumentType   domain.KYCDocumentType
+	DocumentNumber string
+	AddressLine    string
+	City           string
+	Country        string
+	PostalCode     string
+	SubmissionIP   string // client IP from request context; empty string is safe
 }
 
 // UploadDocRequest carries metadata for a new KYC document upload.
@@ -125,6 +125,7 @@ type kycService struct {
 	metrics     *KYCMetrics
 	cache       cache.Store                        // optional; nil disables risk-dashboard caching
 	ledger      repository.BalanceLedgerRepository // optional; nil skips deposit velocity in risk score
+	gate        KYCGate                            // optional; nil disables IP velocity check on Submit
 }
 
 // NewKYCService constructs a KYCService. Pass a non-nil KYCMetrics (variadic)
@@ -155,6 +156,10 @@ func NewKYCService(
 // SetCache wires a cache.Store for risk-dashboard caching. Called once at
 // startup; nil means no caching (acceptable in tests).
 func (s *kycService) SetCache(store cache.Store) { s.cache = store }
+
+// SetGate wires the KYCGate for IP velocity checking on KYC submission.
+// Called once at startup; nil disables the check (acceptable in tests).
+func (s *kycService) SetGate(gate KYCGate) { s.gate = gate }
 
 // SetLedger wires the ledger repo for deposit-velocity scoring.
 // Called once at startup; nil omits the deposit-velocity component.
@@ -190,23 +195,6 @@ func checkSubmitConflicts(existing *domain.KYCProfile) error {
 	return nil
 }
 
-func (s *kycService) checkDeviceFraud(ctx context.Context, fingerprint string, userID int) error {
-	if fingerprint == "" {
-		return nil
-	}
-	devCount, err := s.profileRepo.CountAccountsByDeviceFingerprint(ctx, fingerprint, userID)
-	if err != nil {
-		return err
-	}
-	if devCount > 0 {
-		if s.metrics != nil {
-			s.metrics.RecordFraudFlag(ctx, "device_fingerprint_collision")
-		}
-		return apperrors.Conflict("this device is already associated with another verified account")
-	}
-	return nil
-}
-
 func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCRequest) (*domain.KYCProfile, error) {
 	if err := validateSubmitRequest(req); err != nil {
 		return nil, err
@@ -231,31 +219,31 @@ func (s *kycService) Submit(ctx context.Context, userID int, req SubmitKYCReques
 		return nil, apperrors.Conflict("this identity document is already associated with another account")
 	}
 
-	if err := s.checkDeviceFraud(ctx, req.DeviceFingerprint, userID); err != nil {
+	if err := s.checkIPVelocity(ctx, userID, req.SubmissionIP, existing); err != nil {
 		return nil, err
 	}
 
 	now := time.Now()
 	dt := req.DocumentType
-	var devFP *string
-	if req.DeviceFingerprint != "" {
-		devFP = &req.DeviceFingerprint
+	var submissionIP *string
+	if req.SubmissionIP != "" {
+		submissionIP = &req.SubmissionIP
 	}
 	profile := &domain.KYCProfile{
-		UserID:            userID,
-		Status:            domain.KYCStatusPending,
-		Tier:              domain.KYCTierUnverified,
-		FullName:          req.FullName,
-		DateOfBirth:       req.DateOfBirth,
-		Nationality:       req.Nationality,
-		DocumentType:      &dt,
-		DocumentNumber:    req.DocumentNumber,
-		AddressLine:       req.AddressLine,
-		City:              req.City,
-		Country:           req.Country,
-		PostalCode:        req.PostalCode,
-		DeviceFingerprint: devFP,
-		SubmittedAt:       &now,
+		UserID:         userID,
+		Status:         domain.KYCStatusPending,
+		Tier:           domain.KYCTierUnverified,
+		FullName:       req.FullName,
+		DateOfBirth:    req.DateOfBirth,
+		Nationality:    req.Nationality,
+		DocumentType:   &dt,
+		DocumentNumber: req.DocumentNumber,
+		AddressLine:    req.AddressLine,
+		City:           req.City,
+		Country:        req.Country,
+		PostalCode:     req.PostalCode,
+		SubmissionIP:   submissionIP,
+		SubmittedAt:    &now,
 	}
 	if existing != nil {
 		profile.Tier = existing.Tier
@@ -422,6 +410,9 @@ func (s *kycService) Approve(ctx context.Context, profileID, adminID int, tier d
 	if s.metrics != nil && profile.SubmittedAt != nil {
 		s.metrics.RecordReviewDuration(ctx, time.Since(*profile.SubmittedAt).Seconds(), "approved")
 	}
+	if s.cache != nil {
+		cacheDelete(ctx, s.cache, s.log, domain.CacheKeyKYCRiskDashboard)
+	}
 	return nil
 }
 
@@ -457,6 +448,9 @@ func (s *kycService) Reject(ctx context.Context, profileID, adminID int, reason 
 	if s.metrics != nil && profile.SubmittedAt != nil {
 		s.metrics.RecordReviewDuration(ctx, time.Since(*profile.SubmittedAt).Seconds(), "rejected")
 	}
+	if s.cache != nil {
+		cacheDelete(ctx, s.cache, s.log, domain.CacheKeyKYCRiskDashboard)
+	}
 	return nil
 }
 
@@ -486,6 +480,9 @@ func (s *kycService) Escalate(ctx context.Context, profileID, adminID int, reaso
 	s.audit.Log(ctx, &adminID, &role,
 		domain.AuditActionKYCEscalated, &resType, &profileID,
 		map[string]any{"reason": reason})
+	if s.cache != nil {
+		cacheDelete(ctx, s.cache, s.log, domain.CacheKeyKYCRiskDashboard)
+	}
 	return nil
 }
 
@@ -525,30 +522,32 @@ func (s *kycService) ListFrozenBalances(ctx context.Context) ([]*domain.FrozenBa
 }
 
 func (s *kycService) ReleaseFrozenBalance(ctx context.Context, userID, adminID int) error {
-	if err := s.profileRepo.SetFrozen(ctx, userID, false, 0, ""); err != nil {
-		return err
-	}
+	// Read profile first so we have profileID and status for the event/audit.
 	profile, err := s.profileRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		return err
 	}
-	profileID := 0
-	if profile != nil {
-		profileID = profile.ID
-		s.appendEvent(ctx, &domain.KYCEvent{
-			ProfileID:   profileID,
-			ProfileType: domain.KYCProfileTypeUser,
-			EventType:   domain.KYCEventUnfrozen,
-			ActorID:     &adminID,
-			OldStatus:   &profile.Status,
-			NewStatus:   profile.Status,
-			TraceID:     traceIDFromCtx(ctx),
-		})
+	if profile == nil {
+		return apperrors.NotFound(errKYCProfileNotFound)
 	}
+	// Atomically: read frozen amount, credit users.balance_cents, insert ledger
+	// row, clear freeze columns. Returns 0 when already unfrozen (idempotent).
+	if _, err := s.profileRepo.ReleaseAndCreditFrozen(ctx, userID, int64(profile.ID), "kyc_unfreeze"); err != nil {
+		return err
+	}
+	s.appendEvent(ctx, &domain.KYCEvent{
+		ProfileID:   profile.ID,
+		ProfileType: domain.KYCProfileTypeUser,
+		EventType:   domain.KYCEventUnfrozen,
+		ActorID:     &adminID,
+		OldStatus:   &profile.Status,
+		NewStatus:   profile.Status,
+		TraceID:     traceIDFromCtx(ctx),
+	})
 	resType := "kyc_profile"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role,
-		domain.AuditActionKYCUnfrozen, &resType, &profileID, nil)
+		domain.AuditActionKYCUnfrozen, &resType, &profile.ID, nil)
 	return nil
 }
 
@@ -575,9 +574,35 @@ func (s *kycService) FreezeBalance(ctx context.Context, userID, prizeCents int, 
 	return nil
 }
 
+// checkIPVelocity calls the gate's IP velocity check and, on block, appends a
+// KYCEventIPVelocityFlag audit event before returning the rate-limit error.
+// It is a no-op when s.gate is nil or ip is empty.
+func (s *kycService) checkIPVelocity(ctx context.Context, userID int, ip string, existing *domain.KYCProfile) error {
+	if s.gate == nil {
+		return nil
+	}
+	if err := s.gate.CheckIPSubmissionVelocity(ctx, ip); err != nil {
+		var profileID int
+		if existing != nil {
+			profileID = existing.ID
+		}
+		s.appendEvent(ctx, &domain.KYCEvent{
+			ProfileID:   profileID,
+			ProfileType: domain.KYCProfileTypeUser,
+			EventType:   domain.KYCEventIPVelocityFlag,
+			ActorID:     &userID,
+			Metadata:    map[string]any{"ip": ip},
+			TraceID:     traceIDFromCtx(ctx),
+		})
+		return err
+	}
+	return nil
+}
+
 // appendEvent is a best-effort helper that inserts a kyc_events row.
-// Failures are logged and swallowed so that a transient DB issue never rolls
-// back a primary domain operation that has already committed.
+// Failures are logged and counted (kyc.audit_event_drop_total) so that
+// a transient DB issue never rolls back a primary domain operation that
+// has already committed, but gaps in the audit trail remain observable.
 func (s *kycService) appendEvent(ctx context.Context, event *domain.KYCEvent) {
 	if event.Metadata == nil {
 		event.Metadata = map[string]any{}
@@ -588,6 +613,9 @@ func (s *kycService) appendEvent(ctx context.Context, event *domain.KYCEvent) {
 			zap.Int("profile_id", event.ProfileID),
 			zap.Error(err),
 		)
+		if s.metrics != nil {
+			s.metrics.AuditEventDropsTotal.Add(ctx, 1)
+		}
 	}
 }
 
@@ -668,6 +696,9 @@ func (s *kycService) RecalculateRiskScore(ctx context.Context, userID int) (int,
 
 	if err := s.profileRepo.UpdateRiskScore(ctx, profile.ID, score); err != nil {
 		return 0, err
+	}
+	if s.cache != nil {
+		cacheDelete(ctx, s.cache, s.log, domain.CacheKeyKYCRiskDashboard)
 	}
 	return score, nil
 }

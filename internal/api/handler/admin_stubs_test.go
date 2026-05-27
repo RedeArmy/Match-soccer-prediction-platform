@@ -111,6 +111,7 @@ func (s *stubAdminGroupSvc) RecalculateLeaderboard(_ context.Context, quinielaID
 	}
 	return &domain.LeaderboardSnapshot{QuinielaID: quinielaID}, nil
 }
+func (s *stubAdminGroupSvc) DistributePrizes(_ context.Context, _, _ int) error { return s.err }
 
 // ── AdminPaymentService stub (extends stubPaymentSvc) ────────────────────────
 

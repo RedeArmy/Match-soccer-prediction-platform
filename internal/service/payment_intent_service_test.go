@@ -27,6 +27,9 @@ func (r *stubIntentRepo) Create(_ context.Context, intent *domain.PaymentIntent)
 	return nil
 }
 
+func (r *stubIntentRepo) GetByToken(_ context.Context, _ string) (*domain.PaymentIntent, error) {
+	return nil, nil
+}
 func (r *stubIntentRepo) CaptureAndCredit(_ context.Context, _, _ string) (*domain.PaymentIntent, error) {
 	return nil, nil
 }

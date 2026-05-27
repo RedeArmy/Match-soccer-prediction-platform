@@ -375,40 +375,89 @@ func TestKYCProfileRepository_SumFrozenAmountCents_EmptyIsZero(t *testing.T) {
 	}
 }
 
-// ── CountAccountsByDeviceFingerprint ─────────────────────────────────────────
+// ── CountRecentSubmissionsByIP ────────────────────────────────────────────────
 
-func TestKYCProfileRepository_CountAccounts_EmptyFingerprint_ReturnsZero(t *testing.T) {
+func TestKYCProfileRepository_CountRecentSubmissionsByIP_EmptyIP_ReturnsZero(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresKYCProfileRepository(testDB)
 
-	n, err := repo.CountAccountsByDeviceFingerprint(context.Background(), "", 0)
+	n, err := repo.CountRecentSubmissionsByIP(context.Background(), "", time.Now().Add(-time.Hour))
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if n != 0 {
-		t.Errorf("expected 0 for empty fingerprint, got %d", n)
+		t.Errorf("expected 0 for empty IP, got %d", n)
 	}
 }
 
-func TestKYCProfileRepository_CountAccounts_WithFingerprint_ExcludesSelf(t *testing.T) {
+func TestKYCProfileRepository_CountRecentSubmissionsByIP_CountsWithinWindow(t *testing.T) {
 	cleanTables(t)
 	u1 := seedUser(t)
 	u2 := seedUser(t)
 	repo := repository.NewPostgresKYCProfileRepository(testDB)
 
-	// Insert profiles with same fingerprint via raw SQL — Upsert doesn't have fp param.
-	_, _ = testDB.Exec(context.Background(),
-		`INSERT INTO kyc_profiles (user_id, status, tier, full_name, document_type, document_number, device_fingerprint)
-		 VALUES ($1, 'pending', 0, 'User One', 'gov_id', 'DOC1', 'fp-abc'),
-		        ($2, 'pending', 0, 'User Two', 'gov_id', 'DOC2', 'fp-abc')`,
-		u1.ID, u2.ID)
+	ip := "192.168.1.99"
+	now := time.Now()
+	docType := domain.KYCDocGovID
+	// Insert two profiles with the same submission_ip via Upsert.
+	p1 := &domain.KYCProfile{
+		UserID: u1.ID, Status: domain.KYCStatusPending, Tier: domain.KYCTierUnverified,
+		FullName: "Alice", DocumentType: &docType, DocumentNumber: "DOC-A",
+		SubmissionIP: &ip, SubmittedAt: &now,
+	}
+	p2 := &domain.KYCProfile{
+		UserID: u2.ID, Status: domain.KYCStatusPending, Tier: domain.KYCTierUnverified,
+		FullName: "Bob", DocumentType: &docType, DocumentNumber: "DOC-B",
+		SubmissionIP: &ip, SubmittedAt: &now,
+	}
+	if err := repo.Upsert(context.Background(), p1); err != nil {
+		t.Fatalf("Upsert p1: %v", err)
+	}
+	if err := repo.Upsert(context.Background(), p2); err != nil {
+		t.Fatalf("Upsert p2: %v", err)
+	}
 
-	n, err := repo.CountAccountsByDeviceFingerprint(context.Background(), "fp-abc", u1.ID)
+	since := now.Add(-time.Minute)
+	n, err := repo.CountRecentSubmissionsByIP(context.Background(), ip, since)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if n != 1 {
-		t.Errorf("expected 1 (excluding self), got %d", n)
+	if n != 2 {
+		t.Errorf("expected 2 submissions from same IP within window, got %d", n)
+	}
+}
+
+func TestKYCProfileRepository_CountRecentSubmissionsByIP_ExcludesOutsideWindow(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	ip := "10.0.0.5"
+	old := time.Now().Add(-2 * time.Hour)
+	docType := domain.KYCDocGovID
+	p := &domain.KYCProfile{
+		UserID: u.ID, Status: domain.KYCStatusPending, Tier: domain.KYCTierUnverified,
+		FullName: "Carlos", DocumentType: &docType, DocumentNumber: "DOC-C",
+		SubmissionIP: &ip, SubmittedAt: &old,
+	}
+	if err := repo.Upsert(context.Background(), p); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	// Update submitted_at to a time outside the 1-hour window.
+	_, err := testDB.Exec(context.Background(),
+		`UPDATE kyc_profiles SET submitted_at = $1 WHERE user_id = $2`,
+		old, u.ID)
+	if err != nil {
+		t.Fatalf("update submitted_at: %v", err)
+	}
+
+	since := time.Now().Add(-time.Hour)
+	n, err := repo.CountRecentSubmissionsByIP(context.Background(), ip, since)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 for submission outside window, got %d", n)
 	}
 }
 
@@ -569,5 +618,74 @@ func TestKYCProfileRepository_RiskDashboardStats_WithData(t *testing.T) {
 	}
 	if stats.TierDistribution[domain.KYCTierUnverified] != 1 {
 		t.Errorf("TierDistribution[0]: got %d, want 1", stats.TierDistribution[domain.KYCTierUnverified])
+	}
+}
+
+// ── ReleaseAndCreditFrozen ────────────────────────────────────────────────────
+
+func TestKYCProfileRepository_ReleaseAndCreditFrozen_CreditsBalanceAndClearsFreeze(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+	userRepo := repository.NewPostgresUserRepository(testDB)
+
+	const frozenCents = 50_000 // Q500
+	if err := repo.SetFrozen(context.Background(), u.ID, true, frozenCents, "prize_win"); err != nil {
+		t.Fatalf("SetFrozen: %v", err)
+	}
+
+	credited, err := repo.ReleaseAndCreditFrozen(context.Background(), u.ID, int64(p.ID), "kyc_unfreeze")
+	if err != nil {
+		t.Fatalf("ReleaseAndCreditFrozen: %v", err)
+	}
+	if credited != frozenCents {
+		t.Errorf("credited: got %d, want %d", credited, frozenCents)
+	}
+
+	// users.balance_cents must have been incremented.
+	balanceCents, _, err := userRepo.GetBalance(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if balanceCents != frozenCents {
+		t.Errorf("balance_cents: got %d, want %d", balanceCents, frozenCents)
+	}
+
+	// kyc_profiles freeze columns must be cleared.
+	got, _ := repo.GetByUserID(context.Background(), u.ID)
+	if got.BalanceFrozen {
+		t.Error("expected balance_frozen=false after release")
+	}
+	if got.FrozenAmountCents != 0 {
+		t.Errorf("frozen_amount_cents: got %d, want 0", got.FrozenAmountCents)
+	}
+
+	// A balance_ledger row with kind='prize' must exist.
+	var count int
+	err = testDB.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM balance_ledger WHERE user_id = $1 AND kind = 'prize'`, u.ID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("balance_ledger query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("balance_ledger rows: got %d, want 1", count)
+	}
+}
+
+func TestKYCProfileRepository_ReleaseAndCreditFrozen_NotFrozen_IdempotentNoOp(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	// Profile is not frozen — calling release must return 0, nil.
+	credited, err := repo.ReleaseAndCreditFrozen(context.Background(), u.ID, int64(p.ID), "kyc_unfreeze")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if credited != 0 {
+		t.Errorf("expected 0 credited for non-frozen profile, got %d", credited)
 	}
 }

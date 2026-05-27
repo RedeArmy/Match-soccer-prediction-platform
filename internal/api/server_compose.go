@@ -139,13 +139,7 @@ func (s *Server) buildHandlers(
 	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, repos.member, tiebreakerRepo, tiebreakerConfigRepo, s.log)
 	if cacheStore != nil {
 		cachedRanker := service.NewCachedRankingService(ranker, cacheStore, leaderboardTTL, s.log)
-		// When an admin changes cache.leaderboard_ttl_seconds, update the active
-		// TTL for future cache writes and flush all existing leaderboard entries so
-		// the change takes effect immediately rather than after natural expiry.
-		if mh, ok := paramSvcWithAudit.(service.MutationHookRegisterer); ok {
-			mh.RegisterMutationHook(domain.ParamKeyCacheLeaderboardTTL,
-				leaderboardTTLHook(paramSvcWithAudit, cachedRanker))
-		}
+		s.wireLeaderboardTTLHook(paramSvcWithAudit, cachedRanker)
 		ranker = cachedRanker
 	}
 
@@ -153,7 +147,7 @@ func (s *Server) buildHandlers(
 	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, groupAuthz, tiebreakerRepo, auditSvc, s.log)
 	tournamentSvc := service.NewTournamentService(repos.match, tournamentRepo, params, auditSvc, s.log)
 	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
-	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, repos.member, snapshotter, auditSvc, s.log)
+	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, repos.member, snapshotter, ranker, auditSvc, s.log)
 	adminUserSvc := service.NewAdminUserService(repos.user, repos.member, paymentRepo, auditSvc, s.log)
 	adminReadSvc := service.NewAdminReadService(
 		service.AdminReadRepos{
@@ -300,8 +294,13 @@ func (s *Server) buildHandlers(
 	h.adminN8n = handler.NewAdminN8nHandler(s.cfg.N8n.BaseURL, s.cfg.N8n.APIKey, s.log)
 
 	// ── KYC module ───────────────────────────────────────────────────────────
-	h.kyc, h.adminKYC, prizeSvc = s.buildKYCModule(ctx, params, paramSvcWithAudit, auditSvc, kycGate, ledgerRepo, fileStore)
-	_ = prizeSvc // reserved for prize-disbursement callers; suppresses unused-variable error
+	h.kyc, h.adminKYC, prizeSvc = s.buildKYCModule(ctx, params, paramSvcWithAudit, auditSvc, kycGate, ledgerRepo, outboxWriter, fileStore)
+	if pc, ok := adminGroupSvc.(interface{ SetPrizeCrediter(service.PrizeCrediter) }); ok {
+		pc.SetPrizeCrediter(prizeSvc)
+	}
+	if wg, ok := webhookPaymentSvc.(interface{ SetKYCGate(service.KYCGate) }); ok {
+		wg.SetKYCGate(kycGate)
+	}
 
 	// Wire observability notifier into payment-path handlers. Each handler
 	// defines its own narrow interface so the import graph stays acyclic.
@@ -312,6 +311,16 @@ func (s *Server) buildHandlers(
 	}
 
 	return h
+}
+
+// wireLeaderboardTTLHook registers a mutation hook so that when an admin
+// changes cache.leaderboard_ttl_seconds, the active TTL is updated and all
+// existing leaderboard cache entries are flushed immediately.
+func (s *Server) wireLeaderboardTTLHook(paramSvc service.SystemParamService, ranker *service.CachedRankingService) {
+	if mh, ok := paramSvc.(service.MutationHookRegisterer); ok {
+		mh.RegisterMutationHook(domain.ParamKeyCacheLeaderboardTTL,
+			leaderboardTTLHook(paramSvc, ranker))
+	}
 }
 
 // buildKYCModule wires all KYC repositories, services, OTel instruments, and
@@ -325,6 +334,7 @@ func (s *Server) buildKYCModule(
 	auditSvc service.AuditLogger,
 	kycGate service.KYCGate,
 	ledgerRepo repository.BalanceLedgerRepository,
+	outboxWriter outbox.Writer,
 	fileStore storage.FileStore,
 ) (*handler.KYCHandler, *handler.AdminKYCHandler, service.PrizeCrediter) {
 	kycProfileRepo := repository.NewPostgresKYCProfileRepository(s.db)
@@ -345,6 +355,11 @@ func (s *Server) buildKYCModule(
 	}); ok {
 		sl.SetLedger(ledgerRepo)
 	}
+	if sp, ok := kycGate.(interface {
+		SetProfileRepo(repository.KYCProfileRepository)
+	}); ok {
+		sp.SetProfileRepo(kycProfileRepo)
+	}
 
 	kycSvc := service.NewKYCService(kycProfileRepo, kycDocRepo, kycEventRepo, paramSvcWithAudit, auditSvc, s.log, kycMetrics)
 	if sc, ok := kycSvc.(interface{ SetCache(cache.Store) }); ok {
@@ -355,10 +370,15 @@ func (s *Server) buildKYCModule(
 	}); ok {
 		sl.SetLedger(ledgerRepo)
 	}
+	if sg, ok := kycSvc.(interface {
+		SetGate(service.KYCGate)
+	}); ok {
+		sg.SetGate(kycGate)
+	}
 
 	return handler.NewKYCHandler(kycSvc, fileStore, kycMaxUpload, s.log),
 		handler.NewAdminKYCHandler(kycSvc, s.log),
-		service.NewPrizeService(ledgerRepo, kycGate, kycSvc, s.notifier, s.log)
+		service.NewPrizeService(ledgerRepo, kycGate, kycSvc, outboxWriter, s.notifier, s.log)
 }
 
 // buildResilientCache wraps s.cache with a circuit breaker when the underlying

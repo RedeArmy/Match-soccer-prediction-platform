@@ -3,6 +3,7 @@ package repository_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -338,5 +339,64 @@ func TestBalanceLedgerRepository_CreditIdempotent_UserNotFound(t *testing.T) {
 	_, err := repo.CreditIdempotent(context.Background(), 999999, 1000, domain.LedgerKindWebhookRecurrente, "REF-GHOST")
 	if !isNotFound(err) {
 		t.Errorf("expected not-found error, got %v", err)
+	}
+}
+
+// TestBalanceLedgerRepository_ConcurrentCreditAndDebit verifies that N
+// concurrent Credit and Debit calls on the same user produce a correct final
+// balance and one ledger row per call, with no duplicate or lost rows.
+//
+// Each goroutine either credits 1000 or debits 1000.  Starting balance is set
+// high enough (N*1000) so no Debit fails with insufficient-funds.
+func TestBalanceLedgerRepository_ConcurrentCreditAndDebit(t *testing.T) {
+	if testDB == nil {
+		t.Skip("integration test: no test database available")
+	}
+	cleanTables(t)
+
+	const workers = 10
+	const amountCents = 1_000
+	startBalance := workers * amountCents // ensure debits never underflow
+
+	u := seedUserWithBalance(t, startBalance)
+	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
+
+	var wg sync.WaitGroup
+	wg.Add(workers * 2) // workers credits + workers debits
+
+	for i := 0; i < workers; i++ {
+		go func(i int) {
+			defer wg.Done()
+			if err := repo.Credit(context.Background(), u.ID, amountCents, domain.LedgerKindBankTransfer, int64(i), "concurrent_credit", 0); err != nil {
+				t.Errorf("Credit[%d]: %v", i, err)
+			}
+		}(i)
+		go func(i int) {
+			defer wg.Done()
+			if err := repo.Debit(context.Background(), u.ID, amountCents, domain.LedgerKindEntryFee, int64(i), "concurrent_debit", 0); err != nil {
+				t.Errorf("Debit[%d]: %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	userRepo := repository.NewPostgresUserRepository(testDB)
+	finalBalance, _, err := userRepo.GetBalance(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	// N credits and N debits of equal amount cancel out; balance equals startBalance.
+	if finalBalance != startBalance {
+		t.Errorf("final balance: got %d, want %d (started %d, %d credits, %d debits each %d cents)",
+			finalBalance, startBalance, startBalance, workers, workers, amountCents)
+	}
+
+	entries, err := repo.ListByUser(context.Background(), u.ID, repository.Unbounded())
+	if err != nil {
+		t.Fatalf("ListByUser: %v", err)
+	}
+	wantRows := workers * 2
+	if len(entries) != wantRows {
+		t.Errorf("ledger rows: got %d, want %d (no duplicates, no missing)", len(entries), wantRows)
 	}
 }

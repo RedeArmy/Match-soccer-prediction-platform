@@ -460,6 +460,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 			r.Post("/groups/bulk-delete", h.adminGroup.BulkDeleteGroups)
 			r.Post("/groups/{id}/members/bulk-remove", h.adminGroup.BulkRemoveMembers)
 			r.Post("/groups/{id}/leaderboard/recalculate", h.adminGroup.RecalculateLeaderboard)
+			r.Post("/groups/{id}/distribute-prizes", h.adminGroup.DistributePrizes)
 
 			// Scoring rules
 			r.Get("/scoring-rules", h.adminScoringRules.List)

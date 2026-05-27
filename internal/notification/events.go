@@ -120,6 +120,14 @@ const (
 	EventAdminWeeklyReport EventType = "admin.weekly_report"
 )
 
+// KYC compliance events.
+const (
+	// EventKYCWinnerFreeze is written to the outbox when a prize credit is
+	// withheld pending KYC verification. The outbox worker forwards it to the
+	// n8n kyc-winner-freeze webhook for compliance follow-up.
+	EventKYCWinnerFreeze EventType = "kyc.winner_freeze"
+)
+
 // System / infrastructure alert events (always deliver via email + ops channel).
 const (
 	EventSystemCircuitBreakerOpened     EventType = "system.circuit_breaker_opened"
@@ -341,6 +349,14 @@ type AdminWeeklyReportPayload struct {
 	TopGroupPoints    int    `json:"top_group_points,omitempty"`
 	TotalWithdrawals  int    `json:"total_withdrawals"`
 	WithdrawalCents   int    `json:"withdrawal_cents"`
+}
+
+// KYCWinnerFreezePayload is the payload for EventKYCWinnerFreeze, written when
+// a prize credit is withheld pending KYC verification.
+type KYCWinnerFreezePayload struct {
+	UserID      int    `json:"user_id"`
+	AmountCents int    `json:"amount_cents"`
+	TraceID     string `json:"trace_id,omitempty"`
 }
 
 // KnownEventTypes is the authoritative set of every registered EventType.

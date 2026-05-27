@@ -54,6 +54,17 @@ const (
 	// ParamKeyKYCRiskDashboardCacheTTLSec is the number of seconds the admin
 	// risk dashboard response is cached. Seeded by migration 000125.
 	ParamKeyKYCRiskDashboardCacheTTLSec = "kyc.risk_dashboard_cache_ttl_sec"
+
+	// ParamKeyKYCIPVelocityWindowMinutes is the rolling window (minutes) used by
+	// CheckIPSubmissionVelocity. Submissions from the same IP within this window
+	// are counted; if the count exceeds ParamKeyKYCIPVelocityMaxSubmissions the
+	// request is rejected with apperrors.RateLimited.
+	ParamKeyKYCIPVelocityWindowMinutes = "kyc.ip_velocity_window_minutes"
+
+	// ParamKeyKYCIPVelocityMaxSubmissions is the maximum number of KYC submissions
+	// allowed from a single IP address within the velocity window before the
+	// request is rejected. A value of 0 disables the check.
+	ParamKeyKYCIPVelocityMaxSubmissions = "kyc.ip_velocity_max_submissions"
 )
 
 // KYC system_params default values — match the seeds in migration 000121 so
@@ -82,6 +93,15 @@ const (
 	// dashboard response is cached. 60 seconds balances freshness against DB load.
 	// Matches the seed in migration 000125.
 	DefaultKYCRiskDashboardCacheTTLSecs = 60
+
+	// DefaultKYCIPVelocityWindowMinutes is the rolling window for IP submission
+	// velocity checks. 60 minutes caps abuse from a single network.
+	DefaultKYCIPVelocityWindowMinutes = 60
+
+	// DefaultKYCIPVelocityMaxSubmissions is the submission ceiling per IP per
+	// velocity window. 3 submissions per hour is generous for legitimate users
+	// and blocks automated probing.
+	DefaultKYCIPVelocityMaxSubmissions = 3
 )
 
 // CacheKeyKYCRiskDashboard is the cache key for the admin risk dashboard response.

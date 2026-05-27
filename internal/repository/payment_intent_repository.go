@@ -171,4 +171,29 @@ func resolveCaptureMissTx(ctx context.Context, tx pgx.Tx, token, captureID strin
 	return nil, apperrors.Conflict("payment intent already captured by a different transaction")
 }
 
+// GetByToken returns the intent matching token regardless of status.
+// Returns nil, nil when no intent exists with that token.
+func (r *PostgresPaymentIntentRepository) GetByToken(ctx context.Context, token string) (*domain.PaymentIntent, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	var i domain.PaymentIntent
+	err := r.db.QueryRow(ctx, `
+		SELECT id, token, user_id, amount_cents, currency, status, capture_id,
+		       expires_at, created_at, updated_at
+		  FROM payment_intents
+		 WHERE token = $1
+	`, token).Scan(
+		&i.ID, &i.Token, &i.UserID, &i.AmountCents,
+		&i.Currency, &i.Status, &i.CaptureID,
+		&i.ExpiresAt, &i.CreatedAt, &i.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return &i, nil
+}
+
 var _ PaymentIntentRepository = (*PostgresPaymentIntentRepository)(nil)

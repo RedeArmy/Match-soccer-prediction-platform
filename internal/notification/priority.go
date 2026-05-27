@@ -40,6 +40,7 @@ var priorityTable = map[EventType]Priority{
 	EventAdminHighValueWithdrawal:       PriorityP0Critical,
 	EventAdminPaymentDispute:            PriorityP0Critical,
 	EventAdminScoringDiscrepancy:        PriorityP0Critical,
+	EventKYCWinnerFreeze:                PriorityP0Critical,
 	EventSystemWebhookSignatureFailed:   PriorityP0Critical,
 	EventSystemWebhookSignatureRepeated: PriorityP0Critical,
 	EventSystemBalanceLedgerMismatch:    PriorityP0Critical,
