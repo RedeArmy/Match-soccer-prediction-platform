@@ -625,37 +625,7 @@ func (r *PostgresKYCProfileRepository) ApproveAndSetTier(
 // window where a crash between the two writes left the freeze recorded but
 // the compliance trail missing.
 func (r *PostgresKYCProfileRepository) FreezeAtomic(ctx context.Context, userID, amountCents int, reason, traceID string) error {
-	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
-	defer cancel()
-	return withTx(ctx, r.db, "KYCProfileRepository.FreezeAtomic", func(tx pgx.Tx) error {
-		var profileID int
-		var status string
-		err := tx.QueryRow(ctx, `
-			UPDATE kyc_profiles
-			   SET balance_frozen      = TRUE,
-			       frozen_amount_cents = $2,
-			       frozen_reason       = $3,
-			       updated_at          = NOW()
-			 WHERE user_id = $1
-			RETURNING id, status
-		`, userID, amountCents, reason).Scan(&profileID, &status)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return apperrors.NotFound(errKYCProfileNotFound)
-		}
-		if err != nil {
-			return apperrors.Internal(err)
-		}
-		metadata := fmt.Sprintf(`{"frozen_amount_cents":%d}`, amountCents)
-		_, err = tx.Exec(ctx, `
-			INSERT INTO kyc_events
-			      (profile_id, profile_type, event_type, old_status, new_status, reason, metadata, trace_id)
-			VALUES ($1, 'user', 'frozen', $2, $2, $3, $4::jsonb, $5)
-		`, profileID, status, reason, metadata, traceID)
-		if err != nil {
-			return apperrors.Internal(err)
-		}
-		return nil
-	})
+	return r.FreezeAtomicWithTxHook(ctx, userID, amountCents, reason, traceID, func(_ context.Context, _ pgx.Tx) error { return nil })
 }
 
 // FreezeAtomicWithTxHook is like FreezeAtomic but calls hook(ctx, tx) within
