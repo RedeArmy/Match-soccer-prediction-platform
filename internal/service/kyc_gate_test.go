@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -489,6 +491,9 @@ func (s *ipCountStub) ApproveAndSetTier(_ context.Context, _ int, _ int, _ domai
 	return nil
 }
 func (s *ipCountStub) FreezeAtomic(_ context.Context, _ int, _ int, _ string, _ string) error {
+	return nil
+}
+func (s *ipCountStub) FreezeAtomicWithTxHook(_ context.Context, _ int, _ int, _ string, _ string, _ func(context.Context, pgx.Tx) error) error {
 	return nil
 }
 func (s *ipCountStub) UpdateStatusWithEvent(_ context.Context, _ int, _ int, _ domain.KYCStatus, _ domain.KYCStatus, _ domain.KYCEventType, _ string, _ string) error {

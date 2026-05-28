@@ -6,11 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -92,6 +95,9 @@ func (r *kycProfileRepoStub) ApproveAndSetTier(_ context.Context, _ int, _ int, 
 	return r.err
 }
 func (r *kycProfileRepoStub) FreezeAtomic(_ context.Context, _ int, _ int, _ string, _ string) error {
+	return r.err
+}
+func (r *kycProfileRepoStub) FreezeAtomicWithTxHook(_ context.Context, _ int, _ int, _ string, _ string, _ func(context.Context, pgx.Tx) error) error {
 	return r.err
 }
 func (r *kycProfileRepoStub) UpdateStatusWithEvent(_ context.Context, _ int, _ int, _ domain.KYCStatus, _ domain.KYCStatus, _ domain.KYCEventType, _ string, _ string) error {
@@ -377,6 +383,99 @@ func TestKYCService_FreezeBalance_RepoError_Propagates(t *testing.T) {
 	svc := newKYCSvc(&kycProfileRepoStub{err: errors.New("db fail")}, &kycDocRepoStub{}, &kycEventRepoStub{})
 	if err := svc.FreezeBalance(context.Background(), 1, 1000, "reason"); err == nil {
 		t.Fatal("expected error from FreezeAtomic, got nil")
+	}
+}
+
+// freezeRouteTracker wraps kycProfileRepoStub to track which freeze path is taken.
+type freezeRouteTracker struct {
+	kycProfileRepoStub
+	atomicCalled        bool
+	atomicWithHookCalled bool
+	hookErr             error
+}
+
+func (r *freezeRouteTracker) FreezeAtomic(_ context.Context, _ int, _ int, _ string, _ string) error {
+	r.atomicCalled = true
+	return r.err
+}
+func (r *freezeRouteTracker) FreezeAtomicWithTxHook(_ context.Context, _ int, _ int, _ string, _ string, hook func(context.Context, pgx.Tx) error) error {
+	r.atomicWithHookCalled = true
+	if r.err != nil {
+		return r.err
+	}
+	// Call the hook with a nil tx to verify it is invoked; the outbox stub handles nil gracefully.
+	if err := hook(context.Background(), nil); err != nil {
+		return err
+	}
+	return nil
+}
+
+type freezeOutboxStub struct {
+	writeInTxCalled bool
+	writeInTxErr    error
+}
+
+func (o *freezeOutboxStub) Write(_ context.Context, _ notification.EventType, _, _ string, _ any) error {
+	return nil
+}
+func (o *freezeOutboxStub) WriteBatch(_ context.Context, _ []outbox.BatchEvent) error { return nil }
+func (o *freezeOutboxStub) WriteDedup(_ context.Context, _ string, _ notification.EventType, _, _ string, _ any) (bool, error) {
+	return false, nil
+}
+func (o *freezeOutboxStub) WriteInTx(_ context.Context, _ outbox.TxExecer, _ notification.EventType, _, _ string, _ any) error {
+	o.writeInTxCalled = true
+	return o.writeInTxErr
+}
+
+func TestKYCService_FreezeBalance_WithOutboxWriter_UsesAtomicHook(t *testing.T) {
+	tracker := &freezeRouteTracker{}
+	ob := &freezeOutboxStub{}
+	svc := NewKYCService(tracker, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+	svc.(*kycService).SetOutboxWriter(ob)
+
+	if err := svc.FreezeBalance(context.Background(), 5, 50_000, "prize freeze"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tracker.atomicCalled {
+		t.Error("FreezeAtomic was called; expected FreezeAtomicWithTxHook when outboxWriter is set")
+	}
+	if !tracker.atomicWithHookCalled {
+		t.Error("FreezeAtomicWithTxHook was not called")
+	}
+	if !ob.writeInTxCalled {
+		t.Error("WriteInTx was not called inside the hook")
+	}
+}
+
+func TestKYCService_FreezeBalance_WithoutOutboxWriter_UsesFreezeAtomic(t *testing.T) {
+	tracker := &freezeRouteTracker{}
+	svc := NewKYCService(tracker, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+
+	if err := svc.FreezeBalance(context.Background(), 5, 50_000, "prize freeze"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !tracker.atomicCalled {
+		t.Error("expected FreezeAtomic to be called when no outboxWriter is set")
+	}
+	if tracker.atomicWithHookCalled {
+		t.Error("FreezeAtomicWithTxHook called unexpectedly when outboxWriter is nil")
+	}
+}
+
+func TestKYCService_FreezeBalance_OutboxHookError_RollsBack(t *testing.T) {
+	tracker := &freezeRouteTracker{}
+	ob := &freezeOutboxStub{writeInTxErr: errors.New("outbox write failed")}
+	svc := NewKYCService(tracker, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+	svc.(*kycService).SetOutboxWriter(ob)
+
+	if err := svc.FreezeBalance(context.Background(), 5, 50_000, "prize freeze"); err == nil {
+		t.Fatal("expected error when outbox hook fails, got nil")
+	}
+	if !tracker.atomicWithHookCalled {
+		t.Error("FreezeAtomicWithTxHook was not called")
 	}
 }
 

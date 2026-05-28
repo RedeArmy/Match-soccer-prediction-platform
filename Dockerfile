@@ -16,11 +16,11 @@ COPY . .
 
 # CGO_ENABLED=0 produces a statically linked binary with no libc dependency,
 # which is required to run in the minimal runtime image below.
-# -ldflags="-s -w" strips the symbol table and DWARF debug information,
-# reducing the binary size by roughly 30% at the cost of less useful stack
-# traces from the raw binary (the logger captures structured traces anyway).
+# -w strips DWARF debug tables (reduces binary size by ~20%).
+# -s is intentionally omitted: stripping the symbol table breaks crash
+# symbolication in Sentry, Datadog APM, and Go runtime stack traces.
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
+    -ldflags="-w" \
     -o /bin/api \
     ./cmd/api
 

@@ -775,3 +775,79 @@ func TestLoad_CORSProductionOrigin_InProduction_IsAccepted(t *testing.T) {
 		t.Fatalf("expected no error for production CORS origin, got: %v", err)
 	}
 }
+
+// ── P3-001: console encoding rejected in production ───────────────────────────
+
+func setFullProductionEnv(t *testing.T) {
+	t.Helper()
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	setProductionPaymentEnv(t)
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	setProductionStorageEnv(t)
+}
+
+func TestLoad_ProductionWithConsoleEncoding_ReturnsError(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_LOGGER_ENCODING", "console")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for console encoding in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "console") {
+		t.Errorf("expected error to mention 'console', got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithJSONEncoding_ReturnsNoError(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_LOGGER_ENCODING", "json")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for json encoding in production, got: %v", err)
+	}
+}
+
+func TestLoad_DevelopmentWithConsoleEncoding_ReturnsNoError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "dev")
+	t.Setenv("WCQ_LOGGER_ENCODING", "console")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for console encoding in development, got: %v", err)
+	}
+}
+
+// ── P3-002: ConnMaxLifetime == 0 advisory warning ─────────────────────────────
+
+func TestWarnings_ConnMaxLifetimeZero_ReturnsWarning(t *testing.T) {
+	cfg := &config.Config{}
+	w := config.Warnings(cfg)
+	if len(w) == 0 {
+		t.Fatal("expected at least one warning when ConnMaxLifetime is 0, got none")
+	}
+	found := false
+	for _, msg := range w {
+		if strings.Contains(msg, "ConnMaxLifetime") || strings.Contains(msg, "connMaxLifetime") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning to mention ConnMaxLifetime, got: %v", w)
+	}
+}
+
+func TestWarnings_ConnMaxLifetimeNonZero_NoWarning(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Database.ConnMaxLifetime = 30 * time.Second
+	w := config.Warnings(cfg)
+	for _, msg := range w {
+		if strings.Contains(msg, "ConnMaxLifetime") || strings.Contains(msg, "connMaxLifetime") {
+			t.Errorf("unexpected ConnMaxLifetime warning when value is non-zero: %v", msg)
+		}
+	}
+}

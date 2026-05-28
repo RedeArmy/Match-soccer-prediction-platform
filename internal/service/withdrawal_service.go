@@ -119,6 +119,7 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 		})
 	}
 
+	isHighValue := s.isHighValueWithdrawal(ctx, amountCents)
 	s.writeOutbox(ctx, notification.EventAdminWithdrawalPending,
 		"withdrawal_request", strconv.Itoa(req.ID),
 		notification.AdminWithdrawalPayload{
@@ -126,7 +127,19 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 			UserID:      userID,
 			AmountCents: amountCents,
 			Currency:    currency,
+			IsHighValue: isHighValue,
 		})
+	if isHighValue {
+		s.writeOutbox(ctx, notification.EventAdminHighValueWithdrawal,
+			"withdrawal_request", strconv.Itoa(req.ID),
+			notification.AdminWithdrawalPayload{
+				RequestID:   req.ID,
+				UserID:      userID,
+				AmountCents: amountCents,
+				Currency:    currency,
+				IsHighValue: true,
+			})
+	}
 	return req, nil
 }
 
@@ -234,6 +247,19 @@ func (s *withdrawalService) writeOutbox(
 			zap.Error(err),
 		)
 	}
+}
+
+// isHighValueWithdrawal returns true when amountCents meets or exceeds the
+// notify.high_value_withdrawal_cents threshold, triggering an additional
+// EventAdminHighValueWithdrawal outbox event alongside the regular pending alert.
+func (s *withdrawalService) isHighValueWithdrawal(ctx context.Context, amountCents int) bool {
+	threshold := domain.DefaultNotifyHighValueWithdrawalCents
+	if p, err := s.paramRepo.Get(ctx, domain.ParamKeyNotifyHighValueWithdrawalCents); err == nil && p != nil {
+		if v, err := strconv.Atoi(p.Value); err == nil {
+			threshold = v
+		}
+	}
+	return amountCents >= threshold
 }
 
 func (s *withdrawalService) withdrawalLimits(ctx context.Context) (minCents, maxCents int, err error) {

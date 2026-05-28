@@ -54,13 +54,14 @@ type dlqWriter interface {
 // On successful replay the entry is marked resolved; on failure the attempt
 // counter is incremented and the entry waits for the next back-off window.
 type DLQWorker struct {
-	repo           dlqRepository
-	writer         dlqWriter
-	log            *zap.Logger
-	pollInterval   time.Duration
-	batchSize      int
-	maxAttempts    int
-	alertThreshold int64
+	repo             dlqRepository
+	writer           dlqWriter
+	log              *zap.Logger
+	pollInterval     time.Duration
+	batchSize        int
+	maxAttempts      int
+	warningThreshold int64 // Warn-level log at this count (notify.dlq_warning_threshold)
+	alertThreshold   int64 // Error-level log + n8n webhook at this count
 	// notifier fires an n8n webhook when the unresolved DLQ count exceeds
 	// alertThreshold. nil disables the operational alert (logs-only mode).
 	notifier dlqOverflowNotifier
@@ -83,6 +84,13 @@ func WithDLQPollInterval(d time.Duration) DLQWorkerOption {
 // entry is permanently abandoned.
 func WithDLQMaxAttempts(n int) DLQWorkerOption {
 	return func(w *DLQWorker) { w.maxAttempts = n }
+}
+
+// WithDLQWarningThreshold sets the unresolved-entry count above which the
+// worker emits a Warn-level log line (notify.dlq_warning_threshold). Must be
+// less than the alert threshold to be meaningful. Zero disables the warning.
+func WithDLQWarningThreshold(n int64) DLQWorkerOption {
+	return func(w *DLQWorker) { w.warningThreshold = n }
 }
 
 // WithDLQAlertThreshold overrides the unresolved-entry count above which the
@@ -152,6 +160,11 @@ func (w *DLQWorker) poll(ctx context.Context) {
 		if w.notifier != nil {
 			w.notifier.NotifyDLQOverflow(ctx, total, w.alertThreshold)
 		}
+	} else if w.warningThreshold > 0 && total > w.warningThreshold {
+		w.log.Warn("dlq replay: unresolved entry count above warning threshold",
+			zap.Int64("unresolved", total),
+			zap.Int64("warning_threshold", w.warningThreshold),
+		)
 	}
 
 	entries, err := w.repo.ClaimBatch(ctx, w.batchSize, w.maxAttempts)

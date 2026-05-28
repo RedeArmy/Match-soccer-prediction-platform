@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -116,16 +119,17 @@ type KYCService interface {
 // ── Implementation ────────────────────────────────────────────────────────────
 
 type kycService struct {
-	profileRepo repository.KYCProfileRepository
-	docRepo     repository.KYCDocumentRepository
-	eventRepo   repository.KYCEventRepository
-	params      SystemParamService
-	audit       AuditLogger
-	log         *zap.Logger
-	metrics     *KYCMetrics
-	cache       cache.Store                        // optional; nil disables risk-dashboard caching
-	ledger      repository.BalanceLedgerRepository // optional; nil skips deposit velocity in risk score
-	gate        KYCGate                            // optional; nil disables IP velocity check on Submit
+	profileRepo  repository.KYCProfileRepository
+	docRepo      repository.KYCDocumentRepository
+	eventRepo    repository.KYCEventRepository
+	params       SystemParamService
+	audit        AuditLogger
+	log          *zap.Logger
+	metrics      *KYCMetrics
+	cache        cache.Store                        // optional; nil disables risk-dashboard caching
+	ledger       repository.BalanceLedgerRepository // optional; nil skips deposit velocity in risk score
+	gate         KYCGate                            // optional; nil disables IP velocity check on Submit
+	outboxWriter outbox.Writer                      // optional; when set, FreezeBalance writes the outbox event atomically with the freeze
 }
 
 // NewKYCService constructs a KYCService. Pass a non-nil KYCMetrics (variadic)
@@ -160,6 +164,12 @@ func (s *kycService) SetCache(store cache.Store) { s.cache = store }
 // SetGate wires the KYCGate for IP velocity checking on KYC submission.
 // Called once at startup; nil disables the check (acceptable in tests).
 func (s *kycService) SetGate(gate KYCGate) { s.gate = gate }
+
+// SetOutboxWriter wires the transactional outbox writer so that FreezeBalance
+// writes the kyc.winner_freeze notification event within the same transaction as
+// the balance freeze. When nil (the default), FreezeBalance calls FreezeAtomic
+// and the caller is responsible for writing the outbox event separately.
+func (s *kycService) SetOutboxWriter(w outbox.Writer) { s.outboxWriter = w }
 
 // SetLedger wires the ledger repo for deposit-velocity scoring.
 // Called once at startup; nil omits the deposit-velocity component.
@@ -528,10 +538,25 @@ func (s *kycService) ReleaseFrozenBalance(ctx context.Context, userID, adminID i
 }
 
 func (s *kycService) FreezeBalance(ctx context.Context, userID, prizeCents int, reason string) error {
-	// FreezeAtomic commits the balance freeze and the compliance audit event
-	// in a single transaction, closing the window where a crash between the
-	// two writes left the freeze recorded but the audit trail missing.
-	return s.profileRepo.FreezeAtomic(ctx, userID, prizeCents, reason, traceIDFromCtx(ctx))
+	traceID := traceIDFromCtx(ctx)
+	if s.outboxWriter == nil {
+		// No outbox writer: plain atomic freeze + audit event only.
+		return s.profileRepo.FreezeAtomic(ctx, userID, prizeCents, reason, traceID)
+	}
+	// Outbox writer present: write the kyc.winner_freeze notification event in
+	// the same transaction as the freeze so a crash between the two writes
+	// cannot leave a frozen balance with no outbox task for n8n.
+	aggregateID := fmt.Sprintf("%d", userID)
+	payload := notification.KYCWinnerFreezePayload{
+		UserID:      userID,
+		AmountCents: prizeCents,
+		TraceID:     traceID,
+	}
+	return s.profileRepo.FreezeAtomicWithTxHook(ctx, userID, prizeCents, reason, traceID,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return s.outboxWriter.WriteInTx(ctx, tx, notification.EventKYCWinnerFreeze, "user", aggregateID, payload)
+		},
+	)
 }
 
 // checkIPVelocity calls the gate's IP velocity check and, on block, appends a

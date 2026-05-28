@@ -66,6 +66,10 @@ func main() {
 
 	logStartupBanner(cfg, log)
 
+	for _, w := range config.Warnings(cfg) {
+		log.Warn(w)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

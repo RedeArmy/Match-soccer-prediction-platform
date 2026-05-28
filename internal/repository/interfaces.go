@@ -19,6 +19,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
@@ -863,6 +865,12 @@ type KYCProfileRepository interface {
 	// where the freeze is recorded but the compliance trail is missing.
 	// traceID may be empty when no OTel span is active.
 	FreezeAtomic(ctx context.Context, userID, amountCents int, reason, traceID string) error
+	// FreezeAtomicWithTxHook is like FreezeAtomic but calls hook(ctx, tx) within
+	// the same transaction before commit. The hook is used by KYCService to write
+	// an outbox notification row in the same transaction as the balance freeze,
+	// eliminating the crash window between the freeze commit and the outbox insert.
+	// hook must not call Commit or Rollback on tx.
+	FreezeAtomicWithTxHook(ctx context.Context, userID, amountCents int, reason, traceID string, hook func(context.Context, pgx.Tx) error) error
 	// ListPending returns profiles in the pending, under_review, or escalated
 	// state, ordered by submitted_at ASC (oldest first), with pagination.
 	ListPending(ctx context.Context, f KYCProfileFilters, p Pagination) ([]*domain.KYCProfile, error)

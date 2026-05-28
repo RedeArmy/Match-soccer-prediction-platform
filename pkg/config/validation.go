@@ -84,6 +84,19 @@ func validate(cfg *Config) error {
 	return validateDatabaseConfig(cfg.Database)
 }
 
+// Warnings returns a list of non-fatal configuration advisories.
+// None of these prevent the application from starting, but each indicates a
+// configuration that may cause subtle operational problems. Callers should log
+// each entry at WARN level during startup.
+func Warnings(cfg *Config) []string {
+	var w []string
+	if cfg.Database.ConnMaxLifetime == 0 {
+		w = append(w, "database.connMaxLifetime is 0 (disabled): connections are never recycled; "+
+			"this may prevent clean failover after a network partition (WCQ_DATABASE_CONNMAXLIFETIME)")
+	}
+	return w
+}
+
 // validateDatabaseConfig enforces pool-sizing invariants that cannot be
 // expressed as defaults. It is intentionally separate from the rest of
 // validate so it can be called by both validate and validateWorker without
@@ -131,6 +144,12 @@ func validateProductionConfig(cfg *Config) error {
 	}
 	if cfg.Email.UnsubscribeSecret == "" {
 		return errors.New("email.unsubscribeSecret must not be empty outside development (WCQ_EMAIL_UNSUBSCRIBESECRET); one-click unsubscribe links will be invalid and the endpoint will return 500")
+	}
+	if cfg.Logger.Encoding == "console" {
+		return errors.New(
+			"logger.encoding must not be 'console' in production (WCQ_LOGGER_ENCODING); " +
+				"use 'json' so log lines are parseable by the aggregation pipeline",
+		)
 	}
 	if cfg.EventBus.Driver == "in_memory" {
 		return fmt.Errorf(
