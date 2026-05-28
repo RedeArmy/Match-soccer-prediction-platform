@@ -389,9 +389,9 @@ func TestKYCService_FreezeBalance_RepoError_Propagates(t *testing.T) {
 // freezeRouteTracker wraps kycProfileRepoStub to track which freeze path is taken.
 type freezeRouteTracker struct {
 	kycProfileRepoStub
-	atomicCalled        bool
+	atomicCalled         bool
 	atomicWithHookCalled bool
-	hookErr             error
+	hookErr              error
 }
 
 func (r *freezeRouteTracker) FreezeAtomic(_ context.Context, _ int, _ int, _ string, _ string) error {

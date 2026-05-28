@@ -150,9 +150,10 @@ func (w *DLQWorker) Run(ctx context.Context) {
 // and processes a batch.
 func (w *DLQWorker) poll(ctx context.Context) {
 	total, err := w.repo.CountUnresolved(ctx)
-	if err != nil {
+	switch {
+	case err != nil:
 		w.log.Warn("dlq replay: count unresolved failed", zap.Error(err))
-	} else if total > w.alertThreshold {
+	case total > w.alertThreshold:
 		w.log.Error("dlq replay: unresolved entry count exceeds alert threshold",
 			zap.Int64("unresolved", total),
 			zap.Int64("threshold", w.alertThreshold),
@@ -160,7 +161,7 @@ func (w *DLQWorker) poll(ctx context.Context) {
 		if w.notifier != nil {
 			w.notifier.NotifyDLQOverflow(ctx, total, w.alertThreshold)
 		}
-	} else if w.warningThreshold > 0 && total > w.warningThreshold {
+	case w.warningThreshold > 0 && total > w.warningThreshold:
 		w.log.Warn("dlq replay: unresolved entry count above warning threshold",
 			zap.Int64("unresolved", total),
 			zap.Int64("warning_threshold", w.warningThreshold),
