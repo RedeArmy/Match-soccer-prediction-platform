@@ -143,6 +143,14 @@ func extensionForCT(ct string) string {
 	}
 }
 
+// minimalJPEGBytes returns the minimum byte sequence that http.DetectContentType
+// identifies as image/jpeg (JFIF magic: FF D8 FF E0 plus padding to 512 bytes).
+func minimalJPEGBytes() []byte {
+	b := make([]byte, 16)
+	b[0], b[1], b[2], b[3] = 0xff, 0xd8, 0xff, 0xe0
+	return b
+}
+
 // drainingFileStore is a test double that drains the reader so the TeeReader
 // completes and the SHA-256 hash is computed correctly.
 type drainingFileStore struct{ putErr error }
@@ -164,7 +172,7 @@ func TestKYCHandler_UploadDocument_Success(t *testing.T) {
 	svc := &stubKYCSvc{profile: profile, doc: doc}
 
 	router := withKYCUser(kycUploadRouter(t, svc))
-	req := buildKYCMultipart(t, "gov_id", "image/jpeg", []byte("fake-image-bytes"))
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", minimalJPEGBytes())
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -571,7 +579,7 @@ func TestKYCHandler_UploadDocument_SvcError_Returns500(t *testing.T) {
 	profile := &domain.KYCProfile{ID: 1}
 	svc := &stubKYCSvc{profile: profile, uploadDocErr: apperrors.Internal(nil)}
 	router := withKYCUser(kycUploadRouter(t, svc))
-	req := buildKYCMultipart(t, "gov_id", "image/jpeg", []byte("fake-image-bytes"))
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", minimalJPEGBytes())
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError {
@@ -586,7 +594,7 @@ func TestKYCHandler_UploadDocument_StorePutError_Returns500(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /kyc/documents", h.UploadDocument)
 	router := withKYCUser(mux)
-	req := buildKYCMultipart(t, "gov_id", "image/jpeg", []byte("fake-image-bytes"))
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", minimalJPEGBytes())
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError {

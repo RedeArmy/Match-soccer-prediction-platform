@@ -19,6 +19,14 @@ var knownLogLevels = map[string]struct{}{
 	"fatal":  {},
 }
 
+// knownLogEncodings is the set of encoding strings accepted by the zap logger
+// factory. "console" produces human-readable output for local development;
+// "json" is required for production log aggregation pipelines.
+var knownLogEncodings = map[string]struct{}{
+	"json":    {},
+	"console": {},
+}
+
 // validateWorker enforces the configuration invariants required by the worker
 // binary. It is intentionally less strict than validate: the worker has no
 // HTTP router (no server.port) and no CORS policy. Infrastructure
@@ -29,6 +37,12 @@ func validateWorker(cfg *Config) error {
 		return fmt.Errorf(
 			"logger.level %q is not valid (WCQ_LOGGER_LEVEL); accepted values: debug, info, warn, error, dpanic, panic, fatal",
 			cfg.Logger.Level,
+		)
+	}
+	if _, ok := knownLogEncodings[cfg.Logger.Encoding]; !ok {
+		return fmt.Errorf(
+			"logger.encoding %q is not valid (WCQ_LOGGER_ENCODING); accepted values: json, console",
+			cfg.Logger.Encoding,
 		)
 	}
 	return validateDatabaseConfig(cfg.Database)
@@ -61,7 +75,26 @@ func validate(cfg *Config) error {
 			cfg.Logger.Level,
 		)
 	}
+	if _, ok := knownLogEncodings[cfg.Logger.Encoding]; !ok {
+		return fmt.Errorf(
+			"logger.encoding %q is not valid (WCQ_LOGGER_ENCODING); accepted values: json, console",
+			cfg.Logger.Encoding,
+		)
+	}
 	return validateDatabaseConfig(cfg.Database)
+}
+
+// Warnings returns a list of non-fatal configuration advisories.
+// None of these prevent the application from starting, but each indicates a
+// configuration that may cause subtle operational problems. Callers should log
+// each entry at WARN level during startup.
+func Warnings(cfg *Config) []string {
+	var w []string
+	if cfg.Database.ConnMaxLifetime == 0 {
+		w = append(w, "database.connMaxLifetime is 0 (disabled): connections are never recycled; "+
+			"this may prevent clean failover after a network partition (WCQ_DATABASE_CONNMAXLIFETIME)")
+	}
+	return w
 }
 
 // validateDatabaseConfig enforces pool-sizing invariants that cannot be
@@ -108,6 +141,15 @@ func validateProductionConfig(cfg *Config) error {
 	}
 	if cfg.Payment.PayPalWebhookID == "" {
 		return errors.New("payment.paypalWebhookID must not be empty outside development (WCQ_PAYMENT_PAYPALWEBHOOKID)")
+	}
+	if cfg.Email.UnsubscribeSecret == "" {
+		return errors.New("email.unsubscribeSecret must not be empty outside development (WCQ_EMAIL_UNSUBSCRIBESECRET); one-click unsubscribe links will be invalid and the endpoint will return 500")
+	}
+	if cfg.Logger.Encoding == "console" {
+		return errors.New(
+			"logger.encoding must not be 'console' in production (WCQ_LOGGER_ENCODING); " +
+				"use 'json' so log lines are parseable by the aggregation pipeline",
+		)
 	}
 	if cfg.EventBus.Driver == "in_memory" {
 		return fmt.Errorf(

@@ -328,4 +328,99 @@ func (r *PostgresQuinielaRepository) BulkDeleteByAdmin(ctx context.Context, ids 
 	return succeeded, rows.Err()
 }
 
+// DistributePrizesAtomically claims prizes_distributed_at on quinielaID and
+// executes all credits and freezes in a single pgx transaction so that a crash
+// mid-loop never leaves the quiniela in a partially-distributed state.
+//
+// The compare-and-set on prizes_distributed_at (WHERE prizes_distributed_at IS
+// NULL) is an atomic idempotency guard: a concurrent or retry call that arrives
+// after the first commit will observe 0 rows affected and receive
+// apperrors.Conflict, preventing any double-crediting.
+func (r *PostgresQuinielaRepository) DistributePrizesAtomically(
+	ctx context.Context,
+	quinielaID int,
+	credits []PrizeCredit,
+	freezes []PrizeFreeze,
+) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	return withTx(ctx, r.db, "QuinielaRepository.DistributePrizesAtomically", func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx,
+			`UPDATE quinielas
+			    SET prizes_distributed_at = NOW(),
+			        updated_at            = NOW()
+			  WHERE id = $1
+			    AND prizes_distributed_at IS NULL
+			    AND deleted_at IS NULL`,
+			quinielaID,
+		)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if tag.RowsAffected() == 0 {
+			return apperrors.Conflict("prizes already distributed for this quiniela")
+		}
+		for _, c := range credits {
+			if err := applyPrizeCreditTx(ctx, tx, c); err != nil {
+				return err
+			}
+		}
+		for _, f := range freezes {
+			if err := applyPrizeFreezeTx(ctx, tx, f); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// applyPrizeCreditTx credits a single winner inside an open transaction:
+// increments users.balance_cents and inserts the corresponding ledger row.
+func applyPrizeCreditTx(ctx context.Context, tx pgx.Tx, c PrizeCredit) error {
+	var balanceAfter int
+	err := tx.QueryRow(ctx,
+		`UPDATE users
+		    SET balance_cents = balance_cents + $2,
+		        updated_at    = NOW()
+		  WHERE id = $1 AND deleted_at IS NULL
+		  RETURNING balance_cents`,
+		c.UserID, c.AmountCents,
+	).Scan(&balanceAfter)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperrors.NotFound("prize recipient not found")
+	}
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return insertLedgerTx(ctx, tx, ledgerRow{
+		UserID:       c.UserID,
+		DeltaCents:   c.AmountCents,
+		Kind:         domain.LedgerKindPrize,
+		BalanceAfter: balanceAfter,
+		RefID:        c.RefID,
+		RefType:      c.RefType,
+	})
+}
+
+// applyPrizeFreezeTx freezes the prize share of a single KYC-gated winner
+// inside an open transaction by setting balance_frozen on their kyc_profile.
+func applyPrizeFreezeTx(ctx context.Context, tx pgx.Tx, f PrizeFreeze) error {
+	tag, err := tx.Exec(ctx,
+		`UPDATE kyc_profiles
+		    SET balance_frozen      = TRUE,
+		        frozen_amount_cents = $2,
+		        frozen_reason       = $3,
+		        updated_at          = NOW()
+		  WHERE user_id = $1`,
+		f.UserID, f.AmountCents, f.Reason,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound("KYC profile not found for prize freeze")
+	}
+	return nil
+}
+
 var _ QuinielaRepository = (*PostgresQuinielaRepository)(nil)

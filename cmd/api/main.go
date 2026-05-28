@@ -66,6 +66,10 @@ func main() {
 
 	logStartupBanner(cfg, log)
 
+	for _, w := range config.Warnings(cfg) {
+		log.Warn(w)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -160,11 +164,13 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// dependency explicit and eliminates hidden global state.
 	app := api.New(db, cfg, log, bus, cacheStore, checkers)
 
-	// When Redis is available, use a shared idempotency store so reservations
-	// are visible across all replicas. Falls back to MemoryStore (set inside
-	// Routes()) when Redis is not configured.
+	// When Redis is available, wire cross-replica features: idempotency store
+	// (duplicate payment guard) and Redis-backed rate limiter (limit bypass
+	// prevention across replicas). Both fall back to in-process alternatives
+	// inside Routes() when rc is nil.
 	if rc != nil {
 		app.SetIdempotencyStore(idempotency.NewRedisStore(rc))
+		app.SetRedisClient(rc)
 	}
 
 	// Wire the /metrics endpoint. SetMetricsHandler is nil-safe: when metrics

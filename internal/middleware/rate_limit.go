@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"math"
 	"net/http"
 	"strconv"
@@ -16,9 +17,20 @@ import (
 // limiterTTL is the inactivity window after which an entry is eligible for eviction.
 const limiterTTL = 10 * time.Minute
 
+// Allower is the abstraction accepted by RateLimitByUserID. It allows
+// swapping the in-process token-bucket store for a Redis-backed implementation
+// without changing the middleware call site.
+type Allower interface {
+	// Allow reports whether the request for key is within the rate limit.
+	// When false, retryAfterSecs is the number of seconds the caller should
+	// wait before retrying — used to populate the Retry-After response header.
+	Allow(ctx context.Context, key string) (allowed bool, retryAfterSecs int)
+}
+
 // LimiterStore is a concurrent map from arbitrary key to a per-key token-bucket
 // rate limiter. Stale entries are evicted lazily every ~2000 Allow calls.
 // It is safe for concurrent use by multiple goroutines.
+// LimiterStore implements Allower.
 type LimiterStore struct {
 	mu      sync.Mutex
 	entries map[string]*limiterEntry
@@ -52,10 +64,11 @@ func NewUnlimitedLimiterStore() *LimiterStore {
 	return NewLimiterStore(math.MaxFloat64, math.MaxInt)
 }
 
-// allow returns (permitted, retryAfterSeconds).
-// When permitted is false, retryAfterSeconds is the ceiling of the delay until
-// the next token is available — suitable for the Retry-After response header.
-func (s *LimiterStore) allow(key string) (bool, int) {
+// Allow implements Allower. ctx is unused (token-bucket is synchronous).
+// Returns (permitted, retryAfterSeconds). When permitted is false,
+// retryAfterSeconds is the ceiling of the delay until the next token is
+// available — suitable for the Retry-After response header.
+func (s *LimiterStore) Allow(_ context.Context, key string) (bool, int) {
 	s.mu.Lock()
 
 	s.callN++
@@ -92,16 +105,16 @@ func (s *LimiterStore) evictLocked() {
 	}
 }
 
-// RateLimitByUserID returns a middleware that enforces a per-user token-bucket
-// rate limit using the Clerk subject ID stored in context by RequireAuth.
-// It must be placed after RequireAuth in the middleware chain so the subject
-// is available. When no subject is present the request passes through without
-// consuming a token — the caller's auth middleware is responsible for
-// rejecting unauthenticated requests.
+// RateLimitByUserID returns a middleware that enforces a per-user rate limit
+// using the Clerk subject ID stored in context by RequireAuth. It must be
+// placed after RequireAuth in the middleware chain so the subject is available.
+// When no subject is present the request passes through without consuming a
+// token — the caller's auth middleware is responsible for rejecting
+// unauthenticated requests.
 //
 // Rejected requests receive HTTP 429 with a Retry-After header indicating
 // the number of seconds until the next token is available.
-func RateLimitByUserID(store *LimiterStore, log *zap.Logger) func(http.Handler) http.Handler {
+func RateLimitByUserID(store Allower, log *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			subject, ok := UserIDFromContext(r.Context())
@@ -109,7 +122,7 @@ func RateLimitByUserID(store *LimiterStore, log *zap.Logger) func(http.Handler) 
 				next.ServeHTTP(w, r)
 				return
 			}
-			permitted, retryAfter := store.allow(subject)
+			permitted, retryAfter := store.Allow(r.Context(), subject)
 			if !permitted {
 				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 				WriteError(w, r, log, apperrors.RateLimited(apperrors.MsgRateLimited))

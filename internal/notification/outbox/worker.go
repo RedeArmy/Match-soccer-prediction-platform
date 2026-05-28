@@ -48,15 +48,16 @@ const defaultLagAlertThreshold = domain.DefaultNotifyOutboxLagAlertThresholdSec 
 // SELECT FOR UPDATE SKIP LOCKED in ClaimBatch guarantees each entry is
 // processed by exactly one instance at a time.
 type Worker struct {
-	repo              Repository
-	dispatcher        Dispatcher
-	log               *zap.Logger
-	batchSize         int
-	pollInterval      time.Duration
-	lockDuration      time.Duration
-	maxAttempts       int
-	lagNotifier       outboxLagNotifier
-	lagAlertThreshold time.Duration
+	repo                 Repository
+	dispatcher           Dispatcher
+	log                  *zap.Logger
+	batchSize            int
+	pollInterval         time.Duration
+	lockDuration         time.Duration
+	maxAttempts          int
+	lagNotifier          outboxLagNotifier
+	lagAlertThreshold    time.Duration // warn at this lag (notify.outbox_lag_alert_threshold_sec)
+	lagCriticalThreshold time.Duration // error log at this lag (notify.outbox_lag_critical_sec); 0 = disabled
 }
 
 // WorkerOption is a functional option for Worker.
@@ -95,6 +96,14 @@ func WithOutboxNotifier(n outboxLagNotifier) WorkerOption {
 // entry triggers a NotifyOutboxLag alert. Defaults to 30 s.
 func WithOutboxLagThreshold(d time.Duration) WorkerOption {
 	return func(w *Worker) { w.lagAlertThreshold = d }
+}
+
+// WithOutboxCriticalLagThreshold sets the lag age at which the worker emits an
+// Error-level log entry (notify.outbox_lag_critical_sec). This is a belt-and-
+// suspenders complement to the Prometheus WCQOutboxLagCritical alert. Zero
+// disables the check. Must be greater than the alert threshold to be meaningful.
+func WithOutboxCriticalLagThreshold(d time.Duration) WorkerOption {
+	return func(w *Worker) { w.lagCriticalThreshold = d }
 }
 
 // NewWorker constructs a Worker.  dispatcher is called for every entry the
@@ -161,11 +170,10 @@ func (w *Worker) poll(ctx context.Context) error {
 }
 
 // checkLag fires NotifyOutboxLag when the oldest entry in the claimed batch
-// has been waiting longer than lagAlertThreshold. Using CreatedAt (original
-// enqueue time) rather than ScheduledAt avoids false negatives on retry
-// entries whose scheduled_at has been bumped forward by exponential backoff.
+// has been waiting longer than lagAlertThreshold, and logs at Error level when
+// the lag exceeds the optional lagCriticalThreshold.
 func (w *Worker) checkLag(ctx context.Context, entries []*notification.OutboxEntry) {
-	if w.lagNotifier == nil || len(entries) == 0 {
+	if len(entries) == 0 {
 		return
 	}
 	oldest := entries[0]
@@ -174,7 +182,15 @@ func (w *Worker) checkLag(ctx context.Context, entries []*notification.OutboxEnt
 			oldest = e
 		}
 	}
-	if lag := time.Since(oldest.CreatedAt); lag > w.lagAlertThreshold {
+	lag := time.Since(oldest.CreatedAt)
+	if w.lagCriticalThreshold > 0 && lag > w.lagCriticalThreshold {
+		w.log.Error("outbox: lag has reached critical threshold — notifications severely delayed",
+			zap.Duration("lag", lag),
+			zap.Duration("critical_threshold", w.lagCriticalThreshold),
+			zap.Int("pending_in_batch", len(entries)),
+		)
+	}
+	if w.lagNotifier != nil && lag > w.lagAlertThreshold {
 		w.lagNotifier.NotifyOutboxLag(ctx, lag.Seconds(), int64(len(entries)))
 	}
 }

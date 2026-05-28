@@ -689,3 +689,207 @@ func TestKYCProfileRepository_ReleaseAndCreditFrozen_NotFrozen_IdempotentNoOp(t 
 		t.Errorf("expected 0 credited for non-frozen profile, got %d", credited)
 	}
 }
+
+// ── UpdateStatusWithEvent ─────────────────────────────────────────────────────
+
+func TestKYCProfileRepository_UpdateStatusWithEvent_TransitionsStatusAndWritesAuditRow(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	admin := seedUser(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	err := repo.UpdateStatusWithEvent(
+		context.Background(),
+		p.ID, admin.ID,
+		repository.KYCStatusEvent{
+			OldStatus: domain.KYCStatusPending,
+			NewStatus: domain.KYCStatusUnderReview,
+			EventType: domain.KYCEventUnderReview,
+			Reason:    "",
+			TraceID:   "trace-001",
+		},
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, _ := repo.GetByID(context.Background(), p.ID)
+	if got.Status != domain.KYCStatusUnderReview {
+		t.Errorf("status: got %q, want under_review", got.Status)
+	}
+
+	var count int
+	err = testDB.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM kyc_events WHERE profile_id = $1 AND event_type = 'under_review'`,
+		p.ID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("kyc_events query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("kyc_events rows: got %d, want 1", count)
+	}
+}
+
+func TestKYCProfileRepository_UpdateStatusWithEvent_RejectionWritesReason(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	admin := seedUser(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	err := repo.UpdateStatusWithEvent(
+		context.Background(),
+		p.ID, admin.ID,
+		repository.KYCStatusEvent{
+			OldStatus: domain.KYCStatusPending,
+			NewStatus: domain.KYCStatusRejected,
+			EventType: domain.KYCEventRejected,
+			Reason:    "document expired",
+			TraceID:   "trace-002",
+		},
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, _ := repo.GetByID(context.Background(), p.ID)
+	if got.Status != domain.KYCStatusRejected {
+		t.Errorf("status: got %q, want rejected", got.Status)
+	}
+}
+
+func TestKYCProfileRepository_UpdateStatusWithEvent_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	err := repo.UpdateStatusWithEvent(
+		context.Background(),
+		99999, 1,
+		repository.KYCStatusEvent{
+			OldStatus: domain.KYCStatusPending,
+			NewStatus: domain.KYCStatusUnderReview,
+			EventType: domain.KYCEventUnderReview,
+		},
+	)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+// ── ApproveAndSetTier ─────────────────────────────────────────────────────────
+
+func TestKYCProfileRepository_ApproveAndSetTier_ApprovesAndPropagatesTier(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	admin := seedUser(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	err := repo.ApproveAndSetTier(
+		context.Background(),
+		p.ID, admin.ID,
+		repository.KYCApprovalParams{
+			Tier:       domain.KYCTierOne,
+			NextReview: time.Now().Add(365 * 24 * time.Hour),
+			Reason:     "all clear",
+			TraceID:    "trace-003",
+			OldStatus:  domain.KYCStatusPending,
+		},
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, _ := repo.GetByID(context.Background(), p.ID)
+	if got.Status != domain.KYCStatusApproved {
+		t.Errorf("status: got %q, want approved", got.Status)
+	}
+	if got.Tier != domain.KYCTierOne {
+		t.Errorf("tier: got %d, want 1", got.Tier)
+	}
+
+	// users.kyc_tier must be denormalised.
+	userRepo := repository.NewPostgresUserRepository(testDB)
+	usr, _ := userRepo.GetByID(context.Background(), u.ID)
+	if usr.KYCTier != domain.KYCTierOne {
+		t.Errorf("users.kyc_tier: got %d, want 1", usr.KYCTier)
+	}
+
+	// Audit event must be present.
+	var count int
+	err = testDB.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM kyc_events WHERE profile_id = $1 AND event_type = 'approved'`,
+		p.ID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("kyc_events query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("kyc_events rows: got %d, want 1", count)
+	}
+}
+
+func TestKYCProfileRepository_ApproveAndSetTier_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	err := repo.ApproveAndSetTier(
+		context.Background(),
+		99999, 1,
+		repository.KYCApprovalParams{
+			Tier:       domain.KYCTierOne,
+			NextReview: time.Now().Add(365 * 24 * time.Hour),
+			OldStatus:  domain.KYCStatusPending,
+		},
+	)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+// ── FreezeAtomic ─────────────────────────────────────────────────────────────
+
+func TestKYCProfileRepository_FreezeAtomic_FreezesAndWritesAuditRow(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	seedKYCProfile(t, u.ID)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	const frozenCents = 75_000
+	err := repo.FreezeAtomic(context.Background(), u.ID, frozenCents, "suspected_fraud", "trace-004")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, _ := repo.GetByUserID(context.Background(), u.ID)
+	if !got.BalanceFrozen {
+		t.Error("expected balance_frozen=true")
+	}
+	if got.FrozenAmountCents != frozenCents {
+		t.Errorf("frozen_amount_cents: got %d, want %d", got.FrozenAmountCents, frozenCents)
+	}
+
+	var count int
+	err = testDB.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM kyc_events WHERE profile_id = $1 AND event_type = 'frozen'`,
+		got.ID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("kyc_events query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("kyc_events rows: got %d, want 1", count)
+	}
+}
+
+func TestKYCProfileRepository_FreezeAtomic_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	err := repo.FreezeAtomic(context.Background(), 99999, 1000, "test", "trace-005")
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}

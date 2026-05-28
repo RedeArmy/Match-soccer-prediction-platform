@@ -24,11 +24,13 @@ const (
 // updateStatusErr, if set, is returned exclusively by UpdateStatus so that
 // syncGroupStatus error paths can be tested without affecting earlier calls.
 type stubQuinielaRepo struct {
-	quiniela        *domain.Quiniela
-	quinielas       []*domain.Quiniela
-	err             error
-	updateErr       error
-	updateStatusErr error
+	quiniela              *domain.Quiniela
+	quinielas             []*domain.Quiniela
+	err                   error
+	updateErr             error
+	updateStatusErr       error
+	distributeErr         error
+	distributeAlreadyDone bool
 }
 
 func (r *stubQuinielaRepo) CreateWithMembership(_ context.Context, _ *domain.Quiniela, _ *domain.GroupMembership) error {
@@ -72,6 +74,15 @@ func (r *stubQuinielaRepo) BulkDeleteByAdmin(_ context.Context, ids []int, _ int
 		return nil, r.err
 	}
 	return ids, nil
+}
+func (r *stubQuinielaRepo) DistributePrizesAtomically(_ context.Context, _ int, _ []repository.PrizeCredit, _ []repository.PrizeFreeze) error {
+	if r.distributeErr != nil {
+		return r.distributeErr
+	}
+	if r.distributeAlreadyDone {
+		return apperrors.Conflict("prizes already distributed for this quiniela")
+	}
+	return nil
 }
 
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.

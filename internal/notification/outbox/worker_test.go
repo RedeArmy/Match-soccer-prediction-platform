@@ -467,3 +467,40 @@ func TestWorker_WithOutboxNotifier_TriggersLagAlert(t *testing.T) {
 		t.Error("expected NotifyOutboxLag to be called at least once; got 0 calls")
 	}
 }
+
+// TestWorker_WithCriticalLagThreshold_LogsErrorOnCriticalLag verifies that
+// WithOutboxCriticalLagThreshold fires an Error-level log when an entry is
+// older than the critical threshold. Using time.Nanosecond ensures any freshly
+// inserted row exceeds the threshold immediately.
+// Not parallel: shares the database table.
+func TestWorker_WithCriticalLagThreshold_LogsErrorOnCriticalLag(t *testing.T) {
+	truncateOutbox(t)
+	ctx := context.Background()
+
+	log := zaptest.NewLogger(t)
+	repo := outbox.NewPostgresRepository(testPool)
+	notifier := &stubLagNotifier{}
+	disp := &stubDispatcher{}
+
+	w := outbox.NewWorker(repo, disp, log,
+		outbox.WithBatchSize(10),
+		outbox.WithPollInterval(50*time.Millisecond),
+		outbox.WithLockDuration(30*time.Second),
+		outbox.WithOutboxNotifier(notifier),
+		outbox.WithOutboxLagThreshold(0),                       // alert fires on any lag
+		outbox.WithOutboxCriticalLagThreshold(time.Nanosecond), // any real entry exceeds 1 ns
+	)
+
+	writer := outbox.NewWriter(testPool)
+	if err := writer.Write(ctx,
+		notification.EventAccountWelcome,
+		"user", "critical_lag_test",
+		notification.AccountWelcomePayload{UserID: 42, UserName: "tester"},
+	); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+
+	runCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	w.Run(runCtx) // must log error for critical lag without panicking
+}

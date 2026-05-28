@@ -64,9 +64,6 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// Infrastructure endpoints - not versioned, no authentication required.
 	r.Get("/health", s.handleHealth)
 	r.Get("/health/ready", s.handleReadiness)
-	if s.metricsHandler != nil {
-		r.Handle("/metrics", s.metricsHandler)
-	}
 	r.Get("/swagger/*", httpSwagger.Handler(
 		httpSwagger.URL("/swagger/doc.json"),
 		httpSwagger.DeepLinking(true),
@@ -217,12 +214,31 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// Rate limit params are read once at startup (is_runtime=FALSE); a process
 	// restart is required to change the rate or burst.
 	clerkProvider := auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, authWarmup, s.log)
+
+	// /metrics is admin-only: Prometheus scrape targets must present a valid
+	// Clerk JWT with RoleAdmin. Registered here (after repos and clerkProvider
+	// are available) rather than in the early infrastructure block above.
+	if s.metricsHandler != nil {
+		r.With(
+			middleware.RequireAuth(clerkProvider, s.log),
+			middleware.RequireRole(repos.user, s.log, domain.RoleAdmin),
+		).Handle("/metrics", s.metricsHandler)
+	}
+
+	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))
+	rateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst)
 	userRateStore := s.limiterStore
 	if userRateStore == nil {
-		userRateStore = middleware.NewLimiterStore(
-			float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec)),
-			paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst),
-		)
+		if s.redisClient != nil {
+			// Use the Redis-backed store so rate limits are enforced across all
+			// replicas. Fails open on Redis unavailability (no traffic blocked).
+			userRateStore = middleware.NewRedisRateStore(s.redisClient, ratePerSec, rateBurst, s.log)
+		} else {
+			s.log.Warn("rate limiter: Redis not configured — using in-process store (limits not shared across replicas)",
+				zap.String("remedy", "set WCQ_REDIS_ADDR to enforce limits cluster-wide"),
+			)
+			userRateStore = middleware.NewLimiterStore(ratePerSec, rateBurst)
+		}
 	}
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(VersionHeader("v1"))
