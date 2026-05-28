@@ -30,7 +30,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 #   - /etc/ssl/certs   Required for TLS connections to PostgreSQL and Redis.
 #   - tzdata           Required for time-zone-aware scheduling operations.
 #   - A POSIX shell    Useful for exec-ing into the container during incidents.
-FROM alpine:3.21
+FROM alpine:3.22
 
 RUN apk --no-cache add ca-certificates tzdata
 
@@ -44,5 +44,8 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
 EXPOSE 8081
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:8081/health || exit 1
 
 CMD ["./worker"]

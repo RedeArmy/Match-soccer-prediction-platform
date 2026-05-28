@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -54,7 +55,20 @@ func (s *Server) runPgNotifyBridge(ctx context.Context) {
 // notifications until the connection is lost or ctx is cancelled.
 // Returns nil on clean shutdown (ctx cancelled); returns a non-nil error on
 // connection loss, which runPgNotifyBridge uses to trigger a reconnect.
-func (s *Server) listenAndBridge(ctx context.Context) error {
+// A deferred recover catches any panic from json.Unmarshal or hub.Broadcast
+// and converts it to a non-nil error so the backoff reconnect loop in
+// runPgNotifyBridge restarts the bridge rather than terminating the process.
+func (s *Server) listenAndBridge(ctx context.Context) (retErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("pg_notify bridge: panic recovered — restarting",
+				zap.Any("panic", r),
+				zap.ByteString("stack", debug.Stack()),
+			)
+			retErr = fmt.Errorf("panic: %v", r)
+		}
+	}()
+
 	conn, err := s.db.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("acquire connection: %w", err)
@@ -124,12 +138,41 @@ func leaderboardTTLHook(paramSvc service.SystemParamService, ranker *service.Cac
 //     during which notifications can be dropped is negligibly short.
 //  2. No long-lived PostgreSQL connection is consumed by the bridge goroutine.
 //
-// The payload JSON format is identical to pgNotifyPayload so the worker
-// publishes to the same channel name with the same schema.
+// A restart loop with a 1-second backoff wraps the inner loop so that a
+// panic caused by a malformed payload or hub state never terminates the
+// process — the bridge recovers and resumes.
 func (s *Server) runRedisBridge(ctx context.Context, rc redis.UniversalClient) {
 	if s.notifHub == nil {
 		return
 	}
+	for {
+		s.runRedisBridgeLoop(ctx, rc)
+		if ctx.Err() != nil {
+			return // clean shutdown
+		}
+		s.log.Warn("redis bridge: loop exited unexpectedly — restarting",
+			zap.Duration("backoff", bridgeBackoffInit),
+		)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(bridgeBackoffInit):
+		}
+	}
+}
+
+// runRedisBridgeLoop runs one subscribe-and-fan-out cycle. It returns on ctx
+// cancellation, channel closure, or after recovering from a panic. The outer
+// runRedisBridge loop decides whether to restart.
+func (s *Server) runRedisBridgeLoop(ctx context.Context, rc redis.UniversalClient) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("redis bridge: panic recovered — restarting",
+				zap.Any("panic", r),
+				zap.ByteString("stack", debug.Stack()),
+			)
+		}
+	}()
 
 	pubsub := rc.Subscribe(ctx, "user_notifications")
 	defer pubsub.Close() //nolint:errcheck

@@ -25,3 +25,10 @@ func (s *Server) NotifHubForTest() *hub.Hub {
 func (s *Server) RunRedisBridgeForTest(ctx context.Context, rc redis.UniversalClient) {
 	s.runRedisBridge(ctx, rc)
 }
+
+// RunRedisBridgeLoopForTest calls runRedisBridgeLoop directly. Used by unit
+// tests that need to exercise a single subscribe-and-dispatch cycle in
+// isolation (e.g. panic recovery, channel-close behaviour).
+func (s *Server) RunRedisBridgeLoopForTest(ctx context.Context, rc redis.UniversalClient) {
+	s.runRedisBridgeLoop(ctx, rc)
+}

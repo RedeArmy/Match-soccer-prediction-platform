@@ -53,6 +53,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware - applied to every request.
+	r.Use(middleware.SecurityHeaders) // outermost: headers present on every response
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.StoreClientIP)
