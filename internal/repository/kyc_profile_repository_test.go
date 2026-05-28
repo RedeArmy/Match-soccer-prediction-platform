@@ -702,9 +702,13 @@ func TestKYCProfileRepository_UpdateStatusWithEvent_TransitionsStatusAndWritesAu
 	err := repo.UpdateStatusWithEvent(
 		context.Background(),
 		p.ID, admin.ID,
-		domain.KYCStatusPending, domain.KYCStatusUnderReview,
-		domain.KYCEventUnderReview,
-		"", "trace-001",
+		repository.KYCStatusEvent{
+			OldStatus: domain.KYCStatusPending,
+			NewStatus: domain.KYCStatusUnderReview,
+			EventType: domain.KYCEventUnderReview,
+			Reason:    "",
+			TraceID:   "trace-001",
+		},
 	)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -738,9 +742,13 @@ func TestKYCProfileRepository_UpdateStatusWithEvent_RejectionWritesReason(t *tes
 	err := repo.UpdateStatusWithEvent(
 		context.Background(),
 		p.ID, admin.ID,
-		domain.KYCStatusPending, domain.KYCStatusRejected,
-		domain.KYCEventRejected,
-		"document expired", "trace-002",
+		repository.KYCStatusEvent{
+			OldStatus: domain.KYCStatusPending,
+			NewStatus: domain.KYCStatusRejected,
+			EventType: domain.KYCEventRejected,
+			Reason:    "document expired",
+			TraceID:   "trace-002",
+		},
 	)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -759,9 +767,11 @@ func TestKYCProfileRepository_UpdateStatusWithEvent_NotFound_ReturnsError(t *tes
 	err := repo.UpdateStatusWithEvent(
 		context.Background(),
 		99999, 1,
-		domain.KYCStatusPending, domain.KYCStatusUnderReview,
-		domain.KYCEventUnderReview,
-		"", "",
+		repository.KYCStatusEvent{
+			OldStatus: domain.KYCStatusPending,
+			NewStatus: domain.KYCStatusUnderReview,
+			EventType: domain.KYCEventUnderReview,
+		},
 	)
 	if !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)
@@ -780,10 +790,13 @@ func TestKYCProfileRepository_ApproveAndSetTier_ApprovesAndPropagatesTier(t *tes
 	err := repo.ApproveAndSetTier(
 		context.Background(),
 		p.ID, admin.ID,
-		domain.KYCTierOne,
-		time.Now().Add(365*24*time.Hour),
-		"all clear", "trace-003",
-		domain.KYCStatusPending,
+		repository.KYCApprovalParams{
+			Tier:       domain.KYCTierOne,
+			NextReview: time.Now().Add(365 * 24 * time.Hour),
+			Reason:     "all clear",
+			TraceID:    "trace-003",
+			OldStatus:  domain.KYCStatusPending,
+		},
 	)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -825,10 +838,11 @@ func TestKYCProfileRepository_ApproveAndSetTier_NotFound_ReturnsError(t *testing
 	err := repo.ApproveAndSetTier(
 		context.Background(),
 		99999, 1,
-		domain.KYCTierOne,
-		time.Now().Add(365*24*time.Hour),
-		"", "",
-		domain.KYCStatusPending,
+		repository.KYCApprovalParams{
+			Tier:       domain.KYCTierOne,
+			NextReview: time.Now().Add(365 * 24 * time.Hour),
+			OldStatus:  domain.KYCStatusPending,
+		},
 	)
 	if !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)

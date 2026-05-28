@@ -91,7 +91,7 @@ func (r *kycProfileRepoStub) ReleaseAndCreditFrozen(_ context.Context, _ int, _ 
 	}
 	return 0, nil
 }
-func (r *kycProfileRepoStub) ApproveAndSetTier(_ context.Context, _ int, _ int, _ domain.KYCTier, _ time.Time, _ string, _ string, _ domain.KYCStatus) error {
+func (r *kycProfileRepoStub) ApproveAndSetTier(_ context.Context, _, _ int, _ repository.KYCApprovalParams) error {
 	return r.err
 }
 func (r *kycProfileRepoStub) FreezeAtomic(_ context.Context, _ int, _ int, _ string, _ string) error {
@@ -100,7 +100,7 @@ func (r *kycProfileRepoStub) FreezeAtomic(_ context.Context, _ int, _ int, _ str
 func (r *kycProfileRepoStub) FreezeAtomicWithTxHook(_ context.Context, _ int, _ int, _ string, _ string, _ func(context.Context, pgx.Tx) error) error {
 	return r.err
 }
-func (r *kycProfileRepoStub) UpdateStatusWithEvent(_ context.Context, _ int, _ int, _ domain.KYCStatus, _ domain.KYCStatus, _ domain.KYCEventType, _ string, _ string) error {
+func (r *kycProfileRepoStub) UpdateStatusWithEvent(_ context.Context, _, _ int, _ repository.KYCStatusEvent) error {
 	if r.updateStatusErr != nil {
 		return r.updateStatusErr
 	}
@@ -322,7 +322,7 @@ type approveAtomicTracker struct {
 	updateTierCalled        bool
 }
 
-func (r *approveAtomicTracker) ApproveAndSetTier(_ context.Context, _ int, _ int, _ domain.KYCTier, _ time.Time, _ string, _ string, _ domain.KYCStatus) error {
+func (r *approveAtomicTracker) ApproveAndSetTier(_ context.Context, _, _ int, _ repository.KYCApprovalParams) error {
 	r.approveAndSetTierCalled = true
 	return nil
 }

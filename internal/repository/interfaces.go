@@ -831,6 +831,26 @@ type WithdrawalRequestRepository interface {
 	MarkProcessedAndCommit(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
 }
 
+// KYCStatusEvent bundles the fields required by UpdateStatusWithEvent into a
+// single value to keep the method signature within the 7-parameter limit.
+type KYCStatusEvent struct {
+	OldStatus domain.KYCStatus
+	NewStatus domain.KYCStatus
+	EventType domain.KYCEventType
+	Reason    string
+	TraceID   string
+}
+
+// KYCApprovalParams bundles the fields required by ApproveAndSetTier into a
+// single value to keep the method signature within the 7-parameter limit.
+type KYCApprovalParams struct {
+	Tier       domain.KYCTier
+	NextReview time.Time
+	Reason     string
+	TraceID    string
+	OldStatus  domain.KYCStatus
+}
+
 // KYCProfileRepository manages the identity-verification profile for each user.
 // One profile row exists per user; it is upserted in place on resubmission.
 // The full status-transition history is captured separately in KYCEventRepository.
@@ -852,7 +872,7 @@ type KYCProfileRepository interface {
 	// crash between the two writes leaves the status changed but no audit trail.
 	// oldStatus is the status before the transition (passed by the caller who
 	// already read the profile); traceID may be empty.
-	UpdateStatusWithEvent(ctx context.Context, profileID, adminID int, oldStatus, newStatus domain.KYCStatus, eventType domain.KYCEventType, reason, traceID string) error
+	UpdateStatusWithEvent(ctx context.Context, profileID, adminID int, ev KYCStatusEvent) error
 	// UpdateTier atomically updates tier on kyc_profiles and kyc_tier on users.
 	// Both columns must stay in sync; this method is the only write path for tier changes.
 	// nextReviewAt, when non-nil, sets the next mandatory re-verification date on kyc_profiles.
@@ -912,16 +932,7 @@ type KYCProfileRepository interface {
 	// All three writes commit together or all roll back. This prevents the
 	// split-state where status='approved' but kyc_tier remains 0 after a
 	// mid-operation process kill.
-	ApproveAndSetTier(
-		ctx context.Context,
-		profileID int,
-		adminID int,
-		tier domain.KYCTier,
-		nextReview time.Time,
-		reason string,
-		traceID string,
-		oldStatus domain.KYCStatus,
-	) error
+	ApproveAndSetTier(ctx context.Context, profileID, adminID int, p KYCApprovalParams) error
 }
 
 // KYCDocumentRepository manages uploaded identity documents attached to KYC/KYB profiles.

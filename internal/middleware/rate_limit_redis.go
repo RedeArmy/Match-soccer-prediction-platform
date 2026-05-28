@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// RedisRateStore implements RateStore using a Redis fixed-window counter.
+// RedisRateStore implements Allower using a Redis fixed-window counter.
 // Each 1-second window is a separate key: "rl:{key}:{unix_second}".
 // At most burst requests are allowed within each window.
 //

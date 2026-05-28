@@ -487,7 +487,7 @@ func (s *ipCountStub) CountRecentSubmissionsByIP(_ context.Context, _ string, _ 
 func (s *ipCountStub) ReleaseAndCreditFrozen(_ context.Context, _ int, _ int64, _ string) (int, error) {
 	return 0, nil
 }
-func (s *ipCountStub) ApproveAndSetTier(_ context.Context, _ int, _ int, _ domain.KYCTier, _ time.Time, _ string, _ string, _ domain.KYCStatus) error {
+func (s *ipCountStub) ApproveAndSetTier(_ context.Context, _, _ int, _ repository.KYCApprovalParams) error {
 	return nil
 }
 func (s *ipCountStub) FreezeAtomic(_ context.Context, _ int, _ int, _ string, _ string) error {
@@ -496,7 +496,7 @@ func (s *ipCountStub) FreezeAtomic(_ context.Context, _ int, _ int, _ string, _ 
 func (s *ipCountStub) FreezeAtomicWithTxHook(_ context.Context, _ int, _ int, _ string, _ string, _ func(context.Context, pgx.Tx) error) error {
 	return nil
 }
-func (s *ipCountStub) UpdateStatusWithEvent(_ context.Context, _ int, _ int, _ domain.KYCStatus, _ domain.KYCStatus, _ domain.KYCEventType, _ string, _ string) error {
+func (s *ipCountStub) UpdateStatusWithEvent(_ context.Context, _, _ int, _ repository.KYCStatusEvent) error {
 	return nil
 }
 

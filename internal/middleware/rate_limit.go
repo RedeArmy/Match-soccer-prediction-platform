@@ -17,10 +17,10 @@ import (
 // limiterTTL is the inactivity window after which an entry is eligible for eviction.
 const limiterTTL = 10 * time.Minute
 
-// RateStore is the abstraction accepted by RateLimitByUserID. It allows
+// Allower is the abstraction accepted by RateLimitByUserID. It allows
 // swapping the in-process token-bucket store for a Redis-backed implementation
 // without changing the middleware call site.
-type RateStore interface {
+type Allower interface {
 	// Allow reports whether the request for key is within the rate limit.
 	// When false, retryAfterSecs is the number of seconds the caller should
 	// wait before retrying — used to populate the Retry-After response header.
@@ -30,7 +30,7 @@ type RateStore interface {
 // LimiterStore is a concurrent map from arbitrary key to a per-key token-bucket
 // rate limiter. Stale entries are evicted lazily every ~2000 Allow calls.
 // It is safe for concurrent use by multiple goroutines.
-// LimiterStore implements RateStore.
+// LimiterStore implements Allower.
 type LimiterStore struct {
 	mu      sync.Mutex
 	entries map[string]*limiterEntry
@@ -64,7 +64,7 @@ func NewUnlimitedLimiterStore() *LimiterStore {
 	return NewLimiterStore(math.MaxFloat64, math.MaxInt)
 }
 
-// Allow implements RateStore. ctx is unused (token-bucket is synchronous).
+// Allow implements Allower. ctx is unused (token-bucket is synchronous).
 // Returns (permitted, retryAfterSeconds). When permitted is false,
 // retryAfterSeconds is the ceiling of the delay until the next token is
 // available — suitable for the Retry-After response header.
@@ -114,7 +114,7 @@ func (s *LimiterStore) evictLocked() {
 //
 // Rejected requests receive HTTP 429 with a Retry-After header indicating
 // the number of seconds until the next token is available.
-func RateLimitByUserID(store RateStore, log *zap.Logger) func(http.Handler) http.Handler {
+func RateLimitByUserID(store Allower, log *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			subject, ok := UserIDFromContext(r.Context())

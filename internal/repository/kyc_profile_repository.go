@@ -127,18 +127,13 @@ func (r *PostgresKYCProfileRepository) UpdateStatus(ctx context.Context, profile
 // UpdateStatusWithEvent atomically transitions the profile's status and inserts
 // a kyc_events audit row, ensuring no crash between the two writes leaves a
 // compliance gap. oldStatus is the pre-transition value, already read by the caller.
-func (r *PostgresKYCProfileRepository) UpdateStatusWithEvent(
-	ctx context.Context, profileID, adminID int,
-	oldStatus, newStatus domain.KYCStatus,
-	eventType domain.KYCEventType,
-	reason, traceID string,
-) error {
+func (r *PostgresKYCProfileRepository) UpdateStatusWithEvent(ctx context.Context, profileID, adminID int, ev KYCStatusEvent) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 	return withTx(ctx, r.db, "KYCProfileRepository.UpdateStatusWithEvent", func(tx pgx.Tx) error {
 		rejectionReason := ""
-		if newStatus == domain.KYCStatusRejected {
-			rejectionReason = reason
+		if ev.NewStatus == domain.KYCStatusRejected {
+			rejectionReason = ev.Reason
 		}
 		var reviewer *int
 		if adminID != 0 {
@@ -152,19 +147,18 @@ func (r *PostgresKYCProfileRepository) UpdateStatusWithEvent(
 			       rejection_reason = $4,
 			       updated_at       = NOW()
 			 WHERE id = $1
-		`, profileID, string(newStatus), reviewer, rejectionReason)
+		`, profileID, string(ev.NewStatus), reviewer, rejectionReason)
 		if err != nil {
 			return apperrors.Internal(err)
 		}
 		if tag.RowsAffected() == 0 {
 			return apperrors.NotFound(errKYCProfileNotFound)
 		}
-		oldStatusStr := string(oldStatus)
 		_, err = tx.Exec(ctx, `
 			INSERT INTO kyc_events
 			      (profile_id, profile_type, event_type, actor_id, old_status, new_status, reason, trace_id)
 			VALUES ($1, 'user', $2, $3, $4, $5, $6, $7)
-		`, profileID, string(eventType), reviewer, oldStatusStr, string(newStatus), reason, traceID)
+		`, profileID, string(ev.EventType), reviewer, string(ev.OldStatus), string(ev.NewStatus), ev.Reason, ev.TraceID)
 		if err != nil {
 			return apperrors.Internal(err)
 		}
@@ -558,16 +552,7 @@ func scanKYCProfile(s rowScanner) (*domain.KYCProfile, error) {
 // columns (kyc_profiles.tier and users.kyc_tier), and inserts the audit event —
 // all in a single transaction. A process kill between the three writes leaves
 // no split state: either all three succeed or none is committed.
-func (r *PostgresKYCProfileRepository) ApproveAndSetTier(
-	ctx context.Context,
-	profileID int,
-	adminID int,
-	tier domain.KYCTier,
-	nextReview time.Time,
-	reason string,
-	traceID string,
-	oldStatus domain.KYCStatus,
-) error {
+func (r *PostgresKYCProfileRepository) ApproveAndSetTier(ctx context.Context, profileID, adminID int, p KYCApprovalParams) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 	return withTx(ctx, r.db, "KYCProfileRepository.ApproveAndSetTier", func(tx pgx.Tx) error {
@@ -584,7 +569,7 @@ func (r *PostgresKYCProfileRepository) ApproveAndSetTier(
 			       updated_at       = NOW()
 			 WHERE id = $1
 			 RETURNING user_id
-		`, profileID, int(tier), nextReview, adminID).Scan(&userID)
+		`, profileID, int(p.Tier), p.NextReview, adminID).Scan(&userID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apperrors.NotFound(errKYCProfileNotFound)
 		}
@@ -595,7 +580,7 @@ func (r *PostgresKYCProfileRepository) ApproveAndSetTier(
 		// 2. Propagate tier to the denormalised users.kyc_tier column.
 		tag, err := tx.Exec(ctx,
 			`UPDATE users SET kyc_tier = $2, updated_at = NOW() WHERE id = $1`,
-			userID, int(tier),
+			userID, int(p.Tier),
 		)
 		if err != nil {
 			return apperrors.Internal(err)
@@ -605,13 +590,12 @@ func (r *PostgresKYCProfileRepository) ApproveAndSetTier(
 		}
 
 		// 3. Append the approval event to the immutable audit trail.
-		oldStatusStr := string(oldStatus)
 		_, err = tx.Exec(ctx, `
 			INSERT INTO kyc_events
 			      (profile_id, profile_type, event_type, actor_id, old_status, new_status, reason, metadata, trace_id)
 			VALUES ($1, 'user', 'approved', $2, $3, 'approved', $4, $5::jsonb, $6)
-		`, profileID, adminID, oldStatusStr, reason,
-			`{"source":"ApproveAndSetTier"}`, traceID,
+		`, profileID, adminID, string(p.OldStatus), p.Reason,
+			`{"source":"ApproveAndSetTier"}`, p.TraceID,
 		)
 		if err != nil {
 			return apperrors.Internal(err)

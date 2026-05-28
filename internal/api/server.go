@@ -57,7 +57,7 @@ type Server struct {
 	// limiterStore overrides the per-user rate limiter constructed by Routes().
 	// Nil means Routes() falls back to an in-process LimiterStore. Use
 	// SetLimiterStore (tests) or SetRateStore (Redis wiring in production).
-	limiterStore middleware.RateStore
+	limiterStore middleware.Allower
 	// notifHub is the in-process SSE hub; created once in Routes() and reused
 	// by the notification handler and the pg_notify bridge goroutine.
 	notifHub *hub.Hub
@@ -96,10 +96,10 @@ func (s *Server) SetDLQService(dlq service.DLQService) { s.dlqSvc = dlq }
 // middleware.NewUnlimitedLimiterStore() to disable rate limiting for the test.
 func (s *Server) SetLimiterStore(store *middleware.LimiterStore) { s.limiterStore = store }
 
-// SetRateStore overrides the per-user rate limiter with any RateStore
+// SetRateStore overrides the per-user rate limiter with any Allower
 // implementation. Use this in production to wire a Redis-backed store when
 // the Redis client is available, so rate limits are enforced across replicas.
-func (s *Server) SetRateStore(store middleware.RateStore) { s.limiterStore = store }
+func (s *Server) SetRateStore(store middleware.Allower) { s.limiterStore = store }
 
 // SetRedisClient provides the shared Redis connection for use by Routes().
 // When set, Routes() builds a RedisRateStore so rate limits are enforced across

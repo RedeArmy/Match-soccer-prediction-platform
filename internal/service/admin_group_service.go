@@ -256,37 +256,7 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 	prizePool := q.EntryFee * result.ActivePaidMembers
 	prizePerWinner := prizePool / result.WinnerCount
 
-	var (
-		credits       []repository.PrizeCredit
-		freezes       []repository.PrizeFreeze
-		freezeUserIDs []int
-	)
-	for _, entry := range result.Entries {
-		if !entry.PrizeWinner || entry.User == nil {
-			continue
-		}
-		if entry.User.KYCTier >= domain.KYCTierTwo {
-			credits = append(credits, repository.PrizeCredit{
-				UserID:      entry.User.ID,
-				AmountCents: prizePerWinner,
-				RefID:       int64(quinielaID),
-				RefType:     "quiniela",
-			})
-		} else {
-			reason := fmt.Sprintf(
-				"Ha ganado un premio de Q%.2f. Para recibir tus fondos debes completar la verificación "+
-					"de identidad (DPI vigente para residentes en Guatemala; pasaporte u equivalente para extranjeros). "+
-					"Tu saldo ha sido retenido hasta que el equipo de cumplimiento apruebe tu solicitud.",
-				float64(prizePerWinner)/100,
-			)
-			freezes = append(freezes, repository.PrizeFreeze{
-				UserID:      entry.User.ID,
-				AmountCents: prizePerWinner,
-				Reason:      reason,
-			})
-			freezeUserIDs = append(freezeUserIDs, entry.User.ID)
-		}
-	}
+	credits, freezes, freezeUserIDs := buildPrizeAllocations(result.Entries, quinielaID, prizePerWinner)
 
 	if err := s.quinielaRepo.DistributePrizesAtomically(ctx, quinielaID, credits, freezes); err != nil {
 		if errors.Is(err, apperrors.ErrConflict) {
@@ -318,6 +288,41 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 		"winners_frozen_kyc": len(freezes),
 	})
 	return nil
+}
+
+// buildPrizeAllocations partitions winning leaderboard entries into direct
+// credits (KYCTierTwo and above) and KYC-freeze holds (below KYCTierTwo).
+func buildPrizeAllocations(entries []*domain.LeaderboardEntry, quinielaID, prizePerWinner int) ([]repository.PrizeCredit, []repository.PrizeFreeze, []int) {
+	var credits []repository.PrizeCredit
+	var freezes []repository.PrizeFreeze
+	var freezeUserIDs []int
+	for _, entry := range entries {
+		if !entry.PrizeWinner || entry.User == nil {
+			continue
+		}
+		if entry.User.KYCTier >= domain.KYCTierTwo {
+			credits = append(credits, repository.PrizeCredit{
+				UserID:      entry.User.ID,
+				AmountCents: prizePerWinner,
+				RefID:       int64(quinielaID),
+				RefType:     "quiniela",
+			})
+		} else {
+			reason := fmt.Sprintf(
+				"Ha ganado un premio de Q%.2f. Para recibir tus fondos debes completar la verificación "+
+					"de identidad (DPI vigente para residentes en Guatemala; pasaporte u equivalente para extranjeros). "+
+					"Tu saldo ha sido retenido hasta que el equipo de cumplimiento apruebe tu solicitud.",
+				float64(prizePerWinner)/100,
+			)
+			freezes = append(freezes, repository.PrizeFreeze{
+				UserID:      entry.User.ID,
+				AmountCents: prizePerWinner,
+				Reason:      reason,
+			})
+			freezeUserIDs = append(freezeUserIDs, entry.User.ID)
+		}
+	}
+	return credits, freezes, freezeUserIDs
 }
 
 var _ AdminGroupService = (*adminGroupService)(nil)

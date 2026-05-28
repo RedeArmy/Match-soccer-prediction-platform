@@ -396,10 +396,13 @@ func (s *kycService) Approve(ctx context.Context, profileID, adminID int, tier d
 	}
 	intervalDays := s.params.GetInt(ctx, domain.ParamKeyKYCReviewIntervalDays, domain.DefaultKYCReviewIntervalDays)
 	nextReview := time.Now().AddDate(0, 0, intervalDays)
-	if err := s.profileRepo.ApproveAndSetTier(
-		ctx, profileID, adminID, tier, nextReview, "",
-		traceIDFromCtx(ctx), profile.Status,
-	); err != nil {
+	if err := s.profileRepo.ApproveAndSetTier(ctx, profileID, adminID, repository.KYCApprovalParams{
+		Tier:       tier,
+		NextReview: nextReview,
+		Reason:     "",
+		TraceID:    traceIDFromCtx(ctx),
+		OldStatus:  profile.Status,
+	}); err != nil {
 		return err
 	}
 	// appendEvent is intentionally omitted here: ApproveAndSetTier inserts the
@@ -429,9 +432,13 @@ func (s *kycService) Reject(ctx context.Context, profileID, adminID int, reason 
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
-	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID,
-		profile.Status, domain.KYCStatusRejected,
-		domain.KYCEventRejected, reason, traceIDFromCtx(ctx)); err != nil {
+	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID, repository.KYCStatusEvent{
+		OldStatus: profile.Status,
+		NewStatus: domain.KYCStatusRejected,
+		EventType: domain.KYCEventRejected,
+		Reason:    reason,
+		TraceID:   traceIDFromCtx(ctx),
+	}); err != nil {
 		return err
 	}
 	resType := "kyc_profile"
@@ -456,9 +463,13 @@ func (s *kycService) Escalate(ctx context.Context, profileID, adminID int, reaso
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
-	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID,
-		profile.Status, domain.KYCStatusEscalated,
-		domain.KYCEventEscalated, reason, traceIDFromCtx(ctx)); err != nil {
+	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID, repository.KYCStatusEvent{
+		OldStatus: profile.Status,
+		NewStatus: domain.KYCStatusEscalated,
+		EventType: domain.KYCEventEscalated,
+		Reason:    reason,
+		TraceID:   traceIDFromCtx(ctx),
+	}); err != nil {
 		return err
 	}
 	resType := "kyc_profile"
