@@ -171,6 +171,41 @@ func TestDLQWorker_AboveAlertThreshold_DoesNotPanic(t *testing.T) {
 	w.Run(ctx) // must not panic
 }
 
+func TestDLQWorker_AboveWarningThreshold_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	// countTotal (15) above warning threshold (10) but below alert threshold (50)
+	// — exercises the Warn-level log branch added by WithDLQWarningThreshold.
+	repo := &stubDLQRepo{countTotal: 15}
+	writer := &stubDLQWriter{}
+
+	w := outbox.NewDLQWorker(repo, writer, zap.NewNop(),
+		outbox.WithDLQPollInterval(10*time.Millisecond),
+		outbox.WithDLQWarningThreshold(10),
+		outbox.WithDLQAlertThreshold(50),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	w.Run(ctx) // must not panic
+}
+
+func TestDLQWorker_BelowWarningThreshold_NeitherBranchFires(t *testing.T) {
+	t.Parallel()
+
+	// countTotal (5) is below both thresholds — clean path through poll().
+	repo := &stubDLQRepo{countTotal: 5}
+	writer := &stubDLQWriter{}
+
+	w := outbox.NewDLQWorker(repo, writer, zap.NewNop(),
+		outbox.WithDLQPollInterval(10*time.Millisecond),
+		outbox.WithDLQWarningThreshold(10),
+		outbox.WithDLQAlertThreshold(50),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	w.Run(ctx) // must not panic
+}
+
 func TestDLQWorker_Run_StopsOnContextCancel(t *testing.T) {
 	t.Parallel()
 

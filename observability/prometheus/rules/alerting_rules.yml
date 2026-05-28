@@ -9,6 +9,7 @@
 #   payment_processing_duration_seconds   Float64Histogram        (labels: provider, status)
 #   http_server_request_duration_seconds  Float64Histogram        (labels: method, route, status_code)
 #   notification_sse_dropped_total        Int64ObservableCounter
+#   kyc_audit_event_drop_total            Int64Counter
 #
 # Alertmanager routing (alertmanager.yml):
 #   severity=critical, workflow=payment-error-escalation → n8n-payment-escalation
@@ -175,6 +176,33 @@ groups:
             {{ $value | humanizePercentage }}, exceeding the 0.5 % threshold.
             Review server logs for recurring error patterns and check the
             per-route breakdown in the Grafana SLO dashboard.
+
+  # ---------------------------------------------------------------------------
+  # KYC audit event drops
+  #   kyc_audit_event_drop_total counts compliance audit events that could not
+  #   be persisted to kyc_events (e.g. after a primary domain write committed).
+  #   Any drop is a compliance gap: a DB failure silently omitted part of the
+  #   audit trail.  The alert fires immediately (for: 0m) to surface this fast.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.kyc
+    interval: 30s
+    rules:
+
+      - alert: WCQKYCAuditEventDropped
+        expr: increase(kyc_audit_event_drop_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "KYC audit event dropped — compliance trail gap"
+          description: >
+            {{ $value | humanize }} KYC audit event(s) failed to persist in the
+            last 5 minutes.  A drop means a domain operation (submission,
+            approval, freeze, etc.) committed without its corresponding
+            kyc_events row.  Investigate DB errors in the KYC service logs and
+            reconcile missing rows from application logs before the next
+            regulatory review.
 
   # ---------------------------------------------------------------------------
   # SSE hub broadcast drops

@@ -171,3 +171,29 @@ func TestKYCEventRepository_ListByProfile_InvalidLimit_ReturnsError(t *testing.T
 		t.Fatal("expected error for zero limit, got nil")
 	}
 }
+
+// TestKYCEventRepository_Create_IPVelocityFlag_AcceptedByConstraint verifies that
+// migration 000131 added "ip_velocity_flag" to the kyc_events.event_type CHECK
+// constraint. Before the migration every ip_velocity_flag insert produced a
+// check_violation that appendEvent silently swallowed, leaving a compliance gap.
+func TestKYCEventRepository_Create_IPVelocityFlag_AcceptedByConstraint(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	repo := repository.NewPostgresKYCEventRepository(testDB)
+
+	e := &domain.KYCEvent{
+		ProfileID:   p.ID,
+		ProfileType: domain.KYCProfileTypeUser,
+		EventType:   domain.KYCEventIPVelocityFlag,
+		ActorID:     &u.ID,
+		NewStatus:   domain.KYCStatusPending,
+		Metadata:    map[string]any{"ip": "1.2.3.4"},
+	}
+	if err := repo.Create(context.Background(), e); err != nil {
+		t.Fatalf("ip_velocity_flag rejected by CHECK constraint (migration 000131 not applied?): %v", err)
+	}
+	if e.ID == 0 {
+		t.Error("expected non-zero ID after successful insert")
+	}
+}

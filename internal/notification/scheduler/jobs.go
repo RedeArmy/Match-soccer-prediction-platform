@@ -153,24 +153,23 @@ func inBucket(minutesLeft, leadMin int) bool {
 }
 
 // resolveDeadlineBucket returns the lead-time bucket (in minutes) that
-// minutesLeft falls into, and whether a match was found.
-// Returns (0, false) when minutesLeft is not within tolerance of either lead time.
-func resolveDeadlineBucket(minutesLeft, leadMin1, leadMin2 int) (int, bool) {
-	if inBucket(minutesLeft, leadMin1) {
-		return leadMin1, true
-	}
-	if inBucket(minutesLeft, leadMin2) {
-		return leadMin2, true
+// minutesLeft falls into, checking all provided lead times in order.
+// Returns (0, false) when minutesLeft is not within tolerance of any lead time.
+func resolveDeadlineBucket(minutesLeft int, leadMins ...int) (int, bool) {
+	for _, lm := range leadMins {
+		if inBucket(minutesLeft, lm) {
+			return lm, true
+		}
 	}
 	return 0, false
 }
 
 // PredictionDeadlineApproaching queries upcoming matches and emits
 // EventPredictionMissingReminder for users with no prediction, but only when
-// the match is within one of two configured lead-time buckets.
+// the match is within one of three configured lead-time buckets.
 //
-// Two buckets gate emission so users receive at most two reminders per match
-// (e.g. 60 min and 15 min before kickoff) instead of one per scheduler tick:
+// Three buckets gate emission so users receive at most three reminders per match:
+//   - bucket 0: notify.prediction_missing_lead_min  (default 120 min — early warning)
 //   - bucket 1: notify.prediction_deadline_lead_min_1 (default 60 min)
 //   - bucket 2: notify.prediction_deadline_lead_min_2 (default 15 min)
 //
@@ -179,10 +178,14 @@ func resolveDeadlineBucket(minutesLeft, leadMin1, leadMin2 int) (int, bool) {
 //
 // Intended to run every 5 minutes (bucketToleranceMin = 5).
 func (j *Jobs) PredictionDeadlineApproaching(ctx context.Context) error {
+	missingLeadMin := j.getInt(ctx, domain.ParamKeyNotifyPredictionMissingLeadMin, domain.DefaultNotifyPredictionMissingLeadMin)
 	leadMin1 := j.getInt(ctx, domain.ParamKeyNotifyPredictionDeadlineLeadMin1, domain.DefaultNotifyPredictionDeadlineLeadMin1)
 	leadMin2 := j.getInt(ctx, domain.ParamKeyNotifyPredictionDeadlineLeadMin2, domain.DefaultNotifyPredictionDeadlineLeadMin2)
 
-	maxLead := leadMin1
+	maxLead := missingLeadMin
+	if leadMin1 > maxLead {
+		maxLead = leadMin1
+	}
 	if leadMin2 > maxLead {
 		maxLead = leadMin2
 	}
@@ -194,7 +197,7 @@ func (j *Jobs) PredictionDeadlineApproaching(ctx context.Context) error {
 	}
 
 	for _, dm := range upcoming {
-		bucketMin, ok := resolveDeadlineBucket(dm.MinutesLeft, leadMin1, leadMin2)
+		bucketMin, ok := resolveDeadlineBucket(dm.MinutesLeft, missingLeadMin, leadMin1, leadMin2)
 		if !ok {
 			continue // match is in the window but not at an alert boundary
 		}
@@ -238,12 +241,15 @@ func (j *Jobs) PredictionDeadlineApproaching(ctx context.Context) error {
 // AdminPendingReminder counts pending bank transfers and withdrawals and emits
 // EventAdminPendingReminder when either count is non-zero.
 //
+// Dedup: notify.pending_reminder_interval_sec (default 4 h) controls the
+// minimum time between two successive alerts by acting as the WriteDedup
+// window. Within the same interval window the event is emitted at most once,
+// even if the scheduler tick fires more frequently.
+//
 // When the number of pending bank transfers reaches the configured
 // notify.bank_transfer_queue_depth_threshold it also emits the P0 event
 // EventAdminBankTransferQueueDepth so that operators are alerted to a
 // growing backlog before it becomes critical.
-//
-// Intended to run every 4 hours.
 func (j *Jobs) AdminPendingReminder(ctx context.Context) error {
 	transfers, err := j.store.CountPendingTransfers(ctx)
 	if err != nil {
@@ -270,7 +276,18 @@ func (j *Jobs) AdminPendingReminder(ctx context.Context) error {
 		PendingWithdrawals: withdrawals,
 		OldestPendingSince: oldestStr,
 	}
-	if err := j.writer.Write(ctx,
+
+	// Dedup key is keyed to the current interval window so that the reminder
+	// fires at most once per notify.pending_reminder_interval_sec seconds.
+	intervalSec := j.getInt(ctx,
+		domain.ParamKeyNotifyPendingReminderIntervalSec,
+		domain.DefaultNotifyPendingReminderIntervalSec,
+	)
+	windowStart := j.clock.Now().Unix() / int64(intervalSec)
+	dedupKey := fmt.Sprintf("admin.pending_reminder:window:%d", windowStart)
+
+	if _, err := j.writer.WriteDedup(ctx,
+		dedupKey,
 		notification.EventAdminPendingReminder,
 		"scheduler",
 		"pending_reminder",

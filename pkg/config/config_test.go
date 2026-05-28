@@ -47,14 +47,15 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv(envEnvironment, "dev")
 }
 
-// setProductionPaymentEnv sets the payment webhook secrets required in
-// non-development environments. Tests that check unrelated production
-// validations must call this to avoid the payment secret checks running
-// before the error they intend to observe.
+// setProductionPaymentEnv sets the payment webhook secrets and the email
+// unsubscribe secret required in non-development environments. Tests that
+// check unrelated production validations must call this to avoid these checks
+// running before the error they intend to observe.
 func setProductionPaymentEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
+	t.Setenv("WCQ_EMAIL_UNSUBSCRIBESECRET", "test-unsubscribe-secret")
 }
 
 // setProductionStorageEnv sets the S3 storage variables required in
@@ -200,6 +201,19 @@ func TestLoad_InvalidLogLevel_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestLoad_InvalidLogEncoding_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WCQ_LOGGER_ENCODING", "text")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for invalid log encoding, got nil")
+	}
+	if !strings.Contains(err.Error(), "logger.encoding") {
+		t.Errorf("expected error message to reference logger.encoding, got: %v", err)
+	}
+}
+
 func TestLoad_ProductionWithoutJWKSURL_ReturnsError(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv(envEnvironment, "production")
@@ -275,6 +289,24 @@ func TestLoad_ProductionWithoutPayPalWebhookID_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "WCQ_PAYMENT_PAYPALWEBHOOKID") {
 		t.Errorf("expected error to reference WCQ_PAYMENT_PAYPALWEBHOOKID, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithoutUnsubscribeSecret_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
+	// WCQ_EMAIL_UNSUBSCRIBESECRET intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing unsubscribe secret in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_EMAIL_UNSUBSCRIBESECRET") {
+		t.Errorf("expected error to reference WCQ_EMAIL_UNSUBSCRIBESECRET, got: %v", err)
 	}
 }
 
@@ -384,6 +416,18 @@ func TestLoadWorker_InvalidLogLevel_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "logger.level") {
 		t.Errorf("expected error to reference logger.level, got: %v", err)
+	}
+}
+
+func TestLoadWorker_InvalidLogEncoding_ReturnsError(t *testing.T) {
+	t.Setenv("WCQ_LOGGER_ENCODING", "text")
+
+	_, err := config.LoadWorker()
+	if err == nil {
+		t.Fatal("expected error for invalid log encoding, got nil")
+	}
+	if !strings.Contains(err.Error(), "logger.encoding") {
+		t.Errorf("expected error to reference logger.encoding, got: %v", err)
 	}
 }
 
@@ -729,5 +773,81 @@ func TestLoad_CORSProductionOrigin_InProduction_IsAccepted(t *testing.T) {
 	_, err := config.Load()
 	if err != nil {
 		t.Fatalf("expected no error for production CORS origin, got: %v", err)
+	}
+}
+
+// ── P3-001: console encoding rejected in production ───────────────────────────
+
+func setFullProductionEnv(t *testing.T) {
+	t.Helper()
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	setProductionPaymentEnv(t)
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	setProductionStorageEnv(t)
+}
+
+func TestLoad_ProductionWithConsoleEncoding_ReturnsError(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_LOGGER_ENCODING", "console")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for console encoding in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "console") {
+		t.Errorf("expected error to mention 'console', got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithJSONEncoding_ReturnsNoError(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_LOGGER_ENCODING", "json")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for json encoding in production, got: %v", err)
+	}
+}
+
+func TestLoad_DevelopmentWithConsoleEncoding_ReturnsNoError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "dev")
+	t.Setenv("WCQ_LOGGER_ENCODING", "console")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for console encoding in development, got: %v", err)
+	}
+}
+
+// ── P3-002: ConnMaxLifetime == 0 advisory warning ─────────────────────────────
+
+func TestWarnings_ConnMaxLifetimeZero_ReturnsWarning(t *testing.T) {
+	cfg := &config.Config{}
+	w := config.Warnings(cfg)
+	if len(w) == 0 {
+		t.Fatal("expected at least one warning when ConnMaxLifetime is 0, got none")
+	}
+	found := false
+	for _, msg := range w {
+		if strings.Contains(msg, "ConnMaxLifetime") || strings.Contains(msg, "connMaxLifetime") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning to mention ConnMaxLifetime, got: %v", w)
+	}
+}
+
+func TestWarnings_ConnMaxLifetimeNonZero_NoWarning(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Database.ConnMaxLifetime = 30 * time.Second
+	w := config.Warnings(cfg)
+	for _, msg := range w {
+		if strings.Contains(msg, "ConnMaxLifetime") || strings.Contains(msg, "connMaxLifetime") {
+			t.Errorf("unexpected ConnMaxLifetime warning when value is non-zero: %v", msg)
+		}
 	}
 }

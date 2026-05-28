@@ -168,6 +168,10 @@ func main() {
 
 	logStartupBanner(cfg, log)
 
+	for _, w := range config.Warnings(cfg) {
+		log.Warn(w)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -329,6 +333,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	outboxLockDuration := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyOutboxLockDurationSec, domain.DefaultNotifyOutboxLockDurationSec)) * time.Second
 	outboxMaxAttempts := params.GetInt(ctx, domain.ParamKeyNotifyOutboxMaxAttempts, domain.DefaultNotifyOutboxMaxAttempts)
 	outboxLagThreshold := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyOutboxLagAlertThresholdSec, domain.DefaultNotifyOutboxLagAlertThresholdSec)) * time.Second
+	outboxLagCriticalThreshold := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyOutboxLagCriticalSec, domain.DefaultNotifyOutboxLagCriticalSec)) * time.Second
 
 	staleLockThreshold := time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyOutboxStaleLockThresholdSec, domain.DefaultNotifyOutboxStaleLockThresholdSec)) * time.Second
 	outboxRepo := outbox.NewPostgresRepository(db, outbox.WithStaleLockThreshold(staleLockThreshold))
@@ -416,6 +421,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		outbox.WithDLQBatchSize(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayBatchSize, domain.DefaultNotifyDLQReplayBatchSize)),
 		outbox.WithDLQPollInterval(time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayPollIntervalSec, domain.DefaultNotifyDLQReplayPollIntervalSec))*time.Second),
 		outbox.WithDLQMaxAttempts(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayMaxAttempts, domain.DefaultNotifyDLQReplayMaxAttempts)),
+		outbox.WithDLQWarningThreshold(int64(params.GetInt(ctx, domain.ParamKeyNotifyDLQWarningThreshold, domain.DefaultNotifyDLQWarningThreshold))),
 		outbox.WithDLQAlertThreshold(int64(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayAlertThreshold, domain.DefaultNotifyDLQReplayAlertThreshold))),
 		outbox.WithDLQNotifier(setupObservabilityNotifier(cfg, log)))
 
@@ -466,33 +472,34 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	checkers = append(checkers, notifScheduler.HealthChecker(3.0))
 
 	return startWorker(ctx, workerDeps{
-		cfg:                   cfg,
-		bus:                   bus,
-		scorer:                scorer,
-		snapshotter:           snapshotter,
-		predRepo:              predRepo,
-		invalidators:          invalidators,
-		broadcaster:           broadcaster,
-		snapshotLocker:        &redisSnapshotLocker{client: rc, ttl: snapshotLockTTL},
-		snapshotCfg:           snapCfg,
-		purger:                purger,
-		purgeRetention:        purgeRetention,
-		paramHistoryRetention: paramHistoryRetention,
-		snapshotKeepCount:     snapshotKeepLatestCount,
-		rc:                    rc,
-		checkers:              checkers,
-		metricsHandler:        metricsHandler,
-		dlqElection:           dlqElection,
-		outboxRepo:            outboxRepo,
-		outboxDispatcher:      compositeDispatcher,
-		outboxNotifier:        setupObservabilityNotifier(cfg, log),
-		outboxBatchSize:       outboxBatchSize,
-		outboxPollInterval:    outboxPollInterval,
-		outboxLockDuration:    outboxLockDuration,
-		outboxMaxAttempts:     outboxMaxAttempts,
-		outboxLagThreshold:    outboxLagThreshold,
-		dlqReplayWorker:       dlqReplayWorker,
-		notifScheduler:        notifScheduler,
+		cfg:                        cfg,
+		bus:                        bus,
+		scorer:                     scorer,
+		snapshotter:                snapshotter,
+		predRepo:                   predRepo,
+		invalidators:               invalidators,
+		broadcaster:                broadcaster,
+		snapshotLocker:             &redisSnapshotLocker{client: rc, ttl: snapshotLockTTL},
+		snapshotCfg:                snapCfg,
+		purger:                     purger,
+		purgeRetention:             purgeRetention,
+		paramHistoryRetention:      paramHistoryRetention,
+		snapshotKeepCount:          snapshotKeepLatestCount,
+		rc:                         rc,
+		checkers:                   checkers,
+		metricsHandler:             metricsHandler,
+		dlqElection:                dlqElection,
+		outboxRepo:                 outboxRepo,
+		outboxDispatcher:           compositeDispatcher,
+		outboxNotifier:             setupObservabilityNotifier(cfg, log),
+		outboxBatchSize:            outboxBatchSize,
+		outboxPollInterval:         outboxPollInterval,
+		outboxLockDuration:         outboxLockDuration,
+		outboxMaxAttempts:          outboxMaxAttempts,
+		outboxLagThreshold:         outboxLagThreshold,
+		outboxLagCriticalThreshold: outboxLagCriticalThreshold,
+		dlqReplayWorker:            dlqReplayWorker,
+		notifScheduler:             notifScheduler,
 	}, log)
 }
 
@@ -619,33 +626,34 @@ const dlqMonitorLockID int64 = 1
 // parameter list within the 7-param lint limit while remaining easy to
 // extend without changing the function signature.
 type workerDeps struct {
-	cfg                   *config.Config
-	bus                   events.Bus
-	scorer                service.MatchScorer
-	snapshotter           service.Snapshotter
-	predRepo              repository.PredictionRepository
-	invalidators          []service.PostScoringInvalidator
-	broadcaster           LeaderboardBroadcaster
-	snapshotLocker        SnapshotLocker
-	snapshotCfg           snapshotConfig
-	purger                repository.Purger
-	purgeRetention        time.Duration
-	paramHistoryRetention time.Duration
-	snapshotKeepCount     int
-	rc                    *redis.Client
-	checkers              []health.Checker
-	metricsHandler        http.Handler // nil when metrics are disabled
-	dlqElection           election.LeaderElection
-	outboxRepo            outbox.Repository
-	outboxDispatcher      outbox.Dispatcher
-	outboxNotifier        *observability.Notifier
-	outboxBatchSize       int
-	outboxPollInterval    time.Duration
-	outboxLockDuration    time.Duration
-	outboxMaxAttempts     int
-	outboxLagThreshold    time.Duration
-	dlqReplayWorker       *outbox.DLQWorker
-	notifScheduler        *scheduler.Scheduler
+	cfg                        *config.Config
+	bus                        events.Bus
+	scorer                     service.MatchScorer
+	snapshotter                service.Snapshotter
+	predRepo                   repository.PredictionRepository
+	invalidators               []service.PostScoringInvalidator
+	broadcaster                LeaderboardBroadcaster
+	snapshotLocker             SnapshotLocker
+	snapshotCfg                snapshotConfig
+	purger                     repository.Purger
+	purgeRetention             time.Duration
+	paramHistoryRetention      time.Duration
+	snapshotKeepCount          int
+	rc                         *redis.Client
+	checkers                   []health.Checker
+	metricsHandler             http.Handler // nil when metrics are disabled
+	dlqElection                election.LeaderElection
+	outboxRepo                 outbox.Repository
+	outboxDispatcher           outbox.Dispatcher
+	outboxNotifier             *observability.Notifier
+	outboxBatchSize            int
+	outboxPollInterval         time.Duration
+	outboxLockDuration         time.Duration
+	outboxMaxAttempts          int
+	outboxLagThreshold         time.Duration
+	outboxLagCriticalThreshold time.Duration
+	dlqReplayWorker            *outbox.DLQWorker
+	notifScheduler             *scheduler.Scheduler
 }
 
 // All parameters are already constructed so this function has no I/O of its
@@ -715,6 +723,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 			outbox.WithLockDuration(deps.outboxLockDuration),
 			outbox.WithMaxAttempts(deps.outboxMaxAttempts),
 			outbox.WithOutboxLagThreshold(deps.outboxLagThreshold),
+			outbox.WithOutboxCriticalLagThreshold(deps.outboxLagCriticalThreshold),
 			outbox.WithOutboxNotifier(deps.outboxNotifier),
 		)
 		outboxDone.Add(1)

@@ -6,11 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -87,6 +90,21 @@ func (r *kycProfileRepoStub) ReleaseAndCreditFrozen(_ context.Context, _ int, _ 
 		return r.profile.FrozenAmountCents, nil
 	}
 	return 0, nil
+}
+func (r *kycProfileRepoStub) ApproveAndSetTier(_ context.Context, _, _ int, _ repository.KYCApprovalParams) error {
+	return r.err
+}
+func (r *kycProfileRepoStub) FreezeAtomic(_ context.Context, _ int, _ int, _ string, _ string) error {
+	return r.err
+}
+func (r *kycProfileRepoStub) FreezeAtomicWithTxHook(_ context.Context, _ int, _ int, _ string, _ string, _ func(context.Context, pgx.Tx) error) error {
+	return r.err
+}
+func (r *kycProfileRepoStub) UpdateStatusWithEvent(_ context.Context, _, _ int, _ repository.KYCStatusEvent) error {
+	if r.updateStatusErr != nil {
+		return r.updateStatusErr
+	}
+	return r.err
 }
 
 type kycDocRepoStub struct {
@@ -274,6 +292,49 @@ func TestKYCService_Approve_RepoError_Propagates(t *testing.T) {
 	}
 }
 
+// TestKYCService_Approve_UsesAtomicApproveAndSetTier verifies that Approve routes
+// through ApproveAndSetTier (the atomic method) rather than the two-step
+// UpdateStatus+UpdateTier path. A stub that fails on ApproveAndSetTier must
+// cause the whole Approve call to fail.
+func TestKYCService_Approve_UsesAtomicApproveAndSetTier(t *testing.T) {
+	existing := &domain.KYCProfile{ID: 1, UserID: 5, Status: domain.KYCStatusPending}
+	repo := &approveAtomicTracker{kycProfileRepoStub: kycProfileRepoStub{profile: existing}}
+	svc := NewKYCService(repo, &kycDocRepoStub{}, &kycEventRepoStub{}, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+	if err := svc.Approve(context.Background(), 1, 99, domain.KYCTierTwo); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !repo.approveAndSetTierCalled {
+		t.Error("Approve must call ApproveAndSetTier, not UpdateStatus+UpdateTier")
+	}
+	if repo.updateStatusCalled {
+		t.Error("Approve must NOT call UpdateStatus after refactor")
+	}
+	if repo.updateTierCalled {
+		t.Error("Approve must NOT call UpdateTier after refactor")
+	}
+}
+
+// approveAtomicTracker wraps kycProfileRepoStub to track which methods are called.
+type approveAtomicTracker struct {
+	kycProfileRepoStub
+	approveAndSetTierCalled bool
+	updateStatusCalled      bool
+	updateTierCalled        bool
+}
+
+func (r *approveAtomicTracker) ApproveAndSetTier(_ context.Context, _, _ int, _ repository.KYCApprovalParams) error {
+	r.approveAndSetTierCalled = true
+	return nil
+}
+func (r *approveAtomicTracker) UpdateStatus(_ context.Context, _ int, _ domain.KYCStatus, _ int, _ string) error {
+	r.updateStatusCalled = true
+	return nil
+}
+func (r *approveAtomicTracker) UpdateTier(_ context.Context, _ int, _ domain.KYCTier, _ *time.Time) error {
+	r.updateTierCalled = true
+	return nil
+}
+
 // ── Reject ────────────────────────────────────────────────────────────────────
 
 func TestKYCService_Reject_HappyPath(t *testing.T) {
@@ -318,10 +379,103 @@ func TestKYCService_FreezeBalance_HappyPath(t *testing.T) {
 	}
 }
 
-func TestKYCService_FreezeBalance_SetFrozenError_Propagates(t *testing.T) {
+func TestKYCService_FreezeBalance_RepoError_Propagates(t *testing.T) {
 	svc := newKYCSvc(&kycProfileRepoStub{err: errors.New("db fail")}, &kycDocRepoStub{}, &kycEventRepoStub{})
 	if err := svc.FreezeBalance(context.Background(), 1, 1000, "reason"); err == nil {
-		t.Fatal("expected error from SetFrozen, got nil")
+		t.Fatal("expected error from FreezeAtomic, got nil")
+	}
+}
+
+// freezeRouteTracker wraps kycProfileRepoStub to track which freeze path is taken.
+type freezeRouteTracker struct {
+	kycProfileRepoStub
+	atomicCalled         bool
+	atomicWithHookCalled bool
+	hookErr              error
+}
+
+func (r *freezeRouteTracker) FreezeAtomic(_ context.Context, _ int, _ int, _ string, _ string) error {
+	r.atomicCalled = true
+	return r.err
+}
+func (r *freezeRouteTracker) FreezeAtomicWithTxHook(_ context.Context, _ int, _ int, _ string, _ string, hook func(context.Context, pgx.Tx) error) error {
+	r.atomicWithHookCalled = true
+	if r.err != nil {
+		return r.err
+	}
+	// Call the hook with a nil tx to verify it is invoked; the outbox stub handles nil gracefully.
+	if err := hook(context.Background(), nil); err != nil {
+		return err
+	}
+	return nil
+}
+
+type freezeOutboxStub struct {
+	writeInTxCalled bool
+	writeInTxErr    error
+}
+
+func (o *freezeOutboxStub) Write(_ context.Context, _ notification.EventType, _, _ string, _ any) error {
+	return nil
+}
+func (o *freezeOutboxStub) WriteBatch(_ context.Context, _ []outbox.BatchEvent) error { return nil }
+func (o *freezeOutboxStub) WriteDedup(_ context.Context, _ string, _ notification.EventType, _, _ string, _ any) (bool, error) {
+	return false, nil
+}
+func (o *freezeOutboxStub) WriteInTx(_ context.Context, _ outbox.TxExecer, _ notification.EventType, _, _ string, _ any) error {
+	o.writeInTxCalled = true
+	return o.writeInTxErr
+}
+
+func TestKYCService_FreezeBalance_WithOutboxWriter_UsesAtomicHook(t *testing.T) {
+	tracker := &freezeRouteTracker{}
+	ob := &freezeOutboxStub{}
+	svc := NewKYCService(tracker, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+	svc.(*kycService).SetOutboxWriter(ob)
+
+	if err := svc.FreezeBalance(context.Background(), 5, 50_000, "prize freeze"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tracker.atomicCalled {
+		t.Error("FreezeAtomic was called; expected FreezeAtomicWithTxHook when outboxWriter is set")
+	}
+	if !tracker.atomicWithHookCalled {
+		t.Error("FreezeAtomicWithTxHook was not called")
+	}
+	if !ob.writeInTxCalled {
+		t.Error("WriteInTx was not called inside the hook")
+	}
+}
+
+func TestKYCService_FreezeBalance_WithoutOutboxWriter_UsesFreezeAtomic(t *testing.T) {
+	tracker := &freezeRouteTracker{}
+	svc := NewKYCService(tracker, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+
+	if err := svc.FreezeBalance(context.Background(), 5, 50_000, "prize freeze"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !tracker.atomicCalled {
+		t.Error("expected FreezeAtomic to be called when no outboxWriter is set")
+	}
+	if tracker.atomicWithHookCalled {
+		t.Error("FreezeAtomicWithTxHook called unexpectedly when outboxWriter is nil")
+	}
+}
+
+func TestKYCService_FreezeBalance_OutboxHookError_RollsBack(t *testing.T) {
+	tracker := &freezeRouteTracker{}
+	ob := &freezeOutboxStub{writeInTxErr: errors.New("outbox write failed")}
+	svc := NewKYCService(tracker, &kycDocRepoStub{}, &kycEventRepoStub{},
+		&noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+	svc.(*kycService).SetOutboxWriter(ob)
+
+	if err := svc.FreezeBalance(context.Background(), 5, 50_000, "prize freeze"); err == nil {
+		t.Fatal("expected error when outbox hook fails, got nil")
+	}
+	if !tracker.atomicWithHookCalled {
+		t.Error("FreezeAtomicWithTxHook was not called")
 	}
 }
 
@@ -854,12 +1008,12 @@ func TestKYCService_Approve_WithSubmittedAt_RecordsReviewDuration(t *testing.T) 
 
 // ── Reject error and metrics paths ───────────────────────────────────────────
 
-func TestKYCService_Reject_UpdateStatusError_Propagates(t *testing.T) {
+func TestKYCService_Reject_UpdateStatusWithEventError_Propagates(t *testing.T) {
 	profile := &domain.KYCProfile{ID: 1, Status: domain.KYCStatusPending}
 	stub := &kycProfileRepoStub{profile: profile, updateStatusErr: errors.New("db fail")}
 	svc := newKYCSvc(stub, &kycDocRepoStub{}, &kycEventRepoStub{})
 	if err := svc.Reject(context.Background(), 1, 99, "reason"); err == nil {
-		t.Fatal("expected UpdateStatus error, got nil")
+		t.Fatal("expected UpdateStatusWithEvent error, got nil")
 	}
 }
 
@@ -876,12 +1030,12 @@ func TestKYCService_Reject_WithSubmittedAt_RecordsReviewDuration(t *testing.T) {
 
 // ── Escalate UpdateStatus error ───────────────────────────────────────────────
 
-func TestKYCService_Escalate_UpdateStatusError_Propagates(t *testing.T) {
+func TestKYCService_Escalate_UpdateStatusWithEventError_Propagates(t *testing.T) {
 	profile := &domain.KYCProfile{ID: 1, Status: domain.KYCStatusPending}
 	stub := &kycProfileRepoStub{profile: profile, updateStatusErr: errors.New("db fail")}
 	svc := newKYCSvc(stub, &kycDocRepoStub{}, &kycEventRepoStub{})
 	if err := svc.Escalate(context.Background(), 1, 99, "pep match"); err == nil {
-		t.Fatal("expected UpdateStatus error, got nil")
+		t.Fatal("expected UpdateStatusWithEvent error, got nil")
 	}
 }
 
@@ -936,16 +1090,6 @@ func TestKYCService_ReleaseFrozenBalance_GetByUserIDError_Propagates(t *testing.
 	stub := &kycProfileRepoStub{getByUserIDErr: errors.New("db fail")}
 	svc := newKYCSvc(stub, &kycDocRepoStub{}, &kycEventRepoStub{})
 	if err := svc.ReleaseFrozenBalance(context.Background(), 1, 99); err == nil {
-		t.Fatal("expected GetByUserID error, got nil")
-	}
-}
-
-// ── FreezeBalance GetByUserID error ──────────────────────────────────────────
-
-func TestKYCService_FreezeBalance_GetByUserIDError_Propagates(t *testing.T) {
-	stub := &kycProfileRepoStub{getByUserIDErr: errors.New("db fail")}
-	svc := newKYCSvc(stub, &kycDocRepoStub{}, &kycEventRepoStub{})
-	if err := svc.FreezeBalance(context.Background(), 1, 50_000, "prize_win_freeze"); err == nil {
 		t.Fatal("expected GetByUserID error, got nil")
 	}
 }

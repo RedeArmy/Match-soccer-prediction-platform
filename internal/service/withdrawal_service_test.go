@@ -318,6 +318,65 @@ func TestWithdrawalService_Create_AMLThresholdExceeded_StillReturnsRequest(t *te
 	}
 }
 
+// ── isHighValueWithdrawal / EventAdminHighValueWithdrawal ────────────────────
+
+// newWithdrawalSvcWithParams constructs a service with a param repo that returns
+// a configured set of key→value pairs, plus an outbox writer to count writes.
+func newWithdrawalSvcWithParams(pr *withdrawalParamRepo, w *stubOutboxWriter) WithdrawalService {
+	return NewWithdrawalService(&withdrawalReqRepoStub{}, pr, NoopKYCGate{}, w, &noopAuditLogger{}, zap.NewNop())
+}
+
+func TestWithdrawalService_Create_HighValueFromParam_EmitsExtraEvent(t *testing.T) {
+	// Param threshold set to exactly the withdrawal amount → is high-value.
+	pr := &withdrawalParamRepo{params: map[string]string{
+		domain.ParamKeyNotifyHighValueWithdrawalCents: strconv.Itoa(domain.DefaultWithdrawalMinCents),
+	}}
+	w := &stubOutboxWriter{}
+	svc := newWithdrawalSvcWithParams(pr, w)
+
+	_, err := svc.Create(context.Background(), 1, domain.DefaultWithdrawalMinCents, "GTQ", domain.WithdrawalMethodBankGT, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Expects 2 outbox writes: EventAdminWithdrawalPending + EventAdminHighValueWithdrawal.
+	if w.writes != 2 {
+		t.Errorf("expected 2 outbox writes (pending + high-value), got %d", w.writes)
+	}
+}
+
+func TestWithdrawalService_Create_BelowHighValueThreshold_EmitsSingleEvent(t *testing.T) {
+	// Threshold set higher than the withdrawal amount → NOT high-value.
+	pr := &withdrawalParamRepo{params: map[string]string{
+		domain.ParamKeyNotifyHighValueWithdrawalCents: strconv.Itoa(domain.DefaultWithdrawalMinCents + 1),
+	}}
+	w := &stubOutboxWriter{}
+	svc := newWithdrawalSvcWithParams(pr, w)
+
+	_, err := svc.Create(context.Background(), 1, domain.DefaultWithdrawalMinCents, "GTQ", domain.WithdrawalMethodBankGT, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Expects only 1 outbox write: EventAdminWithdrawalPending.
+	if w.writes != 1 {
+		t.Errorf("expected 1 outbox write (pending only), got %d", w.writes)
+	}
+}
+
+func TestWithdrawalService_Create_DefaultHighValueThreshold_WhenParamAbsent(t *testing.T) {
+	// No param set → falls back to DefaultNotifyHighValueWithdrawalCents.
+	w := &stubOutboxWriter{}
+	svc := newWithdrawalSvcWithParams(&withdrawalParamRepo{}, w)
+
+	// Amount below default (Q10,000 = 1,000,000 cents): single event.
+	_, err := svc.Create(context.Background(), 1, domain.DefaultWithdrawalMinCents, "GTQ", domain.WithdrawalMethodBankGT, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.writes != 1 {
+		t.Errorf("expected 1 outbox write when below default threshold, got %d", w.writes)
+	}
+}
+
 // ── writeOutbox error path ────────────────────────────────────────────────────
 
 func TestWithdrawalService_Create_OutboxWriteError_StillReturnsRequest(t *testing.T) {

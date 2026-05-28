@@ -502,3 +502,128 @@ func TestQuinielaRepository_BulkDeleteByAdmin_AlreadyDeletedSkipped(t *testing.T
 		t.Errorf("expected 0 succeeded for already-deleted ID, got %d", len(succeeded))
 	}
 }
+
+// ── DistributePrizesAtomically ────────────────────────────────────────────────
+
+func TestQuinielaRepository_DistributePrizesAtomically_CreditsWinnersAndMarksDistributed(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	winner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	const prizeAmount = 50_000
+	credits := []repository.PrizeCredit{
+		{UserID: winner.ID, AmountCents: prizeAmount, RefID: int64(q.ID), RefType: "quiniela"},
+	}
+
+	if err := repo.DistributePrizesAtomically(context.Background(), q.ID, credits, nil); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	// prizes_distributed_at must be set.
+	var distributedAt *string
+	err := testDB.QueryRow(context.Background(),
+		`SELECT prizes_distributed_at::text FROM quinielas WHERE id = $1`, q.ID,
+	).Scan(&distributedAt)
+	if err != nil {
+		t.Fatalf("query prizes_distributed_at: %v", err)
+	}
+	if distributedAt == nil {
+		t.Error("expected prizes_distributed_at to be set")
+	}
+
+	// winners balance must increase.
+	userRepo := repository.NewPostgresUserRepository(testDB)
+	balance, _, err := userRepo.GetBalance(context.Background(), winner.ID)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if balance != prizeAmount {
+		t.Errorf("balance_cents: got %d, want %d", balance, prizeAmount)
+	}
+
+	// A ledger row with kind='prize' must exist.
+	var count int
+	err = testDB.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM balance_ledger WHERE user_id = $1 AND kind = 'prize'`, winner.ID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("balance_ledger query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("balance_ledger rows: got %d, want 1", count)
+	}
+}
+
+func TestQuinielaRepository_DistributePrizesAtomically_FreezesKYCGatedWinners(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	gatedUser := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	kycRepo := repository.NewPostgresKYCProfileRepository(testDB)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	// gatedUser must have a KYC profile so applyPrizeFreezeTx can UPDATE it.
+	now := time.Now()
+	docType := domain.KYCDocGovID
+	p := &domain.KYCProfile{
+		UserID: gatedUser.ID, Status: domain.KYCStatusPending, Tier: domain.KYCTierUnverified,
+		FullName: "Gated User", DocumentType: &docType, DocumentNumber: "DOC-G", SubmittedAt: &now,
+	}
+	if err := kycRepo.Upsert(context.Background(), p); err != nil {
+		t.Fatalf("Upsert KYC profile: %v", err)
+	}
+
+	const frozenAmount = 30_000
+	freezes := []repository.PrizeFreeze{
+		{UserID: gatedUser.ID, AmountCents: frozenAmount, Reason: "kyc_pending"},
+	}
+
+	if err := repo.DistributePrizesAtomically(context.Background(), q.ID, nil, freezes); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, _ := kycRepo.GetByUserID(context.Background(), gatedUser.ID)
+	if !got.BalanceFrozen {
+		t.Error("expected balance_frozen=true")
+	}
+	if got.FrozenAmountCents != frozenAmount {
+		t.Errorf("frozen_amount_cents: got %d, want %d", got.FrozenAmountCents, frozenAmount)
+	}
+}
+
+func TestQuinielaRepository_DistributePrizesAtomically_Idempotency_ConflictOnSecondCall(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	if err := repo.DistributePrizesAtomically(context.Background(), q.ID, nil, nil); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+
+	err := repo.DistributePrizesAtomically(context.Background(), q.ID, nil, nil)
+	if err == nil {
+		t.Fatal("expected conflict error on second distribution, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestQuinielaRepository_DistributePrizesAtomically_CreditNotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	credits := []repository.PrizeCredit{
+		{UserID: 99999, AmountCents: 1000, RefID: int64(q.ID), RefType: "quiniela"},
+	}
+
+	err := repo.DistributePrizesAtomically(context.Background(), q.ID, credits, nil)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}

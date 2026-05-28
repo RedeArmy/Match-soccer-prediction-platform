@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
+	"github.com/rede/world-cup-quiniela/internal/notification"
+	"github.com/rede/world-cup-quiniela/internal/notification/outbox"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -116,16 +119,17 @@ type KYCService interface {
 // ── Implementation ────────────────────────────────────────────────────────────
 
 type kycService struct {
-	profileRepo repository.KYCProfileRepository
-	docRepo     repository.KYCDocumentRepository
-	eventRepo   repository.KYCEventRepository
-	params      SystemParamService
-	audit       AuditLogger
-	log         *zap.Logger
-	metrics     *KYCMetrics
-	cache       cache.Store                        // optional; nil disables risk-dashboard caching
-	ledger      repository.BalanceLedgerRepository // optional; nil skips deposit velocity in risk score
-	gate        KYCGate                            // optional; nil disables IP velocity check on Submit
+	profileRepo  repository.KYCProfileRepository
+	docRepo      repository.KYCDocumentRepository
+	eventRepo    repository.KYCEventRepository
+	params       SystemParamService
+	audit        AuditLogger
+	log          *zap.Logger
+	metrics      *KYCMetrics
+	cache        cache.Store                        // optional; nil disables risk-dashboard caching
+	ledger       repository.BalanceLedgerRepository // optional; nil skips deposit velocity in risk score
+	gate         KYCGate                            // optional; nil disables IP velocity check on Submit
+	outboxWriter outbox.Writer                      // optional; when set, FreezeBalance writes the outbox event atomically with the freeze
 }
 
 // NewKYCService constructs a KYCService. Pass a non-nil KYCMetrics (variadic)
@@ -160,6 +164,12 @@ func (s *kycService) SetCache(store cache.Store) { s.cache = store }
 // SetGate wires the KYCGate for IP velocity checking on KYC submission.
 // Called once at startup; nil disables the check (acceptable in tests).
 func (s *kycService) SetGate(gate KYCGate) { s.gate = gate }
+
+// SetOutboxWriter wires the transactional outbox writer so that FreezeBalance
+// writes the kyc.winner_freeze notification event within the same transaction as
+// the balance freeze. When nil (the default), FreezeBalance calls FreezeAtomic
+// and the caller is responsible for writing the outbox event separately.
+func (s *kycService) SetOutboxWriter(w outbox.Writer) { s.outboxWriter = w }
 
 // SetLedger wires the ledger repo for deposit-velocity scoring.
 // Called once at startup; nil omits the deposit-velocity component.
@@ -384,24 +394,19 @@ func (s *kycService) Approve(ctx context.Context, profileID, adminID int, tier d
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
-	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusApproved, adminID, ""); err != nil {
-		return err
-	}
 	intervalDays := s.params.GetInt(ctx, domain.ParamKeyKYCReviewIntervalDays, domain.DefaultKYCReviewIntervalDays)
 	nextReview := time.Now().AddDate(0, 0, intervalDays)
-	if err := s.profileRepo.UpdateTier(ctx, profile.UserID, tier, &nextReview); err != nil {
+	if err := s.profileRepo.ApproveAndSetTier(ctx, profileID, adminID, repository.KYCApprovalParams{
+		Tier:       tier,
+		NextReview: nextReview,
+		Reason:     "",
+		TraceID:    traceIDFromCtx(ctx),
+		OldStatus:  profile.Status,
+	}); err != nil {
 		return err
 	}
-	s.appendEvent(ctx, &domain.KYCEvent{
-		ProfileID:   profileID,
-		ProfileType: domain.KYCProfileTypeUser,
-		EventType:   domain.KYCEventApproved,
-		ActorID:     &adminID,
-		OldStatus:   &profile.Status,
-		NewStatus:   domain.KYCStatusApproved,
-		TraceID:     traceIDFromCtx(ctx),
-		Metadata:    map[string]any{"tier": int(tier)},
-	})
+	// appendEvent is intentionally omitted here: ApproveAndSetTier inserts the
+	// approval audit event inside the same transaction as the status/tier writes.
 	resType := "kyc_profile"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role,
@@ -427,19 +432,15 @@ func (s *kycService) Reject(ctx context.Context, profileID, adminID int, reason 
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
-	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusRejected, adminID, reason); err != nil {
+	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID, repository.KYCStatusEvent{
+		OldStatus: profile.Status,
+		NewStatus: domain.KYCStatusRejected,
+		EventType: domain.KYCEventRejected,
+		Reason:    reason,
+		TraceID:   traceIDFromCtx(ctx),
+	}); err != nil {
 		return err
 	}
-	s.appendEvent(ctx, &domain.KYCEvent{
-		ProfileID:   profileID,
-		ProfileType: domain.KYCProfileTypeUser,
-		EventType:   domain.KYCEventRejected,
-		ActorID:     &adminID,
-		OldStatus:   &profile.Status,
-		NewStatus:   domain.KYCStatusRejected,
-		Reason:      reason,
-		TraceID:     traceIDFromCtx(ctx),
-	})
 	resType := "kyc_profile"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role,
@@ -462,19 +463,15 @@ func (s *kycService) Escalate(ctx context.Context, profileID, adminID int, reaso
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
-	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusEscalated, adminID, ""); err != nil {
+	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID, repository.KYCStatusEvent{
+		OldStatus: profile.Status,
+		NewStatus: domain.KYCStatusEscalated,
+		EventType: domain.KYCEventEscalated,
+		Reason:    reason,
+		TraceID:   traceIDFromCtx(ctx),
+	}); err != nil {
 		return err
 	}
-	s.appendEvent(ctx, &domain.KYCEvent{
-		ProfileID:   profileID,
-		ProfileType: domain.KYCProfileTypeUser,
-		EventType:   domain.KYCEventEscalated,
-		ActorID:     &adminID,
-		OldStatus:   &profile.Status,
-		NewStatus:   domain.KYCStatusEscalated,
-		Reason:      reason,
-		TraceID:     traceIDFromCtx(ctx),
-	})
 	resType := "kyc_profile"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role,
@@ -552,26 +549,25 @@ func (s *kycService) ReleaseFrozenBalance(ctx context.Context, userID, adminID i
 }
 
 func (s *kycService) FreezeBalance(ctx context.Context, userID, prizeCents int, reason string) error {
-	if err := s.profileRepo.SetFrozen(ctx, userID, true, prizeCents, reason); err != nil {
-		return err
+	traceID := traceIDFromCtx(ctx)
+	if s.outboxWriter == nil {
+		// No outbox writer: plain atomic freeze + audit event only.
+		return s.profileRepo.FreezeAtomic(ctx, userID, prizeCents, reason, traceID)
 	}
-	profile, err := s.profileRepo.GetByUserID(ctx, userID)
-	if err != nil {
-		return err
+	// Outbox writer present: write the kyc.winner_freeze notification event in
+	// the same transaction as the freeze so a crash between the two writes
+	// cannot leave a frozen balance with no outbox task for n8n.
+	aggregateID := fmt.Sprintf("%d", userID)
+	payload := notification.KYCWinnerFreezePayload{
+		UserID:      userID,
+		AmountCents: prizeCents,
+		TraceID:     traceID,
 	}
-	if profile != nil {
-		s.appendEvent(ctx, &domain.KYCEvent{
-			ProfileID:   profile.ID,
-			ProfileType: domain.KYCProfileTypeUser,
-			EventType:   domain.KYCEventFrozen,
-			OldStatus:   &profile.Status,
-			NewStatus:   profile.Status,
-			Reason:      reason,
-			TraceID:     traceIDFromCtx(ctx),
-			Metadata:    map[string]any{"frozen_amount_cents": prizeCents},
-		})
-	}
-	return nil
+	return s.profileRepo.FreezeAtomicWithTxHook(ctx, userID, prizeCents, reason, traceID,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return s.outboxWriter.WriteInTx(ctx, tx, notification.EventKYCWinnerFreeze, "user", aggregateID, payload)
+		},
+	)
 }
 
 // checkIPVelocity calls the gate's IP velocity check and, on block, appends a

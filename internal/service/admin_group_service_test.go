@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -251,6 +253,58 @@ func (r *errOnTransferOwnershipRepo) TransferOwnershipRoles(_ context.Context, _
 
 // ── DistributePrizes ──────────────────────────────────────────────────────────
 
+// captureDistributeRepo is a stubQuinielaRepo variant that captures the slices
+// passed to DistributePrizesAtomically so tests can assert on classification.
+type captureDistributeRepo struct {
+	quiniela     *domain.Quiniela
+	err          error
+	onDistribute func(credits []repository.PrizeCredit, freezes []repository.PrizeFreeze)
+}
+
+func (r *captureDistributeRepo) CreateWithMembership(_ context.Context, _ *domain.Quiniela, _ *domain.GroupMembership) error {
+	return r.err
+}
+func (r *captureDistributeRepo) Create(_ context.Context, _ *domain.Quiniela) error { return r.err }
+func (r *captureDistributeRepo) GetByID(_ context.Context, _ int) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
+}
+func (r *captureDistributeRepo) GetByInviteCode(_ context.Context, _ string) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
+}
+func (r *captureDistributeRepo) Update(_ context.Context, _ *domain.Quiniela) error { return r.err }
+func (r *captureDistributeRepo) Delete(_ context.Context, _ int) error              { return r.err }
+func (r *captureDistributeRepo) ListByOwner(_ context.Context, _ int) ([]*domain.Quiniela, error) {
+	return nil, r.err
+}
+func (r *captureDistributeRepo) RotateInviteCode(_ context.Context, _ int, _ string, _ *time.Time) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
+}
+func (r *captureDistributeRepo) UpdateStatus(_ context.Context, _ int, _ domain.QuinielaStatus) error {
+	return r.err
+}
+func (r *captureDistributeRepo) UpdateGroupSettings(_ context.Context, _, _ int) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
+}
+func (r *captureDistributeRepo) DeleteByAdmin(_ context.Context, _, _ int) error { return r.err }
+func (r *captureDistributeRepo) ListByIDs(_ context.Context, _ []int) ([]*domain.Quiniela, error) {
+	return nil, r.err
+}
+func (r *captureDistributeRepo) GetStatusCounts(_ context.Context) (repository.QuinielaStatusCounts, error) {
+	return repository.QuinielaStatusCounts{}, r.err
+}
+func (r *captureDistributeRepo) BulkDeleteByAdmin(_ context.Context, ids []int, _ int) ([]int, error) {
+	return ids, r.err
+}
+func (r *captureDistributeRepo) DistributePrizesAtomically(_ context.Context, _ int, credits []repository.PrizeCredit, freezes []repository.PrizeFreeze) error {
+	if r.err != nil {
+		return r.err
+	}
+	if r.onDistribute != nil {
+		r.onDistribute(credits, freezes)
+	}
+	return nil
+}
+
 type stubPrizeCrediter struct {
 	credited bool
 	err      error
@@ -271,7 +325,26 @@ func newDistributeSvc(q *stubQuinielaRepo, ranker *noopRanker, prize *stubPrizeC
 func eligibleLeaderboard(userIDs ...int) *LeaderboardResult {
 	entries := make([]*domain.LeaderboardEntry, len(userIDs))
 	for i, uid := range userIDs {
-		entries[i] = &domain.LeaderboardEntry{User: &domain.User{ID: uid}, PrizeWinner: true}
+		entries[i] = &domain.LeaderboardEntry{
+			User:        &domain.User{ID: uid, KYCTier: domain.KYCTierTwo},
+			PrizeWinner: true,
+		}
+	}
+	return &LeaderboardResult{
+		Entries:           entries,
+		ActivePaidMembers: len(userIDs),
+		WinnerCount:       len(userIDs),
+		EligibleForPrizes: true,
+	}
+}
+
+func eligibleLeaderboardTier0(userIDs ...int) *LeaderboardResult {
+	entries := make([]*domain.LeaderboardEntry, len(userIDs))
+	for i, uid := range userIDs {
+		entries[i] = &domain.LeaderboardEntry{
+			User:        &domain.User{ID: uid, KYCTier: domain.KYCTierUnverified},
+			PrizeWinner: true,
+		}
 	}
 	return &LeaderboardResult{
 		Entries:           entries,
@@ -323,22 +396,84 @@ func TestAdminGroupService_DistributePrizes_HappyPath_CreditApplied(t *testing.T
 	}
 }
 
-// KYC escrow path: Tier 0 user wins → CreditPrize returns (false, nil) meaning frozen.
+// KYC escrow path: Tier 0 user wins → freeze path taken inside atomic tx.
 func TestAdminGroupService_DistributePrizes_Tier0Winner_PrizeFrozenInEscrow(t *testing.T) {
 	q := &stubQuinielaRepo{quiniela: &domain.Quiniela{ID: 2, EntryFee: 10_000}}
-	ranker := &noopRanker{result: eligibleLeaderboard(42)}
-	crediter := &stubPrizeCrediter{credited: false} // frozen, not credited directly
+	ranker := &noopRanker{result: eligibleLeaderboardTier0(42)}
+	crediter := &stubPrizeCrediter{credited: false} // notification call for freeze winner
 	svc := newDistributeSvc(q, ranker, crediter)
 	if err := svc.DistributePrizes(context.Background(), 2, 99); err != nil {
 		t.Fatalf("unexpected error: prizes should succeed even when frozen via KYC escrow: %v", err)
 	}
 }
 
-func TestAdminGroupService_DistributePrizes_CreditError_Propagates(t *testing.T) {
-	q := &stubQuinielaRepo{quiniela: &domain.Quiniela{ID: 1, EntryFee: 10_000}}
+func TestAdminGroupService_DistributePrizes_AtomicRepoError_Propagates(t *testing.T) {
+	q := &stubQuinielaRepo{
+		quiniela:      &domain.Quiniela{ID: 1, EntryFee: 10_000},
+		distributeErr: errors.New("db error"),
+	}
 	ranker := &noopRanker{result: eligibleLeaderboard(5)}
-	svc := newDistributeSvc(q, ranker, &stubPrizeCrediter{err: errors.New("ledger fail")})
+	svc := newDistributeSvc(q, ranker, &stubPrizeCrediter{credited: true})
 	if err := svc.DistributePrizes(context.Background(), 1, 99); err == nil {
-		t.Fatal("expected credit error to propagate, got nil")
+		t.Fatal("expected atomic repo error to propagate, got nil")
+	}
+}
+
+// TestAdminGroupService_DistributePrizes_Idempotency_SecondCallReturnsConflict verifies
+// that a second DistributePrizes call returns apperrors.Conflict (HTTP 409).
+func TestAdminGroupService_DistributePrizes_Idempotency_SecondCallReturnsConflict(t *testing.T) {
+	q := &stubQuinielaRepo{
+		quiniela:              &domain.Quiniela{ID: 3, EntryFee: 5_000},
+		distributeAlreadyDone: true,
+	}
+	ranker := &noopRanker{result: eligibleLeaderboard(10)}
+	svc := newDistributeSvc(q, ranker, &stubPrizeCrediter{credited: true})
+	err := svc.DistributePrizes(context.Background(), 3, 99)
+	if err == nil {
+		t.Fatal("expected Conflict on second distribution call, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict, got %T: %v", err, err)
+	}
+}
+
+// TestAdminGroupService_DistributePrizes_MixedTiers verifies that Tier2+ winners
+// go into direct credits and Tier0 winners go into the freeze slice.
+func TestAdminGroupService_DistributePrizes_MixedTiers_CorrectClassification(t *testing.T) {
+	var gotCredits []int
+	var gotFreezes []int
+
+	qr := &captureDistributeRepo{
+		quiniela: &domain.Quiniela{ID: 4, EntryFee: 10_000},
+		onDistribute: func(credits []repository.PrizeCredit, freezes []repository.PrizeFreeze) {
+			for _, c := range credits {
+				gotCredits = append(gotCredits, c.UserID)
+			}
+			for _, f := range freezes {
+				gotFreezes = append(gotFreezes, f.UserID)
+			}
+		},
+	}
+	entries := []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+		{User: &domain.User{ID: 2, KYCTier: domain.KYCTierUnverified}, PrizeWinner: true},
+		{User: &domain.User{ID: 3, KYCTier: domain.KYCTierThree}, PrizeWinner: true},
+	}
+	ranker := &noopRanker{result: &LeaderboardResult{
+		Entries:           entries,
+		ActivePaidMembers: 3,
+		WinnerCount:       3,
+		EligibleForPrizes: true,
+	}}
+	svc := NewAdminGroupService(qr, &stubMemberRepo{}, &noopSnapshotter{}, ranker, &noopAuditLogger{}, zap.NewNop())
+	svc.(*adminGroupService).SetPrizeCrediter(&stubPrizeCrediter{credited: false})
+	if err := svc.DistributePrizes(context.Background(), 4, 99); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gotCredits) != 2 {
+		t.Errorf("expected 2 direct credits (IDs 1,3), got %v", gotCredits)
+	}
+	if len(gotFreezes) != 1 {
+		t.Errorf("expected 1 freeze (ID 2), got %v", gotFreezes)
 	}
 }

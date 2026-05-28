@@ -201,6 +201,12 @@ func setupDB(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool
 	}
 	log.Sugar().Info("migrations up to date")
 
+	if cfg.Database.ConnMaxLifetime == 0 {
+		log.Warn("database.connMaxLifetime is 0 (disabled); connections are never recycled. " +
+			"Set WCQ_DATABASE_CONNMAXLIFETIME (e.g. 5m) to avoid stale connections after " +
+			"PostgreSQL failovers or load-balancer restarts.")
+	}
+
 	pool, err := database.NewPool(ctx, database.Config{
 		DSN:                   cfg.Database.DSN,
 		MaxOpenConns:          cfg.Database.MaxOpenConns,
@@ -276,6 +282,10 @@ func tracingStatus(cfg *config.Config) string {
 // store is a MemoryStore. The caller is responsible for closing rc when non-nil.
 func wireRedis(cfg *config.Config, log *zap.Logger, meter metric.Meter) (*redis.Client, cache.Store, health.Checker) {
 	if cfg.Redis.Addr == "" {
+		// MemoryStore is not safe for multi-replica deployments: cache invalidations
+		// are local, so replicas diverge. This path is intentional for development
+		// and single-instance deployments only. Set WCQ_REDIS_ADDR in production.
+		log.Warn("Redis not configured (WCQ_REDIS_ADDR empty) — falling back to in-process MemoryStore; not safe for multi-replica deployments")
 		return nil, cache.NewMemoryStore(), nil
 	}
 	rc := redis.NewClient(&redis.Options{

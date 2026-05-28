@@ -19,6 +19,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
@@ -234,6 +236,29 @@ type QuinielaRepository interface {
 	// Returns the IDs that were successfully deleted. Already-deleted IDs are
 	// silently skipped and do not appear in the result.
 	BulkDeleteByAdmin(ctx context.Context, ids []int, adminID int) ([]int, error)
+	// DistributePrizesAtomically atomically claims prizes_distributed_at and
+	// executes all prize credits and KYC freezes in a single transaction.
+	// Returns apperrors.Conflict when prizes have already been distributed.
+	// If any write fails the transaction is rolled back, prizes_distributed_at
+	// remains NULL, and the operation is safe to retry.
+	DistributePrizesAtomically(ctx context.Context, quinielaID int, credits []PrizeCredit, freezes []PrizeFreeze) error
+}
+
+// PrizeCredit is a direct prize payment: update users.balance_cents and insert
+// a balance_ledger row inside DistributePrizesAtomically.
+type PrizeCredit struct {
+	UserID      int
+	AmountCents int
+	RefID       int64
+	RefType     string
+}
+
+// PrizeFreeze is a KYC-withheld prize: update kyc_profiles to hold the balance
+// in escrow inside DistributePrizesAtomically.
+type PrizeFreeze struct {
+	UserID      int
+	AmountCents int
+	Reason      string
 }
 
 // GroupMembershipRepository defines the persistence operations for the
@@ -806,6 +831,26 @@ type WithdrawalRequestRepository interface {
 	MarkProcessedAndCommit(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
 }
 
+// KYCStatusEvent bundles the fields required by UpdateStatusWithEvent into a
+// single value to keep the method signature within the 7-parameter limit.
+type KYCStatusEvent struct {
+	OldStatus domain.KYCStatus
+	NewStatus domain.KYCStatus
+	EventType domain.KYCEventType
+	Reason    string
+	TraceID   string
+}
+
+// KYCApprovalParams bundles the fields required by ApproveAndSetTier into a
+// single value to keep the method signature within the 7-parameter limit.
+type KYCApprovalParams struct {
+	Tier       domain.KYCTier
+	NextReview time.Time
+	Reason     string
+	TraceID    string
+	OldStatus  domain.KYCStatus
+}
+
 // KYCProfileRepository manages the identity-verification profile for each user.
 // One profile row exists per user; it is upserted in place on resubmission.
 // The full status-transition history is captured separately in KYCEventRepository.
@@ -822,6 +867,12 @@ type KYCProfileRepository interface {
 	// reviewedBy may be 0 (stored as NULL) for system-initiated transitions.
 	// Returns apperrors.NotFound when the profile does not exist.
 	UpdateStatus(ctx context.Context, profileID int, newStatus domain.KYCStatus, reviewedBy int, rejectionReason string) error
+	// UpdateStatusWithEvent atomically updates kyc_profiles.status and inserts a
+	// kyc_events audit row in a single transaction, closing the window where a
+	// crash between the two writes leaves the status changed but no audit trail.
+	// oldStatus is the status before the transition (passed by the caller who
+	// already read the profile); traceID may be empty.
+	UpdateStatusWithEvent(ctx context.Context, profileID, adminID int, ev KYCStatusEvent) error
 	// UpdateTier atomically updates tier on kyc_profiles and kyc_tier on users.
 	// Both columns must stay in sync; this method is the only write path for tier changes.
 	// nextReviewAt, when non-nil, sets the next mandatory re-verification date on kyc_profiles.
@@ -829,6 +880,17 @@ type KYCProfileRepository interface {
 	// SetFrozen sets or clears the balance-freeze columns for a profile.
 	// When frozen=false amountCents and reason are ignored; both are cleared.
 	SetFrozen(ctx context.Context, userID int, frozen bool, amountCents int, reason string) error
+	// FreezeAtomic atomically sets balance_frozen=TRUE and inserts a 'frozen'
+	// kyc_events audit row in a single transaction, eliminating the split-state
+	// where the freeze is recorded but the compliance trail is missing.
+	// traceID may be empty when no OTel span is active.
+	FreezeAtomic(ctx context.Context, userID, amountCents int, reason, traceID string) error
+	// FreezeAtomicWithTxHook is like FreezeAtomic but calls hook(ctx, tx) within
+	// the same transaction before commit. The hook is used by KYCService to write
+	// an outbox notification row in the same transaction as the balance freeze,
+	// eliminating the crash window between the freeze commit and the outbox insert.
+	// hook must not call Commit or Rollback on tx.
+	FreezeAtomicWithTxHook(ctx context.Context, userID, amountCents int, reason, traceID string, hook func(context.Context, pgx.Tx) error) error
 	// ListPending returns profiles in the pending, under_review, or escalated
 	// state, ordered by submitted_at ASC (oldest first), with pagination.
 	ListPending(ctx context.Context, f KYCProfileFilters, p Pagination) ([]*domain.KYCProfile, error)
@@ -861,6 +923,16 @@ type KYCProfileRepository interface {
 	// Returns the number of cents that were credited (0 when not frozen).
 	// refID and refType are stored on the ledger row for traceability.
 	ReleaseAndCreditFrozen(ctx context.Context, userID int, refID int64, refType string) (creditedCents int, err error)
+	// ApproveAndSetTier atomically:
+	//   1. Sets kyc_profiles.status = 'approved', tier = tier, next_review_at = nextReview,
+	//      reviewed_by = adminID, reviewed_at = NOW(), rejection_reason = NULL for profileID.
+	//   2. Sets users.kyc_tier = tier for the user linked to profileID.
+	//   3. Inserts a kyc_events row recording the approval.
+	//
+	// All three writes commit together or all roll back. This prevents the
+	// split-state where status='approved' but kyc_tier remains 0 after a
+	// mid-operation process kill.
+	ApproveAndSetTier(ctx context.Context, profileID, adminID int, p KYCApprovalParams) error
 }
 
 // KYCDocumentRepository manages uploaded identity documents attached to KYC/KYB profiles.

@@ -54,10 +54,10 @@ type Server struct {
 	// auditSvc is set by Routes() after constructing the service; exposed to main.go
 	// so the shutdown path can call Drain() to wait for in-flight audit writes.
 	auditSvc service.AuditService
-	// limiterStore overrides the default per-user rate limiter when non-nil.
-	// Typically set in tests via SetLimiterStore to bypass throttling when
-	// exercising the full middleware chain with many requests for the same user.
-	limiterStore *middleware.LimiterStore
+	// limiterStore overrides the per-user rate limiter constructed by Routes().
+	// Nil means Routes() falls back to an in-process LimiterStore. Use
+	// SetLimiterStore (tests) or SetRateStore (Redis wiring in production).
+	limiterStore middleware.Allower
 	// notifHub is the in-process SSE hub; created once in Routes() and reused
 	// by the notification handler and the pg_notify bridge goroutine.
 	notifHub *hub.Hub
@@ -68,6 +68,10 @@ type Server struct {
 	// idemStore is the idempotency backing store. When non-nil (Redis available),
 	// reservations are shared across all replicas. Falls back to MemoryStore when nil.
 	idemStore idempotency.Store
+	// redisClient is the shared Redis connection. Non-nil when WCQ_REDIS_ADDR is
+	// configured. Routes() uses it to build a RedisRateStore for cross-replica
+	// rate limiting; a nil value falls back to the in-process LimiterStore.
+	redisClient redis.UniversalClient
 	// metricsHandler serves the Prometheus /metrics scrape endpoint. Nil when
 	// metrics are disabled (WCQ_METRICS_ENABLED=false); Routes() registers the
 	// endpoint only when non-nil.
@@ -86,11 +90,22 @@ type Server struct {
 // Call this after New() when the Redis event bus driver is active.
 func (s *Server) SetDLQService(dlq service.DLQService) { s.dlqSvc = dlq }
 
-// SetLimiterStore overrides the per-user rate limiter constructed by Routes().
-// Intended for tests that need to exercise the full middleware chain for many
-// requests with the same user ID without triggering 429 responses; pass
+// SetLimiterStore overrides the per-user rate limiter with an in-process
+// token-bucket store. Intended for tests that need to exercise the full
+// middleware chain without triggering 429 responses; pass
 // middleware.NewUnlimitedLimiterStore() to disable rate limiting for the test.
 func (s *Server) SetLimiterStore(store *middleware.LimiterStore) { s.limiterStore = store }
+
+// SetRateStore overrides the per-user rate limiter with any Allower
+// implementation. Use this in production to wire a Redis-backed store when
+// the Redis client is available, so rate limits are enforced across replicas.
+func (s *Server) SetRateStore(store middleware.Allower) { s.limiterStore = store }
+
+// SetRedisClient provides the shared Redis connection for use by Routes().
+// When set, Routes() builds a RedisRateStore so rate limits are enforced across
+// all replicas. When nil (default), an in-process LimiterStore is used instead.
+// Call before Routes() in production; not required in tests.
+func (s *Server) SetRedisClient(rc redis.UniversalClient) { s.redisClient = rc }
 
 // SetIdempotencyStore replaces the idempotency store used by the payment write
 // endpoints. Must be called before Routes() so the middleware captures the

@@ -386,6 +386,11 @@ func (s *Server) buildKYCModule(ctx context.Context, deps kycModuleDeps) (*handl
 	}); ok {
 		sg.SetGate(deps.kycGate)
 	}
+	if so, ok := kycSvc.(interface {
+		SetOutboxWriter(outbox.Writer)
+	}); ok && deps.outboxWriter != nil {
+		so.SetOutboxWriter(deps.outboxWriter)
+	}
 
 	return handler.NewKYCHandler(kycSvc, deps.fileStore, kycMaxUpload, s.log),
 		handler.NewAdminKYCHandler(kycSvc, s.log),
