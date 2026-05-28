@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -220,7 +221,17 @@ func (s *adminGroupService) RecalculateLeaderboard(ctx context.Context, quiniela
 
 // DistributePrizes credits each ranked winner their share of the prize pool.
 // Prize pool = EntryFee × ActivePaidMembers, split equally among WinnerCount winners.
-// Users below KYCTierTwo have their share frozen via PrizeCrediter (escrow path).
+//
+// Idempotency: prizes_distributed_at is claimed atomically inside
+// DistributePrizesAtomically. A second call returns apperrors.Conflict (HTTP 409);
+// the caller should surface this to the admin UI as a terminal state.
+//
+// All direct credits and KYC-freeze holds are executed inside a single transaction:
+// if any write fails the transaction rolls back, prizes_distributed_at remains NULL,
+// and the entire distribution can be safely retried.
+//
+// Outbox notifications for frozen winners are fired after the transaction commits
+// (best-effort) — a delivery failure does not undo the freeze.
 func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, adminID int) error {
 	if s.prizeCrediter == nil {
 		return apperrors.Internal(fmt.Errorf("prize crediter not configured"))
@@ -244,28 +255,67 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 	}
 	prizePool := q.EntryFee * result.ActivePaidMembers
 	prizePerWinner := prizePool / result.WinnerCount
-	var credited, frozen int
+
+	var (
+		credits       []repository.PrizeCredit
+		freezes       []repository.PrizeFreeze
+		freezeUserIDs []int
+	)
 	for _, entry := range result.Entries {
 		if !entry.PrizeWinner || entry.User == nil {
 			continue
 		}
-		applied, err := s.prizeCrediter.CreditPrize(ctx, entry.User.ID, prizePerWinner, int64(quinielaID), "quiniela")
-		if err != nil {
-			return fmt.Errorf("distribute prizes: user %d: %w", entry.User.ID, err)
+		if entry.User.KYCTier >= domain.KYCTierTwo {
+			credits = append(credits, repository.PrizeCredit{
+				UserID:      entry.User.ID,
+				AmountCents: prizePerWinner,
+				RefID:       int64(quinielaID),
+				RefType:     "quiniela",
+			})
+		} else {
+			reason := fmt.Sprintf(
+				"Ha ganado un premio de Q%.2f. Para recibir tus fondos debes completar la verificación "+
+					"de identidad (DPI vigente para residentes en Guatemala; pasaporte u equivalente para extranjeros). "+
+					"Tu saldo ha sido retenido hasta que el equipo de cumplimiento apruebe tu solicitud.",
+				float64(prizePerWinner)/100,
+			)
+			freezes = append(freezes, repository.PrizeFreeze{
+				UserID:      entry.User.ID,
+				AmountCents: prizePerWinner,
+				Reason:      reason,
+			})
+			freezeUserIDs = append(freezeUserIDs, entry.User.ID)
 		}
-		if applied {
-			credited++
-			continue
-		}
-		frozen++
 	}
+
+	if err := s.quinielaRepo.DistributePrizesAtomically(ctx, quinielaID, credits, freezes); err != nil {
+		if errors.Is(err, apperrors.ErrConflict) {
+			s.log.Info("prizes_already_distributed",
+				zap.Int("quiniela_id", quinielaID),
+			)
+		}
+		return err
+	}
+
+	// Fire outbox notifications for frozen winners outside the transaction.
+	// Each call re-freezes idempotently (safe) and writes the outbox event.
+	for _, userID := range freezeUserIDs {
+		if _, notifyErr := s.prizeCrediter.CreditPrize(ctx, userID, prizePerWinner, int64(quinielaID), "quiniela"); notifyErr != nil {
+			s.log.Warn("prize_freeze_notify_failed",
+				zap.Int("user_id", userID),
+				zap.Int("quiniela_id", quinielaID),
+				zap.Error(notifyErr),
+			)
+		}
+	}
+
 	resType := "quiniela"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role, domain.AuditActionPrizesDistributed, &resType, &quinielaID, map[string]any{
 		"prize_pool_cents":   prizePool,
 		"prize_per_winner":   prizePerWinner,
-		"winners_credited":   credited,
-		"winners_frozen_kyc": frozen,
+		"winners_credited":   len(credits),
+		"winners_frozen_kyc": len(freezes),
 	})
 	return nil
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -236,7 +237,15 @@ func (h *KYCHandler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = file.Close() }()
 
-	contentType := header.Header.Get("Content-Type")
+	// Sniff the actual content type from the first 512 bytes rather than
+	// trusting the client-supplied Content-Type header, which can be forged.
+	sniffBuf := make([]byte, 512)
+	n, err := io.ReadFull(file, sniffBuf)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		writeError(w, r, h.log, apperrors.Validation("file is empty or unreadable"))
+		return
+	}
+	contentType := http.DetectContentType(sniffBuf[:n])
 	if !domain.KYCAllowedContentTypes[contentType] {
 		writeError(w, r, h.log, apperrors.Validation(
 			"unsupported file type; allowed: image/jpeg, image/png, image/webp, application/pdf",
@@ -247,9 +256,13 @@ func (h *KYCHandler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	ext := extensionForContentType(contentType)
 	storageKey := fmt.Sprintf("kyc/%d/%s%s", caller.ID, generateID(), ext)
 
+	// Reconstruct the full file reader (sniffed prefix + remainder) so the
+	// SHA-256 and FileStore.Put receive the complete content.
+	full := io.MultiReader(bytes.NewReader(sniffBuf[:n]), file)
+
 	// Compute SHA-256 while streaming to the FileStore — single pass, no temp buffer.
 	hasher := sha256.New()
-	tee := io.TeeReader(file, hasher)
+	tee := io.TeeReader(full, hasher)
 	if err := h.fileStore.Put(r.Context(), storageKey, contentType, tee, header.Size); err != nil {
 		writeError(w, r, h.log, apperrors.Internal(err))
 		return

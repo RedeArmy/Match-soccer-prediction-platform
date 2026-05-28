@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -121,6 +122,54 @@ func (r *PostgresKYCProfileRepository) UpdateStatus(ctx context.Context, profile
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
 	return nil
+}
+
+// UpdateStatusWithEvent atomically transitions the profile's status and inserts
+// a kyc_events audit row, ensuring no crash between the two writes leaves a
+// compliance gap. oldStatus is the pre-transition value, already read by the caller.
+func (r *PostgresKYCProfileRepository) UpdateStatusWithEvent(
+	ctx context.Context, profileID, adminID int,
+	oldStatus, newStatus domain.KYCStatus,
+	eventType domain.KYCEventType,
+	reason, traceID string,
+) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	return withTx(ctx, r.db, "KYCProfileRepository.UpdateStatusWithEvent", func(tx pgx.Tx) error {
+		rejectionReason := ""
+		if newStatus == domain.KYCStatusRejected {
+			rejectionReason = reason
+		}
+		var reviewer *int
+		if adminID != 0 {
+			reviewer = &adminID
+		}
+		tag, err := tx.Exec(ctx, `
+			UPDATE kyc_profiles
+			   SET status           = $2,
+			       reviewed_at      = NOW(),
+			       reviewed_by      = $3,
+			       rejection_reason = $4,
+			       updated_at       = NOW()
+			 WHERE id = $1
+		`, profileID, string(newStatus), reviewer, rejectionReason)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if tag.RowsAffected() == 0 {
+			return apperrors.NotFound(errKYCProfileNotFound)
+		}
+		oldStatusStr := string(oldStatus)
+		_, err = tx.Exec(ctx, `
+			INSERT INTO kyc_events
+			      (profile_id, profile_type, event_type, actor_id, old_status, new_status, reason, trace_id)
+			VALUES ($1, 'user', $2, $3, $4, $5, $6, $7)
+		`, profileID, string(eventType), reviewer, oldStatusStr, string(newStatus), reason, traceID)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		return nil
+	})
 }
 
 // UpdateTier atomically updates tier on kyc_profiles and kyc_tier on users.
@@ -503,6 +552,110 @@ func scanKYCProfile(s rowScanner) (*domain.KYCProfile, error) {
 		p.DocumentType = &dt
 	}
 	return p, nil
+}
+
+// ApproveAndSetTier atomically approves the KYC profile, updates both tier
+// columns (kyc_profiles.tier and users.kyc_tier), and inserts the audit event —
+// all in a single transaction. A process kill between the three writes leaves
+// no split state: either all three succeed or none is committed.
+func (r *PostgresKYCProfileRepository) ApproveAndSetTier(
+	ctx context.Context,
+	profileID int,
+	adminID int,
+	tier domain.KYCTier,
+	nextReview time.Time,
+	reason string,
+	traceID string,
+	oldStatus domain.KYCStatus,
+) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	return withTx(ctx, r.db, "KYCProfileRepository.ApproveAndSetTier", func(tx pgx.Tx) error {
+		// 1. Update status, tier, and review metadata on kyc_profiles.
+		var userID int
+		err := tx.QueryRow(ctx, `
+			UPDATE kyc_profiles
+			   SET status           = 'approved',
+			       tier             = $2,
+			       next_review_at   = $3,
+			       reviewed_by      = $4,
+			       reviewed_at      = NOW(),
+			       rejection_reason = '',
+			       updated_at       = NOW()
+			 WHERE id = $1
+			 RETURNING user_id
+		`, profileID, int(tier), nextReview, adminID).Scan(&userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperrors.NotFound(errKYCProfileNotFound)
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+
+		// 2. Propagate tier to the denormalised users.kyc_tier column.
+		tag, err := tx.Exec(ctx,
+			`UPDATE users SET kyc_tier = $2, updated_at = NOW() WHERE id = $1`,
+			userID, int(tier),
+		)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		if tag.RowsAffected() == 0 {
+			return apperrors.NotFound("user not found for KYC tier update")
+		}
+
+		// 3. Append the approval event to the immutable audit trail.
+		oldStatusStr := string(oldStatus)
+		_, err = tx.Exec(ctx, `
+			INSERT INTO kyc_events
+			      (profile_id, profile_type, event_type, actor_id, old_status, new_status, reason, metadata, trace_id)
+			VALUES ($1, 'user', 'approved', $2, $3, 'approved', $4, $5::jsonb, $6)
+		`, profileID, adminID, oldStatusStr, reason,
+			`{"source":"ApproveAndSetTier"}`, traceID,
+		)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		return nil
+	})
+}
+
+// FreezeAtomic atomically sets balance_frozen=TRUE on kyc_profiles and inserts
+// a 'frozen' kyc_events audit row within a single transaction, closing the
+// window where a crash between the two writes left the freeze recorded but
+// the compliance trail missing.
+func (r *PostgresKYCProfileRepository) FreezeAtomic(ctx context.Context, userID, amountCents int, reason, traceID string) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	return withTx(ctx, r.db, "KYCProfileRepository.FreezeAtomic", func(tx pgx.Tx) error {
+		var profileID int
+		var status string
+		err := tx.QueryRow(ctx, `
+			UPDATE kyc_profiles
+			   SET balance_frozen      = TRUE,
+			       frozen_amount_cents = $2,
+			       frozen_reason       = $3,
+			       updated_at          = NOW()
+			 WHERE user_id = $1
+			RETURNING id, status
+		`, userID, amountCents, reason).Scan(&profileID, &status)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperrors.NotFound(errKYCProfileNotFound)
+		}
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		metadata := fmt.Sprintf(`{"frozen_amount_cents":%d}`, amountCents)
+		_, err = tx.Exec(ctx, `
+			INSERT INTO kyc_events
+			      (profile_id, profile_type, event_type, old_status, new_status, reason, metadata, trace_id)
+			VALUES ($1, 'user', 'frozen', $2, $2, $3, $4::jsonb, $5)
+		`, profileID, status, reason, metadata, traceID)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+		return nil
+	})
 }
 
 var _ KYCProfileRepository = (*PostgresKYCProfileRepository)(nil)

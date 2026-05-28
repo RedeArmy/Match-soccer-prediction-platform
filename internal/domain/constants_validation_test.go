@@ -486,6 +486,9 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyKYCTier1WithdrawalVelocityCents", ParamKeyKYCTier1WithdrawalVelocityCents, "kyc"},
 		{"ParamKeyKYCTier2WithdrawalVelocityCents", ParamKeyKYCTier2WithdrawalVelocityCents, "kyc"},
 		{"ParamKeyKYCRiskDashboardCacheTTLSec", ParamKeyKYCRiskDashboardCacheTTLSec, "kyc"},
+		// KYC IP-submission velocity (migration 000129)
+		{"ParamKeyKYCIPVelocityWindowMinutes", ParamKeyKYCIPVelocityWindowMinutes, "kyc"},
+		{"ParamKeyKYCIPVelocityMaxSubmissions", ParamKeyKYCIPVelocityMaxSubmissions, "kyc"},
 	}
 
 	for _, tc := range paramKeys {
@@ -628,6 +631,9 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultKYCTier2DepositVelocityCents":    DefaultKYCTier2DepositVelocityCents,
 		"DefaultKYCTier2WithdrawalVelocityCents": DefaultKYCTier2WithdrawalVelocityCents,
 		"DefaultKYCRiskDashboardCacheTTLSecs":    DefaultKYCRiskDashboardCacheTTLSecs,
+		// KYC IP-submission velocity (migration 000129)
+		"DefaultKYCIPVelocityWindowMinutes":  DefaultKYCIPVelocityWindowMinutes,
+		"DefaultKYCIPVelocityMaxSubmissions": DefaultKYCIPVelocityMaxSubmissions,
 	}
 
 	for name, value := range defaults {

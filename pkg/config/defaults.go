@@ -111,6 +111,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("metrics.enabled", false)
 	v.SetDefault("metrics.namespace", "wcq")
 
+	// email secrets default to empty. validation.go enforces non-empty
+	// unsubscribeSecret in non-development environments (CAN-SPAM / GDPR).
+	v.SetDefault("email.resendAPIKey", "")
+	v.SetDefault("email.fromAddress", "")
+	v.SetDefault("email.unsubscribeSecret", "")
+
 	// n8n: admin webhook URL (used by AdminDispatcher for system.* events).
 	// n8n: base URL for ObservabilityNotifier (empty disables operational alerts).
 	// n8n: API key for admin observability proxy endpoints.

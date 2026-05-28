@@ -384,24 +384,16 @@ func (s *kycService) Approve(ctx context.Context, profileID, adminID int, tier d
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
-	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusApproved, adminID, ""); err != nil {
-		return err
-	}
 	intervalDays := s.params.GetInt(ctx, domain.ParamKeyKYCReviewIntervalDays, domain.DefaultKYCReviewIntervalDays)
 	nextReview := time.Now().AddDate(0, 0, intervalDays)
-	if err := s.profileRepo.UpdateTier(ctx, profile.UserID, tier, &nextReview); err != nil {
+	if err := s.profileRepo.ApproveAndSetTier(
+		ctx, profileID, adminID, tier, nextReview, "",
+		traceIDFromCtx(ctx), profile.Status,
+	); err != nil {
 		return err
 	}
-	s.appendEvent(ctx, &domain.KYCEvent{
-		ProfileID:   profileID,
-		ProfileType: domain.KYCProfileTypeUser,
-		EventType:   domain.KYCEventApproved,
-		ActorID:     &adminID,
-		OldStatus:   &profile.Status,
-		NewStatus:   domain.KYCStatusApproved,
-		TraceID:     traceIDFromCtx(ctx),
-		Metadata:    map[string]any{"tier": int(tier)},
-	})
+	// appendEvent is intentionally omitted here: ApproveAndSetTier inserts the
+	// approval audit event inside the same transaction as the status/tier writes.
 	resType := "kyc_profile"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role,
@@ -427,19 +419,11 @@ func (s *kycService) Reject(ctx context.Context, profileID, adminID int, reason 
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
-	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusRejected, adminID, reason); err != nil {
+	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID,
+		profile.Status, domain.KYCStatusRejected,
+		domain.KYCEventRejected, reason, traceIDFromCtx(ctx)); err != nil {
 		return err
 	}
-	s.appendEvent(ctx, &domain.KYCEvent{
-		ProfileID:   profileID,
-		ProfileType: domain.KYCProfileTypeUser,
-		EventType:   domain.KYCEventRejected,
-		ActorID:     &adminID,
-		OldStatus:   &profile.Status,
-		NewStatus:   domain.KYCStatusRejected,
-		Reason:      reason,
-		TraceID:     traceIDFromCtx(ctx),
-	})
 	resType := "kyc_profile"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role,
@@ -462,19 +446,11 @@ func (s *kycService) Escalate(ctx context.Context, profileID, adminID int, reaso
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
-	if err := s.profileRepo.UpdateStatus(ctx, profileID, domain.KYCStatusEscalated, adminID, ""); err != nil {
+	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID,
+		profile.Status, domain.KYCStatusEscalated,
+		domain.KYCEventEscalated, reason, traceIDFromCtx(ctx)); err != nil {
 		return err
 	}
-	s.appendEvent(ctx, &domain.KYCEvent{
-		ProfileID:   profileID,
-		ProfileType: domain.KYCProfileTypeUser,
-		EventType:   domain.KYCEventEscalated,
-		ActorID:     &adminID,
-		OldStatus:   &profile.Status,
-		NewStatus:   domain.KYCStatusEscalated,
-		Reason:      reason,
-		TraceID:     traceIDFromCtx(ctx),
-	})
 	resType := "kyc_profile"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role,
@@ -552,26 +528,10 @@ func (s *kycService) ReleaseFrozenBalance(ctx context.Context, userID, adminID i
 }
 
 func (s *kycService) FreezeBalance(ctx context.Context, userID, prizeCents int, reason string) error {
-	if err := s.profileRepo.SetFrozen(ctx, userID, true, prizeCents, reason); err != nil {
-		return err
-	}
-	profile, err := s.profileRepo.GetByUserID(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if profile != nil {
-		s.appendEvent(ctx, &domain.KYCEvent{
-			ProfileID:   profile.ID,
-			ProfileType: domain.KYCProfileTypeUser,
-			EventType:   domain.KYCEventFrozen,
-			OldStatus:   &profile.Status,
-			NewStatus:   profile.Status,
-			Reason:      reason,
-			TraceID:     traceIDFromCtx(ctx),
-			Metadata:    map[string]any{"frozen_amount_cents": prizeCents},
-		})
-	}
-	return nil
+	// FreezeAtomic commits the balance freeze and the compliance audit event
+	// in a single transaction, closing the window where a crash between the
+	// two writes left the freeze recorded but the audit trail missing.
+	return s.profileRepo.FreezeAtomic(ctx, userID, prizeCents, reason, traceIDFromCtx(ctx))
 }
 
 // checkIPVelocity calls the gate's IP velocity check and, on block, appends a
