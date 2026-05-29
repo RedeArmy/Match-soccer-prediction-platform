@@ -420,8 +420,10 @@ func TestAdminListPaymentsByGroup_Success_Returns200(t *testing.T) {
 }
 
 func TestAdminListPaymentsByGroup_InvalidID_Returns422(t *testing.T) {
+	// groupID=0 exercises the id <= 0 branch; distinct from the non-numeric
+	// case covered by TestAdminListPaymentsByGroup_InvalidGroupID_Returns422.
 	svc := &stubAdminPaymentSvc{}
-	w := do(newAdminPaymentRouter(svc), http.MethodGet, "/groups/abc/payments", "")
+	w := do(newAdminPaymentRouter(svc), http.MethodGet, "/groups/0/payments", "")
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
