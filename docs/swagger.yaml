@@ -90,6 +90,8 @@ definitions:
         type: string
       id:
         type: integer
+      locale:
+        type: string
       name:
         type: string
       role:
@@ -420,6 +422,27 @@ definitions:
       updated_at:
         type: string
       win_method:
+        type: string
+    type: object
+  internal_api_handler.MeResponse:
+    properties:
+      balance_cents:
+        type: integer
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      kyc_tier:
+        type: integer
+      locale:
+        type: string
+      name:
+        type: string
+      reserved_cents:
+        type: integer
+      role:
         type: string
     type: object
   internal_api_handler.MemberResponse:
@@ -1129,6 +1152,11 @@ definitions:
     properties:
       entry_fee:
         type: integer
+    type: object
+  internal_api_handler.updateMeRequest:
+    properties:
+      locale:
+        type: string
     type: object
   internal_api_handler.updatePredictionRequest:
     properties:
@@ -4494,6 +4522,52 @@ paths:
       summary: List my predictions
       tags:
       - predictions
+  /api/v1/users/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.MeResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      summary: Get own user profile
+      tags:
+      - users
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.updateMeRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      summary: Update user profile preferences
+      tags:
+      - users
   /api/v1/users/me/balance:
     get:
       description: Returns the authenticated user's current balance, reserved amount,

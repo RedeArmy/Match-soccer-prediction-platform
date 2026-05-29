@@ -2,7 +2,9 @@ package dispatcher_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -297,4 +299,123 @@ func (r *markInactiveErrorPushRepo) MarkInactive(_ context.Context, _ int64) err
 func (r *markInactiveErrorPushRepo) UpdateLastUsed(_ context.Context, _ int64) error { return nil }
 func (r *markInactiveErrorPushRepo) DeleteInactive(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
+}
+
+// ── Digest push locale tests ──────────────────────────────────────────────────
+
+// bodyCapturePusher records every raw push body it receives.
+type bodyCapturePusher struct {
+	bodies [][]byte
+}
+
+func (p *bodyCapturePusher) Send(_ context.Context, m infrapush.Message) (int, error) {
+	p.bodies = append(p.bodies, m.Body)
+	return http.StatusCreated, nil
+}
+
+// digestPushPayload is a minimal decode target for the push JSON payload.
+type digestPushPayload struct {
+	Type  string `json:"type"`
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+// newDigestLocaleDispatcher builds a dispatcher with a single push subscription
+// for userID=1, a digest gate that triggers on the second P2 push, and a
+// bodyCapturePusher that records every sent payload.
+func newDigestLocaleDispatcher(
+	pusher *bodyCapturePusher,
+	params *stubParamService,
+	localeResolver dispatcher.UserLocaleResolver,
+) *dispatcher.UserDispatcher {
+	pushRepo := &stubPushRepo{subs: []*domain.PushSubscription{
+		{ID: 1, UserID: 1, Endpoint: "https://push.example.com/a", P256dhKey: "k", AuthKey: "a", Active: true},
+	}}
+	gate := notification.NewPushDigestGate(60, 1) // threshold=1: second push → digest
+	cfg := dispatcher.UserDispatcherConfig{
+		NotifRepo:      &stubNotifRepo{inserted: true},
+		PrefRepo:       &stubPrefRepo{pref: allEnabled()},
+		PushRepo:       pushRepo,
+		DLQRepo:        &recordingDLQRepo{},
+		Hub:            hub.New(),
+		Pusher:         pusher,
+		Recorder:       gate,
+		LocaleResolver: localeResolver,
+		Log:            zap.NewNop(),
+	}
+	if params != nil {
+		cfg.Params = params
+	}
+	return dispatcher.NewUserDispatcher(cfg)
+}
+
+func TestDeliverDigestPush_LocaleES_SpanishTitle(t *testing.T) {
+	t.Parallel()
+
+	pusher := &bodyCapturePusher{}
+	resolver := &stubLocaleResolver{locale: domain.LocaleES}
+	d := newDigestLocaleDispatcher(pusher, nil, resolver)
+
+	ctx := context.Background()
+	entry := p2Entry(t, 1)
+	_ = d.Dispatch(ctx, entry) // first: individual push
+	_ = d.Dispatch(ctx, entry) // second: triggers digest
+
+	// Two sends: one individual, one digest.
+	if len(pusher.bodies) < 2 {
+		t.Fatalf("expected ≥2 push bodies; got %d", len(pusher.bodies))
+	}
+
+	var digest digestPushPayload
+	if err := json.Unmarshal(pusher.bodies[len(pusher.bodies)-1], &digest); err != nil {
+		t.Fatalf("unmarshal digest body: %v", err)
+	}
+	if digest.Type != "digest" {
+		t.Fatalf("last push type: got %q; want \"digest\"", digest.Type)
+	}
+	// With threshold=1 the gate counts both the individual and overflow event,
+	// so digestCount=2 on the first overflow.
+	wantTitle := fmt.Sprintf("Tienes %d nuevas notificaciones", 2)
+	if digest.Title != wantTitle {
+		t.Errorf("digest Title: got %q; want %q", digest.Title, wantTitle)
+	}
+	wantBody := "Toca para ver tus últimas actualizaciones."
+	if digest.Body != wantBody {
+		t.Errorf("digest Body: got %q; want %q", digest.Body, wantBody)
+	}
+}
+
+func TestDeliverDigestPush_LocaleEN_EnglishTitle(t *testing.T) {
+	t.Parallel()
+
+	pusher := &bodyCapturePusher{}
+	resolver := &stubLocaleResolver{locale: domain.LocaleEN}
+	d := newDigestLocaleDispatcher(pusher, nil, resolver)
+
+	ctx := context.Background()
+	entry := p2Entry(t, 1)
+	_ = d.Dispatch(ctx, entry) // first: individual push
+	_ = d.Dispatch(ctx, entry) // second: triggers digest
+
+	if len(pusher.bodies) < 2 {
+		t.Fatalf("expected ≥2 push bodies; got %d", len(pusher.bodies))
+	}
+
+	var digest digestPushPayload
+	if err := json.Unmarshal(pusher.bodies[len(pusher.bodies)-1], &digest); err != nil {
+		t.Fatalf("unmarshal digest body: %v", err)
+	}
+	if digest.Type != "digest" {
+		t.Fatalf("last push type: got %q; want \"digest\"", digest.Type)
+	}
+	// With threshold=1 the gate counts both the individual and overflow event,
+	// so digestCount=2 on the first overflow.
+	wantTitle := fmt.Sprintf("You have %d new notifications", 2)
+	if digest.Title != wantTitle {
+		t.Errorf("digest Title: got %q; want %q", digest.Title, wantTitle)
+	}
+	wantBody := "Tap to view your latest updates."
+	if digest.Body != wantBody {
+		t.Errorf("digest Body: got %q; want %q", digest.Body, wantBody)
+	}
 }

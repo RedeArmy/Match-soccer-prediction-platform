@@ -332,6 +332,8 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		r.Route(routeUsers, func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.ResolveUser(repos.user, s.log))
+			r.Get("/me", h.user.GetMe)
+			r.Patch("/me", h.user.UpdateMe)
 			r.Get("/me/stats", h.userStats.GetMyStats)
 			r.Get("/me/balance", h.balance.GetBalance)
 			r.Get("/me/balance/ledger", h.balance.GetLedger)

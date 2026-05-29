@@ -73,6 +73,7 @@ func (r *stubUserRepo) GetStatusCounts(_ context.Context) (repository.UserStatus
 func (r *stubUserRepo) GetBalance(_ context.Context, _ int) (int, int, error) {
 	return 0, 0, r.err
 }
+func (r *stubUserRepo) UpdateLocale(_ context.Context, _ int, _ string) error { return r.err }
 
 const (
 	fmtStatus        = "expected status %d, got %d"

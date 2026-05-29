@@ -1,20 +1,21 @@
 package dispatcher
 
-// Locale identifies the language used for user-facing notification text.
-type Locale string
+import "github.com/rede/world-cup-quiniela/internal/domain"
 
-// Supported locale values for user-facing notification content.
+// Locale is a type alias for domain.Locale so that content builder functions
+// use the canonical type while keeping their signatures unchanged.
+type Locale = domain.Locale
+
+// Re-export the canonical locale constants so existing content builders
+// continue to compile without updating their import list.
 const (
-	LocaleEN Locale = "en"
-	LocaleES Locale = "es"
+	LocaleEN = domain.LocaleEN
+	LocaleES = domain.LocaleES
 )
 
-// localeStr returns es when locale == LocaleES, otherwise en.
-// Both arguments are always evaluated by the caller; use only when the
-// formatting cost of the unused string is negligible (notification path).
+// localeStr is a package-local alias for domain.LocaleStr. Both arguments are
+// always evaluated by the caller; use only when the formatting cost of the
+// unused string is negligible (notification content builder path).
 func localeStr(en, es string, locale Locale) string {
-	if locale == LocaleES {
-		return es
-	}
-	return en
+	return domain.LocaleStr(en, es, locale)
 }
