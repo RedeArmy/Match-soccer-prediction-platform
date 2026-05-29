@@ -35,6 +35,15 @@ const (
 	paypalAuthAlgoHeader         = "PAYPAL-AUTH-ALGO"
 	paypalTransmissionSigHeader  = "PAYPAL-TRANSMISSION-SIG"
 	paypalCertBodyLimit          = 16 << 10 // 16 KB — generous for a PEM certificate
+
+	// paypalTimestampTolerance is the maximum age (or future skew) allowed for
+	// the PAYPAL-TRANSMISSION-TIME header. Requests outside this window are
+	// rejected to prevent replay attacks. PayPal retries webhook deliveries for
+	// up to 3 days, so this tolerance must be generous enough to absorb normal
+	// delivery latency while tight enough to prevent indefinite replays.
+	// 5 minutes matches the industry-standard webhook timestamp tolerance used
+	// by Stripe, GitHub, and Svix.
+	paypalTimestampTolerance = 5 * time.Minute
 )
 
 // CertFetcher retrieves a parsed X.509 certificate from the given URL.
@@ -171,6 +180,17 @@ func checkPayPalWebhook(ctx context.Context, webhookID string, fetcher CertFetch
 		return apperrors.Unauthorised("missing PayPal signature headers")
 	}
 
+	// Validate timestamp freshness to prevent replay attacks.
+	// PayPal uses ISO 8601 / RFC 3339 format for PAYPAL-TRANSMISSION-TIME.
+	if err := validatePayPalTimestamp(transmissionTime, time.Now()); err != nil {
+		log.Warn("paypal webhook: timestamp out of tolerance",
+			zap.String("request_id", GetRequestID(ctx)),
+			zap.String("transmission_time", transmissionTime),
+			zap.Error(err),
+		)
+		return apperrors.Unauthorised("webhook timestamp out of tolerance")
+	}
+
 	// Guard against SSRF: only accept cert URLs from paypal.com.
 	if err := validatePayPalCertURL(certURL); err != nil {
 		log.Warn("paypal webhook: rejected cert URL",
@@ -211,6 +231,26 @@ func checkPayPalWebhook(ctx context.Context, webhookID string, fetcher CertFetch
 			zap.Error(err),
 		)
 		return apperrors.Unauthorised("invalid webhook signature")
+	}
+	return nil
+}
+
+// validatePayPalTimestamp parses the PAYPAL-TRANSMISSION-TIME header value
+// and returns an error when the timestamp is older than paypalTimestampTolerance
+// or is more than paypalTimestampTolerance in the future.
+//
+// now is passed as a parameter so tests can fix the clock without sleeping.
+func validatePayPalTimestamp(transmissionTime string, now time.Time) error {
+	t, err := time.Parse(time.RFC3339, transmissionTime)
+	if err != nil {
+		return fmt.Errorf("parse PAYPAL-TRANSMISSION-TIME: %w", err)
+	}
+	age := now.Sub(t)
+	if age > paypalTimestampTolerance {
+		return fmt.Errorf("webhook is too old: age=%v tolerance=%v", age, paypalTimestampTolerance)
+	}
+	if age < -paypalTimestampTolerance {
+		return fmt.Errorf("webhook timestamp is too far in the future: skew=%v tolerance=%v", -age, paypalTimestampTolerance)
 	}
 	return nil
 }

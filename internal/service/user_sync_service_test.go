@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -57,8 +59,77 @@ func (r *clerkSyncRepo) GetStatusCounts(_ context.Context) (repository.UserStatu
 }
 func (r *clerkSyncRepo) GetBalance(_ context.Context, _ int) (int, int, error) { return 0, 0, nil }
 
+// kycProfileStubForSync is a minimal KYCProfileRepository stub that only
+// implements the methods exercised by ClerkUserSyncService (EnsureStub).
+// All other methods return zero values so the stub satisfies the interface.
+type kycProfileStubForSync struct {
+	ensureStubErr    error
+	ensureStubCalled bool
+}
+
+func (s *kycProfileStubForSync) EnsureStub(_ context.Context, _ int) error {
+	s.ensureStubCalled = true
+	return s.ensureStubErr
+}
+
+// Remaining KYCProfileRepository methods — no-ops for this stub.
+func (s *kycProfileStubForSync) Upsert(_ context.Context, _ *domain.KYCProfile) error { return nil }
+func (s *kycProfileStubForSync) GetByUserID(_ context.Context, _ int) (*domain.KYCProfile, error) {
+	return nil, nil
+}
+func (s *kycProfileStubForSync) GetByID(_ context.Context, _ int) (*domain.KYCProfile, error) {
+	return nil, nil
+}
+func (s *kycProfileStubForSync) UpdateStatus(_ context.Context, _ int, _ domain.KYCStatus, _ int, _ string) error {
+	return nil
+}
+func (s *kycProfileStubForSync) UpdateStatusWithEvent(_ context.Context, _, _ int, _ repository.KYCStatusEvent) error {
+	return nil
+}
+func (s *kycProfileStubForSync) UpdateTier(_ context.Context, _ int, _ domain.KYCTier, _ *time.Time) error {
+	return nil
+}
+func (s *kycProfileStubForSync) SetFrozen(_ context.Context, _ int, _ bool, _ int, _ string) error {
+	return nil
+}
+func (s *kycProfileStubForSync) FreezeAtomic(_ context.Context, _, _ int, _, _ string) error {
+	return nil
+}
+func (s *kycProfileStubForSync) FreezeAtomicWithTxHook(_ context.Context, _, _ int, _, _ string, _ func(context.Context, pgx.Tx) error) error {
+	return nil
+}
+func (s *kycProfileStubForSync) ListPending(_ context.Context, _ repository.KYCProfileFilters, _ repository.Pagination) ([]*domain.KYCProfile, error) {
+	return nil, nil
+}
+func (s *kycProfileStubForSync) ListFrozen(_ context.Context) ([]*domain.FrozenBalanceSummary, error) {
+	return nil, nil
+}
+func (s *kycProfileStubForSync) ListDueForReview(_ context.Context, _ time.Time) ([]*domain.KYCProfile, error) {
+	return nil, nil
+}
+func (s *kycProfileStubForSync) CountReviewQueue(_ context.Context) (int64, error) { return 0, nil }
+func (s *kycProfileStubForSync) SumFrozenAmountCents(_ context.Context) (int64, error) {
+	return 0, nil
+}
+func (s *kycProfileStubForSync) RiskDashboardStats(_ context.Context) (*domain.KYCRiskDashboardStats, error) {
+	return nil, nil
+}
+func (s *kycProfileStubForSync) ExistsByDocumentIdentity(_ context.Context, _ domain.KYCDocumentType, _ string, _ *time.Time, _ int) (bool, error) {
+	return false, nil
+}
+func (s *kycProfileStubForSync) UpdateRiskScore(_ context.Context, _ int, _ int) error { return nil }
+func (s *kycProfileStubForSync) CountRecentSubmissionsByIP(_ context.Context, _ string, _ time.Time) (int64, error) {
+	return 0, nil
+}
+func (s *kycProfileStubForSync) ReleaseAndCreditFrozen(_ context.Context, _ int, _ int64, _ string) (int, error) {
+	return 0, nil
+}
+func (s *kycProfileStubForSync) ApproveAndSetTier(_ context.Context, _, _ int, _ repository.KYCApprovalParams) error {
+	return nil
+}
+
 func newClerkSyncer(repo *clerkSyncRepo) ClerkUserSyncer {
-	return NewClerkUserSyncService(repo, zap.NewNop())
+	return NewClerkUserSyncService(repo, &kycProfileStubForSync{}, zap.NewNop())
 }
 
 // ── Upsert - happy paths ──────────────────────────────────────────────────────
@@ -271,5 +342,57 @@ func TestClerkUserSyncer_SoftDelete_DeleteError_Propagates(t *testing.T) {
 
 	if err := svc.SoftDelete(context.Background(), "user_x"); err == nil {
 		t.Fatal("expected error from Delete, got nil")
+	}
+}
+
+// ── KYC profile stub creation ─────────────────────────────────────────────────
+
+// TestClerkUserSyncer_Upsert_NewUser_CreatesKYCProfileStub verifies that
+// EnsureStub is called after a new user is created, so that every user is
+// guaranteed to have a kyc_profiles row for prize distribution.
+func TestClerkUserSyncer_Upsert_NewUser_CreatesKYCProfileStub(t *testing.T) {
+	repo := &clerkSyncRepo{}
+	kycRepo := &kycProfileStubForSync{}
+	svc := NewClerkUserSyncService(repo, kycRepo, zap.NewNop())
+	emails := []ClerkEmail{{ID: "em_1", Address: "stub@example.com"}}
+
+	if err := svc.Upsert(context.Background(), "user_stub", "Stub", "User", "em_1", emails); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !kycRepo.ensureStubCalled {
+		t.Error("expected EnsureStub to be called for new user; it was not")
+	}
+}
+
+// TestClerkUserSyncer_Upsert_ExistingUser_DoesNotCreateKYCProfileStub verifies
+// that EnsureStub is NOT called for an update (existing user), because the stub
+// was already created at their original registration.
+func TestClerkUserSyncer_Upsert_ExistingUser_DoesNotCreateKYCProfileStub(t *testing.T) {
+	existing := &domain.User{ID: 11, ClerkSubject: "user_existing"}
+	repo := &clerkSyncRepo{existingUser: existing}
+	kycRepo := &kycProfileStubForSync{}
+	svc := NewClerkUserSyncService(repo, kycRepo, zap.NewNop())
+	emails := []ClerkEmail{{ID: "em_1", Address: "existing@example.com"}}
+
+	if err := svc.Upsert(context.Background(), "user_existing", "Existing", "User", "em_1", emails); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if kycRepo.ensureStubCalled {
+		t.Error("EnsureStub should not be called for an existing user update")
+	}
+}
+
+// TestClerkUserSyncer_Upsert_EnsureStubError_IsLogged verifies that a transient
+// EnsureStub error does not surface as a Upsert error — the user row is already
+// committed and the backfill migration covers recovery.
+func TestClerkUserSyncer_Upsert_EnsureStubError_IsLogged(t *testing.T) {
+	repo := &clerkSyncRepo{}
+	kycRepo := &kycProfileStubForSync{ensureStubErr: errors.New("db timeout")}
+	svc := NewClerkUserSyncService(repo, kycRepo, zap.NewNop())
+	emails := []ClerkEmail{{ID: "em_1", Address: "erruser@example.com"}}
+
+	// Must succeed even when EnsureStub fails — user creation committed.
+	if err := svc.Upsert(context.Background(), "user_err", "Err", "User", "em_1", emails); err != nil {
+		t.Fatalf("EnsureStub failure should not surface as Upsert error; got: %v", err)
 	}
 }

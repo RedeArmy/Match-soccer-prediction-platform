@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/rede/world-cup-quiniela/internal/middleware"
@@ -44,7 +46,7 @@ func idempotencyChain(store idempotency.Store, subject string, h http.Handler, l
 func idempotencyRun(t *testing.T, store idempotency.Store, subject, idemKey string, h http.Handler) *httptest.ResponseRecorder {
 	t.Helper()
 	log := zaptest.NewLogger(t)
-	idem := middleware.Idempotency(store, log, 24*time.Hour, 255)
+	idem := middleware.Idempotency(store, nil, log, 24*time.Hour, 255)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/pay", bytes.NewReader([]byte(`{}`)))
 	if idemKey != "" {
@@ -108,7 +110,7 @@ func TestIdempotency_SecondRequest_ReplaysCachedResponse(t *testing.T) {
 
 	store := idempotency.NewMemoryStore()
 	log := zaptest.NewLogger(t)
-	idem := middleware.Idempotency(store, log, 24*time.Hour, 255)
+	idem := middleware.Idempotency(store, nil, log, 24*time.Hour, 255)
 
 	run := func() *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -154,7 +156,7 @@ func TestIdempotency_ErrorResponse_ReleasesReservation(t *testing.T) {
 
 	store := idempotency.NewMemoryStore()
 	log := zaptest.NewLogger(t)
-	idem := middleware.Idempotency(store, log, 24*time.Hour, 255)
+	idem := middleware.Idempotency(store, nil, log, 24*time.Hour, 255)
 
 	call := func() *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -200,7 +202,7 @@ func TestIdempotency_DifferentUsers_DoNotShareKey(t *testing.T) {
 
 	store := idempotency.NewMemoryStore()
 	log := zaptest.NewLogger(t)
-	idem := middleware.Idempotency(store, log, 24*time.Hour, 255)
+	idem := middleware.Idempotency(store, nil, log, 24*time.Hour, 255)
 
 	callAs := func(subject string) int {
 		rec := httptest.NewRecorder()
@@ -444,4 +446,126 @@ func TestIdempotency_ConcurrentInFlight_Returns409(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Errorf("in-flight duplicate: expected 409, got %d", rec.Code)
 	}
+}
+
+// ── degradation counter (wcq_idempotency_degraded_total) ─────────────────────
+
+// idempotencyRunWithMeter is like idempotencyRun but accepts a real OTel meter
+// so that counter increments can be observed in tests.
+func idempotencyRunWithMeter(t *testing.T, store idempotency.Store, subject, idemKey string, h http.Handler, meter sdkmetric.Reader) *httptest.ResponseRecorder {
+	t.Helper()
+	log := zaptest.NewLogger(t)
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(meter))
+	idem := middleware.Idempotency(store, mp.Meter("test"), log, 24*time.Hour, 255)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/pay", bytes.NewReader([]byte(`{}`)))
+	if idemKey != "" {
+		req.Header.Set("Idempotency-Key", idemKey)
+	}
+	ctx := middleware.ContextWithUserID(req.Context(), subject)
+	idem(h).ServeHTTP(rec, req.WithContext(ctx))
+	return rec
+}
+
+// collectSumInt64 reads the cumulative value of an Int64 Sum (counter) metric
+// from rm. Returns 0 when the metric is absent.
+func collectSumInt64(rm metricdata.ResourceMetrics, name string) int64 {
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != name {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				return 0
+			}
+			var total int64
+			for _, dp := range sum.DataPoints {
+				total += dp.Value
+			}
+			return total
+		}
+	}
+	return 0
+}
+
+// TestIdempotency_StoreLoadError_IncrementsDegradedCounter verifies that a
+// Redis load failure increments wcq_idempotency_degraded_total and passes
+// the request through.
+func TestIdempotency_StoreLoadError_IncrementsDegradedCounter(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	rec := idempotencyRunWithMeter(t, failStore{}, "u1", "key-load-fail", h, reader)
+
+	// Request passes through despite the store error.
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected 201 pass-through, got %d", rec.Code)
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if n := collectSumInt64(rm, "wcq_idempotency_degraded_total"); n != 1 {
+		t.Errorf("expected wcq_idempotency_degraded_total=1, got %d", n)
+	}
+}
+
+// TestIdempotency_StoreReserveError_IncrementsDegradedCounter verifies that a
+// reserve failure (after a successful Load that found nothing) also increments
+// the degradation counter.
+func TestIdempotency_StoreReserveError_IncrementsDegradedCounter(t *testing.T) {
+	// loadThenFailStore returns not-found on Load (so we proceed to Reserve)
+	// and then fails on Reserve.
+	store := &loadOKReserveFailStore{}
+	reader := sdkmetric.NewManualReader()
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	rec := idempotencyRunWithMeter(t, store, "u1", "key-reserve-fail", h, reader)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected 201 pass-through, got %d", rec.Code)
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if n := collectSumInt64(rm, "wcq_idempotency_degraded_total"); n != 1 {
+		t.Errorf("expected wcq_idempotency_degraded_total=1, got %d", n)
+	}
+}
+
+// TestIdempotency_NilMeter_NoPanic verifies that passing a nil meter does not
+// panic even when degradation occurs, preserving backward compatibility.
+func TestIdempotency_NilMeter_NoPanic(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	// nil meter + failStore: must not panic
+	rec := idempotencyRun(t, failStore{}, "u1", "nil-meter-key", h)
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected 201 pass-through, got %d", rec.Code)
+	}
+}
+
+// loadOKReserveFailStore succeeds on Load (key not found) but fails on Reserve.
+type loadOKReserveFailStore struct{}
+
+func (loadOKReserveFailStore) Load(_ context.Context, _ string) (idempotency.Entry, bool, error) {
+	return idempotency.Entry{}, false, nil // not found, no error
+}
+func (loadOKReserveFailStore) Reserve(_ context.Context, _ string, _ time.Duration) (bool, error) {
+	return false, errors.New("reserve unavailable")
+}
+func (loadOKReserveFailStore) Commit(_ context.Context, _ string, _ idempotency.Entry, _ time.Duration) error {
+	return nil
+}
+func (loadOKReserveFailStore) Release(_ context.Context, _ string) error {
+	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -17,6 +18,10 @@ const idempotencyHeader = "Idempotency-Key"
 
 // Idempotency returns middleware that deduplicates write requests using the
 // client-supplied Idempotency-Key header.
+//
+// meter is used to record degradation events when the backing store is
+// unavailable. Pass otel.GetMeterProvider().Meter("wcq") in production; a
+// noop Meter in tests (the counter initialisation is a no-op on error).
 //
 // ttl is how long a committed response is retained; keyMaxLen is the maximum
 // accepted Idempotency-Key byte length (requests exceeding it get 422).
@@ -36,10 +41,18 @@ const idempotencyHeader = "Idempotency-Key"
 // Only 2xx responses are committed to the store. Handlers returning 4xx or 5xx
 // release the reservation; the client may retry with the same key once the
 // underlying problem is resolved.
-func Idempotency(store idempotency.Store, log *zap.Logger, ttl time.Duration, keyMaxLen int) func(http.Handler) http.Handler {
+func Idempotency(store idempotency.Store, meter metric.Meter, log *zap.Logger, ttl time.Duration, keyMaxLen int) func(http.Handler) http.Handler {
+	var degradedTotal metric.Int64Counter
+	if meter != nil {
+		degradedTotal, _ = meter.Int64Counter(
+			"wcq_idempotency_degraded_total",
+			metric.WithDescription("Number of requests for which idempotency enforcement was skipped because the Redis store was unavailable. "+
+				"Non-zero on POST /withdrawals or /bank-transfers indicates duplicate-execution risk on multi-replica deployments."),
+		)
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			serveIdempotent(w, r, next, store, log, ttl, keyMaxLen)
+			serveIdempotent(w, r, next, store, log, ttl, keyMaxLen, degradedTotal)
 		})
 	}
 }
@@ -49,6 +62,7 @@ func Idempotency(store idempotency.Store, log *zap.Logger, ttl time.Duration, ke
 // complexity budget.
 func serveIdempotent(w http.ResponseWriter, r *http.Request, next http.Handler,
 	store idempotency.Store, log *zap.Logger, ttl time.Duration, keyMaxLen int,
+	degradedTotal metric.Int64Counter,
 ) {
 	clientKey := r.Header.Get(idempotencyHeader)
 	if clientKey == "" {
@@ -74,6 +88,9 @@ func serveIdempotent(w http.ResponseWriter, r *http.Request, next http.Handler,
 			zap.String("request_id", GetRequestID(r.Context())),
 			zap.Error(err),
 		)
+		if degradedTotal != nil {
+			degradedTotal.Add(r.Context(), 1)
+		}
 		next.ServeHTTP(w, r)
 		return
 	}
@@ -90,6 +107,9 @@ func serveIdempotent(w http.ResponseWriter, r *http.Request, next http.Handler,
 			zap.String("request_id", GetRequestID(r.Context())),
 			zap.Error(err),
 		)
+		if degradedTotal != nil {
+			degradedTotal.Add(r.Context(), 1)
+		}
 		next.ServeHTTP(w, r)
 		return
 	}

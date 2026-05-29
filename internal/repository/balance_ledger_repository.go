@@ -126,6 +126,11 @@ func (r *PostgresBalanceLedgerRepository) ReleaseReservation(ctx context.Context
 }
 
 // CommitReservation permanently deducts both balance_cents and reserved_cents.
+// The WHERE clause guards both balance_cents >= amount AND reserved_cents >= amount.
+// The balance guard is defense-in-depth: the DB-level CHECK (balance_cents >= 0)
+// on the users table would also prevent a negative balance, but the explicit
+// WHERE condition produces a domain-friendly "insufficient" error rather than an
+// opaque constraint violation, and makes the invariant visible at the query site.
 func (r *PostgresBalanceLedgerRepository) CommitReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
@@ -139,6 +144,7 @@ func (r *PostgresBalanceLedgerRepository) CommitReservation(ctx context.Context,
 			 WHERE id = $1
 			   AND deleted_at IS NULL
 			   AND reserved_cents >= $2
+			   AND balance_cents  >= $2
 			 RETURNING balance_cents
 		`, userID, amountCents).Scan(&balanceAfter)
 		if errors.Is(err, pgx.ErrNoRows) {

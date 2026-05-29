@@ -39,5 +39,6 @@ const (
 	AuditActionWithdrawalRequested  = "withdrawal.requested"
 	AuditActionWithdrawalApproved   = "withdrawal.approved"
 	AuditActionWithdrawalRejected   = "withdrawal.rejected"
+	AuditActionWithdrawalProcessed  = "withdrawal.processed"
 	AuditActionWebhookPaymentCredit = "webhook.payment_credited"
 )

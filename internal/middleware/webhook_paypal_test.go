@@ -122,11 +122,15 @@ const (
 )
 
 const (
-	testPayPalCertURL          = "https://api.paypal.com/v1/notifications/certs/test-cert"
-	testPayPalTransmissionID   = "tx-abc-123"
-	testPayPalTransmissionTime = "2026-05-12T10:00:00Z"
-	testPayPalBody             = `{"event_type":"PAYMENT.CAPTURE.COMPLETED","resource":{"id":"CAP1"}}`
+	testPayPalCertURL        = "https://api.paypal.com/v1/notifications/certs/test-cert"
+	testPayPalTransmissionID = "tx-abc-123"
+	testPayPalBody           = `{"event_type":"PAYMENT.CAPTURE.COMPLETED","resource":{"id":"CAP1"}}`
 )
+
+// testPayPalTransmissionTime is generated at package init to ensure it is
+// always within the 5-minute PAYPAL-TRANSMISSION-TIME tolerance window.
+// A fixed timestamp would become stale and cause all signature tests to fail.
+var testPayPalTransmissionTime = time.Now().UTC().Format(time.RFC3339)
 
 func applyPayPalMiddleware(t *testing.T, webhookID string, fetcher middleware.CertFetcher, downstream http.Handler) http.Handler {
 	t.Helper()

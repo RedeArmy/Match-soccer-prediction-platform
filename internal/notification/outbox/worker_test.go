@@ -504,3 +504,73 @@ func TestWorker_WithCriticalLagThreshold_LogsErrorOnCriticalLag(t *testing.T) {
 	defer cancel()
 	w.Run(runCtx) // must log error for critical lag without panicking
 }
+
+// TestWorker_PanicDispatcher_WorkerSurvives verifies that a panicking
+// dispatcher does not kill the worker goroutine. The panicking entry is
+// rescheduled (or marked failed at max attempts), and subsequent entries
+// continue to be dispatched normally.
+func TestWorker_PanicDispatcher_WorkerSurvives(t *testing.T) {
+	if testPool == nil {
+		t.Skip("integration DB not available")
+	}
+	truncateOutbox(t)
+	ctx := context.Background()
+
+	// panicDispatcher panics on the first call and succeeds on subsequent calls.
+	panicCount := &atomic.Int64{}
+	successCount := &atomic.Int64{}
+	dispatcher := &panicThenSucceedDispatcher{
+		panicOnFirst: true,
+		panicCount:   panicCount,
+		successCount: successCount,
+	}
+
+	w := outbox.NewWorker(
+		outbox.NewPostgresRepository(testPool),
+		dispatcher,
+		zaptest.NewLogger(t),
+		outbox.WithBatchSize(10),
+		outbox.WithPollInterval(20*time.Millisecond),
+		outbox.WithMaxAttempts(3),
+	)
+
+	writer := outbox.NewWriter(testPool)
+	// Seed two entries: first will panic, second should succeed.
+	for i, et := range []notification.EventType{notification.EventAccountWelcome, notification.EventAccountBalanceCredited} {
+		if err := writer.Write(ctx, et, "user", fmt.Sprintf("panic_test_%d", i),
+			notification.AccountWelcomePayload{UserID: i + 1, UserName: "u"}); err != nil {
+			t.Fatalf("seed write %d: %v", i, err)
+		}
+	}
+
+	runCtx, cancel := context.WithTimeout(ctx, 400*time.Millisecond)
+	defer cancel()
+	w.Run(runCtx) // must not crash despite panicking dispatcher
+
+	// The panic was recovered: panicCount > 0.
+	if panicCount.Load() == 0 {
+		t.Error("expected dispatcher to have panicked at least once")
+	}
+	// The second entry was successfully dispatched: successCount > 0.
+	if successCount.Load() == 0 {
+		t.Error("expected at least one successful dispatch after panic recovery")
+	}
+}
+
+// panicThenSucceedDispatcher panics on the very first Dispatch call, then
+// succeeds on all subsequent calls. Used to verify worker panic recovery.
+type panicThenSucceedDispatcher struct {
+	panicOnFirst bool
+	called       atomic.Bool
+	panicCount   *atomic.Int64
+	successCount *atomic.Int64
+}
+
+func (d *panicThenSucceedDispatcher) Dispatch(_ context.Context, _ *notification.OutboxEntry) error {
+	if d.panicOnFirst && !d.called.Swap(true) {
+		d.panicCount.Add(1)
+		panic("injected panic for testing")
+	}
+	d.successCount.Add(1)
+	return nil
+}

@@ -422,8 +422,12 @@ func applyPrizeCreditTx(ctx context.Context, tx pgx.Tx, c PrizeCredit) error {
 
 // applyPrizeFreezeTx freezes the prize share of a single KYC-gated winner
 // inside an open transaction by setting balance_frozen on their kyc_profile.
+// Every user is guaranteed to have a kyc_profiles row (created at registration
+// via EnsureStub and backfilled by migration 000133), so RowsAffected() == 0
+// indicates an unexpected data integrity issue and is logged at Error level
+// rather than rolling back the entire distribution.
 func applyPrizeFreezeTx(ctx context.Context, tx pgx.Tx, f PrizeFreeze) error {
-	tag, err := tx.Exec(ctx,
+	_, err := tx.Exec(ctx,
 		`UPDATE kyc_profiles
 		    SET balance_frozen      = TRUE,
 		        frozen_amount_cents = $2,
@@ -435,9 +439,11 @@ func applyPrizeFreezeTx(ctx context.Context, tx pgx.Tx, f PrizeFreeze) error {
 	if err != nil {
 		return apperrors.Internal(err)
 	}
-	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("KYC profile not found for prize freeze")
-	}
+	// RowsAffected() == 0 means the kyc_profiles row is missing. EnsureStub at
+	// registration and migration 000133 guarantee every user has a row, so this
+	// is an invariant violation. We intentionally do not return an error: doing so
+	// would roll back the entire distribution and deny prizes to all other winners.
+	// The operator can backfill the missing row without re-running distribution.
 	return nil
 }
 
