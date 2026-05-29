@@ -10,7 +10,6 @@
 // @version         1.0
 // @description     REST API for the World Cup prediction game. Manage fixtures, submit score forecasts, and track leaderboards.
 //
-// @host            localhost:8080
 // @BasePath        /
 //
 // @securityDefinitions.apikey  BearerAuth
@@ -178,7 +177,10 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	app.SetMetricsHandler(metricsHandler)
 
 	// Wire the observability notifier. Disabled when WCQ_N8N_BASEURL is empty.
-	app.SetNotifier(setupObservabilityNotifier(cfg, log))
+	// The notifier is retained locally so Close() can be called during shutdown
+	// to wait for any in-flight n8n webhook goroutines to complete.
+	notifier := setupObservabilityNotifier(cfg, log)
+	app.SetNotifier(notifier)
 
 	// setupCtx is context.WithoutCancel(ctx): OTel trace values are propagated
 	// to startup DB reads while SIGTERM cannot abort them.
@@ -225,6 +227,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		log.Sugar().Errorf("graceful shutdown failed: %v", err)
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
+
+	// Drain in-flight observability webhook goroutines. Each goroutine has a
+	// fixed 5 s HTTP timeout so this completes quickly. Runs before DrainAudit
+	// so that any alerts fired during the last requests are not lost on restart.
+	log.Sugar().Info("draining observability notifier...")
+	notifier.Close()
 
 	// Drain in-flight audit writes before closing the database pool. This
 	// prevents losing audit entries that were queued during request processing

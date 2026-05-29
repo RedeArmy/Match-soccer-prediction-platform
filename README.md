@@ -32,5 +32,11 @@ the GitHub Container Registry (`ghcr.io`).
 ```bash
 cp .env.example .env
 make docker-up
+make migrate
+make hooks   # install git hooks (auto-regenerates Swagger docs on commit)
 make run
 ```
+
+> **Note:** `make hooks` must be run once after cloning. It installs the pre-commit hook
+> that auto-regenerates `docs/` when handler annotations change, so the CI Swagger
+> staleness check never blocks your PR.

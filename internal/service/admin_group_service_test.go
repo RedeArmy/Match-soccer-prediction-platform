@@ -477,3 +477,137 @@ func TestAdminGroupService_DistributePrizes_MixedTiers_CorrectClassification(t *
 		t.Errorf("expected 1 freeze (ID 2), got %v", gotFreezes)
 	}
 }
+
+// ── Prize pool rounding ───────────────────────────────────────────────────────
+
+// TestAdminGroupService_DistributePrizes_ExactDivision_NoRemainderLost verifies
+// that when the pool divides evenly every winner receives the same amount and
+// the sum equals the pool exactly.
+func TestAdminGroupService_DistributePrizes_ExactDivision_NoRemainderLost(t *testing.T) {
+	// Pool = Q100 (10 000 cents), 2 winners → 5 000 cents each, remainder 0.
+	var gotAmounts []int
+	qr := &captureDistributeRepo{
+		quiniela: &domain.Quiniela{ID: 5, EntryFee: 5_000},
+		onDistribute: func(credits []repository.PrizeCredit, _ []repository.PrizeFreeze) {
+			for _, c := range credits {
+				gotAmounts = append(gotAmounts, c.AmountCents)
+			}
+		},
+	}
+	ranker := &noopRanker{result: &LeaderboardResult{
+		Entries: []*domain.LeaderboardEntry{
+			{User: &domain.User{ID: 1, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+			{User: &domain.User{ID: 2, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+		},
+		ActivePaidMembers: 2,
+		WinnerCount:       2,
+		EligibleForPrizes: true,
+	}}
+	svc := NewAdminGroupService(qr, &stubMemberRepo{}, &noopSnapshotter{}, ranker, &noopAuditLogger{}, zap.NewNop())
+	svc.(*adminGroupService).SetPrizeCrediter(&stubPrizeCrediter{credited: true})
+	if err := svc.DistributePrizes(context.Background(), 5, 99); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gotAmounts) != 2 {
+		t.Fatalf("expected 2 credit records, got %d", len(gotAmounts))
+	}
+	if gotAmounts[0] != 5_000 || gotAmounts[1] != 5_000 {
+		t.Errorf("amounts: got %v; want [5000 5000]", gotAmounts)
+	}
+}
+
+// TestAdminGroupService_DistributePrizes_RemainderCreditedToFirstWinner verifies
+// that integer division surplus goes to the first ranked winner so the full
+// pool is distributed without silent loss.
+func TestAdminGroupService_DistributePrizes_RemainderCreditedToFirstWinner(t *testing.T) {
+	// Pool = Q100 (10 000 cents), 3 winners → 3 333 cents each with 1 cent
+	// remainder. First winner should receive 3 334; others 3 333.
+	// EntryFee=10 000, ActivePaidMembers=1 → pool=10 000, winners=3.
+	var gotAmounts []int
+	qr := &captureDistributeRepo{
+		quiniela: &domain.Quiniela{ID: 6, EntryFee: 10_000},
+		onDistribute: func(credits []repository.PrizeCredit, _ []repository.PrizeFreeze) {
+			for _, c := range credits {
+				gotAmounts = append(gotAmounts, c.AmountCents)
+			}
+		},
+	}
+	ranker := &noopRanker{result: &LeaderboardResult{
+		Entries: []*domain.LeaderboardEntry{
+			{User: &domain.User{ID: 1, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+			{User: &domain.User{ID: 2, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+			{User: &domain.User{ID: 3, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+		},
+		ActivePaidMembers: 1, // pool = 10 000 * 1 = 10 000
+		WinnerCount:       3,
+		EligibleForPrizes: true,
+	}}
+	svc := NewAdminGroupService(qr, &stubMemberRepo{}, &noopSnapshotter{}, ranker, &noopAuditLogger{}, zap.NewNop())
+	svc.(*adminGroupService).SetPrizeCrediter(&stubPrizeCrediter{credited: true})
+	if err := svc.DistributePrizes(context.Background(), 6, 99); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gotAmounts) != 3 {
+		t.Fatalf("expected 3 credit records, got %d", len(gotAmounts))
+	}
+	total := 0
+	for _, a := range gotAmounts {
+		total += a
+	}
+	if total != 10_000 {
+		t.Errorf("total credited %d cents; want 10 000 — remainder was lost", total)
+	}
+	// First winner receives the remainder.
+	if gotAmounts[0] != 3_334 {
+		t.Errorf("first winner: got %d; want 3 334 (3 333 + 1 remainder)", gotAmounts[0])
+	}
+	if gotAmounts[1] != 3_333 || gotAmounts[2] != 3_333 {
+		t.Errorf("other winners: got %v; want [3333 3333]", gotAmounts[1:])
+	}
+}
+
+// TestAdminGroupService_DistributePrizes_RemainderWithKYCFreeze verifies that
+// remainder is correctly applied when the first winner is a KYC-freeze user —
+// their freeze amount must include the remainder, not just prizePerWinner.
+func TestAdminGroupService_DistributePrizes_RemainderWithKYCFreeze(t *testing.T) {
+	// Pool = 10 000, 3 winners → prizePerWinner=3 333, remainder=1.
+	// First winner is Tier0 → freeze path. Freeze amount must be 3 334.
+	var gotFreezeAmounts []int
+	var gotCreditAmounts []int
+	qr := &captureDistributeRepo{
+		quiniela: &domain.Quiniela{ID: 7, EntryFee: 10_000},
+		onDistribute: func(credits []repository.PrizeCredit, freezes []repository.PrizeFreeze) {
+			for _, c := range credits {
+				gotCreditAmounts = append(gotCreditAmounts, c.AmountCents)
+			}
+			for _, f := range freezes {
+				gotFreezeAmounts = append(gotFreezeAmounts, f.AmountCents)
+			}
+		},
+	}
+	ranker := &noopRanker{result: &LeaderboardResult{
+		Entries: []*domain.LeaderboardEntry{
+			{User: &domain.User{ID: 1, KYCTier: domain.KYCTierUnverified}, PrizeWinner: true}, // gets remainder
+			{User: &domain.User{ID: 2, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+			{User: &domain.User{ID: 3, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+		},
+		ActivePaidMembers: 1,
+		WinnerCount:       3,
+		EligibleForPrizes: true,
+	}}
+	svc := NewAdminGroupService(qr, &stubMemberRepo{}, &noopSnapshotter{}, ranker, &noopAuditLogger{}, zap.NewNop())
+	svc.(*adminGroupService).SetPrizeCrediter(&stubPrizeCrediter{credited: false})
+	if err := svc.DistributePrizes(context.Background(), 7, 99); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gotFreezeAmounts) != 1 || gotFreezeAmounts[0] != 3_334 {
+		t.Errorf("freeze amount: got %v; want [3334]", gotFreezeAmounts)
+	}
+	if len(gotCreditAmounts) != 2 {
+		t.Fatalf("expected 2 direct credits, got %d", len(gotCreditAmounts))
+	}
+	total := gotFreezeAmounts[0] + gotCreditAmounts[0] + gotCreditAmounts[1]
+	if total != 10_000 {
+		t.Errorf("total distributed %d cents; want 10 000", total)
+	}
+}
