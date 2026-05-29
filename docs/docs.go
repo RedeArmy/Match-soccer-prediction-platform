@@ -5155,6 +5155,77 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/users/me": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get own user profile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.MeResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Update user profile preferences",
+                "parameters": [
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.updateMeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/users/me/balance": {
             "get": {
                 "security": [
@@ -5687,6 +5758,9 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "locale": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -6178,6 +6252,38 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "win_method": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.MeResponse": {
+            "type": "object",
+            "properties": {
+                "balance_cents": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kyc_tier": {
+                    "type": "integer"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reserved_cents": {
+                    "type": "integer"
+                },
+                "role": {
                     "type": "string"
                 }
             }
@@ -7272,6 +7378,14 @@ const docTemplate = `{
             "properties": {
                 "entry_fee": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.updateMeRequest": {
+            "type": "object",
+            "properties": {
+                "locale": {
+                    "type": "string"
                 }
             }
         },
