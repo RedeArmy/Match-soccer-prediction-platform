@@ -850,6 +850,7 @@ func (r *stubUserRepoForWorker) GetStatusCounts(_ context.Context) (repository.U
 func (r *stubUserRepoForWorker) GetBalance(_ context.Context, _ int) (int, int, error) {
 	return 0, 0, r.err
 }
+func (r *stubUserRepoForWorker) UpdateLocale(_ context.Context, _ int, _ string) error { return r.err }
 
 var _ repository.UserRepository = (*stubUserRepoForWorker)(nil)
 
