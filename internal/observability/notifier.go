@@ -18,6 +18,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -59,6 +60,7 @@ type Notifier struct {
 	secret     string
 	httpClient *http.Client
 	log        *zap.Logger
+	wg         sync.WaitGroup // tracks in-flight fire() goroutines
 }
 
 // New constructs a Notifier from cfg.
@@ -82,6 +84,13 @@ func New(cfg NotifierConfig) *Notifier {
 // Enabled reports whether this notifier will actually send HTTP requests.
 // When false, all methods are no-ops.
 func (n *Notifier) Enabled() bool { return n.baseURL != "" }
+
+// Close blocks until all in-flight fire() goroutines complete. Call this
+// during graceful shutdown — after the HTTP server has stopped accepting
+// new requests — to avoid dropping n8n webhook deliveries that were
+// dispatched during the last requests. Each goroutine carries a fixed
+// 5-second timeout so Close() returns within 5 s of the last fire() call.
+func (n *Notifier) Close() { n.wg.Wait() }
 
 // ── Payload types ────────────────────────────────────────────────────────────
 
@@ -287,7 +296,9 @@ func (n *Notifier) fire(ctx context.Context, path string, payload any) {
 	// Capture log fields from the live context before launching the goroutine.
 	logFields := []zap.Field{zap.String("webhook_path", path)}
 
+	n.wg.Add(1)
 	go func() { //nolint:gosec // G118: intentional fire-and-forget; goroutine must outlive the request context
+		defer n.wg.Done()
 		// Background context: the HTTP call must survive the request context.
 		postCtx, cancel := context.WithTimeout(context.Background(), defaultWebhookTimeout)
 		defer cancel()

@@ -320,6 +320,7 @@ func (s *Server) buildHandlers(
 	if pc, ok := adminGroupSvc.(interface{ SetPrizeCrediter(service.PrizeCrediter) }); ok {
 		pc.SetPrizeCrediter(prizeSvc)
 	}
+	s.wirePrizeMetrics(adminGroupSvc)
 	if wg, ok := webhookPaymentSvc.(interface{ SetKYCGate(service.KYCGate) }); ok {
 		wg.SetKYCGate(kycGate)
 	}
@@ -342,6 +343,21 @@ func (s *Server) wireLeaderboardTTLHook(paramSvc service.SystemParamService, ran
 	if mh, ok := paramSvc.(service.MutationHookRegisterer); ok {
 		mh.RegisterMutationHook(domain.ParamKeyCacheLeaderboardTTL,
 			leaderboardTTLHook(paramSvc, ranker))
+	}
+}
+
+// wirePrizeMetrics registers the GroupPrizeMetrics OTel instruments and wires
+// them into svc via SetPrizeMetrics. Extracted from buildHandlers to keep its
+// cognitive complexity within the project limit.
+func (s *Server) wirePrizeMetrics(svc service.AdminGroupService) {
+	prizeMetrics, err := service.RegisterGroupPrizeMetrics(otel.GetMeterProvider().Meter("wcq"))
+	if err != nil {
+		s.log.Warn("RegisterGroupPrizeMetrics failed (prize distribution failures will not be counted)", zap.Error(err))
+	}
+	if pm, ok := svc.(interface {
+		SetPrizeMetrics(*service.GroupPrizeMetrics)
+	}); ok {
+		pm.SetPrizeMetrics(prizeMetrics)
 	}
 }
 

@@ -32,6 +32,7 @@ const (
 	adminOtherPathGroupsBulkDelete  = "/groups/bulk-delete"
 	adminOtherPathGroups1BulkRemove = "/groups/1/members/bulk-remove"
 	adminOtherPathGroups1Recalc     = "/groups/1/leaderboard/recalculate"
+	adminOtherPathGroups1Distribute = "/groups/1/distribute-prizes"
 	adminOtherPathStats             = "/stats"
 	adminOtherPathTiebreakerSubs    = "/tiebreaker/submissions"
 	adminOtherPathAuditLog          = "/audit-log"
@@ -53,6 +54,7 @@ func newAdminGroupRouter(svc service.AdminGroupService) http.Handler {
 	r.Post("/groups/bulk-delete", h.BulkDeleteGroups)
 	r.Post("/groups/{id}/members/bulk-remove", h.BulkRemoveMembers)
 	r.Post("/groups/{id}/leaderboard/recalculate", h.RecalculateLeaderboard)
+	r.Post("/groups/{id}/distribute-prizes", h.DistributePrizes)
 	return r
 }
 
@@ -328,6 +330,87 @@ func TestAdminRejectDeposit_BadJSON_Returns422(t *testing.T) {
 	}
 }
 
+func TestAdminValidateDeposit_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminPaymentSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, "/payments/1/validate", `{}`),
+		adminCaller,
+	)
+	w := doReq(newAdminPaymentRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminListPaymentsByGroup_InvalidGroupID_Returns422(t *testing.T) {
+	svc := &stubAdminPaymentSvc{}
+	w := do(newAdminPaymentRouter(svc), http.MethodGet, "/groups/abc/payments", "")
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminListPaymentsByGroup_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminPaymentSvc{err: errors.New(adminOtherDBError)}
+	w := do(newAdminPaymentRouter(svc), http.MethodGet, "/groups/1/payments", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminRemoveMember_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminGroupSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(newAdminRequest(http.MethodDelete, "/groups/1/members/10", ""), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminTransferOwnership_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminGroupSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminOtherPathGroups1Transfer, `{"new_owner_user_id":5}`),
+		adminCaller,
+	)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminRejectDeposit_NoCallerInContext_Returns401(t *testing.T) {
+	svc := &stubAdminPaymentSvc{}
+	w := do(newAdminPaymentRouter(svc), http.MethodPost, "/payments/1/reject", `{"notes":"fraud"}`)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminRejectDeposit_InvalidID_Returns422(t *testing.T) {
+	svc := &stubAdminPaymentSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, "/payments/abc/reject", `{"notes":"fraud"}`),
+		adminCaller,
+	)
+	w := doReq(newAdminPaymentRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminRejectDeposit_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminPaymentSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, "/payments/1/reject", `{"notes":"fraud"}`),
+		adminCaller,
+	)
+	w := doReq(newAdminPaymentRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
 func TestAdminListPaymentsByGroup_Success_Returns200(t *testing.T) {
 	svc := &stubAdminPaymentSvc{records: []*domain.PaymentRecord{}}
 	w := do(newAdminPaymentRouter(svc), http.MethodGet, "/groups/1/payments", "")
@@ -337,8 +420,10 @@ func TestAdminListPaymentsByGroup_Success_Returns200(t *testing.T) {
 }
 
 func TestAdminListPaymentsByGroup_InvalidID_Returns422(t *testing.T) {
+	// groupID=0 exercises the id <= 0 branch; distinct from the non-numeric
+	// case covered by TestAdminListPaymentsByGroup_InvalidGroupID_Returns422.
 	svc := &stubAdminPaymentSvc{}
-	w := do(newAdminPaymentRouter(svc), http.MethodGet, "/groups/abc/payments", "")
+	w := do(newAdminPaymentRouter(svc), http.MethodGet, "/groups/0/payments", "")
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
 	}
@@ -1046,6 +1131,52 @@ func TestAdminRecalculateLeaderboard_InvalidID_Returns422(t *testing.T) {
 func TestAdminRecalculateLeaderboard_ServiceError_Returns500(t *testing.T) {
 	svc := &stubAdminGroupSvc{err: errors.New(adminOtherDBError)}
 	req := withCaller(newAdminRequest(http.MethodPost, adminOtherPathGroups1Recalc, ""), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── AdminGroupHandler - DistributePrizes ──────────────────────────────────────
+
+func TestAdminDistributePrizes_Success_Returns200(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequest(http.MethodPost, adminOtherPathGroups1Distribute, ""), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminDistributePrizes_NoCallerInContext_Returns401(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	w := do(newAdminGroupRouter(svc), http.MethodPost, adminOtherPathGroups1Distribute, "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminDistributePrizes_InvalidID_Returns422(t *testing.T) {
+	svc := &stubAdminGroupSvc{}
+	req := withCaller(newAdminRequest(http.MethodPost, "/groups/abc/distribute-prizes", ""), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminDistributePrizes_AlreadyDistributed_Returns409(t *testing.T) {
+	svc := &stubAdminGroupSvc{err: apperrors.Conflict("prizes already distributed for this quiniela")}
+	req := withCaller(newAdminRequest(http.MethodPost, adminOtherPathGroups1Distribute, ""), adminCaller)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d", w.Code)
+	}
+}
+
+func TestAdminDistributePrizes_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminGroupSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(newAdminRequest(http.MethodPost, adminOtherPathGroups1Distribute, ""), adminCaller)
 	w := doReq(newAdminGroupRouter(svc), req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, w.Code)

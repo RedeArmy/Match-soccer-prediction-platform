@@ -460,3 +460,46 @@ func TestNotifyKYCWinnerFreeze_PayloadFields(t *testing.T) {
 		t.Errorf("trace_id: want trace-xyz, got %q", p.TraceID)
 	}
 }
+
+// TestNotifier_Close_WaitsForInFlightGoroutines verifies that Close() blocks
+// until all goroutines launched by fire() have completed. A slow test server
+// that holds the connection for 50 ms simulates an in-flight webhook call;
+// Close() must return only after that goroutine exits, not before.
+func TestNotifier_Close_WaitsForInFlightGoroutines(t *testing.T) {
+	t.Parallel()
+
+	delivered := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(30 * time.Millisecond) // simulate slow n8n
+		w.WriteHeader(http.StatusOK)
+		delivered <- struct{}{}
+	}))
+	defer srv.Close()
+
+	n := newNotifier(t, srv.URL, "")
+	n.NotifyDLQOverflow(context.Background(), 15, 10)
+
+	// Close() must not return until the goroutine has completed.
+	n.Close()
+
+	select {
+	case <-delivered:
+		// goroutine finished before Close() returned — correct
+	default:
+		t.Error("Close() returned before the in-flight goroutine completed")
+	}
+}
+
+// TestNotifier_Close_IsNoOpWhenIdle verifies that Close() on a notifier with
+// no in-flight goroutines returns immediately without blocking.
+func TestNotifier_Close_IsNoOpWhenIdle(t *testing.T) {
+	t.Parallel()
+	n := newNotifier(t, "http://localhost:0", "") // no goroutines launched
+	done := make(chan struct{})
+	go func() { n.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Close() blocked on an idle notifier")
+	}
+}

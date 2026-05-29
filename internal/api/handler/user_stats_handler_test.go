@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap/zaptest"
@@ -150,5 +151,35 @@ func TestUserStatsHandler_GetMyStats_200_LastPredictionAt_OmittedWhenNil(t *test
 	}
 	if _, ok := raw["last_prediction_at"]; ok {
 		t.Error("last_prediction_at should be omitted from JSON when nil")
+	}
+}
+
+func TestUserStatsHandler_GetMyStats_200_LastPredictionAt_PresentWhenSet(t *testing.T) {
+	t.Parallel()
+	ts := time.Date(2026, 6, 15, 18, 0, 0, 0, time.UTC)
+	svc := &stubUserStatsSvc{stats: &domain.UserStats{
+		TotalPredictions: 3,
+		PointsByPhase:    map[domain.MatchPhase]int{},
+		LastPredictionAt: &ts,
+	}}
+	h := handler.NewUserStatsHandler(svc, zaptest.NewLogger(t))
+	router := testUserStatsRouter(h, &domain.User{ID: 1})
+
+	req := httptest.NewRequest(http.MethodGet, pathUserStats, nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, rr.Code)
+	}
+	var body handler.UserStatsResponse
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf(fmtDecodeFail, err)
+	}
+	if body.LastPredictionAt == nil {
+		t.Fatal("LastPredictionAt: want non-nil, got nil")
+	}
+	if *body.LastPredictionAt != "2026-06-15T18:00:00Z" {
+		t.Errorf("LastPredictionAt: got %q; want \"2026-06-15T18:00:00Z\"", *body.LastPredictionAt)
 	}
 }

@@ -1213,7 +1213,6 @@ definitions:
           $ref: '#/definitions/internal_api_handler.n8nWorkflow'
         type: array
     type: object
-host: localhost:8080
 info:
   contact: {}
   description: REST API for the World Cup prediction game. Manage fixtures, submit

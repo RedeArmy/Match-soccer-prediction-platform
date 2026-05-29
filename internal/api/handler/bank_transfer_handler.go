@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -157,7 +159,15 @@ func (h *BankTransferHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := header.Header.Get("Content-Type")
+	// Sniff the actual content type from the first 512 bytes rather than
+	// trusting the client-supplied Content-Type header, which can be forged.
+	sniffBuf := make([]byte, 512)
+	n, err := io.ReadFull(file, sniffBuf)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		writeError(w, r, h.log, apperrors.Validation("file is empty or unreadable"))
+		return
+	}
+	contentType := http.DetectContentType(sniffBuf[:n])
 	if !allowedProofContentType(contentType) {
 		writeError(w, r, h.log, apperrors.Validation("unsupported file type; allowed: image/jpeg, image/png, image/webp, application/pdf"))
 		return
@@ -166,7 +176,10 @@ func (h *BankTransferHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	ext := extensionForContentType(contentType)
 	storageKey := fmt.Sprintf("bank-transfers/%d/%s%s", caller.ID, generateID(), ext) //nolint:perfsprint
 
-	if err := h.fileStore.Put(r.Context(), storageKey, contentType, file, header.Size); err != nil {
+	// Reconstruct the full file reader (sniffed prefix + remainder) so
+	// FileStore.Put receives the complete file content.
+	full := io.MultiReader(bytes.NewReader(sniffBuf[:n]), file)
+	if err := h.fileStore.Put(r.Context(), storageKey, contentType, full, header.Size); err != nil {
 		writeError(w, r, h.log, apperrors.Internal(err))
 		return
 	}
