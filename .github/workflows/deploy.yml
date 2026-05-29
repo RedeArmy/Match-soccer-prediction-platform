@@ -176,7 +176,7 @@ jobs:
       # exit-code: '1' blocks the deploy pipeline on CRITICAL findings.
       # The image-ref uses the short SHA tag (immutable) from the meta step.
       - name: Scan API image for CVEs
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
           format: table
@@ -234,7 +234,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan worker image for CVEs
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository }}-worker:${{ steps.meta-worker.outputs.version }}
           format: table

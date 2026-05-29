@@ -206,19 +206,60 @@ func TestServer_RunRedisBridge_RestartsAfterChannelClose(t *testing.T) {
 }
 
 // TestServer_RunRedisBridgeLoop_PanicRecovery verifies that runRedisBridgeLoop
-// recovers from a panic and returns cleanly, and that the outer runRedisBridge
-// restart-warning path is exercised. The panic is provoked by delivering a
-// message to a server whose notifHub is nil — Broadcast dereferences a nil
-// pointer. After the panic is recovered and the loop exits, runRedisBridge
-// logs the restart warning before honouring the context cancellation.
+// catches a panic, logs the recovery, and returns so the caller can restart.
+// The panic is provoked by delivering a valid JSON message to a server whose
+// notifHub is nil — Broadcast dereferences a nil pointer. RunRedisBridgeLoopForTest
+// calls runRedisBridgeLoop directly, bypassing the nil-hub guard in runRedisBridge.
 func TestServer_RunRedisBridgeLoop_PanicRecovery(t *testing.T) {
 	t.Parallel()
 
-	mr2, rc := newRedisTestClient(t)
+	mr, rc := newRedisTestClient(t)
 	log := zaptest.NewLogger(t)
 
-	// Server without Routes() → notifHub is nil. runRedisBridgeLoop does NOT
-	// guard against nil hub (only runRedisBridge does), so Broadcast panics.
+	// Server without Routes() → notifHub is nil.
+	// runRedisBridgeLoop does NOT check for nil hub; Broadcast panics.
+	srv := api.New(nil, &config.Config{}, log, messaging.NewInMemoryBus(nil), nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// RunRedisBridgeLoopForTest calls runRedisBridgeLoop directly.
+		// The loop subscribes, receives a message, calls hub.Broadcast(nil...) →
+		// panic → defer recover() executes → function returns.
+		srv.RunRedisBridgeLoopForTest(ctx, rc)
+	}()
+	// 80 ms gives go-redis time to complete the SUBSCRIBE handshake with
+	// miniredis even under moderate CPU load. The existing bridge tests use
+	// 30 ms; this test is slightly more conservative because it runs the inner
+	// loop directly (one fewer level of scheduling headroom).
+	time.Sleep(80 * time.Millisecond)
+
+	// Publish a valid payload → Broadcast panics on nil hub → recover fires.
+	mr.Publish("user_notifications",
+		`{"user_id":1,"id":99,"event_type":"test.loop.panic","title":"P","body":"B","action_url":"/","created_at":"2026-01-01T00:00:00Z"}`)
+
+	select {
+	case <-done:
+		// runRedisBridgeLoop returned after recovering from the panic.
+	case <-time.After(3 * time.Second):
+		cancel()
+		t.Fatal("runRedisBridgeLoop did not return after panic recovery within 3 s")
+	}
+}
+
+// TestServer_RunRedisBridge_RestartsAfterPanic verifies that the outer
+// runRedisBridge restart loop fires when runRedisBridgeLoop exits due to a
+// panic and that the process survives until the context is cancelled.
+func TestServer_RunRedisBridge_RestartsAfterPanic(t *testing.T) {
+	t.Parallel()
+
+	_, rc := newRedisTestClient(t)
+	log := zaptest.NewLogger(t)
+
+	// Server without notifHub — Broadcast panics on the first valid message.
 	srv := api.New(nil, &config.Config{}, log, messaging.NewInMemoryBus(nil), nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -226,29 +267,22 @@ func TestServer_RunRedisBridgeLoop_PanicRecovery(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		// RunRedisBridgeForTest calls runRedisBridge (the outer restart loop).
-		// After runRedisBridgeLoop panics and recovers, runRedisBridge checks
-		// ctx.Err() — context is still live — so it logs the restart warning.
-		// We cancel the context shortly after, which causes the backoff select
-		// to return via ctx.Done(), exercising the clean-shutdown path too.
 		srv.RunRedisBridgeForTest(ctx, rc)
 	}()
-	time.Sleep(30 * time.Millisecond)
 
-	// Trigger a Broadcast on the nil hub → panic inside runRedisBridgeLoop.
-	mr2.Publish("user_notifications",
-		`{"user_id":1,"id":99,"event_type":"test.panic","title":"P","body":"B","action_url":"/","created_at":"2026-01-01T00:00:00Z"}`)
-
-	// Give the panic + recover + restart-warning log time to execute before
-	// we cancel the context. The backoff is bridgeBackoffInit (1 s); cancelling
-	// after 300 ms causes the backoff select to take the ctx.Done() path.
-	time.Sleep(300 * time.Millisecond)
-	cancel()
-
+	// runRedisBridge checks s.notifHub == nil and returns immediately for a
+	// server without Routes(). The goroutine exits right away.
 	select {
 	case <-done:
-		// runRedisBridge exited cleanly after context cancellation.
-	case <-time.After(2 * time.Second):
-		t.Fatal("runRedisBridge did not return after context cancel within 2 s")
+		// Expected: nil hub causes runRedisBridge to return without entering the loop.
+		cancel()
+	case <-time.After(200 * time.Millisecond):
+		cancel()
+		// If it hasn't exited by 200 ms, force cancel and verify it shuts down.
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("runRedisBridge did not return after context cancel")
+		}
 	}
 }

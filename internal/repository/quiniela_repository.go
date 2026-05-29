@@ -346,37 +346,8 @@ func (r *PostgresQuinielaRepository) DistributePrizesAtomically(
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 	return withTx(ctx, r.db, "QuinielaRepository.DistributePrizesAtomically", func(tx pgx.Tx) error {
-		// Lock the row immediately. If prizes_distributed_at IS NOT NULL, no row
-		// is returned and we return Conflict. The FOR UPDATE prevents any
-		// concurrent distribution or entry_fee update from proceeding until our
-		// transaction commits or rolls back.
-		var lockedEntryFee int
-		err := tx.QueryRow(ctx,
-			`SELECT entry_fee FROM quinielas
-			  WHERE id = $1
-			    AND prizes_distributed_at IS NULL
-			    AND deleted_at IS NULL
-			  FOR UPDATE`,
-			quinielaID,
-		).Scan(&lockedEntryFee)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return apperrors.Conflict("prizes already distributed for this quiniela")
-		}
-		if err != nil {
-			return apperrors.Internal(err)
-		}
-		if lockedEntryFee != expectedEntryFee {
-			return apperrors.Conflict("entry_fee changed between leaderboard read and distribution — retry")
-		}
-
-		if _, err := tx.Exec(ctx,
-			`UPDATE quinielas
-			    SET prizes_distributed_at = NOW(),
-			        updated_at            = NOW()
-			  WHERE id = $1`,
-			quinielaID,
-		); err != nil {
-			return apperrors.Internal(err)
+		if err := lockAndMarkDistributed(ctx, tx, quinielaID, expectedEntryFee); err != nil {
+			return err
 		}
 		for _, c := range credits {
 			if err := applyPrizeCreditTx(ctx, tx, c); err != nil {
@@ -390,6 +361,41 @@ func (r *PostgresQuinielaRepository) DistributePrizesAtomically(
 		}
 		return nil
 	})
+}
+
+// lockAndMarkDistributed acquires a FOR UPDATE lock on the quiniela row,
+// verifies the entry_fee has not changed, and stamps prizes_distributed_at.
+// Extracted from DistributePrizesAtomically to stay within the cognitive
+// complexity budget.
+func lockAndMarkDistributed(ctx context.Context, tx pgx.Tx, quinielaID, expectedEntryFee int) error {
+	var lockedEntryFee int
+	err := tx.QueryRow(ctx,
+		`SELECT entry_fee FROM quinielas
+		  WHERE id = $1
+		    AND prizes_distributed_at IS NULL
+		    AND deleted_at IS NULL
+		  FOR UPDATE`,
+		quinielaID,
+	).Scan(&lockedEntryFee)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperrors.Conflict("prizes already distributed for this quiniela")
+	}
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if lockedEntryFee != expectedEntryFee {
+		return apperrors.Conflict("entry_fee changed between leaderboard read and distribution — retry")
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE quinielas
+		    SET prizes_distributed_at = NOW(),
+		        updated_at            = NOW()
+		  WHERE id = $1`,
+		quinielaID,
+	); err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
 }
 
 // applyPrizeCreditTx credits a single winner inside an open transaction:

@@ -480,6 +480,64 @@ func TestPayPalWebhookAuth_MalformedBase64Sig_Returns401(t *testing.T) {
 
 // ── Error response shape ──────────────────────────────────────────────────────
 
+// TestPayPalWebhookAuth_StaleTimestamp_Returns401 verifies that the full
+// PayPalWebhookAuth middleware rejects a request whose PAYPAL-TRANSMISSION-TIME
+// is more than five minutes in the past, exercising the timestamp-validation
+// error path in checkPayPalWebhook. The signature is built over the stale
+// timestamp; signature verification is never reached because the timestamp
+// check happens first.
+func TestPayPalWebhookAuth_StaleTimestamp_Returns401(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+
+	downstream := &captureHandler{}
+	mw := applyPayPalMiddleware(t, testPayPalWebhookID, mockFetcher(testPair.cert), downstream)
+
+	req := paypalRequest(t, []byte(testPayPalBody), paypalRequestConfig{
+		transmissionID:   testPayPalTransmissionID,
+		transmissionTime: staleTime,
+		certURL:          testPayPalCertURL,
+		authAlgo:         "SHA256WITHRSA",
+		webhookID:        testPayPalWebhookID,
+		key:              testPair.privKey,
+	})
+
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("stale timestamp: expected 401, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(downstream.body) != 0 {
+		t.Error("downstream handler must not be called when timestamp is rejected")
+	}
+}
+
+// TestPayPalWebhookAuth_FutureTimestamp_Returns401 verifies that a timestamp
+// more than five minutes in the future is also rejected, preventing clock-skew
+// abuse.
+func TestPayPalWebhookAuth_FutureTimestamp_Returns401(t *testing.T) {
+	futureTime := time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339)
+
+	downstream := &captureHandler{}
+	mw := applyPayPalMiddleware(t, testPayPalWebhookID, mockFetcher(testPair.cert), downstream)
+
+	req := paypalRequest(t, []byte(testPayPalBody), paypalRequestConfig{
+		transmissionID:   testPayPalTransmissionID,
+		transmissionTime: futureTime,
+		certURL:          testPayPalCertURL,
+		authAlgo:         "SHA256WITHRSA",
+		webhookID:        testPayPalWebhookID,
+		key:              testPair.privKey,
+	})
+
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("future timestamp: expected 401, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPayPalWebhookAuth_ErrorResponseIsJSON(t *testing.T) {
 	mw := applyPayPalMiddleware(t, testPayPalWebhookID, mockFetcher(testPair.cert),
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}),
