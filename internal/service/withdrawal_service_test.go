@@ -304,6 +304,62 @@ func TestWithdrawalService_ProcessWithdrawal_RepoErrorPropagates(t *testing.T) {
 	}
 }
 
+// TestWithdrawalService_ProcessWithdrawal_AuditAction_IsProcessed verifies that
+// the audit log records AuditActionWithdrawalProcessed (not Rejected) when an
+// admin marks a withdrawal as processed. A wrong action corrupts the compliance
+// audit trail.
+func TestWithdrawalService_ProcessWithdrawal_AuditAction_IsProcessed(t *testing.T) {
+	processed := &domain.WithdrawalRequest{ID: 7, Status: domain.WithdrawalProcessed, UserID: 42, AmountCents: 1000}
+	audit := &captureAuditLogger{}
+	svc := NewWithdrawalService(
+		&withdrawalReqRepoStub{req: processed},
+		&withdrawalParamRepo{},
+		NoopKYCGate{},
+		nil,
+		audit,
+		zap.NewNop(),
+	)
+
+	if _, err := svc.ProcessWithdrawal(context.Background(), 7, 99); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if audit.lastAction != domain.AuditActionWithdrawalProcessed {
+		t.Errorf("audit action: got %q, want %q", audit.lastAction, domain.AuditActionWithdrawalProcessed)
+	}
+}
+
+// TestWithdrawalService_RejectRequest_AuditAction_IsRejected verifies that the
+// reject path still records AuditActionWithdrawalRejected and was not broken
+// when fixing the process path.
+func TestWithdrawalService_RejectRequest_AuditAction_IsRejected(t *testing.T) {
+	rejected := &domain.WithdrawalRequest{ID: 8, Status: domain.WithdrawalRejected, UserID: 43, AmountCents: 500}
+	audit := &captureAuditLogger{}
+	svc := NewWithdrawalService(
+		&withdrawalReqRepoStub{req: rejected},
+		&withdrawalParamRepo{},
+		NoopKYCGate{},
+		nil,
+		audit,
+		zap.NewNop(),
+	)
+
+	if _, err := svc.RejectRequest(context.Background(), 8, 99, "policy violation"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if audit.lastAction != domain.AuditActionWithdrawalRejected {
+		t.Errorf("audit action: got %q, want %q", audit.lastAction, domain.AuditActionWithdrawalRejected)
+	}
+}
+
+// captureAuditLogger records the most recent action string for assertions.
+type captureAuditLogger struct {
+	lastAction string
+}
+
+func (c *captureAuditLogger) Log(_ context.Context, _ *int, _ *domain.UserRole, action string, _ *string, _ *int, _ map[string]any) {
+	c.lastAction = action
+}
+
 // ── AML flag audit log ────────────────────────────────────────────────────────
 
 func TestWithdrawalService_Create_AMLThresholdExceeded_StillReturnsRequest(t *testing.T) {

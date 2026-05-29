@@ -650,4 +650,23 @@ func (r *PostgresKYCProfileRepository) FreezeAtomicWithTxHook(ctx context.Contex
 	})
 }
 
+// EnsureStub inserts a minimal kyc_profiles row for userID if one does not
+// already exist. All columns carry their schema defaults. The call is
+// idempotent: ON CONFLICT (user_id) DO NOTHING means it is safe to call
+// during both user registration and backfill migrations without overwriting
+// any existing profile data.
+func (r *PostgresKYCProfileRepository) EnsureStub(ctx context.Context, userID int) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO kyc_profiles (user_id)
+		VALUES ($1)
+		ON CONFLICT (user_id) DO NOTHING
+	`, userID)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
 var _ KYCProfileRepository = (*PostgresKYCProfileRepository)(nil)

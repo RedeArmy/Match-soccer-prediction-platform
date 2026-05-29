@@ -893,3 +893,57 @@ func TestKYCProfileRepository_FreezeAtomic_NotFound_ReturnsError(t *testing.T) {
 		t.Errorf(fmtNotFoundErr, err)
 	}
 }
+
+// ── EnsureStub ────────────────────────────────────────────────────────────────
+
+func TestKYCProfileRepository_EnsureStub_CreatesMinimalRow(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+	ctx := context.Background()
+
+	if err := repo.EnsureStub(ctx, u.ID); err != nil {
+		t.Fatalf("EnsureStub: %v", err)
+	}
+
+	p, err := repo.GetByUserID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("GetByUserID after EnsureStub: %v", err)
+	}
+	if p == nil {
+		t.Fatal("expected a kyc_profiles row after EnsureStub, got nil")
+	}
+	if p.Status != domain.KYCStatusUnverified {
+		t.Errorf("status = %q; want %q", p.Status, domain.KYCStatusUnverified)
+	}
+	if int(p.Tier) != 0 {
+		t.Errorf("tier = %d; want 0", p.Tier)
+	}
+}
+
+// TestKYCProfileRepository_EnsureStub_Idempotent verifies that calling EnsureStub
+// on a user who already has a full KYC profile does not overwrite existing data.
+func TestKYCProfileRepository_EnsureStub_Idempotent(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID) // creates a full pending profile
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+	ctx := context.Background()
+
+	// Second call must be a no-op (ON CONFLICT DO NOTHING).
+	if err := repo.EnsureStub(ctx, u.ID); err != nil {
+		t.Fatalf("EnsureStub (second call): %v", err)
+	}
+
+	// The full profile must be unchanged.
+	got, err := repo.GetByUserID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("GetByUserID: %v", err)
+	}
+	if got.Status != p.Status {
+		t.Errorf("status changed: got %q, want %q", got.Status, p.Status)
+	}
+	if got.DocumentNumber != p.DocumentNumber {
+		t.Errorf("document_number changed: got %q, want %q", got.DocumentNumber, p.DocumentNumber)
+	}
+}

@@ -106,6 +106,7 @@ func (r *kycProfileRepoStub) UpdateStatusWithEvent(_ context.Context, _, _ int, 
 	}
 	return r.err
 }
+func (r *kycProfileRepoStub) EnsureStub(_ context.Context, _ int) error { return r.err }
 
 type kycDocRepoStub struct {
 	doc  *domain.KYCDocument
@@ -334,6 +335,7 @@ func (r *approveAtomicTracker) UpdateTier(_ context.Context, _ int, _ domain.KYC
 	r.updateTierCalled = true
 	return nil
 }
+func (r *approveAtomicTracker) EnsureStub(_ context.Context, _ int) error { return nil }
 
 // ── Reject ────────────────────────────────────────────────────────────────────
 
@@ -409,6 +411,7 @@ func (r *freezeRouteTracker) FreezeAtomicWithTxHook(_ context.Context, _ int, _ 
 	}
 	return nil
 }
+func (r *freezeRouteTracker) EnsureStub(_ context.Context, _ int) error { return nil }
 
 type freezeOutboxStub struct {
 	writeInTxCalled bool
@@ -837,6 +840,7 @@ type docIdentityErrStub struct {
 func (r *docIdentityErrStub) ExistsByDocumentIdentity(_ context.Context, _ domain.KYCDocumentType, _ string, _ *time.Time, _ int) (bool, error) {
 	return false, errors.New("db fail")
 }
+func (r *docIdentityErrStub) EnsureStub(_ context.Context, _ int) error { return nil }
 
 func TestKYCService_Submit_DocIdentityCheckError_Propagates(t *testing.T) {
 	stub := &docIdentityErrStub{}

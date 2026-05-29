@@ -152,3 +152,49 @@ func TestDefaultPayPalCertFetcher_ReturnsCallable(t *testing.T) {
 		t.Fatal("DefaultPayPalCertFetcher returned nil")
 	}
 }
+
+// ── validatePayPalTimestamp ───────────────────────────────────────────────────
+
+func TestValidatePayPalTimestamp_ValidRecentTimestamp_ReturnsNil(t *testing.T) {
+	now := time.Now().UTC()
+	ts := now.Add(-30 * time.Second).Format(time.RFC3339)
+	if err := validatePayPalTimestamp(ts, now); err != nil {
+		t.Errorf("expected nil for 30-second-old timestamp, got: %v", err)
+	}
+}
+
+func TestValidatePayPalTimestamp_TooOld_ReturnsError(t *testing.T) {
+	now := time.Now().UTC()
+	ts := now.Add(-6 * time.Minute).Format(time.RFC3339)
+	if err := validatePayPalTimestamp(ts, now); err == nil {
+		t.Error("expected error for 6-minute-old timestamp, got nil")
+	}
+}
+
+func TestValidatePayPalTimestamp_TooFarFuture_ReturnsError(t *testing.T) {
+	now := time.Now().UTC()
+	ts := now.Add(6 * time.Minute).Format(time.RFC3339)
+	if err := validatePayPalTimestamp(ts, now); err == nil {
+		t.Error("expected error for timestamp 6 minutes in the future, got nil")
+	}
+}
+
+func TestValidatePayPalTimestamp_ExactlyAtTolerance_ReturnsNil(t *testing.T) {
+	now := time.Now().UTC()
+	ts := now.Add(-(paypalTimestampTolerance - time.Second)).Format(time.RFC3339)
+	if err := validatePayPalTimestamp(ts, now); err != nil {
+		t.Errorf("expected nil at exact tolerance boundary, got: %v", err)
+	}
+}
+
+func TestValidatePayPalTimestamp_MalformedString_ReturnsError(t *testing.T) {
+	if err := validatePayPalTimestamp("not-a-date", time.Now()); err == nil {
+		t.Error("expected error for malformed timestamp, got nil")
+	}
+}
+
+func TestValidatePayPalTimestamp_Empty_ReturnsError(t *testing.T) {
+	if err := validatePayPalTimestamp("", time.Now()); err == nil {
+		t.Error("expected error for empty timestamp, got nil")
+	}
+}

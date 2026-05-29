@@ -79,6 +79,44 @@ jobs:
         run: make test-integration
 
   # --------------------------------------------------------------------------
+  # Update benchmark baseline on every main merge so the drift report in CI
+  # always compares against recent performance rather than a stale snapshot.
+  # Skipped on pull_request events (only runs on push → main).
+  # [skip ci] in the commit message prevents this commit from triggering a
+  # recursive deploy run.
+  # --------------------------------------------------------------------------
+  bench-baseline:
+    name: Update benchmark baseline
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run benchmarks and save baseline
+        run: make bench-save && cp .bench/current.txt .bench/baseline.txt
+
+      - name: Commit updated baseline
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .bench/baseline.txt
+          git diff --staged --quiet || git commit -m "chore: update benchmark baseline [skip ci]"
+          git push
+
+  # --------------------------------------------------------------------------
   # Build and push API Docker image to GitHub Container Registry
   # --------------------------------------------------------------------------
   docker:
@@ -134,6 +172,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Scan the pushed image for known OS and library CVEs.
+      # exit-code: '1' blocks the deploy pipeline on CRITICAL findings.
+      # The image-ref uses the short SHA tag (immutable) from the meta step.
+      - name: Scan API image for CVEs
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL
+
   # --------------------------------------------------------------------------
   # Build and push worker Docker image to GitHub Container Registry
   # --------------------------------------------------------------------------
@@ -182,6 +232,15 @@ jobs:
           labels: ${{ steps.meta-worker.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Scan worker image for CVEs
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}-worker:${{ steps.meta-worker.outputs.version }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL
 
   # --------------------------------------------------------------------------
   # Deploy both images to Fly.io

@@ -205,6 +205,57 @@ groups:
             regulatory review.
 
   # ---------------------------------------------------------------------------
+  # Rate limiter degradation
+  #   wcq_rate_limit_fail_open_total increments whenever the Redis-backed rate
+  #   limiter falls back to fail-open due to a Redis connectivity error.  Any
+  #   non-zero increase means rate limiting is degraded: limits are not shared
+  #   across replicas and traffic may be under-throttled.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.rate_limit
+    interval: 30s
+    rules:
+
+      - alert: WCQRateLimitDegraded
+        expr: increase(wcq_rate_limit_fail_open_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Rate limiter degraded — Redis unavailable, failing open"
+          description: >
+            {{ $value | humanize }} rate-limit checks failed to reach Redis in the
+            last 5 minutes.  The in-process fallback is active: per-replica limits
+            apply but cross-replica enforcement is disabled.  Multi-replica
+            deployments may be under-throttled.  Investigate Redis connectivity.
+
+  # ---------------------------------------------------------------------------
+  # Idempotency degradation
+  #   wcq_idempotency_degraded_total increments whenever the Redis-backed
+  #   idempotency store is unavailable and a write request is passed through
+  #   without deduplication.  Any non-zero value on POST /withdrawals or
+  #   /bank-transfers is a critical operational risk on multi-replica deployments.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.idempotency
+    interval: 30s
+    rules:
+
+      - alert: WCQIdempotencyDegraded
+        expr: increase(wcq_idempotency_degraded_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Idempotency middleware degraded — Redis unavailable"
+          description: >
+            {{ $value | humanize }} idempotency check(s) bypassed in the last 5
+            minutes because the Redis store was unavailable.  POST /withdrawals and
+            POST /bank-transfers may execute multiple times on concurrent requests
+            across replicas.  Investigate Redis immediately and review recent
+            withdrawal and bank-transfer activity for duplicates.
+
+  # ---------------------------------------------------------------------------
   # SSE hub broadcast drops
   #   notification_sse_dropped_total counts events discarded because a client's
   #   buffer was full.  Any drop in a 1-minute window is an early warning that

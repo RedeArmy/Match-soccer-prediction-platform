@@ -238,10 +238,15 @@ type QuinielaRepository interface {
 	BulkDeleteByAdmin(ctx context.Context, ids []int, adminID int) ([]int, error)
 	// DistributePrizesAtomically atomically claims prizes_distributed_at and
 	// executes all prize credits and KYC freezes in a single transaction.
-	// Returns apperrors.Conflict when prizes have already been distributed.
+	// expectedEntryFee is the entry_fee value the caller read before computing
+	// prize amounts; the implementation locks the quiniela row and verifies the
+	// fee has not changed, returning apperrors.Conflict if it has. This closes
+	// the TOCTOU window between the pre-transaction read and the distribution.
+	// Returns apperrors.Conflict when prizes have already been distributed or
+	// when expectedEntryFee does not match the locked row.
 	// If any write fails the transaction is rolled back, prizes_distributed_at
 	// remains NULL, and the operation is safe to retry.
-	DistributePrizesAtomically(ctx context.Context, quinielaID int, credits []PrizeCredit, freezes []PrizeFreeze) error
+	DistributePrizesAtomically(ctx context.Context, quinielaID, expectedEntryFee int, credits []PrizeCredit, freezes []PrizeFreeze) error
 }
 
 // PrizeCredit is a direct prize payment: update users.balance_cents and insert
@@ -859,6 +864,12 @@ type KYCProfileRepository interface {
 	// identity fields and resets status to pending on resubmission.
 	// profile.ID is populated on insert; UpdatedAt is set to now() by the DB.
 	Upsert(ctx context.Context, profile *domain.KYCProfile) error
+	// EnsureStub inserts a minimal kyc_profiles row for userID if one does not
+	// already exist (ON CONFLICT DO NOTHING). All columns carry their schema
+	// defaults (status='unverified', tier=0, balance_frozen=false, etc.).
+	// Called at user registration so that every user has a profile row before
+	// any prize distribution can attempt to freeze their balance.
+	EnsureStub(ctx context.Context, userID int) error
 	// GetByUserID returns the profile for userID, or nil when none exists.
 	GetByUserID(ctx context.Context, userID int) (*domain.KYCProfile, error)
 	// GetByID returns the profile by primary key, or nil when not found.

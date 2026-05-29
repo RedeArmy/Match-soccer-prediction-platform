@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -17,6 +18,10 @@ const idempotencyHeader = "Idempotency-Key"
 
 // Idempotency returns middleware that deduplicates write requests using the
 // client-supplied Idempotency-Key header.
+//
+// meter is used to record degradation events when the backing store is
+// unavailable. Pass otel.GetMeterProvider().Meter("wcq") in production; a
+// noop Meter in tests (the counter initialisation is a no-op on error).
 //
 // ttl is how long a committed response is retained; keyMaxLen is the maximum
 // accepted Idempotency-Key byte length (requests exceeding it get 422).
@@ -36,10 +41,27 @@ const idempotencyHeader = "Idempotency-Key"
 // Only 2xx responses are committed to the store. Handlers returning 4xx or 5xx
 // release the reservation; the client may retry with the same key once the
 // underlying problem is resolved.
-func Idempotency(store idempotency.Store, log *zap.Logger, ttl time.Duration, keyMaxLen int) func(http.Handler) http.Handler {
+// idemConfig bundles the store-related parameters for serveIdempotent,
+// keeping the function's parameter count within the project limit of 7.
+type idemConfig struct {
+	store     idempotency.Store
+	ttl       time.Duration
+	keyMaxLen int
+}
+
+func Idempotency(store idempotency.Store, meter metric.Meter, log *zap.Logger, ttl time.Duration, keyMaxLen int) func(http.Handler) http.Handler {
+	var degradedTotal metric.Int64Counter
+	if meter != nil {
+		degradedTotal, _ = meter.Int64Counter(
+			"wcq_idempotency_degraded_total",
+			metric.WithDescription("Number of requests for which idempotency enforcement was skipped because the Redis store was unavailable. "+
+				"Non-zero on POST /withdrawals or /bank-transfers indicates duplicate-execution risk on multi-replica deployments."),
+		)
+	}
+	cfg := idemConfig{store: store, ttl: ttl, keyMaxLen: keyMaxLen}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			serveIdempotent(w, r, next, store, log, ttl, keyMaxLen)
+			serveIdempotent(w, r, next, cfg, log, degradedTotal)
 		})
 	}
 }
@@ -48,16 +70,16 @@ func Idempotency(store idempotency.Store, log *zap.Logger, ttl time.Duration, ke
 // the closure in Idempotency to keep each function within the cognitive
 // complexity budget.
 func serveIdempotent(w http.ResponseWriter, r *http.Request, next http.Handler,
-	store idempotency.Store, log *zap.Logger, ttl time.Duration, keyMaxLen int,
+	cfg idemConfig, log *zap.Logger, degradedTotal metric.Int64Counter,
 ) {
 	clientKey := r.Header.Get(idempotencyHeader)
 	if clientKey == "" {
 		next.ServeHTTP(w, r)
 		return
 	}
-	if len(clientKey) > keyMaxLen {
+	if len(clientKey) > cfg.keyMaxLen {
 		WriteError(w, r, log, apperrors.Validation(
-			fmt.Sprintf("Idempotency-Key must be at most %d characters", keyMaxLen),
+			fmt.Sprintf("Idempotency-Key must be at most %d characters", cfg.keyMaxLen),
 		))
 		return
 	}
@@ -67,13 +89,16 @@ func serveIdempotent(w http.ResponseWriter, r *http.Request, next http.Handler,
 	subject, _ := UserIDFromContext(r.Context())
 	scopedKey := "idem:" + subject + ":" + clientKey
 
-	entry, found, err := store.Load(r.Context(), scopedKey)
+	entry, found, err := cfg.store.Load(r.Context(), scopedKey)
 	if err != nil {
 		log.Warn("idempotency: store load error, degrading to pass-through",
 			zap.String("key", clientKey),
 			zap.String("request_id", GetRequestID(r.Context())),
 			zap.Error(err),
 		)
+		if degradedTotal != nil {
+			degradedTotal.Add(r.Context(), 1)
+		}
 		next.ServeHTTP(w, r)
 		return
 	}
@@ -83,13 +108,16 @@ func serveIdempotent(w http.ResponseWriter, r *http.Request, next http.Handler,
 	}
 
 	// Reserve: atomically claim the key as in-flight.
-	reserved, err := store.Reserve(r.Context(), scopedKey, ttl)
+	reserved, err := cfg.store.Reserve(r.Context(), scopedKey, cfg.ttl)
 	if err != nil {
 		log.Warn("idempotency: reserve error, degrading to pass-through",
 			zap.String("key", clientKey),
 			zap.String("request_id", GetRequestID(r.Context())),
 			zap.Error(err),
 		)
+		if degradedTotal != nil {
+			degradedTotal.Add(r.Context(), 1)
+		}
 		next.ServeHTTP(w, r)
 		return
 	}
@@ -105,7 +133,7 @@ func serveIdempotent(w http.ResponseWriter, r *http.Request, next http.Handler,
 	// committed to the store and simultaneously written to the real wire.
 	cw := newCaptureWriter(w)
 	next.ServeHTTP(cw, r)
-	commitOrRelease(r.Context(), store, log, scopedKey, clientKey, ttl, cw)
+	commitOrRelease(r.Context(), cfg.store, log, scopedKey, clientKey, cfg.ttl, cw)
 }
 
 // handleExistingEntry dispatches a found store entry: replays a committed

@@ -144,6 +144,33 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # govulncheck scans the module's dependency graph for known CVEs.
+      # The tool is declared in go.mod (tool directive) and verified via
+      # go.sum — no network install needed at runtime.
+      #
+      # Scope: production and validation packages only. cmd/genschema and
+      # internal/testutil are intentionally excluded: they pull in
+      # github.com/docker/docker (via testcontainers-go) which carries CVEs
+      # with no upstream fix available (GO-2026-4883, GO-2026-4887). Neither
+      # package is part of any deployable binary.
+      - name: Vulnerability scan
+        run: |
+          go tool govulncheck \
+            ./internal/api/... \
+            ./internal/domain/... \
+            ./internal/infrastructure/... \
+            ./internal/middleware/... \
+            ./internal/notification/... \
+            ./internal/observability/... \
+            ./internal/repository/... \
+            ./internal/service/... \
+            ./pkg/... \
+            ./cmd/api/... \
+            ./cmd/worker/... \
+            ./cmd/migrate/... \
+            ./cmd/validate-params/... \
+            ./cmd/vapid-keygen/...
+
       # Produces coverage.out in the workspace root.
       # SonarCloud reads this file directly via sonar.go.coverage.reportPaths.
       - name: Test with coverage
@@ -190,6 +217,63 @@ jobs:
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true"
         run: make test-integration
+
+  # --------------------------------------------------------------------------
+  # Base-image CVE scan — detects known vulnerabilities in the alpine base
+  # image before they reach the deploy pipeline. Only fails on CRITICAL
+  # severity with available fixes; unfixed CVEs are informational only.
+  # Uses the same alpine version pinned in Dockerfile and Dockerfile.worker.
+  # --------------------------------------------------------------------------
+  trivy:
+    name: CVE scan (base image)
+    runs-on: ubuntu-latest
+    needs: guard
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan alpine base image for CVEs
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: alpine:3.22
+          format: table
+          exit-code: '1'
+          severity: CRITICAL
+          ignore-unfixed: true
+
+  # --------------------------------------------------------------------------
+  # Validate n8n workflow JSON — prevents malformed files from breaking the
+  # n8n instance on startup. Does not test workflow execution.
+  # --------------------------------------------------------------------------
+  validate-n8n:
+    name: Validate n8n workflows
+    runs-on: ubuntu-latest
+    needs: guard
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate workflow JSON
+        run: |
+          fail=0
+          for f in observability/n8n/workflows/*.json; do
+            if ! jq empty "$f" 2>/dev/null; then
+              echo "::error file=$f::Invalid JSON in n8n workflow: $f"
+              fail=1
+            fi
+          done
+          exit $fail
 
   # --------------------------------------------------------------------------
   # Migration roundtrip — CI gate for down migrations

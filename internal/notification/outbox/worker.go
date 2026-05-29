@@ -2,7 +2,9 @@ package outbox
 
 import (
 	"context"
+	"fmt"
 	"math/rand/v2"
+	"runtime/debug"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -196,6 +198,11 @@ func (w *Worker) checkLag(ctx context.Context, entries []*notification.OutboxEnt
 }
 
 // process dispatches a single entry and marks it done or retries it.
+// A deferred recover() wraps the entire function body so that a panic in the
+// Dispatcher (e.g. nil pointer in email template renderer, malformed push
+// payload) is caught, logged with a full stack trace, and treated as a normal
+// dispatch error. This prevents a single bad entry from terminating the worker
+// goroutine and silencing all subsequent notifications.
 func (w *Worker) process(ctx context.Context, entry *notification.OutboxEntry) {
 	ctx, span := otel.Tracer("outbox").Start(ctx, "outbox.process")
 	span.SetAttributes(
@@ -217,7 +224,7 @@ func (w *Worker) process(ctx context.Context, entry *notification.OutboxEntry) {
 		}, tracing.LogFields(ctx)...)...,
 	)
 
-	if err := w.dispatcher.Dispatch(ctx, entry); err != nil {
+	if err := w.safeDispatch(ctx, entry, log); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "dispatch failed")
 		log.Warn("outbox dispatch failed", zap.Error(err))
@@ -252,6 +259,23 @@ func (w *Worker) process(ctx context.Context, entry *notification.OutboxEntry) {
 		return
 	}
 	log.Info("outbox entry dispatched and marked done")
+}
+
+// safeDispatch calls w.dispatcher.Dispatch and recovers from any panic,
+// converting it into an error. This prevents a misbehaving dispatcher
+// (nil pointer in email renderer, malformed push payload, etc.) from
+// propagating a panic to the Run() goroutine and terminating the worker.
+func (w *Worker) safeDispatch(ctx context.Context, entry *notification.OutboxEntry, log *zap.Logger) (retErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("outbox dispatcher panicked — recovering",
+				zap.Any("panic", r),
+				zap.ByteString("stack", debug.Stack()),
+			)
+			retErr = fmt.Errorf("dispatcher panic: %v", r)
+		}
+	}()
+	return w.dispatcher.Dispatch(ctx, entry)
 }
 
 // unlockStale reclaims processing rows whose lock has expired.

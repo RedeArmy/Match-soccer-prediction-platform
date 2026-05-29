@@ -32,13 +32,17 @@ type ClerkUserSyncer interface {
 }
 
 type clerkUserSyncService struct {
-	userRepo repository.UserRepository
-	log      *zap.Logger
+	userRepo       repository.UserRepository
+	kycProfileRepo repository.KYCProfileRepository
+	log            *zap.Logger
 }
 
 // NewClerkUserSyncService constructs the canonical ClerkUserSyncer.
-func NewClerkUserSyncService(userRepo repository.UserRepository, log *zap.Logger) ClerkUserSyncer {
-	return &clerkUserSyncService{userRepo: userRepo, log: log}
+// kycProfileRepo is used to create a minimal kyc_profiles stub whenever a new
+// user is created, so that prize distribution can always freeze their balance
+// even before the user submits a KYC application.
+func NewClerkUserSyncService(userRepo repository.UserRepository, kycProfileRepo repository.KYCProfileRepository, log *zap.Logger) ClerkUserSyncer {
+	return &clerkUserSyncService{userRepo: userRepo, kycProfileRepo: kycProfileRepo, log: log}
 }
 
 // Upsert creates or updates an internal User from a Clerk user.created /
@@ -92,6 +96,19 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 		zap.Int("user_id", user.ID),
 		zap.String("clerk_subject", subject),
 	)
+
+	// Guarantee a kyc_profiles stub exists for every user so that prize
+	// distribution can always freeze a balance even before the user submits a
+	// KYC application. EnsureStub is idempotent (ON CONFLICT DO NOTHING).
+	if err := s.kycProfileRepo.EnsureStub(ctx, user.ID); err != nil {
+		// Log and continue — the user row is already committed. The backfill
+		// migration (000133) ensures existing users are covered; a transient
+		// failure here is recoverable.
+		s.log.Warn("clerk sync: failed to create kyc_profiles stub",
+			zap.Int("user_id", user.ID),
+			zap.Error(err),
+		)
+	}
 	return nil
 }
 
