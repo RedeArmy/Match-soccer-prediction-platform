@@ -58,6 +58,11 @@ func fixedProof() *domain.BankTransferProof {
 	}
 }
 
+// jpegMagic is the minimal JPEG byte signature that http.DetectContentType
+// recognises as "image/jpeg". Use this instead of arbitrary placeholder bytes
+// in tests that exercise paths reaching the server-side MIME sniffing check.
+var jpegMagic = []byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}
+
 func multipartUpload(t *testing.T, amountCents int, currency, contentType string, fileData []byte) *bytes.Buffer {
 	t.Helper()
 	body := &bytes.Buffer{}
@@ -104,7 +109,7 @@ func TestBankTransferHandler_Upload_OK(t *testing.T) {
 	h := handler.NewBankTransferHandler(svc, &stubFileStore{}, 1<<20, 0, 0, zaptest.NewLogger(t))
 
 	rec := httptest.NewRecorder()
-	req := buildUploadRequest(t, 5000, "GTQ", "image/jpeg", []byte("fake-data"))
+	req := buildUploadRequest(t, 5000, "GTQ", "image/jpeg", jpegMagic)
 	ctx := middleware.ContextWithUser(req.Context(), &domain.User{ID: 10})
 	req = req.WithContext(ctx)
 	h.Upload(rec, req)
@@ -157,7 +162,7 @@ func TestBankTransferHandler_Upload_FileStorePutError(t *testing.T) {
 	h := handler.NewBankTransferHandler(svc, fs, 1<<20, 0, 0, zaptest.NewLogger(t))
 
 	rec := httptest.NewRecorder()
-	req := buildUploadRequest(t, 5000, "GTQ", "image/jpeg", []byte("fake-data"))
+	req := buildUploadRequest(t, 5000, "GTQ", "image/jpeg", jpegMagic)
 	ctx := middleware.ContextWithUser(req.Context(), &domain.User{ID: 10})
 	req = req.WithContext(ctx)
 	h.Upload(rec, req)
@@ -326,13 +331,50 @@ func TestBankTransferHandler_Upload_AtMinAmount_OK(t *testing.T) {
 	h := handler.NewBankTransferHandler(svc, &stubFileStore{}, 1<<20, minCents, 10_000_000, zaptest.NewLogger(t))
 
 	rec := httptest.NewRecorder()
-	req := buildUploadRequest(t, minCents, "GTQ", "image/jpeg", []byte("fake-data"))
+	req := buildUploadRequest(t, minCents, "GTQ", "image/jpeg", jpegMagic)
 	ctx := middleware.ContextWithUser(req.Context(), &domain.User{ID: 10})
 	req = req.WithContext(ctx)
 	h.Upload(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Errorf("expected 201 for amount exactly at minimum, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestBankTransferHandler_Upload_SpoofedContentType_Returns422 verifies that
+// a client cannot bypass the MIME check by setting Content-Type: image/jpeg on
+// the multipart part while sending a non-image payload. The handler sniffs the
+// actual bytes and rejects the file regardless of the declared header.
+func TestBankTransferHandler_Upload_SpoofedContentType_Returns422(t *testing.T) {
+	svc := &stubBankTransferSvc{proof: fixedProof()}
+	h := handler.NewBankTransferHandler(svc, &stubFileStore{}, 1<<20, 0, 0, zaptest.NewLogger(t))
+
+	// File content is plain text ("fake-data"), but the part header claims image/jpeg.
+	rec := httptest.NewRecorder()
+	req := buildUploadRequest(t, 5000, "GTQ", "image/jpeg", []byte("<?php echo 'pwned'; ?>"))
+	ctx := middleware.ContextWithUser(req.Context(), &domain.User{ID: 10})
+	req = req.WithContext(ctx)
+	h.Upload(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for spoofed Content-Type, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestBankTransferHandler_Upload_EmptyFile_Returns422 verifies that uploading
+// a zero-byte file is rejected before reaching the file store.
+func TestBankTransferHandler_Upload_EmptyFile_Returns422(t *testing.T) {
+	svc := &stubBankTransferSvc{proof: fixedProof()}
+	h := handler.NewBankTransferHandler(svc, &stubFileStore{}, 1<<20, 0, 0, zaptest.NewLogger(t))
+
+	rec := httptest.NewRecorder()
+	req := buildUploadRequest(t, 5000, "GTQ", "image/jpeg", []byte{})
+	ctx := middleware.ContextWithUser(req.Context(), &domain.User{ID: 10})
+	req = req.WithContext(ctx)
+	h.Upload(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for empty file, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

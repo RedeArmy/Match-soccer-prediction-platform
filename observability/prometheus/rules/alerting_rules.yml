@@ -10,6 +10,7 @@
 #   http_server_request_duration_seconds  Float64Histogram        (labels: method, route, status_code)
 #   notification_sse_dropped_total        Int64ObservableCounter
 #   kyc_audit_event_drop_total            Int64Counter
+#   prize_distribution_failures_total     Int64Counter
 #
 # Alertmanager routing (alertmanager.yml):
 #   severity=critical, workflow=payment-error-escalation → n8n-payment-escalation
@@ -36,6 +37,7 @@ groups:
           severity: warning
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqdlqdepthwarning--wcqdlqdepthcritical"
           summary: "Notification DLQ depth above 10"
           description: >
             outbox_dlq_depth is {{ $value | humanize }}, exceeding 10 for 5
@@ -50,6 +52,7 @@ groups:
           severity: critical
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqdlqdepthwarning--wcqdlqdepthcritical"
           summary: "Notification DLQ critical — permanent notification loss"
           description: >
             outbox_dlq_depth is {{ $value | humanize }}.  At this depth, user
@@ -74,6 +77,7 @@ groups:
           severity: warning
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqoutboxlaghigh--wcqoutboxlagcritical"
           summary: "Outbox processing lag above 30 s"
           description: >
             The oldest pending-due outbox entry is
@@ -88,6 +92,7 @@ groups:
           severity: critical
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqoutboxlaghigh--wcqoutboxlagcritical"
           summary: "Outbox processing lag above 5 min — notifications severely delayed"
           description: >
             The oldest pending outbox entry is {{ $value | humanizeDuration }}
@@ -112,6 +117,7 @@ groups:
           severity: warning
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqcircuitbreakeropen"
           summary: "Circuit breaker {{ $labels.backend }} open for > 60 s"
           description: >
             The {{ $labels.backend }} circuit breaker has remained open for
@@ -142,6 +148,7 @@ groups:
           team: platform
           workflow: payment-error-escalation
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqpaymenterrorratehigh"
           summary: "Payment webhook error rate above 1 %"
           description: >
             {{ $value | humanizePercentage }} of payment webhook calls have
@@ -170,6 +177,7 @@ groups:
           severity: warning
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqhttp5xxratehigh"
           summary: "HTTP 5xx error rate above 0.5 %"
           description: >
             The 5-minute HTTP 5xx error rate is
@@ -195,6 +203,7 @@ groups:
           severity: critical
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqkycauditeventdropped"
           summary: "KYC audit event dropped — compliance trail gap"
           description: >
             {{ $value | humanize }} KYC audit event(s) failed to persist in the
@@ -222,6 +231,7 @@ groups:
           severity: warning
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqratelimitdegraded"
           summary: "Rate limiter degraded — Redis unavailable, failing open"
           description: >
             {{ $value | humanize }} rate-limit checks failed to reach Redis in the
@@ -247,6 +257,7 @@ groups:
           severity: critical
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqidempotencydegraded"
           summary: "Idempotency middleware degraded — Redis unavailable"
           description: >
             {{ $value | humanize }} idempotency check(s) bypassed in the last 5
@@ -273,9 +284,40 @@ groups:
           severity: warning
           team: platform
         annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqssebroadcastdrops"
           summary: "SSE broadcast drops detected in the last minute"
           description: >
             {{ $value | humanize }} SSE event(s) were dropped in the last
             minute due to full client buffers.  Slow or stalled SSE clients
             may be connected.  Monitor notification_sse_evicted_total to see
             whether the hub is evicting them automatically.
+
+  # ---------------------------------------------------------------------------
+  # Prize distribution failure
+  #   prize_distribution_failures_total increments when DistributePrizes
+  #   encounters a non-idempotency error from DistributePrizesAtomically.
+  #   A non-zero count may indicate a partially credited prize pool: some
+  #   winners were credited inside the transaction, but the transaction rolled
+  #   back before all credits completed.  Requires manual reconciliation.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.prize
+    interval: 30s
+    rules:
+
+      - alert: WCQPrizeDistributionFailed
+        expr: increase(prize_distribution_failures_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqprizedistributionfailed"
+          summary: "Prize distribution failed — manual reconciliation required"
+          description: >
+            {{ $value | humanize }} prize distribution attempt(s) failed in
+            the last 5 minutes with a non-idempotency error.  The atomic
+            transaction may have rolled back after prizes_distributed_at was
+            stamped, leaving some winners without their credit.  Check the
+            audit log (admin_group.prizes_distributed) and balance_ledger for
+            the affected quiniela, and credit any missing amounts manually.
+

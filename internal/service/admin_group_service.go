@@ -63,7 +63,8 @@ type adminGroupService struct {
 	memberRepo    repository.GroupMembershipRepository
 	snapshotter   Snapshotter
 	ranker        Ranker
-	prizeCrediter PrizeCrediter // wired via SetPrizeCrediter after construction
+	prizeCrediter PrizeCrediter      // wired via SetPrizeCrediter after construction
+	prizeMetrics  *GroupPrizeMetrics // wired via SetPrizeMetrics after construction; nil = no-op
 	audit         AuditLogger
 	log           *zap.Logger
 }
@@ -91,6 +92,10 @@ func NewAdminGroupService(
 // startup after the KYC module is initialised; nil is safe (DistributePrizes
 // returns apperrors.Internal when prizeCrediter has not been set).
 func (s *adminGroupService) SetPrizeCrediter(pc PrizeCrediter) { s.prizeCrediter = pc }
+
+// SetPrizeMetrics wires the GroupPrizeMetrics into the service. Called once at
+// startup; nil is safe — all metric calls become no-ops.
+func (s *adminGroupService) SetPrizeMetrics(m *GroupPrizeMetrics) { s.prizeMetrics = m }
 
 func (s *adminGroupService) DeleteGroup(ctx context.Context, quinielaID, adminID int) error {
 	if err := s.quinielaRepo.DeleteByAdmin(ctx, quinielaID, adminID); err != nil {
@@ -255,14 +260,24 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 	}
 	prizePool := q.EntryFee * result.ActivePaidMembers
 	prizePerWinner := prizePool / result.WinnerCount
+	// Integer division truncates: distribute the remainder to the highest-ranked
+	// winner so that 100% of the pool is always credited and no cents are silently
+	// lost. The remainder is always < WinnerCount (at most a few cents), making
+	// first-winner allocation fair and auditable for a sports pool context.
+	remainder := prizePool % result.WinnerCount
 
-	credits, freezes, freezeUserIDs := buildPrizeAllocations(result.Entries, quinielaID, prizePerWinner)
+	credits, freezes, freezeUserIDs := buildPrizeAllocations(result.Entries, quinielaID, prizePerWinner, remainder)
 
 	if err := s.quinielaRepo.DistributePrizesAtomically(ctx, quinielaID, q.EntryFee, credits, freezes); err != nil {
 		if errors.Is(err, apperrors.ErrConflict) {
 			s.log.Info("prizes_already_distributed",
 				zap.Int("quiniela_id", quinielaID),
 			)
+		} else {
+			// Non-idempotency errors after prizes_distributed_at may be stamped
+			// indicate a partial-credit state. Emit a counter so the
+			// WCQPrizeDistributionFailed alert fires for operator review.
+			s.prizeMetrics.RecordDistributionFailure(ctx)
 		}
 		return err
 	}
@@ -284,6 +299,7 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 	s.audit.Log(ctx, &adminID, &role, domain.AuditActionPrizesDistributed, &resType, &quinielaID, map[string]any{
 		"prize_pool_cents":   prizePool,
 		"prize_per_winner":   prizePerWinner,
+		"remainder_cents":    remainder,
 		"winners_credited":   len(credits),
 		"winners_frozen_kyc": len(freezes),
 	})
@@ -292,18 +308,29 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 
 // buildPrizeAllocations partitions winning leaderboard entries into direct
 // credits (KYCTierTwo and above) and KYC-freeze holds (below KYCTierTwo).
-func buildPrizeAllocations(entries []*domain.LeaderboardEntry, quinielaID, prizePerWinner int) ([]repository.PrizeCredit, []repository.PrizeFreeze, []int) {
+//
+// remainder is the integer division surplus (prizePool % WinnerCount). It is
+// added to the first prize winner's amount so the full pool is always
+// distributed with no cents silently discarded. remainder is always
+// < WinnerCount, so the maximum per-winner difference is 1 cent.
+func buildPrizeAllocations(entries []*domain.LeaderboardEntry, quinielaID, prizePerWinner, remainder int) ([]repository.PrizeCredit, []repository.PrizeFreeze, []int) {
 	var credits []repository.PrizeCredit
 	var freezes []repository.PrizeFreeze
 	var freezeUserIDs []int
+	remainderAssigned := false
 	for _, entry := range entries {
 		if !entry.PrizeWinner || entry.User == nil {
 			continue
 		}
+		amount := prizePerWinner
+		if !remainderAssigned {
+			amount += remainder
+			remainderAssigned = true
+		}
 		if entry.User.KYCTier >= domain.KYCTierTwo {
 			credits = append(credits, repository.PrizeCredit{
 				UserID:      entry.User.ID,
-				AmountCents: prizePerWinner,
+				AmountCents: amount,
 				RefID:       int64(quinielaID),
 				RefType:     "quiniela",
 			})
@@ -312,11 +339,11 @@ func buildPrizeAllocations(entries []*domain.LeaderboardEntry, quinielaID, prize
 				"Ha ganado un premio de Q%.2f. Para recibir tus fondos debes completar la verificación "+
 					"de identidad (DPI vigente para residentes en Guatemala; pasaporte u equivalente para extranjeros). "+
 					"Tu saldo ha sido retenido hasta que el equipo de cumplimiento apruebe tu solicitud.",
-				float64(prizePerWinner)/100,
+				float64(amount)/100,
 			)
 			freezes = append(freezes, repository.PrizeFreeze{
 				UserID:      entry.User.ID,
-				AmountCents: prizePerWinner,
+				AmountCents: amount,
 				Reason:      reason,
 			})
 			freezeUserIDs = append(freezeUserIDs, entry.User.ID)

@@ -320,6 +320,15 @@ func (s *Server) buildHandlers(
 	if pc, ok := adminGroupSvc.(interface{ SetPrizeCrediter(service.PrizeCrediter) }); ok {
 		pc.SetPrizeCrediter(prizeSvc)
 	}
+	prizeMetrics, err := service.RegisterGroupPrizeMetrics(otel.GetMeterProvider().Meter("wcq"))
+	if err != nil {
+		s.log.Warn("RegisterGroupPrizeMetrics failed (prize distribution failures will not be counted)", zap.Error(err))
+	}
+	if pm, ok := adminGroupSvc.(interface {
+		SetPrizeMetrics(*service.GroupPrizeMetrics)
+	}); ok {
+		pm.SetPrizeMetrics(prizeMetrics)
+	}
 	if wg, ok := webhookPaymentSvc.(interface{ SetKYCGate(service.KYCGate) }); ok {
 		wg.SetKYCGate(kycGate)
 	}
