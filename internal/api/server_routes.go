@@ -53,6 +53,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware - applied to every request.
+	r.Use(middleware.SecurityHeaders) // outermost: headers present on every response
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.StoreClientIP)
@@ -168,7 +169,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	//   clerk:      Svix HMAC-SHA256 (verified inside WebhookHandler)
 	//   recurrente: HMAC-SHA256 via RecurrenteWebhookAuth middleware
 	//   paypal:     RSA certificate verification via PayPalWebhookAuth middleware
-	clerkSyncer := service.NewClerkUserSyncService(repos.user, s.log)
+	clerkSyncer := service.NewClerkUserSyncService(repos.user, repository.NewPostgresKYCProfileRepository(s.db), s.log)
 	webhookHandler := handler.NewWebhookHandler(clerkSyncer, s.cfg.Clerk.WebhookSecret, s.log)
 	r.Post("/webhooks/clerk", webhookHandler.HandleClerkWebhook)
 	r.With(middleware.RecurrenteWebhookAuth(s.cfg.Payment.RecurrenteWebhookSecret, s.log)).
@@ -190,9 +191,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	}
 	s.breakerRegistry.Register(paypalCertBreaker)
 
-	// One-click email unsubscribe — no Clerk auth required; the signed token
-	// provides its own authentication (see internal/notification/unsubscribe).
-	// Registered on the root router before /api/v1 so it bypasses RequireAuth.
+	// INTENTIONAL AUTH BYPASS: This endpoint authenticates via a time-limited
+	// HMAC-signed token embedded in the unsubscribe URL (signed with
+	// WCQ_EMAIL_UNSUBSCRIBESECRET). Do NOT move it inside the /api/v1 subrouter
+	// below — it must remain on the root router so it is reached before
+	// RequireAuth. Token validation happens inside the Unsubscribe handler.
 	r.Get("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
 
 	// Idempotency store for payment write endpoints.
@@ -208,7 +211,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		)
 		s.idemStore = idempotency.NewMemoryStore()
 	}
-	idem := middleware.Idempotency(s.idemStore, s.log, idemTTL, idemKeyMaxLen)
+	idem := middleware.Idempotency(s.idemStore, meter, s.log, idemTTL, idemKeyMaxLen)
 
 	// Versioned API surface with Clerk JWT authentication.
 	// Rate limit params are read once at startup (is_runtime=FALSE); a process
@@ -232,7 +235,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		if s.redisClient != nil {
 			// Use the Redis-backed store so rate limits are enforced across all
 			// replicas. Fails open on Redis unavailability (no traffic blocked).
-			userRateStore = middleware.NewRedisRateStore(s.redisClient, ratePerSec, rateBurst, s.log)
+			rds := middleware.NewRedisRateStore(s.redisClient, ratePerSec, rateBurst, s.log)
+			if err := rds.RegisterMetrics(meter); err != nil {
+				s.log.Warn("RedisRateStore.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
+			}
+			userRateStore = rds
 		} else {
 			s.log.Warn("rate limiter: Redis not configured — using in-process store (limits not shared across replicas)",
 				zap.String("remedy", "set WCQ_REDIS_ADDR to enforce limits cluster-wide"),

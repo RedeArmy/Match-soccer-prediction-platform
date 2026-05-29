@@ -59,7 +59,10 @@ type paramSpec struct {
 //   - 000111_seed_notify_outbox_params          (+5)
 //   - 000112_seed_observability_alert_params    (+2)
 //   - 000113_seed_phase7_infra_params           (+2)
-//   - 000121_seed_kyc_system_params             (+10)
+//   - 000114_seed_cache_breaker_params          (+2)
+//   - 000115_seed_param_history_retention_param (+1)
+//   - 000121_seed_kyc_params                    (+10)
+//   - 000124_seed_kyc_velocity_params           (+4)
 //   - 000125_seed_kyc_cache_ttl_param           (+1)
 //   - 000129_seed_kyc_ip_velocity_params        (+2)
 var allParams = []paramSpec{

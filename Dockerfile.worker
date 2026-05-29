@@ -5,7 +5,7 @@
 # this step is only re-executed when go.mod or go.sum changes — not on every
 # source file change. In a typical CI pipeline this saves 30–60 seconds per
 # build by reusing the cached dependency layer.
-FROM golang:1.26.2-alpine3.22 AS builder
+FROM golang:1.26.3-alpine3.22 AS builder
 
 WORKDIR /app
 
@@ -16,11 +16,12 @@ COPY . .
 
 # CGO_ENABLED=0 produces a statically linked binary with no libc dependency,
 # which is required to run in the minimal runtime image below.
-# -ldflags="-s -w" strips the symbol table and DWARF debug information,
-# reducing the binary size by roughly 30% at the cost of less useful stack
-# traces from the raw binary (the logger captures structured traces anyway).
+# -w strips DWARF debug tables (reduces binary size by ~20%).
+# -s is intentionally omitted: stripping the symbol table breaks crash
+# symbolication in Fly.io logs and any future APM integration.
+# Consistent with Dockerfile (API).
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
+    -ldflags="-w" \
     -o /bin/worker \
     ./cmd/worker
 
@@ -30,7 +31,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 #   - /etc/ssl/certs   Required for TLS connections to PostgreSQL and Redis.
 #   - tzdata           Required for time-zone-aware scheduling operations.
 #   - A POSIX shell    Useful for exec-ing into the container during incidents.
-FROM alpine:3.21
+FROM alpine:3.22
 
 RUN apk --no-cache add ca-certificates tzdata
 
@@ -44,5 +45,8 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
 EXPOSE 8081
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:8081/health || exit 1
 
 CMD ["./worker"]

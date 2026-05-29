@@ -213,7 +213,7 @@ func (s *withdrawalService) ProcessWithdrawal(ctx context.Context, requestID, ad
 
 	resType := "withdrawal_request"
 	role := domain.RoleAdmin
-	s.audit.Log(ctx, &adminID, &role, domain.AuditActionWithdrawalRejected, &resType, &requestID, nil)
+	s.audit.Log(ctx, &adminID, &role, domain.AuditActionWithdrawalProcessed, &resType, &requestID, nil)
 
 	s.writeOutbox(ctx, notification.EventWithdrawalCompleted,
 		"withdrawal_request", strconv.Itoa(requestID),

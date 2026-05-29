@@ -23,11 +23,11 @@ func NewPostgresPredictionRepository(db *pgxpool.Pool) *PostgresPredictionReposi
 	return &PostgresPredictionRepository{db: db}
 }
 
-const predictionColumns = "id, user_id, match_id, home_score, away_score, predicted_win_method, points, created_at, updated_at"
+const predictionColumns = "id, user_id, match_id, home_score, away_score, predicted_win_method, points, scored_at, created_at, updated_at"
 
 func scanPrediction(row pgx.Row) (*domain.Prediction, error) {
 	p := &domain.Prediction{}
-	if err := row.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.Points, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.Points, &p.ScoredAt, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, singleScanErr(err)
 	}
 	return p, nil
@@ -52,7 +52,7 @@ func (r *PostgresPredictionRepository) Upsert(ctx context.Context, p *domain.Pre
 	if scanErr := row.Scan(
 		&result.ID, &result.UserID, &result.MatchID,
 		&result.HomeScore, &result.AwayScore, &result.PredictedWinMethod, &result.Points,
-		&result.CreatedAt, &result.UpdatedAt,
+		&result.ScoredAt, &result.CreatedAt, &result.UpdatedAt,
 		&wasInserted,
 	); scanErr != nil {
 		return false, apperrors.Internal(scanErr)
@@ -440,10 +440,14 @@ func (r *PostgresPredictionRepository) ListUserScoredPointsChronological(ctx con
 	return points, nil
 }
 
-// UpdateManyPoints atomically updates the points column for every prediction
-// ID in the provided map. A single UPDATE … FROM UNNEST statement is used so
-// the operation is one round-trip and one lock acquisition regardless of how
-// many predictions are being scored.
+// UpdateManyPoints atomically updates the points and scored_at columns for
+// every prediction ID in the provided map whose scored_at IS NULL.
+//
+// Idempotency: the WHERE scored_at IS NULL guard ensures that re-delivering a
+// MatchFinished event (Redis Streams at-least-once) does not overwrite
+// already-scored predictions. A second call for the same match is a no-op for
+// all rows that were scored on the first call, preventing duplicate entries in
+// prediction_score_log and double-counting in leaderboard aggregations.
 //
 // Atomicity guarantee: a single SQL statement is atomic in PostgreSQL without
 // an explicit transaction. The match is either fully scored or not scored at
@@ -467,9 +471,11 @@ func (r *PostgresPredictionRepository) UpdateManyPoints(ctx context.Context, poi
 	if _, err := r.db.Exec(ctx,
 		`UPDATE predictions
 		    SET points     = v.points,
+		        scored_at  = NOW(),
 		        updated_at = NOW()
 		   FROM UNNEST($1::int[], $2::int[]) AS v(id, points)
-		  WHERE predictions.id = v.id`,
+		  WHERE predictions.id = v.id
+		    AND predictions.scored_at IS NULL`,
 		ids, pts,
 	); err != nil {
 		return apperrors.Internal(err)
@@ -480,7 +486,7 @@ func (r *PostgresPredictionRepository) UpdateManyPoints(ctx context.Context, poi
 func collectPredictions(rows pgx.Rows) ([]*domain.Prediction, error) {
 	return collectRows(rows, func(r pgx.Rows) (*domain.Prediction, error) {
 		p := &domain.Prediction{}
-		return p, r.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.Points, &p.CreatedAt, &p.UpdatedAt)
+		return p, r.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.Points, &p.ScoredAt, &p.CreatedAt, &p.UpdatedAt)
 	})
 }
 

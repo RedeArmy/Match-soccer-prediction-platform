@@ -295,7 +295,7 @@ func (r *captureDistributeRepo) GetStatusCounts(_ context.Context) (repository.Q
 func (r *captureDistributeRepo) BulkDeleteByAdmin(_ context.Context, ids []int, _ int) ([]int, error) {
 	return ids, r.err
 }
-func (r *captureDistributeRepo) DistributePrizesAtomically(_ context.Context, _ int, credits []repository.PrizeCredit, freezes []repository.PrizeFreeze) error {
+func (r *captureDistributeRepo) DistributePrizesAtomically(_ context.Context, _, _ int, credits []repository.PrizeCredit, freezes []repository.PrizeFreeze) error {
 	if r.err != nil {
 		return r.err
 	}

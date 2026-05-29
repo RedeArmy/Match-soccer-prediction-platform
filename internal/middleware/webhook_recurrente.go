@@ -28,6 +28,12 @@ const (
 // X-Recurrente-Hmac-Sha256 header. Requests missing the header or whose
 // computed MAC does not match are rejected with 401.
 //
+// NOTE: Recurrente webhooks do not include a timestamp header. Replay
+// protection relies solely on the idempotency key enforced at the payment
+// processing layer (CreditIdempotent in balance_ledger_repository.go).
+// If Recurrente adds timestamp support in a future API version, add
+// freshness validation here following the PayPal pattern in webhook_paypal.go.
+//
 // When secret is empty the middleware logs a warning and passes all requests
 // through without verification. This is acceptable for local development only;
 // pkg/config/validation.go rejects an empty secret before the server starts

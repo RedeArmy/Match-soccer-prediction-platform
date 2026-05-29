@@ -499,6 +499,7 @@ func (s *ipCountStub) FreezeAtomicWithTxHook(_ context.Context, _ int, _ int, _ 
 func (s *ipCountStub) UpdateStatusWithEvent(_ context.Context, _, _ int, _ repository.KYCStatusEvent) error {
 	return nil
 }
+func (s *ipCountStub) EnsureStub(_ context.Context, _ int) error { return nil }
 
 func isRateLimited(err error) bool {
 	var ae *apperrors.AppError

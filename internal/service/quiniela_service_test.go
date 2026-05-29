@@ -75,7 +75,7 @@ func (r *stubQuinielaRepo) BulkDeleteByAdmin(_ context.Context, ids []int, _ int
 	}
 	return ids, nil
 }
-func (r *stubQuinielaRepo) DistributePrizesAtomically(_ context.Context, _ int, _ []repository.PrizeCredit, _ []repository.PrizeFreeze) error {
+func (r *stubQuinielaRepo) DistributePrizesAtomically(_ context.Context, _, _ int, _ []repository.PrizeCredit, _ []repository.PrizeFreeze) error {
 	if r.distributeErr != nil {
 		return r.distributeErr
 	}

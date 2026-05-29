@@ -258,7 +258,7 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 
 	credits, freezes, freezeUserIDs := buildPrizeAllocations(result.Entries, quinielaID, prizePerWinner)
 
-	if err := s.quinielaRepo.DistributePrizesAtomically(ctx, quinielaID, credits, freezes); err != nil {
+	if err := s.quinielaRepo.DistributePrizesAtomically(ctx, quinielaID, q.EntryFee, credits, freezes); err != nil {
 		if errors.Is(err, apperrors.ErrConflict) {
 			s.log.Info("prizes_already_distributed",
 				zap.Int("quiniela_id", quinielaID),

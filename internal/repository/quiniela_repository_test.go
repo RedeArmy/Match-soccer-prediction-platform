@@ -517,7 +517,7 @@ func TestQuinielaRepository_DistributePrizesAtomically_CreditsWinnersAndMarksDis
 		{UserID: winner.ID, AmountCents: prizeAmount, RefID: int64(q.ID), RefType: "quiniela"},
 	}
 
-	if err := repo.DistributePrizesAtomically(context.Background(), q.ID, credits, nil); err != nil {
+	if err := repo.DistributePrizesAtomically(context.Background(), q.ID, q.EntryFee, credits, nil); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 
@@ -580,7 +580,7 @@ func TestQuinielaRepository_DistributePrizesAtomically_FreezesKYCGatedWinners(t 
 		{UserID: gatedUser.ID, AmountCents: frozenAmount, Reason: "kyc_pending"},
 	}
 
-	if err := repo.DistributePrizesAtomically(context.Background(), q.ID, nil, freezes); err != nil {
+	if err := repo.DistributePrizesAtomically(context.Background(), q.ID, q.EntryFee, nil, freezes); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 
@@ -599,11 +599,11 @@ func TestQuinielaRepository_DistributePrizesAtomically_Idempotency_ConflictOnSec
 	q := seedQuiniela(t, owner.ID)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 
-	if err := repo.DistributePrizesAtomically(context.Background(), q.ID, nil, nil); err != nil {
+	if err := repo.DistributePrizesAtomically(context.Background(), q.ID, q.EntryFee, nil, nil); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
-	err := repo.DistributePrizesAtomically(context.Background(), q.ID, nil, nil)
+	err := repo.DistributePrizesAtomically(context.Background(), q.ID, q.EntryFee, nil, nil)
 	if err == nil {
 		t.Fatal("expected conflict error on second distribution, got nil")
 	}
@@ -622,8 +622,22 @@ func TestQuinielaRepository_DistributePrizesAtomically_CreditNotFound_ReturnsErr
 		{UserID: 99999, AmountCents: 1000, RefID: int64(q.ID), RefType: "quiniela"},
 	}
 
-	err := repo.DistributePrizesAtomically(context.Background(), q.ID, credits, nil)
+	err := repo.DistributePrizesAtomically(context.Background(), q.ID, q.EntryFee, credits, nil)
 	if !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestQuinielaRepository_DistributePrizesAtomically_EntryFeeMismatch_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	// Pass an entry_fee that does not match the seeded quiniela (entry_fee=0).
+	const wrongEntryFee = 999_999
+	err := repo.DistributePrizesAtomically(context.Background(), q.ID, wrongEntryFee, nil, nil)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict on entry_fee mismatch, got %v", err)
 	}
 }

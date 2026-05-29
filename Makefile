@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run run-worker test test-integration test-cover test-migrate-roundtrip lint clean docker-up docker-down docker-logs migrate migrate-fresh migrate-fresh-seed schema-dump dev hooks swagger-gen swagger-clean validate-params bench bench-save bench-compare help
+.PHONY: build run run-worker test test-integration test-cover test-migrate-roundtrip lint vuln clean docker-up docker-down docker-logs migrate migrate-fresh migrate-fresh-seed schema-dump dev hooks swagger-gen swagger-clean validate-params bench bench-save bench-compare help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -81,6 +81,12 @@ test-cover:
 ##       Install golangci-lint: https://golangci-lint.run/usage/install/
 lint:
 	golangci-lint run ./...
+
+## vuln: Scan the module for known CVEs using govulncheck (pinned version).
+##       Exits non-zero on any finding. Run before opening a PR or releasing.
+vuln:
+	go install golang.org/x/vuln/cmd/govulncheck@v1.1.3
+	govulncheck ./...
 
 ## clean: Remove compiled binaries and coverage artifacts
 clean:

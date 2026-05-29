@@ -139,6 +139,7 @@ type Prediction struct {
 	AwayScore          int
 	PredictedWinMethod *WinMethod // optional; nil means no win-method prediction was submitted
 	Points             *int
+	ScoredAt           *time.Time // nil until ScoreMatch sets points for the first time
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }

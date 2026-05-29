@@ -238,38 +238,24 @@ func setupObservabilityNotifier(cfg *config.Config, log *zap.Logger) *observabil
 	return n
 }
 
-// logStartupBanner emits a structured summary of the application configuration
-// immediately after logger initialisation. This makes critical settings visible
-// at the top of the log stream rather than buried in startup messages, and
-// surfaces misconfigurations before any infrastructure connections are attempted.
-//
-// The banner format is intentional: parseable by both humans (CloudWatch console,
-// kubectl logs) and log aggregation systems (grep, awk, structured filters).
+// logStartupBanner emits a structured log summarising the application
+// configuration immediately after logger initialisation. The structured format
+// is machine-parseable by log aggregation systems (CloudWatch, Datadog, etc.)
+// and avoids box-drawing Unicode characters that break strict UTF-8 pipelines.
 func logStartupBanner(cfg *config.Config, log *zap.Logger) {
-	log.Sugar().Info("╔═══════════════════════════════════════════════════════════╗")
-	log.Sugar().Info("║              World Cup Quiniela API                       ║")
-	log.Sugar().Info("╠═══════════════════════════════════════════════════════════╣")
-	log.Sugar().Infof("║ Environment:      %-37s ║", cfg.Environment)
-	log.Sugar().Infof("║ Event Bus Driver: %-37s ║", cfg.EventBus.Driver)
-	log.Sugar().Infof("║ Database:         %-37s ║", maskDSN(cfg.Database.DSN))
-	log.Sugar().Infof("║ Redis:            %-37s ║", cfg.Redis.Addr)
-	log.Sugar().Infof("║ Server Port:      %-37s ║", cfg.Server.Port)
-	log.Sugar().Infof("║ Tracing:          %-37s ║", tracingStatus(cfg))
-	log.Sugar().Info("╚═══════════════════════════════════════════════════════════╝")
-
-	// Emit a machine-parseable structured log for automated alerting.
-	// Log aggregation systems can match on event_bus_driver="in_memory" to
-	// detect misconfigured deployments even if the validation was bypassed.
 	log.Info("startup configuration loaded",
+		zap.String("service", cfg.Tracing.ServiceName),
 		zap.String("environment", cfg.Environment),
 		zap.String("event_bus_driver", cfg.EventBus.Driver),
+		zap.String("database", maskDSN(cfg.Database.DSN)),
 		zap.String("redis_addr", cfg.Redis.Addr),
 		zap.String("server_port", cfg.Server.Port),
 		zap.Bool("tracing_enabled", cfg.Tracing.Enabled),
+		zap.String("tracing_status", tracingStatus(cfg)),
 	)
 }
 
-// tracingStatus returns a human-readable tracing status string for the startup banner.
+// tracingStatus returns a human-readable tracing status string for structured startup logs.
 func tracingStatus(cfg *config.Config) string {
 	if cfg.Tracing.Enabled {
 		return "enabled → " + cfg.Tracing.OTLPEndpoint

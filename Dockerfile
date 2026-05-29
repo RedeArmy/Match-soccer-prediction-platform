@@ -5,7 +5,7 @@
 # this step is only re-executed when go.mod or go.sum changes — not on every
 # source file change. In a typical CI pipeline this saves 30–60 seconds per
 # build by reusing the cached dependency layer.
-FROM golang:1.26.2-alpine3.22 AS builder
+FROM golang:1.26.3-alpine3.22 AS builder
 
 WORKDIR /app
 
@@ -33,7 +33,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 #
 # If image size is a critical constraint, switch to scratch and COPY the
 # required certificate bundles and timezone data from the builder stage.
-FROM alpine:3.21
+FROM alpine:3.22
 
 RUN apk --no-cache add ca-certificates tzdata
 
@@ -47,5 +47,12 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
 EXPOSE 8080
+
+# wget is provided by BusyBox in Alpine — no extra apk install needed.
+# /health is the liveness probe (process alive); Fly.io uses /health/ready
+# for readiness (DB reachable), but non-Fly runtimes use /health to avoid
+# holding the process as unhealthy during cold DB connections.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:8080/health || exit 1
 
 CMD ["./api"]
