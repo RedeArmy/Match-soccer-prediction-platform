@@ -27,7 +27,7 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 // password_hash was removed in migration 000010: authentication is delegated
 // to Clerk and no credential is stored in the application database.
 const (
-	userColumns     = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason, balance_cents, reserved_cents, kyc_tier"
+	userColumns     = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason, balance_cents, reserved_cents, kyc_tier, locale"
 	msgUserNotFound = "user not found"
 )
 
@@ -42,7 +42,7 @@ func scanUserFields(s rowScanner) (*domain.User, error) {
 		&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject,
 		&u.CreatedAt, &u.UpdatedAt, &u.DeletedAt,
 		&u.BannedAt, &u.BannedBy, &u.BanReason,
-		&u.BalanceCents, &u.ReservedCents, &kycTier,
+		&u.BalanceCents, &u.ReservedCents, &kycTier, &u.Locale,
 	); err != nil {
 		return nil, err
 	}
@@ -65,14 +65,17 @@ func scanUser(row pgx.Row) (*domain.User, error) {
 }
 
 func (r *PostgresUserRepository) Create(ctx context.Context, u *domain.User) error {
-	// password_hash is no longer a column: only name, email, and role are
-	// required at creation time. clerk_subject is set later via Update when
-	// the Clerk webhook delivers the user.created event.
+	// password_hash is no longer a column: only name, email, role, and locale
+	// are set at creation time. clerk_subject is set later via Update when the
+	// Clerk webhook delivers the user.created event.
+	if u.Locale == "" {
+		u.Locale = string(domain.DefaultLocale)
+	}
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO users (name, email, role)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO users (name, email, role, locale)
+		 VALUES ($1, $2, $3, $4)
 		 RETURNING `+userColumns,
-		u.Name, u.Email, u.Role,
+		u.Name, u.Email, u.Role, u.Locale,
 	)
 	result, err := scanUser(row)
 	if err != nil {
@@ -104,9 +107,9 @@ func (r *PostgresUserRepository) Update(ctx context.Context, u *domain.User) err
 	// password_hash is no longer updated; only name, email, role, and
 	// clerk_subject are mutable through the application layer.
 	row := r.db.QueryRow(ctx,
-		`UPDATE users SET name=$1, email=$2, role=$3, clerk_subject=$4, updated_at=NOW()
-		 WHERE id=$5 RETURNING `+userColumns,
-		u.Name, u.Email, u.Role, clerkSubject, u.ID,
+		`UPDATE users SET name=$1, email=$2, role=$3, clerk_subject=$4, locale=$5, updated_at=NOW()
+		 WHERE id=$6 RETURNING `+userColumns,
+		u.Name, u.Email, u.Role, clerkSubject, u.Locale, u.ID,
 	)
 	result, err := scanUser(row)
 	if err != nil {
@@ -116,6 +119,23 @@ func (r *PostgresUserRepository) Update(ctx context.Context, u *domain.User) err
 		return apperrors.NotFound(msgUserNotFound)
 	}
 	*u = *result
+	return nil
+}
+
+// UpdateLocale sets the locale preference for userID. The column is constrained
+// by CHECK (locale IN ('en', 'es')) at the database level; callers must pass a
+// supported tag. Returns NotFound for unknown or soft-deleted users.
+func (r *PostgresUserRepository) UpdateLocale(ctx context.Context, userID int, locale string) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE users SET locale=$1, updated_at=NOW() WHERE id=$2`+activeOnly,
+		locale, userID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound(msgUserNotFound)
+	}
 	return nil
 }
 

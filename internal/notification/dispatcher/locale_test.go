@@ -2,6 +2,7 @@ package dispatcher_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -30,7 +31,9 @@ func newLocaleDispatcher(notifRepo *stubNotifRepo, params *stubParamService) *di
 	return dispatcher.NewUserDispatcher(cfg)
 }
 
-func TestUserDispatcher_NilParams_DefaultsEnglish(t *testing.T) {
+func TestUserDispatcher_NilParams_DefaultsSpanish(t *testing.T) {
+	// DefaultLocale is "es" (Guatemala-primary). With nil params and no locale
+	// resolver, the dispatcher falls back to domain.DefaultLocale = "es".
 	t.Parallel()
 
 	notifRepo := &stubNotifRepo{inserted: true}
@@ -45,8 +48,8 @@ func TestUserDispatcher_NilParams_DefaultsEnglish(t *testing.T) {
 	if notifRepo.last == nil {
 		t.Fatal("notification not persisted")
 	}
-	if notifRepo.last.Title != "Payment confirmed" {
-		t.Errorf("Title: got %q; want 'Payment confirmed'", notifRepo.last.Title)
+	if notifRepo.last.Title != "Pago confirmado" {
+		t.Errorf("Title: got %q; want 'Pago confirmado' (DefaultLocale='es')", notifRepo.last.Title)
 	}
 }
 
@@ -161,7 +164,9 @@ func TestUserDispatcher_LocaleES_EmailGreetingSpanish(t *testing.T) {
 	}
 }
 
-func TestUserDispatcher_UnknownLocale_FallsBackToEnglish(t *testing.T) {
+func TestUserDispatcher_UnknownLocale_FallsBackToSpanish(t *testing.T) {
+	// ParseLocale normalises unknown tags to DefaultLocale ("es"), so "fr"
+	// → "es". The dispatcher falls back to Spanish, not English.
 	t.Parallel()
 
 	notifRepo := &stubNotifRepo{inserted: true}
@@ -179,7 +184,120 @@ func TestUserDispatcher_UnknownLocale_FallsBackToEnglish(t *testing.T) {
 	if notifRepo.last == nil {
 		t.Fatal("notification not persisted")
 	}
+	if notifRepo.last.Title != "Pago confirmado" {
+		t.Errorf("Title: got %q; want 'Pago confirmado' (unknown locale normalised to DefaultLocale='es')", notifRepo.last.Title)
+	}
+}
+
+// ── UserLocaleResolver priority tests ────────────────────────────────────────
+
+// stubLocaleResolver implements dispatcher.UserLocaleResolver for tests.
+type stubLocaleResolver struct {
+	locale domain.Locale
+	err    error
+}
+
+func (s *stubLocaleResolver) ResolveLocaleByID(_ context.Context, _ int) (domain.Locale, error) {
+	return s.locale, s.err
+}
+
+// newLocaleResolverDispatcher builds a dispatcher wired with both a
+// UserLocaleResolver and a system-param service so priority can be tested.
+func newLocaleResolverDispatcher(
+	notifRepo *stubNotifRepo,
+	resolver dispatcher.UserLocaleResolver,
+	params *stubParamService,
+) *dispatcher.UserDispatcher {
+	cfg := dispatcher.UserDispatcherConfig{
+		NotifRepo:      notifRepo,
+		PrefRepo:       &stubPrefRepo{pref: &domain.NotificationPreference{ChannelInApp: true}},
+		DLQRepo:        &recordingDLQRepo{},
+		Hub:            hub.New(),
+		LocaleResolver: resolver,
+		Log:            zap.NewNop(),
+	}
+	if params != nil {
+		cfg.Params = params
+	}
+	return dispatcher.NewUserDispatcher(cfg)
+}
+
+// TestLocaleResolution_UserProfileWinsOverSystemParam verifies that the user's
+// stored locale beats the system-wide default when the resolver succeeds.
+func TestLocaleResolution_UserProfileWinsOverSystemParam(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	// User profile says "en"; system param says "es".
+	resolver := &stubLocaleResolver{locale: domain.LocaleEN}
+	params := &stubParamService{
+		strings: map[string]string{domain.ParamKeyNotifyDefaultLocale: "es"},
+	}
+	d := newLocaleResolverDispatcher(notifRepo, resolver, params)
+
+	entry := makeEntry(t, notification.EventPaymentConfirmed,
+		notification.PaymentPayload{UserID: 1, PaymentID: 1, AmountCents: 5000, Currency: "GTQ"})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if notifRepo.last == nil {
+		t.Fatal("notification not persisted")
+	}
 	if notifRepo.last.Title != "Payment confirmed" {
-		t.Errorf("Title: got %q; want 'Payment confirmed' (fallback for unknown locale)", notifRepo.last.Title)
+		t.Errorf("user locale 'en' should win over system param 'es'; got title %q", notifRepo.last.Title)
+	}
+}
+
+// TestLocaleResolution_ResolverErrorFallsToSystemParam verifies that a failed
+// locale resolver falls back to the system-param default without blocking delivery.
+func TestLocaleResolution_ResolverErrorFallsToSystemParam(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	resolver := &stubLocaleResolver{err: errors.New("db timeout")} // resolver fails
+	params := &stubParamService{
+		strings: map[string]string{domain.ParamKeyNotifyDefaultLocale: "es"},
+	}
+	d := newLocaleResolverDispatcher(notifRepo, resolver, params)
+
+	entry := makeEntry(t, notification.EventPaymentConfirmed,
+		notification.PaymentPayload{UserID: 1, PaymentID: 1, AmountCents: 5000, Currency: "GTQ"})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if notifRepo.last == nil {
+		t.Fatal("notification not persisted")
+	}
+	// Falls back to system param "es".
+	if notifRepo.last.Title != "Pago confirmado" {
+		t.Errorf("resolver error should fall back to system param 'es'; got title %q", notifRepo.last.Title)
+	}
+}
+
+// TestLocaleResolution_NilResolverUsesSystemParam verifies that a nil resolver
+// (no user-profile locale wired) falls back to the system-param default.
+func TestLocaleResolution_NilResolverUsesSystemParam(t *testing.T) {
+	t.Parallel()
+
+	notifRepo := &stubNotifRepo{inserted: true}
+	params := &stubParamService{
+		strings: map[string]string{domain.ParamKeyNotifyDefaultLocale: "es"},
+	}
+	// No resolver — nil is the zero value for the interface field.
+	d := newLocaleResolverDispatcher(notifRepo, nil, params)
+
+	entry := makeEntry(t, notification.EventPaymentConfirmed,
+		notification.PaymentPayload{UserID: 1, PaymentID: 1, AmountCents: 5000, Currency: "GTQ"})
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if notifRepo.last == nil {
+		t.Fatal("notification not persisted")
+	}
+	if notifRepo.last.Title != "Pago confirmado" {
+		t.Errorf("nil resolver should use system param 'es'; got title %q", notifRepo.last.Title)
 	}
 }

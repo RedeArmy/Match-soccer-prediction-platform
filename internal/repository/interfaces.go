@@ -80,6 +80,9 @@ type UserRepository interface {
 	// userID without fetching the full user row. Returns NotFound for unknown
 	// or soft-deleted users.
 	GetBalance(ctx context.Context, userID int) (balanceCents, reservedCents int, err error)
+	// UpdateLocale sets the user's locale preference ("en" or "es").
+	// Returns NotFound for unknown or soft-deleted users.
+	UpdateLocale(ctx context.Context, userID int, locale string) error
 }
 
 // MatchRepository defines the persistence operations for the Match entity.

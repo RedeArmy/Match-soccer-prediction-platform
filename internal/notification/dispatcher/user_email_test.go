@@ -381,8 +381,9 @@ func TestUserDispatcher_UnsubscribeURL_AppearsInEmail(t *testing.T) {
 	if !strings.Contains(html, "/api/v1/notifications/unsubscribe?token=") {
 		t.Error("rendered HTML should contain an unsubscribe link; none found")
 	}
-	if !strings.Contains(html, "Unsubscribe from emails") {
-		t.Error("rendered HTML should contain unsubscribe anchor text")
+	// DefaultLocale is "es", so the anchor text is in Spanish.
+	if !strings.Contains(html, "Darse de baja de correos") {
+		t.Error("rendered HTML should contain Spanish unsubscribe anchor text ('Darse de baja de correos')")
 	}
 }
 
