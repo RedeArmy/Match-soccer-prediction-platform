@@ -107,6 +107,14 @@ type notifPref struct {
 
 // UserDispatcher implements outbox.Dispatcher for user-facing events.
 //
+// Locale resolution priority (highest to lowest):
+//  1. User profile locale (users.locale column) via localeResolver.
+//  2. System default locale (notify.default_locale system param).
+//  3. domain.DefaultLocale ("es") — compile-time safe default.
+//
+// Per-user locale requires localeResolver to be non-nil (production always
+// wires it; tests that omit it fall back to the system default).
+//
 // For every claimed outbox entry it:
 //  1. Skips admin/system events (handled by AdminDispatcher).
 //  2. For broadcast events (e.g. EventGroupMemberJoined): queries all active
@@ -133,6 +141,7 @@ type UserDispatcher struct {
 	pusher            infrapush.Sender
 	mailer            infraemail.Sender
 	emailResolver     UserEmailResolver
+	localeResolver    UserLocaleResolver // nil falls back to system-wide locale
 	fromAddr          string
 	unsubscribeSecret string // WCQ_EMAIL_UNSUBSCRIBESECRET; empty omits unsubscribe link
 	appBaseURL        string // WCQ_SERVER_APPBASEURL; used to build absolute links in emails
@@ -154,7 +163,8 @@ type UserDispatcherConfig struct {
 	Hub               *hub.Hub
 	Pusher            infrapush.Sender
 	Mailer            infraemail.Sender
-	EmailResolver     UserEmailResolver // nil disables email delivery
+	EmailResolver     UserEmailResolver  // nil disables email delivery
+	LocaleResolver    UserLocaleResolver // nil falls back to system-wide locale
 	FromAddr          string
 	UnsubscribeSecret string                                    // WCQ_EMAIL_UNSUBSCRIBESECRET; empty omits link
 	AppBaseURL        string                                    // WCQ_SERVER_APPBASEURL; needed for absolute links
@@ -181,6 +191,7 @@ func NewUserDispatcher(cfg UserDispatcherConfig) *UserDispatcher {
 		pusher:            cfg.Pusher,
 		mailer:            cfg.Mailer,
 		emailResolver:     cfg.EmailResolver,
+		localeResolver:    cfg.LocaleResolver,
 		fromAddr:          cfg.FromAddr,
 		unsubscribeSecret: cfg.UnsubscribeSecret,
 		appBaseURL:        cfg.AppBaseURL,
@@ -264,7 +275,7 @@ func (d *UserDispatcher) recordDispatch(ctx context.Context, entry *notification
 // (outbox entry, recipient) pair; for fan-out events use the form
 // "outbox-{id}-user-{uid}" so multiple recipients do not collide.
 func (d *UserDispatcher) deliverToUser(ctx context.Context, entry *notification.OutboxEntry, userID int, idempotencyKey string, log *zap.Logger) error {
-	content := d.resolveContent(ctx, entry, log)
+	content := d.resolveContent(ctx, entry, userID, log)
 
 	n := &domain.UserNotification{
 		UserID:         userID,
@@ -372,8 +383,8 @@ func (d *UserDispatcher) resolvePreferences(ctx context.Context, userID int, eve
 // through to the compiled Go default.  The two-level fallback guarantees
 // delivery even when the template store is unavailable or contains an invalid
 // template.
-func (d *UserDispatcher) resolveContent(ctx context.Context, entry *notification.OutboxEntry, log *zap.Logger) userContent {
-	locale := d.resolveLocale(ctx)
+func (d *UserDispatcher) resolveContent(ctx context.Context, entry *notification.OutboxEntry, userID int, log *zap.Logger) userContent {
+	locale := d.resolveLocaleForUser(ctx, userID, log)
 	if d.templateRepo != nil {
 		tmpl, err := d.templateRepo.Get(ctx, string(entry.EventType), string(locale))
 		if err != nil {
@@ -398,18 +409,36 @@ func (d *UserDispatcher) resolveContent(ctx context.Context, entry *notification
 	return buildUserContent(entry, locale)
 }
 
-// resolveLocale returns the active delivery locale.  Falls back to LocaleEN
-// when params is nil (unit tests without a DB) or the key is absent so that
-// existing tests continue to receive English content without any changes.
-func (d *UserDispatcher) resolveLocale(ctx context.Context) Locale {
+// resolveLocaleForUser applies the three-level locale resolution priority:
+//  1. User profile locale (users.locale) — requires localeResolver to be wired.
+//  2. System default locale (notify.default_locale system param).
+//  3. domain.DefaultLocale ("es") — compile-time fallback for tests/nil params.
+//
+// Errors from the locale resolver are logged at Debug and do not block delivery.
+func (d *UserDispatcher) resolveLocaleForUser(ctx context.Context, userID int, log *zap.Logger) Locale {
+	if d.localeResolver != nil {
+		locale, err := d.localeResolver.ResolveLocaleByID(ctx, userID)
+		if err != nil {
+			log.Debug("dispatcher: locale resolver error, using system default",
+				zap.Int("user_id", userID),
+				zap.Error(err),
+			)
+		} else {
+			return locale
+		}
+	}
+	return d.resolveSystemLocale(ctx)
+}
+
+// resolveSystemLocale returns the system-wide delivery locale from the
+// notify.default_locale system param. Falls back to domain.DefaultLocale when
+// params is nil (tests without a DB) or the key is absent.
+func (d *UserDispatcher) resolveSystemLocale(ctx context.Context) Locale {
 	if d.params == nil {
-		return LocaleEN
+		return domain.DefaultLocale
 	}
-	raw := d.params.GetString(ctx, domain.ParamKeyNotifyDefaultLocale, string(LocaleEN))
-	if Locale(raw) == LocaleES {
-		return LocaleES
-	}
-	return LocaleEN
+	raw := d.params.GetString(ctx, domain.ParamKeyNotifyDefaultLocale, string(domain.DefaultLocale))
+	return domain.ParseLocale(raw)
 }
 
 func (d *UserDispatcher) writeDLQEntry(ctx context.Context, entry *notification.OutboxEntry, userID int, channel string, sendErr error) {

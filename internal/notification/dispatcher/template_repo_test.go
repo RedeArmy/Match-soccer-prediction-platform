@@ -45,7 +45,11 @@ func newTemplateDispatcher(notifRepo *stubNotifRepo, tmplRepo *stubTemplateRepo)
 		DLQRepo:      &recordingDLQRepo{},
 		Hub:          h,
 		TemplateRepo: tmplRepo,
-		Log:          zap.NewNop(),
+		// Use "en" locale so fallback-to-compiled-default tests can assert English strings.
+		Params: &stubParamService{
+			strings: map[string]string{domain.ParamKeyNotifyDefaultLocale: "en"},
+		},
+		Log: zap.NewNop(),
 	})
 }
 

@@ -15,6 +15,7 @@ type AdminUserResponse struct {
 	Name      string  `json:"name"`
 	Email     string  `json:"email"`
 	Role      string  `json:"role"`
+	Locale    string  `json:"locale"`
 	BannedAt  *string `json:"banned_at,omitempty"`
 	BannedBy  *int    `json:"banned_by,omitempty"`
 	BanReason string  `json:"ban_reason,omitempty"`
@@ -217,6 +218,7 @@ func adminUserToResponse(u *domain.User) AdminUserResponse {
 		Name:      u.Name,
 		Email:     u.Email,
 		Role:      string(u.Role),
+		Locale:    u.Locale,
 		BanReason: u.BanReason,
 		CreatedAt: u.CreatedAt.Format(timeFormat),
 		UpdatedAt: u.UpdatedAt.Format(timeFormat),
