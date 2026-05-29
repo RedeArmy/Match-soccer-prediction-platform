@@ -79,6 +79,7 @@ type appHandlers struct {
 	adminN8n           *handler.AdminN8nHandler
 	kyc                *handler.KYCHandler
 	adminKYC           *handler.AdminKYCHandler
+	user               *handler.UserHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -281,6 +282,7 @@ func (s *Server) buildHandlers(
 		adminNotifTemplate: handler.NewAdminNotificationTemplateHandler(tmplRepo, s.log),
 		adminNotifDLQ:      handler.NewAdminNotificationDLQHandler(repository.NewPostgresNotificationDLQRepository(s.db), s.log),
 		adminSSEStats:      handler.NewAdminSSEStatsHandler(s.notifHub, s.log),
+		user:               handler.NewUserHandler(repos.user, s.log),
 	}
 
 	// ── Phase 9 observability handlers ───────────────────────────────────────

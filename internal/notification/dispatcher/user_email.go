@@ -18,6 +18,14 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/unsubscribe"
 )
 
+// UserLocaleResolver resolves the stored locale preference for a user by ID.
+// The production implementation wraps repository.UserRepository.GetByID.
+// Returns domain.DefaultLocale on any error so that locale resolution never
+// blocks notification delivery.
+type UserLocaleResolver interface {
+	ResolveLocaleByID(ctx context.Context, userID int) (domain.Locale, error)
+}
+
 // UserEmailResolver resolves the email address and display name for a user by ID.
 // The production implementation wraps repository.UserRepository.GetByID.
 // Tests supply a stub.

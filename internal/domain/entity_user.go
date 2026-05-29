@@ -26,6 +26,7 @@ type User struct {
 	BalanceCents  int     // spendable funds in minor currency units; never negative
 	ReservedCents int     // funds locked for pending withdrawal requests
 	KYCTier       KYCTier // denormalised from kyc_profiles.tier; updated by KYCService
+	Locale        string  // BCP-47 tag ("es" or "en"); defaults to "es" for new users
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	DeletedAt     *time.Time // nil for active users; set when the record is soft-deleted
