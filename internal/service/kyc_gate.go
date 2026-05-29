@@ -56,7 +56,14 @@ type KYCGate interface {
 	CheckIPSubmissionVelocity(ctx context.Context, ip string) error
 }
 
-const msgKYCUpgradeForHigherLimits = "Completa la verificación KYC completa para acceder a límites mayores."
+// kycUpgradeHint is the locale-aware call-to-action appended to cap-exceeded messages.
+func kycUpgradeHint(locale domain.Locale) string {
+	return domain.LocaleStr(
+		"Complete full KYC verification to access higher limits.",
+		"Completa la verificación KYC completa para acceder a límites mayores.",
+		locale,
+	)
+}
 
 // kycGate is the production implementation of KYCGate.
 //
@@ -90,10 +97,12 @@ func (g *kycGate) SetMetrics(m *KYCMetrics) { g.metrics = m }
 func (g *kycGate) SetProfileRepo(repo repository.KYCProfileRepository) { g.profileRepo = repo }
 
 func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) error {
-	tier, err := g.tierFor(ctx, userID)
+	u, err := g.userFor(ctx, userID)
 	if err != nil {
 		return err
 	}
+	tier := u.KYCTier
+	locale := domain.ParseLocale(u.Locale)
 	// Withdrawals require a government-issued photo ID verified by an admin
 	// (Tier 2+). Tier 0 and Tier 1 (phone only) are insufficient because AML
 	// regulations require identity confirmation before any payout is processed.
@@ -101,13 +110,19 @@ func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) 
 		if g.metrics != nil {
 			g.metrics.RecordGateBlock(ctx, "withdrawal", "tier_insufficient")
 		}
-		return apperrors.Forbidden(
-			"Para retirar fondos debes completar la verificación de identidad. " +
-				"Los residentes en Guatemala deben enviar su DPI vigente; " +
-				"los extranjeros deben enviar un documento de identidad oficial vigente " +
-				"(pasaporte, cédula de residencia u equivalente). " +
+		return apperrors.Forbidden(domain.LocaleStr(
+			"To withdraw funds you must complete identity verification. "+
+				"Guatemalan residents must submit a valid DPI; "+
+				"foreign residents must submit a valid official identity document "+
+				"(passport, residency card or equivalent). "+
+				"Upload your documents in the Identity Verification section and await approval from the compliance team.",
+			"Para retirar fondos debes completar la verificación de identidad. "+
+				"Los residentes en Guatemala deben enviar su DPI vigente; "+
+				"los extranjeros deben enviar un documento de identidad oficial vigente "+
+				"(pasaporte, cédula de residencia u equivalente). "+
 				"Sube tus documentos en la sección Verificación de Identidad y espera la aprobación del equipo de cumplimiento.",
-		)
+			locale,
+		))
 	}
 	if tier == domain.KYCTierTwo {
 		cap := g.intParam(ctx, domain.ParamKeyKYCTier2PayoutLimitCents, domain.DefaultKYCTier2PayoutLimitCents)
@@ -116,10 +131,12 @@ func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) 
 				g.metrics.RecordGateBlock(ctx, "withdrawal", "cap_exceeded")
 			}
 			return apperrors.Forbidden(fmt.Sprintf(
-				"El monto de retiro (Q%.2f) supera el límite de tu nivel de verificación actual (Q%.2f). "+
-					msgKYCUpgradeForHigherLimits,
-				float64(amountCents)/100,
-				float64(cap)/100,
+				domain.LocaleStr(
+					"Withdrawal amount (Q%.2f) exceeds the limit for your current verification level (Q%.2f). %s",
+					"El monto de retiro (Q%.2f) supera el límite de tu nivel de verificación actual (Q%.2f). %s",
+					locale,
+				),
+				float64(amountCents)/100, float64(cap)/100, kycUpgradeHint(locale),
 			))
 		}
 	}
@@ -128,10 +145,12 @@ func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) 
 }
 
 func (g *kycGate) CheckDeposit(ctx context.Context, userID, amountCents int) error {
-	tier, err := g.tierFor(ctx, userID)
+	u, err := g.userFor(ctx, userID)
 	if err != nil {
 		return err
 	}
+	tier := u.KYCTier
+	locale := domain.ParseLocale(u.Locale)
 	// Deposits never require identity verification — any user may send funds.
 	// Tier 0 and Tier 1 share the Tier-1 per-transaction cap. Tier 2 has a
 	// higher cap. Tier 3 is unlimited.
@@ -149,46 +168,56 @@ func (g *kycGate) CheckDeposit(ctx context.Context, userID, amountCents int) err
 			g.metrics.RecordGateBlock(ctx, "deposit", "cap_exceeded")
 		}
 		return apperrors.Forbidden(fmt.Sprintf(
-			"El monto del depósito (Q%.2f) supera el límite permitido para tu nivel actual (Q%.2f). "+
-				"Completa la verificación de identidad para acceder a límites mayores.",
-			float64(amountCents)/100,
-			float64(cap)/100,
+			domain.LocaleStr(
+				"Deposit amount (Q%.2f) exceeds the limit for your current verification level (Q%.2f). Complete identity verification to access higher limits.",
+				"El monto del depósito (Q%.2f) supera el límite permitido para tu nivel actual (Q%.2f). Completa la verificación de identidad para acceder a límites mayores.",
+				locale,
+			),
+			float64(amountCents)/100, float64(cap)/100,
 		))
 	}
 	return nil
 }
 
 func (g *kycGate) CheckWinFreeze(ctx context.Context, userID, prizeCents int) (bool, string, error) {
-	tier, err := g.tierFor(ctx, userID)
+	u, err := g.userFor(ctx, userID)
 	if err != nil {
 		return false, "", err
 	}
-	if tier >= domain.KYCTierTwo {
+	if u.KYCTier >= domain.KYCTierTwo {
 		return false, "", nil
 	}
+	locale := domain.ParseLocale(u.Locale)
 	// Any prize amount is frozen for unverified users (Tier 0/1). They must
 	// submit a government-issued ID before the balance can be released.
 	reason := fmt.Sprintf(
-		"Has ganado un premio de Q%.2f. Para recibir tus fondos debes completar la verificación de identidad: "+
-			"residentes en Guatemala deben subir su DPI vigente; extranjeros deben subir un documento oficial vigente "+
-			"(pasaporte, cédula de residencia u equivalente). Tu saldo ha sido retenido hasta que el equipo de cumplimiento apruebe tu solicitud.",
+		domain.LocaleStr(
+			"You have won a prize of Q%.2f. To receive your funds you must complete identity verification: "+
+				"Guatemalan residents must upload a valid DPI; foreign residents must upload a valid official document "+
+				"(passport, residency card or equivalent). Your balance has been held until the compliance team approves your application.",
+			"Has ganado un premio de Q%.2f. Para recibir tus fondos debes completar la verificación de identidad: "+
+				"residentes en Guatemala deben subir su DPI vigente; extranjeros deben subir un documento oficial vigente "+
+				"(pasaporte, cédula de residencia u equivalente). Tu saldo ha sido retenido hasta que el equipo de cumplimiento apruebe tu solicitud.",
+			locale,
+		),
 		float64(prizeCents)/100,
 	)
 	return true, reason, nil
 }
 
-// tierFor returns the KYC tier for the given user without loading the full profile.
-// Reading from users.kyc_tier (denormalised) avoids a JOIN to kyc_profiles on
-// every money-movement call.
-func (g *kycGate) tierFor(ctx context.Context, userID int) (domain.KYCTier, error) {
+// userFor returns the full User record for userID. It is used instead of a
+// narrow tierFor so that every gate method can access both the KYC tier
+// (denormalised from kyc_profiles.tier) and the locale preference in a single
+// database read without a JOIN to kyc_profiles.
+func (g *kycGate) userFor(ctx context.Context, userID int) (*domain.User, error) {
 	u, err := g.userRepo.GetByID(ctx, userID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if u == nil {
-		return 0, apperrors.NotFound("user not found")
+		return nil, apperrors.NotFound("user not found")
 	}
-	return u.KYCTier, nil
+	return u, nil
 }
 
 // intParam reads a system param as an integer, falling back to defaultVal when
@@ -215,12 +244,13 @@ func (g *kycGate) CheckDepositVelocity(ctx context.Context, userID, amountCents 
 	if g.ledger == nil {
 		return nil
 	}
-	tier, err := g.tierFor(ctx, userID)
+	u, err := g.userFor(ctx, userID)
 	if err != nil {
 		return err
 	}
+	locale := domain.ParseLocale(u.Locale)
 	var cap int
-	switch tier {
+	switch u.KYCTier {
 	case domain.KYCTierUnverified, domain.KYCTierOne:
 		cap = g.intParam(ctx, domain.ParamKeyKYCTier1DepositVelocityCents, domain.DefaultKYCTier1DepositVelocityCents)
 	case domain.KYCTierTwo:
@@ -242,9 +272,12 @@ func (g *kycGate) CheckDepositVelocity(ctx context.Context, userID, amountCents 
 			g.metrics.RecordGateBlock(ctx, "deposit", "velocity_exceeded")
 		}
 		return apperrors.Forbidden(fmt.Sprintf(
-			"El depósito supera el límite de velocidad de 24 horas para tu nivel de verificación actual (Q%.2f/día). "+
-				msgKYCUpgradeForHigherLimits,
-			float64(cap)/100,
+			domain.LocaleStr(
+				"Deposit exceeds the 24-hour velocity limit for your current verification level (Q%.2f/day). %s",
+				"El depósito supera el límite de velocidad de 24 horas para tu nivel de verificación actual (Q%.2f/día). %s",
+				locale,
+			),
+			float64(cap)/100, kycUpgradeHint(locale),
 		))
 	}
 	return nil
@@ -254,12 +287,13 @@ func (g *kycGate) CheckWithdrawalVelocity(ctx context.Context, userID, amountCen
 	if g.ledger == nil {
 		return nil
 	}
-	tier, err := g.tierFor(ctx, userID)
+	u, err := g.userFor(ctx, userID)
 	if err != nil {
 		return err
 	}
+	locale := domain.ParseLocale(u.Locale)
 	var cap int
-	switch tier {
+	switch u.KYCTier {
 	case domain.KYCTierUnverified, domain.KYCTierOne:
 		cap = g.intParam(ctx, domain.ParamKeyKYCTier1WithdrawalVelocityCents, domain.DefaultKYCTier1WithdrawalVelocityCents)
 	case domain.KYCTierTwo:
@@ -271,9 +305,11 @@ func (g *kycGate) CheckWithdrawalVelocity(ctx context.Context, userID, amountCen
 		if g.metrics != nil {
 			g.metrics.RecordGateBlock(ctx, "withdrawal", "velocity_no_allowance")
 		}
-		return apperrors.Forbidden(
+		return apperrors.Forbidden(domain.LocaleStr(
+			"Your current verification level does not permit withdrawals. Complete identity verification to enable withdrawals.",
 			"Tu nivel de verificación actual no permite retiros. Completa la verificación de identidad para habilitar retiros.",
-		)
+			locale,
+		))
 	}
 	withdrawalKinds := []domain.BalanceLedgerKind{
 		domain.LedgerKindWithdrawalDeduct,
@@ -287,9 +323,12 @@ func (g *kycGate) CheckWithdrawalVelocity(ctx context.Context, userID, amountCen
 			g.metrics.RecordGateBlock(ctx, "withdrawal", "velocity_exceeded")
 		}
 		return apperrors.Forbidden(fmt.Sprintf(
-			"El retiro supera el límite de velocidad de 24 horas para tu nivel de verificación actual (Q%.2f/día). "+
-				msgKYCUpgradeForHigherLimits,
-			float64(cap)/100,
+			domain.LocaleStr(
+				"Withdrawal exceeds the 24-hour velocity limit for your current verification level (Q%.2f/day). %s",
+				"El retiro supera el límite de velocidad de 24 horas para tu nivel de verificación actual (Q%.2f/día). %s",
+				locale,
+			),
+			float64(cap)/100, kycUpgradeHint(locale),
 		))
 	}
 	return nil
@@ -335,8 +374,14 @@ func (g *kycGate) CheckIPSubmissionVelocity(ctx context.Context, ip string) erro
 		if g.metrics != nil {
 			g.metrics.RecordFraudFlag(ctx, "ip_velocity")
 		}
+		// IP velocity check has no userID, so system default locale is used.
+		locale := domain.DefaultLocale
 		return apperrors.RateLimited(fmt.Sprintf(
-			"Demasiados intentos de verificación desde esta red. Espera %d minutos antes de intentarlo de nuevo.",
+			domain.LocaleStr(
+				"Too many verification attempts from this network. Please wait %d minutes before trying again.",
+				"Demasiados intentos de verificación desde esta red. Espera %d minutos antes de intentarlo de nuevo.",
+				locale,
+			),
 			windowMins,
 		))
 	}

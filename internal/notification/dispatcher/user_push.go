@@ -47,7 +47,7 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 				return // already sent a digest push for this window; drop
 			}
 			// digestCount > 0: first overflow — send one digest push instead
-			d.deliverDigestPush(ctx, entry, userID, digestCount, log)
+			d.deliverDigestPush(ctx, entry, userID, digestCount, content.locale, log)
 			return
 		}
 	}
@@ -89,7 +89,9 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 // when the digest gate transitions from individual delivery to digest mode.
 // The digest payload uses a synthetic event type ("digest") to let the Service
 // Worker render a consolidated notification rather than a named event.
-func (d *UserDispatcher) deliverDigestPush(ctx context.Context, entry *notification.OutboxEntry, userID int, count int32, log *zap.Logger) {
+// locale is the resolved preference for the target user, used to select the
+// digest title and body in the correct language.
+func (d *UserDispatcher) deliverDigestPush(ctx context.Context, entry *notification.OutboxEntry, userID int, count int32, locale Locale, log *zap.Logger) {
 	subs, err := d.pushRepo.ListActiveByUser(ctx, userID)
 	if err != nil || len(subs) == 0 {
 		return
@@ -107,11 +109,19 @@ func (d *UserDispatcher) deliverDigestPush(ctx context.Context, entry *notificat
 	body, _ := json.Marshal(pushPayload{
 		NotificationID: 0, // no single notification ID for a digest
 		Type:           "digest",
-		Title:          fmt.Sprintf("You have %d new notifications", count),
-		Body:           "Tap to view your latest updates.",
-		ActionURL:      "/notifications",
-		Icon:           icon,
-		Badge:          badge,
+		Title: localeStr(
+			fmt.Sprintf("You have %d new notifications", count),
+			fmt.Sprintf("Tienes %d nuevas notificaciones", count),
+			locale,
+		),
+		Body: localeStr(
+			"Tap to view your latest updates.",
+			"Toca para ver tus últimas actualizaciones.",
+			locale,
+		),
+		ActionURL: "/notifications",
+		Icon:      icon,
+		Badge:     badge,
 	})
 
 	for _, sub := range subs {
