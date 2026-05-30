@@ -21,14 +21,15 @@ import (
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const (
-	groupsPath       = "/groups"
-	groupByIDPath    = "/groups/1"
-	groupsMePath     = "/groups/me"
-	groupsJoinPath   = "/groups/join"
-	groupMembersPath = "/groups/1/members"
-	groupRenamePath  = "/groups/1"
-	groupApprovePath = "/groups/1/members/99/approve"
-	groupLeavePath   = "/groups/1/members/me"
+	groupsPath                = "/groups"
+	groupByIDPath             = "/groups/1"
+	groupsMePath              = "/groups/me"
+	groupsJoinPath            = "/groups/join"
+	groupMembersPath          = "/groups/1/members"
+	groupRenamePath           = "/groups/1"
+	groupApprovePath          = "/groups/1/members/99/approve"
+	groupLeavePath            = "/groups/1/members/me"
+	groupsJoinWithBalancePath = "/groups/join-with-balance"
 
 	fmtExpect404  = "expected 404, got %d"
 	fmtDecodeFail = "decode: %v"
@@ -69,6 +70,7 @@ func buildGroupRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
 	}
 	r.Post("/groups", h.Create)
 	r.Post("/groups/join", h.Join)
+	r.Post("/groups/join-with-balance", h.JoinWithBalance)
 	r.Get("/groups/me", h.ListMyGroups)
 	r.Get("/groups/{id}", h.GetByID)
 	r.Patch("/groups/{id}", h.RenameGroup)
@@ -437,6 +439,94 @@ func TestGroupJoin_Returns500_OnServiceError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	testGroupRouter(h).ServeHTTP(rec, req)
 
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+// ── JoinWithBalance ───────────────────────────────────────────────────────────
+
+func TestGroupJoinWithBalance_Returns200(t *testing.T) {
+	t.Parallel()
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{membership: fixedMembership()})
+	req := httptest.NewRequest(http.MethodPost, groupsJoinWithBalancePath, bytes.NewBufferString(bodyJoinGroup))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, rec.Code)
+	}
+}
+
+func TestGroupJoinWithBalance_Returns401_WhenNoUser(t *testing.T) {
+	t.Parallel()
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPost, groupsJoinWithBalancePath, bytes.NewBufferString(bodyJoinGroup))
+	rec := httptest.NewRecorder()
+	testGroupRouterNoUser(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, rec.Code)
+	}
+}
+
+func TestGroupJoinWithBalance_Returns422_WhenNoInviteCode(t *testing.T) {
+	t.Parallel()
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPost, groupsJoinWithBalancePath, bytes.NewBufferString(`{}`))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestGroupJoinWithBalance_Returns400_OnMalformedJSON(t *testing.T) {
+	t.Parallel()
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPost, groupsJoinWithBalancePath, bytes.NewBufferString(`{not json`))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestGroupJoinWithBalance_Returns409_OnInsufficientBalance(t *testing.T) {
+	t.Parallel()
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.Conflict("insufficient available balance")},
+	)
+	req := httptest.NewRequest(http.MethodPost, groupsJoinWithBalancePath, bytes.NewBufferString(bodyJoinGroup))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Errorf(groupHandler409Fmt, rec.Code)
+	}
+}
+
+func TestGroupJoinWithBalance_Returns404_WhenCodeNotFound(t *testing.T) {
+	t.Parallel()
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.NotFound("group not found for the given invite code")},
+	)
+	req := httptest.NewRequest(http.MethodPost, groupsJoinWithBalancePath, bytes.NewBufferString(bodyJoinGroup))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf(fmtExpect404, rec.Code)
+	}
+}
+
+func TestGroupJoinWithBalance_Returns500_OnServiceError(t *testing.T) {
+	t.Parallel()
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.Internal(errors.New(errDBDown))},
+	)
+	req := httptest.NewRequest(http.MethodPost, groupsJoinWithBalancePath, bytes.NewBufferString(bodyJoinGroup))
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, rec.Code)
 	}

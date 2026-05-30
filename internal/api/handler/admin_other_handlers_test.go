@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +157,18 @@ func TestAdminUpdateGroupSettings_NoCallerInContext_Returns401(t *testing.T) {
 	w := do(newAdminGroupRouter(svc), http.MethodPatch, adminOtherPathGroups1Settings, `{"entry_fee":100}`)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf(fmtExpect401, w.Code)
+	}
+}
+
+func TestAdminUpdateGroupSettings_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminGroupSvc{err: errors.New(adminOtherDBError)}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPatch, adminOtherPathGroups1Settings, `{"entry_fee":100}`),
+		adminCaller,
+	)
+	w := doReq(newAdminGroupRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
 	}
 }
 
@@ -671,6 +684,18 @@ func TestAdminParamGet_ServiceError_Returns500(t *testing.T) {
 	}
 }
 
+func TestAdminParamGet_EmptyKey_Returns422(t *testing.T) {
+	// chi guarantees a non-empty key segment for routed requests; call the
+	// handler directly (no router) so chi.URLParam returns "" and the guard fires.
+	h := handler.NewAdminSystemParamHandler(&stubAdminParamSvc{}, zap.NewNop())
+	req := httptest.NewRequest(http.MethodGet, "/system-params/", nil)
+	w := httptest.NewRecorder()
+	h.Get(w, req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
 func TestAdminParamSet_Success_Returns200(t *testing.T) {
 	p := &domain.SystemParam{Key: adminOtherScoringExact, Value: "10"}
 	svc := &stubAdminParamSvc{param: p}
@@ -696,6 +721,18 @@ func TestAdminParamSet_BadJSON_Returns422(t *testing.T) {
 	svc := &stubAdminParamSvc{}
 	req := withCaller(
 		newAdminRequestJSON(http.MethodPatch, "/system-params/k", `not-json`),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminParamSet_ConstraintViolation_Returns422(t *testing.T) {
+	svc := &stubAdminParamSvc{err: apperrors.Validation("value 999 is out of range [1, 100]")}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPatch, "/system-params/scoring.exact_score", `{"value":"999"}`),
 		adminCaller,
 	)
 	w := doReq(newAdminParamRouter(svc), req)
