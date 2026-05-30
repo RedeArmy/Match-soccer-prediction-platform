@@ -4,401 +4,252 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
-	"time"
 
-	"github.com/alicebob/miniredis/v2"
-	"github.com/redis/go-redis/v9"
-	"go.opentelemetry.io/otel/metric"
-	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/rede/world-cup-quiniela/internal/middleware"
-	"github.com/rede/world-cup-quiniela/internal/repository"
-	"github.com/rede/world-cup-quiniela/pkg/clock"
 )
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-func newIPLimiter(t *testing.T, limit int, windowSec int64) (*miniredis.Miniredis, *middleware.IPRateLimiter) {
-	t.Helper()
-	mr := miniredis.RunT(t)
-	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	t.Cleanup(func() { _ = rc.Close() })
-	l := middleware.NewIPRateLimiter(rc, clock.Real{}, zaptest.NewLogger(t), "ip_gl", limit, windowSec)
-	return mr, l
+// stubIPAllower is a test double for middleware.IPAllower that always returns
+// a fixed result.
+type stubIPAllower struct {
+	allowed    bool
+	retryAfter int
 }
 
-func newIPLimiterWithClock(t *testing.T, limit int, windowSec int64, clk clock.Nower) (*miniredis.Miniredis, *middleware.IPRateLimiter) {
-	t.Helper()
-	mr := miniredis.RunT(t)
-	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	t.Cleanup(func() { _ = rc.Close() })
-	l := middleware.NewIPRateLimiter(rc, clk, zaptest.NewLogger(t), "ip_gl", limit, windowSec)
-	return mr, l
+func (s *stubIPAllower) Allow(_ context.Context, _ string) (bool, int) {
+	return s.allowed, s.retryAfter
 }
 
-func requestWithIP(ip string) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-	ctx := repository.ContextWithClientIP(r.Context(), ip)
-	return r.WithContext(ctx)
-}
+// ── NewIPRateLimiter ──────────────────────────────────────────────────────────
 
-// ── Allow: core token behaviour ───────────────────────────────────────────────
-
-// TestIPRateLimiter_AllowsUpToLimit verifies that exactly `limit` requests from
-// the same IP are permitted; the (limit+1)th is blocked.
-func TestIPRateLimiter_AllowsUpToLimit(t *testing.T) {
-	const limit = 5
-	_, l := newIPLimiter(t, limit, 10)
-	ctx := context.Background()
-
-	for i := range limit {
-		allowed, _ := l.Allow(ctx, "1.2.3.4")
-		if !allowed {
-			t.Fatalf("request %d/%d: expected allowed=true, got false", i+1, limit)
-		}
-	}
-
-	allowed, _ := l.Allow(ctx, "1.2.3.4")
-	if allowed {
-		t.Fatal("request limit+1: expected allowed=false, got true")
+func TestNewIPRateLimiter_NilMeter_DoesNotPanic(t *testing.T) {
+	global := &stubIPAllower{allowed: true}
+	webhook := &stubIPAllower{allowed: true}
+	// nil meter should not panic; the counter fields remain nil and are no-ops.
+	limiter := middleware.NewIPRateLimiter(global, webhook, nil, zaptest.NewLogger(t))
+	if limiter == nil {
+		t.Fatal("NewIPRateLimiter returned nil")
 	}
 }
 
-// TestIPRateLimiter_BlockedRequestHasRetryAfter verifies that a blocked Allow
-// returns retryAfterSecs > 0.
-func TestIPRateLimiter_BlockedRequestHasRetryAfter(t *testing.T) {
-	_, l := newIPLimiter(t, 1, 10)
-	ctx := context.Background()
+// ── Global ────────────────────────────────────────────────────────────────────
 
-	l.Allow(ctx, "1.2.3.4") //nolint:errcheck // exhaust the single slot
-
-	_, retry := l.Allow(ctx, "1.2.3.4")
-	if retry <= 0 {
-		t.Errorf("expected retryAfterSecs > 0, got %d", retry)
-	}
-}
-
-// TestIPRateLimiter_IndependentPerIP verifies that IP A and IP B have isolated
-// counters: exhausting A does not affect B.
-func TestIPRateLimiter_IndependentPerIP(t *testing.T) {
-	_, l := newIPLimiter(t, 1, 10)
-	ctx := context.Background()
-
-	l.Allow(ctx, "10.0.0.1")               // exhaust IP A
-	l.Allow(ctx, "10.0.0.1")               // blocked
-	allowed, _ := l.Allow(ctx, "10.0.0.2") // IP B has its own bucket
-	if !allowed {
-		t.Error("IP B should be allowed even though IP A is exhausted")
-	}
-}
-
-// TestIPRateLimiter_FailOpenOnRedisError verifies that a Redis failure causes
-// Allow to return (true, 0) — fail-open — rather than blocking traffic.
-func TestIPRateLimiter_FailOpenOnRedisError(t *testing.T) {
-	mr, l := newIPLimiter(t, 3, 10)
-	mr.Close() // force all Redis commands to fail
-
-	allowed, retry := l.Allow(context.Background(), "1.2.3.4")
-	if !allowed {
-		t.Fatal("expected fail-open (allowed=true) on Redis error, got false")
-	}
-	if retry != 0 {
-		t.Errorf("expected retryAfterSecs=0 on fail-open, got %d", retry)
-	}
-}
-
-// TestIPRateLimiter_NilRedis_UsesFallback verifies that a nil Redis client
-// falls through to the in-process LimiterStore without panicking.
-func TestIPRateLimiter_NilRedis_UsesFallback(t *testing.T) {
-	l := middleware.NewIPRateLimiter(nil, clock.Real{}, zaptest.NewLogger(t), "ip_gl", 3, 10)
-	ctx := context.Background()
-
-	for i := range 3 {
-		allowed, _ := l.Allow(ctx, "9.9.9.9")
-		if !allowed {
-			t.Fatalf("fallback request %d: expected allowed=true", i+1)
-		}
-	}
-}
-
-// TestIPRateLimiter_WindowBoundary verifies that the counter resets when the
-// fixed window rolls over. Uses clock.Frozen to advance time without sleeping.
-func TestIPRateLimiter_WindowBoundary(t *testing.T) {
-	const (
-		limit     = 2
-		windowSec = 10
+func TestIPRateLimiter_Global_AllowsRequestUnderLimit(t *testing.T) {
+	limiter := middleware.NewIPRateLimiter(
+		&stubIPAllower{allowed: true},
+		&stubIPAllower{allowed: false}, // webhook store is stricter — not used on global path
+		nil, zaptest.NewLogger(t),
 	)
-	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	frozen := &mutableClock{t: t0}
 
-	_, l := newIPLimiterWithClock(t, limit, windowSec, frozen)
-	ctx := context.Background()
+	var reached bool
+	handler := limiter.Global()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		reached = true
+	}))
 
-	// Exhaust the window.
-	l.Allow(ctx, "5.5.5.5")
-	l.Allow(ctx, "5.5.5.5")
-	blocked, _ := l.Allow(ctx, "5.5.5.5")
-	if blocked {
-		t.Fatal("expected blocked=false before window rolls; got true")
-	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	req.RemoteAddr = "1.2.3.4"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
 
-	// Advance past the window boundary.
-	frozen.advance(time.Duration(windowSec+1) * time.Second)
-
-	// New window — counter resets.
-	allowed, _ := l.Allow(ctx, "5.5.5.5")
-	if !allowed {
-		t.Fatal("expected allowed=true after window rolled over, got false")
+	if !reached {
+		t.Error("expected handler to be reached on allowed request")
 	}
 }
 
-// mutableClock implements clock.Nower with an advanceable time value.
-// Not safe for concurrent use — intended for single-goroutine tests only.
-type mutableClock struct{ t time.Time }
+func TestIPRateLimiter_Global_Blocks429WhenOverLimit(t *testing.T) {
+	limiter := middleware.NewIPRateLimiter(
+		&stubIPAllower{allowed: false, retryAfter: 1},
+		&stubIPAllower{allowed: true},
+		nil, zaptest.NewLogger(t),
+	)
 
-func (c *mutableClock) Now() time.Time          { return c.t }
-func (c *mutableClock) advance(d time.Duration) { c.t = c.t.Add(d) }
+	handler := limiter.Global()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
 
-// ── Middleware HTTP wrapper ────────────────────────────────────────────────────
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/predictions", nil)
+	req.RemoteAddr = "5.6.7.8"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
 
-// TestIPRateLimiter_Middleware_AllowsAndSetsHeader verifies that requests within
-// the limit pass through and X-RateLimit-Limit is present.
-func TestIPRateLimiter_Middleware_AllowsAndSetsHeader(t *testing.T) {
-	const limit = 5
-	_, l := newIPLimiter(t, limit, 10)
-	handler := l.Middleware("global")(passthroughHandler)
-
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, requestWithIP("2.3.4.5"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429, got %d", rec.Code)
 	}
-	if got := w.Header().Get("X-RateLimit-Limit"); got != strconv.Itoa(limit) {
-		t.Errorf("X-RateLimit-Limit: want %d, got %q", limit, got)
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("expected Retry-After header on 429 response")
 	}
 }
 
-// TestIPRateLimiter_Middleware_Returns429WhenLimitExceeded verifies that the
-// (limit+1)th request receives HTTP 429, a Retry-After header, and the correct
-// JSON error body.
-func TestIPRateLimiter_Middleware_Returns429WhenLimitExceeded(t *testing.T) {
-	_, l := newIPLimiter(t, 2, 10)
-	handler := l.Middleware("global")(passthroughHandler)
+func TestIPRateLimiter_Global_PassesThroughWhenRemoteAddrEmpty(t *testing.T) {
+	limiter := middleware.NewIPRateLimiter(
+		&stubIPAllower{allowed: false}, // would block if IP were extracted
+		&stubIPAllower{allowed: false},
+		nil, zaptest.NewLogger(t),
+	)
 
-	// Exhaust the limit.
-	for range 2 {
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, requestWithIP("3.4.5.6"))
-	}
+	var reached bool
+	handler := limiter.Global()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		reached = true
+	}))
 
-	// Next request must be throttled.
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, requestWithIP("3.4.5.6"))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+	req.RemoteAddr = "" // empty → fail-open
+	handler.ServeHTTP(httptest.NewRecorder(), req)
 
-	if w.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429, got %d", w.Code)
-	}
-	if w.Header().Get("Retry-After") == "" {
-		t.Error("expected Retry-After header on 429 response, got empty string")
-	}
-	if w.Header().Get("X-RateLimit-Limit") == "" {
-		t.Error("expected X-RateLimit-Limit header on 429 response")
+	if !reached {
+		t.Error("expected handler to be reached when RemoteAddr is empty (fail-open)")
 	}
 }
 
-// TestIPRateLimiter_Middleware_NoIPInContext verifies that when no IP is in the
-// request context the request passes through without consuming a token.
-func TestIPRateLimiter_Middleware_NoIPInContext(t *testing.T) {
-	_, l := newIPLimiter(t, 1, 10)
-	handler := l.Middleware("global")(passthroughHandler)
+// ── Webhook ───────────────────────────────────────────────────────────────────
 
-	// Plain request with no IP in context.
-	r := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
+func TestIPRateLimiter_Webhook_AllowsRequest(t *testing.T) {
+	limiter := middleware.NewIPRateLimiter(
+		&stubIPAllower{allowed: false}, // global store not used on webhook path
+		&stubIPAllower{allowed: true},
+		nil, zaptest.NewLogger(t),
+	)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 when no IP in context, got %d", w.Code)
+	var reached bool
+	handler := limiter.Webhook()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		reached = true
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", nil)
+	req.RemoteAddr = "203.0.113.1"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !reached {
+		t.Error("expected handler to be reached on allowed webhook request")
 	}
 }
 
-// TestIPRateLimiter_Configure verifies that Configure updates the limit so the
-// new value is respected on subsequent Allow calls.
-func TestIPRateLimiter_Configure_UpdatesLimit(t *testing.T) {
-	_, l := newIPLimiter(t, 1, 10)
-	ctx := context.Background()
+func TestIPRateLimiter_Webhook_Blocks429WhenOverLimit(t *testing.T) {
+	limiter := middleware.NewIPRateLimiter(
+		&stubIPAllower{allowed: true},
+		&stubIPAllower{allowed: false, retryAfter: 2},
+		nil, zaptest.NewLogger(t),
+	)
 
-	// Original limit = 1: first request allowed, second blocked.
-	l.Allow(ctx, "7.7.7.7")
-	allowed, _ := l.Allow(ctx, "7.7.7.7")
-	if allowed {
-		t.Fatal("expected blocked before Configure")
-	}
+	handler := limiter.Webhook()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
 
-	// Reconfigure with limit = 100 and a fresh Redis key (different IP).
-	l.Configure(100, 10)
-	for i := range 100 {
-		a, _ := l.Allow(ctx, "8.8.8.8")
-		if !a {
-			t.Fatalf("request %d blocked after Configure(100)", i+1)
-		}
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/paypal", nil)
+	req.RemoteAddr = "9.8.7.6"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429, got %d", rec.Code)
 	}
 }
 
-// ── RegisterMetrics ───────────────────────────────────────────────────────────
+// ── Port stripping ────────────────────────────────────────────────────────────
 
-// TestIPRateLimiter_RegisterMetrics_Succeeds verifies that RegisterMetrics with
-// a real SDK meter creates both OTel counters without error.
-func TestIPRateLimiter_RegisterMetrics_Succeeds(t *testing.T) {
-	_, l := newIPLimiter(t, 5, 10)
+// TestIPRateLimiter_Global_StripsPortFromRemoteAddr verifies that two requests
+// from the same IP but different ephemeral ports share the same rate-limit
+// bucket. This is the non-Fly.io scenario: r.RemoteAddr is "host:port".
+func TestIPRateLimiter_Global_StripsPortFromRemoteAddr(t *testing.T) {
+	calls := make(map[string]int)
+	limiter := middleware.NewIPRateLimiter(
+		&recordingAllower{calls: calls},
+		&stubIPAllower{allowed: true},
+		nil, zaptest.NewLogger(t),
+	)
+	handler := limiter.Global()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
 
+	for _, port := range []string{"127.0.0.1:40001", "127.0.0.1:40002", "127.0.0.1:40003"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = port
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	// All three requests must have used the same bucket key ("ip:global:127.0.0.1"),
+	// not one key per ephemeral port.
+	if calls["ip:global:127.0.0.1"] != 3 {
+		t.Errorf("expected bucket key ip:global:127.0.0.1 called 3 times, got %v", calls)
+	}
+}
+
+// TestIPRateLimiter_TrustedClientIPIntegration verifies the full chain:
+// TrustedClientIP sets r.RemoteAddr from Fly-Client-IP, and the rate limiter
+// uses the resulting host as the bucket key (no port).
+func TestIPRateLimiter_TrustedClientIPIntegration(t *testing.T) {
+	calls := make(map[string]int)
+	limiter := middleware.NewIPRateLimiter(
+		&recordingAllower{calls: calls},
+		&stubIPAllower{allowed: true},
+		nil, zaptest.NewLogger(t),
+	)
+	// Chain: TrustedClientIP → IPRateLimiter.Global()
+	handler := middleware.TrustedClientIP(
+		limiter.Global()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	req.RemoteAddr = "fdaa:0:1::1:12345" // Fly internal proxy address
+	req.Header.Set("Fly-Client-IP", "203.0.113.42")
+	req.Header.Set("X-Forwarded-For", "1.2.3.4") // attacker-controlled; must be ignored
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if calls["ip:global:203.0.113.42"] != 1 {
+		t.Errorf("expected bucket key ip:global:203.0.113.42, got %v", calls)
+	}
+}
+
+// recordingAllower records Allow calls by key for test inspection.
+type recordingAllower struct {
+	calls map[string]int
+}
+
+func (r *recordingAllower) Allow(_ context.Context, key string) (bool, int) {
+	r.calls[key]++
+	return true, 0
+}
+
+// ── OTel counter ──────────────────────────────────────────────────────────────
+
+func TestIPRateLimiter_BlockedCounterIncremented(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	meter := mp.Meter("test")
 
-	if err := l.RegisterMetrics(mp.Meter("test")); err != nil {
-		t.Fatalf("RegisterMetrics: %v", err)
-	}
-}
+	limiter := middleware.NewIPRateLimiter(
+		&stubIPAllower{allowed: false, retryAfter: 1},
+		&stubIPAllower{allowed: false, retryAfter: 1},
+		meter, zaptest.NewLogger(t),
+	)
 
-// TestIPRateLimiter_RegisterMetrics_FailOpen_IncrementsCounter verifies that a
-// Redis failure increments wcq_ip_rate_limit_fail_open_total exactly once.
-func TestIPRateLimiter_RegisterMetrics_FailOpen_IncrementsCounter(t *testing.T) {
-	mr, l := newIPLimiter(t, 5, 10)
+	handler := limiter.Global()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
 
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	if err := l.RegisterMetrics(mp.Meter("test")); err != nil {
-		t.Fatalf("RegisterMetrics: %v", err)
-	}
-
-	mr.Close()
-	l.Allow(context.Background(), "1.1.1.1")
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	var rm metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &rm); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	total := findInt64SumValue(t, rm, "wcq_ip_rate_limit_fail_open_total")
-	if total != 1 {
-		t.Errorf("expected wcq_ip_rate_limit_fail_open_total=1, got %d", total)
-	}
-}
 
-// TestIPRateLimiter_Middleware_BlockedTotal_IncrementedWithLayer verifies that
-// a blocked request increments wcq_ip_rate_limit_blocked_total with the correct
-// layer attribute.
-func TestIPRateLimiter_Middleware_BlockedTotal_IncrementedWithLayer(t *testing.T) {
-	_, l := newIPLimiter(t, 1, 10)
-
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	if err := l.RegisterMetrics(mp.Meter("test")); err != nil {
-		t.Fatalf("RegisterMetrics: %v", err)
-	}
-
-	handler := l.Middleware("global")(passthroughHandler)
-
-	// First request exhausts the limit.
-	handler.ServeHTTP(httptest.NewRecorder(), requestWithIP("4.5.6.7"))
-	// Second request is blocked — should increment the counter.
-	handler.ServeHTTP(httptest.NewRecorder(), requestWithIP("4.5.6.7"))
-
-	var rm metricdata.ResourceMetrics
-	if err := reader.Collect(context.Background(), &rm); err != nil {
-		t.Fatalf("Collect: %v", err)
-	}
-	total := findInt64SumValue(t, rm, "wcq_ip_rate_limit_blocked_total")
-	if total != 1 {
-		t.Errorf("expected wcq_ip_rate_limit_blocked_total=1, got %d", total)
-	}
-}
-
-// ── safeIPPrefix ──────────────────────────────────────────────────────────────
-
-// TestSafeIPPrefix_IPv4_RedactsLastTwoOctets is a white-box test of the
-// unexported safeIPPrefix helper via the Middleware log output (tested
-// indirectly through Allow which returns without panicking).
-// The actual redaction format is verified via a package-internal test in
-// rate_limit_internal_test.go.
-func TestSafeIPPrefix_DoesNotPanicOnVariousInputs(t *testing.T) {
-	_, l := newIPLimiter(t, 1, 10)
-	ctx := context.Background()
-
-	// None of these should panic regardless of IP format.
-	for _, ip := range []string{
-		"203.0.113.42", // valid IPv4
-		"::1",          // IPv6 loopback
-		"2001:db8::1",  // IPv6
-		"not-an-ip",    // malformed
-		"",             // empty (handled by Middleware, not Allow directly)
-	} {
-		if ip != "" {
-			l.Allow(ctx, ip) //nolint:errcheck // testing panic safety, not correctness
+	found := false
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name == "wcq_ip_rate_limit_blocked_total" {
+				found = true
+			}
 		}
 	}
-}
-
-// TestIPRateLimiter_Middleware_BlockedIPv6_RedactsIP exercises the
-// "[ipv6-redacted]" branch of safeIPPrefix. Exhausting the limit from an IPv6
-// address forces the blocked-request Warn log to call safeIPPrefix with a
-// non-IPv4 string, covering the return "[ipv6-redacted]" branch.
-func TestIPRateLimiter_Middleware_BlockedIPv6_RedactsIP(t *testing.T) {
-	_, l := newIPLimiter(t, 1, 10)
-	handler := l.Middleware("global")(passthroughHandler)
-
-	// First request exhausts the single-slot window for this IPv6 address.
-	handler.ServeHTTP(httptest.NewRecorder(), requestWithIP("2001:db8::1"))
-	// Second request is blocked; safeIPPrefix is called with the IPv6 address
-	// inside the Warn log, covering the "[ipv6-redacted]" branch.
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, requestWithIP("2001:db8::1"))
-	if w.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429 for blocked IPv6 request, got %d", w.Code)
-	}
-}
-
-// ── RegisterMetrics error paths ───────────────────────────────────────────────
-
-// succeedOnceCounterMeter returns a valid noop counter on its first
-// Int64Counter call and errCounterFailed on every subsequent call. Used to
-// cover the second-counter error branch in IPRateLimiter.RegisterMetrics
-// without failing the first counter registration.
-type succeedOnceCounterMeter struct {
-	metricnoop.Meter
-	called int
-}
-
-func (m *succeedOnceCounterMeter) Int64Counter(_ string, _ ...metric.Int64CounterOption) (metric.Int64Counter, error) {
-	m.called++
-	if m.called == 1 {
-		return metricnoop.Int64Counter{}, nil
-	}
-	return nil, errCounterFailed
-}
-
-// TestIPRateLimiter_RegisterMetrics_FirstCounterError verifies that a meter
-// failure on the first Int64Counter call causes RegisterMetrics to return an
-// error (wcq_ip_rate_limit_blocked_total registration fails).
-func TestIPRateLimiter_RegisterMetrics_FirstCounterError(t *testing.T) {
-	_, l := newIPLimiter(t, 5, 10)
-	if err := l.RegisterMetrics(failCounterMeter{}); err == nil {
-		t.Fatal("expected error when first counter registration fails, got nil")
-	}
-}
-
-// TestIPRateLimiter_RegisterMetrics_SecondCounterError verifies that a meter
-// failure on the second Int64Counter call (wcq_ip_rate_limit_fail_open_total)
-// causes RegisterMetrics to return an error even when the first counter
-// registered successfully.
-func TestIPRateLimiter_RegisterMetrics_SecondCounterError(t *testing.T) {
-	_, l := newIPLimiter(t, 5, 10)
-	if err := l.RegisterMetrics(&succeedOnceCounterMeter{}); err == nil {
-		t.Fatal("expected error when second counter registration fails, got nil")
+	if !found {
+		t.Error("expected wcq_ip_rate_limit_blocked_total counter after blocked request")
 	}
 }

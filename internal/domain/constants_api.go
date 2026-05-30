@@ -16,24 +16,19 @@ const (
 	DefaultAPIRateLimitRatePerSec = 10 // api.rate_limit_rate_per_sec (tokens/second)
 	DefaultAPIRateLimitBurst      = 30 // api.rate_limit_burst (max burst size)
 
-	// IP-based rate limiting — two layers applied before route dispatch.
+	// IP-based rate limiting (L1 global + L2 webhook).
 	//
-	// L1 global per-IP (api.ip_global_rate_limit_requests /
-	// api.ip_global_rate_limit_window_sec): caps all traffic from a single IP
-	// across the entire API surface. 100 requests per 10-second window is
-	// generous for real users (a dashboard load issues ~5-10 parallel requests)
-	// while blocking volumetric attacks. Both values are is_runtime=FALSE.
-	DefaultAPIGlobalIPRateLimitRequests  = 100 // api.ip_global_rate_limit_requests
-	DefaultAPIGlobalIPRateLimitWindowSec = 10  // api.ip_global_rate_limit_window_sec
-
-	// L2 webhook per-IP (api.ip_webhook_rate_limit_requests /
-	// api.ip_webhook_rate_limit_window_sec): tighter limit applied only to
-	// /webhooks/* routes. Real payment providers send 1-5 webhooks per minute;
-	// 20 per 60-second window is generous for retries while protecting the
-	// CPU-expensive PayPal RSA signature verification from replay floods.
-	// Both values are is_runtime=FALSE.
-	DefaultAPIWebhookIPRateLimitRequests  = 20 // api.ip_webhook_rate_limit_requests
-	DefaultAPIWebhookIPRateLimitWindowSec = 60 // api.ip_webhook_rate_limit_window_sec
+	// L1 global: one token-bucket per source IP across all /api/v1 routes.
+	// 50 RPS / 100 burst is permissive for legitimate users while blocking
+	// sustained bot traffic from a single address.
+	DefaultIPRateLimitGlobalRPS   = 50  // api.ip_rate_limit_global_rps
+	DefaultIPRateLimitGlobalBurst = 100 // api.ip_rate_limit_global_burst
+	//
+	// L2 webhook: tighter bucket applied only to /webhooks/* routes.
+	// Recurrente and PayPal rarely send more than one webhook per second per
+	// source; 5 RPS / 10 burst stops replay attacks without blocking providers.
+	DefaultIPRateLimitWebhookRPS   = 5  // api.ip_rate_limit_webhook_rps
+	DefaultIPRateLimitWebhookBurst = 10 // api.ip_rate_limit_webhook_burst
 
 	// Idempotency middleware: applied to payment write endpoints.
 	// TTL of 24 h gives clients a generous window for safe retry; key length
@@ -81,27 +76,21 @@ const (
 	// bucket. is_runtime=FALSE: restart required.
 	ParamKeyAPIRateLimitBurst = "api.rate_limit_burst"
 
-	// IP-based rate limiting — L1 global and L2 webhook layers.
-	// All four params are is_runtime=FALSE: the IPRateLimiter is configured once
-	// at process startup via Configure(); a restart is required to change them.
+	// IP-based rate limiting (L1 global bucket; is_runtime=FALSE: restart required).
+	// ParamKeyIPRateLimitGlobalRPS is the per-IP refill rate (tokens/second) for
+	// the L1 global bucket applied to all /api/v1 routes.
+	ParamKeyIPRateLimitGlobalRPS = "api.ip_rate_limit_global_rps"
+	// ParamKeyIPRateLimitGlobalBurst is the maximum burst size for the L1 global
+	// per-IP bucket.
+	ParamKeyIPRateLimitGlobalBurst = "api.ip_rate_limit_global_burst"
 
-	// ParamKeyAPIGlobalIPRateLimitRequests is the maximum number of requests
-	// allowed from a single IP within the global window (L1). Applies to every
-	// route including /health and /webhooks/*.
-	ParamKeyAPIGlobalIPRateLimitRequests = "api.ip_global_rate_limit_requests"
-
-	// ParamKeyAPIGlobalIPRateLimitWindowSec is the fixed-window duration in
-	// seconds for the L1 global per-IP limiter.
-	ParamKeyAPIGlobalIPRateLimitWindowSec = "api.ip_global_rate_limit_window_sec"
-
-	// ParamKeyAPIWebhookIPRateLimitRequests is the maximum number of requests
-	// allowed from a single IP within the webhook window (L2). Applies only to
-	// /webhooks/* routes.
-	ParamKeyAPIWebhookIPRateLimitRequests = "api.ip_webhook_rate_limit_requests"
-
-	// ParamKeyAPIWebhookIPRateLimitWindowSec is the fixed-window duration in
-	// seconds for the L2 webhook per-IP limiter.
-	ParamKeyAPIWebhookIPRateLimitWindowSec = "api.ip_webhook_rate_limit_window_sec"
+	// IP-based rate limiting (L2 webhook bucket; is_runtime=FALSE: restart required).
+	// ParamKeyIPRateLimitWebhookRPS is the per-IP refill rate (tokens/second) for
+	// the L2 stricter bucket applied only to /webhooks/* routes.
+	ParamKeyIPRateLimitWebhookRPS = "api.ip_rate_limit_webhook_rps"
+	// ParamKeyIPRateLimitWebhookBurst is the maximum burst size for the L2 webhook
+	// per-IP bucket.
+	ParamKeyIPRateLimitWebhookBurst = "api.ip_rate_limit_webhook_burst"
 
 	// ParamKeyAPIIdempotencyTTLHours is the number of hours a committed
 	// idempotency entry is retained in the store.

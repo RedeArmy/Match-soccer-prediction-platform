@@ -19,36 +19,49 @@
 app            = 'wcq-worker'
 primary_region = 'mia'
 
-# The worker receives events from Redis pub/sub and has no inbound HTTP
-# traffic, so no [http_service] is defined. It must run continuously —
-# auto_stop is not set, so Fly keeps the machine alive indefinitely.
-#
-# The health port (8081) is checked internally via [[services]] to let
-# Fly restart the machine if the worker becomes unresponsive.
-[[services]]
-  internal_port = 8081
-  protocol      = 'tcp'
+# The worker receives events from Redis pub/sub and has no user-facing HTTP
+# traffic. [http_service] is used instead of [[services]] because [[services]]
+# with protocol='tcp' does not reliably trigger [[services.http_checks]] probes
+# across all Fly.io configurations — HTTP health checks require an HTTP-typed
+# service block. auto_stop/auto_start are disabled so the machine runs
+# continuously; min_machines_running = 1 prevents Fly from scaling to zero.
+[http_service]
+  internal_port        = 8081
+  auto_stop_machines   = false
+  auto_start_machines  = false
+  min_machines_running = 1
 
-  # Do not expose the health port publicly — it is for Fly's internal
-  # health monitoring only, not for external callers.
-  [[services.http_checks]]
+  # Liveness check: if /health returns non-2xx for the grace + timeout period,
+  # Fly will restart the machine automatically.
+  [[http_service.checks]]
     interval     = '15s'
     timeout      = '10s'
     grace_period = '15s'
     method       = 'GET'
     path         = '/health'
 
-# GOMEMLIMIT is set to 230 MiB (89 % of the 256 MB machine limit) so that the
-# Go runtime triggers aggressive GC before the OS OOM-killer fires. Without
-# this, a burst of concurrent snapshot goroutines can push heap allocation past
-# the 256 MB ceiling and crash the process silently on Fly.io.
+# Memory and GC tuning for a 256 MB Fly.io machine:
 #
-# WCQ_DATABASE_MAXOPENCONNS is reduced from the default 25 to 10 because the
-# worker runs at most 4 concurrent snapshot goroutines (DefaultWorkerSnapshotConcurrency)
-# plus a handful of scoring/event-processing connections. 25 idle connections
-# would hold pgx buffers and connection overhead against the 230 MiB heap budget.
+# GOMEMLIMIT=230MiB  — hard ceiling at 89 % of physical RAM; the Go runtime GC
+#                      will collect aggressively before the OS OOM-killer fires.
+# GOGC=100           — default percentage-based trigger: collect when the live
+#                      heap doubles. Combined with GOMEMLIMIT this gives
+#                      predictable incremental GC under bursty scoring workloads
+#                      (concurrent snapshot goroutines), avoiding the large pause
+#                      spikes that occur when GOGC=off lets the heap grow freely
+#                      until GOMEMLIMIT fires a single large cycle near the ceiling.
+#                      Must be set explicitly — the Go default is also 100 when
+#                      GOMEMLIMIT is set, but leaving it implicit risks a future
+#                      operator copying GOGC=off from the API toml without
+#                      realising the worker's tighter 256 MB budget. (TD-006)
+# WCQ_DATABASE_MAXOPENCONNS=10 — caps the pgx pool at 10 instead of the 25-
+#                      connection default. The worker runs at most 4 concurrent
+#                      snapshot goroutines (DefaultWorkerSnapshotConcurrency) plus
+#                      a handful of scoring connections; 25 idle connections would
+#                      hold unnecessary pgx buffers against the 230 MiB budget.
 [env]
   GOMEMLIMIT                = "230MiB"
+  GOGC                      = "100"
   WCQ_DATABASE_MAXOPENCONNS = "10"
 
 [[vm]]

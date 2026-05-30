@@ -1,5 +1,5 @@
 {
-  "name": "KYC High Risk — Escalation to Senior Compliance",
+  "name": "KYC High Risk \u2014 Escalation to Senior Compliance",
   "nodes": [
     {
       "parameters": {
@@ -12,18 +12,24 @@
       "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "kyc-high-risk-escalation"
     },
     {
       "parameters": {
-        "jsCode": "const p = $input.first().json;\nconst riskLabel = p.risk_score >= 80 ? 'CRITICAL' : 'HIGH';\nreturn [{\n  json: {\n    subject: `[COMPLIANCE] ${riskLabel} risk KYC profile — Score ${p.risk_score}/100 (User ${p.user_id})`,\n    body: `A KYC profile has been automatically escalated due to elevated risk indicators.\\n\\nUser ID: ${p.user_id}\\nProfile ID: ${p.profile_id}\\nRisk score: ${p.risk_score}/100\\nPEP flag: ${p.pep_flag}\\nSanctions flag: ${p.sanctions_flag}\\nBalance frozen: ${p.balance_frozen}\\nTrace ID: ${p.trace_id}\\n\\nThis profile requires senior compliance officer review before any approval.\\n\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/profiles/${p.profile_id}`\n  }\n}];"
+        "jsCode": "const p = $input.first().json;\nconst riskLabel = p.risk_score >= 80 ? 'CRITICAL' : 'HIGH';\nreturn [{\n  json: {\n    subject: `[COMPLIANCE] ${riskLabel} risk KYC profile \u2014 Score ${p.risk_score}/100 (User ${p.user_id})`,\n    body: `A KYC profile has been automatically escalated due to elevated risk indicators.\\n\\nUser ID: ${p.user_id}\\nProfile ID: ${p.profile_id}\\nRisk score: ${p.risk_score}/100\\nPEP flag: ${p.pep_flag}\\nSanctions flag: ${p.sanctions_flag}\\nBalance frozen: ${p.balance_frozen}\\nTrace ID: ${p.trace_id}\\n\\nThis profile requires senior compliance officer review before any approval.\\n\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/profiles/${p.profile_id}`\n  }\n}];"
       },
       "id": "kyc-hr-format",
       "name": "Format Escalation",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 300]
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -36,18 +42,47 @@
       "name": "Escalate to Senior Compliance",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2,
-      "position": [650, 300]
+      "position": [
+        650,
+        300
+      ]
     }
   ],
   "connections": {
     "Webhook Trigger": {
-      "main": [[{ "node": "Format Escalation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Format Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Format Escalation": {
-      "main": [[{ "node": "Escalate to Senior Compliance", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Escalate to Senior Compliance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
-  "settings": { "executionOrder": "v1" },
-  "tags": ["kyc", "compliance", "risk", "escalation"]
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    "kyc",
+    "compliance",
+    "risk",
+    "escalation"
+  ],
+  "meta": {
+    "n8n_version": "1.49.0"
+  }
 }
