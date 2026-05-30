@@ -1,4 +1,8 @@
 {
+    "schemes": [
+        "https",
+        "http"
+    ],
     "swagger": "2.0",
     "info": {
         "description": "REST API for the World Cup prediction game. Manage fixtures, submit score forecasts, and track leaderboards.",
