@@ -150,11 +150,12 @@ func (h *Hub) Connect(userID int) (<-chan Notification, func()) {
 	if h.maxConnsPerUser > 0 && len(h.clients[userID]) >= h.maxConnsPerUser {
 		h.mu.Unlock()
 		h.metrics.rejected.Add(1)
-		// The connection was never registered, so there is nothing to
-		// clean up. The no-op satisfies the func() contract so callers
-		// can always defer cleanup() unconditionally after a nil-channel
-		// check.
-		return nil, func() {}
+		return nil, func() {
+			// The connection was never registered, so there is nothing to
+			// clean up. The no-op satisfies the func() contract so callers
+			// can always defer cleanup() unconditionally after a nil-channel
+			// check.
+		}
 	}
 	if h.clients[userID] == nil {
 		h.clients[userID] = make(map[string]*connEntry)
