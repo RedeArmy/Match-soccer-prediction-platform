@@ -12,6 +12,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	_ "github.com/rede/world-cup-quiniela/docs" // registers the Swagger spec at init time
@@ -258,23 +259,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 
 	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))
 	rateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst)
-	userRateStore := s.limiterStore
-	if userRateStore == nil {
-		if s.redisClient != nil {
-			// Use the Redis-backed store so rate limits are enforced across all
-			// replicas. Fails open on Redis unavailability (no traffic blocked).
-			rds := middleware.NewRedisRateStore(s.redisClient, ratePerSec, rateBurst, s.log)
-			if err := rds.RegisterMetrics(meter); err != nil {
-				s.log.Warn("RedisRateStore.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
-			}
-			userRateStore = rds
-		} else {
-			s.log.Warn("rate limiter: Redis not configured — using in-process store (limits not shared across replicas)",
-				zap.String("remedy", "set WCQ_REDIS_ADDR to enforce limits cluster-wide"),
-			)
-			userRateStore = middleware.NewLimiterStore(ratePerSec, rateBurst)
-		}
-	}
+	userRateStore := s.buildUserRateStore(meter, ratePerSec, rateBurst)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(VersionHeader("v1"))
 		r.Use(ipLimiter.Global()) // L1: per-IP limit before auth, blocks unauthenticated scans
@@ -551,6 +536,31 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	return otelhttp.NewHandler(r, "world-cup-quiniela.api",
 		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
 	)
+}
+
+// buildUserRateStore returns the effective per-user rate-limit store for the
+// /api/v1 subrouter. Selection priority:
+//
+//  1. s.limiterStore — injected via SetLimiterStore / SetRateStore (tests only).
+//  2. Redis-backed RedisRateStore — preferred in production; enforces limits
+//     across all replicas and fails open when Redis is unavailable.
+//  3. In-process LimiterStore — fallback when Redis is not configured; limits
+//     are per-replica only and a warning is emitted to prompt the operator.
+func (s *Server) buildUserRateStore(meter metric.Meter, ratePerSec float64, rateBurst int) middleware.Allower {
+	if s.limiterStore != nil {
+		return s.limiterStore
+	}
+	if s.redisClient != nil {
+		rds := middleware.NewRedisRateStore(s.redisClient, ratePerSec, rateBurst, s.log)
+		if err := rds.RegisterMetrics(meter); err != nil {
+			s.log.Warn("RedisRateStore.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
+		}
+		return rds
+	}
+	s.log.Warn("rate limiter: Redis not configured — using in-process store (limits not shared across replicas)",
+		zap.String("remedy", "set WCQ_REDIS_ADDR to enforce limits cluster-wide"),
+	)
+	return middleware.NewLimiterStore(ratePerSec, rateBurst)
 }
 
 // registerLocalSubscribers wires domain event handlers onto the in-process bus.
