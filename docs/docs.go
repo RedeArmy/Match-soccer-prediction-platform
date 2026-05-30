@@ -7490,7 +7490,7 @@ var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
 	Host:             "",
 	BasePath:         "/",
-	Schemes:          []string{},
+	Schemes:          []string{"https", "http"},
 	Title:            "World Cup Quiniela API",
 	Description:      "REST API for the World Cup prediction game. Manage fixtures, submit score forecasts, and track leaderboards.",
 	InfoInstanceName: "swagger",

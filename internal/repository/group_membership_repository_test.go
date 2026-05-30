@@ -1160,3 +1160,77 @@ func TestGroupMembershipRepository_LeaveMembership_CancelledContext_ReturnsError
 		t.Fatal("expected error for cancelled context, got nil")
 	}
 }
+
+// ── DebitBalanceAndMarkPaid ───────────────────────────────────────────────────
+
+func TestGroupMembershipRepository_DebitBalanceAndMarkPaid_CreditsLedgerAndMarksMembership(t *testing.T) {
+	cleanTables(t)
+
+	// Owner seeds the quiniela; member will pay the entry fee.
+	owner := seedUser(t)
+	member := seedUserWithBalance(t, 10_000) // 100 GTQ in cents
+	q := seedQuiniela(t, owner.ID)
+
+	// Set a non-zero entry fee directly on the quiniela row so the debit
+	// has a meaningful amount to work with.
+	const entryFee = 5_000 // Q50
+	if _, err := testDB.Exec(context.Background(),
+		`UPDATE quinielas SET entry_fee = $1 WHERE id = $2`, entryFee, q.ID,
+	); err != nil {
+		t.Fatalf("set entry_fee: %v", err)
+	}
+
+	// Create an active, unpaid membership for the member.
+	mrepo := repository.NewPostgresGroupMembershipRepository(testDB)
+	m := &domain.GroupMembership{
+		QuinielaID: q.ID,
+		UserID:     member.ID,
+		Status:     domain.MembershipActive,
+		Paid:       false,
+	}
+	if err := mrepo.Create(context.Background(), m); err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+
+	paid, err := mrepo.DebitBalanceAndMarkPaid(context.Background(), q.ID, member.ID, entryFee)
+	if err != nil {
+		t.Fatalf("DebitBalanceAndMarkPaid: %v", err)
+	}
+	if !paid.Paid {
+		t.Error("membership.Paid: got false; want true after debit")
+	}
+
+	// Verify balance was deducted.
+	urepo := repository.NewPostgresUserRepository(testDB)
+	updated, err := urepo.GetByID(context.Background(), member.ID)
+	if err != nil {
+		t.Fatalf("GetByID after debit: %v", err)
+	}
+	if updated.BalanceCents != 10_000-entryFee {
+		t.Errorf("balance after debit: got %d; want %d", updated.BalanceCents, 10_000-entryFee)
+	}
+}
+
+func TestGroupMembershipRepository_DebitBalanceAndMarkPaid_InsufficientBalance_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+
+	owner := seedUser(t)
+	member := seedUserWithBalance(t, 100) // only Q1 in cents — not enough
+	q := seedQuiniela(t, owner.ID)
+
+	mrepo := repository.NewPostgresGroupMembershipRepository(testDB)
+	m := &domain.GroupMembership{
+		QuinielaID: q.ID,
+		UserID:     member.ID,
+		Status:     domain.MembershipActive,
+		Paid:       false,
+	}
+	if err := mrepo.Create(context.Background(), m); err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+
+	_, err := mrepo.DebitBalanceAndMarkPaid(context.Background(), q.ID, member.ID, 5_000)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict on insufficient balance; got %v", err)
+	}
+}
