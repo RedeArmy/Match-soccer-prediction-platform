@@ -367,6 +367,11 @@ var paramIntConstraints = map[string]paramIntRange{
 	// being accepted via the admin API.
 	domain.ParamKeyAPIRateLimitRatePerSec: {1, 1_000}, // 1 token/s – 1 000 token/s
 	domain.ParamKeyAPIRateLimitBurst:      {1, 1_000}, // min 1; 1 000 burst is already very generous
+	// IP rate limiting (L1 global, L2 webhook) — is_runtime=FALSE; restart required.
+	domain.ParamKeyAPIGlobalIPRateLimitRequests:   {1, 10_000}, // max 10K req: above that it's a DDoS
+	domain.ParamKeyAPIGlobalIPRateLimitWindowSec:  {1, 3_600},  // 1 s – 1 hour window
+	domain.ParamKeyAPIWebhookIPRateLimitRequests:  {1, 1_000},  // webhook: 1–1K req per window
+	domain.ParamKeyAPIWebhookIPRateLimitWindowSec: {1, 3_600},  // 1 s – 1 hour window
 
 	// Snapshot retention
 	domain.ParamKeySnapshotKeepLatestCount: {1, 1_000},

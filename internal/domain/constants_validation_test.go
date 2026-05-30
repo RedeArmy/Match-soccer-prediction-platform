@@ -68,11 +68,15 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyPurgeRetentionDays":              ParamKeyPurgeRetentionDays,
 		"ParamKeySystemParamHistoryRetentionDays": ParamKeySystemParamHistoryRetentionDays,
 		// API
-		"ParamKeyAPIBodySizeLimitBytes":   ParamKeyAPIBodySizeLimitBytes,
-		"ParamKeyAPIRateLimitRatePerSec":  ParamKeyAPIRateLimitRatePerSec,
-		"ParamKeyAPIRateLimitBurst":       ParamKeyAPIRateLimitBurst,
-		"ParamKeyAPIIdempotencyTTLHours":  ParamKeyAPIIdempotencyTTLHours,
-		"ParamKeyAPIIdempotencyKeyMaxLen": ParamKeyAPIIdempotencyKeyMaxLen,
+		"ParamKeyAPIBodySizeLimitBytes":          ParamKeyAPIBodySizeLimitBytes,
+		"ParamKeyAPIRateLimitRatePerSec":         ParamKeyAPIRateLimitRatePerSec,
+		"ParamKeyAPIRateLimitBurst":              ParamKeyAPIRateLimitBurst,
+		"ParamKeyAPIIdempotencyTTLHours":         ParamKeyAPIIdempotencyTTLHours,
+		"ParamKeyAPIIdempotencyKeyMaxLen":        ParamKeyAPIIdempotencyKeyMaxLen,
+		"ParamKeyAPIGlobalIPRateLimitRequests":   ParamKeyAPIGlobalIPRateLimitRequests,
+		"ParamKeyAPIGlobalIPRateLimitWindowSec":  ParamKeyAPIGlobalIPRateLimitWindowSec,
+		"ParamKeyAPIWebhookIPRateLimitRequests":  ParamKeyAPIWebhookIPRateLimitRequests,
+		"ParamKeyAPIWebhookIPRateLimitWindowSec": ParamKeyAPIWebhookIPRateLimitWindowSec,
 		// Snapshot
 		"ParamKeySnapshotKeepLatestCount": ParamKeySnapshotKeepLatestCount,
 		// Circuit breaker
@@ -212,9 +216,13 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultPurgeRetentionDays":              DefaultPurgeRetentionDays,
 		"DefaultSystemParamHistoryRetentionDays": DefaultSystemParamHistoryRetentionDays,
 		// API
-		"DefaultAPIBodySizeLimitBytes":  DefaultAPIBodySizeLimitBytes,
-		"DefaultAPIRateLimitRatePerSec": DefaultAPIRateLimitRatePerSec,
-		"DefaultAPIRateLimitBurst":      DefaultAPIRateLimitBurst,
+		"DefaultAPIBodySizeLimitBytes":          DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIRateLimitRatePerSec":         DefaultAPIRateLimitRatePerSec,
+		"DefaultAPIRateLimitBurst":              DefaultAPIRateLimitBurst,
+		"DefaultAPIGlobalIPRateLimitRequests":   DefaultAPIGlobalIPRateLimitRequests,
+		"DefaultAPIGlobalIPRateLimitWindowSec":  DefaultAPIGlobalIPRateLimitWindowSec,
+		"DefaultAPIWebhookIPRateLimitRequests":  DefaultAPIWebhookIPRateLimitRequests,
+		"DefaultAPIWebhookIPRateLimitWindowSec": DefaultAPIWebhookIPRateLimitWindowSec,
 		// Snapshot
 		"DefaultSnapshotKeepLatestCount": DefaultSnapshotKeepLatestCount,
 		// Payment
@@ -303,7 +311,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 114 // update when adding a new ParamKey* constant
+		const expectedCount = 118 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -311,7 +319,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 103 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size)
+		const expectedCount = 107 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -409,6 +417,10 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyAPIRateLimitBurst", ParamKeyAPIRateLimitBurst, "api"},
 		{"ParamKeyAPIIdempotencyTTLHours", ParamKeyAPIIdempotencyTTLHours, "api"},
 		{"ParamKeyAPIIdempotencyKeyMaxLen", ParamKeyAPIIdempotencyKeyMaxLen, "api"},
+		{"ParamKeyAPIGlobalIPRateLimitRequests", ParamKeyAPIGlobalIPRateLimitRequests, "api"},
+		{"ParamKeyAPIGlobalIPRateLimitWindowSec", ParamKeyAPIGlobalIPRateLimitWindowSec, "api"},
+		{"ParamKeyAPIWebhookIPRateLimitRequests", ParamKeyAPIWebhookIPRateLimitRequests, "api"},
+		{"ParamKeyAPIWebhookIPRateLimitWindowSec", ParamKeyAPIWebhookIPRateLimitWindowSec, "api"},
 		// Snapshot
 		{"ParamKeySnapshotKeepLatestCount", ParamKeySnapshotKeepLatestCount, "snapshot"},
 		// Circuit breaker
@@ -564,11 +576,15 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultPurgeRetentionDays":              DefaultPurgeRetentionDays,
 		"DefaultSystemParamHistoryRetentionDays": DefaultSystemParamHistoryRetentionDays,
 		// API
-		"DefaultAPIBodySizeLimitBytes":   DefaultAPIBodySizeLimitBytes,
-		"DefaultAPIRateLimitRatePerSec":  DefaultAPIRateLimitRatePerSec,
-		"DefaultAPIRateLimitBurst":       DefaultAPIRateLimitBurst,
-		"DefaultAPIIdempotencyTTLHours":  DefaultAPIIdempotencyTTLHours,
-		"DefaultAPIIdempotencyKeyMaxLen": DefaultAPIIdempotencyKeyMaxLen,
+		"DefaultAPIBodySizeLimitBytes":          DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIRateLimitRatePerSec":         DefaultAPIRateLimitRatePerSec,
+		"DefaultAPIRateLimitBurst":              DefaultAPIRateLimitBurst,
+		"DefaultAPIGlobalIPRateLimitRequests":   DefaultAPIGlobalIPRateLimitRequests,
+		"DefaultAPIGlobalIPRateLimitWindowSec":  DefaultAPIGlobalIPRateLimitWindowSec,
+		"DefaultAPIWebhookIPRateLimitRequests":  DefaultAPIWebhookIPRateLimitRequests,
+		"DefaultAPIWebhookIPRateLimitWindowSec": DefaultAPIWebhookIPRateLimitWindowSec,
+		"DefaultAPIIdempotencyTTLHours":         DefaultAPIIdempotencyTTLHours,
+		"DefaultAPIIdempotencyKeyMaxLen":        DefaultAPIIdempotencyKeyMaxLen,
 		// Snapshot
 		"DefaultSnapshotKeepLatestCount": DefaultSnapshotKeepLatestCount,
 		// Payment

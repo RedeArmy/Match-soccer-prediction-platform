@@ -66,6 +66,7 @@ type paramSpec struct {
 //   - 000125_seed_kyc_cache_ttl_param           (+1)
 //   - 000129_seed_kyc_ip_velocity_params        (+2)
 //   - 000138_seed_scoring_chunk_size_param      (+1)
+//   - 000139_seed_ip_rate_limit_params          (+4)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -140,6 +141,11 @@ var allParams = []paramSpec{
 	// API rate limiting — not runtime: LimiterStore is constructed once at startup; restart required.
 	{key: domain.ParamKeyAPIRateLimitRatePerSec, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitRatePerSec), paramType: "int", category: "api", isRuntime: false},
 	{key: domain.ParamKeyAPIRateLimitBurst, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitBurst), paramType: "int", category: "api", isRuntime: false},
+	// IP rate limiting — L1 global and L2 webhook; not runtime: restart required.
+	{key: domain.ParamKeyAPIGlobalIPRateLimitRequests, defaultValue: strconv.Itoa(domain.DefaultAPIGlobalIPRateLimitRequests), paramType: "int", category: "api", isRuntime: false},
+	{key: domain.ParamKeyAPIGlobalIPRateLimitWindowSec, defaultValue: strconv.Itoa(domain.DefaultAPIGlobalIPRateLimitWindowSec), paramType: "int", category: "api", isRuntime: false},
+	{key: domain.ParamKeyAPIWebhookIPRateLimitRequests, defaultValue: strconv.Itoa(domain.DefaultAPIWebhookIPRateLimitRequests), paramType: "int", category: "api", isRuntime: false},
+	{key: domain.ParamKeyAPIWebhookIPRateLimitWindowSec, defaultValue: strconv.Itoa(domain.DefaultAPIWebhookIPRateLimitWindowSec), paramType: "int", category: "api", isRuntime: false},
 
 	// Idempotency middleware — not runtime: TTL and key limit are fixed at server startup.
 	{key: domain.ParamKeyAPIIdempotencyTTLHours, defaultValue: strconv.Itoa(domain.DefaultAPIIdempotencyTTLHours), paramType: "int", category: "api", isRuntime: false},
