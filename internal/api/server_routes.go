@@ -138,7 +138,9 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// driver, the worker process owns all event consumption; the API server
 	// only publishes, so local subscription is skipped.
 	ruleRepo := repository.NewPostgresScoringRuleRepository(s.db)
-	scorer := service.NewScoringService(repos.match, repos.pred, ruleRepo, paramSvc, s.log)
+	scorer := service.NewScoringService(repos.match, repos.pred, ruleRepo, paramSvc, s.log,
+		service.WithScoringMeter(otel.GetMeterProvider().Meter("wcq")),
+	)
 	if s.cfg.EventBus.Driver != "redis" {
 		s.registerLocalSubscribers(ctx, scorer)
 	}
@@ -149,7 +151,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// Keeping the start out of Routes() prevents goroutine leaks in tests that
 	// call Routes() on a Server they then discard without a matching Stop call.
 	sseChanBufSize := paramSvc.GetInt(ctx, domain.ParamKeyNotifySSEChanBufSize, domain.DefaultNotifySSEChanBufSize)
-	s.notifHub = hub.NewWithBufSize(sseChanBufSize)
+	sseMaxConns := paramSvc.GetInt(ctx, domain.ParamKeyNotifySSEMaxConnsPerUser, domain.DefaultNotifySSEMaxConnsPerUser)
+	s.notifHub = hub.NewWithOptions(hub.Options{
+		ChanBufSize:     sseChanBufSize,
+		MaxConnsPerUser: sseMaxConns,
+	})
 	if err := s.notifHub.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
 		s.log.Warn("hub.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
 	}

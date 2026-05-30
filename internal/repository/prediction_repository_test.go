@@ -1610,3 +1610,128 @@ func TestPredictionRepository_InsertScoringBatch_WithWinMethodsAndOldPoints(t *t
 		t.Errorf("pred_win_method: got %v, want extra_time", gotPredWM)
 	}
 }
+
+// ── PredictionRepository - ScoreMatchBatch ────────────────────────────────────
+
+func TestPredictionRepository_ScoreMatchBatch_ScoresPredictions(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	m := seedMatch(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	p1 := &domain.Prediction{UserID: u1.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	p2 := &domain.Prediction{UserID: u2.ID, MatchID: m.ID, HomeScore: 0, AwayScore: 0}
+	if err := repo.Create(ctx, p1); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(ctx, p2); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	var scoredPreds []*domain.Prediction
+	err := repo.ScoreMatchBatch(ctx, m.ID, func(preds []*domain.Prediction) (map[int]int, error) {
+		scoredPreds = preds
+		pts := make(map[int]int, len(preds))
+		for _, p := range preds {
+			pts[p.ID] = 5
+		}
+		return pts, nil
+	}, domain.DefaultScoringUpdateChunkSize)
+	if err != nil {
+		t.Fatalf("ScoreMatchBatch: %v", err)
+	}
+	if len(scoredPreds) != 2 {
+		t.Fatalf("scorer called with %d predictions, want 2", len(scoredPreds))
+	}
+
+	// Verify points persisted for both predictions.
+	got1, _ := repo.GetByID(ctx, p1.ID)
+	got2, _ := repo.GetByID(ctx, p2.ID)
+	if got1.Points == nil || *got1.Points != 5 {
+		t.Errorf("p1 points: got %v, want 5", got1.Points)
+	}
+	if got2.Points == nil || *got2.Points != 5 {
+		t.Errorf("p2 points: got %v, want 5", got2.Points)
+	}
+}
+
+func TestPredictionRepository_ScoreMatchBatch_EmptyMatch_IsNoop(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	m := seedMatch(t)
+	called := false
+	err := repo.ScoreMatchBatch(ctx, m.ID, func(preds []*domain.Prediction) (map[int]int, error) {
+		called = true
+		return nil, nil
+	}, domain.DefaultScoringUpdateChunkSize)
+	if err != nil {
+		t.Fatalf("ScoreMatchBatch on empty match: %v", err)
+	}
+	if !called {
+		t.Error("expected scorer to be called even for empty match")
+	}
+}
+
+func TestPredictionRepository_ScoreMatchBatch_Idempotent_SkipsAlreadyScored(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	m := seedMatch(t)
+	u := seedUser(t)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := repo.Create(ctx, p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	// First call scores the prediction.
+	if err := repo.ScoreMatchBatch(ctx, m.ID, func(preds []*domain.Prediction) (map[int]int, error) {
+		return map[int]int{p.ID: 5}, nil
+	}, domain.DefaultScoringUpdateChunkSize); err != nil {
+		t.Fatalf("first ScoreMatchBatch: %v", err)
+	}
+
+	// Second call: the scorer returns different points but scored_at IS NULL guard
+	// means the already-scored row is not overwritten.
+	if err := repo.ScoreMatchBatch(ctx, m.ID, func(preds []*domain.Prediction) (map[int]int, error) {
+		return map[int]int{p.ID: 99}, nil
+	}, domain.DefaultScoringUpdateChunkSize); err != nil {
+		t.Fatalf("second ScoreMatchBatch: %v", err)
+	}
+
+	got, _ := repo.GetByID(ctx, p.ID)
+	if got.Points == nil || *got.Points != 5 {
+		t.Errorf("idempotency: points overwritten; got %v, want 5", got.Points)
+	}
+}
+
+func TestPredictionRepository_ScoreMatchBatch_ScorerError_RollsBackTransaction(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	m := seedMatch(t)
+	u := seedUser(t)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := repo.Create(ctx, p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	scorerErr := errors.New("scoring computation failed")
+	err := repo.ScoreMatchBatch(ctx, m.ID, func(preds []*domain.Prediction) (map[int]int, error) {
+		return nil, scorerErr
+	}, domain.DefaultScoringUpdateChunkSize)
+	if !errors.Is(err, scorerErr) {
+		t.Fatalf("expected scorer error to propagate, got %v", err)
+	}
+
+	// Points must remain nil — the transaction was rolled back.
+	got, _ := repo.GetByID(ctx, p.ID)
+	if got.Points != nil {
+		t.Errorf("expected nil points after rolled-back batch, got %v", *got.Points)
+	}
+}

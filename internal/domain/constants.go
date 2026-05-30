@@ -49,6 +49,14 @@ const (
 	PointsIncorrectResult = 0
 )
 
+// DefaultScoringUpdateChunkSize is the fallback maximum number of prediction
+// rows updated in a single UNNEST UPDATE batch inside ScoreMatchBatch. The
+// authoritative runtime value is always read from the system_params row
+// scoring.update_chunk_size so operators can tune it without a code deploy.
+// 500 rows is the safe default: it balances PostgreSQL per-statement memory,
+// transaction hold time, and the overhead of multiple round-trips.
+const DefaultScoringUpdateChunkSize = 500
+
 // PredictionDeadlineOffset is the duration before kick-off after which
 // predictions are no longer accepted.
 //
@@ -157,6 +165,13 @@ const (
 	ParamKeyScoringGoalDiff       = "scoring.goal_difference"
 	ParamKeyScoringExtraTimeBonus = "scoring.extra_time_bonus"
 	ParamKeyScoringPenaltiesBonus = "scoring.penalties_bonus"
+	// ParamKeyScoringUpdateChunkSize is the maximum number of prediction rows
+	// updated in a single UNNEST UPDATE batch inside ScoreMatchBatch.
+	// Operators can lower this value under high-memory pressure or raise it
+	// on beefy DB instances to reduce round-trips. is_runtime=FALSE: a worker
+	// restart is required to pick up a changed value (read once at ScoreMatch
+	// time, effectively cached for the process lifetime of the event handler).
+	ParamKeyScoringUpdateChunkSize = "scoring.update_chunk_size"
 	// ParamKeyPredictionDeadlineMin is the prediction deadline offset in minutes.
 	// A value of 5 closes predictions 5 minutes before kick-off.
 	ParamKeyPredictionDeadlineMin = "prediction.deadline_minutes"
@@ -293,6 +308,7 @@ func AllParamKeys() []string {
 		ParamKeyScoringGoalDiff,
 		ParamKeyScoringExtraTimeBonus,
 		ParamKeyScoringPenaltiesBonus,
+		ParamKeyScoringUpdateChunkSize,
 		// Prediction
 		ParamKeyPredictionDeadlineMin,
 		// Group
@@ -409,6 +425,7 @@ func AllParamKeys() []string {
 		ParamKeyNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params (migration 000113)
 		ParamKeyNotifySSEChanBufSize,
+		ParamKeyNotifySSEMaxConnsPerUser,
 		ParamKeyNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129)
 		ParamKeyKYCTier1DepositLimitCents,

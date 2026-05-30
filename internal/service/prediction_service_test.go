@@ -101,6 +101,19 @@ func (r *stubPredRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, 
 func (r *stubPredRepo) InsertScoringBatch(_ context.Context, _ []domain.PredictionScoreLog) error {
 	return r.err
 }
+func (r *stubPredRepo) ScoreMatchBatch(_ context.Context, _ int, scorer func([]*domain.Prediction) (map[int]int, error), _ int) error {
+	points, err := scorer(r.list)
+	if err != nil {
+		return err
+	}
+	for _, p := range r.list {
+		if pts, ok := points[p.ID]; ok {
+			p.Points = &pts
+			r.updated = append(r.updated, p)
+		}
+	}
+	return r.err
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

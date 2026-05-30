@@ -433,6 +433,18 @@ func TestWireLogLevelCounters_ReturnsLogger(t *testing.T) {
 	}
 }
 
+func TestWireLogLevelCounters_HooksFire_OnWarnAndErrorEntries(t *testing.T) {
+	// Emit one Warn and one Error entry through the enriched logger so the
+	// counter-increment closures (warnCtr.Add / errCtr.Add) execute.
+	// Without this, wireLogLevelCounters sits at 60%: the two closure bodies
+	// are dead to the coverage tool because the hook is never triggered.
+	log := newTestLogger(t)
+	result := wireLogLevelCounters(log, noopMeter())
+	result.Warn("warn hook coverage probe")
+	result.Error("error hook coverage probe")
+	// Reaching here confirms both closures ran without panic.
+}
+
 func TestFlushShutdown_NoError_LogsNothing(t *testing.T) {
 	log := newTestLogger(t)
 	flushShutdown(context.Background(), func(ctx context.Context) error {

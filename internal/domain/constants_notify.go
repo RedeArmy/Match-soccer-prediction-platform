@@ -42,6 +42,14 @@ const (
 	// is_runtime=FALSE: restart required (applied once at Hub construction).
 	DefaultNotifySSEChanBufSize = 64 // notify.sse_chan_buf_size
 
+	// DefaultNotifySSEMaxConnsPerUser is the maximum number of concurrent SSE
+	// connections allowed per authenticated user. When reached, hub.Connect
+	// returns nil and the handler responds HTTP 429. A value of 0 disables the
+	// cap (unlimited). 5 allows a user to have the app open in multiple tabs /
+	// devices without exceeding the limit under normal usage.
+	// is_runtime=FALSE: applied once at Hub construction; restart required.
+	DefaultNotifySSEMaxConnsPerUser = 5 // notify.sse_max_conns_per_user
+
 	// Web Push delivery TTL: how long (in seconds) the push service should
 	// retain an undelivered message.
 	DefaultNotifyWebPushTTLSec = 86400 // notify.web_push_ttl_sec — 24 hours
@@ -195,6 +203,11 @@ const (
 	// ParamKeyNotifySSEChanBufSize is the per-connection channel buffer size for
 	// the SSE hub. is_runtime=FALSE: restart required.
 	ParamKeyNotifySSEChanBufSize = "notify.sse_chan_buf_size"
+	// ParamKeyNotifySSEMaxConnsPerUser is the maximum concurrent SSE connections
+	// allowed per user. hub.Connect returns nil when the limit is reached and
+	// the handler responds HTTP 429. 0 = unlimited.
+	// is_runtime=FALSE: applied once at Hub construction; restart required.
+	ParamKeyNotifySSEMaxConnsPerUser = "notify.sse_max_conns_per_user"
 	// ParamKeyNotifyWebPushTTLSec is the Web Push message time-to-live in seconds.
 	ParamKeyNotifyWebPushTTLSec = "notify.web_push_ttl_sec"
 	// ParamKeyNotifyPushIconURL is the URL of the notification icon (192×192 px PNG).

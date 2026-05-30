@@ -59,26 +59,35 @@ primary_region = 'mia'
     method       = 'GET'
     path         = '/health/ready'
 
-# Memory and GC tuning for a 256 MB Fly.io machine:
+# Memory and GC tuning for a 512 MB Fly.io machine:
 #
-# GOMEMLIMIT=230MiB  — hard ceiling at 89 % of physical RAM; Go GC will collect
-#                      aggressively before the OS OOM-killer fires.
-# GOGC=off           — disables percentage-based GC triggering (default: collect
-#                      when live heap doubles). With GOMEMLIMIT as the sole
-#                      backstop the runtime runs fewer, larger GC cycles during
-#                      steady-state load, reducing CPU and latency jitter.
-#                      Safe because GOMEMLIMIT still prevents OOM.
+# GOMEMLIMIT=460MiB  — hard ceiling at 89 % of physical RAM; the Go runtime GC
+#                      will collect aggressively before the OS OOM-killer fires.
+# GOGC=100           — default percentage-based trigger: collect when the live
+#                      heap doubles. Combined with GOMEMLIMIT this gives
+#                      predictable incremental GC under sustained match-day load,
+#                      avoiding the large pause spikes that occur when GOGC=off
+#                      lets the heap grow freely until GOMEMLIMIT fires a single
+#                      large cycle near the memory ceiling. (TD-006)
 # WCQ_DATABASE_MAXOPENCONNS=15 — caps the pgx connection pool at 15 instead of
 #                      the 25-connection default. Each connection holds a
 #                      prepared-statement cache; reducing the pool saves ~40 MB
 #                      of baseline heap, leaving more headroom for in-flight
 #                      JSON serialisation during match-day traffic peaks.
+#
+# Sizing rationale (P2-004):
+#   SSE overhead at 2,000 concurrent connections ≈ 160 MB
+#   DB pool (15 conns) ≈ 40 MB
+#   Redis client      ≈   5 MB
+#   ─────────────────────────────
+#   Peak footprint    ≈ 205 MB, well within 460 MiB ceiling.
+#   The 256 MB machine left only ~25 MB of headroom at match-day scale.
 [env]
-  GOMEMLIMIT              = "230MiB"
-  GOGC                    = "off"
+  GOMEMLIMIT              = "460MiB"
+  GOGC                    = "100"
   WCQ_DATABASE_MAXOPENCONNS = "15"
 
 [[vm]]
-  memory   = '256mb'
+  memory   = '512mb'
   cpu_kind = 'shared'
   cpus     = 1

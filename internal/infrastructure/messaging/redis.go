@@ -54,6 +54,14 @@ func streamKey(eventType events.EventType) string {
 	return "stream:" + string(eventType)
 }
 
+// DeadLetterRecorder provides persistent backup storage for events that could
+// not be written to the Redis dead-letter queue (e.g. Redis itself is
+// unavailable). It is called from pushDLQ only when the Redis RPUSH fails. A
+// nil implementation means no backup is configured and the loss is only logged.
+type DeadLetterRecorder interface {
+	RecordDeadLettered(ctx context.Context, eventType, envelopeJSON, handlerErr string, attempts int) error
+}
+
 // dlqEntry is the payload stored in the dead-letter queue for each event that
 // exhausted all handler retry attempts. It carries enough context for an
 // operator to identify the event, understand the failure, and replay it.
@@ -87,6 +95,7 @@ type RedisBus struct {
 	cancels      []context.CancelFunc
 	mu           sync.RWMutex
 	handlers     map[events.EventType][]func(context.Context, events.Envelope) error
+	dlqFallback  DeadLetterRecorder // optional Postgres backup; nil = log-only on Redis push failure
 }
 
 // NewRedisBus constructs a RedisBus that publishes and subscribes using the
@@ -107,6 +116,13 @@ func NewRedisBus(client *redis.Client, log *zap.Logger) *RedisBus {
 		consumerName: fmt.Sprintf("%s-%d", hostname, os.Getpid()),
 		handlers:     make(map[events.EventType][]func(context.Context, events.Envelope) error),
 	}
+}
+
+// SetDLQFallback wires a persistent backup for events that cannot be written
+// to the Redis DLQ. Call once after construction, before any Subscribe calls.
+// Not safe for concurrent use; intended for startup wiring only.
+func (b *RedisBus) SetDLQFallback(f DeadLetterRecorder) {
+	b.dlqFallback = f
 }
 
 // Close cancels all active consumer goroutines. It is safe to call Close
@@ -418,13 +434,19 @@ func (b *RedisBus) ack(ctx context.Context, key, msgID string) {
 }
 
 // pushDLQ appends a dead-letter entry to the Redis list at dlq:<event_type>.
+// If the Redis push fails and a DLQFallback is configured, the entry is written
+// to Postgres so that no critical event is silently lost during Redis outages.
 func (b *RedisBus) pushDLQ(ctx context.Context, envelope events.Envelope, handlerErr error) {
+	configMu.RLock()
+	attempts := maxHandlerAttempts
+	configMu.RUnlock()
+
 	entry := dlqEntry{
 		EventType:      string(envelope.Type),
 		Envelope:       envelope,
 		Error:          handlerErr.Error(),
 		DeadLetteredAt: time.Now().UTC(),
-		Attempts:       maxHandlerAttempts,
+		Attempts:       attempts,
 	}
 	data, err := json.Marshal(entry)
 	if err != nil {
@@ -434,17 +456,40 @@ func (b *RedisBus) pushDLQ(ctx context.Context, envelope events.Envelope, handle
 		)
 		return
 	}
-	if err := b.client.RPush(context.WithoutCancel(ctx), dlqKey(envelope.Type), data).Err(); err != nil {
-		b.log.Error("redis bus: push to dlq",
+
+	pushCtx := context.WithoutCancel(ctx)
+	if redisErr := b.client.RPush(pushCtx, dlqKey(envelope.Type), data).Err(); redisErr != nil {
+		b.log.Error("redis bus: push to dlq failed",
 			zap.String("event_type", string(envelope.Type)),
-			zap.Error(err),
+			zap.Error(redisErr),
 		)
+		b.pushDLQFallback(pushCtx, envelope, string(data), handlerErr.Error(), attempts)
 	}
+
 	b.log.Error("event handler failed after all retries - dead-lettered",
 		zap.String("event_type", string(envelope.Type)),
 		zap.String("dlq_key", dlqKey(envelope.Type)),
-		zap.Int("attempts", maxHandlerAttempts),
+		zap.Int("attempts", attempts),
 		zap.Error(handlerErr),
+	)
+}
+
+// pushDLQFallback writes to the Postgres backup DLQ when Redis is unavailable.
+// envelopeJSON is the already-marshalled entry JSON reused from pushDLQ to
+// avoid a second marshal call. A nil dlqFallback is a no-op.
+func (b *RedisBus) pushDLQFallback(ctx context.Context, envelope events.Envelope, envelopeJSON, handlerErr string, attempts int) {
+	if b.dlqFallback == nil {
+		return
+	}
+	if err := b.dlqFallback.RecordDeadLettered(ctx, string(envelope.Type), envelopeJSON, handlerErr, attempts); err != nil {
+		b.log.Error("redis bus: postgres dlq fallback also failed — event lost",
+			zap.String("event_type", string(envelope.Type)),
+			zap.Error(err),
+		)
+		return
+	}
+	b.log.Warn("redis bus: event dead-lettered to Postgres fallback (Redis DLQ unavailable)",
+		zap.String("event_type", string(envelope.Type)),
 	)
 }
 

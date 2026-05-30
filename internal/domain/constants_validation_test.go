@@ -18,11 +18,12 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	// ── ParamKey* enumeration (112 total) ─────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
-		"ParamKeyScoringExactScore":     ParamKeyScoringExactScore,
-		"ParamKeyScoringCorrectOutcome": ParamKeyScoringCorrectOutcome,
-		"ParamKeyScoringGoalDiff":       ParamKeyScoringGoalDiff,
-		"ParamKeyScoringExtraTimeBonus": ParamKeyScoringExtraTimeBonus,
-		"ParamKeyScoringPenaltiesBonus": ParamKeyScoringPenaltiesBonus,
+		"ParamKeyScoringExactScore":      ParamKeyScoringExactScore,
+		"ParamKeyScoringCorrectOutcome":  ParamKeyScoringCorrectOutcome,
+		"ParamKeyScoringGoalDiff":        ParamKeyScoringGoalDiff,
+		"ParamKeyScoringExtraTimeBonus":  ParamKeyScoringExtraTimeBonus,
+		"ParamKeyScoringPenaltiesBonus":  ParamKeyScoringPenaltiesBonus,
+		"ParamKeyScoringUpdateChunkSize": ParamKeyScoringUpdateChunkSize,
 		// Prediction
 		"ParamKeyPredictionDeadlineMin": ParamKeyPredictionDeadlineMin,
 		// Group
@@ -141,6 +142,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifyDLQWarningThreshold":  ParamKeyNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params (migration 000113)
 		"ParamKeyNotifySSEChanBufSize":              ParamKeyNotifySSEChanBufSize,
+		"ParamKeyNotifySSEMaxConnsPerUser":          ParamKeyNotifySSEMaxConnsPerUser,
 		"ParamKeyNotifyOutboxStaleLockThresholdSec": ParamKeyNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129)
 		"ParamKeyKYCTier1DepositLimitCents":       ParamKeyKYCTier1DepositLimitCents,
@@ -181,8 +183,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultCacheMatchTTLSeconds":       DefaultCacheMatchTTLSeconds,
 		"DefaultCacheLeaderboardTTLSeconds": DefaultCacheLeaderboardTTLSeconds,
 		// Scoring bonuses (intentionally zero = disabled)
-		"DefaultScoringExtraTimeBonus": DefaultScoringExtraTimeBonus,
-		"DefaultScoringPenaltiesBonus": DefaultScoringPenaltiesBonus,
+		"DefaultScoringExtraTimeBonus":  DefaultScoringExtraTimeBonus,
+		"DefaultScoringPenaltiesBonus":  DefaultScoringPenaltiesBonus,
+		"DefaultScoringUpdateChunkSize": DefaultScoringUpdateChunkSize,
 		// Conflict
 		"DefaultConflictStaleDays": DefaultConflictStaleDays,
 		"DefaultConflictMaxScan":   DefaultConflictMaxScan,
@@ -277,6 +280,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params (migration 000113)
 		"DefaultNotifySSEChanBufSize":              DefaultNotifySSEChanBufSize,
+		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
@@ -299,7 +303,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 112 // update when adding a new ParamKey* constant
+		const expectedCount = 114 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -307,7 +311,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 101 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity)
+		const expectedCount = 103 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -355,6 +359,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyScoringGoalDiff", ParamKeyScoringGoalDiff, "scoring"},
 		{"ParamKeyScoringExtraTimeBonus", ParamKeyScoringExtraTimeBonus, "scoring"},
 		{"ParamKeyScoringPenaltiesBonus", ParamKeyScoringPenaltiesBonus, "scoring"},
+		{"ParamKeyScoringUpdateChunkSize", ParamKeyScoringUpdateChunkSize, "scoring"},
 		// Prediction
 		{"ParamKeyPredictionDeadlineMin", ParamKeyPredictionDeadlineMin, "prediction"},
 		// Group
@@ -473,6 +478,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyNotifyDLQWarningThreshold", ParamKeyNotifyDLQWarningThreshold, "notify"},
 		// Phase 7 infrastructure params (migration 000113)
 		{"ParamKeyNotifySSEChanBufSize", ParamKeyNotifySSEChanBufSize, "notify"},
+		{"ParamKeyNotifySSEMaxConnsPerUser", ParamKeyNotifySSEMaxConnsPerUser, "notify"},
 		{"ParamKeyNotifyOutboxStaleLockThresholdSec", ParamKeyNotifyOutboxStaleLockThresholdSec, "notify"},
 		// KYC / AML (migrations 000121, 000124, 000125)
 		{"ParamKeyKYCTier1DepositLimitCents", ParamKeyKYCTier1DepositLimitCents, "kyc"},
@@ -517,6 +523,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 // are intentionally zero (disabled/off states) are tested separately below.
 func TestDefaultConstantsArePositive(t *testing.T) {
 	defaults := map[string]int{
+		// Scoring chunk size
+		"DefaultScoringUpdateChunkSize": DefaultScoringUpdateChunkSize,
 		// Group
 		"DefaultGroupInviteCodeLength": DefaultGroupInviteCodeLength,
 		// Prediction
@@ -619,6 +627,7 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyOutboxLagCriticalSec": DefaultNotifyOutboxLagCriticalSec,
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params
+		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
