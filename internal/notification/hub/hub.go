@@ -42,10 +42,15 @@ import (
 )
 
 const (
-	defaultChanBufSize     = 32
-	evictAfterDrops        = 5
-	DefaultMaxConnsPerUser = 5 // per-user cap enforced by NewWithOptions; 0 = unlimited
+	defaultChanBufSize = 32
+	evictAfterDrops    = 5
 )
+
+// DefaultMaxConnsPerUser is the default maximum number of concurrent SSE
+// connections allowed per authenticated user. NewWithOptions uses this value
+// when Options.MaxConnsPerUser is not explicitly set. A value of 0 disables
+// the cap entirely (unlimited connections).
+const DefaultMaxConnsPerUser = 5
 
 // Notification is the value delivered to SSE clients.
 type Notification struct {
