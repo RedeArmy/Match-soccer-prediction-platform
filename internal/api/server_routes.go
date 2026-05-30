@@ -27,7 +27,6 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/auth"
 	"github.com/rede/world-cup-quiniela/pkg/breaker"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
-	"github.com/rede/world-cup-quiniela/pkg/idempotency"
 )
 
 const (
@@ -260,13 +259,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// all replicas. Falls back to MemoryStore for single-process deployments.
 	idemTTL := time.Duration(paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
 	idemKeyMaxLen := paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
-	if s.idemStore == nil {
-		s.log.Warn("idempotency: Redis not configured — using in-process MemoryStore",
-			zap.Bool("single_process_only", true),
-			zap.String("remedy", "set WCQ_REDIS_ADDR; without it duplicate payment requests can commit on separate replicas"),
-		)
-		s.idemStore = idempotency.NewMemoryStore()
-	}
+	s.ensureIdempotencyStore()
 	idem := middleware.Idempotency(s.idemStore, meter, s.log, idemTTL, idemKeyMaxLen)
 
 	// Versioned API surface with Clerk JWT authentication.
