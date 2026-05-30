@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -21,6 +23,11 @@ func NewPostgresKYCDocumentRepository(db *pgxpool.Pool) *PostgresKYCDocumentRepo
 }
 
 // Create inserts a new KYC document metadata row.
+//
+// Returns apperrors.Conflict when the same profile has already submitted a
+// document with an identical SHA-256 hash (enforced by the
+// uq_kyc_documents_profile_hash partial unique index). The caller should treat
+// this as a duplicate-upload error and surface an actionable message to the user.
 func (r *PostgresKYCDocumentRepository) Create(ctx context.Context, doc *domain.KYCDocument) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
@@ -30,10 +37,18 @@ func (r *PostgresKYCDocumentRepository) Create(ctx context.Context, doc *domain.
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, uploaded_at
 	`
-	return r.db.QueryRow(ctx, q,
+	err := r.db.QueryRow(ctx, q,
 		doc.ProfileID, string(doc.ProfileType), string(doc.DocumentType),
 		doc.StorageKey, doc.ContentType, doc.FileSize, doc.FileHash,
 	).Scan(&doc.ID, &doc.UploadedAt)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return apperrors.Conflict("a document with identical content has already been submitted for this profile")
+		}
+		return apperrors.Internal(err)
+	}
+	return nil
 }
 
 // GetByID returns the KYC document by primary key, or nil when not found.

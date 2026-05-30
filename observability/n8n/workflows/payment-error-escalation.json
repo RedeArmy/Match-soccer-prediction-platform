@@ -12,7 +12,10 @@
       "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "payment-error"
     },
     {
@@ -23,7 +26,10 @@
       "name": "Format Alert",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 300]
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -36,23 +42,45 @@
       "name": "Send Email Alert",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2,
-      "position": [650, 300]
+      "position": [
+        650,
+        300
+      ]
     }
   ],
   "connections": {
     "Webhook Trigger": {
       "main": [
-        [{"node": "Format Alert", "type": "main", "index": 0}]
+        [
+          {
+            "node": "Format Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Format Alert": {
       "main": [
-        [{"node": "Send Email Alert", "type": "main", "index": 0}]
+        [
+          {
+            "node": "Send Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
   "settings": {
     "executionOrder": "v1"
   },
-  "tags": ["observability", "payments", "alerting"]
+  "tags": [
+    "observability",
+    "payments",
+    "alerting"
+  ],
+  "meta": {
+    "n8n_version": "1.49.0"
+  }
 }

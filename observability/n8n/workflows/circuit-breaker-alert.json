@@ -12,7 +12,10 @@
       "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "circuit-breaker"
     },
     {
@@ -31,7 +34,10 @@
       "name": "Is Circuit Open?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [450, 300]
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -41,7 +47,10 @@
       "name": "Format Alert",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [650, 200]
+      "position": [
+        650,
+        200
+      ]
     },
     {
       "parameters": {
@@ -54,29 +63,57 @@
       "name": "Send Email Alert",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2,
-      "position": [850, 200]
+      "position": [
+        850,
+        200
+      ]
     }
   ],
   "connections": {
     "Webhook Trigger": {
       "main": [
-        [{"node": "Is Circuit Open?", "type": "main", "index": 0}]
+        [
+          {
+            "node": "Is Circuit Open?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Is Circuit Open?": {
       "main": [
-        [{"node": "Format Alert", "type": "main", "index": 0}],
+        [
+          {
+            "node": "Format Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
         []
       ]
     },
     "Format Alert": {
       "main": [
-        [{"node": "Send Email Alert", "type": "main", "index": 0}]
+        [
+          {
+            "node": "Send Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
   "settings": {
     "executionOrder": "v1"
   },
-  "tags": ["observability", "alerting", "circuit-breaker"]
+  "tags": [
+    "observability",
+    "alerting",
+    "circuit-breaker"
+  ],
+  "meta": {
+    "n8n_version": "1.49.0"
+  }
 }

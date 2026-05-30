@@ -67,9 +67,31 @@ func ContextWithUser(ctx context.Context, user *domain.User) context.Context {
 	return context.WithValue(ctx, contextKeyUser, user)
 }
 
+// TrustedClientIP is the authoritative IP-extraction middleware for this
+// application. It replaces chi's RealIP and is safe against header-injection
+// attacks that would let clients bypass per-IP rate limits.
+//
+// On Fly.io the edge sets Fly-Client-IP from the real TCP connection address
+// before the request reaches the app; clients cannot forge or override it.
+// Outside Fly.io (local dev, CI) the header is absent, so we fall back to
+// r.RemoteAddr, which is the raw TCP peer address and equally unforgeable.
+//
+// We deliberately never read X-Forwarded-For, X-Real-IP, or True-Client-IP:
+// any client can set those to arbitrary values to cycle fake IPs past rate
+// limiters.
+func TrustedClientIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ip := r.Header.Get("Fly-Client-IP"); ip != "" {
+			r.RemoteAddr = ip
+		}
+		// else: r.RemoteAddr is already the unforgeable TCP peer address.
+		next.ServeHTTP(w, r)
+	})
+}
+
 // StoreClientIP extracts the host portion of r.RemoteAddr (already normalised
-// by chi's RealIP middleware) and stores it via repository.ContextWithClientIP.
-// Must be placed after chimiddleware.RealIP in the middleware chain.
+// by TrustedClientIP) and stores it via repository.ContextWithClientIP.
+// Must be placed after TrustedClientIP in the middleware chain.
 func StoreClientIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
