@@ -16,6 +16,25 @@ const (
 	DefaultAPIRateLimitRatePerSec = 10 // api.rate_limit_rate_per_sec (tokens/second)
 	DefaultAPIRateLimitBurst      = 30 // api.rate_limit_burst (max burst size)
 
+	// IP-based rate limiting — two layers applied before route dispatch.
+	//
+	// L1 global per-IP (api.ip_global_rate_limit_requests /
+	// api.ip_global_rate_limit_window_sec): caps all traffic from a single IP
+	// across the entire API surface. 100 requests per 10-second window is
+	// generous for real users (a dashboard load issues ~5-10 parallel requests)
+	// while blocking volumetric attacks. Both values are is_runtime=FALSE.
+	DefaultAPIGlobalIPRateLimitRequests  = 100 // api.ip_global_rate_limit_requests
+	DefaultAPIGlobalIPRateLimitWindowSec = 10  // api.ip_global_rate_limit_window_sec
+
+	// L2 webhook per-IP (api.ip_webhook_rate_limit_requests /
+	// api.ip_webhook_rate_limit_window_sec): tighter limit applied only to
+	// /webhooks/* routes. Real payment providers send 1-5 webhooks per minute;
+	// 20 per 60-second window is generous for retries while protecting the
+	// CPU-expensive PayPal RSA signature verification from replay floods.
+	// Both values are is_runtime=FALSE.
+	DefaultAPIWebhookIPRateLimitRequests  = 20 // api.ip_webhook_rate_limit_requests
+	DefaultAPIWebhookIPRateLimitWindowSec = 60 // api.ip_webhook_rate_limit_window_sec
+
 	// Idempotency middleware: applied to payment write endpoints.
 	// TTL of 24 h gives clients a generous window for safe retry; key length
 	// of 255 bytes fits a UUID, hash, or arbitrary client-generated string.
@@ -61,6 +80,28 @@ const (
 	// ParamKeyAPIRateLimitBurst is the maximum burst size of the per-user token
 	// bucket. is_runtime=FALSE: restart required.
 	ParamKeyAPIRateLimitBurst = "api.rate_limit_burst"
+
+	// IP-based rate limiting — L1 global and L2 webhook layers.
+	// All four params are is_runtime=FALSE: the IPRateLimiter is configured once
+	// at process startup via Configure(); a restart is required to change them.
+
+	// ParamKeyAPIGlobalIPRateLimitRequests is the maximum number of requests
+	// allowed from a single IP within the global window (L1). Applies to every
+	// route including /health and /webhooks/*.
+	ParamKeyAPIGlobalIPRateLimitRequests = "api.ip_global_rate_limit_requests"
+
+	// ParamKeyAPIGlobalIPRateLimitWindowSec is the fixed-window duration in
+	// seconds for the L1 global per-IP limiter.
+	ParamKeyAPIGlobalIPRateLimitWindowSec = "api.ip_global_rate_limit_window_sec"
+
+	// ParamKeyAPIWebhookIPRateLimitRequests is the maximum number of requests
+	// allowed from a single IP within the webhook window (L2). Applies only to
+	// /webhooks/* routes.
+	ParamKeyAPIWebhookIPRateLimitRequests = "api.ip_webhook_rate_limit_requests"
+
+	// ParamKeyAPIWebhookIPRateLimitWindowSec is the fixed-window duration in
+	// seconds for the L2 webhook per-IP limiter.
+	ParamKeyAPIWebhookIPRateLimitWindowSec = "api.ip_webhook_rate_limit_window_sec"
 
 	// ParamKeyAPIIdempotencyTTLHours is the number of hours a committed
 	// idempotency entry is retained in the store.

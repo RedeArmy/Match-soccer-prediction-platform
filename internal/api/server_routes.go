@@ -26,7 +26,7 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/auth"
 	"github.com/rede/world-cup-quiniela/pkg/breaker"
-	"github.com/rede/world-cup-quiniela/pkg/idempotency"
+	"github.com/rede/world-cup-quiniela/pkg/clock"
 )
 
 const (
@@ -61,6 +61,32 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	r.Use(middleware.RequestLogger(s.log))
 	r.Use(middleware.CORS(s.cfg.CORS.AllowedOrigins))
 	r.Use(middleware.NewMetrics(otel.GetMeterProvider().Meter("wcq")))
+
+	// L1 — global per-IP rate limit applied to every route, including /health
+	// and /webhooks/*. Constructed here with compile-time defaults so it covers
+	// infrastructure routes registered before paramSvc is available; Configure()
+	// is called after paramSvc is ready to load system_params values. The
+	// StoreClientIP middleware above guarantees the IP is in context.
+	globalIPLimiter := middleware.NewIPRateLimiter(
+		s.redisClient,
+		clock.Real{},
+		s.log,
+		"ip_gl",
+		domain.DefaultAPIGlobalIPRateLimitRequests,
+		int64(domain.DefaultAPIGlobalIPRateLimitWindowSec),
+	)
+	r.Use(globalIPLimiter.Middleware("global"))
+
+	// L2 — webhook-specific per-IP limiter; constructed with defaults and wired
+	// into the /webhooks route group below. Configure() updates it alongside L1.
+	webhookIPLimiter := middleware.NewIPRateLimiter(
+		s.redisClient,
+		clock.Real{},
+		s.log,
+		"ip_wh",
+		domain.DefaultAPIWebhookIPRateLimitRequests,
+		int64(domain.DefaultAPIWebhookIPRateLimitWindowSec),
+	)
 
 	// Infrastructure endpoints - not versioned, no authentication required.
 	r.Get("/health", s.handleHealth)
@@ -165,21 +191,38 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// Register per-handler metrics after construction so every handler that
 	// exposes OTel instruments is wired to the global meter.
 	meter := otel.GetMeterProvider().Meter("wcq")
+
+	// Update L1 and L2 IP limiter limits from system_params now that paramSvc
+	// is available. Configure is safe to call here: no requests are being served
+	// yet so there is no concurrent access on the limiter fields.
+	globalIPLimiter.Configure(
+		paramSvc.GetInt(ctx, domain.ParamKeyAPIGlobalIPRateLimitRequests, domain.DefaultAPIGlobalIPRateLimitRequests),
+		int64(paramSvc.GetInt(ctx, domain.ParamKeyAPIGlobalIPRateLimitWindowSec, domain.DefaultAPIGlobalIPRateLimitWindowSec)),
+	)
+	webhookIPLimiter.Configure(
+		paramSvc.GetInt(ctx, domain.ParamKeyAPIWebhookIPRateLimitRequests, domain.DefaultAPIWebhookIPRateLimitRequests),
+		int64(paramSvc.GetInt(ctx, domain.ParamKeyAPIWebhookIPRateLimitWindowSec, domain.DefaultAPIWebhookIPRateLimitWindowSec)),
+	)
+	if err := globalIPLimiter.RegisterMetrics(meter); err != nil {
+		s.log.Warn("globalIPLimiter.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
+	}
+	if err := webhookIPLimiter.RegisterMetrics(meter); err != nil {
+		s.log.Warn("webhookIPLimiter.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
+	}
 	if err := h.paymentWebhook.RegisterMetrics(meter); err != nil {
 		s.log.Warn("paymentWebhook.RegisterMetrics failed", zap.Error(err))
 	}
 
 	// Webhook endpoints — authenticated via provider-specific signatures, not Clerk JWT.
-	// Must be registered before the /api/v1 subrouter so they receive no auth middleware.
-	// Each provider uses its own signature scheme:
+	// Grouped under /webhooks so the L2 IP rate limiter can be applied once to the
+	// entire group. This protects CPU-expensive RSA verification (PayPal) from
+	// replay floods before signature verification runs.
+	// Signature schemes per provider:
 	//   clerk:      Svix HMAC-SHA256 (verified inside WebhookHandler)
 	//   recurrente: HMAC-SHA256 via RecurrenteWebhookAuth middleware
 	//   paypal:     RSA certificate verification via PayPalWebhookAuth middleware
 	clerkSyncer := service.NewClerkUserSyncService(repos.user, repository.NewPostgresKYCProfileRepository(s.db), s.log)
 	webhookHandler := handler.NewWebhookHandler(clerkSyncer, s.cfg.Clerk.WebhookSecret, s.log)
-	r.Post("/webhooks/clerk", webhookHandler.HandleClerkWebhook)
-	r.With(middleware.RecurrenteWebhookAuth(s.cfg.Payment.RecurrenteWebhookSecret, s.log)).
-		Post("/webhooks/recurrente", h.paymentWebhook.HandleRecurrente)
 	// Wrap the PayPal cert fetcher with a circuit breaker. If PayPal's certificate
 	// endpoint is repeatedly unavailable, the breaker opens and subsequent webhook
 	// deliveries return 500 immediately (no network timeout wait), prompting PayPal
@@ -190,8 +233,14 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		time.Duration(paramSvc.GetInt(ctx, domain.ParamKeyBreakerPaypalCertCooldownSec, domain.DefaultBreakerPaypalCertCooldownSec))*time.Second,
 	)
 	certFetcher := middleware.BreakerCertFetcher(middleware.DefaultPayPalCertFetcher(), paypalCertBreaker, s.log)
-	r.With(middleware.PayPalWebhookAuth(s.cfg.Payment.PayPalWebhookID, certFetcher, s.log)).
-		Post("/webhooks/paypal", h.paymentWebhook.HandlePayPal)
+	r.Route("/webhooks", func(r chi.Router) {
+		r.Use(webhookIPLimiter.Middleware("webhook")) // L2 — tighter per-IP limit
+		r.Post("/clerk", webhookHandler.HandleClerkWebhook)
+		r.With(middleware.RecurrenteWebhookAuth(s.cfg.Payment.RecurrenteWebhookSecret, s.log)).
+			Post("/recurrente", h.paymentWebhook.HandleRecurrente)
+		r.With(middleware.PayPalWebhookAuth(s.cfg.Payment.PayPalWebhookID, certFetcher, s.log)).
+			Post("/paypal", h.paymentWebhook.HandlePayPal)
+	})
 	if err := breaker.RegisterGauge(meter, paypalCertBreaker); err != nil {
 		s.log.Warn("breaker.RegisterGauge(paypal-cert) failed", zap.Error(err))
 	}
@@ -210,13 +259,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// all replicas. Falls back to MemoryStore for single-process deployments.
 	idemTTL := time.Duration(paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
 	idemKeyMaxLen := paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
-	if s.idemStore == nil {
-		s.log.Warn("idempotency: Redis not configured — using in-process MemoryStore",
-			zap.Bool("single_process_only", true),
-			zap.String("remedy", "set WCQ_REDIS_ADDR; without it duplicate payment requests can commit on separate replicas"),
-		)
-		s.idemStore = idempotency.NewMemoryStore()
-	}
+	s.ensureIdempotencyStore()
 	idem := middleware.Idempotency(s.idemStore, meter, s.log, idemTTL, idemKeyMaxLen)
 
 	// Versioned API surface with Clerk JWT authentication.
