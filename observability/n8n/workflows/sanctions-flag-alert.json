@@ -1,5 +1,5 @@
 {
-  "name": "KYC Sanctions Flag — Immediate Compliance Alert",
+  "name": "KYC Sanctions Flag \u2014 Immediate Compliance Alert",
   "nodes": [
     {
       "parameters": {
@@ -12,18 +12,24 @@
       "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "sanctions-flag"
     },
     {
       "parameters": {
-        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    subject: `[URGENT COMPLIANCE] Sanctions match detected — User ${p.user_id}`,\n    body: `URGENT: A potential sanctions list match has been flagged during KYC review.\\n\\nUser ID: ${p.user_id}\\nProfile ID: ${p.profile_id}\\nMatch source: ${p.match_source}\\nMatch detail: ${p.match_detail}\\nRisk score: ${p.risk_score}/100\\nTrace ID: ${p.trace_id}\\n\\nIMMEDIATE ACTION REQUIRED:\\n1. The user's account has been automatically frozen.\\n2. Notify the AML/Sanctions compliance officer immediately.\\n3. Do NOT approve this profile until cleared by legal counsel.\\n4. File a UAF Suspicious Activity Report if required under Guatemalan law.\\n\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/profiles/${p.profile_id}`\n  }\n}];"
+        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    subject: `[URGENT COMPLIANCE] Sanctions match detected \u2014 User ${p.user_id}`,\n    body: `URGENT: A potential sanctions list match has been flagged during KYC review.\\n\\nUser ID: ${p.user_id}\\nProfile ID: ${p.profile_id}\\nMatch source: ${p.match_source}\\nMatch detail: ${p.match_detail}\\nRisk score: ${p.risk_score}/100\\nTrace ID: ${p.trace_id}\\n\\nIMMEDIATE ACTION REQUIRED:\\n1. The user's account has been automatically frozen.\\n2. Notify the AML/Sanctions compliance officer immediately.\\n3. Do NOT approve this profile until cleared by legal counsel.\\n4. File a UAF Suspicious Activity Report if required under Guatemalan law.\\n\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/profiles/${p.profile_id}`\n  }\n}];"
       },
       "id": "kyc-sf-format",
       "name": "Format Sanctions Alert",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 300]
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -36,18 +42,48 @@
       "name": "Send Sanctions Alert",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2,
-      "position": [650, 300]
+      "position": [
+        650,
+        300
+      ]
     }
   ],
   "connections": {
     "Webhook Trigger": {
-      "main": [[{ "node": "Format Sanctions Alert", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Format Sanctions Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Format Sanctions Alert": {
-      "main": [[{ "node": "Send Sanctions Alert", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Sanctions Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
-  "settings": { "executionOrder": "v1" },
-  "tags": ["kyc", "compliance", "sanctions", "aml", "urgent"]
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    "kyc",
+    "compliance",
+    "sanctions",
+    "aml",
+    "urgent"
+  ],
+  "meta": {
+    "n8n_version": "1.49.0"
+  }
 }

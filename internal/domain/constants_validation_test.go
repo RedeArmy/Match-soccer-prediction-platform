@@ -15,7 +15,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (112 total) ─────────────────────────────────────
+	// ── ParamKey* enumeration (118 total) ─────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":      ParamKeyScoringExactScore,
@@ -68,15 +68,16 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyPurgeRetentionDays":              ParamKeyPurgeRetentionDays,
 		"ParamKeySystemParamHistoryRetentionDays": ParamKeySystemParamHistoryRetentionDays,
 		// API
-		"ParamKeyAPIBodySizeLimitBytes":          ParamKeyAPIBodySizeLimitBytes,
-		"ParamKeyAPIRateLimitRatePerSec":         ParamKeyAPIRateLimitRatePerSec,
-		"ParamKeyAPIRateLimitBurst":              ParamKeyAPIRateLimitBurst,
-		"ParamKeyAPIIdempotencyTTLHours":         ParamKeyAPIIdempotencyTTLHours,
-		"ParamKeyAPIIdempotencyKeyMaxLen":        ParamKeyAPIIdempotencyKeyMaxLen,
-		"ParamKeyAPIGlobalIPRateLimitRequests":   ParamKeyAPIGlobalIPRateLimitRequests,
-		"ParamKeyAPIGlobalIPRateLimitWindowSec":  ParamKeyAPIGlobalIPRateLimitWindowSec,
-		"ParamKeyAPIWebhookIPRateLimitRequests":  ParamKeyAPIWebhookIPRateLimitRequests,
-		"ParamKeyAPIWebhookIPRateLimitWindowSec": ParamKeyAPIWebhookIPRateLimitWindowSec,
+		"ParamKeyAPIBodySizeLimitBytes":   ParamKeyAPIBodySizeLimitBytes,
+		"ParamKeyAPIRateLimitRatePerSec":  ParamKeyAPIRateLimitRatePerSec,
+		"ParamKeyAPIRateLimitBurst":       ParamKeyAPIRateLimitBurst,
+		"ParamKeyAPIIdempotencyTTLHours":  ParamKeyAPIIdempotencyTTLHours,
+		"ParamKeyAPIIdempotencyKeyMaxLen": ParamKeyAPIIdempotencyKeyMaxLen,
+		// IP rate limiting (migration 000142)
+		"ParamKeyIPRateLimitGlobalRPS":    ParamKeyIPRateLimitGlobalRPS,
+		"ParamKeyIPRateLimitGlobalBurst":  ParamKeyIPRateLimitGlobalBurst,
+		"ParamKeyIPRateLimitWebhookRPS":   ParamKeyIPRateLimitWebhookRPS,
+		"ParamKeyIPRateLimitWebhookBurst": ParamKeyIPRateLimitWebhookBurst,
 		// Snapshot
 		"ParamKeySnapshotKeepLatestCount": ParamKeySnapshotKeepLatestCount,
 		// Circuit breaker
@@ -216,13 +217,14 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultPurgeRetentionDays":              DefaultPurgeRetentionDays,
 		"DefaultSystemParamHistoryRetentionDays": DefaultSystemParamHistoryRetentionDays,
 		// API
-		"DefaultAPIBodySizeLimitBytes":          DefaultAPIBodySizeLimitBytes,
-		"DefaultAPIRateLimitRatePerSec":         DefaultAPIRateLimitRatePerSec,
-		"DefaultAPIRateLimitBurst":              DefaultAPIRateLimitBurst,
-		"DefaultAPIGlobalIPRateLimitRequests":   DefaultAPIGlobalIPRateLimitRequests,
-		"DefaultAPIGlobalIPRateLimitWindowSec":  DefaultAPIGlobalIPRateLimitWindowSec,
-		"DefaultAPIWebhookIPRateLimitRequests":  DefaultAPIWebhookIPRateLimitRequests,
-		"DefaultAPIWebhookIPRateLimitWindowSec": DefaultAPIWebhookIPRateLimitWindowSec,
+		"DefaultAPIBodySizeLimitBytes":  DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIRateLimitRatePerSec": DefaultAPIRateLimitRatePerSec,
+		"DefaultAPIRateLimitBurst":      DefaultAPIRateLimitBurst,
+		// IP rate limiting (migration 000142)
+		"DefaultIPRateLimitGlobalRPS":    DefaultIPRateLimitGlobalRPS,
+		"DefaultIPRateLimitGlobalBurst":  DefaultIPRateLimitGlobalBurst,
+		"DefaultIPRateLimitWebhookRPS":   DefaultIPRateLimitWebhookRPS,
+		"DefaultIPRateLimitWebhookBurst": DefaultIPRateLimitWebhookBurst,
 		// Snapshot
 		"DefaultSnapshotKeepLatestCount": DefaultSnapshotKeepLatestCount,
 		// Payment
@@ -417,10 +419,11 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyAPIRateLimitBurst", ParamKeyAPIRateLimitBurst, "api"},
 		{"ParamKeyAPIIdempotencyTTLHours", ParamKeyAPIIdempotencyTTLHours, "api"},
 		{"ParamKeyAPIIdempotencyKeyMaxLen", ParamKeyAPIIdempotencyKeyMaxLen, "api"},
-		{"ParamKeyAPIGlobalIPRateLimitRequests", ParamKeyAPIGlobalIPRateLimitRequests, "api"},
-		{"ParamKeyAPIGlobalIPRateLimitWindowSec", ParamKeyAPIGlobalIPRateLimitWindowSec, "api"},
-		{"ParamKeyAPIWebhookIPRateLimitRequests", ParamKeyAPIWebhookIPRateLimitRequests, "api"},
-		{"ParamKeyAPIWebhookIPRateLimitWindowSec", ParamKeyAPIWebhookIPRateLimitWindowSec, "api"},
+		// IP rate limiting (migration 000142)
+		{"ParamKeyIPRateLimitGlobalRPS", ParamKeyIPRateLimitGlobalRPS, "api"},
+		{"ParamKeyIPRateLimitGlobalBurst", ParamKeyIPRateLimitGlobalBurst, "api"},
+		{"ParamKeyIPRateLimitWebhookRPS", ParamKeyIPRateLimitWebhookRPS, "api"},
+		{"ParamKeyIPRateLimitWebhookBurst", ParamKeyIPRateLimitWebhookBurst, "api"},
 		// Snapshot
 		{"ParamKeySnapshotKeepLatestCount", ParamKeySnapshotKeepLatestCount, "snapshot"},
 		// Circuit breaker
@@ -576,15 +579,16 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultPurgeRetentionDays":              DefaultPurgeRetentionDays,
 		"DefaultSystemParamHistoryRetentionDays": DefaultSystemParamHistoryRetentionDays,
 		// API
-		"DefaultAPIBodySizeLimitBytes":          DefaultAPIBodySizeLimitBytes,
-		"DefaultAPIRateLimitRatePerSec":         DefaultAPIRateLimitRatePerSec,
-		"DefaultAPIRateLimitBurst":              DefaultAPIRateLimitBurst,
-		"DefaultAPIGlobalIPRateLimitRequests":   DefaultAPIGlobalIPRateLimitRequests,
-		"DefaultAPIGlobalIPRateLimitWindowSec":  DefaultAPIGlobalIPRateLimitWindowSec,
-		"DefaultAPIWebhookIPRateLimitRequests":  DefaultAPIWebhookIPRateLimitRequests,
-		"DefaultAPIWebhookIPRateLimitWindowSec": DefaultAPIWebhookIPRateLimitWindowSec,
-		"DefaultAPIIdempotencyTTLHours":         DefaultAPIIdempotencyTTLHours,
-		"DefaultAPIIdempotencyKeyMaxLen":        DefaultAPIIdempotencyKeyMaxLen,
+		"DefaultAPIBodySizeLimitBytes":   DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIRateLimitRatePerSec":  DefaultAPIRateLimitRatePerSec,
+		"DefaultAPIRateLimitBurst":       DefaultAPIRateLimitBurst,
+		"DefaultAPIIdempotencyTTLHours":  DefaultAPIIdempotencyTTLHours,
+		"DefaultAPIIdempotencyKeyMaxLen": DefaultAPIIdempotencyKeyMaxLen,
+		// IP rate limiting (migration 000142)
+		"DefaultIPRateLimitGlobalRPS":    DefaultIPRateLimitGlobalRPS,
+		"DefaultIPRateLimitGlobalBurst":  DefaultIPRateLimitGlobalBurst,
+		"DefaultIPRateLimitWebhookRPS":   DefaultIPRateLimitWebhookRPS,
+		"DefaultIPRateLimitWebhookBurst": DefaultIPRateLimitWebhookBurst,
 		// Snapshot
 		"DefaultSnapshotKeepLatestCount": DefaultSnapshotKeepLatestCount,
 		// Payment

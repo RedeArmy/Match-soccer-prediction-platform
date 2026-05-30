@@ -111,6 +111,49 @@ corresponding `kyc_events` row. This is a compliance gap — the audit trail is 
 
 ---
 
+## WCQIPRateLimitGlobalBlocked
+
+**What it means:** The L1 global IP rate limiter has blocked more than 100 requests per minute
+from one or more source IPs for at least 2 consecutive minutes. This indicates a concentrated
+DoS attempt, aggressive bot scan, or misconfigured client.
+
+**First actions:**
+1. Identify the offending IP(s): filter `wcq_ip_rate_limit_blocked_total{layer="global"}` by
+   source IP label in Grafana or query directly in Prometheus.
+2. Cross-reference the IP against the request logs: `fly logs -a wcq-api | grep <ip>`.
+   - If the IP is a known bot or crawler: no immediate action; the rate limiter is doing its job.
+   - If the IP belongs to a legitimate user (e.g., shared NAT): consider raising the global
+     bucket limit via `api.ip_rate_limit_global_rps` in system_params.
+3. If the blocking pattern suggests a coordinated attack from multiple IPs, consider adding
+   Fly.io firewall rules to block the offending CIDR ranges.
+
+**Resolution verification:** `increase(wcq_ip_rate_limit_blocked_total{layer="global"}[1m])`
+drops below 100.
+
+---
+
+## WCQIPRateLimitWebhookBlocked
+
+**What it means:** The L2 webhook IP rate limiter has blocked more than 20 payment webhook
+requests per minute. Legitimate webhook senders (Recurrente, PayPal) are well-behaved and
+will never trigger this threshold under normal operation. Any non-zero rate here almost
+certainly indicates a replay attack cycling through fake source IPs.
+
+**First actions:**
+1. Confirm the attack source: `fly logs -a wcq-api | grep "webhooks/"` — look for repeated
+   POST requests from unusual IPs.
+2. Verify PayPal and Recurrente delivery status on their respective dashboards to confirm
+   legitimate webhooks are not being blocked (they should not be, given the low baseline rate).
+3. If the attack is ongoing, consider temporarily raising the L2 bucket threshold via
+   `api.ip_rate_limit_webhook_rps` in system_params, or applying Fly firewall rules.
+4. Check `WCQPaymentErrorRateHigh` — if the attack exhausted PayPal's retry budget, real
+   webhook deliveries may have been dropped. Trigger manual reconciliation if needed.
+
+**Resolution verification:** `increase(wcq_ip_rate_limit_blocked_total{layer="webhook"}[1m])`
+drops to zero.
+
+---
+
 ## WCQRateLimitDegraded
 
 **What it means:** The Redis-backed rate limiter fell back to in-process mode because

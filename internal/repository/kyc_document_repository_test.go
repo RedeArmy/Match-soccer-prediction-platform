@@ -2,25 +2,39 @@ package repository_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
+
+// Ensure apperrors is used — prevents unused-import error in files
+// that only reference ErrConflict via errors.Is.
+var _ = apperrors.ErrConflict
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+// kycDocSeq generates unique file hashes so the uq_kyc_documents_profile_hash
+// partial unique index (migration 000141) does not reject calls from the same
+// profile that intentionally need multiple distinct documents (e.g. ListByProfile).
+var kycDocSeq atomic.Int64
+
 func seedKYCDocument(t *testing.T, profileID int) *domain.KYCDocument {
 	t.Helper()
+	seq := kycDocSeq.Add(1)
 	repo := repository.NewPostgresKYCDocumentRepository(testDB)
 	doc := &domain.KYCDocument{
 		ProfileID:    profileID,
 		ProfileType:  domain.KYCProfileTypeUser,
 		DocumentType: domain.KYCDocGovID,
-		StorageKey:   "kyc/test/doc.jpg",
+		StorageKey:   fmt.Sprintf("kyc/test/doc-%d.jpg", seq),
 		ContentType:  "image/jpeg",
 		FileSize:     1024,
-		FileHash:     "abc123",
+		FileHash:     fmt.Sprintf("sha256-%d", seq),
 	}
 	if err := repo.Create(context.Background(), doc); err != nil {
 		t.Fatalf("seedKYCDocument: %v", err)
@@ -29,6 +43,39 @@ func seedKYCDocument(t *testing.T, profileID int) *domain.KYCDocument {
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
+
+func TestKYCDocumentRepository_Create_DuplicateHash_ReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	repo := repository.NewPostgresKYCDocumentRepository(testDB)
+
+	const hash = "sha256-deadbeef"
+	first := &domain.KYCDocument{
+		ProfileID: p.ID, ProfileType: domain.KYCProfileTypeUser,
+		DocumentType: domain.KYCDocGovID,
+		StorageKey:   "kyc/orig.jpg", ContentType: "image/jpeg",
+		FileSize: 512, FileHash: hash,
+	}
+	if err := repo.Create(context.Background(), first); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	// Second document with identical hash for the same profile — must be rejected.
+	dup := &domain.KYCDocument{
+		ProfileID: p.ID, ProfileType: domain.KYCProfileTypeUser,
+		DocumentType: domain.KYCDocSelfie, // different type, same bytes
+		StorageKey:   "kyc/dup.jpg", ContentType: "image/jpeg",
+		FileSize: 512, FileHash: hash,
+	}
+	err := repo.Create(context.Background(), dup)
+	if err == nil {
+		t.Fatal("expected Conflict error for duplicate file_hash, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected apperrors.ErrConflict, got %T: %v", err, err)
+	}
+}
 
 func TestKYCDocumentRepository_Create_PopulatesID(t *testing.T) {
 	cleanTables(t)

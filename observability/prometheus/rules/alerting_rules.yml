@@ -11,6 +11,8 @@
 #   notification_sse_dropped_total        Int64ObservableCounter
 #   kyc_audit_event_drop_total            Int64Counter
 #   prize_distribution_failures_total     Int64Counter
+#   wcq_ip_rate_limit_blocked_total       Int64Counter  (labels: layer=global|webhook)
+#   wcq_rate_limit_fail_open_total        Int64Counter
 #
 # Alertmanager routing (alertmanager.yml):
 #   severity=critical, workflow=payment-error-escalation → n8n-payment-escalation
@@ -212,6 +214,60 @@ groups:
             kyc_events row.  Investigate DB errors in the KYC service logs and
             reconcile missing rows from application logs before the next
             regulatory review.
+
+  # ---------------------------------------------------------------------------
+  # IP rate limit blocking
+  #   wcq_ip_rate_limit_blocked_total counts requests dropped by the two-tier
+  #   IP-based rate limiter (middleware/rate_limit_ip.go):
+  #     layer="global"  — L1 bucket: one bucket per source IP across all routes.
+  #     layer="webhook" — L2 bucket: stricter per-IP bucket on webhook endpoints.
+  #
+  #   A sustained burst of blocked global requests indicates a concentrated DoS
+  #   attempt from one or a few source IPs.  Blocked webhook requests point to a
+  #   replay attack cycling through the payment webhook endpoints.
+  #
+  #   Thresholds are derived from the IP rate limiter design (ADR-0012):
+  #     global  > 100 requests/min → warn (may be a scanner or bot; investigate)
+  #     webhook > 20  requests/min → critical (replay attack on payment path)
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.ip_rate_limit
+    interval: 30s
+    rules:
+
+      - alert: WCQIPRateLimitGlobalBlocked
+        expr: increase(wcq_ip_rate_limit_blocked_total{layer="global"}[1m]) > 100
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqipratelimitglobalblocked"
+          summary: "IP rate limiter blocking > 100 global requests/min for 2 min"
+          description: >
+            {{ $value | humanize }} requests/min from one or more source IPs have
+            been blocked by the L1 global IP rate limiter over the last minute.
+            Sustained blocking at this level indicates a DoS attempt, aggressive
+            bot scan, or misconfigured client.  Check wcq_ip_rate_limit_blocked_total
+            by source IP label to identify the offending address.
+
+      - alert: WCQIPRateLimitWebhookBlocked
+        expr: increase(wcq_ip_rate_limit_blocked_total{layer="webhook"}[1m]) > 20
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          workflow: payment-error-escalation
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqipratelimitwebhookblocked"
+          summary: "IP rate limiter blocking > 20 webhook requests/min — possible replay attack"
+          description: >
+            {{ $value | humanize }} requests/min to payment webhook endpoints
+            (/webhooks/recurrente, /webhooks/paypal) have been blocked by the L2
+            webhook IP rate limiter.  This threshold is low by design: legitimate
+            webhook senders (Recurrente, PayPal) are well-behaved and will not hit
+            the limit under normal delivery.  A non-zero rate here almost always
+            indicates a replay attack cycling through fake IPs.  Investigate
+            immediately — PayPal retries exhaust within hours.
 
   # ---------------------------------------------------------------------------
   # Rate limiter degradation

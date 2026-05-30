@@ -82,8 +82,15 @@ jobs:
   # Update benchmark baseline on every main merge so the drift report in CI
   # always compares against recent performance rather than a stale snapshot.
   # Skipped on pull_request events (only runs on push → main).
+  #
+  # The baseline is pushed to develop, not to main, because:
+  #   1. main has branch-protection rules that require a PR — direct pushes
+  #      are rejected even from github-actions[bot].
+  #   2. The drift report in ci.yml runs on PRs targeting develop, so the
+  #      baseline must live on develop for the comparison to be meaningful.
+  #
   # [skip ci] in the commit message prevents this commit from triggering a
-  # recursive deploy run.
+  # recursive CI run on develop.
   # --------------------------------------------------------------------------
   bench-baseline:
     name: Update benchmark baseline
@@ -94,9 +101,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
+      - name: Checkout develop
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: develop
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go
@@ -108,13 +116,13 @@ jobs:
       - name: Run benchmarks and save baseline
         run: make bench-save && cp .bench/current.txt .bench/baseline.txt
 
-      - name: Commit updated baseline
+      - name: Commit updated baseline to develop
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .bench/baseline.txt
           git diff --staged --quiet || git commit -m "chore: update benchmark baseline [skip ci]"
-          git push
+          git push origin develop
 
   # --------------------------------------------------------------------------
   # Build and push API Docker image to GitHub Container Registry
@@ -142,6 +150,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # OCI image references must be fully lowercase. github.repository may
+      # contain uppercase letters (e.g. "RedeArmy/Match-soccer-prediction-platform"),
+      # which Trivy and some registries reject with "could not parse reference".
+      - name: Compute lowercase image name
+        id: image
+        run: |
+          echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" \
+            >> $GITHUB_OUTPUT
+
       # Derives two tags from the current commit:
       #   - short SHA (e.g. a1b2c3d) — immutable, used for rollbacks
       #   - latest                   — always points to the most recent build
@@ -149,7 +166,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=latest
@@ -178,7 +195,7 @@ jobs:
       - name: Scan API image for CVEs
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
+          image-ref: ${{ steps.image.outputs.name }}:${{ steps.meta.outputs.version }}
           format: table
           exit-code: '1'
           ignore-unfixed: true
@@ -208,13 +225,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # OCI image references must be fully lowercase — same reason as the API job.
+      - name: Compute lowercase worker image name
+        id: image-worker
+        run: |
+          echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')-worker" \
+            >> $GITHUB_OUTPUT
+
       # The worker image is pushed to <repo>-worker so it is distinct from the
       # API image while living in the same registry namespace.
       - name: Extract worker image metadata
         id: meta-worker
         uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
-          images: ghcr.io/${{ github.repository }}-worker
+          images: ${{ steps.image-worker.outputs.name }}
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=latest
@@ -236,7 +260,7 @@ jobs:
       - name: Scan worker image for CVEs
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository }}-worker:${{ steps.meta-worker.outputs.version }}
+          image-ref: ${{ steps.image-worker.outputs.name }}:${{ steps.meta-worker.outputs.version }}
           format: table
           exit-code: '1'
           ignore-unfixed: true
@@ -281,11 +305,19 @@ jobs:
       # machine serving traffic while the new version is being rolled out,
       # eliminating downtime. `--wait-timeout 300` aborts and marks the
       # deployment failed if Fly does not confirm health within 5 minutes.
+      # OCI image references must be fully lowercase — same reason as the docker jobs.
+      - name: Compute lowercase image names
+        id: image-names
+        run: |
+          repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          echo "api=ghcr.io/${repo}" >> $GITHUB_OUTPUT
+          echo "worker=ghcr.io/${repo}-worker" >> $GITHUB_OUTPUT
+
       - name: Deploy API
         run: |
           flyctl deploy \
             --app wcq-api \
-            --image ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.sha }} \
+            --image ${{ steps.image-names.outputs.api }}:${{ steps.tag.outputs.sha }} \
             --strategy rolling \
             --wait-timeout 300
         env:
@@ -300,7 +332,7 @@ jobs:
           flyctl deploy \
             --app wcq-worker \
             --config fly.worker.toml \
-            --image ghcr.io/${{ github.repository }}-worker:${{ steps.tag.outputs.sha }} \
+            --image ${{ steps.image-names.outputs.worker }}:${{ steps.tag.outputs.sha }} \
             --strategy rolling \
             --wait-timeout 300
         env:

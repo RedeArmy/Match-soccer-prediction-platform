@@ -5,10 +5,10 @@
 // must be stateless and safe for concurrent use by multiple goroutines.
 //
 // Custom middleware in this package supplements - rather than replaces - the
-// middleware provided by go-chi/chi/v5/middleware. Generic HTTP concerns
-// (RequestID, RealIP) are delegated to chi; application-specific concerns
-// (JWT validation, structured zap logging, Clerk authentication) are
-// implemented here to keep business context out of the chi package.
+// middleware provided by go-chi/chi/v5/middleware. The RequestID concern is
+// delegated to chi; application-specific concerns (JWT validation, structured
+// zap logging, trusted IP extraction, Clerk authentication) are implemented
+// here to keep business context out of the chi package.
 package middleware
 
 import (

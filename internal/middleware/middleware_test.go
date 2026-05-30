@@ -734,3 +734,92 @@ func TestWebhookVerifiedBodyFromContext_ReturnsFalseWhenNotSet(t *testing.T) {
 		t.Error("expected ok=false when body not set in context, got true")
 	}
 }
+
+// ── StoreClientIP ─────────────────────────────────────────────────────────────
+
+func TestStoreClientIP_StoresHostFromRemoteAddr(t *testing.T) {
+	var gotIP string
+	handler := middleware.StoreClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		// The IP is stored via repository.ContextWithClientIP; retrieve it with
+		// repository.ClientIPFromContext.
+		gotIP = repository.ClientIPFromContext(r.Context())
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.42:54321"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotIP != "203.0.113.42" {
+		t.Errorf("StoreClientIP: expected %q, got %q", "203.0.113.42", gotIP)
+	}
+}
+
+func TestStoreClientIP_HostOnlyRemoteAddr(t *testing.T) {
+	var gotIP string
+	handler := middleware.StoreClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		gotIP = repository.ClientIPFromContext(r.Context())
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1" // no port — already host-only
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotIP != "10.0.0.1" {
+		t.Errorf("StoreClientIP host-only: expected %q, got %q", "10.0.0.1", gotIP)
+	}
+}
+
+// ── TrustedClientIP ───────────────────────────────────────────────────────────
+
+func TestTrustedClientIP_UsesFlyClientIPWhenPresent(t *testing.T) {
+	const flyIP = "203.0.113.42"
+	var gotRemoteAddr string
+	handler := middleware.TrustedClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		gotRemoteAddr = r.RemoteAddr
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345" // Fly internal proxy address
+	req.Header.Set("Fly-Client-IP", flyIP)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotRemoteAddr != flyIP {
+		t.Errorf("expected RemoteAddr %q, got %q", flyIP, gotRemoteAddr)
+	}
+}
+
+func TestTrustedClientIP_FallsBackToRemoteAddrWhenHeaderAbsent(t *testing.T) {
+	const peerAddr = "192.0.2.7:54321"
+	var gotRemoteAddr string
+	handler := middleware.TrustedClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		gotRemoteAddr = r.RemoteAddr
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = peerAddr
+	// No Fly-Client-IP header — simulates a local / non-Fly environment.
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotRemoteAddr != peerAddr {
+		t.Errorf("expected RemoteAddr %q unchanged, got %q", peerAddr, gotRemoteAddr)
+	}
+}
+
+func TestTrustedClientIP_IgnoresForgeableHeaders(t *testing.T) {
+	const flyIP = "203.0.113.99"
+	var gotRemoteAddr string
+	handler := middleware.TrustedClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		gotRemoteAddr = r.RemoteAddr
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.Header.Set("Fly-Client-IP", flyIP)
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8") // attacker-controlled; must be ignored
+	req.Header.Set("X-Real-IP", "9.9.9.9")                // attacker-controlled; must be ignored
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotRemoteAddr != flyIP {
+		t.Errorf("expected RemoteAddr %q from Fly-Client-IP, got %q", flyIP, gotRemoteAddr)
+	}
+}

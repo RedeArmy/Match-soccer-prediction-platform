@@ -66,7 +66,7 @@ type paramSpec struct {
 //   - 000125_seed_kyc_cache_ttl_param           (+1)
 //   - 000129_seed_kyc_ip_velocity_params        (+2)
 //   - 000138_seed_scoring_chunk_size_param      (+1)
-//   - 000139_seed_ip_rate_limit_params          (+4)
+//   - 000142_seed_ip_rate_limit_params          (+4)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -141,15 +141,17 @@ var allParams = []paramSpec{
 	// API rate limiting — not runtime: LimiterStore is constructed once at startup; restart required.
 	{key: domain.ParamKeyAPIRateLimitRatePerSec, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitRatePerSec), paramType: "int", category: "api", isRuntime: false},
 	{key: domain.ParamKeyAPIRateLimitBurst, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitBurst), paramType: "int", category: "api", isRuntime: false},
-	// IP rate limiting — L1 global and L2 webhook; not runtime: restart required.
-	{key: domain.ParamKeyAPIGlobalIPRateLimitRequests, defaultValue: strconv.Itoa(domain.DefaultAPIGlobalIPRateLimitRequests), paramType: "int", category: "api", isRuntime: false},
-	{key: domain.ParamKeyAPIGlobalIPRateLimitWindowSec, defaultValue: strconv.Itoa(domain.DefaultAPIGlobalIPRateLimitWindowSec), paramType: "int", category: "api", isRuntime: false},
-	{key: domain.ParamKeyAPIWebhookIPRateLimitRequests, defaultValue: strconv.Itoa(domain.DefaultAPIWebhookIPRateLimitRequests), paramType: "int", category: "api", isRuntime: false},
-	{key: domain.ParamKeyAPIWebhookIPRateLimitWindowSec, defaultValue: strconv.Itoa(domain.DefaultAPIWebhookIPRateLimitWindowSec), paramType: "int", category: "api", isRuntime: false},
-
 	// Idempotency middleware — not runtime: TTL and key limit are fixed at server startup.
 	{key: domain.ParamKeyAPIIdempotencyTTLHours, defaultValue: strconv.Itoa(domain.DefaultAPIIdempotencyTTLHours), paramType: "int", category: "api", isRuntime: false},
 	{key: domain.ParamKeyAPIIdempotencyKeyMaxLen, defaultValue: strconv.Itoa(domain.DefaultAPIIdempotencyKeyMaxLen), paramType: "int", category: "api", isRuntime: false},
+
+	// IP-based rate limiting (migration 000142) — not runtime: LimiterStores constructed at startup; restart required.
+	// L1 global bucket: applied to all /api/v1 routes, one bucket per source IP.
+	{key: domain.ParamKeyIPRateLimitGlobalRPS, defaultValue: strconv.Itoa(domain.DefaultIPRateLimitGlobalRPS), paramType: "int", category: "api", isRuntime: false},
+	{key: domain.ParamKeyIPRateLimitGlobalBurst, defaultValue: strconv.Itoa(domain.DefaultIPRateLimitGlobalBurst), paramType: "int", category: "api", isRuntime: false},
+	// L2 webhook bucket: applied to /webhooks/recurrente and /webhooks/paypal, tighter limit.
+	{key: domain.ParamKeyIPRateLimitWebhookRPS, defaultValue: strconv.Itoa(domain.DefaultIPRateLimitWebhookRPS), paramType: "int", category: "api", isRuntime: false},
+	{key: domain.ParamKeyIPRateLimitWebhookBurst, defaultValue: strconv.Itoa(domain.DefaultIPRateLimitWebhookBurst), paramType: "int", category: "api", isRuntime: false},
 
 	// Snapshot retention — not runtime: worker restart required.
 	{key: domain.ParamKeySnapshotKeepLatestCount, defaultValue: strconv.Itoa(domain.DefaultSnapshotKeepLatestCount), paramType: "int", category: "worker", isRuntime: false},

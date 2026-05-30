@@ -39,15 +39,24 @@ func (p *PostgresPurger) PurgeDeletedQuinielas(ctx context.Context, olderThan ti
 
 // PurgeOldSnapshots deletes leaderboard snapshots that lie outside the most-
 // recent keepLatestN window for each quiniela. The window function ranks rows
-// newest-first within each partition, so row 1 is always kept and only the
-// tail beyond keepLatestN is removed. This bounds the table to at most
-// (active_quinielas × keepLatestN) rows regardless of how many matches are
-// played.
+// newest-first within each partition; only the tail beyond keepLatestN is
+// removed. This bounds the table to at most (active_quinielas × keepLatestN)
+// rows regardless of how many matches are played.
+//
+// Scaling note: the existing composite index (quiniela_id, taken_at DESC)
+// satisfies the window function sort without a sort step. The DELETE...USING
+// pattern avoids the NOT IN antipattern, which degrades to O(n²) on large
+// result sets because Postgres re-evaluates the subquery for each candidate
+// row. At FIFA 2026 scale (≤ 64 matches × ~100 quinielas ≈ 6,400 rows) the
+// difference is negligible; if the quiniela count grows beyond ~500, consider
+// partitioning leaderboard_snapshots by quiniela_id to keep the per-partition
+// scan bounded.
 func (p *PostgresPurger) PurgeOldSnapshots(ctx context.Context, keepLatestN int) (int64, error) {
 	tag, err := p.db.Exec(ctx, `
 		DELETE FROM leaderboard_snapshots
-		WHERE id NOT IN (
-			SELECT id FROM (
+		USING (
+			SELECT id
+			FROM (
 				SELECT id,
 				       ROW_NUMBER() OVER (
 				           PARTITION BY quiniela_id
@@ -55,8 +64,10 @@ func (p *PostgresPurger) PurgeOldSnapshots(ctx context.Context, keepLatestN int)
 				       ) AS rn
 				FROM leaderboard_snapshots
 			) ranked
-			WHERE rn <= $1
-		)`, keepLatestN)
+			WHERE rn > $1
+		) to_delete
+		WHERE leaderboard_snapshots.id = to_delete.id
+	`, keepLatestN)
 	if err != nil {
 		return 0, apperrors.Internal(err)
 	}

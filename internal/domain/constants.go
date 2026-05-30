@@ -363,11 +363,11 @@ func AllParamKeys() []string {
 		ParamKeyAPIRateLimitBurst,
 		ParamKeyAPIIdempotencyTTLHours,
 		ParamKeyAPIIdempotencyKeyMaxLen,
-		// IP rate limiting (L1 global, L2 webhook)
-		ParamKeyAPIGlobalIPRateLimitRequests,
-		ParamKeyAPIGlobalIPRateLimitWindowSec,
-		ParamKeyAPIWebhookIPRateLimitRequests,
-		ParamKeyAPIWebhookIPRateLimitWindowSec,
+		// IP rate limiting (L1 global + L2 webhook)
+		ParamKeyIPRateLimitGlobalRPS,
+		ParamKeyIPRateLimitGlobalBurst,
+		ParamKeyIPRateLimitWebhookRPS,
+		ParamKeyIPRateLimitWebhookBurst,
 		// Snapshot
 		ParamKeySnapshotKeepLatestCount,
 		// Circuit breaker
