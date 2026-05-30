@@ -16,6 +16,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
+	"github.com/rede/world-cup-quiniela/pkg/idempotency"
 )
 
 // bridgePool creates a pgxpool.Pool pointing at an unreachable address.
@@ -201,5 +202,44 @@ func TestListenAndBridge_AcquireError(t *testing.T) {
 	err := s.listenAndBridge(ctx)
 	if err == nil {
 		t.Fatal("expected non-nil error when Acquire fails on cancelled context")
+	}
+}
+
+// ── ensureIdempotencyStore ────────────────────────────────────────────────────
+
+func TestEnsureIdempotencyStore_ReturnsFalseWhenAlreadySet(t *testing.T) {
+	s := &Server{log: zap.NewNop()}
+	s.SetIdempotencyStore(idempotency.NewMemoryStore())
+
+	if s.ensureIdempotencyStore() {
+		t.Error("expected degraded=false when store was already configured")
+	}
+	if s.idemStore == nil {
+		t.Error("idemStore must remain non-nil after call")
+	}
+}
+
+func TestEnsureIdempotencyStore_ReturnsTrueAndSetsMemoryStore(t *testing.T) {
+	s := &Server{log: zap.NewNop()}
+
+	if !s.ensureIdempotencyStore() {
+		t.Error("expected degraded=true when no store was configured")
+	}
+	if s.idemStore == nil {
+		t.Error("idemStore must be non-nil after fallback")
+	}
+}
+
+func TestEnsureIdempotencyStore_IdempotentOnRepeatedCalls(t *testing.T) {
+	s := &Server{log: zap.NewNop()}
+
+	first := s.ensureIdempotencyStore()
+	second := s.ensureIdempotencyStore() // already set by first call
+
+	if !first {
+		t.Error("first call: expected degraded=true")
+	}
+	if second {
+		t.Error("second call: expected degraded=false (store already set)")
 	}
 }

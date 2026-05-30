@@ -229,7 +229,16 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// all replicas. Falls back to MemoryStore for single-process deployments.
 	idemTTL := time.Duration(paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
 	idemKeyMaxLen := paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
-	s.ensureIdempotencyStore()
+
+	// ensureIdempotencyStore returns true when it fell back to MemoryStore.
+	// Emit the degraded counter once at startup so WCQIdempotencyDegraded
+	// (for:0m) fires immediately; the per-request counter in the Idempotency
+	// middleware only fires on Redis errors, not on permanent MemoryStore use.
+	if s.ensureIdempotencyStore() {
+		if c, err := meter.Int64Counter("wcq_idempotency_degraded_total"); err == nil {
+			c.Add(ctx, 1)
+		}
+	}
 	idem := middleware.Idempotency(s.idemStore, meter, s.log, idemTTL, idemKeyMaxLen)
 
 	// Versioned API surface with Clerk JWT authentication.

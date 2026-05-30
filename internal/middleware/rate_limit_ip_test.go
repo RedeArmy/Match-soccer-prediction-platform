@@ -148,6 +148,73 @@ func TestIPRateLimiter_Webhook_Blocks429WhenOverLimit(t *testing.T) {
 	}
 }
 
+// ── Port stripping ────────────────────────────────────────────────────────────
+
+// TestIPRateLimiter_Global_StripsPortFromRemoteAddr verifies that two requests
+// from the same IP but different ephemeral ports share the same rate-limit
+// bucket. This is the non-Fly.io scenario: r.RemoteAddr is "host:port".
+func TestIPRateLimiter_Global_StripsPortFromRemoteAddr(t *testing.T) {
+	calls := make(map[string]int)
+	limiter := middleware.NewIPRateLimiter(
+		&recordingAllower{calls: calls},
+		&stubIPAllower{allowed: true},
+		nil, zaptest.NewLogger(t),
+	)
+	handler := limiter.Global()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for _, port := range []string{"127.0.0.1:40001", "127.0.0.1:40002", "127.0.0.1:40003"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = port
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	// All three requests must have used the same bucket key ("ip:global:127.0.0.1"),
+	// not one key per ephemeral port.
+	if calls["ip:global:127.0.0.1"] != 3 {
+		t.Errorf("expected bucket key ip:global:127.0.0.1 called 3 times, got %v", calls)
+	}
+}
+
+// TestIPRateLimiter_TrustedClientIPIntegration verifies the full chain:
+// TrustedClientIP sets r.RemoteAddr from Fly-Client-IP, and the rate limiter
+// uses the resulting host as the bucket key (no port).
+func TestIPRateLimiter_TrustedClientIPIntegration(t *testing.T) {
+	calls := make(map[string]int)
+	limiter := middleware.NewIPRateLimiter(
+		&recordingAllower{calls: calls},
+		&stubIPAllower{allowed: true},
+		nil, zaptest.NewLogger(t),
+	)
+	// Chain: TrustedClientIP → IPRateLimiter.Global()
+	handler := middleware.TrustedClientIP(
+		limiter.Global()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/matches", nil)
+	req.RemoteAddr = "fdaa:0:1::1:12345" // Fly internal proxy address
+	req.Header.Set("Fly-Client-IP", "203.0.113.42")
+	req.Header.Set("X-Forwarded-For", "1.2.3.4") // attacker-controlled; must be ignored
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if calls["ip:global:203.0.113.42"] != 1 {
+		t.Errorf("expected bucket key ip:global:203.0.113.42, got %v", calls)
+	}
+}
+
+// recordingAllower records Allow calls by key for test inspection.
+type recordingAllower struct {
+	calls map[string]int
+}
+
+func (r *recordingAllower) Allow(_ context.Context, key string) (bool, int) {
+	r.calls[key]++
+	return true, 0
+}
+
 // ── OTel counter ──────────────────────────────────────────────────────────────
 
 func TestIPRateLimiter_BlockedCounterIncremented(t *testing.T) {

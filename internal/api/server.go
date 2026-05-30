@@ -116,18 +116,21 @@ func (s *Server) SetRedisClient(rc redis.UniversalClient) { s.redisClient = rc }
 func (s *Server) SetIdempotencyStore(store idempotency.Store) { s.idemStore = store }
 
 // ensureIdempotencyStore guarantees s.idemStore is non-nil before Routes()
-// registers any payment endpoints. When SetIdempotencyStore was not called
-// (Redis unavailable), the in-process MemoryStore is used as a fallback with
-// a structured warning so operators can identify the degraded state from logs.
-func (s *Server) ensureIdempotencyStore() {
+// registers any payment endpoints. Returns true when it fell back to the
+// in-process MemoryStore (Redis was not configured), false when a Redis-backed
+// store was already wired via SetIdempotencyStore. Callers use the return value
+// to emit a startup OTel counter so the WCQIdempotencyDegraded alert fires
+// immediately rather than remaining silent until the first payment request.
+func (s *Server) ensureIdempotencyStore() (degraded bool) {
 	if s.idemStore != nil {
-		return
+		return false
 	}
 	s.log.Warn("idempotency: Redis not configured — using in-process MemoryStore",
 		zap.Bool("single_process_only", true),
 		zap.String("remedy", "set WCQ_REDIS_ADDR; without it duplicate payment requests can commit on separate replicas"),
 	)
 	s.idemStore = idempotency.NewMemoryStore()
+	return true
 }
 
 // SetMetricsHandler registers the Prometheus /metrics scrape handler. Call

@@ -12,7 +12,8 @@
 #   kyc_audit_event_drop_total            Int64Counter
 #   prize_distribution_failures_total     Int64Counter
 #   wcq_ip_rate_limit_blocked_total       Int64Counter  (labels: layer=global|webhook)
-#   wcq_rate_limit_fail_open_total        Int64Counter
+#   wcq_rate_limit_fail_open_total        Int64Counter  (per-user Redis rate limiter)
+#   wcq_idempotency_degraded_total        Int64Counter  (idempotency Redis store degraded)
 #
 # Alertmanager routing (alertmanager.yml):
 #   severity=critical, workflow=payment-error-escalation → n8n-payment-escalation

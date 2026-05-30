@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -27,12 +28,15 @@ type IPRateLimiter struct {
 	global       IPAllower
 	webhook      IPAllower
 	blockedTotal metric.Int64Counter // wcq_ip_rate_limit_blocked_total{layer=...}
-	failOpen     metric.Int64Counter // wcq_ip_rate_limit_fail_open_total
 	log          *zap.Logger
 }
 
 // NewIPRateLimiter constructs an IPRateLimiter wired to the given stores.
 // meter may be nil in tests (OTel counter registration is a no-op on error).
+//
+// Fail-open telemetry lives in the IPAllower implementations (LimiterStore,
+// RedisRateStore), not here — the IPAllower interface does not surface errors,
+// so IPRateLimiter cannot distinguish a soft miss from a store failure.
 func NewIPRateLimiter(global, webhook IPAllower, meter metric.Meter, log *zap.Logger) *IPRateLimiter {
 	l := &IPRateLimiter{global: global, webhook: webhook, log: log}
 	if meter != nil {
@@ -41,11 +45,6 @@ func NewIPRateLimiter(global, webhook IPAllower, meter metric.Meter, log *zap.Lo
 			metric.WithDescription("Number of requests blocked by the per-IP rate limiter. "+
 				"Label layer=global is the L1 all-routes bucket; layer=webhook is the L2 "+
 				"stricter bucket applied only to /webhooks/* routes."),
-		)
-		l.failOpen, _ = meter.Int64Counter(
-			"wcq_ip_rate_limit_fail_open_total",
-			metric.WithDescription("Number of IP rate limit checks that failed open "+
-				"due to a store error (in-process fallback active)."),
 		)
 	}
 	return l
@@ -80,7 +79,15 @@ func (l *IPRateLimiter) layer(name string) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Prefer the host portion of RemoteAddr so the bucket key is stable
+			// regardless of the ephemeral TCP source port. TrustedClientIP has
+			// already normalised RemoteAddr to the real client IP (from
+			// Fly-Client-IP on Fly.io, or the raw TCP peer otherwise), so we
+			// only need to strip the port when it is present.
 			ip := r.RemoteAddr
+			if host, _, err := net.SplitHostPort(ip); err == nil {
+				ip = host
+			}
 			if ip == "" {
 				next.ServeHTTP(w, r)
 				return

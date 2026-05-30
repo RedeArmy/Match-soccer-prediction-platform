@@ -152,8 +152,12 @@ func minimalJPEGBytes() []byte {
 }
 
 // drainingFileStore is a test double that drains the reader so the TeeReader
-// completes and the SHA-256 hash is computed correctly.
-type drainingFileStore struct{ putErr error }
+// completes and the SHA-256 hash is computed correctly. deletedKeys records
+// every storage key passed to Delete so tests can verify cleanup behaviour.
+type drainingFileStore struct {
+	putErr      error
+	deletedKeys []string
+}
 
 func (d *drainingFileStore) Put(_ context.Context, _, _ string, r io.Reader, _ int64) error {
 	_, _ = io.Copy(io.Discard, r)
@@ -162,7 +166,10 @@ func (d *drainingFileStore) Put(_ context.Context, _, _ string, r io.Reader, _ i
 func (d *drainingFileStore) Get(_ context.Context, _ string) (io.ReadCloser, string, error) {
 	return nil, "", nil
 }
-func (d *drainingFileStore) Delete(_ context.Context, _ string) error { return nil }
+func (d *drainingFileStore) Delete(_ context.Context, key string) error {
+	d.deletedKeys = append(d.deletedKeys, key)
+	return nil
+}
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
@@ -615,5 +622,65 @@ func TestKYCHandler_UploadDocument_BodyTooLarge_Returns413(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("expected 413, got %d", rec.Code)
+	}
+}
+
+// TestKYCHandler_UploadDocument_EmptyFile_Returns422 covers the io.ReadFull →
+// io.EOF branch (L244-247): a zero-byte file part passes r.FormFile but
+// returns io.EOF on the first sniff read, which is not io.ErrUnexpectedEOF.
+func TestKYCHandler_UploadDocument_EmptyFile_Returns422(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 7}
+	svc := &stubKYCSvc{profile: profile}
+	router := withKYCUser(kycUploadRouter(t, svc))
+
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", []byte{}) // 0-byte file
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for empty file, got %d", rec.Code)
+	}
+}
+
+// ── ATD-003: duplicate-hash 409 path ─────────────────────────────────────────
+
+// TestKYCHandler_UploadDocument_DuplicateHash_Returns409 verifies that when
+// the service returns apperrors.Conflict (DB unique-index violation on
+// file_hash), the handler surfaces HTTP 409 to the client.
+func TestKYCHandler_UploadDocument_DuplicateHash_Returns409(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 7}
+	svc := &stubKYCSvc{profile: profile, uploadDocErr: apperrors.Conflict("a document with identical content has already been submitted for this profile")}
+	h := handler.NewKYCHandler(svc, &drainingFileStore{}, 10*1024*1024, zaptest.NewLogger(t))
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /kyc/documents", h.UploadDocument)
+	router := withKYCUser(mux)
+
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", minimalJPEGBytes())
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf("expected 409 Conflict for duplicate file_hash, got %d", rec.Code)
+	}
+}
+
+// TestKYCHandler_UploadDocument_DuplicateHash_CleansUpStoredFile verifies
+// that when the DB rejects a duplicate hash, the handler deletes the file
+// that was already written to the FileStore. Leaving the file would orphan
+// storage and waste quota on a document that will never be referenced.
+func TestKYCHandler_UploadDocument_DuplicateHash_CleansUpStoredFile(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 7}
+	svc := &stubKYCSvc{profile: profile, uploadDocErr: apperrors.Conflict("duplicate")}
+	store := &drainingFileStore{}
+	h := handler.NewKYCHandler(svc, store, 10*1024*1024, zaptest.NewLogger(t))
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /kyc/documents", h.UploadDocument)
+	router := withKYCUser(mux)
+
+	req := buildKYCMultipart(t, "gov_id", "image/jpeg", minimalJPEGBytes())
+	router.ServeHTTP(httptest.NewRecorder(), req)
+
+	if len(store.deletedKeys) != 1 {
+		t.Errorf("expected FileStore.Delete to be called once on conflict, called %d times", len(store.deletedKeys))
 	}
 }
