@@ -222,12 +222,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 
 	// Wire the Postgres DLQ fallback before any Subscribe calls so that events
 	// dead-lettered during match scoring are never silently lost even when
-	// Redis itself is unavailable. The worker validates redis driver above, so
-	// the type assertion is always safe here. (ATD-007)
-	if redisBus, ok := bus.(*messaging.RedisBus); ok {
-		redisBus.SetDLQFallback(repository.NewPostgresEventDLQRepository(db))
-		log.Info("worker: Postgres event DLQ fallback wired")
-	}
+	// Redis itself is unavailable. (ATD-007)
+	wirePgDLQFallback(bus, db, log)
 
 	matchRepo := repository.NewPostgresMatchRepository(db)
 	predRepo := repository.NewPostgresPredictionRepository(db)
@@ -953,4 +949,19 @@ func (r *repoEmailResolver) ResolveEmailByID(ctx context.Context, userID int) (s
 		return "", "", fmt.Errorf("user %d not found", userID)
 	}
 	return u.Email, u.Name, nil
+}
+
+// wirePgDLQFallback attaches a Postgres-backed DeadLetterRecorder to the event
+// bus so that scoring events cannot be silently lost when the Redis DLQ itself
+// is unavailable. The worker unconditionally validates the redis driver before
+// reaching this call, so the type assertion always succeeds in production; a
+// failed assertion is treated as a silent no-op so tests using an InMemoryBus
+// are unaffected.
+func wirePgDLQFallback(bus events.Bus, db *pgxpool.Pool, log *zap.Logger) {
+	redisBus, ok := bus.(*messaging.RedisBus)
+	if !ok {
+		return
+	}
+	redisBus.SetDLQFallback(repository.NewPostgresEventDLQRepository(db))
+	log.Info("worker: Postgres event DLQ fallback wired")
 }

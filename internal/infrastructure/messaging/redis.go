@@ -54,11 +54,11 @@ func streamKey(eventType events.EventType) string {
 	return "stream:" + string(eventType)
 }
 
-// DLQFallback provides persistent backup storage for events that could not be
-// written to the Redis dead-letter queue (e.g. Redis itself is unavailable).
-// It is called from pushDLQ only when the Redis RPUSH fails. A nil
-// implementation means no backup is configured and the loss is only logged.
-type DLQFallback interface {
+// DeadLetterRecorder provides persistent backup storage for events that could
+// not be written to the Redis dead-letter queue (e.g. Redis itself is
+// unavailable). It is called from pushDLQ only when the Redis RPUSH fails. A
+// nil implementation means no backup is configured and the loss is only logged.
+type DeadLetterRecorder interface {
 	RecordDeadLettered(ctx context.Context, eventType, envelopeJSON, handlerErr string, attempts int) error
 }
 
@@ -95,7 +95,7 @@ type RedisBus struct {
 	cancels      []context.CancelFunc
 	mu           sync.RWMutex
 	handlers     map[events.EventType][]func(context.Context, events.Envelope) error
-	dlqFallback  DLQFallback // optional Postgres backup; nil = log-only on Redis push failure
+	dlqFallback  DeadLetterRecorder // optional Postgres backup; nil = log-only on Redis push failure
 }
 
 // NewRedisBus constructs a RedisBus that publishes and subscribes using the
@@ -121,7 +121,7 @@ func NewRedisBus(client *redis.Client, log *zap.Logger) *RedisBus {
 // SetDLQFallback wires a persistent backup for events that cannot be written
 // to the Redis DLQ. Call once after construction, before any Subscribe calls.
 // Not safe for concurrent use; intended for startup wiring only.
-func (b *RedisBus) SetDLQFallback(f DLQFallback) {
+func (b *RedisBus) SetDLQFallback(f DeadLetterRecorder) {
 	b.dlqFallback = f
 }
 

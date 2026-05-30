@@ -514,38 +514,43 @@ func (r *PostgresPredictionRepository) ScoreMatchBatch(ctx context.Context, matc
 		if err != nil {
 			return err
 		}
-		if len(points) == 0 {
-			return nil
-		}
-
-		ids := make([]int, 0, len(points))
-		pts := make([]int, 0, len(points))
-		for id, p := range points {
-			ids = append(ids, id)
-			pts = append(pts, p)
-		}
-
-		// Chunk the UPDATE into chunkSize-row batches (runtime-configurable via
-		// scoring.update_chunk_size). All chunks execute inside this transaction
-		// so atomicity is preserved; the benefit is avoiding a single massive
-		// UNNEST array at >10 000 rows.
-		for i := 0; i < len(ids); i += chunkSize {
-			end := min(i+chunkSize, len(ids))
-			if _, err := tx.Exec(ctx,
-				`UPDATE predictions
-				    SET points     = v.points,
-				        scored_at  = NOW(),
-				        updated_at = NOW()
-				   FROM UNNEST($1::int[], $2::int[]) AS v(id, points)
-				  WHERE predictions.id = v.id
-				    AND predictions.scored_at IS NULL`,
-				ids[i:end], pts[i:end],
-			); err != nil {
-				return apperrors.Internal(err)
-			}
-		}
-		return nil
+		return applyChunkedPointsUpdate(ctx, tx, points, chunkSize)
 	})
+}
+
+// applyChunkedPointsUpdate converts points into parallel id/pts slices and
+// executes the UPDATE in chunkSize-row UNNEST batches. All batches execute
+// inside the caller's open transaction, preserving atomicity whilst avoiding
+// a single large array literal for matches with >10 000 predictions.
+// An empty points map is a no-op.
+func applyChunkedPointsUpdate(ctx context.Context, tx pgx.Tx, points map[int]int, chunkSize int) error {
+	if len(points) == 0 {
+		return nil
+	}
+
+	ids := make([]int, 0, len(points))
+	pts := make([]int, 0, len(points))
+	for id, p := range points {
+		ids = append(ids, id)
+		pts = append(pts, p)
+	}
+
+	for i := 0; i < len(ids); i += chunkSize {
+		end := min(i+chunkSize, len(ids))
+		if _, err := tx.Exec(ctx,
+			`UPDATE predictions
+			    SET points     = v.points,
+			        scored_at  = NOW(),
+			        updated_at = NOW()
+			   FROM UNNEST($1::int[], $2::int[]) AS v(id, points)
+			  WHERE predictions.id = v.id
+			    AND predictions.scored_at IS NULL`,
+			ids[i:end], pts[i:end],
+		); err != nil {
+			return apperrors.Internal(err)
+		}
+	}
+	return nil
 }
 
 func collectPredictions(rows pgx.Rows) ([]*domain.Prediction, error) {
