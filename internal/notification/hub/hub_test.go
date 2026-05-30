@@ -458,6 +458,85 @@ func TestHub_RegisterMetrics_RegistrationError_Propagates(t *testing.T) {
 	}
 }
 
+// ── Per-user connection cap ───────────────────────────────────────────────────
+
+func TestHub_Connect_MaxConnsPerUser_RejectsOverLimit(t *testing.T) {
+	t.Parallel()
+	const limit = 3
+	h := hub.NewWithOptions(hub.Options{MaxConnsPerUser: limit})
+
+	cleanups := make([]func(), limit)
+	for i := range cleanups {
+		ch, cleanup := h.Connect(1)
+		if ch == nil {
+			t.Fatalf("connection %d/%d rejected unexpectedly", i+1, limit)
+		}
+		cleanups[i] = cleanup
+	}
+	defer func() {
+		for _, c := range cleanups {
+			c()
+		}
+	}()
+
+	// One more connection must be rejected.
+	ch, cleanup := h.Connect(1)
+	defer cleanup()
+	if ch != nil {
+		t.Error("expected nil channel when per-user limit is reached; got non-nil")
+	}
+}
+
+func TestHub_Connect_MaxConnsPerUser_AllowsConnectionAfterCleanup(t *testing.T) {
+	t.Parallel()
+	h := hub.NewWithOptions(hub.Options{MaxConnsPerUser: 1})
+
+	ch1, cleanup1 := h.Connect(1)
+	if ch1 == nil {
+		t.Fatal("first connection should be accepted")
+	}
+	cleanup1()
+
+	// After cleanup the slot is free; a new connection must succeed.
+	ch2, cleanup2 := h.Connect(1)
+	defer cleanup2()
+	if ch2 == nil {
+		t.Error("connection after cleanup should be accepted; got nil channel")
+	}
+}
+
+func TestHub_Connect_MaxConnsPerUser_CapIsPerUser(t *testing.T) {
+	t.Parallel()
+	h := hub.NewWithOptions(hub.Options{MaxConnsPerUser: 1})
+
+	ch1, c1 := h.Connect(1)
+	ch2, c2 := h.Connect(2) // different user — must not be affected by user 1's cap
+	defer c1()
+	defer c2()
+
+	if ch1 == nil {
+		t.Error("user 1 connection rejected unexpectedly")
+	}
+	if ch2 == nil {
+		t.Error("user 2 connection rejected unexpectedly (cap is per-user, not global)")
+	}
+}
+
+func TestHub_Connect_MaxConnsPerUser_RejectedCounterIncremented(t *testing.T) {
+	t.Parallel()
+	h := hub.NewWithOptions(hub.Options{MaxConnsPerUser: 1})
+
+	_, c1 := h.Connect(1)
+	defer c1()
+
+	_, c2 := h.Connect(1) // over limit
+	defer c2()
+
+	if got := h.RejectedConnections(); got != 1 {
+		t.Errorf("RejectedConnections: got %d; want 1", got)
+	}
+}
+
 func TestHub_NewWithBufSize_ZeroFallsBackToDefault(t *testing.T) {
 	t.Parallel()
 	// NewWithBufSize(0) must fall back to the default buffer size rather than

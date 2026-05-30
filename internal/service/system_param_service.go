@@ -289,11 +289,12 @@ type paramIntRange struct{ min, max int }
 // accept any parseable integer.
 var paramIntConstraints = map[string]paramIntRange{
 	// Scoring — runtime, re-read on every ScoreMatch call
-	domain.ParamKeyScoringExactScore:     {1, 100},
-	domain.ParamKeyScoringCorrectOutcome: {0, 100},
-	domain.ParamKeyScoringGoalDiff:       {0, 100},
-	domain.ParamKeyScoringExtraTimeBonus: {0, 100}, // 0 = no global bonus
-	domain.ParamKeyScoringPenaltiesBonus: {0, 100}, // 0 = no global bonus
+	domain.ParamKeyScoringExactScore:      {1, 100},
+	domain.ParamKeyScoringCorrectOutcome:  {0, 100},
+	domain.ParamKeyScoringGoalDiff:        {0, 100},
+	domain.ParamKeyScoringExtraTimeBonus:  {0, 100},     // 0 = no global bonus
+	domain.ParamKeyScoringPenaltiesBonus:  {0, 100},     // 0 = no global bonus
+	domain.ParamKeyScoringUpdateChunkSize: {50, 10_000}, // min 50 rows; max 10K to prevent runaway lock hold
 
 	// Prediction
 	domain.ParamKeyPredictionDeadlineMin: {0, 1440}, // 0 = no deadline; max 24 h
@@ -444,6 +445,7 @@ var paramIntConstraints = map[string]paramIntRange{
 
 	// Phase 7 infrastructure params (migration 000113, is_runtime=FALSE).
 	domain.ParamKeyNotifySSEChanBufSize:              {8, 1_024},   // 8 – 1 024 slots per connection
+	domain.ParamKeyNotifySSEMaxConnsPerUser:          {0, 100},     // 0 = unlimited; 100 is very generous
 	domain.ParamKeyNotifyOutboxStaleLockThresholdSec: {60, 86_400}, // 60 s – 24 hours
 
 	// KYC / AML per-transaction caps (migration 000121, is_runtime=TRUE).

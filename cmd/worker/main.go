@@ -220,6 +220,15 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 	defer db.Close()
 
+	// Wire the Postgres DLQ fallback before any Subscribe calls so that events
+	// dead-lettered during match scoring are never silently lost even when
+	// Redis itself is unavailable. The worker validates redis driver above, so
+	// the type assertion is always safe here. (ATD-007)
+	if redisBus, ok := bus.(*messaging.RedisBus); ok {
+		redisBus.SetDLQFallback(repository.NewPostgresEventDLQRepository(db))
+		log.Info("worker: Postgres event DLQ fallback wired")
+	}
+
 	matchRepo := repository.NewPostgresMatchRepository(db)
 	predRepo := repository.NewPostgresPredictionRepository(db)
 	systemParamRepo := repository.NewPostgresSystemParamRepository(db)
@@ -242,7 +251,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	purgeTickInterval = time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerPurgeIntervalHours, domain.DefaultWorkerPurgeIntervalHours)) * time.Hour
 	snapshotKeepLatestCount = params.GetInt(ctx, domain.ParamKeySnapshotKeepLatestCount, domain.DefaultSnapshotKeepLatestCount)
 	ruleRepo := repository.NewPostgresScoringRuleRepository(db)
-	scorer := service.NewScoringService(matchRepo, predRepo, ruleRepo, params, log)
+	scorer := service.NewScoringService(matchRepo, predRepo, ruleRepo, params, log,
+		service.WithScoringMeter(meter),
+	)
 
 	quinielaRepo := repository.NewPostgresQuinielaRepository(db)
 	memberRepo := repository.NewPostgresGroupMembershipRepository(db)

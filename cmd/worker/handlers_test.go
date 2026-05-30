@@ -316,6 +316,10 @@ func (r *stubWorkerPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*dom
 func (r *stubWorkerPredRepo) InsertScoringBatch(_ context.Context, _ []domain.PredictionScoreLog) error {
 	return nil
 }
+func (r *stubWorkerPredRepo) ScoreMatchBatch(_ context.Context, _ int, scorer func([]*domain.Prediction) (map[int]int, error), _ int) error {
+	_, err := scorer(nil)
+	return err
+}
 
 func TestPostScoringWork_NilPredRepo_Noop(t *testing.T) {
 	postScoringWork(context.Background(), 1, postScoringDeps{snapshotter: &stubSnapshotter{}}, zap.NewNop())

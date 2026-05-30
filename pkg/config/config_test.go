@@ -548,6 +548,91 @@ func TestLoad_ProductionWithGDriveStorage_WithFolderID_ReturnsNoError(t *testing
 	}
 }
 
+func TestLoad_ProductionWithGDriveStorage_MalformedCredentialsJSON_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "gdrive")
+	t.Setenv("WCQ_STORAGE_GDRIVEFOLDERID", "folder-id")
+	t.Setenv("WCQ_STORAGE_GDRIVECREDENTIALSJSON", "not-valid-json{{")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for malformed GDrive credentials JSON, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_STORAGE_GDRIVECREDENTIALSJSON") {
+		t.Errorf("error should reference WCQ_STORAGE_GDRIVECREDENTIALSJSON, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithGDriveStorage_CredentialsJSONMissingTypeField_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "gdrive")
+	t.Setenv("WCQ_STORAGE_GDRIVEFOLDERID", "folder-id")
+	// Valid JSON but no "type" field — not a GCP service-account key.
+	t.Setenv("WCQ_STORAGE_GDRIVECREDENTIALSJSON", `{"client_email":"sa@project.iam.gserviceaccount.com"}`)
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for GDrive credentials JSON missing 'type' field, got nil")
+	}
+	if !strings.Contains(err.Error(), "type") {
+		t.Errorf("error should mention missing 'type' field, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithGDriveStorage_ValidCredentialsJSON_ReturnsNoError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_STORAGE_DRIVER", "gdrive")
+	t.Setenv("WCQ_STORAGE_GDRIVEFOLDERID", "folder-id")
+	t.Setenv("WCQ_STORAGE_GDRIVECREDENTIALSJSON",
+		`{"type":"service_account","client_email":"sa@project.iam.gserviceaccount.com"}`)
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for valid GDrive credentials JSON, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithN8nBaseURLAndNoSecret_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_N8N_BASEURL", "https://n8n.example.com")
+	// WCQ_N8N_WEBHOOKSECRET intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error when n8n baseURL is set without webhookSecret, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_N8N_WEBHOOKSECRET") {
+		t.Errorf("error should reference WCQ_N8N_WEBHOOKSECRET, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithN8nWebhookURLAndNoSecret_ReturnsError(t *testing.T) {
+	setProductionBaseEnv(t)
+	t.Setenv("WCQ_N8N_WEBHOOKURL", "https://n8n.example.com/webhook/abc")
+	// WCQ_N8N_WEBHOOKSECRET intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error when n8n webhookURL is set without webhookSecret, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_N8N_WEBHOOKSECRET") {
+		t.Errorf("error should reference WCQ_N8N_WEBHOOKSECRET, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithN8nBaseURLAndSecret_ReturnsNoError(t *testing.T) {
+	setProductionBaseEnv(t)
+	// Use a minimal valid storage config so the storage-driver check does not fire
+	// before we reach the n8n validation.
+	t.Setenv("WCQ_STORAGE_DRIVER", "gdrive")
+	t.Setenv("WCQ_STORAGE_GDRIVEFOLDERID", "folder-id")
+	t.Setenv("WCQ_N8N_BASEURL", "https://n8n.example.com")
+	t.Setenv("WCQ_N8N_WEBHOOKSECRET", "super-secret-key")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error when n8n baseURL and secret are both set, got: %v", err)
+	}
+}
+
 func TestLoad_ProductionWithS3Storage_MissingBucket_ReturnsError(t *testing.T) {
 	setProductionBaseEnv(t)
 	t.Setenv("WCQ_STORAGE_DRIVER", "s3")

@@ -65,6 +65,7 @@ type paramSpec struct {
 //   - 000124_seed_kyc_velocity_params           (+4)
 //   - 000125_seed_kyc_cache_ttl_param           (+1)
 //   - 000129_seed_kyc_ip_velocity_params        (+2)
+//   - 000138_seed_scoring_chunk_size_param      (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -72,6 +73,8 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyScoringGoalDiff, defaultValue: strconv.Itoa(domain.PointsGoalDifference), paramType: "int", category: "scoring", isRuntime: true},
 	{key: domain.ParamKeyScoringExtraTimeBonus, defaultValue: strconv.Itoa(domain.DefaultScoringExtraTimeBonus), paramType: "int", category: "scoring", isRuntime: true},
 	{key: domain.ParamKeyScoringPenaltiesBonus, defaultValue: strconv.Itoa(domain.DefaultScoringPenaltiesBonus), paramType: "int", category: "scoring", isRuntime: true},
+	// isRuntime=FALSE: read per ScoreMatch call but not hot-patched; restart required for new value.
+	{key: domain.ParamKeyScoringUpdateChunkSize, defaultValue: strconv.Itoa(domain.DefaultScoringUpdateChunkSize), paramType: "int", category: "scoring", isRuntime: false},
 
 	// Prediction — runtime: re-read on every prediction submit/update call.
 	{key: domain.ParamKeyPredictionDeadlineMin, defaultValue: strconv.Itoa(int(domain.PredictionDeadlineOffset / time.Minute)), paramType: "int", category: "prediction", isRuntime: true},
@@ -236,6 +239,9 @@ var allParams = []paramSpec{
 
 	// Phase 7 infrastructure params (migration 000113); not runtime — restart required.
 	{key: domain.ParamKeyNotifySSEChanBufSize, defaultValue: strconv.Itoa(domain.DefaultNotifySSEChanBufSize), paramType: "int", category: "notify", isRuntime: false},
+	// Per-user SSE connection cap (migration 000136); not runtime — hub rebuilt at startup.
+	// 0 = unlimited; default 5 allows multi-tab/device without unbounded heap growth.
+	{key: domain.ParamKeyNotifySSEMaxConnsPerUser, defaultValue: strconv.Itoa(domain.DefaultNotifySSEMaxConnsPerUser), paramType: "int", category: "notify", isRuntime: false},
 	{key: domain.ParamKeyNotifyOutboxStaleLockThresholdSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxStaleLockThresholdSec), paramType: "int", category: "notify", isRuntime: false},
 
 	// KYC/AML gate params (migrations 000121 + 000125); runtime — all limits are enforced

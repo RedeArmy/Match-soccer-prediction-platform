@@ -335,6 +335,7 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyScoringGoalDiff:          true,
 		domain.ParamKeyScoringExtraTimeBonus:    true,
 		domain.ParamKeyScoringPenaltiesBonus:    true,
+		domain.ParamKeyScoringUpdateChunkSize:   true,
 		domain.ParamKeyPredictionDeadlineMin:    true,
 		domain.ParamKeyGroupMinMembers:          true,
 		domain.ParamKeyGroupMaxSize:             true,
@@ -448,6 +449,8 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		// Added by migration 000113
 		domain.ParamKeyNotifySSEChanBufSize:              true,
 		domain.ParamKeyNotifyOutboxStaleLockThresholdSec: true,
+		// Added by migration 000136
+		domain.ParamKeyNotifySSEMaxConnsPerUser: true,
 		// Added by migration 000114
 		domain.ParamKeyBreakerCacheMaxFails:    true,
 		domain.ParamKeyBreakerCacheCooldownSec: true,
@@ -533,7 +536,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 112 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125, +2 ip velocity from 000129)
+	const expectedCount = 114 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125, +2 ip velocity from 000129, +1 sse max conns from 000136, +1 scoring chunk size from 000138)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

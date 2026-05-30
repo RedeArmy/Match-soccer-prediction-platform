@@ -599,3 +599,107 @@ func TestRedisBus_RetriesAndPushesToDLQ_OnHandlerError(t *testing.T) {
 	// miniredis does not persist between tests; closing it cleans up automatically.
 	mr.Close()
 }
+
+// recordingDLQFallback is a test double for messaging.DLQFallback that
+// records every RecordDeadLettered call so tests can assert on them.
+type recordingDLQFallback struct {
+	mu    sync.Mutex
+	calls []dlqFallbackCall
+}
+
+type dlqFallbackCall struct {
+	eventType string
+	attempts  int
+}
+
+func (r *recordingDLQFallback) RecordDeadLettered(_ context.Context, eventType, _, _ string, attempts int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, dlqFallbackCall{eventType: eventType, attempts: attempts})
+	return nil
+}
+
+func (r *recordingDLQFallback) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.calls)
+}
+
+// TestRedisBus_DLQFallback_CalledWhenRedisDLQUnavailable verifies that
+// DLQFallback.RecordDeadLettered is invoked when the Redis DLQ RPush fails,
+// ensuring no critical event is silently lost during Redis outages. (ATD-007)
+//
+// The test exercises pushDLQFallback directly via the exported test shim rather
+// than via the full consumer-goroutine path, eliminating the race between
+// goroutine scheduling and error injection that plagues integration-level tests
+// for this failure mode.
+func TestRedisBus_DLQFallback_CalledWhenRedisDLQUnavailable(t *testing.T) {
+	_, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	fallback := &recordingDLQFallback{}
+	bus.SetDLQFallback(fallback)
+
+	env := matchFinishedEnvelope()
+	bus.InvokeDLQFallback(context.Background(), env, `{"event_type":"match.finished"}`, "handler error", 3)
+
+	if fallback.count() == 0 {
+		t.Fatal("expected DLQFallback.RecordDeadLettered to be called, got 0 calls")
+	}
+	got := fallback.calls[0]
+	if got.eventType != string(events.EventMatchFinished) {
+		t.Errorf("fallback event_type: want %q, got %q", events.EventMatchFinished, got.eventType)
+	}
+	if got.attempts != 3 {
+		t.Errorf("fallback attempts: want 3, got %d", got.attempts)
+	}
+}
+
+// TestRedisBus_DLQFallback_NilFallback_IsNoop verifies that pushDLQFallback
+// is safe to call when no fallback is configured (nil dlqFallback). (ATD-007)
+func TestRedisBus_DLQFallback_NilFallback_IsNoop(t *testing.T) {
+	_, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil) // no SetDLQFallback
+
+	env := matchFinishedEnvelope()
+	// Must not panic.
+	bus.InvokeDLQFallback(context.Background(), env, `{}`, "error", 3)
+}
+
+// errorDLQFallback always returns an error so the "fallback itself fails" path
+// in pushDLQFallback is exercised (the double-failure log + early return).
+type errorDLQFallback struct{}
+
+func (errorDLQFallback) RecordDeadLettered(_ context.Context, _, _, _ string, _ int) error {
+	return errors.New("pg unavailable")
+}
+
+// TestRedisBus_DLQFallback_FallbackError_DoesNotPanic verifies that when both
+// the Redis DLQ push and the Postgres fallback fail, pushDLQFallback logs the
+// double-failure and returns without panicking.
+func TestRedisBus_DLQFallback_FallbackError_DoesNotPanic(t *testing.T) {
+	_, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+	bus.SetDLQFallback(errorDLQFallback{})
+
+	env := matchFinishedEnvelope()
+	// Must not panic even when fallback.RecordDeadLettered returns an error.
+	bus.InvokeDLQFallback(context.Background(), env, `{"event_type":"match.finished"}`, "handler error", 3)
+}
+
+// TestRedisBus_PushDLQ_UnmarshalablePayload_DoesNotPanic covers the json.Marshal
+// error branch in pushDLQ. An Envelope with a function payload cannot be
+// JSON-encoded, so json.Marshal returns an error and pushDLQ must return early
+// without panicking. (defensive branch — impossible in production)
+func TestRedisBus_PushDLQ_UnmarshalablePayload_DoesNotPanic(t *testing.T) {
+	_, client := newMiniRedis(t)
+	bus := messaging.NewRedisBus(client, nil)
+
+	// A func value cannot be marshalled to JSON — this triggers the Marshal error.
+	env := events.Envelope{
+		Type:    events.EventMatchFinished,
+		Payload: func() {}, // not JSON-serializable
+	}
+	// Must not panic.
+	bus.InvokePushDLQ(context.Background(), env, errors.New("test error"))
+}
