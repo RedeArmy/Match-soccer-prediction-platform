@@ -135,6 +135,26 @@ type PredictionRepository interface {
 	// the partial-scoring state where some predictions on a finished match are
 	// scored and others are not. An empty map is a no-op.
 	UpdateManyPoints(ctx context.Context, points map[int]int) error
+	// ScoreMatchBatch atomically reads all predictions for matchID, calls scorer
+	// to compute the new point values, and writes them back in a single database
+	// transaction. This eliminates the read→compute→write gap that exists when
+	// ListByMatch and UpdateManyPoints are called separately: a network error
+	// between the two calls can no longer produce a silent partial failure.
+	//
+	// scorer receives the current prediction slice (which may be empty) and
+	// returns the point map to persist. A nil or empty map returned by scorer
+	// is treated as a no-op. scorer is called exactly once, inside the open
+	// transaction, so it must not perform any I/O that would deadlock.
+	//
+	// The WHERE scored_at IS NULL guard inside the UPDATE makes the operation
+	// idempotent: a second call for the same match (e.g. after a DLQ replay)
+	// is a safe no-op for already-scored rows.
+	//
+	// chunkSize controls the maximum number of rows updated in a single UNNEST
+	// UPDATE statement. Callers should pass the value from the system param
+	// scoring.update_chunk_size (default: domain.DefaultScoringUpdateChunkSize).
+	// Values ≤ 0 are treated as the domain default.
+	ScoreMatchBatch(ctx context.Context, matchID int, scorer func([]*domain.Prediction) (map[int]int, error), chunkSize int) error
 	// TotalPointsByQuiniela returns a map of userID -> total scored points for
 	// every active, paid member of the given quiniela. It is used exclusively
 	// by the ranking service to compute leaderboard standings in a single query,

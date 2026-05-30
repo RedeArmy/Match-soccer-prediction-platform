@@ -423,6 +423,13 @@ func (r *failOnUpdateRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]i
 func (r *failOnUpdateRepo) InsertScoringBatch(_ context.Context, _ []domain.PredictionScoreLog) error {
 	return nil
 }
+func (r *failOnUpdateRepo) ScoreMatchBatch(_ context.Context, _ int, scorer func([]*domain.Prediction) (map[int]int, error), _ int) error {
+	// Call scorer so service-layer logic executes, then simulate the write failure.
+	if _, err := scorer(r.list); err != nil {
+		return err
+	}
+	return r.updateErr
+}
 
 // TestScoreMatch_Idempotent_ReplayProducesSameScores verifies the DLQ-replay
 // safety guarantee: a second call to ScoreMatch for the same match must produce
@@ -537,6 +544,41 @@ func TestScoreMatch_LogInsertFailure_ScoringStillSucceeds(t *testing.T) {
 	}
 	if len(predRepo.updated) != 1 {
 		t.Errorf("expected points to be written despite log failure, updated=%d", len(predRepo.updated))
+	}
+}
+
+// TestScoreMatch_WithScoringMeter_DoesNotPanic verifies that wiring an OTel
+// meter via WithScoringMeter does not break ScoreMatch and that the no-op
+// meter path is exercised without panics. (ATD-003)
+func TestScoreMatch_WithScoringMeter_DoesNotPanic(t *testing.T) {
+	home, away := 2, 1
+	match := &domain.Match{
+		ID: 1, Status: domain.MatchStatusFinished,
+		HomeScore: &home, AwayScore: &away,
+	}
+	// Build enough predictions to span two 500-row chunks so the chunk loop is
+	// exercised. The test uses a no-op meter so no real OTel exporter is needed.
+	const count = domain.DefaultScoringUpdateChunkSize + 5
+	preds := make([]*domain.Prediction, count)
+	for i := range preds {
+		preds[i] = &domain.Prediction{ID: i + 1, HomeScore: 2, AwayScore: 1}
+	}
+	predRepo := &stubPredRepo{list: preds}
+
+	// A nil meter is a no-op; WithScoringMeter must handle it gracefully.
+	svc := NewScoringService(
+		&stubMatchRepo{match: match},
+		predRepo,
+		&stubScoringRuleRepo{},
+		&noopSystemParamService{},
+		zap.NewNop(),
+		WithScoringMeter(nil),
+	)
+	if err := svc.ScoreMatch(context.Background(), 1); err != nil {
+		t.Fatalf("ScoreMatch with nil meter: %v", err)
+	}
+	if len(predRepo.updated) != count {
+		t.Errorf("expected %d updated predictions, got %d", count, len(predRepo.updated))
 	}
 }
 

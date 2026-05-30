@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -160,6 +161,9 @@ func validateProductionConfig(cfg *Config) error {
 	if err := validateCORSOrigins(cfg.CORS.AllowedOrigins, cfg.Environment); err != nil {
 		return err
 	}
+	if err := validateN8nConfig(cfg.N8n); err != nil {
+		return err
+	}
 	return validateStorageDriver(cfg.Storage)
 }
 
@@ -231,9 +235,48 @@ func validateCORSOrigins(origins []string, env string) error {
 	return nil
 }
 
+// validateN8nConfig rejects configurations where n8n is wired for outgoing
+// requests but no signing secret is set. Without a secret, outgoing webhook
+// calls are unsigned and any party that discovers the n8n base URL can forge
+// observability events or admin alerts.
+func validateN8nConfig(n N8nConfig) error {
+	if (n.BaseURL != "" || n.WebhookURL != "") && n.WebhookSecret == "" {
+		return errors.New(
+			"n8n.webhookSecret must not be empty when n8n.baseURL or n8n.webhookURL is configured (WCQ_N8N_WEBHOOKSECRET); " +
+				"without it, outgoing n8n requests are unsigned and can be forged",
+		)
+	}
+	return nil
+}
+
 func validateGDriveConfig(s StorageConfig) error {
 	if s.GDriveFolderID == "" {
 		return errors.New("storage.gdriveFolderID must not be empty when storage.driver=gdrive (WCQ_STORAGE_GDRIVEFOLDERID)")
 	}
+	if s.GDriveCredentialsJSON != "" {
+		// Validate the credentials JSON structure at startup so that a malformed
+		// or base64-encoded blob fails immediately rather than at the first file
+		// upload. Using stdlib json.Unmarshal avoids a Google SDK dependency in
+		// this package; the production path (storage.NewGDriveFileStore) does the
+		// full credential parse with google.CredentialsFromJSONWithType.
+		var creds struct {
+			Type        string `json:"type"`
+			ClientEmail string `json:"client_email"`
+		}
+		if err := json.Unmarshal([]byte(s.GDriveCredentialsJSON), &creds); err != nil {
+			return fmt.Errorf(
+				"storage.gdriveCredentialsJSON is not valid JSON (WCQ_STORAGE_GDRIVECREDENTIALSJSON): %w",
+				err,
+			)
+		}
+		if creds.Type == "" {
+			return errors.New(
+				"storage.gdriveCredentialsJSON is missing required 'type' field (WCQ_STORAGE_GDRIVECREDENTIALSJSON); " +
+					"expected a GCP service-account key JSON",
+			)
+		}
+	}
+	// Empty GDriveCredentialsJSON is valid: runtime falls back to Application
+	// Default Credentials (GOOGLE_APPLICATION_CREDENTIALS or GCE metadata).
 	return nil
 }

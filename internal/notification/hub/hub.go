@@ -15,6 +15,12 @@
 // The HTTP connection's defer-cleanup is a no-op for already-evicted entries
 // because the map deletion is guarded by the same mutex.
 //
+// Per-user connection cap: Connect returns a nil channel when a user already
+// holds maxConnsPerUser open connections. The caller must check for nil before
+// entering the event loop and reject the request with 429. A zero value for
+// maxConnsPerUser disables the cap (used by New and NewWithBufSize for backward
+// compatibility with tests that open many connections per user).
+//
 // Design constraints:
 //   - Zero external dependencies.
 //   - Buffered channels of size 32 per connection.
@@ -40,6 +46,12 @@ const (
 	evictAfterDrops    = 5
 )
 
+// DefaultMaxConnsPerUser is the default maximum number of concurrent SSE
+// connections allowed per authenticated user. NewWithOptions uses this value
+// when Options.MaxConnsPerUser is not explicitly set. A value of 0 disables
+// the cap entirely (unlimited connections).
+const DefaultMaxConnsPerUser = 5
+
 // Notification is the value delivered to SSE clients.
 type Notification struct {
 	ID        int64  `json:"id"`
@@ -63,12 +75,24 @@ type connSnapshot struct {
 	entry  *connEntry
 }
 
+// Options configures a Hub at construction time.
+type Options struct {
+	// ChanBufSize is the per-connection channel buffer. Values ≤ 0 fall back
+	// to defaultChanBufSize (32).
+	ChanBufSize int
+	// MaxConnsPerUser is the maximum number of concurrent SSE connections
+	// allowed per user. Connect returns a nil channel when this limit is
+	// reached. Values ≤ 0 disable the cap (unlimited).
+	MaxConnsPerUser int
+}
+
 // Hub is a thread-safe registry of SSE client channels.
 type Hub struct {
-	mu          sync.RWMutex
-	clients     map[int]map[string]*connEntry
-	metrics     hubMetrics
-	chanBufSize int
+	mu              sync.RWMutex
+	clients         map[int]map[string]*connEntry
+	metrics         hubMetrics
+	chanBufSize     int
+	maxConnsPerUser int // 0 = unlimited
 }
 
 type hubMetrics struct {
@@ -76,30 +100,44 @@ type hubMetrics struct {
 	broadcasts  atomic.Int64
 	dropped     atomic.Int64
 	evicted     atomic.Int64
+	rejected    atomic.Int64 // connections refused due to per-user cap
 }
 
-// New constructs an empty Hub with the default channel buffer size (32).
+// New constructs an empty Hub with the default channel buffer size and no
+// per-user connection cap (unlimited). Use NewWithOptions in production to
+// enforce DefaultMaxConnsPerUser.
 func New() *Hub {
-	return NewWithBufSize(defaultChanBufSize)
+	return NewWithOptions(Options{})
 }
 
 // NewWithBufSize constructs an empty Hub with the given per-connection channel
-// buffer size. The caller is responsible for choosing a value appropriate for
-// the expected event rate; 32 is sufficient for most deployments. Values ≤ 0
-// fall back to the default.
+// buffer size and no per-user connection cap. Values ≤ 0 fall back to the
+// default (32). Use NewWithOptions in production to enforce DefaultMaxConnsPerUser.
 func NewWithBufSize(n int) *Hub {
-	if n <= 0 {
-		n = defaultChanBufSize
+	return NewWithOptions(Options{ChanBufSize: n})
+}
+
+// NewWithOptions constructs a Hub with the given options.
+// ChanBufSize ≤ 0 falls back to 32; MaxConnsPerUser ≤ 0 disables the cap.
+func NewWithOptions(opts Options) *Hub {
+	if opts.ChanBufSize <= 0 {
+		opts.ChanBufSize = defaultChanBufSize
 	}
 	return &Hub{
-		clients:     make(map[int]map[string]*connEntry),
-		chanBufSize: n,
+		clients:         make(map[int]map[string]*connEntry),
+		chanBufSize:     opts.ChanBufSize,
+		maxConnsPerUser: opts.MaxConnsPerUser,
 	}
 }
 
 // Connect registers a new SSE connection for userID.
 // It returns a receive-only channel and a cleanup function the caller must
 // invoke (typically via defer) when the HTTP connection closes.
+//
+// When MaxConnsPerUser is set and the user has reached the limit, Connect
+// returns (nil, no-op). The caller must check for a nil channel and reject
+// the request (HTTP 429) before entering the event loop; reading from a nil
+// channel blocks forever.
 //
 // The cleanup is safe to call even after the hub has evicted the connection:
 // a missing map entry means eviction already closed the channel and decremented
@@ -109,6 +147,16 @@ func (h *Hub) Connect(userID int) (<-chan Notification, func()) {
 	e := &connEntry{ch: make(chan Notification, h.chanBufSize)}
 
 	h.mu.Lock()
+	if h.maxConnsPerUser > 0 && len(h.clients[userID]) >= h.maxConnsPerUser {
+		h.mu.Unlock()
+		h.metrics.rejected.Add(1)
+		return nil, func() {
+			// The connection was never registered, so there is nothing to
+			// clean up. The no-op satisfies the func() contract so callers
+			// can always defer cleanup() unconditionally after a nil-channel
+			// check.
+		}
+	}
 	if h.clients[userID] == nil {
 		h.clients[userID] = make(map[string]*connEntry)
 	}
@@ -225,6 +273,12 @@ func (h *Hub) Metrics() (connections, broadcasts, dropped int64) {
 		h.metrics.dropped.Load()
 }
 
+// RejectedConnections returns the total number of Connect calls refused due to
+// the per-user connection cap. Useful for alerting on abuse patterns.
+func (h *Hub) RejectedConnections() int64 {
+	return h.metrics.rejected.Load()
+}
+
 // RegisterMetrics wires up OTel instruments for the hub's counters.
 // Call once at startup after the meter provider is initialised; it is a no-op
 // when meter is nil. Exported metrics:
@@ -283,6 +337,18 @@ func (h *Hub) RegisterMetrics(meter metric.Meter) error {
 		metric.WithDescription("Cumulative SSE connections evicted for exceeding the consecutive-drop threshold."),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
 			o.Observe(h.metrics.evicted.Load())
+			return nil
+		}),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = meter.Int64ObservableCounter(
+		"notification.sse.rejected",
+		metric.WithDescription("Cumulative SSE Connect calls refused due to the per-user connection cap."),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			o.Observe(h.metrics.rejected.Load())
 			return nil
 		}),
 	)

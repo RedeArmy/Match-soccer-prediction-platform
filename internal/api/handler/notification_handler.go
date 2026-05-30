@@ -131,13 +131,28 @@ func (h *NotificationHandler) GetStream(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Enforce per-user connection cap before writing any headers. A nil channel
+	// means the hub rejected the connection.
+	ch, cleanup := h.hub.Connect(caller.ID)
+	if ch == nil {
+		writeError(w, r, h.log, apperrors.RateLimited("SSE connection limit reached; close another tab or device and retry"))
+		return
+	}
+	defer cleanup()
+
+	// Disable the per-response write deadline so this long-lived SSE connection
+	// is not silently killed by http.Server.WriteTimeout (default 30 s). Each
+	// write is still subject to the TCP stack's send-buffer timeout.
+	// ErrNotSupported is expected with httptest.ResponseRecorder in tests.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		h.log.Warn("sse: failed to clear write deadline", zap.Error(err))
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
-
-	ch, cleanup := h.hub.Connect(caller.ID)
-	defer cleanup()
 
 	// Signal successful connection.
 	fmt.Fprintf(w, "event: connected\ndata: {}\n\n")

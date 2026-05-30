@@ -205,6 +205,86 @@ func TestMemoryStore_ConcurrentAccess_DoesNotRace(t *testing.T) {
 	wg.Wait()
 }
 
+// ── TTL / expiry ──────────────────────────────────────────────────────────────
+
+func TestMemoryStore_Set_PositiveTTL_ExpiresOnGet(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	s := cache.NewMemoryStoreWithClock(func() time.Time { return now })
+
+	if err := s.Set(context.Background(), "k", "v", time.Minute); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	// Before expiry: Get succeeds.
+	var dest string
+	if err := s.Get(context.Background(), "k", &dest); err != nil {
+		t.Fatalf("Get before expiry: %v", err)
+	}
+
+	// Advance clock past the TTL.
+	now = now.Add(2 * time.Minute)
+
+	if err := s.Get(context.Background(), "k", &dest); !errors.Is(err, cache.ErrCacheMiss) {
+		t.Errorf("Get after expiry: expected ErrCacheMiss, got %v", err)
+	}
+}
+
+func TestMemoryStore_Set_PositiveTTL_EvictsEntryFromMap(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	s := cache.NewMemoryStoreWithClock(func() time.Time { return now })
+
+	_ = s.Set(context.Background(), "k", "v", time.Minute)
+	if s.Len() != 1 {
+		t.Fatalf("expected 1 entry before expiry, got %d", s.Len())
+	}
+
+	now = now.Add(2 * time.Minute)
+
+	// Trigger lazy eviction via Get.
+	var dest string
+	_ = s.Get(context.Background(), "k", &dest)
+
+	if s.Len() != 0 {
+		t.Errorf("expected entry to be evicted after expired Get, got Len=%d", s.Len())
+	}
+}
+
+func TestMemoryStore_Set_ZeroTTL_EntryNeverExpires(t *testing.T) {
+	t.Parallel()
+	// Frozen far in the future to prove zero-TTL entries are never expired.
+	far := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
+	s := cache.NewMemoryStoreWithClock(func() time.Time { return far })
+
+	_ = s.Set(context.Background(), "k", "v", 0)
+
+	var dest string
+	if err := s.Get(context.Background(), "k", &dest); err != nil {
+		t.Errorf("zero-TTL entry should never expire; got %v", err)
+	}
+}
+
+func TestMemoryStore_Set_OverwriteExpired_EntryBecomesLive(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	s := cache.NewMemoryStoreWithClock(func() time.Time { return now })
+
+	_ = s.Set(context.Background(), "k", "old", time.Minute)
+	now = now.Add(2 * time.Minute) // expire the first entry
+
+	// Overwrite with a new positive TTL at the advanced time.
+	_ = s.Set(context.Background(), "k", "new", time.Hour)
+
+	var dest string
+	if err := s.Get(context.Background(), "k", &dest); err != nil {
+		t.Fatalf("overwritten entry should be live: %v", err)
+	}
+	if dest != "new" {
+		t.Errorf("expected 'new', got %q", dest)
+	}
+}
+
 // ── Interface compliance ──────────────────────────────────────────────────────
 
 func TestMemoryStore_ImplementsStore(t *testing.T) {

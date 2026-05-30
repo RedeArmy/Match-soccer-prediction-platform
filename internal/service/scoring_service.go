@@ -7,6 +7,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -25,6 +26,32 @@ type MatchScorer interface {
 	ScoreMatch(ctx context.Context, matchID int) error
 }
 
+// scoringOption is a functional option for NewScoringService.
+type scoringOption func(*scoringService)
+
+// WithScoringMeter registers OTel metric instruments on meter.
+// Two counters are emitted after each successful ScoreMatch call:
+//
+//   - scoring.predictions_scored — number of predictions updated
+//   - scoring.batch_chunks       — number of 500-row UPDATE chunks executed
+//
+// Passing a nil meter is a no-op; no metrics are recorded in that case.
+func WithScoringMeter(meter metric.Meter) scoringOption {
+	return func(s *scoringService) {
+		if meter == nil {
+			return
+		}
+		m, err := newScoringMetrics(meter)
+		if err != nil {
+			s.log.Warn("scoring: metric registration failed (metrics disabled)",
+				zap.Error(err),
+			)
+			return
+		}
+		s.metrics = m
+	}
+}
+
 // scoringService is the concrete implementation of MatchScorer.
 type scoringService struct {
 	matchRepo repository.MatchRepository
@@ -32,23 +59,31 @@ type scoringService struct {
 	ruleRepo  repository.ScoringRuleRepository
 	params    SystemParamService
 	log       *zap.Logger
+	metrics   *scoringMetrics // nil when not wired
 }
 
 // NewScoringService constructs a scoringService with the given dependencies.
+// Optional functional options (e.g. WithScoringMeter) are applied after the
+// base struct is initialised so they have access to the logger.
 func NewScoringService(
 	matchRepo repository.MatchRepository,
 	predRepo repository.PredictionRepository,
 	ruleRepo repository.ScoringRuleRepository,
 	params SystemParamService,
 	log *zap.Logger,
+	opts ...scoringOption,
 ) MatchScorer {
-	return &scoringService{
+	svc := &scoringService{
 		matchRepo: matchRepo,
 		predRepo:  predRepo,
 		ruleRepo:  ruleRepo,
 		params:    params,
 		log:       log,
 	}
+	for _, o := range opts {
+		o(svc)
+	}
+	return svc
 }
 
 // scoringConfig holds the effective point values for one ScoreMatch call.
@@ -143,41 +178,48 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 		return apperrors.Validation("match result is missing home or away score")
 	}
 
-	predictions, err := s.predRepo.ListByMatch(ctx, matchID)
-	if err != nil {
+	cfg := s.configForPhase(ctx, match.Phase)
+	chunkSize := s.params.GetInt(ctx, domain.ParamKeyScoringUpdateChunkSize, domain.DefaultScoringUpdateChunkSize)
+
+	// ScoreMatchBatch reads predictions and writes points in a single transaction,
+	// eliminating the silent-failure window that existed when ListByMatch and
+	// UpdateManyPoints were called in separate round-trips. A network error no
+	// longer produces an inconsistent state: the transaction is rolled back and
+	// the event bus re-delivers the MatchFinished event for a clean retry.
+	var (
+		capturedPreds []*domain.Prediction
+		capturedOld   map[int]*int
+		capturedNew   map[int]int
+	)
+	if err := s.predRepo.ScoreMatchBatch(ctx, matchID, func(preds []*domain.Prediction) (map[int]int, error) {
+		if len(preds) == 0 {
+			return nil, nil
+		}
+		capturedPreds = preds
+		capturedOld = make(map[int]*int, len(preds))
+		capturedNew = make(map[int]int, len(preds))
+		for _, pred := range preds {
+			capturedOld[pred.ID] = pred.Points
+			capturedNew[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore, match.WinMethod, cfg)
+		}
+		return capturedNew, nil
+	}, chunkSize); err != nil {
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "predictions lookup failed")
+		span.SetStatus(codes.Error, "score match batch failed")
 		return err
 	}
-	if len(predictions) == 0 {
+
+	if len(capturedPreds) == 0 {
 		return nil
 	}
-
+	chunkCount := (len(capturedPreds) + chunkSize - 1) / chunkSize
 	span.SetAttributes(
-		attribute.Int("prediction_count", len(predictions)),
+		attribute.Int("prediction_count", len(capturedPreds)),
 		attribute.String("match_phase", string(match.Phase)),
+		attribute.Int("batch_chunks", chunkCount),
 	)
-
-	cfg := s.configForPhase(ctx, match.Phase)
-
-	// Capture the current points before the update so the log can record the
-	// old→new transition. Repositories are not required to preserve the in-memory
-	// slice after an update, so we read the pointers now.
-	oldPts := make(map[int]*int, len(predictions))
-	for _, pred := range predictions {
-		oldPts[pred.ID] = pred.Points
-	}
-
-	points := make(map[int]int, len(predictions))
-	for _, pred := range predictions {
-		points[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore, match.WinMethod, cfg)
-	}
-	if err := s.predRepo.UpdateManyPoints(ctx, points); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "points update failed")
-		return err
-	}
-	s.writeScoringLog(ctx, predictions, oldPts, points, match, cfg)
+	s.metrics.observe(ctx, int64(len(capturedPreds)), int64(chunkCount))
+	s.writeScoringLog(ctx, capturedPreds, capturedOld, capturedNew, match, cfg)
 	return nil
 }
 
