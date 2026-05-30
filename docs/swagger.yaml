@@ -4824,6 +4824,9 @@ paths:
       summary: Recurrente payment webhook
       tags:
       - webhooks
+schemes:
+- https
+- http
 securityDefinitions:
   BearerAuth:
     description: 'Clerk JWT token. Format: "Bearer <token>"'

@@ -12,6 +12,8 @@
 //
 // @BasePath        /
 //
+// @schemes         https http
+//
 // @securityDefinitions.apikey  BearerAuth
 // @in                          header
 // @name                        Authorization

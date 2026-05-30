@@ -2,10 +2,12 @@ package repository_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── UserRepository ────────────────────────────────────────────────────────────
@@ -447,4 +449,34 @@ func TestUserRepository_GetStatusCounts_ReturnsCorrectTotals(t *testing.T) {
 		t.Errorf("expected Active ≥ 2, got %d", counts.Active)
 	}
 	_ = u2
+}
+
+// ── UpdateLocale ──────────────────────────────────────────────────────────────
+
+func TestUserRepository_UpdateLocale_ChangesStoredValue(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t) // default locale is "es" from migration 000135
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	if err := repo.UpdateLocale(context.Background(), u.ID, "en"); err != nil {
+		t.Fatalf("UpdateLocale to 'en': %v", err)
+	}
+
+	got, err := repo.GetByID(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.Locale != "en" {
+		t.Errorf("Locale after update: got %q; want \"en\"", got.Locale)
+	}
+}
+
+func TestUserRepository_UpdateLocale_NotFound_ReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	err := repo.UpdateLocale(context.Background(), 99999, "en")
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for unknown user; got %v", err)
+	}
 }
