@@ -153,3 +153,13 @@ func TestRegisterKYCMetrics_FrozenReaderError_DoesNotBlockRegistration(t *testin
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestKYCMetrics_RecordAMLHit_NilReceiver_NoPanic(t *testing.T) {
+	var m *KYCMetrics
+	m.RecordAMLHit(context.Background())
+}
+
+func TestKYCMetrics_RecordAMLHit_DoesNotPanic(t *testing.T) {
+	m := newTestMetrics(t)
+	m.RecordAMLHit(context.Background())
+}
