@@ -433,6 +433,76 @@ func TestWithdrawalService_Create_DefaultHighValueThreshold_WhenParamAbsent(t *t
 	}
 }
 
+// ── toGTQCents (USD/GTQ exchange rate) ───────────────────────────────────────
+
+// toGTQCents is exercised via Create: the service sets req.GTQReservedCents
+// before calling CreateAndReserve, and the stub preserves the value on return.
+
+func TestWithdrawalService_Create_GTQ_GTQReservedEqualsAmount(t *testing.T) {
+	svc := newWithdrawalSvc(&withdrawalReqRepoStub{}, nil)
+
+	got, err := svc.Create(context.Background(), 1, domain.DefaultWithdrawalMinCents, "GTQ", domain.WithdrawalMethodBankGT, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.GTQReservedCents != domain.DefaultWithdrawalMinCents {
+		t.Errorf("GTQReservedCents: got %d, want %d", got.GTQReservedCents, domain.DefaultWithdrawalMinCents)
+	}
+}
+
+func TestWithdrawalService_Create_USD_UsesDefaultRate(t *testing.T) {
+	// Must be >= DefaultWithdrawalMinCents (5000) because the limit check runs
+	// on the raw amountCents before currency conversion.
+	// 10 000 USD cents × default rate 790 / 100 = 79 000 GTQ centavos.
+	const usdCents = domain.DefaultWithdrawalMinCents
+	const want = usdCents * domain.DefaultUSDGTQRate / 100
+	svc := newWithdrawalSvc(&withdrawalReqRepoStub{}, nil)
+
+	got, err := svc.Create(context.Background(), 1, usdCents, "USD", domain.WithdrawalMethodPayPal, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.GTQReservedCents != want {
+		t.Errorf("GTQReservedCents: got %d, want %d (%d USD cents × %d / 100)",
+			got.GTQReservedCents, want, usdCents, domain.DefaultUSDGTQRate)
+	}
+}
+
+func TestWithdrawalService_Create_USD_UsesCustomRateFromParam(t *testing.T) {
+	// Custom rate 800 (Q8.00 per $1).
+	const customRate = 800
+	const usdCents = domain.DefaultWithdrawalMinCents
+	const want = usdCents * customRate / 100
+	pr := &withdrawalParamRepo{params: map[string]string{
+		domain.ParamKeyUSDGTQRate: strconv.Itoa(customRate),
+	}}
+	svc := NewWithdrawalService(&withdrawalReqRepoStub{}, pr, NoopKYCGate{}, nil, &noopAuditLogger{}, zap.NewNop())
+
+	got, err := svc.Create(context.Background(), 1, usdCents, "USD", domain.WithdrawalMethodPayPal, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.GTQReservedCents != want {
+		t.Errorf("GTQReservedCents: got %d, want %d (%d USD cents × %d / 100)",
+			got.GTQReservedCents, want, usdCents, customRate)
+	}
+}
+
+func TestWithdrawalService_Create_USD_ParamRepoError_FallsBackToDefault(t *testing.T) {
+	const usdCents = domain.DefaultWithdrawalMinCents
+	const want = usdCents * domain.DefaultUSDGTQRate / 100
+	pr := &withdrawalParamRepo{err: errors.New("db error")}
+	svc := NewWithdrawalService(&withdrawalReqRepoStub{}, pr, NoopKYCGate{}, nil, &noopAuditLogger{}, zap.NewNop())
+
+	got, err := svc.Create(context.Background(), 1, usdCents, "USD", domain.WithdrawalMethodPayPal, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.GTQReservedCents != want {
+		t.Errorf("GTQReservedCents with fallback: got %d, want %d", got.GTQReservedCents, want)
+	}
+}
+
 // ── writeOutbox error path ────────────────────────────────────────────────────
 
 func TestWithdrawalService_Create_OutboxWriteError_StillReturnsRequest(t *testing.T) {

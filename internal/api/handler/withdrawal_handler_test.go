@@ -60,7 +60,7 @@ func TestWithdrawalHandler_Create_OK(t *testing.T) {
 	svc := &stubWithdrawalSvc{req: fixedWithdrawal()}
 	router := withdrawalRouter(t, svc)
 	rec := httptest.NewRecorder()
-	body := bytes.NewReader([]byte(`{"amount_cents":5000,"currency":"GTQ","method":"bank_gt","payout_details":{"account":"1234"}}`))
+	body := bytes.NewReader([]byte(`{"amount_cents":5000,"currency":"GTQ","method":"bank_gt","payout_details":{"account_number":"12345678901","bank_name":"BAC Guatemala"}}`))
 	req := httptest.NewRequest(http.MethodPost, "/withdrawals", body)
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
@@ -82,7 +82,7 @@ func TestWithdrawalHandler_Create_PayPal_OK(t *testing.T) {
 	svc := &stubWithdrawalSvc{req: w}
 	router := withdrawalRouter(t, svc)
 	rec := httptest.NewRecorder()
-	body := bytes.NewReader([]byte(`{"amount_cents":2000,"currency":"USD","method":"paypal","payout_details":{"email":"user@example.com"}}`))
+	body := bytes.NewReader([]byte(`{"amount_cents":2000,"currency":"USD","method":"paypal","payout_details":{"paypal_email":"user@example.com"}}`))
 	req := httptest.NewRequest(http.MethodPost, "/withdrawals", body)
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
@@ -95,7 +95,7 @@ func TestWithdrawalHandler_Create_DefaultCurrency(t *testing.T) {
 	svc := &stubWithdrawalSvc{req: fixedWithdrawal()}
 	router := withdrawalRouter(t, svc)
 	rec := httptest.NewRecorder()
-	body := bytes.NewReader([]byte(`{"amount_cents":1000,"method":"bank_gt"}`))
+	body := bytes.NewReader([]byte(`{"amount_cents":1000,"method":"bank_gt","payout_details":{"account_number":"12345678901","bank_name":"BAC Guatemala"}}`))
 	req := httptest.NewRequest(http.MethodPost, "/withdrawals", body)
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
@@ -236,6 +236,151 @@ func TestWithdrawalHandler_AdminListPending_OK(t *testing.T) {
 	}
 	if len(resp) != 2 {
 		t.Errorf("expected 2 withdrawals, got %d", len(resp))
+	}
+}
+
+func TestWithdrawalHandler_AdminListPending_MasksPayoutDetails(t *testing.T) {
+	w := fixedWithdrawal()
+	w.PayoutDetails = map[string]string{
+		"account_number": "12345678901",
+		"bank_name":      "BAC Guatemala",
+	}
+	svc := &stubWithdrawalSvc{reqs: []*domain.WithdrawalRequest{w}}
+	router := withdrawalRouter(t, svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/withdrawals/pending", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp []handler.WithdrawalResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(resp))
+	}
+
+	pd := resp[0].PayoutDetails
+	// account_number must be masked — last 4 digits only.
+	if pd["account_number"] == "12345678901" {
+		t.Error("admin list response must not expose plain account_number")
+	}
+	if pd["account_number"] != "*******8901" {
+		t.Errorf("account_number mask: got %q, want %q", pd["account_number"], "*******8901")
+	}
+	// bank_name is non-sensitive routing info — must not be masked.
+	if pd["bank_name"] != "BAC Guatemala" {
+		t.Errorf("bank_name should not be masked, got %q", pd["bank_name"])
+	}
+}
+
+func TestWithdrawalHandler_AdminListPending_MasksPayPalEmail(t *testing.T) {
+	w := fixedWithdrawal()
+	w.Method = domain.WithdrawalMethodPayPal
+	w.PayoutDetails = map[string]string{"paypal_email": "user@paypal.example.com"}
+	svc := &stubWithdrawalSvc{reqs: []*domain.WithdrawalRequest{w}}
+	router := withdrawalRouter(t, svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/withdrawals/pending", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp []handler.WithdrawalResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	pd := resp[0].PayoutDetails
+	if pd["paypal_email"] == "user@paypal.example.com" {
+		t.Error("admin list must not expose plain paypal_email")
+	}
+	if pd["paypal_email"] != "u***@paypal.example.com" {
+		t.Errorf("paypal_email mask: got %q, want %q", pd["paypal_email"], "u***@paypal.example.com")
+	}
+}
+
+func TestWithdrawalHandler_AdminListPending_MasksShortAccountNumber(t *testing.T) {
+	w := fixedWithdrawal()
+	w.PayoutDetails = map[string]string{
+		"account_number": "12", // shorter than the 4-digit reveal window → all asterisks
+		"bank_name":      "BAC",
+	}
+	svc := &stubWithdrawalSvc{reqs: []*domain.WithdrawalRequest{w}}
+	router := withdrawalRouter(t, svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/withdrawals/pending", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp []handler.WithdrawalResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp[0].PayoutDetails["account_number"] != "**" {
+		t.Errorf("short account_number: got %q, want %q", resp[0].PayoutDetails["account_number"], "**")
+	}
+}
+
+func TestWithdrawalHandler_AdminListPending_MasksPayPalEmail_NoAtSign(t *testing.T) {
+	// maskEmailAddress returns "***" when the stored value has no "@".
+	// This edge-case can occur if legacy data was written before validation.
+	w := fixedWithdrawal()
+	w.Method = domain.WithdrawalMethodPayPal
+	w.PayoutDetails = map[string]string{"paypal_email": "no-at-sign"}
+	svc := &stubWithdrawalSvc{reqs: []*domain.WithdrawalRequest{w}}
+	router := withdrawalRouter(t, svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/withdrawals/pending", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp []handler.WithdrawalResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp[0].PayoutDetails["paypal_email"] != "***" {
+		t.Errorf("no-@ email: got %q, want %q", resp[0].PayoutDetails["paypal_email"], "***")
+	}
+}
+
+func TestWithdrawalHandler_ListMine_DoesNotMaskPayoutDetails(t *testing.T) {
+	// Users must see their own full account details.
+	w := fixedWithdrawal()
+	w.PayoutDetails = map[string]string{
+		"account_number": "12345678901",
+		"bank_name":      "BAC Guatemala",
+	}
+	svc := &stubWithdrawalSvc{reqs: []*domain.WithdrawalRequest{w}}
+	router := withdrawalRouter(t, svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/withdrawals", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp []handler.WithdrawalResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(resp))
+	}
+
+	if resp[0].PayoutDetails["account_number"] != "12345678901" {
+		t.Errorf("user list must return full account_number, got %q", resp[0].PayoutDetails["account_number"])
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/breaker"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
+	"github.com/rede/world-cup-quiniela/pkg/payoutenc"
 	"github.com/rede/world-cup-quiniela/pkg/promclient"
 	"github.com/rede/world-cup-quiniela/pkg/randcode"
 	"github.com/rede/world-cup-quiniela/pkg/tempoclient"
@@ -105,7 +106,8 @@ func (s *Server) buildHandlers(
 	scoringRuleRepo := repository.NewPostgresScoringRuleRepository(s.db)
 	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(s.db)
 	proofRepo := repository.NewPostgresBankTransferProofRepository(s.db)
-	withdrawalRepo := repository.NewPostgresWithdrawalRequestRepository(s.db)
+	withdrawalRepo := repository.NewPostgresWithdrawalRequestRepository(s.db).
+		WithEncrypter(buildPayoutEncrypter(s.cfg.Payment.PayoutEncryptionKey, s.log))
 	intentRepo := repository.NewPostgresPaymentIntentRepository(s.db)
 
 	// Read infrastructure params (startup-time, not per-request).
@@ -450,4 +452,23 @@ func (s *Server) buildResilientCache(ctx context.Context, params service.SystemP
 	s.breakerRegistry.Register(cb)
 
 	return cache.NewResilientStore(rs, cb, s.log)
+}
+
+// buildPayoutEncrypter constructs the AES-256-GCM encrypter for payout_details.
+// When hexKey is empty (local development) a no-op passthrough is returned so
+// the application starts without a key. In production validateProductionConfig
+// rejects an empty key before this function is reached.
+func buildPayoutEncrypter(hexKey string, log *zap.Logger) payoutenc.Encrypter {
+	if hexKey == "" {
+		log.Warn("payout_details encryption disabled: WCQ_PAYMENT_PAYOUTENCRYPTIONKEY is not set — acceptable only in development")
+		return payoutenc.Noop
+	}
+	enc, err := payoutenc.NewAESGCM(hexKey)
+	if err != nil {
+		// The key was set but is malformed. Fail loudly at startup.
+		log.Fatal("invalid WCQ_PAYMENT_PAYOUTENCRYPTIONKEY: must be a 64-char hex-encoded 32-byte key (openssl rand -hex 32)",
+			zap.Error(err),
+		)
+	}
+	return enc
 }

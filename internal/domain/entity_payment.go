@@ -136,24 +136,30 @@ const (
 
 // WithdrawalRequest is a user-initiated payout request.
 //
-// On creation: AmountCents is moved from balance_cents to reserved_cents.
+// On creation: GTQReservedCents is moved from balance_cents to reserved_cents.
 // On approval: reserved_cents is committed (balance_cents permanently reduced).
 // On rejection: reserved_cents is released back to available balance.
+//
+// AmountCents is the user-facing requested amount in the specified Currency
+// (e.g. USD cents for PayPal withdrawals). GTQReservedCents is the GTQ
+// centavos held in the balance reservation — always equal to AmountCents for
+// GTQ requests and computed via payment.usd_gtq_rate for USD requests.
 //
 // PayoutDetails holds method-specific fields:
 //   - bank_gt : {"account_number":"…","bank_name":"…"}
 //   - paypal  : {"paypal_email":"…"}
 type WithdrawalRequest struct {
-	ID            int
-	UserID        int
-	AmountCents   int
-	Currency      string
-	Method        WithdrawalMethod
-	PayoutDetails map[string]string
-	Status        WithdrawalStatus
-	ReviewedBy    *int
-	Notes         string
-	ProcessedAt   *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID               int
+	UserID           int
+	AmountCents      int
+	Currency         string
+	GTQReservedCents int
+	Method           WithdrawalMethod
+	PayoutDetails    map[string]string
+	Status           WithdrawalStatus
+	ReviewedBy       *int
+	Notes            string
+	ProcessedAt      *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }

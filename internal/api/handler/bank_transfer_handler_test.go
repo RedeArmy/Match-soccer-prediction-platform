@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,7 +35,9 @@ func bankTransferRouter(t *testing.T, svc *stubBankTransferSvc, fs *stubFileStor
 	})
 	r.Post("/bank-transfers", h.Upload)
 	r.Get("/bank-transfers", h.ListMine)
+	r.Get("/bank-transfers/{id}/download", h.DownloadProof)
 	r.Get("/bank-transfers/pending", h.AdminListPending)
+	r.Get("/admin/bank-transfers/{id}/download", h.AdminDownloadProof)
 	r.Post("/bank-transfers/{id}/approve", h.AdminApprove)
 	r.Post("/bank-transfers/{id}/reject", h.AdminReject)
 	return r
@@ -381,3 +384,258 @@ func TestBankTransferHandler_Upload_EmptyFile_Returns422(t *testing.T) {
 // extractBoundary is a no-op used to satisfy the compiler; actual extraction
 // is inlined where needed.
 func extractBoundary(_ *bytes.Buffer) string { return "boundary" }
+
+// ── Response field security ───────────────────────────────────────────────────
+
+func TestBankTransferHandler_ListMine_ResponseDoesNotExposeStorageKey(t *testing.T) {
+	svc := &stubBankTransferSvc{proofs: []*domain.BankTransferProof{fixedProof()}}
+	router := bankTransferRouter(t, svc, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	// Verify the raw JSON body does not contain the storage key path.
+	body := rec.Body.String()
+	if strings.Contains(body, "storage_key") {
+		t.Errorf("response must not contain storage_key field — internal FileStore path must not be exposed to clients: body=%s", body)
+	}
+	if strings.Contains(body, "bank-transfers/10/abc.jpg") {
+		t.Errorf("response must not contain internal FileStore key value: body=%s", body)
+	}
+}
+
+// ── DownloadProof ─────────────────────────────────────────────────────────────
+
+func TestBankTransferHandler_DownloadProof_OK_StreamsFile(t *testing.T) {
+	fileBytes := []byte("fake-jpeg-content")
+	svc := &stubBankTransferSvc{proof: fixedProof()} // proof.UserID = 10 = caller.ID
+	fs := &stubFileStore{getContent: fileBytes, getType: "image/jpeg"}
+	router := bankTransferRouter(t, svc, fs)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers/1/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/jpeg" {
+		t.Errorf("expected Content-Type image/jpeg, got %q", ct)
+	}
+	if rec.Body.String() != string(fileBytes) {
+		t.Errorf("expected body %q, got %q", fileBytes, rec.Body.String())
+	}
+}
+
+func TestBankTransferHandler_DownloadProof_WrongUser_Returns404(t *testing.T) {
+	// Proof belongs to user 99, but caller is user 10.
+	otherUserProof := &domain.BankTransferProof{ID: 5, UserID: 99, StorageKey: "bank-transfers/99/x.pdf"}
+	svc := &stubBankTransferSvc{proof: otherUserProof}
+	fs := &stubFileStore{getContent: []byte("content"), getType: "application/pdf"}
+	router := bankTransferRouter(t, svc, fs)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers/5/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for proof belonging to another user (prevents enumeration), got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_DownloadProof_Unauthenticated_Returns401(t *testing.T) {
+	h := handler.NewBankTransferHandler(&stubBankTransferSvc{}, &stubFileStore{}, 1<<20, 0, 0, zaptest.NewLogger(t))
+	r := chi.NewRouter()
+	r.Get("/bank-transfers/{id}/download", h.DownloadProof)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers/1/download", nil)
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 without auth context, got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_DownloadProof_ProofNotFound_Returns404(t *testing.T) {
+	svc := &stubBankTransferSvc{proof: nil}
+	router := bankTransferRouter(t, svc, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers/999/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for missing proof, got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_DownloadProof_FileStoreError_Returns500(t *testing.T) {
+	svc := &stubBankTransferSvc{proof: fixedProof()}
+	fs := &stubFileStore{getErr: errors.New("s3 timeout")}
+	router := bankTransferRouter(t, svc, fs)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers/1/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on FileStore error, got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_DownloadProof_FileNotInStorage_Returns404(t *testing.T) {
+	svc := &stubBankTransferSvc{proof: fixedProof()}
+	// stubFileStore.Get returns ErrNotFound by default (getContent nil, getErr nil)
+	router := bankTransferRouter(t, svc, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers/1/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 when file not in storage, got %d", rec.Code)
+	}
+}
+
+// ── AdminDownloadProof ────────────────────────────────────────────────────────
+
+func TestBankTransferHandler_AdminDownloadProof_OK_NoOwnershipCheck(t *testing.T) {
+	// Admin can download any user's proof — no ownership restriction.
+	otherUserProof := &domain.BankTransferProof{ID: 7, UserID: 42, StorageKey: "bank-transfers/42/doc.pdf", ContentType: "application/pdf"}
+	fileBytes := []byte("pdf-content")
+	svc := &stubBankTransferSvc{proof: otherUserProof}
+	fs := &stubFileStore{getContent: fileBytes, getType: "application/pdf"}
+	router := bankTransferRouter(t, svc, fs)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/bank-transfers/7/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for admin download, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != string(fileBytes) {
+		t.Errorf("expected file body %q, got %q", fileBytes, rec.Body.String())
+	}
+}
+
+func TestBankTransferHandler_AdminDownloadProof_NotFound_Returns404(t *testing.T) {
+	svc := &stubBankTransferSvc{proof: nil}
+	router := bankTransferRouter(t, svc, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/bank-transfers/999/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for missing proof (admin), got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_DownloadProof_InvalidID_Returns422(t *testing.T) {
+	router := bankTransferRouter(t, &stubBankTransferSvc{}, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers/abc/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for non-integer id, got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_DownloadProof_ServiceError_Returns500(t *testing.T) {
+	svc := &stubBankTransferSvc{err: errors.New("db error")}
+	router := bankTransferRouter(t, svc, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers/1/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on service error, got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_AdminDownloadProof_InvalidID_Returns422(t *testing.T) {
+	router := bankTransferRouter(t, &stubBankTransferSvc{}, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/bank-transfers/bad/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for non-integer id, got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_AdminDownloadProof_ServiceError_Returns500(t *testing.T) {
+	svc := &stubBankTransferSvc{err: errors.New("db error")}
+	router := bankTransferRouter(t, svc, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/bank-transfers/1/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on service error (admin download), got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_ServeProofFile_FallsBackToProofContentType(t *testing.T) {
+	// FileStore returns empty content-type; handler should fall back to proof.ContentType.
+	proof := fixedProof() // ContentType: "image/jpeg"
+	svc := &stubBankTransferSvc{proof: proof}
+	fs := &stubFileStore{
+		getContent: []byte("jpeg-data"),
+		getType:    "", // empty — triggers fallback
+	}
+	router := bankTransferRouter(t, svc, fs)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/bank-transfers/1/download", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/jpeg" {
+		t.Errorf("expected fallback Content-Type image/jpeg, got %q", ct)
+	}
+}
+
+func TestBankTransferHandler_SetNotifier_DoesNotPanic(t *testing.T) {
+	h := handler.NewBankTransferHandler(&stubBankTransferSvc{}, &stubFileStore{}, 1<<20, 0, 0, zaptest.NewLogger(t))
+	// SetNotifier must not panic; it simply stores the notifier for later use.
+	h.SetNotifier(nil)
+}
+
+func TestBankTransferHandler_AdminApprove_ReturnsApprovedAt(t *testing.T) {
+	now := time.Now().UTC()
+	approved := fixedProof()
+	approved.Status = domain.BankTransferApproved
+	approved.ApprovedAt = &now
+	svc := &stubBankTransferSvc{proof: approved}
+	router := bankTransferRouter(t, svc, nil)
+
+	rec := httptest.NewRecorder()
+	body := strings.NewReader(`{"notes":"ok"}`)
+	req := httptest.NewRequest(http.MethodPost, "/bank-transfers/1/approve", body)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp handler.BankTransferResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.ApprovedAt == nil {
+		t.Error("expected non-nil approved_at in response")
+	}
+}

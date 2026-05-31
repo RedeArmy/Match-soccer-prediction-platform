@@ -52,6 +52,7 @@ func (r *webhookLedgerRepoStub) ListByUser(_ context.Context, _ int, _ repositor
 func (r *webhookLedgerRepoStub) SumTransactionsByUserAndPeriod(_ context.Context, _ int, _ []domain.BalanceLedgerKind, _ time.Time) (int64, error) {
 	return 0, nil
 }
+func (r *webhookLedgerRepoStub) CountRows(_ context.Context) (int64, error) { return 0, nil }
 
 // webhookIntentRepoStub is the PaymentIntentRepository stub for service tests.
 type webhookIntentRepoStub struct {

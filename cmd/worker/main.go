@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -50,6 +51,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/election"
 	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	infrapush "github.com/rede/world-cup-quiniela/internal/infrastructure/webpush"
 	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
@@ -271,9 +273,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		DB:       cfg.Redis.DB,
 	})
 	defer rc.Close() //nolint:errcheck
-	if err := redisotel.InstrumentTracing(rc); err != nil {
-		log.Warn("worker: redisotel: tracing instrumentation failed", zap.Error(err))
-	}
+	logWarnOnErr(log, "worker: redisotel: tracing instrumentation failed", redisotel.InstrumentTracing(rc))
 
 	// snapshotSem: cluster-wide distributed semaphore via Redis.
 	// The worker validates WCQ_EVENTBUS_DRIVER=redis at startup so rc is always
@@ -287,9 +287,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	)
 
 	cacheStore := cache.NewRedisStore(rc)
-	if err := cacheStore.RegisterMetrics(meter); err != nil {
-		log.Warn("worker: cacheStore.RegisterMetrics failed", zap.Error(err))
-	}
+	logWarnOnErr(log, "worker: cacheStore.RegisterMetrics failed", cacheStore.RegisterMetrics(meter))
 	invalidators := []service.PostScoringInvalidator{
 		service.NewPostScoringCacheFlush(cacheStore, log),
 	}
@@ -408,21 +406,18 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	compositeDispatcher := dispatcher.NewCompositeDispatcher(adminDispatcher, userDispatcher)
 
 	// Register OTel instruments for the dispatchers and outbox backlog.
-	if err := adminDispatcher.RegisterMetrics(meter); err != nil {
-		log.Warn("adminDispatcher.RegisterMetrics failed", zap.Error(err))
-	}
-	if err := userDispatcher.RegisterMetrics(meter); err != nil {
-		log.Warn("userDispatcher.RegisterMetrics failed", zap.Error(err))
-	}
-	if err := outbox.RegisterPendingGauge(meter, outboxRepo); err != nil {
-		log.Warn("outbox.RegisterPendingGauge failed", zap.Error(err))
-	}
-	if err := outbox.RegisterDLQDepthGauge(meter, dlqRepo); err != nil {
-		log.Warn("outbox.RegisterDLQDepthGauge failed", zap.Error(err))
-	}
-	if err := outbox.RegisterOldestPendingAgeGauge(meter, outboxRepo); err != nil {
-		log.Warn("outbox.RegisterOldestPendingAgeGauge failed", zap.Error(err))
-	}
+	logWarnOnErr(log, "adminDispatcher.RegisterMetrics failed", adminDispatcher.RegisterMetrics(meter))
+	logWarnOnErr(log, "userDispatcher.RegisterMetrics failed", userDispatcher.RegisterMetrics(meter))
+	logWarnOnErr(log, "outbox.RegisterPendingGauge failed", outbox.RegisterPendingGauge(meter, outboxRepo))
+	logWarnOnErr(log, "outbox.RegisterDLQDepthGauge failed", outbox.RegisterDLQDepthGauge(meter, dlqRepo))
+	logWarnOnErr(log, "outbox.RegisterOldestPendingAgeGauge failed", outbox.RegisterOldestPendingAgeGauge(meter, outboxRepo))
+
+	// ATD-002: balance_ledger growth monitoring.  The gauge uses pg_class.reltuples
+	// (fast, ±5% accurate) so it adds negligible DB load on every Prometheus scrape.
+	// WCQLedgerRowCountWarning fires at 2M rows; the partitioning plan in
+	// docs/adr/0008-balance-ledger-partitioning.md triggers at ~50M rows.
+	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(db)
+	logWarnOnErr(log, "repository.RegisterLedgerRowCountGauge failed", repository.RegisterLedgerRowCountGauge(meter, ledgerRepo))
 
 	dlqReplayWorker := outbox.NewDLQWorker(dlqRepo, outboxWriter, log,
 		outbox.WithDLQBatchSize(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayBatchSize, domain.DefaultNotifyDLQReplayBatchSize)),
@@ -464,6 +459,34 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	notifScheduler.RegisterInterval("push.subscription_prune",
 		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPushPruneIntervalSec, domain.DefaultWorkerSchedPushPruneIntervalSec))*time.Second,
 		makePushPruneJob(params, pushRepo, log))
+
+	// KYC document lifecycle — purge document metadata and physical files for
+	// accounts deleted beyond the configured retention window.  Runs weekly at
+	// 03:00 on Sunday (low-traffic window).  Physical deletion from the FileStore
+	// is attempted for each document before removing the DB metadata row so that
+	// the metadata row is never orphaned without its backing file.
+	kycDocRepo := repository.NewPostgresKYCDocumentRepository(db)
+	kycFileStore, kycStoreErr := storage.New(ctx, storage.Config{
+		Driver:                cfg.Storage.Driver,
+		LocalDir:              cfg.Storage.LocalDir,
+		S3Bucket:              cfg.Storage.S3Bucket,
+		S3Endpoint:            cfg.Storage.S3Endpoint,
+		S3Region:              cfg.Storage.S3Region,
+		S3AccessKeyID:         cfg.Storage.S3AccessKeyID,
+		S3SecretKey:           cfg.Storage.S3SecretKey,
+		OneDriveTenantID:      cfg.Storage.OneDriveTenantID,
+		OneDriveClientID:      cfg.Storage.OneDriveClientID,
+		OneDriveClientSecret:  cfg.Storage.OneDriveClientSecret,
+		OneDriveDriveID:       cfg.Storage.OneDriveDriveID,
+		GDriveCredentialsJSON: cfg.Storage.GDriveCredentialsJSON,
+		GDriveFolderID:        cfg.Storage.GDriveFolderID,
+	})
+	if kycStoreErr != nil {
+		log.Warn("kyc.document_purge: FileStore unavailable — physical file deletion disabled until next restart",
+			zap.Error(kycStoreErr))
+	}
+	notifScheduler.RegisterWeekly("kyc.document_purge", time.Sunday, 3, 0,
+		makeKYCDocumentPurgeJob(params, kycDocRepo, kycFileStore, log))
 
 	// snapshotLockTTL covers the worst-case snapshot retry window with generous
 	// headroom. The lock is also released explicitly by Unlock in the happy path;
@@ -523,6 +546,59 @@ func resolveSchedulerLocation(tzName string, log *zap.Logger) *time.Location {
 		return time.UTC
 	}
 	return loc
+}
+
+// logWarnOnErr logs err at Warn level when non-nil. Used to collapse repetitive
+// if err != nil { log.Warn } blocks at metric registration call sites where
+// a failed instrument is non-fatal.
+func logWarnOnErr(log *zap.Logger, msg string, err error) {
+	if err != nil {
+		log.Warn(msg, zap.Error(err))
+	}
+}
+
+// recoverGoroutine is deferred at the top of every background goroutine
+// launched by startWorker. It catches any panic, logs it at Error level with
+// a full stack trace, and allows the goroutine to exit cleanly. The process
+// orchestrator (Fly.io restart policy) handles process-level recovery.
+//
+// Call order: place after WaitGroup.Done() defers so Done() always fires even
+// when the goroutine panics. Example:
+//
+//	go func() {
+//	    defer wg.Done()
+//	    defer recoverGoroutine("name", log)
+//	    work(ctx)
+//	}()
+func recoverGoroutine(name string, log *zap.Logger) {
+	if rec := recover(); rec != nil {
+		log.Error("worker: goroutine panicked — process orchestrator will restart",
+			zap.String("goroutine", name),
+			zap.Any("panic", rec),
+			zap.ByteString("stack", debug.Stack()),
+		)
+	}
+}
+
+// safeEventHandler wraps h in a panic-catching envelope so a panicking handler
+// does not crash the worker process. When the handler panics the panic is
+// logged and a non-nil error is returned, causing the bus to apply its normal
+// retry / DLQ logic rather than silently losing the event.
+func safeEventHandler(name string, h func(context.Context, events.Envelope) error, log *zap.Logger) func(context.Context, events.Envelope) error {
+	return func(ctx context.Context, env events.Envelope) (retErr error) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Error("worker: event handler panicked",
+					zap.String("handler", name),
+					zap.String("event_type", string(env.Type)),
+					zap.Any("panic", rec),
+					zap.ByteString("stack", debug.Stack()),
+				)
+				retErr = fmt.Errorf("panic in handler %s: %v", name, rec)
+			}
+		}()
+		return h(ctx, env)
+	}
 }
 
 // logOrFatal logs err at WARN level in development environments and at Fatal
@@ -599,6 +675,105 @@ func makePushPruneJob(params service.SystemParamService, pushRepo repository.Pus
 	}
 }
 
+// purgeKYCDocument deletes the physical file from fileStore and the metadata row
+// from docRepo for a single KYC document. Returns counters ready to be summed
+// by the caller: deleted=1 on full success, fileStoreFailed=1 when the storage
+// delete failed (metadata row is preserved for retry), dbFailed=1 when the
+// metadata delete failed after a successful storage delete.
+//
+// When fileStore is nil physical deletion is skipped and the metadata row is
+// still removed so the database does not accumulate stale rows.
+func purgeKYCDocument(
+	ctx context.Context,
+	doc *domain.KYCDocument,
+	fileStore storage.FileStore,
+	docRepo repository.KYCDocumentRepository,
+	log *zap.Logger,
+) (deleted, fileStoreFailed, dbFailed int) {
+	if fileStore != nil {
+		if err := fileStore.Delete(ctx, doc.StorageKey); err != nil {
+			log.Warn("kyc.document_purge: FileStore delete failed — skipping metadata delete, will retry next run",
+				zap.Int64("doc_id", doc.ID),
+				zap.String("storage_key", doc.StorageKey),
+				zap.Error(err),
+			)
+			return 0, 1, 0
+		}
+	} else {
+		log.Warn("kyc.document_purge: FileStore unavailable — metadata row will be removed without physical file deletion",
+			zap.Int64("doc_id", doc.ID),
+			zap.String("storage_key", doc.StorageKey),
+		)
+	}
+	if err := docRepo.DeleteByID(ctx, doc.ID); err != nil {
+		log.Warn("kyc.document_purge: metadata delete failed",
+			zap.Int64("doc_id", doc.ID),
+			zap.Error(err),
+		)
+		return 0, 0, 1
+	}
+	return 1, 0, 0
+}
+
+// makeKYCDocumentPurgeJob returns the weekly scheduler job that deletes KYC
+// identity documents (DPI scans, selfies) for user accounts soft-deleted
+// beyond the configured retention window.
+//
+// Deletion order per document:
+//  1. fileStore.Delete(storageKey)   — removes the physical file from S3/OneDrive/GDrive.
+//  2. docRepo.DeleteByID(id)         — removes the metadata row from the database.
+//
+// This ordering guarantees that the metadata row always outlives its backing
+// file.  If the FileStore call fails, the metadata row is preserved so the
+// next weekly run can retry — the file is never permanently orphaned.  If the
+// FileStore call succeeds but the DB delete fails, the row is left with a
+// dangling storage key; the next run calls fileStore.Delete again, which
+// succeeds silently because the file is already gone, then retries the DB
+// delete.
+//
+// When fileStore is nil (storage driver failed to initialise at startup), the
+// job skips physical deletion for every document, logs a warning per document,
+// and still removes the metadata row so the DB does not accumulate stale rows
+// indefinitely.  Operators should investigate the FileStore error and restart
+// the worker to restore full purge behaviour.
+func makeKYCDocumentPurgeJob(
+	params service.SystemParamService,
+	docRepo repository.KYCDocumentRepository,
+	fileStore storage.FileStore,
+	log *zap.Logger,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		retentionYears := params.GetInt(ctx, domain.ParamKeyKYCDocRetentionYears, domain.DefaultKYCDocRetentionYears)
+		cutoff := time.Now().AddDate(-retentionYears, 0, 0)
+
+		const batchSize = 100
+		docs, err := docRepo.ListExpiredDocuments(ctx, cutoff, batchSize)
+		if err != nil {
+			log.Warn("kyc.document_purge: list failed", zap.Error(err))
+			return err
+		}
+		if len(docs) == 0 {
+			return nil
+		}
+
+		var deleted, fileStoreFailed, dbFailed int
+		for _, doc := range docs {
+			d, fsf, dbf := purgeKYCDocument(ctx, doc, fileStore, docRepo, log)
+			deleted += d
+			fileStoreFailed += fsf
+			dbFailed += dbf
+		}
+
+		log.Info("kyc.document_purge: completed",
+			zap.Int("deleted", deleted),
+			zap.Int("file_store_failed", fileStoreFailed),
+			zap.Int("db_failed", dbFailed),
+			zap.Int("retention_years", retentionYears),
+		)
+		return nil
+	}
+}
+
 // startWorker wires event subscribers, starts the health HTTP server, starts
 // the DLQ monitoring goroutine, and blocks until ctx is cancelled (i.e. until
 // an OS signal is received).
@@ -668,18 +843,19 @@ type workerDeps struct {
 // lifecycle management - and the part that can be exercised in unit tests
 // by injecting an InMemoryBus, a stub scorer, and a pre-cancelled context.
 func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
-	deps.bus.Subscribe(ctx, events.EventMatchStarted, newMatchStartedHandler(log))
+	deps.bus.Subscribe(ctx, events.EventMatchStarted,
+		safeEventHandler("matchStarted", newMatchStartedHandler(log), log))
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
 	deps.bus.Subscribe(ctx, events.EventMatchFinished,
-		newMatchFinishedHandler(deps.scorer, postScoringDeps{
+		safeEventHandler("matchFinished", newMatchFinishedHandler(deps.scorer, postScoringDeps{
 			snapshotter:  deps.snapshotter,
 			predRepo:     deps.predRepo,
 			invalidators: deps.invalidators,
 			broadcaster:  deps.broadcaster,
 			locker:       deps.snapshotLocker,
 			snapshot:     deps.snapshotCfg,
-		}, log))
+		}, log), log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
 	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, deps.metricsHandler, log)
@@ -689,6 +865,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	// returns before draining the channel (e.g. ctx already cancelled).
 	srvErr := make(chan error, 1)
 	go func() {
+		defer recoverGoroutine("healthServer", log)
 		log.Sugar().Infof("worker health server listening on :%s", deps.cfg.Worker.HealthPort)
 		if err := healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			srvErr <- err
@@ -708,6 +885,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	ticker := time.NewTicker(dlqMonitorInterval)
 	go func() {
 		defer dlqDone.Done()
+		defer recoverGoroutine("dlqMonitor", log)
 		defer ticker.Stop()
 		monitorDLQ(ctx, deps.rc, deps.dlqElection, ticker.C, deps.outboxNotifier, log)
 	}()
@@ -717,6 +895,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	purgeTicker := time.NewTicker(purgeTickInterval)
 	go func() {
 		defer purgeDone.Done()
+		defer recoverGoroutine("purgeDaemon", log)
 		defer purgeTicker.Stop()
 		monitorPurge(ctx, deps.purger, deps.purgeRetention, deps.paramHistoryRetention, deps.snapshotKeepCount, purgeTicker.C, log)
 	}()
@@ -736,6 +915,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		outboxDone.Add(1)
 		go func() {
 			defer outboxDone.Done()
+			defer recoverGoroutine("outboxWorker", log)
 			outboxWorker.Run(ctx)
 		}()
 		log.Info("outbox worker started (admin email dispatcher active)")
@@ -747,6 +927,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		dlqReplayDone.Add(1)
 		go func() {
 			defer dlqReplayDone.Done()
+			defer recoverGoroutine("dlqReplayWorker", log)
 			deps.dlqReplayWorker.Run(ctx)
 		}()
 		log.Info("dlq replay worker started")
@@ -758,6 +939,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		notifSchedDone.Add(1)
 		go func() {
 			defer notifSchedDone.Done()
+			defer recoverGoroutine("notifScheduler", log)
 			deps.notifScheduler.Run(ctx)
 		}()
 		log.Info("notification scheduler started")

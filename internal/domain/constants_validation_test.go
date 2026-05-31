@@ -98,6 +98,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyBankTransferMinAmountCents": ParamKeyBankTransferMinAmountCents,
 		"ParamKeyBankTransferMaxAmountCents": ParamKeyBankTransferMaxAmountCents,
 		"ParamKeyPaymentIntentTTLMinutes":    ParamKeyPaymentIntentTTLMinutes,
+		"ParamKeyUSDGTQRate":                 ParamKeyUSDGTQRate,
 		// Notification subsystem
 		"ParamKeyNotifyBankTransferStaleSec":            ParamKeyNotifyBankTransferStaleSec,
 		"ParamKeyNotifyWithdrawalStaleSec":              ParamKeyNotifyWithdrawalStaleSec,
@@ -149,7 +150,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifySSEChanBufSize":              ParamKeyNotifySSEChanBufSize,
 		"ParamKeyNotifySSEMaxConnsPerUser":          ParamKeyNotifySSEMaxConnsPerUser,
 		"ParamKeyNotifyOutboxStaleLockThresholdSec": ParamKeyNotifyOutboxStaleLockThresholdSec,
-		// KYC / AML (migrations 000121, 000124, 000125, 000129)
+		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		"ParamKeyKYCTier1DepositLimitCents":       ParamKeyKYCTier1DepositLimitCents,
 		"ParamKeyKYCTier2DepositLimitCents":       ParamKeyKYCTier2DepositLimitCents,
 		"ParamKeyKYCTier2PayoutLimitCents":        ParamKeyKYCTier2PayoutLimitCents,
@@ -163,6 +164,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyKYCRiskDashboardCacheTTLSec":     ParamKeyKYCRiskDashboardCacheTTLSec,
 		"ParamKeyKYCIPVelocityWindowMinutes":      ParamKeyKYCIPVelocityWindowMinutes,
 		"ParamKeyKYCIPVelocityMaxSubmissions":     ParamKeyKYCIPVelocityMaxSubmissions,
+		// KYC document retention (migration 000144)
+		"ParamKeyKYCDocRetentionYears": ParamKeyKYCDocRetentionYears,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -292,7 +295,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultNotifySSEChanBufSize":              DefaultNotifySSEChanBufSize,
 		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
-		// KYC / AML (migrations 000121, 000124, 000125, 000129)
+		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
 		"DefaultKYCTier2DepositLimitCents":       DefaultKYCTier2DepositLimitCents,
 		"DefaultKYCTier2PayoutLimitCents":        DefaultKYCTier2PayoutLimitCents,
@@ -306,6 +309,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultKYCRiskDashboardCacheTTLSecs":    DefaultKYCRiskDashboardCacheTTLSecs,
 		"DefaultKYCIPVelocityWindowMinutes":      DefaultKYCIPVelocityWindowMinutes,
 		"DefaultKYCIPVelocityMaxSubmissions":     DefaultKYCIPVelocityMaxSubmissions,
+		// KYC document retention (migration 000144)
+		"DefaultKYCDocRetentionYears": DefaultKYCDocRetentionYears,
+		// USD/GTQ exchange rate (migration 000147)
+		"DefaultUSDGTQRate": DefaultUSDGTQRate,
 		// String defaults — not in the int defaults map; documented separately.
 		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
 		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
@@ -313,7 +320,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 118 // update when adding a new ParamKey* constant
+		const expectedCount = 120 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -321,7 +328,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 107 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit)
+		const expectedCount = 109 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -444,6 +451,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyBankTransferMinAmountCents", ParamKeyBankTransferMinAmountCents, "payment"},
 		{"ParamKeyBankTransferMaxAmountCents", ParamKeyBankTransferMaxAmountCents, "payment"},
 		{"ParamKeyPaymentIntentTTLMinutes", ParamKeyPaymentIntentTTLMinutes, "payment"},
+		{"ParamKeyUSDGTQRate", ParamKeyUSDGTQRate, "payment"},
 		// Notification subsystem
 		{"ParamKeyNotifyBankTransferStaleSec", ParamKeyNotifyBankTransferStaleSec, "notify"},
 		{"ParamKeyNotifyWithdrawalStaleSec", ParamKeyNotifyWithdrawalStaleSec, "notify"},
@@ -510,6 +518,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		// KYC IP-submission velocity (migration 000129)
 		{"ParamKeyKYCIPVelocityWindowMinutes", ParamKeyKYCIPVelocityWindowMinutes, "kyc"},
 		{"ParamKeyKYCIPVelocityMaxSubmissions", ParamKeyKYCIPVelocityMaxSubmissions, "kyc"},
+		// KYC document retention (migration 000144)
+		{"ParamKeyKYCDocRetentionYears", ParamKeyKYCDocRetentionYears, "kyc"},
 	}
 
 	for _, tc := range paramKeys {
@@ -649,7 +659,7 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		// Phase 7 infrastructure params
 		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
-		// KYC / AML (migrations 000121, 000124, 000125)
+		// KYC / AML (migrations 000121, 000124, 000125, 000144)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
 		"DefaultKYCTier2DepositLimitCents":       DefaultKYCTier2DepositLimitCents,
 		"DefaultKYCTier2PayoutLimitCents":        DefaultKYCTier2PayoutLimitCents,
@@ -663,6 +673,10 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		// KYC IP-submission velocity (migration 000129)
 		"DefaultKYCIPVelocityWindowMinutes":  DefaultKYCIPVelocityWindowMinutes,
 		"DefaultKYCIPVelocityMaxSubmissions": DefaultKYCIPVelocityMaxSubmissions,
+		// KYC document retention (migration 000144)
+		"DefaultKYCDocRetentionYears": DefaultKYCDocRetentionYears,
+		// USD/GTQ exchange rate (migration 000147)
+		"DefaultUSDGTQRate": DefaultUSDGTQRate,
 	}
 
 	for name, value := range defaults {

@@ -128,6 +128,10 @@ func (r *kycDocRepoStub) ListByProfile(_ context.Context, _ int, _ domain.KYCPro
 	return r.docs, r.err
 }
 func (r *kycDocRepoStub) MarkVerified(_ context.Context, _ int64, _ int) error { return r.err }
+func (r *kycDocRepoStub) ListExpiredDocuments(_ context.Context, _ time.Time, _ int) ([]*domain.KYCDocument, error) {
+	return nil, nil
+}
+func (r *kycDocRepoStub) DeleteByID(_ context.Context, _ int64) error { return r.err }
 
 type kycEventRepoStub struct {
 	events []*domain.KYCEvent

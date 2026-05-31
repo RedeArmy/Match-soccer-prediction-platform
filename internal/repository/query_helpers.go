@@ -102,6 +102,16 @@ func itoa(n int) string {
 // whereBuilder accumulates SQL predicate fragments and their positional
 // arguments. It eliminates the WHERE 1=1 anti-pattern: call clause() to get
 // a proper WHERE clause (empty string when no predicates were added).
+//
+// Plan-cache note (ATD-007): dynamic queries built here produce a distinct
+// query string per filter combination. Under QueryExecModeCacheStatement (the
+// global pgx default set in infrastructure/database/postgres.go) each unique
+// string is prepared once per connection. For the low-traffic admin list
+// endpoints that consume this builder the churn is bounded to O(2^N) variants
+// for N optional filters — acceptable at quiniela scale. Switching to
+// QueryExecModeSimpleProtocol would skip prepared-statement caching at the
+// cost of per-query re-planning; revisit if admin endpoints become high-traffic
+// or N grows beyond ~6 filters per query.
 type whereBuilder struct {
 	conds  []string
 	args   []any

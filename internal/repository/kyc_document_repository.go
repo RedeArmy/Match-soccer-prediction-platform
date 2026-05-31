@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -124,6 +125,55 @@ func scanKYCDocument(s rowScanner) (*domain.KYCDocument, error) {
 	doc.ProfileType = domain.KYCProfileType(profileType)
 	doc.DocumentType = domain.KYCDocumentType(docType)
 	return doc, nil
+}
+
+// ListExpiredDocuments returns up to limit document metadata rows that belong
+// to user profiles whose accounts were deleted before cutoff.  Results are
+// ordered by uploaded_at ASC so older documents are processed first.
+//
+// Only 'user' profile_type is handled here; 'org' profiles are a future
+// extension.  The JOIN path is:
+//
+//	kyc_documents → kyc_profiles (profile_id) → users (user_id, deleted_at).
+func (r *PostgresKYCDocumentRepository) ListExpiredDocuments(ctx context.Context, cutoff time.Time, limit int) ([]*domain.KYCDocument, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	const q = `
+		SELECT d.id, d.profile_id, d.profile_type, d.document_type,
+		       d.storage_key, d.content_type, d.file_size, d.file_hash,
+		       d.verified, d.verified_at, d.verified_by, d.uploaded_at
+		  FROM kyc_documents d
+		  JOIN kyc_profiles p ON p.id = d.profile_id AND d.profile_type = 'user'
+		  JOIN users u ON u.id = p.user_id
+		 WHERE u.deleted_at IS NOT NULL
+		   AND u.deleted_at < $1
+		 ORDER BY d.uploaded_at ASC
+		 LIMIT $2
+	`
+	rows, err := r.db.Query(ctx, q, cutoff, limit)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return collectRows(rows, func(r pgx.Rows) (*domain.KYCDocument, error) {
+		return scanKYCDocument(r)
+	})
+}
+
+// DeleteByID permanently removes a document metadata row.
+// The caller is responsible for deleting the physical file from the FileStore
+// before or after this call — the two operations are intentionally not atomic
+// to keep each step simple and retriable.
+func (r *PostgresKYCDocumentRepository) DeleteByID(ctx context.Context, id int64) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	tag, err := r.db.Exec(ctx, `DELETE FROM kyc_documents WHERE id = $1`, id)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound("kyc document not found")
+	}
+	return nil
 }
 
 var _ KYCDocumentRepository = (*PostgresKYCDocumentRepository)(nil)

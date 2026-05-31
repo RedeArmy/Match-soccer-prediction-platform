@@ -35,9 +35,10 @@ func TestE2E_Withdrawal_InsufficientBalance(t *testing.T) {
 	// Request 100 GTQ — twice the available 50 GTQ.
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/withdrawals", userToken,
 		jsonBody(t, map[string]any{
-			"amount_cents": 10_000,
-			"currency":     "GTQ",
-			"method":       "paypal",
+			"amount_cents":   10_000,
+			"currency":       "GTQ",
+			"method":         "paypal",
+			"payout_details": map[string]string{"paypal_email": "poor@paypal.test"},
 		}))
 
 	if rec.Code != http.StatusConflict {
@@ -74,9 +75,10 @@ func TestE2E_Withdrawal_ZeroBalanceUser(t *testing.T) {
 
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/withdrawals", userToken,
 		jsonBody(t, map[string]any{
-			"amount_cents": 5_000,
-			"currency":     "GTQ",
-			"method":       "paypal",
+			"amount_cents":   5_000,
+			"currency":       "GTQ",
+			"method":         "paypal",
+			"payout_details": map[string]string{"paypal_email": "zero@paypal.test"},
 		}))
 
 	if rec.Code != http.StatusConflict {

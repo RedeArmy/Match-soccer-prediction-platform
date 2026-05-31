@@ -348,6 +348,24 @@ func scanBalanceLedgerFields(s rowScanner) (*domain.BalanceLedger, error) {
 	)
 }
 
+// CountRows returns the planner's row estimate for balance_ledger using
+// pg_class.reltuples.  The value is updated by ANALYZE (which autovacuum
+// runs automatically); on a freshly vacuumed table it is accurate to ±5%.
+// A negative reltuples value (can occur before the first ANALYZE) is
+// normalised to 0.
+func (r *PostgresBalanceLedgerRepository) CountRows(ctx context.Context) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	var n int64
+	err := r.db.QueryRow(ctx,
+		`SELECT GREATEST(reltuples::bigint, 0) FROM pg_class WHERE relname = 'balance_ledger'`,
+	).Scan(&n)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return n, nil
+}
+
 var _ BalanceLedgerRepository = (*PostgresBalanceLedgerRepository)(nil)
 
 // ── IP address context helpers ────────────────────────────────────────────────

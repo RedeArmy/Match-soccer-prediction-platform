@@ -131,6 +131,22 @@ func (s *bankTransferService) ListPending(ctx context.Context) ([]*domain.BankTr
 }
 
 func (s *bankTransferService) ApproveTransfer(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error) {
+	// Load the proof before crediting so we can run the velocity check.
+	// CheckDepositVelocity uses the balance_ledger (credits only appear there
+	// after ApproveAndCredit), so the upload-time check cannot enforce the 24 h
+	// cap when multiple proofs are submitted while still pending — only the
+	// approval-time check sees the running ledger total.
+	pending, err := s.proofRepo.GetByID(ctx, proofID)
+	if err != nil {
+		return nil, err
+	}
+	if pending == nil {
+		return nil, apperrors.NotFound("bank transfer proof not found")
+	}
+	if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, pending.AmountCents); err != nil {
+		return nil, err
+	}
+
 	proof, err := s.proofRepo.ApproveAndCredit(ctx, proofID, adminID, notes)
 	if err != nil {
 		return nil, err

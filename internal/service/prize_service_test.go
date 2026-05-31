@@ -47,6 +47,7 @@ func (s *prizeLedgerStub) ListByUser(_ context.Context, _ int, _ repository.Pagi
 func (s *prizeLedgerStub) SumTransactionsByUserAndPeriod(_ context.Context, _ int, _ []domain.BalanceLedgerKind, _ time.Time) (int64, error) {
 	return 0, nil
 }
+func (s *prizeLedgerStub) CountRows(_ context.Context) (int64, error) { return 0, nil }
 
 // prizeKYCGateStub controls whether freeze is triggered.
 type prizeKYCGateStub struct {
