@@ -1,133 +1,52 @@
 # Documentation Index
 
-This directory contains comprehensive technical documentation for the World Cup Quiniela project.
+This directory contains technical documentation for the World Cup Quiniela project.
 
 ---
 
-## 📚 Technical Debt Resolution
+## Architecture Decision Records
 
-### Analysis & Implementation
-
-| Document | Description | Size |
-|----------|-------------|------|
-| [TECHNICAL_DEBT_ANALYSIS.md](./TECHNICAL_DEBT_ANALYSIS.md) | Detailed analysis of three critical issues | 3 KB |
-| [TECHNICAL_DEBT_RESOLUTION.md](./TECHNICAL_DEBT_RESOLUTION.md) | Initial technical debt resolution | 10 KB |
-| [TECHNICAL_DEBT_RESOLUTION_2.md](./TECHNICAL_DEBT_RESOLUTION_2.md) | Production stability & API consistency fixes | 2 KB |
-
-### Issues Resolved
-
-1. **EventBus Driver Validation** — Prevents silent scoring failure in production
-2. **Defensive Transaction Rollback** — Improves observability of connection errors
-3. **Consistent List Response Shapes** — Unified API contract
-
----
-
-## 🧪 Testing & Validation
-
-| Document | Description | Size |
-|----------|-------------|------|
-| [CODE_VALIDATION_REPORT.md](./CODE_VALIDATION_REPORT.md) | Format & coverage validation report | 14 KB |
-| [VALIDATION_REPORT.md](./VALIDATION_REPORT.md) | Code quality validation results | 8 KB |
-| [COVERAGE_CALCULATION.md](./COVERAGE_CALCULATION.md) | Coverage calculation methodology | 6 KB |
-| [COVERAGE_NOTES.md](./COVERAGE_NOTES.md) | CLI tool coverage exclusion justification | 4 KB |
-
-**Summary:**
-- ✅ Coverage: 90.8% average (≥ 80% threshold)
-- ✅ Tests: 130+ passing (100% pass rate)
-- ✅ Linting: 0 issues
-- ✅ Format: 100% compliant
+| Document | Decision |
+|---|---|
+| [ADR-0001](./adr/0001-migration-rollback-policy.md) | Migration rollback policy |
+| [ADR-0002](./adr/0002-synthetic-vs-persisted-events.md) | Synthetic vs persisted events |
+| [ADR-0003](./adr/0003-clerk-for-auth.md) | Clerk for authentication |
+| [ADR-0004](./adr/0004-outbox-pattern-for-notifications.md) | Outbox pattern for notifications |
+| [ADR-0005](./adr/0005-redis-leader-election-for-worker.md) | Redis leader election |
+| [ADR-0006](./adr/0006-wherebuilder-query-pattern.md) | whereBuilder query pattern |
+| [ADR-0007](./adr/0007-pgxpool-over-database-sql.md) | pgxpool over database/sql |
+| [ADR-0008](./adr/0008-balance-ledger-partitioning.md) | Balance ledger partitioning |
+| [ADR-0009](./adr/0009-kyc-escrow-design.md) | KYC escrow design |
+| [ADR-0010](./adr/0010-sse-notification-bridge.md) | SSE notification bridge |
+| [ADR-0011](./adr/0011-prize-distribution-atomicity.md) | Prize distribution atomicity |
+| [ADR-0012](./adr/0012-rate-limiter-architecture.md) | Rate limiter architecture |
 
 ---
 
-## ⚙️ System Parameters
+## System Parameters
 
-| Document | Description | Size |
-|----------|-------------|------|
-| [SYSTEM_PARAMS_VALIDATION_REPORT.md](./SYSTEM_PARAMS_VALIDATION_REPORT.md) | Complete parameter validation (23 params) | 17 KB |
-| [SYSTEM_PARAMS_QUICK_REFERENCE.md](./SYSTEM_PARAMS_QUICK_REFERENCE.md) | Quick reference card | 4 KB |
-| [SYSTEM_PARAMS_VALIDATION.md](./SYSTEM_PARAMS_VALIDATION.md) | Parameter validation details | 7 KB |
-| [SYSTEM_PARAMS_IMPLEMENTATION.md](./SYSTEM_PARAMS_IMPLEMENTATION.md) | Implementation catalog | 12 KB |
-| [SYSTEM_PARAMETERS.md](./SYSTEM_PARAMETERS.md) | System parameters overview | 14 KB |
+| Document | Description |
+|---|---|
+| [SYSTEM_PARAMETERS.md](./SYSTEM_PARAMETERS.md) | System parameters overview and design |
 
-**All 23 Parameters Validated:**
-- ✅ Scoring (3)
-- ✅ Prediction (1)
-- ✅ Group (3)
-- ✅ Conflict (2)
-- ✅ Pagination (2)
-- ✅ Tournament (1)
-- ✅ Admin (1)
-- ✅ Cache (3)
-- ✅ System (3)
-- ✅ DLQ (2)
-- ✅ Messaging (2)
+The authoritative list of all 120 parameters is maintained in `internal/domain/constants.go` and validated end-to-end by `cmd/validate-params`. Run `make validate-params` to verify the database matches the code constants.
 
 ---
 
-## 🔧 Refactoring
+## Operations
 
-| Document | Description | Size |
-|----------|-------------|------|
-| [REFACTORING_SUMMARY.md](./REFACTORING_SUMMARY.md) | Cognitive complexity refactoring | 2 KB |
-| [DEFENSIVE_CODE_COVERAGE.md](./DEFENSIVE_CODE_COVERAGE.md) | Defensive code coverage analysis | 9 KB |
-| [COVERAGE_ACCEPTANCE.md](./COVERAGE_ACCEPTANCE.md) | 68.3% coverage acceptance rationale | 7 KB |
-
-**Achievements:**
-- ✅ Complexity: 26 → 3 (88% reduction)
-- ✅ Performance: O(n²) → O(n)
-- ✅ Function length: 82 → 13 lines (84% reduction)
+| Document | Description |
+|---|---|
+| [runbook.md](./runbook.md) | On-call runbook: alerts, rollback, incident response |
+| [capacity.md](./capacity.md) | Capacity planning and scaling thresholds |
+| [i18n-contract.md](./i18n-contract.md) | Internationalisation contract for the frontend |
 
 ---
 
-## 📖 Quick Links
+## API Reference
 
-### For Developers
-
-- **Starting Point:** [TECHNICAL_DEBT_ANALYSIS.md](./TECHNICAL_DEBT_ANALYSIS.md)
-- **Implementation Details:** [TECHNICAL_DEBT_RESOLUTION_2.md](./TECHNICAL_DEBT_RESOLUTION_2.md)
-- **System Parameters:** [SYSTEM_PARAMS_QUICK_REFERENCE.md](./SYSTEM_PARAMS_QUICK_REFERENCE.md)
-
-### For Code Review
-
-- **Coverage Report:** [CODE_VALIDATION_REPORT.md](./CODE_VALIDATION_REPORT.md)
-- **Test Results:** [VALIDATION_REPORT.md](./VALIDATION_REPORT.md)
-
-### For Operations
-
-- **System Parameters:** [SYSTEM_PARAMS_VALIDATION_REPORT.md](./SYSTEM_PARAMS_VALIDATION_REPORT.md)
-- **Migration Guide:** See [TECHNICAL_DEBT_RESOLUTION_2.md](./TECHNICAL_DEBT_RESOLUTION_2.md) § Migration Guide
+`docs/swagger.json` and `docs/swagger.yaml` are generated by `make swagger-gen` (runs `swag init`). They are committed so CI does not need to run the generator on every checkout. The Swagger UI is served at `/swagger/index.html` by the API server.
 
 ---
 
-## 📊 Metrics Summary
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| **Code Coverage** | 90.8% | ✅ Exceeds 80% |
-| **Test Pass Rate** | 100% | ✅ |
-| **Linting Issues** | 0 | ✅ |
-| **Code Format** | 100% | ✅ |
-| **System Parameters** | 23/23 | ✅ Validated |
-| **Documentation** | 13 files | ✅ Complete |
-
----
-
-## 🚀 Production Readiness
-
-**Status:** ✅ **All checks passed**
-
-**Breaking Changes:**
-- EventBus configuration requires `WCQ_EVENTBUS_DRIVER=redis` in production
-
-**Next Steps:**
-1. Review documentation
-2. Verify test coverage
-3. Deploy to staging
-4. Monitor startup logs
-5. Deploy to production
-
----
-
-**Last Updated:** 2026-05-04  
-**Standard:** MAANG SDE III  
-**Maintained By:** Engineering Team
+**Last Updated:** 2026-05-31
