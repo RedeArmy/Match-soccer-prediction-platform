@@ -190,21 +190,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// Network isolation replaces JWT authentication as the access control mechanism.
 	//
 	// The worker follows the same pattern via newHealthServer (port 8081).
-	if metricsHandler != nil && cfg.Server.MetricsPort != "" {
-		metricsMux := http.NewServeMux()
-		metricsMux.Handle("/metrics", metricsHandler)
-		metricsSrv := &http.Server{
-			Addr:              ":" + cfg.Server.MetricsPort,
-			Handler:           metricsMux,
-			ReadHeaderTimeout: cfg.Server.ReadTimeout,
-		}
-		go func() {
-			log.Sugar().Infof("metrics server listening on :%s (internal — no auth)", cfg.Server.MetricsPort)
-			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				log.Error("metrics server stopped unexpectedly", zap.Error(err))
-			}
-		}()
-	}
+	startMetricsServer(cfg, metricsHandler, log)
 
 	// setupCtx is context.WithoutCancel(ctx): OTel trace values are propagated
 	// to startup DB reads while SIGTERM cannot abort them.
@@ -276,6 +262,30 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 
 	log.Sugar().Info("server stopped")
 	return nil
+}
+
+// startMetricsServer starts a minimal HTTP server that exposes /metrics on a
+// dedicated internal port with no authentication. It is a no-op when handler
+// is nil or MetricsPort is not set. The server is intentionally excluded from
+// the graceful-shutdown sequence: Prometheus scrapers tolerate brief gaps during
+// pod restarts, and the port must be network-isolated from the internet.
+func startMetricsServer(cfg *config.Config, handler http.Handler, log *zap.Logger) {
+	if handler == nil || cfg.Server.MetricsPort == "" {
+		return
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", handler)
+	srv := &http.Server{
+		Addr:              ":" + cfg.Server.MetricsPort,
+		Handler:           mux,
+		ReadHeaderTimeout: cfg.Server.ReadTimeout,
+	}
+	go func() {
+		log.Sugar().Infof("metrics server listening on :%s (internal — no auth)", cfg.Server.MetricsPort)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("metrics server stopped unexpectedly", zap.Error(err))
+		}
+	}()
 }
 
 func startNotifyBridge(ctx context.Context, app *api.Server, rc *redis.Client) {

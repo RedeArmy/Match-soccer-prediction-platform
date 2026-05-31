@@ -272,9 +272,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		DB:       cfg.Redis.DB,
 	})
 	defer rc.Close() //nolint:errcheck
-	if err := redisotel.InstrumentTracing(rc); err != nil {
-		log.Warn("worker: redisotel: tracing instrumentation failed", zap.Error(err))
-	}
+	logWarnOnErr(log, "worker: redisotel: tracing instrumentation failed", redisotel.InstrumentTracing(rc))
 
 	// snapshotSem: cluster-wide distributed semaphore via Redis.
 	// The worker validates WCQ_EVENTBUS_DRIVER=redis at startup so rc is always
@@ -288,9 +286,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	)
 
 	cacheStore := cache.NewRedisStore(rc)
-	if err := cacheStore.RegisterMetrics(meter); err != nil {
-		log.Warn("worker: cacheStore.RegisterMetrics failed", zap.Error(err))
-	}
+	logWarnOnErr(log, "worker: cacheStore.RegisterMetrics failed", cacheStore.RegisterMetrics(meter))
 	invalidators := []service.PostScoringInvalidator{
 		service.NewPostScoringCacheFlush(cacheStore, log),
 	}
@@ -409,30 +405,18 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	compositeDispatcher := dispatcher.NewCompositeDispatcher(adminDispatcher, userDispatcher)
 
 	// Register OTel instruments for the dispatchers and outbox backlog.
-	if err := adminDispatcher.RegisterMetrics(meter); err != nil {
-		log.Warn("adminDispatcher.RegisterMetrics failed", zap.Error(err))
-	}
-	if err := userDispatcher.RegisterMetrics(meter); err != nil {
-		log.Warn("userDispatcher.RegisterMetrics failed", zap.Error(err))
-	}
-	if err := outbox.RegisterPendingGauge(meter, outboxRepo); err != nil {
-		log.Warn("outbox.RegisterPendingGauge failed", zap.Error(err))
-	}
-	if err := outbox.RegisterDLQDepthGauge(meter, dlqRepo); err != nil {
-		log.Warn("outbox.RegisterDLQDepthGauge failed", zap.Error(err))
-	}
-	if err := outbox.RegisterOldestPendingAgeGauge(meter, outboxRepo); err != nil {
-		log.Warn("outbox.RegisterOldestPendingAgeGauge failed", zap.Error(err))
-	}
+	logWarnOnErr(log, "adminDispatcher.RegisterMetrics failed", adminDispatcher.RegisterMetrics(meter))
+	logWarnOnErr(log, "userDispatcher.RegisterMetrics failed", userDispatcher.RegisterMetrics(meter))
+	logWarnOnErr(log, "outbox.RegisterPendingGauge failed", outbox.RegisterPendingGauge(meter, outboxRepo))
+	logWarnOnErr(log, "outbox.RegisterDLQDepthGauge failed", outbox.RegisterDLQDepthGauge(meter, dlqRepo))
+	logWarnOnErr(log, "outbox.RegisterOldestPendingAgeGauge failed", outbox.RegisterOldestPendingAgeGauge(meter, outboxRepo))
 
 	// ATD-002: balance_ledger growth monitoring.  The gauge uses pg_class.reltuples
 	// (fast, ±5% accurate) so it adds negligible DB load on every Prometheus scrape.
 	// WCQLedgerRowCountWarning fires at 2M rows; the partitioning plan in
 	// docs/adr/0008-balance-ledger-partitioning.md triggers at ~50M rows.
 	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(db)
-	if err := repository.RegisterLedgerRowCountGauge(meter, ledgerRepo); err != nil {
-		log.Warn("repository.RegisterLedgerRowCountGauge failed", zap.Error(err))
-	}
+	logWarnOnErr(log, "repository.RegisterLedgerRowCountGauge failed", repository.RegisterLedgerRowCountGauge(meter, ledgerRepo))
 
 	dlqReplayWorker := outbox.NewDLQWorker(dlqRepo, outboxWriter, log,
 		outbox.WithDLQBatchSize(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayBatchSize, domain.DefaultNotifyDLQReplayBatchSize)),
@@ -563,6 +547,15 @@ func resolveSchedulerLocation(tzName string, log *zap.Logger) *time.Location {
 	return loc
 }
 
+// logWarnOnErr logs err at Warn level when non-nil. Used to collapse repetitive
+// if err != nil { log.Warn } blocks at metric registration call sites where
+// a failed instrument is non-fatal.
+func logWarnOnErr(log *zap.Logger, msg string, err error) {
+	if err != nil {
+		log.Warn(msg, zap.Error(err))
+	}
+}
+
 // logOrFatal logs err at WARN level in development environments and at Fatal
 // level (os.Exit) in production. It is a no-op when err is nil.
 // This eliminates repeated nested if/else blocks at each sender construction
@@ -637,6 +630,46 @@ func makePushPruneJob(params service.SystemParamService, pushRepo repository.Pus
 	}
 }
 
+// purgeKYCDocument deletes the physical file from fileStore and the metadata row
+// from docRepo for a single KYC document. Returns counters ready to be summed
+// by the caller: deleted=1 on full success, fileStoreFailed=1 when the storage
+// delete failed (metadata row is preserved for retry), dbFailed=1 when the
+// metadata delete failed after a successful storage delete.
+//
+// When fileStore is nil physical deletion is skipped and the metadata row is
+// still removed so the database does not accumulate stale rows.
+func purgeKYCDocument(
+	ctx context.Context,
+	doc *domain.KYCDocument,
+	fileStore storage.FileStore,
+	docRepo repository.KYCDocumentRepository,
+	log *zap.Logger,
+) (deleted, fileStoreFailed, dbFailed int) {
+	if fileStore != nil {
+		if err := fileStore.Delete(ctx, doc.StorageKey); err != nil {
+			log.Warn("kyc.document_purge: FileStore delete failed — skipping metadata delete, will retry next run",
+				zap.Int64("doc_id", doc.ID),
+				zap.String("storage_key", doc.StorageKey),
+				zap.Error(err),
+			)
+			return 0, 1, 0
+		}
+	} else {
+		log.Warn("kyc.document_purge: FileStore unavailable — metadata row will be removed without physical file deletion",
+			zap.Int64("doc_id", doc.ID),
+			zap.String("storage_key", doc.StorageKey),
+		)
+	}
+	if err := docRepo.DeleteByID(ctx, doc.ID); err != nil {
+		log.Warn("kyc.document_purge: metadata delete failed",
+			zap.Int64("doc_id", doc.ID),
+			zap.Error(err),
+		)
+		return 0, 0, 1
+	}
+	return 1, 0, 0
+}
+
 // makeKYCDocumentPurgeJob returns the weekly scheduler job that deletes KYC
 // identity documents (DPI scans, selfies) for user accounts soft-deleted
 // beyond the configured retention window.
@@ -680,32 +713,10 @@ func makeKYCDocumentPurgeJob(
 
 		var deleted, fileStoreFailed, dbFailed int
 		for _, doc := range docs {
-			if fileStore != nil {
-				if err := fileStore.Delete(ctx, doc.StorageKey); err != nil {
-					log.Warn("kyc.document_purge: FileStore delete failed — skipping metadata delete, will retry next run",
-						zap.Int64("doc_id", doc.ID),
-						zap.String("storage_key", doc.StorageKey),
-						zap.Error(err),
-					)
-					fileStoreFailed++
-					continue
-				}
-			} else {
-				log.Warn("kyc.document_purge: FileStore unavailable — metadata row will be removed without physical file deletion",
-					zap.Int64("doc_id", doc.ID),
-					zap.String("storage_key", doc.StorageKey),
-				)
-			}
-
-			if err := docRepo.DeleteByID(ctx, doc.ID); err != nil {
-				log.Warn("kyc.document_purge: metadata delete failed",
-					zap.Int64("doc_id", doc.ID),
-					zap.Error(err),
-				)
-				dbFailed++
-			} else {
-				deleted++
-			}
+			d, fsf, dbf := purgeKYCDocument(ctx, doc, fileStore, docRepo, log)
+			deleted += d
+			fileStoreFailed += fsf
+			dbFailed += dbf
 		}
 
 		log.Info("kyc.document_purge: completed",

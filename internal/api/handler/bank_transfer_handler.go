@@ -271,7 +271,7 @@ type reviewBankTransferRequest struct {
 func (h *BankTransferHandler) AdminApprove(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid bank transfer id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidBankTransferID))
 		return
 	}
 	caller, ok := middleware.UserFromContext(r.Context())
@@ -312,7 +312,7 @@ func (h *BankTransferHandler) AdminApprove(w http.ResponseWriter, r *http.Reques
 func (h *BankTransferHandler) AdminReject(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid bank transfer id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidBankTransferID))
 		return
 	}
 	caller, ok := middleware.UserFromContext(r.Context())
@@ -359,7 +359,7 @@ func (h *BankTransferHandler) DownloadProof(w http.ResponseWriter, r *http.Reque
 	}
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid bank transfer id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidBankTransferID))
 		return
 	}
 	proof, err := h.svc.GetByID(r.Context(), id)
@@ -392,7 +392,7 @@ func (h *BankTransferHandler) DownloadProof(w http.ResponseWriter, r *http.Reque
 func (h *BankTransferHandler) AdminDownloadProof(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid bank transfer id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidBankTransferID))
 		return
 	}
 	proof, err := h.svc.GetByID(r.Context(), id)
