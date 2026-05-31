@@ -14,11 +14,12 @@ func seedWithdrawalRequest(t *testing.T, userID, amountCents int) *domain.Withdr
 	t.Helper()
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 	req := &domain.WithdrawalRequest{
-		UserID:        userID,
-		AmountCents:   amountCents,
-		Currency:      "GTQ",
-		Method:        domain.WithdrawalMethodBankGT,
-		PayoutDetails: map[string]string{"account": "1234567890"},
+		UserID:           userID,
+		AmountCents:      amountCents,
+		Currency:         "GTQ",
+		GTQReservedCents: amountCents, // GTQ: 1:1 with AmountCents
+		Method:           domain.WithdrawalMethodBankGT,
+		PayoutDetails:    map[string]string{"account": "1234567890"},
 	}
 	if err := repo.CreateAndReserve(context.Background(), req); err != nil {
 		t.Fatalf("seedWithdrawalRequest: %v", err)
@@ -63,7 +64,7 @@ func TestWithdrawalRequestRepository_CreateAndReserve_InsufficientBalance(t *tes
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 
 	req := &domain.WithdrawalRequest{
-		UserID: u.ID, AmountCents: 5000, Currency: "GTQ",
+		UserID: u.ID, AmountCents: 5000, GTQReservedCents: 5000, Currency: "GTQ",
 		Method: domain.WithdrawalMethodBankGT,
 	}
 	err := repo.CreateAndReserve(context.Background(), req)

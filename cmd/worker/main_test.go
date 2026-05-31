@@ -740,6 +740,90 @@ func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
 	}
 }
 
+// ── recoverGoroutine tests ────────────────────────────────────────────────────
+
+func TestRecoverGoroutine_NoPanic_IsNoOp(t *testing.T) {
+	log := zap.NewNop()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer recoverGoroutine("noPanic", log)
+		// no panic — goroutine should exit cleanly
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("goroutine did not exit")
+	}
+}
+
+func TestRecoverGoroutine_Panic_DoesNotPropagate(t *testing.T) {
+	log := zap.NewNop()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer recoverGoroutine("willPanic", log)
+		panic("test panic")
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("goroutine did not recover from panic")
+	}
+}
+
+// ── safeEventHandler tests ────────────────────────────────────────────────────
+
+func TestSafeEventHandler_NoPanic_ReturnsHandlerError(t *testing.T) {
+	log := zap.NewNop()
+	sentinel := errors.New("handler error")
+	h := safeEventHandler("test", func(_ context.Context, _ events.Envelope) error {
+		return sentinel
+	}, log)
+
+	err := h(context.Background(), events.Envelope{})
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected sentinel error, got %v", err)
+	}
+}
+
+func TestSafeEventHandler_Panic_ReturnsError(t *testing.T) {
+	log := zap.NewNop()
+	h := safeEventHandler("panicHandler", func(_ context.Context, _ events.Envelope) error {
+		panic("handler panic")
+	}, log)
+
+	err := h(context.Background(), events.Envelope{Type: events.EventMatchFinished})
+	if err == nil {
+		t.Fatal("expected non-nil error after handler panic")
+	}
+	if !strings.Contains(err.Error(), "panicHandler") {
+		t.Errorf("error should mention handler name, got: %v", err)
+	}
+}
+
+func TestSafeEventHandler_NilError_ReturnsNil(t *testing.T) {
+	log := zap.NewNop()
+	h := safeEventHandler("ok", func(_ context.Context, _ events.Envelope) error {
+		return nil
+	}, log)
+
+	if err := h(context.Background(), events.Envelope{}); err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+}
+
+// ── logWarnOnErr tests ────────────────────────────────────────────────────────
+
+func TestLogWarnOnErr_NilError_IsNoOp(t *testing.T) {
+	// must not panic; using nop logger so no observable side-effect
+	logWarnOnErr(zap.NewNop(), "should not log", nil)
+}
+
+func TestLogWarnOnErr_NonNilError_DoesNotPanic(t *testing.T) {
+	logWarnOnErr(zap.NewNop(), "metric registration failed", errors.New("oops"))
+}
+
 // ── buildMailer tests (DT-26) ─────────────────────────────────────────────────
 
 func TestBuildMailer_WithAPIKey_ReturnsNoError(t *testing.T) {

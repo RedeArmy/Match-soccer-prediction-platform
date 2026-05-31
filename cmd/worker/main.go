@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -556,6 +557,50 @@ func logWarnOnErr(log *zap.Logger, msg string, err error) {
 	}
 }
 
+// recoverGoroutine is deferred at the top of every background goroutine
+// launched by startWorker. It catches any panic, logs it at Error level with
+// a full stack trace, and allows the goroutine to exit cleanly. The process
+// orchestrator (Fly.io restart policy) handles process-level recovery.
+//
+// Call order: place after WaitGroup.Done() defers so Done() always fires even
+// when the goroutine panics. Example:
+//
+//	go func() {
+//	    defer wg.Done()
+//	    defer recoverGoroutine("name", log)
+//	    work(ctx)
+//	}()
+func recoverGoroutine(name string, log *zap.Logger) {
+	if rec := recover(); rec != nil {
+		log.Error("worker: goroutine panicked — process orchestrator will restart",
+			zap.String("goroutine", name),
+			zap.Any("panic", rec),
+			zap.ByteString("stack", debug.Stack()),
+		)
+	}
+}
+
+// safeEventHandler wraps h in a panic-catching envelope so a panicking handler
+// does not crash the worker process. When the handler panics the panic is
+// logged and a non-nil error is returned, causing the bus to apply its normal
+// retry / DLQ logic rather than silently losing the event.
+func safeEventHandler(name string, h func(context.Context, events.Envelope) error, log *zap.Logger) func(context.Context, events.Envelope) error {
+	return func(ctx context.Context, env events.Envelope) (retErr error) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Error("worker: event handler panicked",
+					zap.String("handler", name),
+					zap.String("event_type", string(env.Type)),
+					zap.Any("panic", rec),
+					zap.ByteString("stack", debug.Stack()),
+				)
+				retErr = fmt.Errorf("panic in handler %s: %v", name, rec)
+			}
+		}()
+		return h(ctx, env)
+	}
+}
+
 // logOrFatal logs err at WARN level in development environments and at Fatal
 // level (os.Exit) in production. It is a no-op when err is nil.
 // This eliminates repeated nested if/else blocks at each sender construction
@@ -798,18 +843,19 @@ type workerDeps struct {
 // lifecycle management - and the part that can be exercised in unit tests
 // by injecting an InMemoryBus, a stub scorer, and a pre-cancelled context.
 func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
-	deps.bus.Subscribe(ctx, events.EventMatchStarted, newMatchStartedHandler(log))
+	deps.bus.Subscribe(ctx, events.EventMatchStarted,
+		safeEventHandler("matchStarted", newMatchStartedHandler(log), log))
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
 	deps.bus.Subscribe(ctx, events.EventMatchFinished,
-		newMatchFinishedHandler(deps.scorer, postScoringDeps{
+		safeEventHandler("matchFinished", newMatchFinishedHandler(deps.scorer, postScoringDeps{
 			snapshotter:  deps.snapshotter,
 			predRepo:     deps.predRepo,
 			invalidators: deps.invalidators,
 			broadcaster:  deps.broadcaster,
 			locker:       deps.snapshotLocker,
 			snapshot:     deps.snapshotCfg,
-		}, log))
+		}, log), log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 
 	healthSrv := newHealthServer(deps.cfg.Worker.HealthPort, deps.checkers, deps.metricsHandler, log)
@@ -819,6 +865,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	// returns before draining the channel (e.g. ctx already cancelled).
 	srvErr := make(chan error, 1)
 	go func() {
+		defer recoverGoroutine("healthServer", log)
 		log.Sugar().Infof("worker health server listening on :%s", deps.cfg.Worker.HealthPort)
 		if err := healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			srvErr <- err
@@ -838,6 +885,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	ticker := time.NewTicker(dlqMonitorInterval)
 	go func() {
 		defer dlqDone.Done()
+		defer recoverGoroutine("dlqMonitor", log)
 		defer ticker.Stop()
 		monitorDLQ(ctx, deps.rc, deps.dlqElection, ticker.C, deps.outboxNotifier, log)
 	}()
@@ -847,6 +895,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	purgeTicker := time.NewTicker(purgeTickInterval)
 	go func() {
 		defer purgeDone.Done()
+		defer recoverGoroutine("purgeDaemon", log)
 		defer purgeTicker.Stop()
 		monitorPurge(ctx, deps.purger, deps.purgeRetention, deps.paramHistoryRetention, deps.snapshotKeepCount, purgeTicker.C, log)
 	}()
@@ -866,6 +915,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		outboxDone.Add(1)
 		go func() {
 			defer outboxDone.Done()
+			defer recoverGoroutine("outboxWorker", log)
 			outboxWorker.Run(ctx)
 		}()
 		log.Info("outbox worker started (admin email dispatcher active)")
@@ -877,6 +927,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		dlqReplayDone.Add(1)
 		go func() {
 			defer dlqReplayDone.Done()
+			defer recoverGoroutine("dlqReplayWorker", log)
 			deps.dlqReplayWorker.Run(ctx)
 		}()
 		log.Info("dlq replay worker started")
@@ -888,6 +939,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		notifSchedDone.Add(1)
 		go func() {
 			defer notifSchedDone.Done()
+			defer recoverGoroutine("notifScheduler", log)
 			deps.notifScheduler.Run(ctx)
 		}()
 		log.Info("notification scheduler started")

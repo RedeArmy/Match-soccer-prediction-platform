@@ -386,6 +386,7 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyBankTransferMinAmountCents: {100, 1_000_000},      // 1 GTQ – 10 000 GTQ
 	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
 	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 10_080},           // 5 min – 1 week
+	domain.ParamKeyUSDGTQRate:                 {100, 10_000},         // Q1.00 – Q100.00 per USD
 
 	// Idempotency middleware (is_runtime=FALSE; restart required)
 	domain.ParamKeyAPIIdempotencyTTLHours:  {1, 720},   // 1 h – 30 days

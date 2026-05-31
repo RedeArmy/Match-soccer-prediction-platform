@@ -388,6 +388,7 @@ func AllParamKeys() []string {
 		ParamKeyBankTransferMinAmountCents,
 		ParamKeyBankTransferMaxAmountCents,
 		ParamKeyPaymentIntentTTLMinutes,
+		ParamKeyUSDGTQRate,
 		// Notification subsystem (constants_notify.go)
 		ParamKeyNotifyBankTransferStaleSec,
 		ParamKeyNotifyWithdrawalStaleSec,

@@ -35,7 +35,7 @@ func (r *PostgresWithdrawalRequestRepository) WithEncrypter(enc payoutenc.Encryp
 }
 
 const (
-	withdrawalColumns     = "id, user_id, amount_cents, currency, method, payout_details, status, reviewed_by, notes, processed_at, created_at, updated_at"
+	withdrawalColumns     = "id, user_id, amount_cents, currency, method, payout_details, status, reviewed_by, notes, processed_at, created_at, updated_at, gtq_reserved_cents"
 	msgWithdrawalNotFound = "withdrawal request not found"
 )
 
@@ -66,7 +66,7 @@ func (r *PostgresWithdrawalRequestRepository) scanFields(s rowScanner) (*domain.
 	if err := s.Scan(
 		&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
 		&payoutJSON, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
-		&w.CreatedAt, &w.UpdatedAt,
+		&w.CreatedAt, &w.UpdatedAt, &w.GTQReservedCents,
 	); err != nil {
 		return nil, err
 	}
@@ -102,14 +102,14 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 		w := &domain.WithdrawalRequest{}
 		scanErr := tx.QueryRow(ctx, `
 			INSERT INTO withdrawal_requests
-			      (user_id, amount_cents, currency, method, payout_details)
-			VALUES ($1,     $2,          $3,       $4,     $5)
+			      (user_id, amount_cents, currency, method, payout_details, gtq_reserved_cents)
+			VALUES ($1,     $2,          $3,       $4,     $5,             $6)
 			RETURNING `+withdrawalColumns,
-			req.UserID, req.AmountCents, req.Currency, req.Method, payoutJSON,
+			req.UserID, req.AmountCents, req.Currency, req.Method, payoutJSON, req.GTQReservedCents,
 		).Scan(
 			&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
 			&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
-			&w.CreatedAt, &w.UpdatedAt,
+			&w.CreatedAt, &w.UpdatedAt, &w.GTQReservedCents,
 		)
 		if scanErr != nil {
 			return apperrors.Internal(scanErr)
@@ -120,6 +120,9 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 		}
 		w.PayoutDetails = details
 
+		// Reserve GTQ centavos (not the user-facing currency amount).
+		// For GTQ withdrawals this equals AmountCents; for USD withdrawals it is
+		// the converted GTQ equivalent computed by withdrawalService.Create.
 		var balanceAfter int
 		reserveErr := tx.QueryRow(ctx, `
 			UPDATE users
@@ -129,7 +132,7 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 			   AND deleted_at IS NULL
 			   AND (balance_cents - reserved_cents) >= $2
 			 RETURNING balance_cents
-		`, w.UserID, w.AmountCents).Scan(&balanceAfter)
+		`, w.UserID, w.GTQReservedCents).Scan(&balanceAfter)
 		if reserveErr == pgx.ErrNoRows {
 			return insufficientOrNotFound(ctx, tx, w.UserID)
 		}
@@ -138,7 +141,7 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 		}
 
 		if err := insertLedgerTx(ctx, tx, ledgerRow{
-			UserID: w.UserID, DeltaCents: -w.AmountCents,
+			UserID: w.UserID, DeltaCents: -w.GTQReservedCents,
 			Kind: domain.LedgerKindWithdrawalReserve, BalanceAfter: balanceAfter,
 			RefID: int64(w.ID), RefType: "withdrawal_request",
 		}); err != nil {
@@ -233,7 +236,7 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 		).Scan(
 			&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
 			&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
-			&w.CreatedAt, &w.UpdatedAt,
+			&w.CreatedAt, &w.UpdatedAt, &w.GTQReservedCents,
 		)
 		if scanErr == pgx.ErrNoRows {
 			return nil // handled outside tx
@@ -254,13 +257,13 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 			       updated_at     = NOW()
 			 WHERE id = $1 AND deleted_at IS NULL AND reserved_cents >= $2
 			 RETURNING balance_cents
-		`, w.UserID, w.AmountCents).Scan(&balanceAfter)
+		`, w.UserID, w.GTQReservedCents).Scan(&balanceAfter)
 		if releaseErr != nil && releaseErr != pgx.ErrNoRows {
 			return apperrors.Internal(releaseErr)
 		}
 
 		if err := insertLedgerTx(ctx, tx, ledgerRow{
-			UserID: w.UserID, DeltaCents: w.AmountCents,
+			UserID: w.UserID, DeltaCents: w.GTQReservedCents,
 			Kind: domain.LedgerKindWithdrawalRelease, BalanceAfter: balanceAfter,
 			RefID: int64(w.ID), RefType: "withdrawal_request", CreatorID: reviewerID,
 		}); err != nil {
@@ -298,7 +301,7 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 		).Scan(
 			&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
 			&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
-			&w.CreatedAt, &w.UpdatedAt,
+			&w.CreatedAt, &w.UpdatedAt, &w.GTQReservedCents,
 		)
 		if scanErr == pgx.ErrNoRows {
 			return nil // handled outside tx
@@ -320,7 +323,7 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 			       updated_at     = NOW()
 			 WHERE id = $1 AND deleted_at IS NULL AND reserved_cents >= $2
 			 RETURNING balance_cents
-		`, w.UserID, w.AmountCents).Scan(&balanceAfter)
+		`, w.UserID, w.GTQReservedCents).Scan(&balanceAfter)
 		if commitErr == pgx.ErrNoRows {
 			return apperrors.Conflict("insufficient reserved balance to commit withdrawal")
 		}
@@ -329,7 +332,7 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 		}
 
 		if err := insertLedgerTx(ctx, tx, ledgerRow{
-			UserID: w.UserID, DeltaCents: -w.AmountCents,
+			UserID: w.UserID, DeltaCents: -w.GTQReservedCents,
 			Kind: domain.LedgerKindWithdrawalDeduct, BalanceAfter: balanceAfter,
 			RefID: int64(w.ID), RefType: "withdrawal_request",
 		}); err != nil {

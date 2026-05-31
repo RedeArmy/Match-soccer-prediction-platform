@@ -93,11 +93,12 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 	}
 
 	req := &domain.WithdrawalRequest{
-		UserID:        userID,
-		AmountCents:   amountCents,
-		Currency:      currency,
-		Method:        method,
-		PayoutDetails: payoutDetails,
+		UserID:           userID,
+		AmountCents:      amountCents,
+		Currency:         currency,
+		GTQReservedCents: s.toGTQCents(ctx, amountCents, currency),
+		Method:           method,
+		PayoutDetails:    payoutDetails,
 	}
 	if err := s.withdrawalRepo.CreateAndReserve(ctx, req); err != nil {
 		return nil, err
@@ -260,6 +261,25 @@ func (s *withdrawalService) isHighValueWithdrawal(ctx context.Context, amountCen
 		}
 	}
 	return amountCents >= threshold
+}
+
+// toGTQCents converts amountCents (in the given currency) to GTQ centavos for
+// balance reservation. For GTQ the value is unchanged. For USD the conversion
+// uses payment.usd_gtq_rate (GTQ centavos per USD dollar, e.g. 790 = Q7.90/$1).
+//
+// Integer arithmetic: Go's int is 64-bit on all target platforms; the maximum
+// product (500 000 USD cents × 10 000 rate upper-bound) ≈ 5×10⁹ fits comfortably.
+func (s *withdrawalService) toGTQCents(ctx context.Context, amountCents int, currency string) int {
+	if currency != "USD" {
+		return amountCents
+	}
+	rate := domain.DefaultUSDGTQRate
+	if p, err := s.paramRepo.Get(ctx, domain.ParamKeyUSDGTQRate); err == nil && p != nil {
+		if v, err := strconv.Atoi(p.Value); err == nil && v > 0 {
+			rate = v
+		}
+	}
+	return amountCents * rate / 100
 }
 
 func (s *withdrawalService) withdrawalLimits(ctx context.Context) (minCents, maxCents int, err error) {
