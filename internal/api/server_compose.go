@@ -81,6 +81,8 @@ type appHandlers struct {
 	kyc                *handler.KYCHandler
 	adminKYC           *handler.AdminKYCHandler
 	user               *handler.UserHandler
+	adminExchangeRate  *handler.AdminExchangeRateHandler
+	exchangeRate       *handler.ExchangeRateHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -334,6 +336,26 @@ func (s *Server) buildHandlers(
 		h.paymentWebhook.SetNotifier(s.notifier)
 		h.withdrawal.SetNotifier(s.notifier)
 	}
+
+	// ── Exchange rate service ────────────────────────────────────────────────
+	fxRepo := repository.NewPostgresExchangeRateRepository(s.db)
+	fxFetcher := service.NewMultiSourceFetcher(s.log,
+		service.NewBanguatFetcher(),
+		service.NewExchangeRateAPIFetcher(s.cfg.ExchangeRate.ExchangeRateAPIKey),
+		service.NewOpenExchangeFetcher(s.cfg.ExchangeRate.OpenExchangeRatesAppID),
+	)
+	fxImpl := service.NewExchangeRateServiceImpl(fxFetcher, fxRepo, paramSvcWithAudit, s.notifier, s.log)
+	fxSvc := service.ExchangeRateService(fxImpl)
+	if err := fxImpl.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
+		s.log.Warn("exchange_rate: RegisterMetrics failed", zap.Error(err))
+	}
+	// Pre-warm the cache from the most recent history row so the first
+	// GET /api/exchange-rate request is served from cache, not from the DB.
+	if err := fxSvc.WarmCache(ctx); err != nil {
+		s.log.Warn("exchange_rate: cache warm failed (non-fatal, will warm on first request)", zap.Error(err))
+	}
+	h.adminExchangeRate = handler.NewAdminExchangeRateHandler(fxSvc, fxRepo, auditSvc, s.log)
+	h.exchangeRate = handler.NewExchangeRateHandler(fxSvc, s.log)
 
 	return h
 }
