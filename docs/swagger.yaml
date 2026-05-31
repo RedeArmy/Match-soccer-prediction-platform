@@ -150,8 +150,6 @@ definitions:
         type: integer
       status:
         type: string
-      storage_key:
-        type: string
       updated_at:
         type: string
       user_id:
@@ -1373,6 +1371,38 @@ paths:
       security:
       - BearerAuth: []
       summary: Approve bank transfer
+      tags:
+      - admin-payments
+  /api/v1/admin/bank-transfers/{id}/download:
+    get:
+      description: Streams the uploaded proof image or PDF for admin review. No ownership
+        restriction. Requires admin role.
+      parameters:
+      - description: Proof ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Download any bank transfer proof file (admin)
       tags:
       - admin-payments
   /api/v1/admin/bank-transfers/{id}/reject:
@@ -3816,6 +3846,34 @@ paths:
       security:
       - BearerAuth: []
       summary: Upload bank transfer proof
+      tags:
+      - balance
+  /api/v1/bank-transfers/{id}/download:
+    get:
+      description: Streams the uploaded proof image or PDF. Only the owner can download
+        their own file.
+      parameters:
+      - description: Proof ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Download bank transfer proof file
       tags:
       - balance
   /api/v1/groups:

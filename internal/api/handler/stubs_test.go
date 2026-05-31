@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 
@@ -359,13 +360,22 @@ func (s *stubWebhookPaymentSvc) ResolveAndCreditPayPalIntent(_ context.Context, 
 // ── stubFileStore ─────────────────────────────────────────────────────────────
 
 type stubFileStore struct {
-	putErr error
+	putErr     error
+	getContent []byte // returned by Get when non-nil
+	getType    string // Content-Type returned by Get
+	getErr     error  // returned by Get when non-nil
 }
 
 func (s *stubFileStore) Put(_ context.Context, _, _ string, _ io.Reader, _ int64) error {
 	return s.putErr
 }
 func (s *stubFileStore) Get(_ context.Context, _ string) (io.ReadCloser, string, error) {
+	if s.getErr != nil {
+		return nil, "", s.getErr
+	}
+	if s.getContent != nil {
+		return io.NopCloser(bytes.NewReader(s.getContent)), s.getType, nil
+	}
 	return nil, "", storage.ErrNotFound
 }
 func (s *stubFileStore) Delete(_ context.Context, _ string) error { return nil }

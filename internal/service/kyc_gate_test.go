@@ -44,6 +44,7 @@ func (s *ledgerSumStub) ListByUser(_ context.Context, _ int, _ repository.Pagina
 func (s *ledgerSumStub) SumTransactionsByUserAndPeriod(_ context.Context, _ int, _ []domain.BalanceLedgerKind, _ time.Time) (int64, error) {
 	return s.sum, s.err
 }
+func (s *ledgerSumStub) CountRows(_ context.Context) (int64, error) { return 0, nil }
 
 func newKYCGateWithLedger(tier domain.KYCTier, ledgerSum int64) *kycGate {
 	u := &domain.User{ID: 1, KYCTier: tier}

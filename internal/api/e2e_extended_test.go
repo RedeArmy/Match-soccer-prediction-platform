@@ -87,7 +87,7 @@ func TestE2E_WithdrawalLifecycle_ApproveAndProcess(t *testing.T) {
 			"amount_cents":   10_000,
 			"currency":       "GTQ",
 			"method":         "paypal",
-			"payout_details": map[string]string{"email": "user@paypal.test"},
+			"payout_details": map[string]string{"paypal_email": "user@paypal.test"},
 		}))
 	assertStatus(t, rec, http.StatusCreated, "create withdrawal")
 
@@ -191,9 +191,10 @@ func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
 	// Step 1 — submit withdrawal; amount is reserved.
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/withdrawals", userToken,
 		jsonBody(t, map[string]any{
-			"amount_cents": withdrawalAmount,
-			"currency":     "GTQ",
-			"method":       "paypal",
+			"amount_cents":   withdrawalAmount,
+			"currency":       "GTQ",
+			"method":         "paypal",
+			"payout_details": map[string]string{"paypal_email": "user@paypal.test"},
 		}))
 	assertStatus(t, rec, http.StatusCreated, "create withdrawal")
 	var created struct {

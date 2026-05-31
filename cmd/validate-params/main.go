@@ -67,6 +67,8 @@ type paramSpec struct {
 //   - 000129_seed_kyc_ip_velocity_params        (+2)
 //   - 000138_seed_scoring_chunk_size_param      (+1)
 //   - 000142_seed_ip_rate_limit_params          (+4)
+//   - 000144_seed_kyc_doc_retention_param       (+1)
+//   - 000147_seed_usd_gtq_rate_param            (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -180,6 +182,7 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyBankTransferMinAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMinAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyBankTransferMaxAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMaxAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyPaymentIntentTTLMinutes, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentTTLMinutes), paramType: "int", category: "payment", isRuntime: true},
+	{key: domain.ParamKeyUSDGTQRate, defaultValue: strconv.Itoa(domain.DefaultUSDGTQRate), paramType: "int", category: "payment", isRuntime: true},
 
 	// Notifications — runtime: thresholds and recipient list are tunable without restart.
 	{key: domain.ParamKeyNotifyBankTransferStaleSec, defaultValue: strconv.Itoa(domain.DefaultNotifyBankTransferStaleSec), paramType: "int", category: "notify", isRuntime: true},
@@ -269,6 +272,8 @@ var allParams = []paramSpec{
 	// KYC IP velocity (migration 000129); runtime — enforced per-request by CheckIPSubmissionVelocity.
 	{key: domain.ParamKeyKYCIPVelocityWindowMinutes, defaultValue: strconv.Itoa(domain.DefaultKYCIPVelocityWindowMinutes), paramType: "int", category: "kyc", isRuntime: true},
 	{key: domain.ParamKeyKYCIPVelocityMaxSubmissions, defaultValue: strconv.Itoa(domain.DefaultKYCIPVelocityMaxSubmissions), paramType: "int", category: "kyc", isRuntime: true},
+	// KYC document retention (migration 000144); not runtime — worker restart required to pick up changes.
+	{key: domain.ParamKeyKYCDocRetentionYears, defaultValue: strconv.Itoa(domain.DefaultKYCDocRetentionYears), paramType: "int", category: "kyc", isRuntime: false},
 }
 
 type dbParam struct {

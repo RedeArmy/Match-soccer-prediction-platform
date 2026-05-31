@@ -46,6 +46,14 @@ func validateWorker(cfg *Config) error {
 			cfg.Logger.Encoding,
 		)
 	}
+	if !cfg.IsDevelopment() {
+		if err := validateProductionDatabaseTLS(cfg.Database.DSN); err != nil {
+			return err
+		}
+		if err := validateN8nConfig(cfg.N8n); err != nil {
+			return err
+		}
+	}
 	return validateDatabaseConfig(cfg.Database)
 }
 
@@ -95,6 +103,15 @@ func Warnings(cfg *Config) []string {
 		w = append(w, "database.connMaxLifetime is 0 (disabled): connections are never recycled; "+
 			"this may prevent clean failover after a network partition (WCQ_DATABASE_CONNMAXLIFETIME)")
 	}
+	// Advisory: sslmode=require encrypts the connection but does not verify the
+	// server certificate, leaving it vulnerable to MITM attacks.  sslmode=verify-full
+	// is the recommended production setting and costs nothing extra on Fly Postgres.
+	// sslmode=disable is already rejected at startup by validateProductionDatabaseTLS.
+	if !cfg.IsDevelopment() && strings.Contains(cfg.Database.DSN, "sslmode=require") {
+		w = append(w, "database.dsn: sslmode=require encrypts the connection but does not "+
+			"verify the server certificate. Use sslmode=verify-full for strict TLS "+
+			"(prevents MITM attacks). Update WCQ_DATABASE_DSN.")
+	}
 	return w
 }
 
@@ -143,6 +160,9 @@ func validateProductionConfig(cfg *Config) error {
 	if cfg.Payment.PayPalWebhookID == "" {
 		return errors.New("payment.paypalWebhookID must not be empty outside development (WCQ_PAYMENT_PAYPALWEBHOOKID)")
 	}
+	if cfg.Payment.PayoutEncryptionKey == "" {
+		return errors.New("payment.payoutEncryptionKey must not be empty outside development (WCQ_PAYMENT_PAYOUTENCRYPTIONKEY); generate with: openssl rand -hex 32")
+	}
 	if cfg.Email.UnsubscribeSecret == "" {
 		return errors.New("email.unsubscribeSecret must not be empty outside development (WCQ_EMAIL_UNSUBSCRIBESECRET); one-click unsubscribe links will be invalid and the endpoint will return 500")
 	}
@@ -158,6 +178,9 @@ func validateProductionConfig(cfg *Config) error {
 			cfg.Environment,
 		)
 	}
+	if err := validateProductionDatabaseTLS(cfg.Database.DSN); err != nil {
+		return err
+	}
 	if err := validateCORSOrigins(cfg.CORS.AllowedOrigins, cfg.Environment); err != nil {
 		return err
 	}
@@ -165,6 +188,28 @@ func validateProductionConfig(cfg *Config) error {
 		return err
 	}
 	return validateStorageDriver(cfg.Storage)
+}
+
+// validateProductionDatabaseTLS rejects database DSNs that explicitly disable
+// TLS via sslmode=disable.  The check covers both PostgreSQL DSN formats:
+//
+//   - URL:            postgres://user:pass@host/db?sslmode=disable
+//   - keyword=value:  host=localhost sslmode=disable
+//
+// When sslmode is absent the connection uses pgx's default ("prefer"), which
+// is acceptable; operators who want strict certificate verification should set
+// sslmode=verify-full.  The check is a substring search: PostgreSQL has no
+// sslmode value prefixed with "disable" other than "disable" itself, so there
+// are no false positives.
+func validateProductionDatabaseTLS(dsn string) error {
+	if strings.Contains(dsn, "sslmode=disable") {
+		return errors.New(
+			"database.dsn: sslmode=disable is not permitted outside development (WCQ_DATABASE_DSN); " +
+				"use sslmode=require to encrypt the connection, or sslmode=verify-full for " +
+				"strict certificate verification",
+		)
+	}
+	return nil
 }
 
 // validateStorageDriver rejects the local driver in production and delegates

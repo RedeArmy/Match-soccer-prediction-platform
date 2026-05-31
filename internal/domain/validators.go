@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"regexp"
 	"time"
 
@@ -168,6 +169,28 @@ func ValidateGroupSize(n int) error {
 	return nil
 }
 
+// supportedWithdrawalCurrencies is the canonical set of ISO-4217 currency
+// codes accepted for withdrawal requests.
+//
+// GTQ (Guatemalan Quetzal) is the primary currency for domestic bank transfers.
+// USD (US Dollar) is accepted for international PayPal payouts.
+// Any other string is rejected at the handler boundary so it never reaches the
+// DB or the ledger, keeping financial records internally consistent.
+var supportedWithdrawalCurrencies = map[string]struct{}{
+	"GTQ": {},
+	"USD": {},
+}
+
+// ValidateWithdrawalCurrency returns a validation error when currency is not
+// one of the platform-supported codes.  Pass the already-defaulted value (i.e.
+// call this after the "empty → GTQ" fallback in the handler).
+func ValidateWithdrawalCurrency(currency string) error {
+	if _, ok := supportedWithdrawalCurrencies[currency]; !ok {
+		return apperrors.Validation(`currency must be one of: "GTQ", "USD"`)
+	}
+	return nil
+}
+
 // validWinMethods is the canonical set of accepted WinMethod string values.
 var validWinMethods = map[WinMethod]struct{}{
 	WinMethodNormal:    {},
@@ -196,6 +219,58 @@ var validPhases = map[MatchPhase]struct{}{
 	PhaseSemiFinal:    {},
 	PhaseThirdPlace:   {},
 	PhaseFinal:        {},
+}
+
+// payoutRequiredKeys maps each WithdrawalMethod to its required payout_details
+// keys and the maximum character length for each value.  An exhaustive key set
+// is enforced (no extra keys allowed) to prevent storage abuse and to ensure
+// the admin payout workflow always has the fields it expects.
+var payoutRequiredKeys = map[WithdrawalMethod]map[string]int{
+	WithdrawalMethodBankGT: {
+		"account_number": 30, // Guatemalan account numbers are ≤ 13 digits; 30 gives headroom
+		"bank_name":      100,
+	},
+	WithdrawalMethodPayPal: {
+		"paypal_email": MaxEmailLength, // reuse RFC 5321 maximum (320)
+	},
+}
+
+// ValidatePayoutDetails checks that details contains exactly the required keys
+// for method, that no unknown keys are present, and that all values satisfy
+// their length bounds.  For PayPal the email format is also validated.
+//
+// Call this in the HTTP handler layer (before the service) so that invalid
+// requests are rejected with 422 before any DB interaction.
+func ValidatePayoutDetails(method WithdrawalMethod, details map[string]string) error {
+	keyLimits, ok := payoutRequiredKeys[method]
+	if !ok {
+		return apperrors.Validation(fmt.Sprintf("unknown withdrawal method: %q", method))
+	}
+	if len(details) == 0 {
+		return apperrors.Validation("payout_details must not be empty")
+	}
+	// Reject unknown keys first so callers get a precise error.
+	for k := range details {
+		if _, allowed := keyLimits[k]; !allowed {
+			return apperrors.Validation(fmt.Sprintf("payout_details: unexpected key %q for method %q", k, method))
+		}
+	}
+	// Verify all required keys are present and within length bounds.
+	for k, maxLen := range keyLimits {
+		v, present := details[k]
+		if !present || v == "" {
+			return apperrors.Validation(fmt.Sprintf("payout_details: %q is required for method %q", k, method))
+		}
+		if len(v) > maxLen {
+			return apperrors.Validation(fmt.Sprintf("payout_details: %q must not exceed %d characters", k, maxLen))
+		}
+	}
+	if method == WithdrawalMethodPayPal {
+		if err := ValidateEmail(details["paypal_email"]); err != nil {
+			return apperrors.Validation("payout_details: paypal_email is not a valid email address")
+		}
+	}
+	return nil
 }
 
 // ValidateMatchPhase returns a validation error when phase is not one of the

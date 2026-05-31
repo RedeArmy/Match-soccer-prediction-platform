@@ -218,7 +218,9 @@ func setupDB(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool
 	if err != nil {
 		return nil, fmt.Errorf("database unavailable: %w", err)
 	}
-	log.Sugar().Info("database connection established")
+	log.Info("database connection established",
+		zap.String("tls_mode", database.EffectiveTLSMode(cfg.Database.DSN)),
+	)
 	return pool, nil
 }
 

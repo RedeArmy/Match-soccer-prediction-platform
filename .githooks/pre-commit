@@ -1,21 +1,45 @@
 #!/usr/bin/env bash
-# pre-commit: regenerate Swagger docs when handler annotations may have changed.
+# pre-commit: runs two safety checks before every commit.
 #
-# Triggered automatically before every commit when hooks are installed via
-# `make hooks` (or `make dev`). Only runs when staged changes include files
-# that carry swag annotations — handler Go files or the main entry point.
-# The regenerated docs/ files are staged automatically so the commit always
-# includes an up-to-date spec without any extra developer action.
+#  1. Swagger regeneration — when handler annotations change, docs/ is updated
+#     and staged automatically so the commit always includes an up-to-date spec.
+#
+#  2. Secret scan — if gitleaks is installed, staged files are checked for
+#     accidental credentials (API keys, passwords, private keys). The hook
+#     skips this check when gitleaks is absent so developers can still commit
+#     before installing it, but a CI gate enforces the same scan on every PR.
 #
 # Install once after cloning:
 #   make hooks
+#
+# Install gitleaks (optional but recommended):
+#   go install github.com/zricethezav/gitleaks/v8/cmd/gitleaks@latest
 
 set -euo pipefail
 
 # GUI Git clients (GitHub Desktop, Tower, etc.) launch hooks in a minimal
 # shell that does not source ~/.bashrc or ~/.zshrc, so ~/go/bin is absent
-# from PATH. Prepend it explicitly so `swag` is always found.
+# from PATH. Prepend it explicitly so `swag` and `gitleaks` are found.
 export PATH="$PATH:$(go env GOPATH)/bin"
+
+# ── 1. Secret scan ────────────────────────────────────────────────────────────
+
+if command -v gitleaks &>/dev/null; then
+    echo "→ Scanning staged files for secrets..."
+    if ! gitleaks protect --staged --config .gitleaks.toml --redact 2>&1; then
+        echo ""
+        echo "ERROR: gitleaks detected potential secrets in staged files."
+        echo "       Review the output above, remove any real credentials, and recommit."
+        echo "       If this is a false positive, add an inline comment or update .gitleaks.toml."
+        exit 1
+    fi
+    echo "→ Secret scan passed."
+else
+    echo "→ gitleaks not installed — secret scan skipped."
+    echo "   Install: go install github.com/zricethezav/gitleaks/v8/cmd/gitleaks@latest"
+fi
+
+# ── 2. Swagger regeneration ───────────────────────────────────────────────────
 
 SWAGGER_SOURCES_PATTERN='^(internal/api/handler/.*\.go|cmd/api/main\.go)'
 

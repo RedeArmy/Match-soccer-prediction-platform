@@ -72,10 +72,6 @@ type Server struct {
 	// configured. Routes() uses it to build a RedisRateStore for cross-replica
 	// rate limiting; a nil value falls back to the in-process LimiterStore.
 	redisClient redis.UniversalClient
-	// metricsHandler serves the Prometheus /metrics scrape endpoint. Nil when
-	// metrics are disabled (WCQ_METRICS_ENABLED=false); Routes() registers the
-	// endpoint only when non-nil.
-	metricsHandler http.Handler
 	// notifier ships structured JSON events to n8n webhooks for operational
 	// alerting. Nil until SetNotifier is called; buildHandlers injects it into
 	// the payment-path handlers that trigger observability events.
@@ -132,11 +128,6 @@ func (s *Server) ensureIdempotencyStore() (degraded bool) {
 	s.idemStore = idempotency.NewMemoryStore()
 	return true
 }
-
-// SetMetricsHandler registers the Prometheus /metrics scrape handler. Call
-// this before Routes() so the endpoint is included in the routing table.
-// When handler is nil (metrics disabled) /metrics is not registered.
-func (s *Server) SetMetricsHandler(handler http.Handler) { s.metricsHandler = handler }
 
 // SetNotifier wires the observability Notifier for operational alerting via
 // n8n webhooks. Call before Routes() so buildHandlers can inject it into the

@@ -8,14 +8,18 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type bankTransferProofRepoStub struct {
-	proof  *domain.BankTransferProof
-	proofs []*domain.BankTransferProof
-	err    error
+	proof         *domain.BankTransferProof // returned by GetByID
+	approvedProof *domain.BankTransferProof // returned by ApproveAndCredit (falls back to proof)
+	proofs        []*domain.BankTransferProof
+	err           error
+	approveErr    error // optional separate error for ApproveAndCredit
 }
 
 func (r *bankTransferProofRepoStub) Create(_ context.Context, proof *domain.BankTransferProof) error {
@@ -35,6 +39,12 @@ func (r *bankTransferProofRepoStub) ListPending(_ context.Context) ([]*domain.Ba
 	return r.proofs, r.err
 }
 func (r *bankTransferProofRepoStub) ApproveAndCredit(_ context.Context, _ int, _ int, _ string) (*domain.BankTransferProof, error) {
+	if r.approveErr != nil {
+		return nil, r.approveErr
+	}
+	if r.approvedProof != nil {
+		return r.approvedProof, nil
+	}
 	return r.proof, r.err
 }
 func (r *bankTransferProofRepoStub) Reject(_ context.Context, _ int, _ int, _ string) (*domain.BankTransferProof, error) {
@@ -47,6 +57,10 @@ func newBankTransferSvc(repo *bankTransferProofRepoStub) BankTransferService {
 
 func newBankTransferSvcWithOutbox(repo *bankTransferProofRepoStub, w *stubOutboxWriter) BankTransferService {
 	return NewBankTransferService(repo, NoopKYCGate{}, w, &noopAuditLogger{}, zap.NewNop())
+}
+
+func newBankTransferSvcWithGate(repo repository.BankTransferProofRepository, gate KYCGate) BankTransferService {
+	return NewBankTransferService(repo, gate, nil, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────
@@ -184,6 +198,7 @@ func TestBankTransferService_ApproveTransfer_HappyPath(t *testing.T) {
 }
 
 func TestBankTransferService_ApproveTransfer_RepoErrorPropagates(t *testing.T) {
+	// GetByID (for the velocity check) fails.
 	svc := newBankTransferSvc(&bankTransferProofRepoStub{err: errors.New("not found")})
 
 	_, err := svc.ApproveTransfer(context.Background(), 999, 99, "")
@@ -191,6 +206,94 @@ func TestBankTransferService_ApproveTransfer_RepoErrorPropagates(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+func TestBankTransferService_ApproveTransfer_ProofNotFound_ReturnsNotFound(t *testing.T) {
+	// GetByID returns (nil, nil) — proof does not exist.
+	svc := newBankTransferSvc(&bankTransferProofRepoStub{proof: nil})
+
+	_, err := svc.ApproveTransfer(context.Background(), 999, 99, "")
+	if err == nil {
+		t.Fatal("expected not-found error, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// velocityBlockGate is a KYCGate stub that rejects CheckDepositVelocity.
+type velocityBlockGate struct{ NoopKYCGate }
+
+func (g velocityBlockGate) CheckDepositVelocity(_ context.Context, _, _ int) error {
+	return apperrors.Forbidden("deposit velocity cap exceeded for this tier")
+}
+
+func TestBankTransferService_ApproveTransfer_VelocityExceeded_RejectsBeforeCredit(t *testing.T) {
+	pending := &domain.BankTransferProof{ID: 5, UserID: 10, AmountCents: 300_000, Status: domain.BankTransferPending}
+
+	var approveCallCount int
+	stub := &bankTransferProofRepoStub{proof: pending}
+	countingRepo := &countingApproveRepo{stub: stub, count: &approveCallCount}
+
+	svc := newBankTransferSvcWithGate(countingRepo, velocityBlockGate{})
+
+	_, err := svc.ApproveTransfer(context.Background(), 5, 99, "")
+	if err == nil {
+		t.Fatal("expected velocity error, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrForbidden) {
+		t.Errorf("expected ErrForbidden, got %v", err)
+	}
+	// ApproveAndCredit must never be called when velocity check fails.
+	if approveCallCount != 0 {
+		t.Errorf("expected ApproveAndCredit not called when velocity blocked, got %d call(s)", approveCallCount)
+	}
+}
+
+func TestBankTransferService_ApproveTransfer_VelocityPasses_CreditsBalance(t *testing.T) {
+	pending := &domain.BankTransferProof{ID: 5, UserID: 10, AmountCents: 100_000, Status: domain.BankTransferPending}
+	approved := &domain.BankTransferProof{ID: 5, UserID: 10, AmountCents: 100_000, Status: domain.BankTransferApproved}
+
+	repo := &bankTransferProofRepoStub{proof: pending, approvedProof: approved}
+	svc := newBankTransferSvc(repo) // NoopKYCGate always passes
+
+	got, err := svc.ApproveTransfer(context.Background(), 5, 99, "OK")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Status != domain.BankTransferApproved {
+		t.Errorf("status: got %q, want approved", got.Status)
+	}
+}
+
+// countingApproveRepo wraps bankTransferProofRepoStub to record ApproveAndCredit calls.
+// Implements repository.BankTransferProofRepository by delegating all methods to the
+// embedded stub except ApproveAndCredit, which also increments the counter.
+type countingApproveRepo struct {
+	stub  *bankTransferProofRepoStub
+	count *int
+}
+
+func (r *countingApproveRepo) Create(ctx context.Context, proof *domain.BankTransferProof) error {
+	return r.stub.Create(ctx, proof)
+}
+func (r *countingApproveRepo) GetByID(ctx context.Context, id int) (*domain.BankTransferProof, error) {
+	return r.stub.GetByID(ctx, id)
+}
+func (r *countingApproveRepo) ListByUser(ctx context.Context, userID int) ([]*domain.BankTransferProof, error) {
+	return r.stub.ListByUser(ctx, userID)
+}
+func (r *countingApproveRepo) ListPending(ctx context.Context) ([]*domain.BankTransferProof, error) {
+	return r.stub.ListPending(ctx)
+}
+func (r *countingApproveRepo) ApproveAndCredit(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error) {
+	*r.count++
+	return r.stub.ApproveAndCredit(ctx, proofID, adminID, notes)
+}
+func (r *countingApproveRepo) Reject(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error) {
+	return r.stub.Reject(ctx, proofID, adminID, notes)
+}
+
+var _ repository.BankTransferProofRepository = (*countingApproveRepo)(nil)
 
 // ── RejectTransfer ────────────────────────────────────────────────────────────
 

@@ -19,6 +19,12 @@ const (
 	// DefaultPaymentIntentTTLMinutes is the number of minutes a pending PayPal
 	// payment intent remains valid. After expiry the customer must restart checkout.
 	DefaultPaymentIntentTTLMinutes = 60 // payment.intent_ttl_minutes
+
+	// DefaultUSDGTQRate is the GTQ centavos per USD dollar used as the fallback
+	// exchange rate when the payment.usd_gtq_rate system param is absent.
+	// 790 = Q7.90 per $1 USD (approximate market rate at quiniela launch).
+	// Formula: gtq_reserved_cents = usd_cents * DefaultUSDGTQRate / 100.
+	DefaultUSDGTQRate = 790 // payment.usd_gtq_rate
 )
 
 // Payment, withdrawal, and bank-transfer system parameter keys.
@@ -41,4 +47,9 @@ const (
 	// ParamKeyPaymentIntentTTLMinutes is the number of minutes a pending PayPal
 	// payment intent remains valid. is_runtime=TRUE: tunable without restart.
 	ParamKeyPaymentIntentTTLMinutes = "payment.intent_ttl_minutes"
+
+	// ParamKeyUSDGTQRate is the GTQ centavos per USD dollar used to convert
+	// USD PayPal withdrawal amounts into GTQ centavos for balance reservation.
+	// is_runtime=TRUE: tunable via admin API; propagates within 30 s.
+	ParamKeyUSDGTQRate = "payment.usd_gtq_rate"
 )
