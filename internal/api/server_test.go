@@ -30,7 +30,6 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/pkg/breaker"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/health"
@@ -423,79 +422,32 @@ func TestServer_SetBreakerRegistry_DoesNotPanic(t *testing.T) {
 	srv.SetBreakerRegistry(reg)
 }
 
-// ── /metrics auth guard ───────────────────────────────────────────────────────
+// ── /metrics not on main router ──────────────────────────────────────────────
 
 const metricsPath = "/metrics"
 
-// metricsOKHandler is a stub scrape target that always responds 200.
-var metricsOKHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
-})
-
-// TestMetricsEndpoint_Unauthenticated_Returns401 verifies that the /metrics
-// endpoint rejects requests that carry no Bearer token. The route is now
-// guarded by RequireAuth + RequireRole(RoleAdmin); an empty JWKS URL causes
-// RequireAuth to reject all tokens (fail-closed), so 401 is the expected
-// response rather than 200 (formerly) or 404 (route not registered).
-func TestMetricsEndpoint_Unauthenticated_Returns401(t *testing.T) {
-	srv := newAdminTestServer(t) // fakePool + empty JWKS → fail-closed auth
-	srv.SetMetricsHandler(metricsOKHandler)
+// TestMetricsEndpoint_NotOnMainRouter verifies that GET /metrics is absent
+// from the main HTTP router regardless of authentication state.
+//
+// Prometheus metrics are served on a dedicated internal port (WCQ_SERVER_METRICSPORT,
+// default 9091) without authentication, relying on network-level isolation
+// (Fly.io internal network) to prevent public access.  Registering the
+// endpoint on the public router would require Prometheus to present a
+// Clerk JWT, which it cannot do.
+//
+// This test guards the security property: even an unauthenticated request to
+// the main router must receive 404, not a metrics leak.
+func TestMetricsEndpoint_NotOnMainRouter(t *testing.T) {
+	srv := newAdminTestServer(t)
 	h := srv.Routes(context.Background())
 
-	req := httptest.NewRequest(http.MethodGet, metricsPath, nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		req := httptest.NewRequest(method, metricsPath, nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
 
-	if rec.Code == http.StatusNotFound {
-		t.Fatal("GET /metrics returned 404: route is not registered")
-	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for unauthenticated /metrics, got %d", rec.Code)
-	}
-}
-
-// TestMetricsEndpoint_WithValidToken_RouteIsRegistered verifies that a
-// request bearing a valid JWT reaches past RequireAuth and is blocked by
-// RequireRole (which queries the DB). With the fake pool the DB call fails,
-// returning 500 — confirming the route is registered and protected, not absent.
-func TestMetricsEndpoint_WithValidToken_RouteIsRegistered(t *testing.T) {
-	jwksURL, signJWT := testJWKSServer(t)
-	cfg := &config.Config{}
-	cfg.Clerk.JWKSURL = jwksURL
-	srv := api.New(fakePool(t), cfg, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
-	srv.SetMetricsHandler(metricsOKHandler)
-	srv.SetLimiterStore(middleware.NewUnlimitedLimiterStore())
-	h := srv.Routes(context.Background())
-
-	req := httptest.NewRequest(http.MethodGet, metricsPath, nil)
-	req.Header.Set("Authorization", "Bearer "+signJWT("test-subject"))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	// 404 would mean the route was never registered.
-	if rec.Code == http.StatusNotFound {
-		t.Fatal("GET /metrics returned 404: route is not registered")
-	}
-	// 200 would mean the handler fired without passing the auth guard.
-	if rec.Code == http.StatusOK {
-		t.Fatal("GET /metrics returned 200 without admin role — auth guard not applied")
-	}
-}
-
-// TestMetricsEndpoint_NilDB_Returns404 verifies that when the database is
-// unavailable (nil pool), /metrics is not registered at all. The endpoint
-// requires repos to authenticate callers, so it is intentionally absent from
-// the degraded routing table rather than returning 503 unauthenticated.
-func TestMetricsEndpoint_NilDB_Returns404(t *testing.T) {
-	srv := api.New(nil, &config.Config{}, zaptest.NewLogger(t), messaging.NewInMemoryBus(nil), nil, nil)
-	srv.SetMetricsHandler(metricsOKHandler)
-	h := srv.Routes(context.Background())
-
-	req := httptest.NewRequest(http.MethodGet, metricsPath, nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected 404 for /metrics with nil DB, got %d", rec.Code)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s /metrics: expected 404 (not on main router), got %d", method, rec.Code)
+		}
 	}
 }

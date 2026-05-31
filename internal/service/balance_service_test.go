@@ -82,6 +82,7 @@ func (r *balanceLedgerRepoStub) CreditIdempotent(_ context.Context, _ int, _ int
 func (r *balanceLedgerRepoStub) SumTransactionsByUserAndPeriod(_ context.Context, _ int, _ []domain.BalanceLedgerKind, _ time.Time) (int64, error) {
 	return 0, r.err
 }
+func (r *balanceLedgerRepoStub) CountRows(_ context.Context) (int64, error) { return 0, nil }
 
 func newBalanceSvc(ur *balanceSvcUserRepo, lr *balanceLedgerRepoStub) BalanceService {
 	return NewBalanceService(ur, lr, zap.NewNop())

@@ -88,10 +88,18 @@ func (h *WithdrawalHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, apperrors.Validation("method must be bank_gt or paypal"))
 		return
 	}
+	if err := domain.ValidatePayoutDetails(method, req.PayoutDetails); err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
 
 	currency := req.Currency
 	if currency == "" {
 		currency = "GTQ"
+	}
+	if err := domain.ValidateWithdrawalCurrency(currency); err != nil {
+		writeError(w, r, h.log, err)
+		return
 	}
 
 	result, err := h.svc.Create(r.Context(), caller.ID, req.AmountCents, currency, method, req.PayoutDetails)
@@ -151,7 +159,11 @@ func (h *WithdrawalHandler) AdminListPending(w http.ResponseWriter, r *http.Requ
 	}
 	data := make([]WithdrawalResponse, len(requests))
 	for i, req := range requests {
-		data[i] = withdrawalToResponse(req)
+		// Mask sensitive payout_details in list responses: a single paginated
+		// payload would otherwise expose every user's raw bank account numbers
+		// or PayPal emails.  The processing admin who clicks into a specific
+		// withdrawal sees the full details via the approve/reject/process response.
+		data[i] = withdrawalToResponseMasked(req)
 	}
 	writeJSON(w, http.StatusOK, data)
 }

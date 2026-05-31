@@ -294,6 +294,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/bank-transfers/{id}/download": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Streams the uploaded proof image or PDF for admin review. No ownership restriction. Requires admin role.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "admin-payments"
+                ],
+                "summary": "Download any bank transfer proof file (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Proof ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/bank-transfers/{id}/reject": {
             "post": {
                 "security": [
@@ -4057,6 +4106,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/bank-transfers/{id}/download": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Streams the uploaded proof image or PDF. Only the owner can download their own file.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "balance"
+                ],
+                "summary": "Download bank transfer proof file",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Proof ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/groups": {
             "post": {
                 "security": [
@@ -5847,9 +5939,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "status": {
-                    "type": "string"
-                },
-                "storage_key": {
                     "type": "string"
                 },
                 "updated_at": {

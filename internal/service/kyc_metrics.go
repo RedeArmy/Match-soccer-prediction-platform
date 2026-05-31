@@ -33,6 +33,11 @@ type KYCMetrics struct {
 	// AuditEventDropsTotal counts kyc_events rows that could not be persisted
 	// because of a transient DB error.  Non-zero values indicate audit gaps.
 	AuditEventDropsTotal metric.Int64Counter
+	// AMLHitsTotal counts transactions that met or exceeded the UAF reporting
+	// threshold (kyc.aml_threshold_cents).  Non-blocking: the transaction
+	// commits and a manual review is required to file the UAF report.
+	// Alert WCQAMLThresholdHit fires immediately on any non-zero increment.
+	AMLHitsTotal metric.Int64Counter
 }
 
 // RegisterKYCMetrics creates and registers all KYC OTel instruments on meter.
@@ -86,6 +91,14 @@ func RegisterKYCMetrics(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("kyc metrics: audit_event_drop_total: %w", err)
+	}
+
+	m.AMLHitsTotal, err = meter.Int64Counter(
+		"kyc.aml_threshold_hit_total",
+		metric.WithDescription("Transactions that met or exceeded the UAF AML reporting threshold. Each increment requires a compliance review and potential UAF report filing."),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("kyc metrics: aml_threshold_hit_total: %w", err)
 	}
 
 	if err := registerQueueDepthGauge(m, meter, profileQueueReader); err != nil {
@@ -186,6 +199,17 @@ func (m *KYCMetrics) RecordGateBlock(ctx context.Context, operation, reason stri
 		attribute.String("operation", operation),
 		attribute.String("reason", reason),
 	))
+}
+
+// RecordAMLHit increments the AML threshold hit counter.  Call this when a
+// transaction meets or exceeds kyc.aml_threshold_cents.  The transaction is
+// never blocked; this counter exists solely to trigger the WCQAMLThresholdHit
+// alert and ensure no reportable transaction goes unnoticed.
+func (m *KYCMetrics) RecordAMLHit(ctx context.Context) {
+	if m == nil || m.AMLHitsTotal == nil {
+		return
+	}
+	m.AMLHitsTotal.Add(ctx, 1)
 }
 
 // ── Observer interfaces ───────────────────────────────────────────────────────

@@ -174,15 +174,37 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		app.SetRedisClient(rc)
 	}
 
-	// Wire the /metrics endpoint. SetMetricsHandler is nil-safe: when metrics
-	// are disabled metricsHandler is nil and Routes() omits the /metrics route.
-	app.SetMetricsHandler(metricsHandler)
-
 	// Wire the observability notifier. Disabled when WCQ_N8N_BASEURL is empty.
 	// The notifier is retained locally so Close() can be called during shutdown
 	// to wait for any in-flight n8n webhook goroutines to complete.
 	notifier := setupObservabilityNotifier(cfg, log)
 	app.SetNotifier(notifier)
+
+	// Start the dedicated metrics server on a separate internal port.
+	//
+	// Prometheus cannot present a Clerk JWT, so /metrics must not live behind
+	// RequireAuth.  The solution is a minimal HTTP server on cfg.Server.MetricsPort
+	// (default 9091, WCQ_SERVER_METRICSPORT) that serves ONLY /metrics with no
+	// authentication.  This port must be bound to the internal network interface
+	// only (e.g. Fly.io private IPv6) so it is never reachable from the internet.
+	// Network isolation replaces JWT authentication as the access control mechanism.
+	//
+	// The worker follows the same pattern via newHealthServer (port 8081).
+	if metricsHandler != nil && cfg.Server.MetricsPort != "" {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", metricsHandler)
+		metricsSrv := &http.Server{
+			Addr:              ":" + cfg.Server.MetricsPort,
+			Handler:           metricsMux,
+			ReadHeaderTimeout: cfg.Server.ReadTimeout,
+		}
+		go func() {
+			log.Sugar().Infof("metrics server listening on :%s (internal — no auth)", cfg.Server.MetricsPort)
+			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("metrics server stopped unexpectedly", zap.Error(err))
+			}
+		}()
+	}
 
 	// setupCtx is context.WithoutCancel(ctx): OTel trace values are propagated
 	// to startup DB reads while SIGTERM cannot abort them.

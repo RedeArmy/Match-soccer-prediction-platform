@@ -548,3 +548,120 @@ func TestParseWinMethod_CaseSensitive_ReturnsValidation(t *testing.T) {
 		t.Errorf("expected validation error for wrong-cased win_method, got %v", err)
 	}
 }
+
+// ── ValidateWithdrawalCurrency ────────────────────────────────────────────────
+
+func TestValidateWithdrawalCurrency_GTQ_ReturnsNil(t *testing.T) {
+	if err := domain.ValidateWithdrawalCurrency("GTQ"); err != nil {
+		t.Errorf(fmtUnexpectedErr, err)
+	}
+}
+
+func TestValidateWithdrawalCurrency_USD_ReturnsNil(t *testing.T) {
+	if err := domain.ValidateWithdrawalCurrency("USD"); err != nil {
+		t.Errorf(fmtUnexpectedErr, err)
+	}
+}
+
+func TestValidateWithdrawalCurrency_Unsupported_ReturnsValidation(t *testing.T) {
+	unsupported := []string{"EUR", "BTC", "MONOPOLY", "gtq", "usd", "", " ", "GTQ "}
+	for _, c := range unsupported {
+		if err := domain.ValidateWithdrawalCurrency(c); !isValidation(err) {
+			t.Errorf("currency %q: expected validation error, got %v", c, err)
+		}
+	}
+}
+
+func TestValidateWithdrawalCurrency_ErrorMentionsSupportedCodes(t *testing.T) {
+	err := domain.ValidateWithdrawalCurrency("EUR")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "GTQ") || !strings.Contains(msg, "USD") {
+		t.Errorf("error message should mention GTQ and USD, got: %q", msg)
+	}
+}
+
+// ── ValidatePayoutDetails ─────────────────────────────────────────────────────
+
+func TestValidatePayoutDetails_BankGT_ValidDetails_ReturnsNil(t *testing.T) {
+	details := map[string]string{
+		"account_number": "1234567890",
+		"bank_name":      "Banco Industrial",
+	}
+	if err := domain.ValidatePayoutDetails(domain.WithdrawalMethodBankGT, details); err != nil {
+		t.Errorf(fmtUnexpectedErr, err)
+	}
+}
+
+func TestValidatePayoutDetails_PayPal_ValidEmail_ReturnsNil(t *testing.T) {
+	details := map[string]string{"paypal_email": "user@example.com"}
+	if err := domain.ValidatePayoutDetails(domain.WithdrawalMethodPayPal, details); err != nil {
+		t.Errorf(fmtUnexpectedErr, err)
+	}
+}
+
+func TestValidatePayoutDetails_UnknownMethod_ReturnsValidation(t *testing.T) {
+	err := domain.ValidatePayoutDetails("crypto", map[string]string{"wallet": "abc"})
+	if !isValidation(err) {
+		t.Errorf("expected validation error for unknown method, got %v", err)
+	}
+}
+
+func TestValidatePayoutDetails_EmptyMap_ReturnsValidation(t *testing.T) {
+	err := domain.ValidatePayoutDetails(domain.WithdrawalMethodBankGT, map[string]string{})
+	if !isValidation(err) {
+		t.Errorf("expected validation error for empty details, got %v", err)
+	}
+}
+
+func TestValidatePayoutDetails_UnknownKey_ReturnsValidation(t *testing.T) {
+	details := map[string]string{
+		"account_number": "1234567890",
+		"bank_name":      "Banco Industrial",
+		"extra_field":    "unexpected",
+	}
+	err := domain.ValidatePayoutDetails(domain.WithdrawalMethodBankGT, details)
+	if !isValidation(err) {
+		t.Errorf("expected validation error for unknown key, got %v", err)
+	}
+}
+
+func TestValidatePayoutDetails_MissingRequiredKey_ReturnsValidation(t *testing.T) {
+	details := map[string]string{"account_number": "1234567890"}
+	err := domain.ValidatePayoutDetails(domain.WithdrawalMethodBankGT, details)
+	if !isValidation(err) {
+		t.Errorf("expected validation error for missing key, got %v", err)
+	}
+}
+
+func TestValidatePayoutDetails_EmptyRequiredValue_ReturnsValidation(t *testing.T) {
+	details := map[string]string{
+		"account_number": "1234567890",
+		"bank_name":      "",
+	}
+	err := domain.ValidatePayoutDetails(domain.WithdrawalMethodBankGT, details)
+	if !isValidation(err) {
+		t.Errorf("expected validation error for empty required value, got %v", err)
+	}
+}
+
+func TestValidatePayoutDetails_ValueExceedsMaxLen_ReturnsValidation(t *testing.T) {
+	details := map[string]string{
+		"account_number": strings.Repeat("9", 31), // max is 30
+		"bank_name":      "Banco Industrial",
+	}
+	err := domain.ValidatePayoutDetails(domain.WithdrawalMethodBankGT, details)
+	if !isValidation(err) {
+		t.Errorf("expected validation error for oversized value, got %v", err)
+	}
+}
+
+func TestValidatePayoutDetails_PayPal_InvalidEmail_ReturnsValidation(t *testing.T) {
+	details := map[string]string{"paypal_email": "not-an-email"}
+	err := domain.ValidatePayoutDetails(domain.WithdrawalMethodPayPal, details)
+	if !isValidation(err) {
+		t.Errorf("expected validation error for invalid PayPal email, got %v", err)
+	}
+}

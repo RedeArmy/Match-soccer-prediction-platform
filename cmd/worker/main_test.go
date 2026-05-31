@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/election"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	"github.com/rede/world-cup-quiniela/internal/observability"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -988,4 +990,209 @@ func TestMakePushPruneJob_CancelledContext_ReturnsError(t *testing.T) {
 	if err := job(ctx); err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
 	}
+}
+
+// ── makeKYCDocumentPurgeJob tests ─────────────────────────────────────────────
+
+// stubKYCDocRepo is a minimal stub for repository.KYCDocumentRepository used
+// to test makeKYCDocumentPurgeJob without a real database.
+type stubKYCDocRepo struct {
+	docs       []*domain.KYCDocument
+	listErr    error
+	deleteErr  error
+	deletedIDs []int64
+}
+
+func (r *stubKYCDocRepo) Create(_ context.Context, _ *domain.KYCDocument) error { return nil }
+func (r *stubKYCDocRepo) GetByID(_ context.Context, _ int64) (*domain.KYCDocument, error) {
+	return nil, nil
+}
+func (r *stubKYCDocRepo) ListByProfile(_ context.Context, _ int, _ domain.KYCProfileType) ([]*domain.KYCDocument, error) {
+	return nil, nil
+}
+func (r *stubKYCDocRepo) MarkVerified(_ context.Context, _ int64, _ int) error { return nil }
+func (r *stubKYCDocRepo) ListExpiredDocuments(_ context.Context, _ time.Time, _ int) ([]*domain.KYCDocument, error) {
+	return r.docs, r.listErr
+}
+func (r *stubKYCDocRepo) DeleteByID(_ context.Context, id int64) error {
+	if r.deleteErr == nil {
+		r.deletedIDs = append(r.deletedIDs, id)
+	}
+	return r.deleteErr
+}
+
+var _ repository.KYCDocumentRepository = (*stubKYCDocRepo)(nil)
+
+// stubFileStore is a minimal in-memory stub for storage.FileStore.
+type stubFileStore struct {
+	deleteErr   error
+	deletedKeys []string
+}
+
+func (s *stubFileStore) Put(_ context.Context, _, _ string, _ io.Reader, _ int64) error {
+	return nil
+}
+func (s *stubFileStore) Get(_ context.Context, _ string) (io.ReadCloser, string, error) {
+	return nil, "", storage.ErrNotFound
+}
+func (s *stubFileStore) Delete(_ context.Context, key string) error {
+	if s.deleteErr == nil {
+		s.deletedKeys = append(s.deletedKeys, key)
+	}
+	return s.deleteErr
+}
+
+var _ storage.FileStore = (*stubFileStore)(nil)
+
+// sampleKYCDoc builds a test KYCDocument with the given id and storage key.
+func sampleKYCDoc(id int64, storageKey string) *domain.KYCDocument {
+	return &domain.KYCDocument{
+		ID:         id,
+		ProfileID:  1,
+		StorageKey: storageKey,
+	}
+}
+
+func TestMakeKYCDocumentPurgeJob_EmptyList_ReturnsNil(t *testing.T) {
+	docRepo := &stubKYCDocRepo{}
+	fileStore := &stubFileStore{}
+	job := makeKYCDocumentPurgeJob(&stubParamSvc{}, docRepo, fileStore, zap.NewNop())
+
+	if err := job(context.Background()); err != nil {
+		t.Errorf("expected nil for empty list, got %v", err)
+	}
+	if len(fileStore.deletedKeys) != 0 {
+		t.Errorf("expected no FileStore deletes, got %d", len(fileStore.deletedKeys))
+	}
+}
+
+func TestMakeKYCDocumentPurgeJob_HappyPath_DeletesFileBeforeMetadata(t *testing.T) {
+	docs := []*domain.KYCDocument{
+		sampleKYCDoc(10, "kyc/user-1/doc-a.jpg"),
+		sampleKYCDoc(20, "kyc/user-2/doc-b.pdf"),
+	}
+	docRepo := &stubKYCDocRepo{docs: docs}
+	fileStore := &stubFileStore{}
+	job := makeKYCDocumentPurgeJob(&stubParamSvc{}, docRepo, fileStore, zap.NewNop())
+
+	if err := job(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(fileStore.deletedKeys) != 2 {
+		t.Errorf("expected 2 FileStore deletes, got %d", len(fileStore.deletedKeys))
+	}
+	if len(docRepo.deletedIDs) != 2 {
+		t.Errorf("expected 2 DB deletes, got %d", len(docRepo.deletedIDs))
+	}
+	// Both documents fully purged
+	if fileStore.deletedKeys[0] != "kyc/user-1/doc-a.jpg" || fileStore.deletedKeys[1] != "kyc/user-2/doc-b.pdf" {
+		t.Errorf("unexpected deleted keys: %v", fileStore.deletedKeys)
+	}
+	if docRepo.deletedIDs[0] != 10 || docRepo.deletedIDs[1] != 20 {
+		t.Errorf("unexpected deleted IDs: %v", docRepo.deletedIDs)
+	}
+}
+
+func TestMakeKYCDocumentPurgeJob_FileStoreDeleteFails_SkipsDBDelete(t *testing.T) {
+	docs := []*domain.KYCDocument{sampleKYCDoc(10, "kyc/user-1/doc-a.jpg")}
+	docRepo := &stubKYCDocRepo{docs: docs}
+	fileStore := &stubFileStore{deleteErr: errors.New("S3 unreachable")}
+	job := makeKYCDocumentPurgeJob(&stubParamSvc{}, docRepo, fileStore, zap.NewNop())
+
+	// Job returns nil (non-fatal) — FileStore failures are logged and retried
+	// on the next weekly run; they do not abort the entire job.
+	if err := job(context.Background()); err != nil {
+		t.Errorf("expected nil (non-fatal file store failure), got %v", err)
+	}
+	// DB metadata must NOT be deleted when the physical file was not removed.
+	if len(docRepo.deletedIDs) != 0 {
+		t.Errorf("expected 0 DB deletes when FileStore fails, got %d: %v", len(docRepo.deletedIDs), docRepo.deletedIDs)
+	}
+}
+
+func TestMakeKYCDocumentPurgeJob_DBDeleteFails_CountsAsFailure(t *testing.T) {
+	docs := []*domain.KYCDocument{sampleKYCDoc(10, "kyc/user-1/doc-a.jpg")}
+	docRepo := &stubKYCDocRepo{docs: docs, deleteErr: errors.New("db error")}
+	fileStore := &stubFileStore{}
+	job := makeKYCDocumentPurgeJob(&stubParamSvc{}, docRepo, fileStore, zap.NewNop())
+
+	if err := job(context.Background()); err != nil {
+		t.Errorf("expected nil (non-fatal db failure), got %v", err)
+	}
+	// FileStore delete still ran
+	if len(fileStore.deletedKeys) != 1 {
+		t.Errorf("expected 1 FileStore delete, got %d", len(fileStore.deletedKeys))
+	}
+}
+
+func TestMakeKYCDocumentPurgeJob_NilFileStore_RemovesMetadataWithWarning(t *testing.T) {
+	docs := []*domain.KYCDocument{sampleKYCDoc(10, "kyc/user-1/doc-a.jpg")}
+	docRepo := &stubKYCDocRepo{docs: docs}
+	job := makeKYCDocumentPurgeJob(&stubParamSvc{}, docRepo, nil, zap.NewNop())
+
+	if err := job(context.Background()); err != nil {
+		t.Fatalf("unexpected error with nil FileStore: %v", err)
+	}
+	// DB metadata is still removed to avoid accumulating stale rows.
+	if len(docRepo.deletedIDs) != 1 || docRepo.deletedIDs[0] != 10 {
+		t.Errorf("expected DB metadata deleted even with nil FileStore, got %v", docRepo.deletedIDs)
+	}
+}
+
+func TestMakeKYCDocumentPurgeJob_ListError_ReturnsError(t *testing.T) {
+	docRepo := &stubKYCDocRepo{listErr: errors.New("db connection lost")}
+	fileStore := &stubFileStore{}
+	job := makeKYCDocumentPurgeJob(&stubParamSvc{}, docRepo, fileStore, zap.NewNop())
+
+	err := job(context.Background())
+	if err == nil {
+		t.Fatal("expected error when list fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "db connection lost") {
+		t.Errorf("expected list error to propagate, got: %v", err)
+	}
+}
+
+func TestMakeKYCDocumentPurgeJob_PartialFailure_ContinuesRemaining(t *testing.T) {
+	// First doc has a FileStore error; second doc should still be processed.
+	callCount := 0
+	docs := []*domain.KYCDocument{
+		sampleKYCDoc(10, "kyc/user-1/doc-a.jpg"),
+		sampleKYCDoc(20, "kyc/user-2/doc-b.pdf"),
+	}
+	docRepo := &stubKYCDocRepo{docs: docs}
+	fileStore := &callCountingFileStore{failOnCall: 1, counter: &callCount}
+	job := makeKYCDocumentPurgeJob(&stubParamSvc{}, docRepo, fileStore, zap.NewNop())
+
+	if err := job(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Only second doc fully purged (first FileStore call failed).
+	if len(docRepo.deletedIDs) != 1 || docRepo.deletedIDs[0] != 20 {
+		t.Errorf("expected only second doc deleted, got %v", docRepo.deletedIDs)
+	}
+}
+
+// callCountingFileStore fails on a specific call number (1-indexed) and
+// succeeds on all others.  Used to test partial-failure resilience.
+type callCountingFileStore struct {
+	failOnCall  int
+	counter     *int
+	deletedKeys []string
+}
+
+func (s *callCountingFileStore) Put(_ context.Context, _, _ string, _ io.Reader, _ int64) error {
+	return nil
+}
+func (s *callCountingFileStore) Get(_ context.Context, _ string) (io.ReadCloser, string, error) {
+	return nil, "", storage.ErrNotFound
+}
+func (s *callCountingFileStore) Delete(_ context.Context, key string) error {
+	*s.counter++
+	if *s.counter == s.failOnCall {
+		return errors.New("transient error")
+	}
+	s.deletedKeys = append(s.deletedKeys, key)
+	return nil
 }

@@ -107,6 +107,26 @@ const (
 // CacheKeyKYCRiskDashboard is the cache key for the admin risk dashboard response.
 const CacheKeyKYCRiskDashboard = "kyc:risk_dashboard"
 
+// KYC document retention system_param keys.
+const (
+	// ParamKeyKYCDocRetentionYears is the number of years to retain KYC
+	// document metadata after a user account is soft-deleted.  After this
+	// period the document metadata rows and their associated FileStore objects
+	// are eligible for deletion.
+	// Default: 5 years (conservative best-practice for sports betting platforms).
+	ParamKeyKYCDocRetentionYears = "kyc.doc_retention_years"
+)
+
+// KYC document retention defaults.
+const (
+	// DefaultKYCDocRetentionYears is 5 years.  This aligns with the Guatemalan
+	// UAF / SIB general records-retention guidance applicable to entities that
+	// perform AML-flagged transaction monitoring, even though a quiniela is not
+	// a regulated financial institution.  Erring on the conservative side avoids
+	// compliance gaps if the platform is later subject to stricter requirements.
+	DefaultKYCDocRetentionYears = 5
+)
+
 // Velocity limit system_param keys — 24-hour rolling totals per KYC tier.
 const (
 	ParamKeyKYCTier1DepositVelocityCents    = "kyc.tier1_deposit_velocity_cents"

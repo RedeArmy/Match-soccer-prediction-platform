@@ -469,6 +469,7 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyKYCRiskDashboardCacheTTLSec:     {10, 3_600},            // 10 s – 1 h
 	domain.ParamKeyKYCIPVelocityWindowMinutes:      {5, 1_440},             // 5 min – 24 h
 	domain.ParamKeyKYCIPVelocityMaxSubmissions:     {0, 100},               // 0 (disabled) – 100 per window
+	domain.ParamKeyKYCDocRetentionYears:            {1, 20},                // 1 year minimum – 20 years maximum
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

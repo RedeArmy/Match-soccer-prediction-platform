@@ -237,7 +237,11 @@ func (g *kycGate) intParam(ctx context.Context, key string, defaultVal int) int 
 
 func (g *kycGate) ExceedsAMLThreshold(ctx context.Context, amountCents int) (bool, error) {
 	threshold := g.intParam(ctx, domain.ParamKeyKYCAMLThresholdCents, domain.DefaultKYCAMLThresholdCents)
-	return amountCents >= threshold, nil
+	exceeds := amountCents >= threshold
+	if exceeds {
+		g.metrics.RecordAMLHit(ctx)
+	}
+	return exceeds, nil
 }
 
 func (g *kycGate) CheckDepositVelocity(ctx context.Context, userID, amountCents int) error {

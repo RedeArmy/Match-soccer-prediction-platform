@@ -10,10 +10,12 @@
 #   http_server_request_duration_seconds  Float64Histogram        (labels: method, route, status_code)
 #   notification_sse_dropped_total        Int64ObservableCounter
 #   kyc_audit_event_drop_total            Int64Counter
+#   kyc_aml_threshold_hit_total           Int64Counter  (UAF reportable transactions)
 #   prize_distribution_failures_total     Int64Counter
 #   wcq_ip_rate_limit_blocked_total       Int64Counter  (labels: layer=global|webhook)
 #   wcq_rate_limit_fail_open_total        Int64Counter  (per-user Redis rate limiter)
 #   wcq_idempotency_degraded_total        Int64Counter  (idempotency Redis store degraded)
+#   wcq_balance_ledger_row_count          Int64ObservableGauge  (estimated balance_ledger rows)
 #
 # Alertmanager routing (alertmanager.yml):
 #   severity=critical, workflow=payment-error-escalation → n8n-payment-escalation
@@ -216,6 +218,25 @@ groups:
             reconcile missing rows from application logs before the next
             regulatory review.
 
+      - alert: WCQAMLThresholdHit
+        expr: increase(kyc_aml_threshold_hit_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqamlthresholdhit"
+          summary: "AML reporting threshold reached — manual review required"
+          description: >
+            {{ $value | humanize }} transaction(s) in the last 5 minutes met or
+            exceeded the UAF AML reporting threshold (kyc.aml_threshold_cents,
+            default Q25,000).  These transactions are NOT blocked — they commit
+            normally and are recorded in audit_log (action='kyc.aml_flagged').
+            Review the audit_log entries and file a UAF report if required by
+            the applicable Guatemalan anti-money-laundering regulations.
+            Run: SELECT * FROM audit_log WHERE action = 'kyc.aml_flagged'
+            ORDER BY created_at DESC LIMIT 50;
+
   # ---------------------------------------------------------------------------
   # IP rate limit blocking
   #   wcq_ip_rate_limit_blocked_total counts requests dropped by the two-tier
@@ -377,4 +398,47 @@ groups:
             stamped, leaving some winners without their credit.  Check the
             audit log (admin_group.prizes_distributed) and balance_ledger for
             the affected quiniela, and credit any missing amounts manually.
+
+  # ---------------------------------------------------------------------------
+  # Balance ledger growth
+  #   wcq_balance_ledger_row_count is an estimated row count emitted by the
+  #   worker using pg_class.reltuples (accurate to ±5%, updated by ANALYZE).
+  #   Partitioning is documented in docs/adr/0008-balance-ledger-partitioning.md
+  #   and is recommended at ~50M rows. These alerts fire well before that
+  #   threshold to give the operations team advance notice.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.ledger
+    interval: 5m
+    rules:
+
+      - alert: WCQLedgerRowCountWarning
+        expr: wcq_balance_ledger_row_count > 2000000
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqledgerrowcountwarning"
+          summary: "balance_ledger approaching partitioning threshold"
+          description: >
+            balance_ledger has approximately {{ $value | humanize }} rows.
+            Partitioning is recommended at ~50M rows (ADR-0008). Review the
+            partitioning plan and DB pool sizing guidance in docs/capacity.md
+            before scheduling the migration. No immediate action required.
+
+      - alert: WCQLedgerRowCountCritical
+        expr: wcq_balance_ledger_row_count > 10000000
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqledgerrowcountwarning"
+          summary: "balance_ledger requires partitioning planning now"
+          description: >
+            balance_ledger has approximately {{ $value | humanize }} rows.
+            The zero-downtime partitioning migration in ADR-0008 must be executed
+            before the table reaches ~50M rows to avoid autovacuum pressure and
+            index bloat. Consult docs/capacity.md for pool sizing guidance and
+            schedule within the next maintenance window.
 

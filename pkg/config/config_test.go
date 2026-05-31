@@ -56,6 +56,8 @@ func setProductionPaymentEnv(t *testing.T) {
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
 	t.Setenv("WCQ_EMAIL_UNSUBSCRIBESECRET", "test-unsubscribe-secret")
+	// 64-char hex = 32 bytes; value is a test-only key, not for real use.
+	t.Setenv("WCQ_PAYMENT_PAYOUTENCRYPTIONKEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 }
 
 // setProductionStorageEnv sets the S3 storage variables required in
@@ -292,6 +294,24 @@ func TestLoad_ProductionWithoutPayPalWebhookID_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestLoad_ProductionWithoutPayoutEncryptionKey_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
+	// WCQ_PAYMENT_PAYOUTENCRYPTIONKEY intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing payout encryption key in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_PAYMENT_PAYOUTENCRYPTIONKEY") {
+		t.Errorf("expected error to reference WCQ_PAYMENT_PAYOUTENCRYPTIONKEY, got: %v", err)
+	}
+}
+
 func TestLoad_ProductionWithoutUnsubscribeSecret_ReturnsError(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv(envEnvironment, "production")
@@ -299,6 +319,7 @@ func TestLoad_ProductionWithoutUnsubscribeSecret_ReturnsError(t *testing.T) {
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
+	t.Setenv("WCQ_PAYMENT_PAYOUTENCRYPTIONKEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	// WCQ_EMAIL_UNSUBSCRIBESECRET intentionally not set.
 
 	_, err := config.Load()
@@ -428,6 +449,59 @@ func TestLoadWorker_InvalidLogEncoding_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "logger.encoding") {
 		t.Errorf("expected error to reference logger.encoding, got: %v", err)
+	}
+}
+
+// ── LoadWorker: n8n secret enforcement (P2-003) ───────────────────────────────
+// The worker constructs both AdminDispatcher (N8nURL) and the observability
+// Notifier (N8n.BaseURL); both must be signed when configured outside dev.
+
+func TestLoadWorker_ProductionWithN8nBaseURLAndNoSecret_ReturnsError(t *testing.T) {
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_N8N_BASEURL", "http://n8n:5678")
+	// WCQ_N8N_WEBHOOKSECRET intentionally not set.
+
+	_, err := config.LoadWorker()
+	if err == nil {
+		t.Fatal("expected error for missing n8n secret with base URL set in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_N8N_WEBHOOKSECRET") {
+		t.Errorf("expected error to reference WCQ_N8N_WEBHOOKSECRET, got: %v", err)
+	}
+}
+
+func TestLoadWorker_ProductionWithN8nWebhookURLAndNoSecret_ReturnsError(t *testing.T) {
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_N8N_WEBHOOKURL", "http://n8n:5678/webhook/admin")
+	// WCQ_N8N_WEBHOOKSECRET intentionally not set.
+
+	_, err := config.LoadWorker()
+	if err == nil {
+		t.Fatal("expected error for missing n8n secret with webhook URL set in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_N8N_WEBHOOKSECRET") {
+		t.Errorf("expected error to reference WCQ_N8N_WEBHOOKSECRET, got: %v", err)
+	}
+}
+
+func TestLoadWorker_ProductionWithN8nAndSecret_IsAccepted(t *testing.T) {
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_N8N_BASEURL", "http://n8n:5678")
+	t.Setenv("WCQ_N8N_WEBHOOKSECRET", "test-secret-value")
+
+	if _, err := config.LoadWorker(); err != nil {
+		t.Fatalf("expected no error when n8n is configured with a secret, got: %v", err)
+	}
+}
+
+func TestLoadWorker_DevelopmentWithN8nAndNoSecret_IsAccepted(t *testing.T) {
+	// sslmode=disable and missing n8n secret are both acceptable in dev.
+	t.Setenv(envEnvironment, "dev")
+	t.Setenv("WCQ_N8N_BASEURL", "http://localhost:5678")
+	// WCQ_N8N_WEBHOOKSECRET intentionally not set — should not be enforced in dev.
+
+	if _, err := config.LoadWorker(); err != nil {
+		t.Fatalf("expected no error in development without n8n secret, got: %v", err)
 	}
 }
 
@@ -858,6 +932,65 @@ func TestLoad_CORSProductionOrigin_InProduction_IsAccepted(t *testing.T) {
 	_, err := config.Load()
 	if err != nil {
 		t.Fatalf("expected no error for production CORS origin, got: %v", err)
+	}
+}
+
+// ── P1-003: sslmode=disable rejected in production ────────────────────────────
+
+func TestLoad_ProductionWithSSLDisabledInDSN_ReturnsError(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_DATABASE_DSN", "postgres://user:pass@host:5432/db?sslmode=disable")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for sslmode=disable in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "sslmode=disable") {
+		t.Errorf("expected error to reference sslmode=disable, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithSSLRequireInDSN_IsAccepted(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_DATABASE_DSN", "postgres://user:pass@host:5432/db?sslmode=require")
+	t.Setenv("WCQ_LOGGER_ENCODING", "json")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for sslmode=require in production, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithSSLVerifyFullInDSN_IsAccepted(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_DATABASE_DSN", "postgres://user:pass@host:5432/db?sslmode=verify-full")
+	t.Setenv("WCQ_LOGGER_ENCODING", "json")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error for sslmode=verify-full in production, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithSSLDisabledInKeywordDSN_ReturnsError(t *testing.T) {
+	// keyword=value DSN format (no URL scheme) — must also be rejected.
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_DATABASE_DSN", "host=db.example.com user=app password=secret dbname=quiniela sslmode=disable")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for keyword=value DSN with sslmode=disable, got nil")
+	}
+	if !strings.Contains(err.Error(), "sslmode=disable") {
+		t.Errorf("expected error to reference sslmode=disable, got: %v", err)
+	}
+}
+
+func TestLoad_DevelopmentWithSSLDisabledInDSN_IsAccepted(t *testing.T) {
+	// sslmode=disable is valid in development — no enforcement there.
+	setRequiredEnv(t) // sets environment=dev
+	t.Setenv("WCQ_DATABASE_DSN", "postgres://user:pass@localhost:5432/db?sslmode=disable")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error in dev with sslmode=disable, got: %v", err)
 	}
 }
 
