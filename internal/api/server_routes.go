@@ -62,29 +62,14 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	r.Use(middleware.CORS(s.cfg.CORS.AllowedOrigins))
 	r.Use(middleware.NewMetrics(otel.GetMeterProvider().Meter("wcq")))
 
-	// Infrastructure endpoints - not versioned, no authentication required.
-	r.Get("/health", s.handleHealth)
-	r.Get("/health/ready", s.handleReadiness)
-	r.Get("/swagger/*", httpSwagger.Handler(
-		httpSwagger.URL("/swagger/doc.json"),
-		httpSwagger.DeepLinking(true),
-	))
-
-	// Static assets — Service Worker must be served at the root scope so that
-	// it controls all pages. The embedded FS is built into the binary at compile
-	// time; no separate asset deployment step is required.
-	staticSub, _ := fs.Sub(staticFiles, "static")
-	staticServer := http.FileServer(http.FS(staticSub))
-	r.Get("/sw.js", staticServer.ServeHTTP)
-	r.Get("/push.js", staticServer.ServeHTTP)
-	r.Get("/icons/*", staticServer.ServeHTTP)
-
 	if s.db == nil {
-		// When the database is unavailable, register the entire API surface with
-		// two catch-all stubs that return 503. Wildcard coverage means new routes
-		// added to the happy path are automatically covered without a second edit
-		// here. Infrastructure endpoints (/health, /swagger) remain reachable
-		// because they are registered above and are not part of /api/v1.
+		// When the database is unavailable, register health and a catch-all 503
+		// stub for the API surface. Infrastructure endpoints remain reachable so
+		// load-balancer health checks work; IP rate limiting is not applied in
+		// degraded mode (no business logic runs, so the risk is acceptable).
+		// Wildcard coverage means new routes added to the happy path are
+		// automatically covered without a second edit here.
+		s.registerPublicRoutes(r)
 		r.Route("/api/v1", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(domain.DefaultAPIBodySizeLimitBytes))
 			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log), s.log))
@@ -172,17 +157,30 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 
 	// IP-based rate limiter (L1 global + L2 webhook).
 	// Constructed here — after paramSvc and meter are available — with the system
-	// params read once at startup. is_runtime=FALSE: the LimiterStores are fixed
-	// at construction time; a process restart is required for new param values.
-	ipGlobalStore := middleware.NewLimiterStore(
+	// params read once at startup. is_runtime=FALSE: the stores are fixed at
+	// construction time; a process restart is required for new param values.
+	// Redis is used when available so limits are enforced cluster-wide across
+	// replicas; falls back to in-process on Redis unavailability (fail-open).
+	ipGlobalStore := s.buildIPRateStore(meter,
 		float64(paramSvc.GetInt(ctx, domain.ParamKeyIPRateLimitGlobalRPS, domain.DefaultIPRateLimitGlobalRPS)),
 		paramSvc.GetInt(ctx, domain.ParamKeyIPRateLimitGlobalBurst, domain.DefaultIPRateLimitGlobalBurst),
 	)
-	ipWebhookStore := middleware.NewLimiterStore(
+	ipWebhookStore := s.buildIPRateStore(meter,
 		float64(paramSvc.GetInt(ctx, domain.ParamKeyIPRateLimitWebhookRPS, domain.DefaultIPRateLimitWebhookRPS)),
 		paramSvc.GetInt(ctx, domain.ParamKeyIPRateLimitWebhookBurst, domain.DefaultIPRateLimitWebhookBurst),
 	)
 	ipLimiter := middleware.NewIPRateLimiter(ipGlobalStore, ipWebhookStore, meter, s.log)
+	// L1 is registered on the root router so it covers every route: /health,
+	// /webhooks/*, static assets, and all /api/v1/* endpoints.  TrustedClientIP
+	// must run first (registered above) to normalise r.RemoteAddr before this
+	// middleware reads it.  chi requires all r.Use() calls before any route
+	// registrations on the same mux; health/static routes are registered below.
+	r.Use(ipLimiter.Global())
+
+	// Infrastructure endpoints — registered after r.Use(ipLimiter.Global()) so
+	// they are covered by L1.  In degraded mode (s.db==nil, handled above)
+	// these routes are registered by registerPublicRoutes without the IP limiter.
+	s.registerPublicRoutes(r)
 
 	// Webhook endpoints — authenticated via provider-specific signatures, not Clerk JWT.
 	// Grouped under /webhooks so the L2 IP rate limiter can be applied once to the
@@ -221,7 +219,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	//
 	//  Applied (root-router middleware, wired in the header block above):
 	//    SecurityHeaders, RequestID (chi), TrustedClientIP, StoreClientIP,
-	//    Recover, RequestLogger, CORS, IPRateLimiter.Global (via r.With below)
+	//    Recover, RequestLogger, CORS, IPRateLimiter.Global
 	//
 	//  NOT applied (all live inside the /api/v1 subrouter registered below):
 	//    RequireAuth, RateLimitByUserID, ResolveUser, RequestBodyLimit,
@@ -233,13 +231,13 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	//  HMAC-SHA256 token (WCQ_EMAIL_UNSUBSCRIBESECRET); the handler calls
 	//  unsubscribe.VerifyToken before taking any action.
 	//
-	//  IP rate limiting is applied explicitly via r.With to protect the HMAC
-	//  verification path against automated token-enumeration attempts.
+	//  L1 IP rate limiting is applied via the global r.Use(ipLimiter.Global())
+	//  registered above; no per-route r.With() is needed here.
 	//  RequestBodyLimit is unnecessary (GET with no body).
 	//
 	//  If middleware is added to the root router in the future, audit this route
 	//  to confirm the new middleware is compatible with unauthenticated access.
-	r.With(ipLimiter.Global()).Get("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
+	r.Get("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
 
 	// Idempotency store for payment write endpoints.
 	// SetIdempotencyStore (called from cmd/api/main.go before Routes()) wires the
@@ -269,7 +267,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	userRateStore := s.buildUserRateStore(meter, ratePerSec, rateBurst)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(VersionHeader("v1"))
-		r.Use(ipLimiter.Global()) // L1: per-IP limit before auth, blocks unauthenticated scans
+		// L1 (ipLimiter.Global) is applied at the root router — not here.
 		r.Use(middleware.RequireAuth(clerkProvider, s.log))
 		r.Use(middleware.RateLimitByUserID(userRateStore, s.log))
 
@@ -573,6 +571,30 @@ func (s *Server) buildUserRateStore(meter metric.Meter, ratePerSec float64, rate
 	return middleware.NewLimiterStore(ratePerSec, rateBurst)
 }
 
+// buildIPRateStore returns the effective per-IP rate-limit store for L1 (global)
+// and L2 (webhook) limiters. Selection priority:
+//
+//  1. Redis-backed RedisRateStore — preferred; enforces limits across all replicas
+//     and fails open when Redis is unavailable (wcq_rate_limit_fail_open_total).
+//  2. In-process LimiterStore — fallback when Redis is not configured; limits are
+//     per-replica only and a warning is emitted to prompt the operator.
+//
+// Unlike buildUserRateStore there is no test-injected override: tests construct
+// IPRateLimiter directly with stub IPAllower implementations.
+func (s *Server) buildIPRateStore(meter metric.Meter, ratePerSec float64, burst int) middleware.IPAllower {
+	if s.redisClient != nil {
+		rds := middleware.NewRedisRateStore(s.redisClient, ratePerSec, burst, s.log)
+		if err := rds.RegisterMetrics(meter); err != nil {
+			s.log.Warn("RedisRateStore.RegisterMetrics failed (IP limiter fail-open metric unavailable)", zap.Error(err))
+		}
+		return rds
+	}
+	s.log.Warn("ip rate limiter: Redis not configured — using in-process store (limits not shared across replicas)",
+		zap.String("remedy", "set WCQ_REDIS_ADDR to enforce IP limits cluster-wide"),
+	)
+	return middleware.NewLimiterStore(ratePerSec, burst)
+}
+
 // registerLocalSubscribers wires domain event handlers onto the in-process bus.
 // It is only called when EventBus.Driver != "redis"; with the Redis driver, the
 // worker process owns all event consumption exclusively and the API server only
@@ -597,4 +619,24 @@ func (s *Server) registerLocalSubscribers(ctx context.Context, scorer service.Ma
 		}
 		return nil
 	})
+}
+
+// registerPublicRoutes registers health, swagger, and static-asset routes on r.
+// It is called twice: once in degraded mode (s.db==nil, no IP rate limiter) and
+// once in normal mode after r.Use(ipLimiter.Global()) so all routes are covered.
+// Keeping this in a helper avoids duplicating the route list in both branches.
+func (s *Server) registerPublicRoutes(r chi.Router) {
+	r.Get("/health", s.handleHealth)
+	r.Get("/health/ready", s.handleReadiness)
+	r.Get("/swagger/*", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+		httpSwagger.DeepLinking(true),
+	))
+	// Service Worker and push assets must be served at the root scope so the
+	// SW controls all pages. The embedded FS is compiled into the binary.
+	staticSub, _ := fs.Sub(staticFiles, "static")
+	staticServer := http.FileServer(http.FS(staticSub))
+	r.Get("/sw.js", staticServer.ServeHTTP)
+	r.Get("/push.js", staticServer.ServeHTTP)
+	r.Get("/icons/*", staticServer.ServeHTTP)
 }
