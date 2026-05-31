@@ -87,6 +87,37 @@ func (r *PostgresWithdrawalRequestRepository) scanOne(row pgx.Row) (*domain.With
 	return w, nil
 }
 
+// scanWithdrawalMutationTx executes a mutation query inside tx, scans the
+// RETURNING row into a WithdrawalRequest, and decodes payout_details. It is
+// the shared scan path for RejectAndRelease and MarkProcessedAndCommit.
+//
+// Returns (nil, nil) when the query matches no rows (ErrNoRows), signalling
+// that the caller should fall through to notFoundOrConflict after the
+// transaction closes.
+func (r *PostgresWithdrawalRequestRepository) scanWithdrawalMutationTx(
+	ctx context.Context, tx pgx.Tx, query string, args ...any,
+) (*domain.WithdrawalRequest, error) {
+	var payoutRaw []byte
+	w := &domain.WithdrawalRequest{}
+	scanErr := tx.QueryRow(ctx, query, args...).Scan(
+		&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
+		&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
+		&w.CreatedAt, &w.UpdatedAt, &w.GTQReservedCents,
+	)
+	if scanErr == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if scanErr != nil {
+		return nil, apperrors.Internal(scanErr)
+	}
+	details, err := r.unmarshalPayout(payoutRaw)
+	if err != nil {
+		return nil, err
+	}
+	w.PayoutDetails = details
+	return w, nil
+}
+
 // CreateAndReserve atomically inserts the request and reserves the balance.
 func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Context, req *domain.WithdrawalRequest) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
@@ -98,27 +129,19 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 	}
 
 	return withTx(ctx, r.db, "WithdrawalRequestRepository.CreateAndReserve", func(tx pgx.Tx) error {
-		var payoutRaw []byte
-		w := &domain.WithdrawalRequest{}
-		scanErr := tx.QueryRow(ctx, `
+		w, err := r.scanWithdrawalMutationTx(ctx, tx, `
 			INSERT INTO withdrawal_requests
 			      (user_id, amount_cents, currency, method, payout_details, gtq_reserved_cents)
 			VALUES ($1,     $2,          $3,       $4,     $5,             $6)
 			RETURNING `+withdrawalColumns,
 			req.UserID, req.AmountCents, req.Currency, req.Method, payoutJSON, req.GTQReservedCents,
-		).Scan(
-			&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
-			&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
-			&w.CreatedAt, &w.UpdatedAt, &w.GTQReservedCents,
 		)
-		if scanErr != nil {
-			return apperrors.Internal(scanErr)
-		}
-		details, err := r.unmarshalPayout(payoutRaw)
 		if err != nil {
 			return err
 		}
-		w.PayoutDetails = details
+		if w == nil {
+			return apperrors.Internal(fmt.Errorf("insert withdrawal_requests returned no rows"))
+		}
 
 		// Reserve GTQ centavos (not the user-facing currency amount).
 		// For GTQ withdrawals this equals AmountCents; for USD withdrawals it is
@@ -222,9 +245,7 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 	defer cancel()
 	var result *domain.WithdrawalRequest
 	err := withTx(ctx, r.db, "WithdrawalRequestRepository.RejectAndRelease", func(tx pgx.Tx) error {
-		var payoutRaw []byte
-		w := &domain.WithdrawalRequest{}
-		scanErr := tx.QueryRow(ctx, `
+		w, err := r.scanWithdrawalMutationTx(ctx, tx, `
 			UPDATE withdrawal_requests
 			   SET status      = 'rejected',
 			       reviewed_by = $2,
@@ -233,22 +254,13 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 			 WHERE id = $1 AND status = 'pending'
 			 RETURNING `+withdrawalColumns,
 			id, reviewerID, notes,
-		).Scan(
-			&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
-			&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
-			&w.CreatedAt, &w.UpdatedAt, &w.GTQReservedCents,
 		)
-		if scanErr == pgx.ErrNoRows {
-			return nil // handled outside tx
-		}
-		if scanErr != nil {
-			return apperrors.Internal(scanErr)
-		}
-		details, err := r.unmarshalPayout(payoutRaw)
 		if err != nil {
 			return err
 		}
-		w.PayoutDetails = details
+		if w == nil {
+			return nil // handled outside tx
+		}
 
 		var balanceAfter int
 		releaseErr := tx.QueryRow(ctx, `
@@ -288,9 +300,7 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 	defer cancel()
 	var result *domain.WithdrawalRequest
 	err := withTx(ctx, r.db, "WithdrawalRequestRepository.MarkProcessedAndCommit", func(tx pgx.Tx) error {
-		var payoutRaw []byte
-		w := &domain.WithdrawalRequest{}
-		scanErr := tx.QueryRow(ctx, `
+		w, err := r.scanWithdrawalMutationTx(ctx, tx, `
 			UPDATE withdrawal_requests
 			   SET status       = 'processed',
 			       processed_at = NOW(),
@@ -298,22 +308,13 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 			 WHERE id = $1 AND status = 'approved'
 			 RETURNING `+withdrawalColumns,
 			id,
-		).Scan(
-			&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
-			&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
-			&w.CreatedAt, &w.UpdatedAt, &w.GTQReservedCents,
 		)
-		if scanErr == pgx.ErrNoRows {
-			return nil // handled outside tx
-		}
-		if scanErr != nil {
-			return apperrors.Internal(scanErr)
-		}
-		details, err := r.unmarshalPayout(payoutRaw)
 		if err != nil {
 			return err
 		}
-		w.PayoutDetails = details
+		if w == nil {
+			return nil // handled outside tx
+		}
 
 		var balanceAfter int
 		commitErr := tx.QueryRow(ctx, `
