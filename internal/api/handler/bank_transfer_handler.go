@@ -339,6 +339,102 @@ func (h *BankTransferHandler) AdminReject(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, bankTransferToResponse(proof))
 }
 
+// DownloadProof handles GET /api/v1/bank-transfers/{id}/download.
+//
+// @Summary      Download bank transfer proof file
+// @Description  Streams the uploaded proof image or PDF. Only the owner can download their own file.
+// @Tags         balance
+// @Produce      application/octet-stream
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Proof ID"
+// @Success      200
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Router       /api/v1/bank-transfers/{id}/download [get]
+func (h *BankTransferHandler) DownloadProof(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil || id <= 0 {
+		writeError(w, r, h.log, apperrors.Validation("invalid bank transfer id"))
+		return
+	}
+	proof, err := h.svc.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if proof == nil || proof.UserID != caller.ID {
+		// Return 404 even when the proof exists but belongs to another user;
+		// 403 would confirm the ID exists and enable enumeration.
+		writeError(w, r, h.log, apperrors.NotFound("bank transfer proof not found"))
+		return
+	}
+	h.serveProofFile(w, r, proof)
+}
+
+// AdminDownloadProof handles GET /api/v1/admin/bank-transfers/{id}/download.
+//
+// @Summary      Download any bank transfer proof file (admin)
+// @Description  Streams the uploaded proof image or PDF for admin review. No ownership restriction. Requires admin role.
+// @Tags         admin-payments
+// @Produce      application/octet-stream
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Proof ID"
+// @Success      200
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/bank-transfers/{id}/download [get]
+func (h *BankTransferHandler) AdminDownloadProof(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil || id <= 0 {
+		writeError(w, r, h.log, apperrors.Validation("invalid bank transfer id"))
+		return
+	}
+	proof, err := h.svc.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if proof == nil {
+		writeError(w, r, h.log, apperrors.NotFound("bank transfer proof not found"))
+		return
+	}
+	h.serveProofFile(w, r, proof)
+}
+
+// serveProofFile streams the proof file from the FileStore to w.
+// Content-Type is taken from the FileStore response when available; falls back
+// to the value stored in the metadata row.  Content-Disposition is "inline" so
+// browsers can render images and PDFs without forcing a download.
+func (h *BankTransferHandler) serveProofFile(w http.ResponseWriter, r *http.Request, proof *domain.BankTransferProof) {
+	rc, ct, err := h.fileStore.Get(r.Context(), proof.StorageKey)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, r, h.log, apperrors.NotFound("proof file not found in storage"))
+			return
+		}
+		writeError(w, r, h.log, apperrors.Internal(err))
+		return
+	}
+	defer func() { _ = rc.Close() }()
+
+	if ct == "" {
+		ct = proof.ContentType
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Disposition", "inline")
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, rc); err != nil {
+		h.log.Warn("bank transfer download: stream copy interrupted", zap.Error(err))
+	}
+}
+
 func allowedProofContentType(ct string) bool {
 	switch ct {
 	case "image/jpeg", "image/png", "image/webp", "application/pdf":

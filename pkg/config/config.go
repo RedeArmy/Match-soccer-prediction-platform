@@ -217,6 +217,13 @@ type ServerConfig struct {
 	// inside outgoing emails.  No trailing slash.
 	// Set via WCQ_SERVER_APPBASEURL.
 	AppBaseURL string `mapstructure:"appBaseURL"`
+	// MetricsPort is the TCP port on which the API server exposes the
+	// Prometheus /metrics scrape endpoint without authentication.  This port
+	// must only be reachable from within the private network (e.g. a Fly.io
+	// internal network) so that no public traffic can reach it.
+	// Defaults to "9091". Set via WCQ_SERVER_METRICSPORT.
+	// An empty string disables the dedicated metrics server.
+	MetricsPort string `mapstructure:"metricsPort"`
 }
 
 // DatabaseConfig carries the connection string and pool settings for the
@@ -345,6 +352,12 @@ type PaymentConfig struct {
 	// It is embedded in the signed message during RSA certificate verification.
 	// Set via WCQ_PAYMENT_PAYPALWEBHOOKID.
 	PayPalWebhookID string `mapstructure:"paypalWebhookID"`
+	// PayoutEncryptionKey is a 64-character lowercase hex string encoding a
+	// 32-byte AES-256 key used to encrypt payout_details at rest.
+	// Generate with: openssl rand -hex 32
+	// Required outside development (WCQ_PAYMENT_PAYOUTENCRYPTIONKEY).
+	// When absent in development the repository falls back to plaintext storage.
+	PayoutEncryptionKey string `mapstructure:"payoutEncryptionKey"`
 }
 
 // TracingConfig controls distributed tracing via OpenTelemetry.

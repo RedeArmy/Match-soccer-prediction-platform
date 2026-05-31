@@ -1,0 +1,48 @@
+# gitleaks configuration for world-cup-quiniela.
+#
+# gitleaks scans commits and the working tree for secrets — API keys, passwords,
+# private keys, and other sensitive values that must never reach version control.
+#
+# Run manually:   gitleaks detect --source . --config .gitleaks.toml
+# Install hook:   gitleaks protect --source . --hook pre-commit --config .gitleaks.toml
+#
+# The default ruleset is inherited from gitleaks' built-in rules.
+# The allowlist below suppresses known-safe false positives specific to this repo.
+
+title = "world-cup-quiniela gitleaks configuration"
+
+[allowlist]
+description = "Repo-wide allowlist — suppress confirmed non-secret patterns"
+
+# ── File-level exceptions ────────────────────────────────────────────────────
+
+files = [
+  # .env.example contains placeholder tokens such as WCQ_KEY=<your-key-here>
+  # and is explicitly committed as the configuration reference.
+  '''^\.env\.example$''',
+
+  # Go test files use synthetic, hard-coded keys that are never real secrets.
+  # Example: the 64-char hex test key in pkg/payoutenc/enc_test.go and the
+  # production fixture keys in pkg/config/config_test.go.
+  '''_test\.go$''',
+]
+
+paths = [
+  # Build artefacts and tool caches are never in the commit history.
+  '''^vendor/''',
+  '''^\.bench/''',
+  '''^\.gomodcache/''',
+  '''^\.gocache/''',
+]
+
+# ── Regex-level exceptions ────────────────────────────────────────────────────
+
+regexes = [
+  # Placeholder tokens used in documentation and examples.
+  # Matches patterns like: KEY=<your-value>, KEY=<base64>, KEY=<hex-string>
+  '''=\s*<[^>]+>''',
+
+  # go.sum hashes are 256-bit digests, not secrets; suppress to avoid noise
+  # when gitleaks matches the hex pattern.
+  '''h1:[A-Za-z0-9/+=]{44,}''',
+]

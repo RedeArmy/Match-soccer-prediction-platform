@@ -18,14 +18,18 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
+  # API metrics server — dedicated unauthenticated port (WCQ_SERVER_METRICSPORT,
+  # default 9091).  This port must be bound to the internal network only.
   - job_name: quiniela-api
     static_configs:
-      - targets: ["host.docker.internal:8080"]
+      - targets: ["host.docker.internal:9091"]
     metrics_path: /metrics
     scheme: http
 
+  # Worker health server — exposes /metrics alongside /health and /health/ready
+  # on WCQ_WORKER_HEALTHPORT (default 8081).  No authentication required.
   - job_name: quiniela-worker
     static_configs:
-      - targets: ["host.docker.internal:9091"]
+      - targets: ["host.docker.internal:8081"]
     metrics_path: /metrics
     scheme: http

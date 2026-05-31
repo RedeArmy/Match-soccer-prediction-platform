@@ -217,12 +217,29 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	}
 	s.breakerRegistry.Register(paypalCertBreaker)
 
-	// INTENTIONAL AUTH BYPASS: This endpoint authenticates via a time-limited
-	// HMAC-signed token embedded in the unsubscribe URL (signed with
-	// WCQ_EMAIL_UNSUBSCRIBESECRET). Do NOT move it inside the /api/v1 subrouter
-	// below — it must remain on the root router so it is reached before
-	// RequireAuth. Token validation happens inside the Unsubscribe handler.
-	r.Get("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
+	// INTENTIONAL AUTH BYPASS — middleware map for this route:
+	//
+	//  Applied (root-router middleware, wired in the header block above):
+	//    SecurityHeaders, RequestID (chi), TrustedClientIP, StoreClientIP,
+	//    Recover, RequestLogger, CORS, IPRateLimiter.Global (via r.With below)
+	//
+	//  NOT applied (all live inside the /api/v1 subrouter registered below):
+	//    RequireAuth, RateLimitByUserID, ResolveUser, RequestBodyLimit,
+	//    Idempotency, VersionHeader
+	//
+	//  Rationale: the unsubscribe URL is embedded in outgoing emails.  Requiring a
+	//  Clerk JWT in the link would force the user to be logged in — impractical for
+	//  CAN-SPAM one-click unsubscribe.  Authentication is replaced by a time-limited
+	//  HMAC-SHA256 token (WCQ_EMAIL_UNSUBSCRIBESECRET); the handler calls
+	//  unsubscribe.VerifyToken before taking any action.
+	//
+	//  IP rate limiting is applied explicitly via r.With to protect the HMAC
+	//  verification path against automated token-enumeration attempts.
+	//  RequestBodyLimit is unnecessary (GET with no body).
+	//
+	//  If middleware is added to the root router in the future, audit this route
+	//  to confirm the new middleware is compatible with unauthenticated access.
+	r.With(ipLimiter.Global()).Get("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
 
 	// Idempotency store for payment write endpoints.
 	// SetIdempotencyStore (called from cmd/api/main.go before Routes()) wires the
@@ -246,16 +263,6 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// Rate limit params are read once at startup (is_runtime=FALSE); a process
 	// restart is required to change the rate or burst.
 	clerkProvider := auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, authWarmup, s.log)
-
-	// /metrics is admin-only: Prometheus scrape targets must present a valid
-	// Clerk JWT with RoleAdmin. Registered here (after repos and clerkProvider
-	// are available) rather than in the early infrastructure block above.
-	if s.metricsHandler != nil {
-		r.With(
-			middleware.RequireAuth(clerkProvider, s.log),
-			middleware.RequireRole(repos.user, s.log, domain.RoleAdmin),
-		).Handle("/metrics", s.metricsHandler)
-	}
 
 	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))
 	rateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst)
@@ -366,6 +373,8 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 			// an outer smaller limit silently blocks the inner larger one.
 			r.With(middleware.RequestBodyLimit(uploadSizeLimit), idem).Post("/", h.bankTransfer.Upload)
 			r.With(middleware.RequestBodyLimit(bodySizeLimit)).Get("/", h.bankTransfer.ListMine)
+			// Download proxies the file through the server; no body size limit needed.
+			r.Get("/{id}/download", h.bankTransfer.DownloadProof)
 		})
 
 		r.Route("/withdrawals", func(r chi.Router) {
@@ -435,6 +444,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 
 			// Bank transfers
 			r.Get("/bank-transfers/pending", h.bankTransfer.AdminListPending)
+			r.Get("/bank-transfers/{id}/download", h.bankTransfer.AdminDownloadProof)
 			r.Post("/bank-transfers/{id}/approve", h.bankTransfer.AdminApprove)
 			r.Post("/bank-transfers/{id}/reject", h.bankTransfer.AdminReject)
 

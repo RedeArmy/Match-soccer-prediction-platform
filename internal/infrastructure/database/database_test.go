@@ -16,6 +16,44 @@ import (
 	"github.com/rede/world-cup-quiniela/migrations"
 )
 
+// ── EffectiveTLSMode ─────────────────────────────────────────────────────────
+
+func TestEffectiveTLSMode_Disable(t *testing.T) {
+	got := database.EffectiveTLSMode("postgres://user:pass@host/db?sslmode=disable")
+	if got != "disable" {
+		t.Errorf("got %q, want %q", got, "disable")
+	}
+}
+
+func TestEffectiveTLSMode_Require(t *testing.T) {
+	got := database.EffectiveTLSMode("postgres://user:pass@host/db?sslmode=require")
+	if !strings.Contains(got, "require") {
+		t.Errorf("got %q, want something containing 'require'", got)
+	}
+}
+
+func TestEffectiveTLSMode_VerifyFull(t *testing.T) {
+	got := database.EffectiveTLSMode("postgres://user:pass@host/db?sslmode=verify-full")
+	if !strings.Contains(got, "verify-full") {
+		t.Errorf("got %q, want something containing 'verify-full'", got)
+	}
+}
+
+func TestEffectiveTLSMode_Prefer(t *testing.T) {
+	// sslmode=prefer (the pgxpool default when sslmode is absent): should be non-empty.
+	got := database.EffectiveTLSMode("postgres://user:pass@host/db")
+	if got == "" || got == "unknown (DSN parse error)" {
+		t.Errorf("unexpected result for default sslmode: %q", got)
+	}
+}
+
+func TestEffectiveTLSMode_InvalidDSN(t *testing.T) {
+	got := database.EffectiveTLSMode("not-a-valid-dsn://??")
+	if got == "" {
+		t.Error("expected non-empty result for invalid DSN")
+	}
+}
+
 const (
 	fmtUnexpectedErr = "unexpected error: %v"
 	fmtExpectedErr   = "expected an error, got nil"

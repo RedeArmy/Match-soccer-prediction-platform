@@ -25,6 +25,33 @@ import (
 // require a few seconds for PostgreSQL to finish its own startup sequence.
 // The total maximum wait is 1 + 2 + 4 + 8 = 15 seconds before the fourth
 // attempt, after which the fifth attempt either succeeds or returns an error.
+// EffectiveTLSMode returns a short human-readable description of the TLS mode
+// that pgxpool will use when connecting to the DSN.  It is derived from the
+// parsed TLS configuration rather than the raw DSN string so that both URL
+// format (postgres://...?sslmode=require) and keyword=value format
+// (sslmode=require host=...) are handled correctly.
+//
+// Intended for startup logging only — not for policy enforcement.
+// Policy enforcement (rejecting sslmode=disable in production) is done in
+// pkg/config.validateProductionDatabaseTLS.
+func EffectiveTLSMode(dsn string) string {
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return "unknown (DSN parse error)"
+	}
+	tls := cfg.ConnConfig.TLSConfig
+	if tls == nil {
+		return "disable"
+	}
+	if tls.InsecureSkipVerify {
+		return "require (encrypted, certificate not verified)"
+	}
+	if tls.ServerName != "" {
+		return "verify-full (encrypted, certificate + hostname verified)"
+	}
+	return "verify-ca (encrypted, CA verified)"
+}
+
 var poolConnectBackoff = []time.Duration{
 	1 * time.Second,
 	2 * time.Second,

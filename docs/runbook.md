@@ -96,6 +96,41 @@ This is a catch-all for errors not covered by more specific alerts.
 
 ---
 
+## WCQAMLThresholdHit
+
+**What it means:** One or more transactions in the last 5 minutes met or exceeded the
+`kyc.aml_threshold_cents` system parameter (default Q25,000). The transaction was **not
+blocked** — it committed normally. A corresponding `kyc.aml_flagged` entry was written to
+`audit_log`. This alert fires immediately so the compliance team can review and file a UAF
+report if required by the applicable Guatemalan AML regulations.
+
+**First actions:**
+1. Identify the transactions requiring review:
+   ```sql
+   SELECT al.id, al.actor_id, al.resource_type, al.resource_id,
+          al.data->>'amount_cents' AS amount_cents,
+          al.data->>'currency' AS currency,
+          al.data->>'operation' AS operation,
+          al.created_at
+   FROM audit_log al
+   WHERE al.action = 'kyc.aml_flagged'
+     AND al.created_at >= NOW() - INTERVAL '1 hour'
+   ORDER BY al.created_at DESC;
+   ```
+2. For each flagged transaction, obtain the user profile from `kyc_profiles` and check
+   their KYC tier and verification history.
+3. Determine whether a UAF report is required under Article 23 of the Guatemalan
+   Ley Contra el Lavado de Dinero u Otros Activos.
+4. If a report is required, complete the UAF electronic form within the mandatory window.
+5. Log the review decision (report filed / not applicable) in the incident log.
+
+**Tuning the threshold:** If the alert fires too frequently (legitimate users regularly
+exceed Q25,000), raise `kyc.aml_threshold_cents` via the admin system params API. The
+default Q25,000 matches the UAF mandatory reporting threshold; do not lower it below this
+value.
+
+---
+
 ## WCQKYCAuditEventDropped
 
 **What it means:** A KYC operation (submission, approval, freeze) committed without its
@@ -213,3 +248,71 @@ missing their credits. This requires manual reconciliation.
 
 **Do not re-trigger `POST /admin/groups/{id}/distribute-prizes`** — if
 `prizes_distributed_at` was stamped, a second call returns 409. Manual credit is required.
+
+---
+
+## WCQLedgerRowCountWarning
+
+**What it means:** The `balance_ledger` table has grown beyond 2M rows (warning) or 10M
+rows (critical). Partitioning is recommended at ~50M rows per ADR-0008. No immediate
+operational action is required, but the zero-downtime migration must be planned.
+
+**First actions:**
+1. Confirm the row count: `SELECT COUNT(*) FROM balance_ledger;` (exact) or
+   `SELECT reltuples::bigint FROM pg_class WHERE relname = 'balance_ledger';` (fast estimate).
+2. Review the partitioning plan in [`docs/adr/0008-balance-ledger-partitioning.md`](adr/0008-balance-ledger-partitioning.md).
+3. Read the DB pool sizing guidance and scaling triggers in [`docs/capacity.md`](capacity.md)
+   before scheduling the migration — the partitioning window also affects pool configuration.
+4. Schedule the migration during a low-traffic window (after the FIFA 2026 tournament,
+   if applicable). The migration is zero-downtime but requires ~1h for large tables.
+
+**Resolution verification:** Alert clears automatically once the row count drops below
+the threshold (e.g., after a successful migration and old-table cleanup).
+
+---
+
+## WCQRateLimitDegradedPerReplica
+
+> **Note:** This alert is merged with `WCQRateLimitDegraded` in alerting_rules.yml.
+> This section documents the per-replica fallback behaviour for reference.
+
+**Per-replica RPS ceiling when Redis is unavailable:**
+
+When Redis is unreachable, the per-user token bucket falls back to an in-process
+`LimiterStore`. Rate limits apply per replica — a user can send N requests to each
+Fly.io machine independently.
+
+| Config | Default | Per-replica ceiling (1 replica) | Effective ceiling (2 replicas) |
+|--------|---------|----------------------------------|--------------------------------|
+| `api.rate_limit_rps` | 10 req/s | 10 req/s | 20 req/s |
+| `api.rate_limit_burst` | 20 req | 20 req burst | 40 req burst |
+
+Under normal conditions with Redis available, the Redis-backed store enforces limits
+cluster-wide. The degraded state is visible via `wcq_rate_limit_fail_open_total`.
+
+---
+
+## Capacity Planning
+
+Full capacity model, measured baselines, and scaling triggers are documented in
+[`docs/capacity.md`](capacity.md). Quick reference for on-call decisions:
+
+| Trigger | Action | Detail in capacity.md |
+|---|---|---|
+| p99 latency > 1 s sustained | Raise `WCQ_DATABASE_MAXOPENCONNS`; consider read replica | DB Pool Capacity section |
+| `WCQLedgerRowCountWarning` fires | Plan partitioning migration | Scaling Recommendations table |
+| Multiple Fly.io machines deployed | Verify Redis rate-limiting is active | Runtime Configuration table |
+| Persistent DB pool wait > 50 ms | Scale connections or add caching | Theoretical DB Pool Capacity |
+
+**Connection pool sizing** (from `docs/capacity.md`):
+
+With `MaxOpenConns = 25` and Fly.io `hard_limit = 250`:
+- A 10:1 request-to-connection ratio is expected under normal load.
+- Simple reads hold a connection for ~3 ms → pool capacity ~8,000 ops/s.
+- Transactional writes hold ~10 ms → pool capacity ~2,500 ops/s.
+- Prize distribution holds 50–200 ms but is admin-triggered and infrequent.
+
+**Connection pool E2E test**: `TestConcurrentReadinessProbes` in
+`internal/api/e2e_concurrency_test.go` fires 50 concurrent `/health/ready` requests
+against a 5-connection pool (10× oversubscription, mirroring production's 25/250 ratio).
+Run with `make test-integration`.

@@ -12,7 +12,7 @@ WORKER_BIN  := $(BINARY_DIR)/worker
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
-.PHONY: build run run-worker test test-integration test-cover test-migrate-roundtrip lint vuln clean docker-up docker-down docker-logs migrate migrate-fresh migrate-fresh-seed schema-dump dev hooks swagger-gen swagger-clean validate-params bench bench-save bench-compare help
+.PHONY: build run run-worker test test-integration test-cover check-coverage check-coverage-service test-migrate-roundtrip lint vuln clean docker-up docker-down docker-logs migrate migrate-fresh migrate-fresh-seed schema-dump dev hooks check-env swagger-gen swagger-clean validate-params bench bench-save bench-compare load-test help
 
 ## build: Compile all binaries into ./bin
 build:
@@ -77,6 +77,47 @@ test-cover:
 		-coverpkg=./... \
 		./...
 
+## check-coverage: Fail if total test coverage is below MIN_COVERAGE (default: 70%).
+##                 Reads coverage.out produced by `make test-cover`.
+##                 Acts as a local fallback for the SonarCloud quality gate so a
+##                 coverage drop is caught even when sonarcloud.io is unavailable.
+##                 Override: make check-coverage MIN_COVERAGE=80
+MIN_COVERAGE ?= 70
+check-coverage:
+	@[ -f coverage.out ] || { \
+		echo "coverage.out not found — run 'make test-cover' first"; exit 1; \
+	}
+	@COVERAGE=$$(go tool cover -func coverage.out \
+		| grep '^total:' \
+		| awk '{print $$NF}' \
+		| tr -d '%'); \
+	echo "Coverage: $${COVERAGE}%  (minimum: $(MIN_COVERAGE)%)"; \
+	awk -v got="$${COVERAGE}" -v min="$(MIN_COVERAGE)" \
+		'BEGIN { if (got+0 < min+0) { \
+			print "FAIL: " got "% is below minimum " min "%"; exit 1 \
+		} else { print "PASS" } }'
+
+## check-coverage-service: Fail if internal/service/ unit-test coverage is below MIN_SVC_COVERAGE (default: 80%).
+##                          Runs tests directly — does NOT require a pre-existing coverage.out.
+##                          internal/repository/ is excluded: its tests are integration-only (testcontainers)
+##                          and measured by the test-integration job, not unit-test jobs.
+##                          Override: make check-coverage-service MIN_SVC_COVERAGE=85
+MIN_SVC_COVERAGE ?= 80
+check-coverage-service:
+	@go test -count=1 -short \
+		-coverprofile=/tmp/cov_service.out \
+		-covermode=atomic \
+		./internal/service/... 2>/dev/null | tail -1
+	@COVERAGE=$$(go tool cover -func=/tmp/cov_service.out \
+		| grep '^total:' \
+		| awk '{print $$NF}' \
+		| tr -d '%'); \
+	echo "internal/service coverage: $${COVERAGE}%  (minimum: $(MIN_SVC_COVERAGE)%)"; \
+	awk -v got="$${COVERAGE}" -v min="$(MIN_SVC_COVERAGE)" \
+		'BEGIN { if (got+0 < min+0) { \
+			print "FAIL: " got "% is below minimum " min "%"; exit 1 \
+		} else { print "PASS" } }'
+
 ## lint: Run golangci-lint across the entire module
 ##       Install golangci-lint: https://golangci-lint.run/usage/install/
 lint:
@@ -112,12 +153,32 @@ dev: docker-up hooks
 	@docker compose exec postgres sh -c 'until pg_isready -U $${POSTGRES_USER:-quiniela} -d $${POSTGRES_DB:-quiniela}; do sleep 1; done'
 	$(MAKE) migrate
 
-## hooks: Install project Git hooks (run once after cloning)
-##        Points Git at .githooks/ so the pre-commit hook regenerates Swagger
-##        docs automatically whenever handler annotations change.
+## hooks: Install project Git hooks (run once after cloning).
+##        The pre-commit hook regenerates Swagger docs and (when gitleaks is
+##        installed) scans staged files for secrets before every commit.
+##        Install gitleaks: go install github.com/zricethezav/gitleaks/v8/cmd/gitleaks@latest
 hooks:
 	git config core.hooksPath .githooks
 	@echo "Git hooks installed from .githooks/"
+
+## check-env: Verify that .env is not tracked by Git and print a credential reminder.
+##            Safe to run at any time — advisory only, exits 0.
+check-env:
+	@if git ls-files --error-unmatch .env >/dev/null 2>&1; then \
+		echo "ERROR: .env is tracked by Git."; \
+		echo "       Untrack it immediately: git rm --cached .env && git commit -m 'chore: untrack .env'"; \
+		exit 1; \
+	fi
+	@echo "OK  .env is not tracked by Git"
+	@if [ ! -f .env ]; then \
+		echo "INFO .env not found — copy from template: cp .env.example .env"; \
+	else \
+		echo "OK  .env exists locally"; \
+		echo ""; \
+		echo "REMINDER: .env is for local development only."; \
+		echo "          Never copy production secrets (Clerk, PayPal, Resend, payout key) into .env."; \
+		echo "          Use 'fly secrets set ...' to inject secrets in production."; \
+	fi
 
 ## migrate: Apply pending database schema migrations
 migrate:
@@ -214,6 +275,30 @@ bench-compare:
 		./internal/api/... \
 	> .bench/current.txt
 	go run golang.org/x/perf/cmd/benchstat .bench/baseline.txt .bench/current.txt
+
+## load-test: Fire an HTTP load test against a running server (manual use only — not in CI).
+##            Requires hey: go install github.com/rakyll/hey@latest
+##            Requires the server to be running: make run (in another terminal)
+##
+##            Defaults exercise /health/ready at fly.toml soft_limit concurrency (200 req, 200 conc).
+##            Override any variable:
+##              make load-test LOAD_TEST_N=1000 LOAD_TEST_C=50 LOAD_TEST_PATH=/api/v1/matches
+##
+##            Authenticated endpoints: set LOAD_TEST_AUTH to a valid Bearer token.
+##              make load-test LOAD_TEST_PATH=/api/v1/predictions/me LOAD_TEST_AUTH="Bearer <token>"
+LOAD_TEST_ADDR ?= http://localhost:8080
+LOAD_TEST_PATH ?= /health/ready
+LOAD_TEST_N    ?= 200
+LOAD_TEST_C    ?= 200
+LOAD_TEST_AUTH ?=
+load-test:
+	@command -v hey >/dev/null 2>&1 || { echo "hey not found. Install: go install github.com/rakyll/hey@latest"; exit 1; }
+	@echo "→ Load test: $(LOAD_TEST_ADDR)$(LOAD_TEST_PATH) — $(LOAD_TEST_N) requests, $(LOAD_TEST_C) concurrent"
+	@if [ -n "$(LOAD_TEST_AUTH)" ]; then \
+		hey -n $(LOAD_TEST_N) -c $(LOAD_TEST_C) -H "Authorization: $(LOAD_TEST_AUTH)" "$(LOAD_TEST_ADDR)$(LOAD_TEST_PATH)"; \
+	else \
+		hey -n $(LOAD_TEST_N) -c $(LOAD_TEST_C) "$(LOAD_TEST_ADDR)$(LOAD_TEST_PATH)"; \
+	fi
 
 ## help: Display this help message
 help:

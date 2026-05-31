@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
@@ -23,12 +25,14 @@ type LedgerEntryResponse struct {
 }
 
 // BankTransferResponse is returned by bank transfer proof endpoints.
+// storage_key is intentionally absent: it is an internal FileStore path that
+// must never be handed to API consumers.  Use GET /bank-transfers/{id}/download
+// to retrieve the file content through the application layer.
 type BankTransferResponse struct {
 	ID          int64   `json:"id"`
 	UserID      int     `json:"user_id"`
 	AmountCents int     `json:"amount_cents"`
 	Currency    string  `json:"currency"`
-	StorageKey  string  `json:"storage_key"`
 	ContentType string  `json:"content_type"`
 	FileSize    int     `json:"file_size"`
 	Status      string  `json:"status"`
@@ -81,7 +85,6 @@ func bankTransferToResponse(p *domain.BankTransferProof) BankTransferResponse {
 		UserID:      p.UserID,
 		AmountCents: p.AmountCents,
 		Currency:    p.Currency,
-		StorageKey:  p.StorageKey,
 		ContentType: p.ContentType,
 		FileSize:    p.FileSize,
 		Status:      string(p.Status),
@@ -94,6 +97,61 @@ func bankTransferToResponse(p *domain.BankTransferProof) BankTransferResponse {
 		s := p.ApprovedAt.Format(timeFormat)
 		r.ApprovedAt = &s
 	}
+	return r
+}
+
+// maskTailChars redacts all but the last n characters of s with asterisks.
+// Returns all asterisks when s is shorter than or equal to n chars.
+func maskTailChars(s string, n int) string {
+	if len(s) <= n {
+		return strings.Repeat("*", len(s))
+	}
+	return strings.Repeat("*", len(s)-n) + s[len(s)-n:]
+}
+
+// maskEmailAddress returns the first character plus "***@" plus the domain,
+// e.g. "user@example.com" → "u***@example.com".  Returns "***" for
+// addresses that cannot be split at "@".
+func maskEmailAddress(s string) string {
+	at := strings.IndexByte(s, '@')
+	if at <= 0 {
+		return "***"
+	}
+	return string(s[0]) + "***" + s[at:]
+}
+
+// maskPayoutDetails returns a copy of details with sensitive routing fields
+// redacted.  bank_name is left unmasked: it is non-sensitive routing metadata
+// that admins require to identify the destination bank when processing a
+// transfer.  Only the fields that could uniquely identify a user's financial
+// account are masked.
+func maskPayoutDetails(details map[string]string) map[string]string {
+	if len(details) == 0 {
+		return details
+	}
+	masked := make(map[string]string, len(details))
+	for k, v := range details {
+		switch k {
+		case "account_number":
+			masked[k] = maskTailChars(v, 4) // show last 4 digits only
+		case "paypal_email":
+			masked[k] = maskEmailAddress(v)
+		default:
+			masked[k] = v
+		}
+	}
+	return masked
+}
+
+// withdrawalToResponseMasked builds a WithdrawalResponse with sensitive
+// payout_details fields redacted.  Use this for admin list endpoints where a
+// single response would otherwise expose the raw financial details of every
+// user in the result set.  Single-item admin responses (approve / reject /
+// process) use the unmasked withdrawalToResponse so the processing admin can
+// read the full destination account.
+func withdrawalToResponseMasked(w *domain.WithdrawalRequest) WithdrawalResponse {
+	r := withdrawalToResponse(w)
+	r.PayoutDetails = maskPayoutDetails(w.PayoutDetails)
 	return r
 }
 

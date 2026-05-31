@@ -432,7 +432,7 @@ func AllParamKeys() []string {
 		ParamKeyNotifySSEChanBufSize,
 		ParamKeyNotifySSEMaxConnsPerUser,
 		ParamKeyNotifyOutboxStaleLockThresholdSec,
-		// KYC / AML (migrations 000121, 000124, 000125, 000129)
+		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		ParamKeyKYCTier1DepositLimitCents,
 		ParamKeyKYCTier2DepositLimitCents,
 		ParamKeyKYCTier2PayoutLimitCents,
@@ -446,5 +446,6 @@ func AllParamKeys() []string {
 		ParamKeyKYCRiskDashboardCacheTTLSec,
 		ParamKeyKYCIPVelocityWindowMinutes,
 		ParamKeyKYCIPVelocityMaxSubmissions,
+		ParamKeyKYCDocRetentionYears,
 	}
 }

@@ -806,6 +806,11 @@ type BalanceLedgerRepository interface {
 	// entries for userID with the given kinds since the given time. Used by
 	// KYCGate to detect cumulative AML reporting thresholds.
 	SumTransactionsByUserAndPeriod(ctx context.Context, userID int, kinds []domain.BalanceLedgerKind, since time.Time) (int64, error)
+	// CountRows returns the estimated number of rows in balance_ledger using
+	// pg_class.reltuples.  The estimate is typically accurate to within ±5%
+	// after ANALYZE; it is orders of magnitude faster than COUNT(*).
+	// Intended for monitoring gauges — do not use where exact counts matter.
+	CountRows(ctx context.Context) (int64, error)
 }
 
 // BankTransferProofRepository manages bank transfer proof records and their
@@ -982,6 +987,16 @@ type KYCDocumentRepository interface {
 	// MarkVerified sets verified=true, verified_at=now(), and verified_by=adminID
 	// for the given document. Returns apperrors.NotFound when the document does not exist.
 	MarkVerified(ctx context.Context, docID int64, adminID int) error
+	// ListExpiredDocuments returns up to limit document metadata rows eligible for
+	// deletion: those belonging to user profiles whose accounts were deleted before
+	// cutoff.  Results are ordered by uploaded_at ASC so older documents are
+	// processed first.  The caller uses the returned StorageKey values to delete
+	// the physical files before calling DeleteByID.
+	ListExpiredDocuments(ctx context.Context, cutoff time.Time, limit int) ([]*domain.KYCDocument, error)
+	// DeleteByID permanently removes a document metadata row.  The caller must
+	// delete the physical file from the FileStore before or after this call — the
+	// two operations are not atomic.
+	DeleteByID(ctx context.Context, id int64) error
 }
 
 // KYCEventRepository provides append-only access to the kyc_events audit table.

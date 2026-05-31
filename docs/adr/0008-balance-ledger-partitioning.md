@@ -1,6 +1,6 @@
 # ADR 0008 – balance_ledger partitioning plan
 
-**Status:** Proposed  
+**Status:** Active (monitoring live; migration deferred until ~50M rows)  
 **Date:** 2026-05-26  
 **Deciders:** Engineering team
 

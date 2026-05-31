@@ -50,6 +50,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/election"
 	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	infrapush "github.com/rede/world-cup-quiniela/internal/infrastructure/webpush"
 	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/internal/notification/dispatcher"
@@ -424,6 +425,15 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		log.Warn("outbox.RegisterOldestPendingAgeGauge failed", zap.Error(err))
 	}
 
+	// ATD-002: balance_ledger growth monitoring.  The gauge uses pg_class.reltuples
+	// (fast, ±5% accurate) so it adds negligible DB load on every Prometheus scrape.
+	// WCQLedgerRowCountWarning fires at 2M rows; the partitioning plan in
+	// docs/adr/0008-balance-ledger-partitioning.md triggers at ~50M rows.
+	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(db)
+	if err := repository.RegisterLedgerRowCountGauge(meter, ledgerRepo); err != nil {
+		log.Warn("repository.RegisterLedgerRowCountGauge failed", zap.Error(err))
+	}
+
 	dlqReplayWorker := outbox.NewDLQWorker(dlqRepo, outboxWriter, log,
 		outbox.WithDLQBatchSize(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayBatchSize, domain.DefaultNotifyDLQReplayBatchSize)),
 		outbox.WithDLQPollInterval(time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayPollIntervalSec, domain.DefaultNotifyDLQReplayPollIntervalSec))*time.Second),
@@ -464,6 +474,34 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	notifScheduler.RegisterInterval("push.subscription_prune",
 		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPushPruneIntervalSec, domain.DefaultWorkerSchedPushPruneIntervalSec))*time.Second,
 		makePushPruneJob(params, pushRepo, log))
+
+	// KYC document lifecycle — purge document metadata and physical files for
+	// accounts deleted beyond the configured retention window.  Runs weekly at
+	// 03:00 on Sunday (low-traffic window).  Physical deletion from the FileStore
+	// is attempted for each document before removing the DB metadata row so that
+	// the metadata row is never orphaned without its backing file.
+	kycDocRepo := repository.NewPostgresKYCDocumentRepository(db)
+	kycFileStore, kycStoreErr := storage.New(ctx, storage.Config{
+		Driver:                cfg.Storage.Driver,
+		LocalDir:              cfg.Storage.LocalDir,
+		S3Bucket:              cfg.Storage.S3Bucket,
+		S3Endpoint:            cfg.Storage.S3Endpoint,
+		S3Region:              cfg.Storage.S3Region,
+		S3AccessKeyID:         cfg.Storage.S3AccessKeyID,
+		S3SecretKey:           cfg.Storage.S3SecretKey,
+		OneDriveTenantID:      cfg.Storage.OneDriveTenantID,
+		OneDriveClientID:      cfg.Storage.OneDriveClientID,
+		OneDriveClientSecret:  cfg.Storage.OneDriveClientSecret,
+		OneDriveDriveID:       cfg.Storage.OneDriveDriveID,
+		GDriveCredentialsJSON: cfg.Storage.GDriveCredentialsJSON,
+		GDriveFolderID:        cfg.Storage.GDriveFolderID,
+	})
+	if kycStoreErr != nil {
+		log.Warn("kyc.document_purge: FileStore unavailable — physical file deletion disabled until next restart",
+			zap.Error(kycStoreErr))
+	}
+	notifScheduler.RegisterWeekly("kyc.document_purge", time.Sunday, 3, 0,
+		makeKYCDocumentPurgeJob(params, kycDocRepo, kycFileStore, log))
 
 	// snapshotLockTTL covers the worst-case snapshot retry window with generous
 	// headroom. The lock is also released explicitly by Unlock in the happy path;
@@ -595,6 +633,87 @@ func makePushPruneJob(params service.SystemParamService, pushRepo repository.Pus
 		if n > 0 {
 			log.Info("push subscription prune: deleted stale inactive subscriptions", zap.Int64("count", n))
 		}
+		return nil
+	}
+}
+
+// makeKYCDocumentPurgeJob returns the weekly scheduler job that deletes KYC
+// identity documents (DPI scans, selfies) for user accounts soft-deleted
+// beyond the configured retention window.
+//
+// Deletion order per document:
+//  1. fileStore.Delete(storageKey)   — removes the physical file from S3/OneDrive/GDrive.
+//  2. docRepo.DeleteByID(id)         — removes the metadata row from the database.
+//
+// This ordering guarantees that the metadata row always outlives its backing
+// file.  If the FileStore call fails, the metadata row is preserved so the
+// next weekly run can retry — the file is never permanently orphaned.  If the
+// FileStore call succeeds but the DB delete fails, the row is left with a
+// dangling storage key; the next run calls fileStore.Delete again, which
+// succeeds silently because the file is already gone, then retries the DB
+// delete.
+//
+// When fileStore is nil (storage driver failed to initialise at startup), the
+// job skips physical deletion for every document, logs a warning per document,
+// and still removes the metadata row so the DB does not accumulate stale rows
+// indefinitely.  Operators should investigate the FileStore error and restart
+// the worker to restore full purge behaviour.
+func makeKYCDocumentPurgeJob(
+	params service.SystemParamService,
+	docRepo repository.KYCDocumentRepository,
+	fileStore storage.FileStore,
+	log *zap.Logger,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		retentionYears := params.GetInt(ctx, domain.ParamKeyKYCDocRetentionYears, domain.DefaultKYCDocRetentionYears)
+		cutoff := time.Now().AddDate(-retentionYears, 0, 0)
+
+		const batchSize = 100
+		docs, err := docRepo.ListExpiredDocuments(ctx, cutoff, batchSize)
+		if err != nil {
+			log.Warn("kyc.document_purge: list failed", zap.Error(err))
+			return err
+		}
+		if len(docs) == 0 {
+			return nil
+		}
+
+		var deleted, fileStoreFailed, dbFailed int
+		for _, doc := range docs {
+			if fileStore != nil {
+				if err := fileStore.Delete(ctx, doc.StorageKey); err != nil {
+					log.Warn("kyc.document_purge: FileStore delete failed — skipping metadata delete, will retry next run",
+						zap.Int64("doc_id", doc.ID),
+						zap.String("storage_key", doc.StorageKey),
+						zap.Error(err),
+					)
+					fileStoreFailed++
+					continue
+				}
+			} else {
+				log.Warn("kyc.document_purge: FileStore unavailable — metadata row will be removed without physical file deletion",
+					zap.Int64("doc_id", doc.ID),
+					zap.String("storage_key", doc.StorageKey),
+				)
+			}
+
+			if err := docRepo.DeleteByID(ctx, doc.ID); err != nil {
+				log.Warn("kyc.document_purge: metadata delete failed",
+					zap.Int64("doc_id", doc.ID),
+					zap.Error(err),
+				)
+				dbFailed++
+			} else {
+				deleted++
+			}
+		}
+
+		log.Info("kyc.document_purge: completed",
+			zap.Int("deleted", deleted),
+			zap.Int("file_store_failed", fileStoreFailed),
+			zap.Int("db_failed", dbFailed),
+			zap.Int("retention_years", retentionYears),
+		)
 		return nil
 	}
 }

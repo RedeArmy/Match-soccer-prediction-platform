@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -10,17 +9,29 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
+	"github.com/rede/world-cup-quiniela/pkg/payoutenc"
 )
 
 // PostgresWithdrawalRequestRepository is the PostgreSQL-backed implementation
 // of WithdrawalRequestRepository.
 type PostgresWithdrawalRequestRepository struct {
-	db *pgxpool.Pool
+	db  *pgxpool.Pool
+	enc payoutenc.Encrypter // defaults to payoutenc.Noop when not set
 }
 
-// NewPostgresWithdrawalRequestRepository constructs a PostgresWithdrawalRequestRepository.
+// NewPostgresWithdrawalRequestRepository constructs a repository that stores
+// payout_details as plaintext JSON.  Call WithEncrypter to enable at-rest
+// encryption before serving real traffic.
 func NewPostgresWithdrawalRequestRepository(db *pgxpool.Pool) *PostgresWithdrawalRequestRepository {
-	return &PostgresWithdrawalRequestRepository{db: db}
+	return &PostgresWithdrawalRequestRepository{db: db, enc: payoutenc.Noop}
+}
+
+// WithEncrypter wires an Encrypter for payout_details.  Call this at
+// composition time (before any requests are served) so the field is visible
+// to all subsequent reads and writes without races.
+func (r *PostgresWithdrawalRequestRepository) WithEncrypter(enc payoutenc.Encrypter) *PostgresWithdrawalRequestRepository {
+	r.enc = enc
+	return r
 }
 
 const (
@@ -28,10 +39,28 @@ const (
 	msgWithdrawalNotFound = "withdrawal request not found"
 )
 
-// scanWithdrawalFields populates a WithdrawalRequest from any rowScanner,
-// including the JSON unmarshal of payout_details. Returns a raw scan/decode
-// error; callers interpret sentinel values such as pgx.ErrNoRows.
-func scanWithdrawalFields(s rowScanner) (*domain.WithdrawalRequest, error) {
+// marshalPayout encrypts and JSON-encodes payout details for storage.
+func (r *PostgresWithdrawalRequestRepository) marshalPayout(details map[string]string) ([]byte, error) {
+	data, err := payoutenc.Marshal(r.enc, details)
+	if err != nil {
+		return nil, apperrors.Internal(fmt.Errorf("encode payout_details: %w", err))
+	}
+	return data, nil
+}
+
+// unmarshalPayout decrypts (when needed) and decodes a raw payout_details blob
+// from the database.  Legacy plaintext rows are read transparently during the
+// migration window.
+func (r *PostgresWithdrawalRequestRepository) unmarshalPayout(data []byte) (map[string]string, error) {
+	m, err := payoutenc.Unmarshal(r.enc, data)
+	if err != nil {
+		return nil, apperrors.Internal(fmt.Errorf("decode payout_details: %w", err))
+	}
+	return m, nil
+}
+
+// scanFields populates a WithdrawalRequest from any rowScanner.
+func (r *PostgresWithdrawalRequestRepository) scanFields(s rowScanner) (*domain.WithdrawalRequest, error) {
 	w := &domain.WithdrawalRequest{}
 	var payoutJSON []byte
 	if err := s.Scan(
@@ -41,19 +70,17 @@ func scanWithdrawalFields(s rowScanner) (*domain.WithdrawalRequest, error) {
 	); err != nil {
 		return nil, err
 	}
-	if len(payoutJSON) > 0 {
-		if err := json.Unmarshal(payoutJSON, &w.PayoutDetails); err != nil {
-			return nil, err
-		}
+	details, err := r.unmarshalPayout(payoutJSON)
+	if err != nil {
+		return nil, err
 	}
+	w.PayoutDetails = details
 	return w, nil
 }
 
-// scanWithdrawal wraps scanWithdrawalFields for single-row queries.
-// pgx.ErrNoRows is translated to (nil, nil) so callers can distinguish
-// "not found" from a real database error.
-func scanWithdrawal(row pgx.Row) (*domain.WithdrawalRequest, error) {
-	w, err := scanWithdrawalFields(row)
+// scanOne wraps scanFields for single-row queries; pgx.ErrNoRows → (nil, nil).
+func (r *PostgresWithdrawalRequestRepository) scanOne(row pgx.Row) (*domain.WithdrawalRequest, error) {
+	w, err := r.scanFields(row)
 	if err != nil {
 		return nil, singleScanErr(err)
 	}
@@ -64,34 +91,35 @@ func scanWithdrawal(row pgx.Row) (*domain.WithdrawalRequest, error) {
 func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Context, req *domain.WithdrawalRequest) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
-	payoutJSON, err := json.Marshal(req.PayoutDetails)
+
+	payoutJSON, err := r.marshalPayout(req.PayoutDetails)
 	if err != nil {
-		return apperrors.Internal(fmt.Errorf("marshal payout_details: %w", err))
+		return err
 	}
+
 	return withTx(ctx, r.db, "WithdrawalRequestRepository.CreateAndReserve", func(tx pgx.Tx) error {
-		// Insert the request first.
-		row := tx.QueryRow(ctx, `
+		var payoutRaw []byte
+		w := &domain.WithdrawalRequest{}
+		scanErr := tx.QueryRow(ctx, `
 			INSERT INTO withdrawal_requests
 			      (user_id, amount_cents, currency, method, payout_details)
 			VALUES ($1,     $2,          $3,       $4,     $5)
 			RETURNING `+withdrawalColumns,
 			req.UserID, req.AmountCents, req.Currency, req.Method, payoutJSON,
-		)
-		w := &domain.WithdrawalRequest{}
-		var pd []byte
-		scanErr := row.Scan(
+		).Scan(
 			&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
-			&pd, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
+			&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
 			&w.CreatedAt, &w.UpdatedAt,
 		)
 		if scanErr != nil {
 			return apperrors.Internal(scanErr)
 		}
-		if len(pd) > 0 {
-			_ = json.Unmarshal(pd, &w.PayoutDetails)
+		details, err := r.unmarshalPayout(payoutRaw)
+		if err != nil {
+			return err
 		}
+		w.PayoutDetails = details
 
-		// Reserve the balance (available must cover the amount).
 		var balanceAfter int
 		reserveErr := tx.QueryRow(ctx, `
 			UPDATE users
@@ -109,7 +137,11 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 			return apperrors.Internal(reserveErr)
 		}
 
-		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: -w.AmountCents, Kind: domain.LedgerKindWithdrawalReserve, BalanceAfter: balanceAfter, RefID: int64(w.ID), RefType: "withdrawal_request"}); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{
+			UserID: w.UserID, DeltaCents: -w.AmountCents,
+			Kind: domain.LedgerKindWithdrawalReserve, BalanceAfter: balanceAfter,
+			RefID: int64(w.ID), RefType: "withdrawal_request",
+		}); err != nil {
 			return err
 		}
 
@@ -122,7 +154,7 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 func (r *PostgresWithdrawalRequestRepository) GetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
 	defer cancel()
-	return scanWithdrawal(r.db.QueryRow(ctx,
+	return r.scanOne(r.db.QueryRow(ctx,
 		`SELECT `+withdrawalColumns+` FROM withdrawal_requests WHERE id = $1`, id,
 	))
 }
@@ -138,8 +170,8 @@ func (r *PostgresWithdrawalRequestRepository) ListByUser(ctx context.Context, us
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	return collectRows(rows, func(r pgx.Rows) (*domain.WithdrawalRequest, error) {
-		return scanWithdrawalFields(r)
+	return collectRows(rows, func(row pgx.Rows) (*domain.WithdrawalRequest, error) {
+		return r.scanFields(row)
 	})
 }
 
@@ -153,8 +185,8 @@ func (r *PostgresWithdrawalRequestRepository) ListPending(ctx context.Context) (
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
-	return collectRows(rows, func(r pgx.Rows) (*domain.WithdrawalRequest, error) {
-		return scanWithdrawalFields(r)
+	return collectRows(rows, func(row pgx.Rows) (*domain.WithdrawalRequest, error) {
+		return r.scanFields(row)
 	})
 }
 
@@ -162,7 +194,7 @@ func (r *PostgresWithdrawalRequestRepository) ListPending(ctx context.Context) (
 func (r *PostgresWithdrawalRequestRepository) Approve(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
-	row := r.db.QueryRow(ctx, `
+	result, err := r.scanOne(r.db.QueryRow(ctx, `
 		UPDATE withdrawal_requests
 		   SET status      = 'approved',
 		       reviewed_by = $2,
@@ -171,8 +203,7 @@ func (r *PostgresWithdrawalRequestRepository) Approve(ctx context.Context, id, r
 		 WHERE id = $1 AND status = 'pending'
 		 RETURNING `+withdrawalColumns,
 		id, reviewerID, notes,
-	)
-	result, err := scanWithdrawal(row)
+	))
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +219,9 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 	defer cancel()
 	var result *domain.WithdrawalRequest
 	err := withTx(ctx, r.db, "WithdrawalRequestRepository.RejectAndRelease", func(tx pgx.Tx) error {
-		row := tx.QueryRow(ctx, `
+		var payoutRaw []byte
+		w := &domain.WithdrawalRequest{}
+		scanErr := tx.QueryRow(ctx, `
 			UPDATE withdrawal_requests
 			   SET status      = 'rejected',
 			       reviewed_by = $2,
@@ -197,12 +230,9 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 			 WHERE id = $1 AND status = 'pending'
 			 RETURNING `+withdrawalColumns,
 			id, reviewerID, notes,
-		)
-		w := &domain.WithdrawalRequest{}
-		var pd []byte
-		scanErr := row.Scan(
+		).Scan(
 			&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
-			&pd, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
+			&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
 			&w.CreatedAt, &w.UpdatedAt,
 		)
 		if scanErr == pgx.ErrNoRows {
@@ -211,9 +241,11 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 		if scanErr != nil {
 			return apperrors.Internal(scanErr)
 		}
-		if len(pd) > 0 {
-			_ = json.Unmarshal(pd, &w.PayoutDetails)
+		details, err := r.unmarshalPayout(payoutRaw)
+		if err != nil {
+			return err
 		}
+		w.PayoutDetails = details
 
 		var balanceAfter int
 		releaseErr := tx.QueryRow(ctx, `
@@ -227,7 +259,11 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 			return apperrors.Internal(releaseErr)
 		}
 
-		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: w.AmountCents, Kind: domain.LedgerKindWithdrawalRelease, BalanceAfter: balanceAfter, RefID: int64(w.ID), RefType: "withdrawal_request", CreatorID: reviewerID}); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{
+			UserID: w.UserID, DeltaCents: w.AmountCents,
+			Kind: domain.LedgerKindWithdrawalRelease, BalanceAfter: balanceAfter,
+			RefID: int64(w.ID), RefType: "withdrawal_request", CreatorID: reviewerID,
+		}); err != nil {
 			return err
 		}
 
@@ -249,7 +285,9 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 	defer cancel()
 	var result *domain.WithdrawalRequest
 	err := withTx(ctx, r.db, "WithdrawalRequestRepository.MarkProcessedAndCommit", func(tx pgx.Tx) error {
-		row := tx.QueryRow(ctx, `
+		var payoutRaw []byte
+		w := &domain.WithdrawalRequest{}
+		scanErr := tx.QueryRow(ctx, `
 			UPDATE withdrawal_requests
 			   SET status       = 'processed',
 			       processed_at = NOW(),
@@ -257,12 +295,9 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 			 WHERE id = $1 AND status = 'approved'
 			 RETURNING `+withdrawalColumns,
 			id,
-		)
-		w := &domain.WithdrawalRequest{}
-		var pd []byte
-		scanErr := row.Scan(
+		).Scan(
 			&w.ID, &w.UserID, &w.AmountCents, &w.Currency, &w.Method,
-			&pd, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
+			&payoutRaw, &w.Status, &w.ReviewedBy, &w.Notes, &w.ProcessedAt,
 			&w.CreatedAt, &w.UpdatedAt,
 		)
 		if scanErr == pgx.ErrNoRows {
@@ -271,9 +306,11 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 		if scanErr != nil {
 			return apperrors.Internal(scanErr)
 		}
-		if len(pd) > 0 {
-			_ = json.Unmarshal(pd, &w.PayoutDetails)
+		details, err := r.unmarshalPayout(payoutRaw)
+		if err != nil {
+			return err
 		}
+		w.PayoutDetails = details
 
 		var balanceAfter int
 		commitErr := tx.QueryRow(ctx, `
@@ -291,7 +328,11 @@ func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context
 			return apperrors.Internal(commitErr)
 		}
 
-		if err := insertLedgerTx(ctx, tx, ledgerRow{UserID: w.UserID, DeltaCents: -w.AmountCents, Kind: domain.LedgerKindWithdrawalDeduct, BalanceAfter: balanceAfter, RefID: int64(w.ID), RefType: "withdrawal_request"}); err != nil {
+		if err := insertLedgerTx(ctx, tx, ledgerRow{
+			UserID: w.UserID, DeltaCents: -w.AmountCents,
+			Kind: domain.LedgerKindWithdrawalDeduct, BalanceAfter: balanceAfter,
+			RefID: int64(w.ID), RefType: "withdrawal_request",
+		}); err != nil {
 			return err
 		}
 

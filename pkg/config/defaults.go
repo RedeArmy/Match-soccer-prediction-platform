@@ -28,6 +28,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("environment", "production")
 
 	v.SetDefault("server.port", "8080")
+	// server.metricsPort hosts the Prometheus scrape endpoint without auth on
+	// an internal-only port.  9091 mirrors the worker health port convention
+	// while avoiding collision with the Prometheus server itself (9090).
+	v.SetDefault("server.metricsPort", "9091")
 	v.SetDefault("server.readTimeout", 10*time.Second)
 	v.SetDefault("server.writeTimeout", 30*time.Second)
 	v.SetDefault("server.idleTimeout", 60*time.Second)
@@ -72,6 +76,7 @@ func setDefaults(v *viper.Viper) {
 	// in non-development environments.
 	v.SetDefault("payment.recurrenteWebhookSecret", "")
 	v.SetDefault("payment.paypalWebhookID", "")
+	v.SetDefault("payment.payoutEncryptionKey", "")
 
 	// worker.healthPort defaults to 8081 so the worker's health endpoints do
 	// not collide with the API server (8080) when both run on the same host.
