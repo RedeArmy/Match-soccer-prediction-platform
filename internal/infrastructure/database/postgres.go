@@ -25,6 +25,7 @@ import (
 // require a few seconds for PostgreSQL to finish its own startup sequence.
 // The total maximum wait is 1 + 2 + 4 + 8 = 15 seconds before the fourth
 // attempt, after which the fifth attempt either succeeds or returns an error.
+
 // EffectiveTLSMode returns a short human-readable description of the TLS mode
 // that pgxpool will use when connecting to the DSN.  It is derived from the
 // parsed TLS configuration rather than the raw DSN string so that both URL

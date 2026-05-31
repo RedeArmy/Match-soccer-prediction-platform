@@ -194,8 +194,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		metricsMux := http.NewServeMux()
 		metricsMux.Handle("/metrics", metricsHandler)
 		metricsSrv := &http.Server{
-			Addr:    ":" + cfg.Server.MetricsPort,
-			Handler: metricsMux,
+			Addr:              ":" + cfg.Server.MetricsPort,
+			Handler:           metricsMux,
+			ReadHeaderTimeout: cfg.Server.ReadTimeout,
 		}
 		go func() {
 			log.Sugar().Infof("metrics server listening on :%s (internal — no auth)", cfg.Server.MetricsPort)
