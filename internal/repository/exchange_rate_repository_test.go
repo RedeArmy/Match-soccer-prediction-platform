@@ -37,6 +37,9 @@ func seedExchangeRate(t *testing.T, repo repository.ExchangeRateRepository, effe
 // ── Save ──────────────────────────────────────────────────────────────────────
 
 func TestExchangeRateRepository_Save_InsertsRow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping database integration test in short mode")
+	}
 	cleanTables(t)
 	repo := repository.NewPostgresExchangeRateRepository(testDB)
 
@@ -72,6 +75,9 @@ func TestExchangeRateRepository_Save_InsertsRow(t *testing.T) {
 }
 
 func TestExchangeRateRepository_Save_WithOverrideReason_PersistsMetadata(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping database integration test in short mode")
+	}
 	cleanTables(t)
 	u := seedUser(t)
 	repo := repository.NewPostgresExchangeRateRepository(testDB)
@@ -111,6 +117,9 @@ func TestExchangeRateRepository_Save_WithOverrideReason_PersistsMetadata(t *test
 // ── GetLatest ─────────────────────────────────────────────────────────────────
 
 func TestExchangeRateRepository_GetLatest_EmptyTable_ReturnsNil(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping database integration test in short mode")
+	}
 	cleanTables(t)
 	repo := repository.NewPostgresExchangeRateRepository(testDB)
 
@@ -124,6 +133,9 @@ func TestExchangeRateRepository_GetLatest_EmptyTable_ReturnsNil(t *testing.T) {
 }
 
 func TestExchangeRateRepository_GetLatest_ReturnsMostRecentByEffectiveAt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping database integration test in short mode")
+	}
 	cleanTables(t)
 	repo := repository.NewPostgresExchangeRateRepository(testDB)
 
@@ -147,6 +159,9 @@ func TestExchangeRateRepository_GetLatest_ReturnsMostRecentByEffectiveAt(t *test
 // ── GetHistory ────────────────────────────────────────────────────────────────
 
 func TestExchangeRateRepository_GetHistory_ReturnsRowsNewestFirst(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping database integration test in short mode")
+	}
 	cleanTables(t)
 	repo := repository.NewPostgresExchangeRateRepository(testDB)
 
@@ -169,6 +184,9 @@ func TestExchangeRateRepository_GetHistory_ReturnsRowsNewestFirst(t *testing.T) 
 }
 
 func TestExchangeRateRepository_GetHistory_PaginationLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping database integration test in short mode")
+	}
 	cleanTables(t)
 	repo := repository.NewPostgresExchangeRateRepository(testDB)
 
@@ -187,6 +205,9 @@ func TestExchangeRateRepository_GetHistory_PaginationLimit(t *testing.T) {
 }
 
 func TestExchangeRateRepository_GetHistory_EmptyTable_ReturnsNil(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping database integration test in short mode")
+	}
 	cleanTables(t)
 	repo := repository.NewPostgresExchangeRateRepository(testDB)
 
@@ -202,6 +223,9 @@ func TestExchangeRateRepository_GetHistory_EmptyTable_ReturnsNil(t *testing.T) {
 // ── GetOverrides ──────────────────────────────────────────────────────────────
 
 func TestExchangeRateRepository_GetOverrides_FiltersAutomatedRows(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping database integration test in short mode")
+	}
 	cleanTables(t)
 	u := seedUser(t)
 	repo := repository.NewPostgresExchangeRateRepository(testDB)
@@ -227,6 +251,9 @@ func TestExchangeRateRepository_GetOverrides_FiltersAutomatedRows(t *testing.T) 
 }
 
 func TestExchangeRateRepository_GetOverrides_EmptyTable_ReturnsNil(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping database integration test in short mode")
+	}
 	cleanTables(t)
 	repo := repository.NewPostgresExchangeRateRepository(testDB)
 
