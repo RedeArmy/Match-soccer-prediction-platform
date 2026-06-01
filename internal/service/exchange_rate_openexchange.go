@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -79,31 +77,12 @@ func (f *OpenExchangeFetcher) FetchCurrent(ctx context.Context) (*RawRate, error
 		return nil, fmt.Errorf("openexchangerates: app ID not configured")
 	}
 
-	url := fmt.Sprintf(f.urlTemplate, f.appID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("openexchangerates: build request: %w", err)
-	}
-
-	resp, err := f.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("openexchangerates: GET: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("openexchangerates: unexpected status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, openExchangeBodyLimit))
-	if err != nil {
-		return nil, fmt.Errorf("openexchangerates: read body: %w", err)
-	}
-
 	var payload openExchangeResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("openexchangerates: parse JSON: %w", err)
+	url := fmt.Sprintf(f.urlTemplate, f.appID)
+	if err := fetchJSON(ctx, f.client, openExchangeSourceName, url, openExchangeBodyLimit, &payload); err != nil {
+		return nil, err
 	}
+
 	if payload.Error {
 		return nil, fmt.Errorf("openexchangerates: provider error: %s", payload.Message)
 	}

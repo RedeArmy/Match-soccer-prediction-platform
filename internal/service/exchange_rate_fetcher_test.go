@@ -466,7 +466,7 @@ func TestMultiSourceFetcher_ShortCircuitsAfterFirstSuccess(t *testing.T) {
 
 func TestMultiSourceFetcher_PanicsOnEmptySourceList(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Error("expected panic for empty source list, got none")
 		}
 	}()

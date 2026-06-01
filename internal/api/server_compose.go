@@ -337,14 +337,27 @@ func (s *Server) buildHandlers(
 		h.withdrawal.SetNotifier(s.notifier)
 	}
 
-	// ── Exchange rate service ────────────────────────────────────────────────
+	h.adminExchangeRate, h.exchangeRate = s.buildFXModule(ctx, paramSvcWithAudit, auditSvc)
+
+	return h
+}
+
+// buildFXModule constructs the exchange-rate service, registers its OTel
+// instruments, pre-warms its cache, and returns the two route handlers.
+// Extracted from buildHandlers to keep that method within the cognitive-
+// complexity ceiling.
+func (s *Server) buildFXModule(
+	ctx context.Context,
+	params service.SystemParamService,
+	audit service.AuditLogger,
+) (*handler.AdminExchangeRateHandler, *handler.ExchangeRateHandler) {
 	fxRepo := repository.NewPostgresExchangeRateRepository(s.db)
 	fxFetcher := service.NewMultiSourceFetcher(s.log,
 		service.NewBanguatFetcher(),
 		service.NewExchangeRateAPIFetcher(s.cfg.ExchangeRate.ExchangeRateAPIKey),
 		service.NewOpenExchangeFetcher(s.cfg.ExchangeRate.OpenExchangeRatesAppID),
 	)
-	fxImpl := service.NewExchangeRateServiceImpl(fxFetcher, fxRepo, paramSvcWithAudit, s.notifier, s.log)
+	fxImpl := service.NewExchangeRateServiceImpl(fxFetcher, fxRepo, params, s.notifier, s.log)
 	fxSvc := service.ExchangeRateService(fxImpl)
 	if err := fxImpl.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
 		s.log.Warn("exchange_rate: RegisterMetrics failed", zap.Error(err))
@@ -354,10 +367,8 @@ func (s *Server) buildHandlers(
 	if err := fxSvc.WarmCache(ctx); err != nil {
 		s.log.Warn("exchange_rate: cache warm failed (non-fatal, will warm on first request)", zap.Error(err))
 	}
-	h.adminExchangeRate = handler.NewAdminExchangeRateHandler(fxSvc, fxRepo, auditSvc, s.log)
-	h.exchangeRate = handler.NewExchangeRateHandler(fxSvc, s.log)
-
-	return h
+	return handler.NewAdminExchangeRateHandler(fxSvc, fxRepo, audit, s.log),
+		handler.NewExchangeRateHandler(fxSvc, s.log)
 }
 
 // wireLeaderboardTTLHook registers a mutation hook so that when an admin

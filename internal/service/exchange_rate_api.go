@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -77,31 +75,12 @@ func (f *ExchangeRateAPIFetcher) FetchCurrent(ctx context.Context) (*RawRate, er
 		return nil, fmt.Errorf("exchangerate-api: API key not configured")
 	}
 
-	url := fmt.Sprintf(f.urlTemplate, f.apiKey)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("exchangerate-api: build request: %w", err)
-	}
-
-	resp, err := f.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("exchangerate-api: GET: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("exchangerate-api: unexpected status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, exchangeRateAPIBodyLimit))
-	if err != nil {
-		return nil, fmt.Errorf("exchangerate-api: read body: %w", err)
-	}
-
 	var payload exchangeRateAPIResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("exchangerate-api: parse JSON: %w", err)
+	url := fmt.Sprintf(f.urlTemplate, f.apiKey)
+	if err := fetchJSON(ctx, f.client, exchangeRateAPISourceName, url, exchangeRateAPIBodyLimit, &payload); err != nil {
+		return nil, err
 	}
+
 	if payload.Result != "success" {
 		return nil, fmt.Errorf("exchangerate-api: provider error %q", payload.ErrorType)
 	}

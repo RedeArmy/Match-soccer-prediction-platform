@@ -423,9 +423,9 @@ func (s *ExchangeRateServiceImpl) WarmCache(ctx context.Context) error {
 // computeRates applies buy/sell margins (in basis points) to produce ExchangeRates.
 // All arithmetic in decimal.Decimal — no float64 in the computation chain.
 func computeRates(reference decimal.Decimal, buyBPS, sellBPS int, source string, stale bool) *domain.ExchangeRates {
-	ten_k := decimal.NewFromInt(10_000)
-	buyMarginPct := decimal.NewFromInt(int64(buyBPS)).Div(ten_k)
-	sellMarginPct := decimal.NewFromInt(int64(sellBPS)).Div(ten_k)
+	tenK := decimal.NewFromInt(10_000)
+	buyMarginPct := decimal.NewFromInt(int64(buyBPS)).Div(tenK)
+	sellMarginPct := decimal.NewFromInt(int64(sellBPS)).Div(tenK)
 
 	one := decimal.NewFromInt(1)
 	buyRate := reference.Mul(one.Sub(buyMarginPct))
