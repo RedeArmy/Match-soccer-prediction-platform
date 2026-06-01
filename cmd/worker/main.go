@@ -488,6 +488,27 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	notifScheduler.RegisterWeekly("kyc.document_purge", time.Sunday, 3, 0,
 		makeKYCDocumentPurgeJob(params, kycDocRepo, kycFileStore, log))
 
+	// Automated exchange rate refresh — Banguat publishes at ~10:00 AM Guatemala
+	// time; 10:30 gives a 30-minute buffer for the feed to stabilise.
+	// Falls back to ExchangeRate-API and OpenExchangeRates when Banguat is down.
+	// On all-source failure: stale fallback + n8n /webhook/fx-rate-stale alert.
+	fxRepo := repository.NewPostgresExchangeRateRepository(db)
+	fxFetcher := service.NewMultiSourceFetcher(log,
+		service.NewBanguatFetcher(),
+		service.NewExchangeRateAPIFetcher(cfg.ExchangeRate.ExchangeRateAPIKey),
+		service.NewOpenExchangeFetcher(cfg.ExchangeRate.OpenExchangeRatesAppID),
+	)
+	fxNotifier := setupObservabilityNotifier(cfg, log)
+	fxImpl := service.NewExchangeRateServiceImpl(fxFetcher, fxRepo, params, fxNotifier, log)
+	if err := fxImpl.RegisterMetrics(meter); err != nil {
+		log.Warn("exchange_rate: RegisterMetrics failed", zap.Error(err))
+	}
+	notifScheduler.RegisterDaily("payment.exchange_rate_refresh", 10, 30,
+		func(ctx context.Context) error {
+			_, err := fxImpl.RefreshRate(ctx)
+			return err
+		})
+
 	// snapshotLockTTL covers the worst-case snapshot retry window with generous
 	// headroom. The lock is also released explicitly by Unlock in the happy path;
 	// the TTL only activates on process crash or context cancellation.

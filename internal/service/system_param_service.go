@@ -387,6 +387,11 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
 	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 10_080},           // 5 min – 1 week
 	domain.ParamKeyUSDGTQRate:                 {100, 10_000},         // Q1.00 – Q100.00 per USD
+	domain.ParamKeyExchangeRateMarginBPS:      {0, 500},              // 0 (no markup) – 500 bps (5 %)
+	domain.ParamKeyFXBuyMarginBPS:             {0, 500},              // 0 – 500 bps (5 %) buy-side margin
+	domain.ParamKeyFXSellMarginBPS:            {0, 500},              // 0 – 500 bps (5 %) sell-side margin
+	domain.ParamKeyFXDisplayDecimals:          {2, 8},                // 2 – 8 decimal places for display
+	domain.ParamKeyFXStaleThresholdH:          {1, 72},               // 1 h – 72 h stale threshold
 
 	// Idempotency middleware (is_runtime=FALSE; restart required)
 	domain.ParamKeyAPIIdempotencyTTLHours:  {1, 720},   // 1 h – 30 days

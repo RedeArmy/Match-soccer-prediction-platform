@@ -33,6 +33,26 @@ type Config struct {
 	N8n           N8nConfig           `mapstructure:"n8n"`
 	WebPush       WebPushConfig       `mapstructure:"webPush"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
+	ExchangeRate  ExchangeRateConfig  `mapstructure:"exchangeRate"`
+}
+
+// ExchangeRateConfig holds optional API keys for the fallback exchange rate
+// sources. Banguat (the primary source) requires no authentication.
+//
+// Both fields are optional: the fetcher falls through to the next source when
+// a key is absent, and ultimately falls back to the last known rate if all
+// external sources are unavailable.
+type ExchangeRateConfig struct {
+	// ExchangeRateAPIKey is the API key for v6.exchangerate-api.com.
+	// Used as the first fallback when Banguat is unavailable.
+	// Free tier: 1 500 requests/month — one daily fetch is well within quota.
+	// Set via WCQ_EXCHANGERATE_EXCHANGERATEAPIKEY.
+	ExchangeRateAPIKey string `mapstructure:"exchangeRateAPIKey"`
+	// OpenExchangeRatesAppID is the app_id for openexchangerates.org.
+	// Used as the second fallback when both Banguat and ExchangeRate-API fail.
+	// Free tier: 1 000 requests/month.
+	// Set via WCQ_EXCHANGERATE_OPENEXCHANGERATESAPPID.
+	OpenExchangeRatesAppID string `mapstructure:"openExchangeRatesAppID"`
 }
 
 // ObservabilityConfig holds the base URLs for the observability backends

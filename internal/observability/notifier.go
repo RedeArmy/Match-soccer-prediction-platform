@@ -35,6 +35,7 @@ const (
 	pathTransferUploaded = "/webhook/transfer-uploaded"
 	pathBalanceCredited  = "/webhook/balance-credited"
 	pathKYCWinnerFreeze  = "/webhook/kyc-winner-freeze"
+	pathFXRateStale      = "/webhook/fx-rate-stale"
 
 	defaultWebhookTimeout = 5 * time.Second
 )
@@ -275,6 +276,29 @@ func (n *Notifier) NotifyBalanceCredited(ctx context.Context, userID, amountCent
 		AmountCents: amountCents,
 		Source:      source,
 		TraceID:     extractTraceID(ctx),
+	})
+}
+
+// FXRateStalePayload is the body posted to /webhook/fx-rate-stale.
+type FXRateStalePayload struct {
+	LastRate  string  `json:"last_rate_gtq_per_usd"`
+	AgeHours  float64 `json:"age_hours"`
+	Source    string  `json:"source_attempted"`
+	Timestamp string  `json:"timestamp"`
+}
+
+// NotifyFXRateStale fires a non-blocking POST to /webhook/fx-rate-stale.
+// Called by ExchangeRateService when all external sources fail and the platform
+// falls back to the last known rate. lastRate is the sell rate string.
+func (n *Notifier) NotifyFXRateStale(ctx context.Context, lastRate string, ageHours float64, source string) {
+	if !n.Enabled() {
+		return
+	}
+	n.fire(ctx, pathFXRateStale, FXRateStalePayload{
+		LastRate:  lastRate,
+		AgeHours:  ageHours,
+		Source:    source,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})
 }
 

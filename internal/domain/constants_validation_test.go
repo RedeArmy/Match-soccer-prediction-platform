@@ -99,6 +99,11 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyBankTransferMaxAmountCents": ParamKeyBankTransferMaxAmountCents,
 		"ParamKeyPaymentIntentTTLMinutes":    ParamKeyPaymentIntentTTLMinutes,
 		"ParamKeyUSDGTQRate":                 ParamKeyUSDGTQRate,
+		"ParamKeyExchangeRateMarginBPS":      ParamKeyExchangeRateMarginBPS,
+		"ParamKeyFXBuyMarginBPS":             ParamKeyFXBuyMarginBPS,
+		"ParamKeyFXSellMarginBPS":            ParamKeyFXSellMarginBPS,
+		"ParamKeyFXDisplayDecimals":          ParamKeyFXDisplayDecimals,
+		"ParamKeyFXStaleThresholdH":          ParamKeyFXStaleThresholdH,
 		// Notification subsystem
 		"ParamKeyNotifyBankTransferStaleSec":            ParamKeyNotifyBankTransferStaleSec,
 		"ParamKeyNotifyWithdrawalStaleSec":              ParamKeyNotifyWithdrawalStaleSec,
@@ -313,6 +318,13 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultKYCDocRetentionYears": DefaultKYCDocRetentionYears,
 		// USD/GTQ exchange rate (migration 000147)
 		"DefaultUSDGTQRate": DefaultUSDGTQRate,
+		// Exchange rate safety margin (migration 000148)
+		"DefaultExchangeRateMarginBPS": DefaultExchangeRateMarginBPS,
+		// Competitive margin engine (migration 000150)
+		"DefaultFXBuyMarginBPS":    DefaultFXBuyMarginBPS,
+		"DefaultFXSellMarginBPS":   DefaultFXSellMarginBPS,
+		"DefaultFXDisplayDecimals": DefaultFXDisplayDecimals,
+		"DefaultFXStaleThresholdH": DefaultFXStaleThresholdH,
 		// String defaults — not in the int defaults map; documented separately.
 		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
 		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
@@ -320,7 +332,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 120 // update when adding a new ParamKey* constant
+		const expectedCount = 125 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -328,7 +340,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 109 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention)
+		const expectedCount = 114 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -452,6 +464,11 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyBankTransferMaxAmountCents", ParamKeyBankTransferMaxAmountCents, "payment"},
 		{"ParamKeyPaymentIntentTTLMinutes", ParamKeyPaymentIntentTTLMinutes, "payment"},
 		{"ParamKeyUSDGTQRate", ParamKeyUSDGTQRate, "payment"},
+		{"ParamKeyExchangeRateMarginBPS", ParamKeyExchangeRateMarginBPS, "payment"},
+		{"ParamKeyFXBuyMarginBPS", ParamKeyFXBuyMarginBPS, "fx"},
+		{"ParamKeyFXSellMarginBPS", ParamKeyFXSellMarginBPS, "fx"},
+		{"ParamKeyFXDisplayDecimals", ParamKeyFXDisplayDecimals, "fx"},
+		{"ParamKeyFXStaleThresholdH", ParamKeyFXStaleThresholdH, "fx"},
 		// Notification subsystem
 		{"ParamKeyNotifyBankTransferStaleSec", ParamKeyNotifyBankTransferStaleSec, "notify"},
 		{"ParamKeyNotifyWithdrawalStaleSec", ParamKeyNotifyWithdrawalStaleSec, "notify"},
@@ -677,6 +694,13 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultKYCDocRetentionYears": DefaultKYCDocRetentionYears,
 		// USD/GTQ exchange rate (migration 000147)
 		"DefaultUSDGTQRate": DefaultUSDGTQRate,
+		// Exchange rate safety margin (migration 000148)
+		"DefaultExchangeRateMarginBPS": DefaultExchangeRateMarginBPS,
+		// Competitive margin engine (migration 000150)
+		"DefaultFXBuyMarginBPS":    DefaultFXBuyMarginBPS,
+		"DefaultFXSellMarginBPS":   DefaultFXSellMarginBPS,
+		"DefaultFXDisplayDecimals": DefaultFXDisplayDecimals,
+		"DefaultFXStaleThresholdH": DefaultFXStaleThresholdH,
 	}
 
 	for name, value := range defaults {

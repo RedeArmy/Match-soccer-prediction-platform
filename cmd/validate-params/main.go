@@ -69,6 +69,8 @@ type paramSpec struct {
 //   - 000142_seed_ip_rate_limit_params          (+4)
 //   - 000144_seed_kyc_doc_retention_param       (+1)
 //   - 000147_seed_usd_gtq_rate_param            (+1)
+//   - 000148_seed_exchange_rate_margin_param    (+1)
+//   - 000150_seed_fx_system_params              (+4)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -183,6 +185,13 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyBankTransferMaxAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMaxAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyPaymentIntentTTLMinutes, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentTTLMinutes), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyUSDGTQRate, defaultValue: strconv.Itoa(domain.DefaultUSDGTQRate), paramType: "int", category: "payment", isRuntime: true},
+	{key: domain.ParamKeyExchangeRateMarginBPS, defaultValue: strconv.Itoa(domain.DefaultExchangeRateMarginBPS), paramType: "int", category: "payment", isRuntime: true},
+
+	// Competitive FX margin engine — runtime: re-read on every RefreshRate call.
+	{key: domain.ParamKeyFXBuyMarginBPS, defaultValue: strconv.Itoa(domain.DefaultFXBuyMarginBPS), paramType: "int", category: "fx", isRuntime: true},
+	{key: domain.ParamKeyFXSellMarginBPS, defaultValue: strconv.Itoa(domain.DefaultFXSellMarginBPS), paramType: "int", category: "fx", isRuntime: true},
+	{key: domain.ParamKeyFXDisplayDecimals, defaultValue: strconv.Itoa(domain.DefaultFXDisplayDecimals), paramType: "int", category: "fx", isRuntime: true},
+	{key: domain.ParamKeyFXStaleThresholdH, defaultValue: strconv.Itoa(domain.DefaultFXStaleThresholdH), paramType: "int", category: "fx", isRuntime: true},
 
 	// Notifications — runtime: thresholds and recipient list are tunable without restart.
 	{key: domain.ParamKeyNotifyBankTransferStaleSec, defaultValue: strconv.Itoa(domain.DefaultNotifyBankTransferStaleSec), paramType: "int", category: "notify", isRuntime: true},
