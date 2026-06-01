@@ -182,6 +182,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// these routes are registered by registerPublicRoutes without the IP limiter.
 	s.registerPublicRoutes(r)
 
+	// Public exchange rate display — no auth required, covered by L1 IP limiter.
+	// Registered outside /api/v1 (which enforces RequireAuth) so unauthenticated
+	// frontend clients can display current buy/sell rates.
+	r.Get("/api/exchange-rate", h.exchangeRate.GetCurrent)
+
 	// Webhook endpoints — authenticated via provider-specific signatures, not Clerk JWT.
 	// Grouped under /webhooks so the L2 IP rate limiter can be applied once to the
 	// entire group. This protects CPU-expensive RSA verification (PayPal) from
@@ -528,6 +533,12 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 				r.Get("/n8n/workflows", h.adminN8n.Workflows)
 				r.Get("/n8n/executions/recent", h.adminN8n.RecentExecutions)
 			})
+
+			// Exchange rate management
+			r.Get("/exchange-rate/current", h.adminExchangeRate.GetCurrent)
+			r.Get("/exchange-rate/history", h.adminExchangeRate.GetHistory)
+			r.Post("/exchange-rate/override", h.adminExchangeRate.Override)
+			r.Post("/exchange-rate/refresh", h.adminExchangeRate.Refresh)
 
 			// Notification content templates (DB-backed, operator-editable)
 			const tmplByKey = "/notification-templates/{event_type}/{locale}"

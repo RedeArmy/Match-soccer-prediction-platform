@@ -64,9 +64,45 @@ type Notification struct {
 }
 
 // connEntry holds the channel and backpressure state for a single SSE connection.
+//
+// mu serialises close(ch) against the non-blocking send in trySend.
+// Without this guard, Broadcast can attempt a send concurrently with cleanup
+// closing the channel — a data race detected by -race and a panic in production.
+// Lock order: h.mu (hub-level) must always be acquired before entry.mu.
 type connEntry struct {
-	ch    chan Notification
-	drops atomic.Int32 // consecutive failed non-blocking sends; resets on success
+	mu     sync.Mutex
+	closed bool
+	ch     chan Notification
+	drops  atomic.Int32 // consecutive failed non-blocking sends; resets on success
+}
+
+// trySend attempts a non-blocking send of n to the entry's channel.
+// Returns true on success, false when the buffer is full or the channel is
+// already closed.  The entry mutex ensures the close path cannot race the send.
+func (e *connEntry) trySend(n Notification) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.closed {
+		return false
+	}
+	select {
+	case e.ch <- n:
+		return true
+	default:
+		return false
+	}
+}
+
+// closeOnce closes the channel exactly once, guarded by the entry mutex.
+// Must be called while the hub write lock (h.mu) is already held, so that the
+// close is atomic with the map deletion that precedes it.
+func (e *connEntry) closeOnce() {
+	e.mu.Lock()
+	if !e.closed {
+		e.closed = true
+		close(e.ch)
+	}
+	e.mu.Unlock()
 }
 
 // connSnapshot is the data captured under the read lock for a single connection.
@@ -173,7 +209,7 @@ func (h *Hub) Connect(userID int) (<-chan Notification, func()) {
 				if len(conns) == 0 {
 					delete(h.clients, userID)
 				}
-				close(e.ch)
+				e.closeOnce()
 				h.metrics.connections.Add(-1)
 			}
 			// Entry absent: hub already evicted it (closed channel, decremented counter).
@@ -221,10 +257,9 @@ func (h *Hub) Broadcast(ctx context.Context, userID int, n Notification) {
 
 	var toEvict []string
 	for _, s := range snapshot {
-		select {
-		case s.entry.ch <- n:
+		if s.entry.trySend(n) {
 			s.entry.drops.Store(0) // reset consecutive-drop counter on success
-		default:
+		} else {
 			h.metrics.dropped.Add(1)
 			if s.entry.drops.Add(1) >= evictAfterDrops {
 				toEvict = append(toEvict, s.connID)
@@ -241,7 +276,7 @@ func (h *Hub) Broadcast(ctx context.Context, userID int, n Notification) {
 	for _, cid := range toEvict {
 		if e, ok := conns[cid]; ok {
 			delete(conns, cid)
-			close(e.ch)
+			e.closeOnce()
 			h.metrics.connections.Add(-1)
 			h.metrics.evicted.Add(1)
 		}

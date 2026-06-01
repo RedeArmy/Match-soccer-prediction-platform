@@ -81,6 +81,8 @@ type appHandlers struct {
 	kyc                *handler.KYCHandler
 	adminKYC           *handler.AdminKYCHandler
 	user               *handler.UserHandler
+	adminExchangeRate  *handler.AdminExchangeRateHandler
+	exchangeRate       *handler.ExchangeRateHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -335,7 +337,38 @@ func (s *Server) buildHandlers(
 		h.withdrawal.SetNotifier(s.notifier)
 	}
 
+	h.adminExchangeRate, h.exchangeRate = s.buildFXModule(ctx, paramSvcWithAudit, auditSvc)
+
 	return h
+}
+
+// buildFXModule constructs the exchange-rate service, registers its OTel
+// instruments, pre-warms its cache, and returns the two route handlers.
+// Extracted from buildHandlers to keep that method within the cognitive-
+// complexity ceiling.
+func (s *Server) buildFXModule(
+	ctx context.Context,
+	params service.SystemParamService,
+	audit service.AuditLogger,
+) (*handler.AdminExchangeRateHandler, *handler.ExchangeRateHandler) {
+	fxRepo := repository.NewPostgresExchangeRateRepository(s.db)
+	fxFetcher := service.NewMultiSourceFetcher(s.log,
+		service.NewBanguatFetcher(),
+		service.NewExchangeRateAPIFetcher(s.cfg.ExchangeRate.ExchangeRateAPIKey),
+		service.NewOpenExchangeFetcher(s.cfg.ExchangeRate.OpenExchangeRatesAppID),
+	)
+	fxImpl := service.NewExchangeRateServiceImpl(fxFetcher, fxRepo, params, s.notifier, s.log)
+	fxSvc := service.ExchangeRateService(fxImpl)
+	if err := fxImpl.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
+		s.log.Warn("exchange_rate: RegisterMetrics failed", zap.Error(err))
+	}
+	// Pre-warm the cache from the most recent history row so the first
+	// GET /api/exchange-rate request is served from cache, not from the DB.
+	if err := fxSvc.WarmCache(ctx); err != nil {
+		s.log.Warn("exchange_rate: cache warm failed (non-fatal, will warm on first request)", zap.Error(err))
+	}
+	return handler.NewAdminExchangeRateHandler(fxSvc, fxRepo, audit, s.log),
+		handler.NewExchangeRateHandler(fxSvc, s.log)
 }
 
 // wireLeaderboardTTLHook registers a mutation hook so that when an admin

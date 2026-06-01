@@ -389,6 +389,11 @@ func AllParamKeys() []string {
 		ParamKeyBankTransferMaxAmountCents,
 		ParamKeyPaymentIntentTTLMinutes,
 		ParamKeyUSDGTQRate,
+		ParamKeyExchangeRateMarginBPS,
+		ParamKeyFXBuyMarginBPS,
+		ParamKeyFXSellMarginBPS,
+		ParamKeyFXDisplayDecimals,
+		ParamKeyFXStaleThresholdH,
 		// Notification subsystem (constants_notify.go)
 		ParamKeyNotifyBankTransferStaleSec,
 		ParamKeyNotifyWithdrawalStaleSec,

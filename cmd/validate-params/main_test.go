@@ -478,6 +478,13 @@ func TestAllParamsHaveConstant(t *testing.T) {
 		domain.ParamKeyKYCDocRetentionYears: true,
 		// USD/GTQ exchange rate (migration 000147)
 		domain.ParamKeyUSDGTQRate: true,
+		// Exchange rate safety margin (migration 000148)
+		domain.ParamKeyExchangeRateMarginBPS: true,
+		// Competitive FX margin engine (migration 000150)
+		domain.ParamKeyFXBuyMarginBPS:    true,
+		domain.ParamKeyFXSellMarginBPS:   true,
+		domain.ParamKeyFXDisplayDecimals: true,
+		domain.ParamKeyFXStaleThresholdH: true,
 	}
 
 	for _, spec := range allParams {
@@ -532,6 +539,8 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 		"notify": true,
 		// Added by migrations 000121 + 000125
 		"kyc": true,
+		// Added by migration 000150
+		"fx": true,
 	}
 
 	for _, spec := range allParams {
@@ -545,7 +554,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 120 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125, +2 ip velocity from 000129, +1 sse max conns from 000136, +1 scoring chunk size from 000138, +4 ip rate limit from 000142, +1 kyc doc retention from 000144, +1 usd_gtq_rate from 000147)
+	const expectedCount = 125 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125, +2 ip velocity from 000129, +1 sse max conns from 000136, +1 scoring chunk size from 000138, +4 ip rate limit from 000142, +1 kyc doc retention from 000144, +1 usd_gtq_rate from 000147, +1 exchange_rate_margin from 000148, +4 fx margin from 000150)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

@@ -41,4 +41,7 @@ const (
 	AuditActionWithdrawalRejected   = "withdrawal.rejected"
 	AuditActionWithdrawalProcessed  = "withdrawal.processed"
 	AuditActionWebhookPaymentCredit = "webhook.payment_credited"
+
+	// Exchange rate actions.
+	AuditActionFXRateOverride = "fx_rate.override"
 )
