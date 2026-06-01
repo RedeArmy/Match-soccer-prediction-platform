@@ -15,7 +15,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (118 total) ─────────────────────────────────────
+	// ── ParamKey* enumeration (134 total) ─────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":      ParamKeyScoringExactScore,
@@ -140,7 +140,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyWorkerSchedMatchResultIntervalSec":     ParamKeyWorkerSchedMatchResultIntervalSec,
 		"ParamKeyWorkerSchedPendingReminderIntervalSec": ParamKeyWorkerSchedPendingReminderIntervalSec,
 		"ParamKeyWorkerSchedStaleEscalationIntervalSec": ParamKeyWorkerSchedStaleEscalationIntervalSec,
-		"ParamKeyWorkerSchedPushPruneIntervalSec":       ParamKeyWorkerSchedPushPruneIntervalSec,
+		"ParamKeyWorkerSchedPushPruneIntervalSec":         ParamKeyWorkerSchedPushPruneIntervalSec,
+		// Leaderboard broadcaster retry policy (migration 000160)
+		"ParamKeyWorkerLeaderboardPublishMaxAttempts": ParamKeyWorkerLeaderboardPublishMaxAttempts,
+		"ParamKeyWorkerLeaderboardPublishBaseDelayMs": ParamKeyWorkerLeaderboardPublishBaseDelayMs,
 		// Email render timeout (migration 000108)
 		"ParamKeyNotifyRenderTimeoutMs": ParamKeyNotifyRenderTimeoutMs,
 		// Notification DLQ replay worker (migration 000110)
@@ -160,6 +163,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// Phase 7 infrastructure params (migration 000113)
 		"ParamKeyNotifySSEChanBufSize":              ParamKeyNotifySSEChanBufSize,
 		"ParamKeyNotifySSEMaxConnsPerUser":          ParamKeyNotifySSEMaxConnsPerUser,
+		// SSE eviction threshold (migration 000160)
+		"ParamKeyNotifySSEEvictAfterDrops":         ParamKeyNotifySSEEvictAfterDrops,
 		"ParamKeyNotifyOutboxStaleLockThresholdSec": ParamKeyNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		"ParamKeyKYCTier1DepositLimitCents":       ParamKeyKYCTier1DepositLimitCents,
@@ -292,6 +297,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultWorkerSchedPendingReminderIntervalSec": DefaultWorkerSchedPendingReminderIntervalSec,
 		"DefaultWorkerSchedStaleEscalationIntervalSec": DefaultWorkerSchedStaleEscalationIntervalSec,
 		"DefaultWorkerSchedPushPruneIntervalSec":       DefaultWorkerSchedPushPruneIntervalSec,
+			// Leaderboard broadcaster retry policy (migration 000160)
+			"DefaultWorkerLeaderboardPublishMaxAttempts": DefaultWorkerLeaderboardPublishMaxAttempts,
+			"DefaultWorkerLeaderboardPublishBaseDelayMs": DefaultWorkerLeaderboardPublishBaseDelayMs,
 		// Email render timeout (migration 000108)
 		"DefaultNotifyRenderTimeoutMs": DefaultNotifyRenderTimeoutMs,
 		// Notification DLQ replay worker (migration 000110)
@@ -311,6 +319,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// Phase 7 infrastructure params (migration 000113)
 		"DefaultNotifySSEChanBufSize":              DefaultNotifySSEChanBufSize,
 		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
+			// SSE eviction threshold (migration 000160)
+			"DefaultNotifySSEEvictAfterDrops":         DefaultNotifySSEEvictAfterDrops,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
@@ -344,7 +354,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 131 // update when adding a new ParamKey* constant
+		const expectedCount = 134 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -352,7 +362,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 120 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention)
+		const expectedCount = 123 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -518,6 +528,9 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyWorkerSchedPendingReminderIntervalSec", ParamKeyWorkerSchedPendingReminderIntervalSec, "worker"},
 		{"ParamKeyWorkerSchedStaleEscalationIntervalSec", ParamKeyWorkerSchedStaleEscalationIntervalSec, "worker"},
 		{"ParamKeyWorkerSchedPushPruneIntervalSec", ParamKeyWorkerSchedPushPruneIntervalSec, "worker"},
+		// Leaderboard broadcaster retry policy (migration 000160)
+		{"ParamKeyWorkerLeaderboardPublishMaxAttempts", ParamKeyWorkerLeaderboardPublishMaxAttempts, "worker"},
+		{"ParamKeyWorkerLeaderboardPublishBaseDelayMs", ParamKeyWorkerLeaderboardPublishBaseDelayMs, "worker"},
 		// Email render timeout (migration 000108)
 		{"ParamKeyNotifyRenderTimeoutMs", ParamKeyNotifyRenderTimeoutMs, "notify"},
 		// Notification DLQ replay worker (migration 000110)
@@ -537,6 +550,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		// Phase 7 infrastructure params (migration 000113)
 		{"ParamKeyNotifySSEChanBufSize", ParamKeyNotifySSEChanBufSize, "notify"},
 		{"ParamKeyNotifySSEMaxConnsPerUser", ParamKeyNotifySSEMaxConnsPerUser, "notify"},
+		// SSE eviction threshold (migration 000160)
+		{"ParamKeyNotifySSEEvictAfterDrops", ParamKeyNotifySSEEvictAfterDrops, "notify"},
 		{"ParamKeyNotifyOutboxStaleLockThresholdSec", ParamKeyNotifyOutboxStaleLockThresholdSec, "notify"},
 		// KYC / AML (migrations 000121, 000124, 000125)
 		{"ParamKeyKYCTier1DepositLimitCents", ParamKeyKYCTier1DepositLimitCents, "kyc"},
@@ -681,6 +696,9 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultWorkerSchedPendingReminderIntervalSec": DefaultWorkerSchedPendingReminderIntervalSec,
 		"DefaultWorkerSchedStaleEscalationIntervalSec": DefaultWorkerSchedStaleEscalationIntervalSec,
 		"DefaultWorkerSchedPushPruneIntervalSec":       DefaultWorkerSchedPushPruneIntervalSec,
+			// Leaderboard broadcaster retry policy (migration 000160)
+			"DefaultWorkerLeaderboardPublishMaxAttempts": DefaultWorkerLeaderboardPublishMaxAttempts,
+			"DefaultWorkerLeaderboardPublishBaseDelayMs": DefaultWorkerLeaderboardPublishBaseDelayMs,
 		// Email render timeout (migration 000108)
 		"DefaultNotifyRenderTimeoutMs": DefaultNotifyRenderTimeoutMs,
 		// Notification DLQ replay worker (migration 000110)
@@ -699,6 +717,8 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params
 		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
+			// SSE eviction threshold (migration 000160)
+			"DefaultNotifySSEEvictAfterDrops":         DefaultNotifySSEEvictAfterDrops,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000144)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,

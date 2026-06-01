@@ -357,6 +357,9 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyWorkerSchedPendingReminderIntervalSec: {60, 86_400},     // 1 min – 24 h
 	domain.ParamKeyWorkerSchedStaleEscalationIntervalSec: {60, 86_400},     // 1 min – 24 h
 	domain.ParamKeyWorkerSchedPushPruneIntervalSec:       {3_600, 604_800}, // 1 h – 7 days
+	// Leaderboard broadcaster retry policy (migration 000160, is_runtime=FALSE).
+	domain.ParamKeyWorkerLeaderboardPublishMaxAttempts: {1, 10},     // 1 – 10 PUBLISH attempts
+	domain.ParamKeyWorkerLeaderboardPublishBaseDelayMs: {10, 5_000}, // 10 ms – 5 s base backoff
 
 	// System
 	domain.ParamKeyPurgeRetentionDays:  {1, 365},
@@ -461,8 +464,10 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyDLQWarningThreshold:  {1, 10_000}, // 1 – 10 000 unresolved entries
 
 	// Phase 7 infrastructure params (migration 000113, is_runtime=FALSE).
-	domain.ParamKeyNotifySSEChanBufSize:              {8, 1_024},   // 8 – 1 024 slots per connection
-	domain.ParamKeyNotifySSEMaxConnsPerUser:          {0, 100},     // 0 = unlimited; 100 is very generous
+	domain.ParamKeyNotifySSEChanBufSize:     {8, 1_024}, // 8 – 1 024 slots per connection
+	domain.ParamKeyNotifySSEMaxConnsPerUser: {0, 100},   // 0 = unlimited; 100 is very generous
+	// SSE eviction threshold (migration 000160, is_runtime=FALSE).
+	domain.ParamKeyNotifySSEEvictAfterDrops:          {2, 50},      // 2 – 50 consecutive drops before eviction
 	domain.ParamKeyNotifyOutboxStaleLockThresholdSec: {60, 86_400}, // 60 s – 24 hours
 
 	// KYC / AML per-transaction caps (migration 000121, is_runtime=TRUE).

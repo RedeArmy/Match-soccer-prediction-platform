@@ -48,11 +48,11 @@ var ErrPaymentIntentAlreadyCaptured = errors.New("payment intent already capture
 type UserRepository interface {
 	Create(ctx context.Context, user *domain.User) error
 	GetByID(ctx context.Context, id int) (*domain.User, error)
-	// GetByClerkSubject resolves a Clerk opaque subject (e.g. "user_2abc…") to
-	// an internal User. Returns nil, nil when no matching row exists so callers
-	// can distinguish "not found" from a database error without importing
-	// apperrors directly.
-	GetByClerkSubject(ctx context.Context, subject string) (*domain.User, error)
+	// GetByExternalSubject resolves an identity-provider subject (the JWT "sub"
+	// claim) to an internal User. Returns nil, nil when no matching row exists
+	// so callers can distinguish "not found" from a database error without
+	// importing apperrors directly.
+	GetByExternalSubject(ctx context.Context, subject string) (*domain.User, error)
 	Update(ctx context.Context, user *domain.User) error
 	Delete(ctx context.Context, id int) error
 	List(ctx context.Context) ([]*domain.User, error)

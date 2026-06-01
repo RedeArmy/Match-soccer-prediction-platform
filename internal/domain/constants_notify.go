@@ -50,6 +50,13 @@ const (
 	// is_runtime=FALSE: applied once at Hub construction; restart required.
 	DefaultNotifySSEMaxConnsPerUser = 5 // notify.sse_max_conns_per_user
 
+	// DefaultNotifySSEEvictAfterDrops is the number of consecutive failed sends
+	// on a single SSE connection before the hub evicts it. A slow or dead client
+	// whose buffer stays full for this many broadcast rounds is closed; the SSE
+	// handler detects the closed channel and terminates cleanly.
+	// is_runtime=FALSE: applied once at Hub construction; restart required.
+	DefaultNotifySSEEvictAfterDrops = 5 // notify.sse_evict_after_drops
+
 	// Web Push delivery TTL: how long (in seconds) the push service should
 	// retain an undelivered message.
 	DefaultNotifyWebPushTTLSec = 86400 // notify.web_push_ttl_sec — 24 hours
@@ -208,6 +215,11 @@ const (
 	// the handler responds HTTP 429. 0 = unlimited.
 	// is_runtime=FALSE: applied once at Hub construction; restart required.
 	ParamKeyNotifySSEMaxConnsPerUser = "notify.sse_max_conns_per_user"
+	// ParamKeyNotifySSEEvictAfterDrops is the consecutive-drop threshold after
+	// which the hub evicts a slow/dead SSE connection. A higher value tolerates
+	// slower consumers at the cost of holding open connections longer.
+	// is_runtime=FALSE: applied once at Hub construction; restart required.
+	ParamKeyNotifySSEEvictAfterDrops = "notify.sse_evict_after_drops"
 	// ParamKeyNotifyWebPushTTLSec is the Web Push message time-to-live in seconds.
 	ParamKeyNotifyWebPushTTLSec = "notify.web_push_ttl_sec"
 	// ParamKeyNotifyPushIconURL is the URL of the notification icon (192×192 px PNG).

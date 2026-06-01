@@ -24,7 +24,7 @@ func (r *balanceSvcUserRepo) Create(_ context.Context, _ *domain.User) error { r
 func (r *balanceSvcUserRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
 	return nil, r.err
 }
-func (r *balanceSvcUserRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
+func (r *balanceSvcUserRepo) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return nil, r.err
 }
 func (r *balanceSvcUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }

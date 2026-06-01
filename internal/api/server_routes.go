@@ -141,9 +141,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// call Routes() on a Server they then discard without a matching Stop call.
 	sseChanBufSize := paramSvc.GetInt(ctx, domain.ParamKeyNotifySSEChanBufSize, domain.DefaultNotifySSEChanBufSize)
 	sseMaxConns := paramSvc.GetInt(ctx, domain.ParamKeyNotifySSEMaxConnsPerUser, domain.DefaultNotifySSEMaxConnsPerUser)
+	sseEvictAfterDrops := paramSvc.GetInt(ctx, domain.ParamKeyNotifySSEEvictAfterDrops, domain.DefaultNotifySSEEvictAfterDrops)
 	s.notifHub = hub.NewWithOptions(hub.Options{
 		ChanBufSize:     sseChanBufSize,
 		MaxConnsPerUser: sseMaxConns,
+		EvictAfterDrops: sseEvictAfterDrops,
 	})
 	if err := s.notifHub.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
 		s.log.Warn("hub.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
@@ -258,8 +260,9 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 
 	// ensureIdempotencyStore returns true when it fell back to MemoryStore.
 	// Emit the degraded counter once at startup so WCQIdempotencyDegraded
-	// (for:0m) fires immediately; the per-request counter in the Idempotency
-	// middleware only fires on Redis errors, not on permanent MemoryStore use.
+	// (for:0m, severity:critical) fires immediately; the per-request counter
+	// in the Idempotency middleware only fires on Redis errors, not on permanent
+	// MemoryStore use. The fail-open decision is documented in ADR 0014.
 	if s.ensureIdempotencyStore() {
 		if c, err := meter.Int64Counter("wcq_idempotency_degraded_total"); err == nil {
 			c.Add(ctx, 1)

@@ -77,14 +77,26 @@ fast bootstrapping of new environments. It must be regenerated whenever the cumu
 number of migrations since the last baseline update exceeds 25, or at the start of
 each major tournament preparation phase.
 
-Regeneration command:
+**Current checkpoint:** baseline covers migrations up to `000159` (regenerated
+2026-06-01). Next regeneration trigger: migration `000184`.
+
+Regeneration options (choose one):
+
 ```bash
-pg_dump --schema-only --no-owner <production_db> > migrations/baseline/schema.sql
+# Option A — containerised, no running database required (preferred for CI / dev):
+go run ./cmd/genschema
+
+# Option B — against the running production/staging database:
+make schema-dump
 ```
 
-After regeneration, all existing migration version numbers must still be marked
-applied in the `schema_migrations` table so that `--fresh` bootstrap and sequential
-migration remain consistent.
+`cmd/genschema` spins up a temporary PostgreSQL container, runs all migrations,
+and emits the filtered DDL. `make schema-dump` calls `pg_dump` against the
+`DATABASE_URL` in the current environment.
+
+After regeneration, all existing migration version numbers are automatically
+recorded in `schema_migrations` by `MigrateFresh`, so `--fresh` bootstrap and
+sequential migration remain consistent without manual intervention.
 
 ---
 

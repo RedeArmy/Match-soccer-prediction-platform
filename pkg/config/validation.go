@@ -57,6 +57,15 @@ func validateWorker(cfg *Config) error {
 					"Set WCQ_REDIS_PASSWORD or WCQ_ENVIRONMENT=development",
 			)
 		}
+		if !cfg.Metrics.Enabled {
+			return errors.New(
+				"metrics.enabled must be true outside development (WCQ_METRICS_ENABLED=true): " +
+					"a non-development deployment without Prometheus metrics has no operational " +
+					"visibility. All Grafana dashboards will show empty panels and no alert will " +
+					"fire on degraded behaviour. Set WCQ_METRICS_ENABLED=true or " +
+					"WCQ_ENVIRONMENT=development",
+			)
+		}
 		if err := validateN8nConfig(cfg.N8n); err != nil {
 			return err
 		}
@@ -128,17 +137,10 @@ func Warnings(cfg *Config) []string {
 			"Idempotency keys, rate-limit state, and leader-election locks are exposed "+
 			"to any process on the same network. Set WCQ_REDIS_PASSWORD.")
 	}
-	// Advisory: metrics disabled means all 11 Grafana dashboards show no data and
-	// all OTel instruments are silently discarded. An operator who deploys without
-	// this flag set will see empty dashboards and may incorrectly assume the
-	// monitoring stack is broken rather than the flag being unset.
-	if !cfg.IsDevelopment() && !cfg.Metrics.Enabled {
-		w = append(w, "metrics.enabled=false: Prometheus metrics are disabled and all OTel "+
-			"instruments are silently discarded. Grafana dashboards will show no data. "+
-			"Set WCQ_METRICS_ENABLED=true in production.")
-	}
 	// Advisory: tracing disabled means distributed traces are not exported and
 	// Grafana Tempo / trace views will be empty in non-development environments.
+	// Unlike metrics, tracing is not a hard requirement: the OTLP backend is an
+	// optional deployment component and some operators run without it.
 	if !cfg.IsDevelopment() && !cfg.Tracing.Enabled {
 		w = append(w, "tracing.enabled=false: distributed tracing is disabled and all spans "+
 			"are discarded. Grafana Tempo trace views will be empty. "+
@@ -220,6 +222,15 @@ func validateProductionConfig(cfg *Config) error {
 				"and leader-election locks to any process on the same network. " +
 				"An attacker who reads Redis can delete idempotency entries to replay payment webhooks. " +
 				"Authenticate Redis or acknowledge the risk by setting WCQ_ENVIRONMENT=development",
+		)
+	}
+	if !cfg.Metrics.Enabled {
+		return errors.New(
+			"metrics.enabled must be true outside development (WCQ_METRICS_ENABLED=true): " +
+				"a non-development deployment without Prometheus metrics has no operational " +
+				"visibility. All Grafana dashboards will show empty panels and no alert will " +
+				"fire on degraded behaviour. Set WCQ_METRICS_ENABLED=true or " +
+				"WCQ_ENVIRONMENT=development",
 		)
 	}
 	if err := validateCORSOrigins(cfg.CORS.AllowedOrigins, cfg.Environment); err != nil {

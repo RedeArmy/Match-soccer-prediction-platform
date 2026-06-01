@@ -4,22 +4,22 @@ import "time"
 
 // User represents a registered participant in the quiniela platform.
 //
-// Authentication is delegated entirely to Clerk: users log in via Clerk's
-// hosted flow and the API validates the resulting JWT. No password or
-// credential is stored here. ClerkSubject is the opaque identifier Clerk
-// assigns to each user (format "user_2abc…") and is the stable link between
-// a Clerk identity and the internal User record.
+// Authentication is delegated to an external identity provider via the
+// auth.IdentityProvider interface. No password or credential is stored here.
+// ExternalSubject is the opaque "sub" claim the provider stamps on each JWT
+// (e.g. "user_2abc…" for Clerk, "auth0|…" for Auth0) and is the stable link
+// between the external identity and the internal User record.
 //
 // BannedAt/BannedBy/BanReason track administrative bans. A non-nil BannedAt
 // means the user is currently banned and must be blocked from all write
 // operations. BannedBy is the ID of the admin who issued the ban; BanReason
 // is a human-readable explanation stored for audit purposes.
 type User struct {
-	ID            int
-	Name          string
-	Email         string
-	Role          UserRole
-	ClerkSubject  string // opaque Clerk user ID, e.g. "user_2abc…"; empty for legacy rows
+	ID              int
+	Name            string
+	Email           string
+	Role            UserRole
+	ExternalSubject string // opaque identity-provider subject (JWT "sub"); empty for legacy rows
 	BannedAt      *time.Time
 	BannedBy      *int
 	BanReason     string

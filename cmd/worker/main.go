@@ -309,10 +309,14 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// worker rejects non-redis event bus drivers before reaching this point.
 	// Concurrency matches the snapshot pool so SSE fan-out and DB fan-out share
 	// the same budget, keeping total DB connections predictable under load.
+	lbPublishMaxAttempts := params.GetInt(ctx, domain.ParamKeyWorkerLeaderboardPublishMaxAttempts, domain.DefaultWorkerLeaderboardPublishMaxAttempts)
+	lbPublishBaseDelay := time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerLeaderboardPublishBaseDelayMs, domain.DefaultWorkerLeaderboardPublishBaseDelayMs)) * time.Millisecond
 	broadcaster := LeaderboardBroadcaster(&redisPubLeaderboardBroadcaster{
 		client:      rc,
 		memberRepo:  memberRepo,
 		concurrency: snapshotConcurrency,
+		maxAttempts: lbPublishMaxAttempts,
+		baseDelay:   lbPublishBaseDelay,
 		log:         log,
 	})
 

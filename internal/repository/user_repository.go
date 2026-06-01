@@ -27,7 +27,7 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 // password_hash was removed in migration 000010: authentication is delegated
 // to Clerk and no credential is stored in the application database.
 const (
-	userColumns     = "id, name, email, role, clerk_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason, balance_cents, reserved_cents, kyc_tier, locale"
+	userColumns     = "id, name, email, role, external_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason, balance_cents, reserved_cents, kyc_tier, locale"
 	msgUserNotFound = "user not found"
 )
 
@@ -36,18 +36,18 @@ const (
 // interpreting sentinel errors such as pgx.ErrNoRows.
 func scanUserFields(s rowScanner) (*domain.User, error) {
 	u := &domain.User{}
-	var clerkSubject *string // nullable in DB; empty string in domain when NULL
+	var externalSubject *string // nullable in DB; empty string in domain when NULL
 	var kycTier int
 	if err := s.Scan(
-		&u.ID, &u.Name, &u.Email, &u.Role, &clerkSubject,
+		&u.ID, &u.Name, &u.Email, &u.Role, &externalSubject,
 		&u.CreatedAt, &u.UpdatedAt, &u.DeletedAt,
 		&u.BannedAt, &u.BannedBy, &u.BanReason,
 		&u.BalanceCents, &u.ReservedCents, &kycTier, &u.Locale,
 	); err != nil {
 		return nil, err
 	}
-	if clerkSubject != nil {
-		u.ClerkSubject = *clerkSubject
+	if externalSubject != nil {
+		u.ExternalSubject = *externalSubject
 	}
 	u.KYCTier = domain.KYCTier(kycTier)
 	return u, nil
@@ -66,8 +66,8 @@ func scanUser(row pgx.Row) (*domain.User, error) {
 
 func (r *PostgresUserRepository) Create(ctx context.Context, u *domain.User) error {
 	// password_hash is no longer a column: only name, email, role, and locale
-	// are set at creation time. clerk_subject is set later via Update when the
-	// Clerk webhook delivers the user.created event.
+	// are set at creation time. external_subject is set later via Update when
+	// the identity-provider webhook delivers the user.created event.
 	if u.Locale == "" {
 		u.Locale = string(domain.DefaultLocale)
 	}
@@ -92,24 +92,24 @@ func (r *PostgresUserRepository) GetByID(ctx context.Context, id int) (*domain.U
 	return scanUser(row)
 }
 
-func (r *PostgresUserRepository) GetByClerkSubject(ctx context.Context, subject string) (*domain.User, error) {
+func (r *PostgresUserRepository) GetByExternalSubject(ctx context.Context, subject string) (*domain.User, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+userColumns+` FROM users WHERE clerk_subject=$1`+activeOnly, subject,
+		`SELECT `+userColumns+` FROM users WHERE external_subject=$1`+activeOnly, subject,
 	)
 	return scanUser(row)
 }
 
 func (r *PostgresUserRepository) Update(ctx context.Context, u *domain.User) error {
-	var clerkSubject *string
-	if u.ClerkSubject != "" {
-		clerkSubject = &u.ClerkSubject
+	var externalSubject *string
+	if u.ExternalSubject != "" {
+		externalSubject = &u.ExternalSubject
 	}
 	// password_hash is no longer updated; only name, email, role, and
-	// clerk_subject are mutable through the application layer.
+	// external_subject are mutable through the application layer.
 	row := r.db.QueryRow(ctx,
-		`UPDATE users SET name=$1, email=$2, role=$3, clerk_subject=$4, locale=$5, updated_at=NOW()
+		`UPDATE users SET name=$1, email=$2, role=$3, external_subject=$4, locale=$5, updated_at=NOW()
 		 WHERE id=$6 RETURNING `+userColumns,
-		u.Name, u.Email, u.Role, clerkSubject, u.Locale, u.ID,
+		u.Name, u.Email, u.Role, externalSubject, u.Locale, u.ID,
 	)
 	result, err := scanUser(row)
 	if err != nil {

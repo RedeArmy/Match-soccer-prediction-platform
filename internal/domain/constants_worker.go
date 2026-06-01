@@ -24,6 +24,17 @@ const (
 	DefaultWorkerSchedStaleEscalationIntervalSec = 1800  // worker.sched_stale_escalation_interval_sec — 30 min
 	DefaultWorkerSchedPushPruneIntervalSec       = 86400 // worker.sched_push_prune_interval_sec — 24 h
 
+	// Leaderboard broadcaster retry policy.
+	// DefaultWorkerLeaderboardPublishMaxAttempts is the maximum number of Redis
+	// PUBLISH attempts per user signal before the broadcaster gives up and logs
+	// a warning. The safety net: a missed signal is recoverable within the
+	// leaderboard cache TTL (ParamKeyCacheLeaderboardTTL, default 60 s).
+	DefaultWorkerLeaderboardPublishMaxAttempts = 3 // worker.leaderboard_publish_max_attempts
+	// DefaultWorkerLeaderboardPublishBaseDelayMs is the initial exponential-backoff
+	// delay in milliseconds between PUBLISH retries. Successive attempts double
+	// the delay; the total worst-case wait is base + 2×base = 3×base.
+	DefaultWorkerLeaderboardPublishBaseDelayMs = 50 // worker.leaderboard_publish_base_delay_ms
+
 	// Soft-delete retention.
 	DefaultPurgeRetentionDays = 30 // system.purge_retention_days
 
@@ -77,7 +88,15 @@ const (
 	ParamKeyWorkerSchedMatchResultIntervalSec     = "worker.sched_match_result_interval_sec"
 	ParamKeyWorkerSchedPendingReminderIntervalSec = "worker.sched_pending_reminder_interval_sec"
 	ParamKeyWorkerSchedStaleEscalationIntervalSec = "worker.sched_stale_escalation_interval_sec"
-	ParamKeyWorkerSchedPushPruneIntervalSec       = "worker.sched_push_prune_interval_sec"
+	ParamKeyWorkerSchedPushPruneIntervalSec = "worker.sched_push_prune_interval_sec"
+
+	// Leaderboard broadcaster retry policy (is_runtime=FALSE: worker restart required).
+	// ParamKeyWorkerLeaderboardPublishMaxAttempts is the maximum Redis PUBLISH
+	// attempts per user signal before the broadcaster gives up.
+	ParamKeyWorkerLeaderboardPublishMaxAttempts = "worker.leaderboard_publish_max_attempts"
+	// ParamKeyWorkerLeaderboardPublishBaseDelayMs is the initial backoff in
+	// milliseconds between PUBLISH retries (doubles on each subsequent attempt).
+	ParamKeyWorkerLeaderboardPublishBaseDelayMs = "worker.leaderboard_publish_base_delay_ms"
 
 	// ParamKeyPurgeRetentionDays is the age in days after which soft-deleted
 	// users and quinielas are permanently removed by the worker purge goroutine.

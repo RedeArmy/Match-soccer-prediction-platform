@@ -75,6 +75,8 @@ type paramSpec struct {
 //   - 000153_seed_admin_rate_limit_params        (+2)
 //   - 000154_seed_audit_max_in_flight_param      (+1)
 //   - 000155_seed_fx_history_retention_param     (+1)
+//   - 000158_seed_outbox_retention_param         (+1)
+//   - 000160_seed_sse_broadcaster_params         (+3)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -251,6 +253,9 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyWorkerSchedPendingReminderIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPendingReminderIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerSchedStaleEscalationIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedStaleEscalationIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerSchedPushPruneIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPushPruneIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	// Leaderboard broadcaster retry policy (migration 000160); not runtime — worker restart required.
+	{key: domain.ParamKeyWorkerLeaderboardPublishMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultWorkerLeaderboardPublishMaxAttempts), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerLeaderboardPublishBaseDelayMs, defaultValue: strconv.Itoa(domain.DefaultWorkerLeaderboardPublishBaseDelayMs), paramType: "int", category: "worker", isRuntime: false},
 	// Email render timeout (migration 000108); runtime — takes effect within 30 s cache window.
 	{key: domain.ParamKeyNotifyRenderTimeoutMs, defaultValue: strconv.Itoa(domain.DefaultNotifyRenderTimeoutMs), paramType: "int", category: "notify", isRuntime: true},
 
@@ -277,6 +282,8 @@ var allParams = []paramSpec{
 	// Per-user SSE connection cap (migration 000136); not runtime — hub rebuilt at startup.
 	// 0 = unlimited; default 5 allows multi-tab/device without unbounded heap growth.
 	{key: domain.ParamKeyNotifySSEMaxConnsPerUser, defaultValue: strconv.Itoa(domain.DefaultNotifySSEMaxConnsPerUser), paramType: "int", category: "notify", isRuntime: false},
+	// SSE eviction threshold (migration 000160); not runtime — hub rebuilt at startup.
+	{key: domain.ParamKeyNotifySSEEvictAfterDrops, defaultValue: strconv.Itoa(domain.DefaultNotifySSEEvictAfterDrops), paramType: "int", category: "notify", isRuntime: false},
 	{key: domain.ParamKeyNotifyOutboxStaleLockThresholdSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxStaleLockThresholdSec), paramType: "int", category: "notify", isRuntime: false},
 
 	// KYC/AML gate params (migrations 000121 + 000125); runtime — all limits are enforced

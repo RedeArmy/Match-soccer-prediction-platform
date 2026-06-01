@@ -64,7 +64,7 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 		return apperrors.Validation("webhook payload contains an invalid user name")
 	}
 
-	existing, err := s.userRepo.GetByClerkSubject(ctx, subject)
+	existing, err := s.userRepo.GetByExternalSubject(ctx, subject)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
@@ -72,13 +72,13 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 	if existing != nil {
 		existing.Name = name
 		existing.Email = email
-		existing.ClerkSubject = subject
+		existing.ExternalSubject = subject
 		if err := s.userRepo.Update(ctx, existing); err != nil {
 			return err
 		}
 		s.log.Info("clerk sync: updated user",
 			zap.Int("user_id", existing.ID),
-			zap.String("clerk_subject", subject),
+			zap.String("external_subject", subject),
 		)
 		return nil
 	}
@@ -86,7 +86,7 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 	user := &domain.User{
 		Name:         name,
 		Email:        email,
-		ClerkSubject: subject,
+		ExternalSubject: subject,
 		Role:         domain.RoleUser,
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
@@ -94,7 +94,7 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 	}
 	s.log.Info("clerk sync: created user",
 		zap.Int("user_id", user.ID),
-		zap.String("clerk_subject", subject),
+		zap.String("external_subject", subject),
 	)
 
 	// Guarantee a kyc_profiles stub exists for every user so that prize
@@ -141,20 +141,20 @@ func (s *clerkUserSyncService) resolvePrimaryEmail(emails []ClerkEmail, primaryE
 }
 
 // SoftDelete marks the internal user row as deleted in response to a Clerk
-// user.deleted webhook event. The call is idempotent: GetByClerkSubject uses
-// activeOnly, so it returns nil for already-deleted subjects, and the function
+// user.deleted webhook event. The call is idempotent: GetByExternalSubject uses
+// activeOnly so it returns nil for already-deleted subjects, and the function
 // returns nil without calling Delete again.
 //
 // Errors from the underlying repository are propagated so the webhook handler
 // can return a non-2xx status and allow Clerk to retry the delivery.
 func (s *clerkUserSyncService) SoftDelete(ctx context.Context, subject string) error {
-	user, err := s.userRepo.GetByClerkSubject(ctx, subject)
+	user, err := s.userRepo.GetByExternalSubject(ctx, subject)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
 	if user == nil {
 		s.log.Info("clerk sync: user.deleted received for unknown or already-deleted subject — no-op",
-			zap.String("clerk_subject", subject),
+			zap.String("external_subject", subject),
 		)
 		return nil
 	}
@@ -163,7 +163,7 @@ func (s *clerkUserSyncService) SoftDelete(ctx context.Context, subject string) e
 	}
 	s.log.Info("clerk sync: soft-deleted user on Clerk account deletion",
 		zap.Int("user_id", user.ID),
-		zap.String("clerk_subject", subject),
+		zap.String("external_subject", subject),
 	)
 	return nil
 }

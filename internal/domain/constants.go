@@ -368,6 +368,8 @@ func AllParamKeys() []string {
 		ParamKeyWorkerSchedPendingReminderIntervalSec,
 		ParamKeyWorkerSchedStaleEscalationIntervalSec,
 		ParamKeyWorkerSchedPushPruneIntervalSec,
+		ParamKeyWorkerLeaderboardPublishMaxAttempts,
+		ParamKeyWorkerLeaderboardPublishBaseDelayMs,
 		// System
 		ParamKeyPurgeRetentionDays,
 		ParamKeySystemParamHistoryRetentionDays,
@@ -456,6 +458,7 @@ func AllParamKeys() []string {
 		// Phase 7 infrastructure params (migration 000113)
 		ParamKeyNotifySSEChanBufSize,
 		ParamKeyNotifySSEMaxConnsPerUser,
+		ParamKeyNotifySSEEvictAfterDrops,
 		ParamKeyNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		ParamKeyKYCTier1DepositLimitCents,
