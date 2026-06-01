@@ -503,3 +503,60 @@ func TestNotifier_Close_IsNoOpWhenIdle(t *testing.T) {
 		t.Error("Close() blocked on an idle notifier")
 	}
 }
+
+// ── NotifyFXRateStale ─────────────────────────────────────────────────────────
+
+func TestNotifyFXRateStale_Disabled_IsNoOp(t *testing.T) {
+	ts := &testServer{}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	n := newNotifier(t, "", "")
+	n.NotifyFXRateStale(context.Background(), "7.9050", 28.5, "banguat")
+
+	time.Sleep(50 * time.Millisecond)
+	if ts.count() != 0 {
+		t.Errorf("expected 0 requests when disabled, got %d", ts.count())
+	}
+}
+
+func TestNotifyFXRateStale_PostsToCorrectPath(t *testing.T) {
+	ts := &testServer{}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	n := newNotifier(t, srv.URL, "")
+	n.NotifyFXRateStale(context.Background(), "7.9050", 28.5, "banguat")
+	ts.waitForCount(t, 1)
+
+	if got := ts.lastPath(); got != "/webhook/fx-rate-stale" {
+		t.Errorf("path: want /webhook/fx-rate-stale, got %s", got)
+	}
+}
+
+func TestNotifyFXRateStale_PayloadFields(t *testing.T) {
+	ts := &testServer{}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	n := newNotifier(t, srv.URL, "")
+	n.NotifyFXRateStale(context.Background(), "7.9050", 28.5, "exchangerate-api")
+	ts.waitForCount(t, 1)
+
+	var p observability.FXRateStalePayload
+	if err := json.Unmarshal([]byte(ts.lastBody()), &p); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if p.LastRate != "7.9050" {
+		t.Errorf("last_rate_gtq_per_usd: want 7.9050, got %s", p.LastRate)
+	}
+	if p.AgeHours != 28.5 {
+		t.Errorf("age_hours: want 28.5, got %f", p.AgeHours)
+	}
+	if p.Source != "exchangerate-api" {
+		t.Errorf("source_attempted: want exchangerate-api, got %s", p.Source)
+	}
+	if p.Timestamp == "" {
+		t.Error("timestamp must not be empty")
+	}
+}
