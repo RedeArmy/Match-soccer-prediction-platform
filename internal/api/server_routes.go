@@ -109,6 +109,9 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		paramSvc.GetInt(ctx, domain.ParamKeyAuditMaxRetries, domain.DefaultAuditMaxRetries),
 		paramSvc.GetInt(ctx, domain.ParamKeyAuditRetryDelayMs, domain.DefaultAuditRetryDelayMs),
 	)
+	service.ConfigureAuditMaxInFlight(
+		paramSvc.GetInt(ctx, domain.ParamKeyAuditMaxInFlight, domain.DefaultAuditMaxInFlight),
+	)
 	repository.InitRetryPolicy(
 		paramSvc.GetInt(ctx, domain.ParamKeyTxRetryMaxAttempts, domain.DefaultTxRetryMaxAttempts),
 		paramSvc.GetInt(ctx, domain.ParamKeyTxRetryBaseDelayMs, domain.DefaultTxRetryBaseDelayMs),
@@ -270,6 +273,18 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))
 	rateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst)
 	userRateStore := s.buildUserRateStore(meter, ratePerSec, rateBurst)
+
+	// Admin-panel rate limit: a separate, tighter in-process token bucket for
+	// /api/v1/admin so a single admin cannot hammer expensive bulk endpoints
+	// (POST /admin/system-params/bulk, POST /admin/groups/{id}/distribute-prizes)
+	// without consuming their general user quota. In-process (no Redis) is
+	// deliberate: admin users are few and cross-replica coordination is
+	// unnecessary; the goal is preventing accidental loops, not precise
+	// cluster-wide accounting.
+	adminRatePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAdminRateLimitRatePerSec, domain.DefaultAdminRateLimitRatePerSec))
+	adminRateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAdminRateLimitBurst, domain.DefaultAdminRateLimitBurst)
+	adminRateStore := middleware.NewLimiterStore(adminRatePerSec, adminRateBurst)
+
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(VersionHeader("v1"))
 		// L1 (ipLimiter.Global) is applied at the root router — not here.
@@ -423,6 +438,10 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(bodySizeLimit))
 			r.Use(middleware.RequireRole(repos.user, s.log, domain.RoleAdmin))
+			// Dedicated admin rate limit: applied after RequireRole so non-admins
+			// are rejected before consuming a token from the admin bucket.
+			// Independent from the parent /api/v1 userRateStore.
+			r.Use(middleware.RateLimitByUserID(adminRateStore, s.log))
 
 			// Users
 			r.Get(routeUsers, h.adminUser.ListUsers)

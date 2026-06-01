@@ -294,6 +294,56 @@ definitions:
       error:
         $ref: '#/definitions/github_com_rede_world-cup-quiniela_internal_middleware.ErrorDetail'
     type: object
+  internal_api_handler.ExchangeRateRecordResponse:
+    properties:
+      buy_margin_pct:
+        type: string
+      buy_rate:
+        type: string
+      effective_at:
+        type: string
+      fetched_at:
+        type: string
+      id:
+        type: integer
+      is_override:
+        type: boolean
+      override_by:
+        type: integer
+      override_reason:
+        type: string
+      reference_rate:
+        type: string
+      sell_margin_pct:
+        type: string
+      sell_rate:
+        type: string
+      source:
+        type: string
+      stale:
+        type: boolean
+    type: object
+  internal_api_handler.ExchangeRatesResponse:
+    properties:
+      buy_margin_pct:
+        type: string
+      buy_rate:
+        type: string
+      effective_at:
+        type: string
+      is_override:
+        type: boolean
+      reference_rate:
+        type: string
+      sell_margin_pct:
+        type: string
+      sell_rate:
+        type: string
+      source:
+        type: string
+      stale:
+        type: boolean
+    type: object
   internal_api_handler.GlobalLeaderboardEntryResponse:
     properties:
       rank:
@@ -628,6 +678,17 @@ definitions:
         type: string
       title:
         type: string
+    type: object
+  internal_api_handler.PublicExchangeRateResponse:
+    properties:
+      buy_rate:
+        type: string
+      effective_at:
+        type: string
+      sell_rate:
+        type: string
+      stale:
+        type: boolean
     type: object
   internal_api_handler.ScoringRuleResponse:
     properties:
@@ -1024,6 +1085,20 @@ definitions:
       user_id:
         type: integer
     type: object
+  internal_api_handler.overrideRateRequest:
+    properties:
+      reason:
+        description: |-
+          Reason is required (minimum 10 characters) and is stored in
+          exchange_rate_history.override_reason for audit purposes.
+        type: string
+      reference_rate:
+        description: |-
+          ReferenceRate is the new reference rate as a string to avoid float64
+          precision loss at the JSON boundary.  Parsed as decimal.Decimal.
+          Must be in the range (0, 20] — reasonable GTQ/USD bounds.
+        type: string
+    type: object
   internal_api_handler.previewTemplateRequest:
     properties:
       action_url_tmpl:
@@ -1218,6 +1293,23 @@ info:
   title: World Cup Quiniela API
   version: "1.0"
 paths:
+  /api/exchange-rate:
+    get:
+      description: Returns the current GTQ/USD buy and sell rates for frontend
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.PublicExchangeRateResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      summary: Get current exchange rate
+      tags:
+      - exchange-rate
   /api/v1/admin/audit-log:
     get:
       description: Returns a cursor-paginated list of audit log entries. Supports
@@ -1653,6 +1745,142 @@ paths:
       summary: Replay dead-letter queue
       tags:
       - admin-dlq
+  /api/v1/admin/exchange-rate/current:
+    get:
+      description: 'Returns the current GTQ/USD rates with full detail: reference'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.ExchangeRatesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current exchange rate (admin)
+      tags:
+      - admin-exchange-rate
+  /api/v1/admin/exchange-rate/history:
+    get:
+      description: Returns a paginated list of all GTQ/USD rate records, newest
+      parameters:
+      - description: Maximum records to return (1–200, default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of records to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.ExchangeRateRecordResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List exchange rate history (admin)
+      tags:
+      - admin-exchange-rate
+  /api/v1/admin/exchange-rate/override:
+    post:
+      consumes:
+      - application/json
+      description: Sets a manual GTQ/USD reference rate, bypassing the automated
+      parameters:
+      - description: New reference rate and reason
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.overrideRateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.ExchangeRatesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid rate or reason too short
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Override exchange rate (admin)
+      tags:
+      - admin-exchange-rate
+  /api/v1/admin/exchange-rate/refresh:
+    post:
+      description: Triggers an immediate GTQ/USD rate fetch from the configured
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.ExchangeRatesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: All external sources failed
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Refresh exchange rate (admin)
+      tags:
+      - admin-exchange-rate
   /api/v1/admin/groups/{id}:
     delete:
       description: Soft-deletes the quiniela group. All memberships and predictions

@@ -172,6 +172,19 @@ type PredictionScoreLog struct {
 	CfgPenaltiesBonus int
 }
 
+// ScoringCfgSnapshot is the subset of scoring configuration captured in
+// prediction_score_log. ScoreMatch reads this back on re-runs (DLQ replays) so
+// that replays apply the same point values as the original scoring, preventing
+// leaderboard drift when an admin modifies scoring_rules between the failure and
+// the replay. Nil means no prior log exists for the match (first-time scoring).
+type ScoringCfgSnapshot struct {
+	ExactScore     int
+	CorrectOutcome int
+	GoalDifference int
+	ExtraTimeBonus int
+	PenaltiesBonus int
+}
+
 // LeaderboardEntry pairs a quiniela participant with their aggregated score.
 // It is a read-only projection used exclusively by the ranking service and the
 // leaderboard API response; it is never persisted to the database.

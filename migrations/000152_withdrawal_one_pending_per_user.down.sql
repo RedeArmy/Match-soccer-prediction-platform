@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS withdrawal_requests_one_pending_per_user;

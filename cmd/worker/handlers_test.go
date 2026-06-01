@@ -320,6 +320,9 @@ func (r *stubWorkerPredRepo) ScoreMatchBatch(_ context.Context, _ int, scorer fu
 	_, err := scorer(nil)
 	return err
 }
+func (r *stubWorkerPredRepo) GetScoringCfgSnapshot(_ context.Context, _ int) (*domain.ScoringCfgSnapshot, error) {
+	return nil, nil
+}
 
 func TestPostScoringWork_NilPredRepo_Noop(t *testing.T) {
 	postScoringWork(context.Background(), 1, postScoringDeps{snapshotter: &stubSnapshotter{}}, zap.NewNop())

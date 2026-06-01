@@ -98,6 +98,39 @@ type scoringConfig struct {
 	penaltiesBonus int // bonus points when the correct win method is penalties
 }
 
+// resolveConfig returns the scoring config to use for matchID. On first-time
+// scoring (no prediction_score_log entries for the match) it delegates to
+// configForPhase so current rules apply. On re-runs (DLQ replays, manual
+// rescores) it returns the config recorded in the earliest log entry, ensuring
+// that replays produce identical point values regardless of rule changes that
+// occurred after the original scoring run.
+//
+// A lookup error is non-fatal: it falls back to configForPhase and logs a
+// warning. This preserves today's behaviour for the transient-error case while
+// still locking to the snapshot on the happy replay path.
+func (s *scoringService) resolveConfig(ctx context.Context, matchID int, phase domain.MatchPhase) scoringConfig {
+	snapshot, err := s.predRepo.GetScoringCfgSnapshot(ctx, matchID)
+	if err != nil {
+		s.log.Warn("scoring: GetScoringCfgSnapshot failed — using current rules",
+			append([]zap.Field{
+				zap.Int("match_id", matchID),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...,
+		)
+		return s.configForPhase(ctx, phase)
+	}
+	if snapshot != nil {
+		return scoringConfig{
+			exactScore:     snapshot.ExactScore,
+			correctOutcome: snapshot.CorrectOutcome,
+			goalDifference: snapshot.GoalDifference,
+			extraTimeBonus: snapshot.ExtraTimeBonus,
+			penaltiesBonus: snapshot.PenaltiesBonus,
+		}
+	}
+	return s.configForPhase(ctx, phase)
+}
+
 // loadGlobalConfig reads the flat, phase-agnostic scoring parameters from
 // system_params. Used as a fallback when no active phase-specific rule exists.
 // Win-method bonuses default to 0 in the global fallback; the per-phase rule
@@ -178,7 +211,7 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 		return apperrors.Validation("match result is missing home or away score")
 	}
 
-	cfg := s.configForPhase(ctx, match.Phase)
+	cfg := s.resolveConfig(ctx, matchID, match.Phase)
 	chunkSize := s.params.GetInt(ctx, domain.ParamKeyScoringUpdateChunkSize, domain.DefaultScoringUpdateChunkSize)
 
 	// ScoreMatchBatch reads predictions and writes points in a single transaction,

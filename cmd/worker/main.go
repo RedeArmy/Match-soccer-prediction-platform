@@ -42,6 +42,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
@@ -242,6 +244,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		params.GetInt(ctx, domain.ParamKeyAuditMaxRetries, domain.DefaultAuditMaxRetries),
 		params.GetInt(ctx, domain.ParamKeyAuditRetryDelayMs, domain.DefaultAuditRetryDelayMs),
 	)
+	service.ConfigureAuditMaxInFlight(
+		params.GetInt(ctx, domain.ParamKeyAuditMaxInFlight, domain.DefaultAuditMaxInFlight),
+	)
 	snapshotConcurrency := params.GetInt(ctx, domain.ParamKeyWorkerSnapshotConcurrency, domain.DefaultWorkerSnapshotConcurrency)
 	snapshotRetryBase := time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSnapshotRetryBaseMs, domain.DefaultWorkerSnapshotRetryBaseMs)) * time.Millisecond
 	maxSnapshotAttempts := params.GetInt(ctx, domain.ParamKeyWorkerSnapshotMaxAttempts, domain.DefaultWorkerSnapshotMaxAttempts)
@@ -316,6 +321,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	purgeRetention := time.Duration(retentionDays) * 24 * time.Hour
 	paramHistoryRetentionDays := params.GetInt(ctx, domain.ParamKeySystemParamHistoryRetentionDays, domain.DefaultSystemParamHistoryRetentionDays)
 	paramHistoryRetention := time.Duration(paramHistoryRetentionDays) * 24 * time.Hour
+	fxHistoryRetentionDays := params.GetInt(ctx, domain.ParamKeyFXHistoryRetentionDays, domain.DefaultFXHistoryRetentionDays)
+	fxHistoryRetention := time.Duration(fxHistoryRetentionDays) * 24 * time.Hour
 
 	// Leader election for the DLQ monitor via a PostgreSQL session-level
 	// advisory lock. A 15-second timeout is added to ctx to bound the
@@ -419,6 +426,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(db)
 	logWarnOnErr(log, "repository.RegisterLedgerRowCountGauge failed", repository.RegisterLedgerRowCountGauge(meter, ledgerRepo))
 
+	// Scoring DLQ depth — exposes wcq_scoring_dlq_depth{event_type=...} so
+	// Prometheus can alert when scoring events accumulate in the Redis DLQ.
+	// The monitorDLQ goroutine already logs non-zero depths; this metric adds
+	// independent Prometheus visibility for the WCQScoringDLQNonEmpty alert.
+	logWarnOnErr(log, "register scoring DLQ gauge failed", registerScoringDLQGauge(meter, rc))
+
 	dlqReplayWorker := outbox.NewDLQWorker(dlqRepo, outboxWriter, log,
 		outbox.WithDLQBatchSize(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayBatchSize, domain.DefaultNotifyDLQReplayBatchSize)),
 		outbox.WithDLQPollInterval(time.Duration(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayPollIntervalSec, domain.DefaultNotifyDLQReplayPollIntervalSec))*time.Second),
@@ -427,66 +440,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		outbox.WithDLQAlertThreshold(int64(params.GetInt(ctx, domain.ParamKeyNotifyDLQReplayAlertThreshold, domain.DefaultNotifyDLQReplayAlertThreshold))),
 		outbox.WithDLQNotifier(setupObservabilityNotifier(cfg, log)))
 
-	// Notification scheduler: prediction deadline reminders, admin digests,
-	// match result alerts, and stale-operation escalation.
-	tzName := params.GetString(ctx, domain.ParamKeyNotifySchedulerTimezone, domain.DefaultNotifySchedulerTimezone)
-	schedulerLoc := resolveSchedulerLocation(tzName, log)
-	schedulerStore := repository.NewPostgresSchedulerStore(db)
-	jobs := scheduler.NewJobs(scheduler.JobsConfig{
-		Store:  schedulerStore,
-		Writer: outboxWriter,
-		Params: params,
-		Log:    log,
-	})
-	notifScheduler := scheduler.New(scheduler.Config{
-		Location: schedulerLoc,
-		Log:      log,
-	})
-	notifScheduler.RegisterInterval("prediction.deadline_approaching",
-		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPredDeadlineIntervalSec, domain.DefaultWorkerSchedPredDeadlineIntervalSec))*time.Second,
-		jobs.PredictionDeadlineApproaching)
-	notifScheduler.RegisterInterval("admin.match_result_pending",
-		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedMatchResultIntervalSec, domain.DefaultWorkerSchedMatchResultIntervalSec))*time.Second,
-		jobs.AdminMatchResultPending)
-	notifScheduler.RegisterInterval("admin.pending_reminder",
-		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPendingReminderIntervalSec, domain.DefaultWorkerSchedPendingReminderIntervalSec))*time.Second,
-		jobs.AdminPendingReminder)
-	notifScheduler.RegisterInterval("admin.stale_escalation",
-		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedStaleEscalationIntervalSec, domain.DefaultWorkerSchedStaleEscalationIntervalSec))*time.Second,
-		jobs.StaleEscalation)
-	notifScheduler.RegisterDaily("admin.daily_summary", 8, 0, jobs.AdminDailySummary)
-	notifScheduler.RegisterWeekly("admin.weekly_report", time.Monday, 8, 0, jobs.AdminWeeklyReport)
-	notifScheduler.RegisterInterval("push.subscription_prune",
-		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPushPruneIntervalSec, domain.DefaultWorkerSchedPushPruneIntervalSec))*time.Second,
-		makePushPruneJob(params, pushRepo, log))
-
-	// KYC document lifecycle — purge document metadata and physical files for
-	// accounts deleted beyond the configured retention window.  Runs weekly at
-	// 03:00 on Sunday (low-traffic window).  Physical deletion from the FileStore
-	// is attempted for each document before removing the DB metadata row so that
-	// the metadata row is never orphaned without its backing file.
-	kycDocRepo := repository.NewPostgresKYCDocumentRepository(db)
-	kycFileStore, kycStoreErr := storage.New(ctx, storage.Config{
-		Driver:                cfg.Storage.Driver,
-		LocalDir:              cfg.Storage.LocalDir,
-		S3Bucket:              cfg.Storage.S3Bucket,
-		S3Endpoint:            cfg.Storage.S3Endpoint,
-		S3Region:              cfg.Storage.S3Region,
-		S3AccessKeyID:         cfg.Storage.S3AccessKeyID,
-		S3SecretKey:           cfg.Storage.S3SecretKey,
-		OneDriveTenantID:      cfg.Storage.OneDriveTenantID,
-		OneDriveClientID:      cfg.Storage.OneDriveClientID,
-		OneDriveClientSecret:  cfg.Storage.OneDriveClientSecret,
-		OneDriveDriveID:       cfg.Storage.OneDriveDriveID,
-		GDriveCredentialsJSON: cfg.Storage.GDriveCredentialsJSON,
-		GDriveFolderID:        cfg.Storage.GDriveFolderID,
-	})
-	if kycStoreErr != nil {
-		log.Warn("kyc.document_purge: FileStore unavailable — physical file deletion disabled until next restart",
-			zap.Error(kycStoreErr))
-	}
-	notifScheduler.RegisterWeekly("kyc.document_purge", time.Sunday, 3, 0,
-		makeKYCDocumentPurgeJob(params, kycDocRepo, kycFileStore, log))
+	notifScheduler := buildNotifScheduler(ctx, cfg.Storage, params, db, outboxWriter, pushRepo, log)
 
 	// Automated exchange rate refresh — Banguat publishes at ~10:00 AM Guatemala
 	// time; 10:30 gives a 30-minute buffer for the feed to stabilise.
@@ -521,6 +475,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// the probe degrades. See ADR 0002 for the synthetic-vs-persisted distinction.
 	checkers := buildHealthCheckers(db, rc)
 	checkers = append(checkers, notifScheduler.HealthChecker(3.0))
+	logWarnOnErr(log, "scheduler: RegisterMetrics failed", notifScheduler.RegisterMetrics(meter, 3.0))
 
 	return startWorker(ctx, workerDeps{
 		cfg:                        cfg,
@@ -535,6 +490,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		purger:                     purger,
 		purgeRetention:             purgeRetention,
 		paramHistoryRetention:      paramHistoryRetention,
+		fxHistoryRetention:         fxHistoryRetention,
 		snapshotKeepCount:          snapshotKeepLatestCount,
 		rc:                         rc,
 		checkers:                   checkers,
@@ -804,6 +760,83 @@ func makeKYCDocumentPurgeJob(
 // must reference the same name to correctly report consumer lag.
 const workerConsumerGroup = "quiniela-workers"
 
+// buildNotifScheduler constructs the notification Scheduler and registers all
+// periodic notification jobs. The FX rate refresh job is NOT registered here —
+// it is added by the caller after fxImpl is constructed so that the scheduler
+// and the FX service can be built independently.
+//
+// KYC FileStore initialisation failures are non-fatal: the returned scheduler
+// still registers the purge job, but physical file deletion is disabled until
+// the next restart (the DB metadata rows are still removed).
+func buildNotifScheduler(
+	ctx context.Context,
+	storageCfg config.StorageConfig,
+	params service.SystemParamService,
+	db *pgxpool.Pool,
+	outboxWriter outbox.Writer,
+	pushRepo repository.PushSubscriptionRepository,
+	log *zap.Logger,
+) *scheduler.Scheduler {
+	tzName := params.GetString(ctx, domain.ParamKeyNotifySchedulerTimezone, domain.DefaultNotifySchedulerTimezone)
+	schedulerLoc := resolveSchedulerLocation(tzName, log)
+	schedulerStore := repository.NewPostgresSchedulerStore(db)
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  schedulerStore,
+		Writer: outboxWriter,
+		Params: params,
+		Log:    log,
+	})
+	s := scheduler.New(scheduler.Config{
+		Location: schedulerLoc,
+		Log:      log,
+	})
+	s.RegisterInterval("prediction.deadline_approaching",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPredDeadlineIntervalSec, domain.DefaultWorkerSchedPredDeadlineIntervalSec))*time.Second,
+		jobs.PredictionDeadlineApproaching)
+	s.RegisterInterval("admin.match_result_pending",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedMatchResultIntervalSec, domain.DefaultWorkerSchedMatchResultIntervalSec))*time.Second,
+		jobs.AdminMatchResultPending)
+	s.RegisterInterval("admin.pending_reminder",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPendingReminderIntervalSec, domain.DefaultWorkerSchedPendingReminderIntervalSec))*time.Second,
+		jobs.AdminPendingReminder)
+	s.RegisterInterval("admin.stale_escalation",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedStaleEscalationIntervalSec, domain.DefaultWorkerSchedStaleEscalationIntervalSec))*time.Second,
+		jobs.StaleEscalation)
+	s.RegisterDaily("admin.daily_summary", 8, 0, jobs.AdminDailySummary)
+	s.RegisterWeekly("admin.weekly_report", time.Monday, 8, 0, jobs.AdminWeeklyReport)
+	s.RegisterInterval("push.subscription_prune",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPushPruneIntervalSec, domain.DefaultWorkerSchedPushPruneIntervalSec))*time.Second,
+		makePushPruneJob(params, pushRepo, log))
+
+	// KYC document lifecycle — purge document metadata and physical files for
+	// accounts deleted beyond the configured retention window.  Runs weekly at
+	// 03:00 on Sunday (low-traffic window).
+	kycDocRepo := repository.NewPostgresKYCDocumentRepository(db)
+	kycFileStore, kycStoreErr := storage.New(ctx, storage.Config{
+		Driver:                storageCfg.Driver,
+		LocalDir:              storageCfg.LocalDir,
+		S3Bucket:              storageCfg.S3Bucket,
+		S3Endpoint:            storageCfg.S3Endpoint,
+		S3Region:              storageCfg.S3Region,
+		S3AccessKeyID:         storageCfg.S3AccessKeyID,
+		S3SecretKey:           storageCfg.S3SecretKey,
+		OneDriveTenantID:      storageCfg.OneDriveTenantID,
+		OneDriveClientID:      storageCfg.OneDriveClientID,
+		OneDriveClientSecret:  storageCfg.OneDriveClientSecret,
+		OneDriveDriveID:       storageCfg.OneDriveDriveID,
+		GDriveCredentialsJSON: storageCfg.GDriveCredentialsJSON,
+		GDriveFolderID:        storageCfg.GDriveFolderID,
+	})
+	if kycStoreErr != nil {
+		log.Warn("kyc.document_purge: FileStore unavailable — physical file deletion disabled until next restart",
+			zap.Error(kycStoreErr))
+	}
+	s.RegisterWeekly("kyc.document_purge", time.Sunday, 3, 0,
+		makeKYCDocumentPurgeJob(params, kycDocRepo, kycFileStore, log))
+
+	return s
+}
+
 // buildHealthCheckers constructs the full set of readiness checkers for the
 // worker process. Extracting this into its own function keeps run() readable
 // and makes the checker list independently testable without needing a live
@@ -818,6 +851,40 @@ func buildHealthCheckers(db *pgxpool.Pool, rc *redis.Client) []health.Checker {
 		health.NewStreamPendingChecker(rc, "stream:"+string(events.EventMatchStarted), workerConsumerGroup),
 		health.NewStreamPendingChecker(rc, "stream:"+string(events.EventMatchFinished), workerConsumerGroup),
 	}
+}
+
+// registerScoringDLQGauge registers the wcq_scoring_dlq_depth observable gauge.
+// One series is emitted per monitored event type (label: event_type). The gauge
+// reads the Redis DLQ list length on every Prometheus scrape so the metric
+// stays current between monitorDLQ ticks.
+//
+// Redis errors are fail-open: a connectivity problem reports 0 rather than
+// returning an error that would suppress the gauge entirely. The existing
+// monitorDLQ log lines (dlq_size) complement this metric — the gauge gives
+// Prometheus visibility; the log gives a timestamped event trail.
+func registerScoringDLQGauge(meter metric.Meter, rc *redis.Client) error {
+	g, err := meter.Int64ObservableGauge("wcq_scoring_dlq_depth",
+		metric.WithDescription("Number of scoring events in the Redis dead-letter queue by event type. "+
+			"Non-zero means failed handler retries that require manual replay via POST /admin/dlq/replay."),
+	)
+	if err != nil {
+		return fmt.Errorf("register wcq_scoring_dlq_depth: %w", err)
+	}
+	monitoredEvents := []events.EventType{events.EventMatchStarted, events.EventMatchFinished}
+	_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		for _, et := range monitoredEvents {
+			n, redisErr := rc.LLen(ctx, "dlq:"+string(et)).Result()
+			if redisErr != nil {
+				n = 0 // fail-open: prefer under-alerting to spurious fires on Redis unavailability
+			}
+			o.ObserveInt64(g, n, metric.WithAttributes(attribute.String("event_type", string(et))))
+		}
+		return nil
+	}, g)
+	if err != nil {
+		return fmt.Errorf("register wcq_scoring_dlq_depth callback: %w", err)
+	}
+	return nil
 }
 
 // dlqMonitorLockID is the PostgreSQL advisory lock identifier for DLQ monitor
@@ -841,6 +908,7 @@ type workerDeps struct {
 	purger                     repository.Purger
 	purgeRetention             time.Duration
 	paramHistoryRetention      time.Duration
+	fxHistoryRetention         time.Duration
 	snapshotKeepCount          int
 	rc                         *redis.Client
 	checkers                   []health.Checker
@@ -918,7 +986,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		defer purgeDone.Done()
 		defer recoverGoroutine("purgeDaemon", log)
 		defer purgeTicker.Stop()
-		monitorPurge(ctx, deps.purger, deps.purgeRetention, deps.paramHistoryRetention, deps.snapshotKeepCount, purgeTicker.C, log)
+		monitorPurge(ctx, deps.purger, deps.purgeRetention, deps.paramHistoryRetention, deps.fxHistoryRetention, deps.snapshotKeepCount, purgeTicker.C, log)
 	}()
 
 	// Outbox worker — polls domain_outbox and dispatches admin/system notifications.
@@ -1002,7 +1070,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 //
 // If purger is nil (e.g. in unit tests where the database is not available),
 // the function returns immediately.
-func monitorPurge(ctx context.Context, purger repository.Purger, retention, paramHistoryRetention time.Duration, snapshotKeepCount int, tickC <-chan time.Time, log *zap.Logger) {
+func monitorPurge(ctx context.Context, purger repository.Purger, retention, paramHistoryRetention, fxHistoryRetention time.Duration, snapshotKeepCount int, tickC <-chan time.Time, log *zap.Logger) {
 	if purger == nil {
 		return
 	}
@@ -1033,6 +1101,12 @@ func monitorPurge(ctx context.Context, purger repository.Purger, retention, para
 				log.Warn("worker: purge param history failed", zap.Error(err))
 			} else if n > 0 {
 				log.Info("worker: purged old param history rows", zap.Int64("count", n))
+			}
+			fxBefore := time.Now().Add(-fxHistoryRetention)
+			if n, err := purger.PurgeOldFXHistory(ctx, fxBefore); err != nil {
+				log.Warn("worker: purge fx history failed", zap.Error(err))
+			} else if n > 0 {
+				log.Info("worker: purged old exchange rate history rows", zap.Int64("count", n))
 			}
 		}
 	}

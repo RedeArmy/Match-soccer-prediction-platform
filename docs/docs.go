@@ -15,6 +15,32 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/exchange-rate": {
+            "get": {
+                "description": "Returns the current GTQ/USD buy and sell rates for frontend",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exchange-rate"
+                ],
+                "summary": "Get current exchange rate",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.PublicExchangeRateResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/audit-log": {
             "get": {
                 "security": [
@@ -686,6 +712,221 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/exchange-rate/current": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the current GTQ/USD rates with full detail: reference",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-exchange-rate"
+                ],
+                "summary": "Get current exchange rate (admin)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ExchangeRatesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/exchange-rate/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of all GTQ/USD rate records, newest",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-exchange-rate"
+                ],
+                "summary": "List exchange rate history (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Maximum records to return (1–200, default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of records to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.ExchangeRateRecordResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/exchange-rate/override": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets a manual GTQ/USD reference rate, bypassing the automated",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-exchange-rate"
+                ],
+                "summary": "Override exchange rate (admin)",
+                "parameters": [
+                    {
+                        "description": "New reference rate and reason",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.overrideRateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ExchangeRatesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid rate or reason too short",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/exchange-rate/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Triggers an immediate GTQ/USD rate fetch from the configured",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-exchange-rate"
+                ],
+                "summary": "Refresh exchange rate (admin)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ExchangeRatesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "All external sources failed",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -6155,6 +6396,82 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.ExchangeRateRecordResponse": {
+            "type": "object",
+            "properties": {
+                "buy_margin_pct": {
+                    "type": "string"
+                },
+                "buy_rate": {
+                    "type": "string"
+                },
+                "effective_at": {
+                    "type": "string"
+                },
+                "fetched_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_override": {
+                    "type": "boolean"
+                },
+                "override_by": {
+                    "type": "integer"
+                },
+                "override_reason": {
+                    "type": "string"
+                },
+                "reference_rate": {
+                    "type": "string"
+                },
+                "sell_margin_pct": {
+                    "type": "string"
+                },
+                "sell_rate": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "stale": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api_handler.ExchangeRatesResponse": {
+            "type": "object",
+            "properties": {
+                "buy_margin_pct": {
+                    "type": "string"
+                },
+                "buy_rate": {
+                    "type": "string"
+                },
+                "effective_at": {
+                    "type": "string"
+                },
+                "is_override": {
+                    "type": "boolean"
+                },
+                "reference_rate": {
+                    "type": "string"
+                },
+                "sell_margin_pct": {
+                    "type": "string"
+                },
+                "sell_rate": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "stale": {
+                    "type": "boolean"
+                }
+            }
+        },
         "internal_api_handler.GlobalLeaderboardEntryResponse": {
             "type": "object",
             "properties": {
@@ -6660,6 +6977,23 @@ const docTemplate = `{
                 },
                 "title": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.PublicExchangeRateResponse": {
+            "type": "object",
+            "properties": {
+                "buy_rate": {
+                    "type": "string"
+                },
+                "effective_at": {
+                    "type": "string"
+                },
+                "sell_rate": {
+                    "type": "string"
+                },
+                "stale": {
+                    "type": "boolean"
                 }
             }
         },
@@ -7268,6 +7602,19 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.overrideRateRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "description": "Reason is required (minimum 10 characters) and is stored in\nexchange_rate_history.override_reason for audit purposes.",
+                    "type": "string"
+                },
+                "reference_rate": {
+                    "description": "ReferenceRate is the new reference rate as a string to avoid float64\nprecision loss at the JSON boundary.  Parsed as decimal.Decimal.\nMust be in the range (0, 20] — reasonable GTQ/USD bounds.",
+                    "type": "string"
                 }
             }
         },

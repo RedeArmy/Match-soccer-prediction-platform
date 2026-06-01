@@ -140,6 +140,14 @@ const (
 	DefaultAuditMaxRetries   = 2   // audit.max_retries
 	DefaultAuditRetryDelayMs = 250 // audit.retry_delay_ms
 
+	// DefaultAuditMaxInFlight is the maximum number of concurrent audit-log
+	// goroutines. When this limit is reached, new Log calls drop the entry
+	// immediately (incrementing Dropped) rather than spawning another goroutine
+	// and risking OOM under sustained DB degradation. 1 000 goroutines is
+	// generous (~8 MB of stack), giving operators ample time to react once the
+	// Prometheus alert fires at 500 before any entries are actually dropped.
+	DefaultAuditMaxInFlight = 1000 // audit.max_in_flight
+
 	// Prediction window
 	DefaultPredictionDeadlineMin = 5 // prediction.deadline_minutes — closes predictions 5 min before kick-off
 
@@ -247,6 +255,11 @@ const (
 	// ParamKeyAuditRetryDelayMs is the delay in milliseconds between audit write
 	// retries to allow transient DB failures to clear.
 	ParamKeyAuditRetryDelayMs = "audit.retry_delay_ms"
+	// ParamKeyAuditMaxInFlight is the ceiling on concurrent audit goroutines.
+	// Log calls that would push inFlight above this value are dropped immediately
+	// (Dropped counter increments) rather than queuing indefinitely under DB
+	// pressure. is_runtime=FALSE: restart required to pick up changes.
+	ParamKeyAuditMaxInFlight = "audit.max_in_flight"
 
 	// DB transaction retry policy (is_runtime=FALSE: restart required).
 	// ParamKeyTxRetryMaxAttempts is the total number of transaction attempts
@@ -333,6 +346,7 @@ func AllParamKeys() []string {
 		ParamKeyAuditWriteTimeout,
 		ParamKeyAuditMaxRetries,
 		ParamKeyAuditRetryDelayMs,
+		ParamKeyAuditMaxInFlight,
 		// Auth
 		ParamKeyAuthValidationTimeout,
 		// DLQ
@@ -357,10 +371,13 @@ func AllParamKeys() []string {
 		// System
 		ParamKeyPurgeRetentionDays,
 		ParamKeySystemParamHistoryRetentionDays,
+		ParamKeyFXHistoryRetentionDays,
 		// API
 		ParamKeyAPIBodySizeLimitBytes,
 		ParamKeyAPIRateLimitRatePerSec,
 		ParamKeyAPIRateLimitBurst,
+		ParamKeyAdminRateLimitRatePerSec,
+		ParamKeyAdminRateLimitBurst,
 		ParamKeyAPIIdempotencyTTLHours,
 		ParamKeyAPIIdempotencyKeyMaxLen,
 		// IP rate limiting (L1 global + L2 webhook)
@@ -388,6 +405,7 @@ func AllParamKeys() []string {
 		ParamKeyBankTransferMinAmountCents,
 		ParamKeyBankTransferMaxAmountCents,
 		ParamKeyPaymentIntentTTLMinutes,
+		ParamKeyPaymentIntentMaxCents,
 		ParamKeyUSDGTQRate,
 		ParamKeyExchangeRateMarginBPS,
 		ParamKeyFXBuyMarginBPS,

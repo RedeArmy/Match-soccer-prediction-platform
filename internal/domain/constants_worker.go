@@ -39,6 +39,14 @@ const (
 	// kept. 90 days covers the FIFA 2026 tournament window plus two months of
 	// post-tournament analysis without letting the table grow indefinitely.
 	DefaultSystemParamHistoryRetentionDays = 90 // system.param_history_retention_days
+
+	// DefaultFXHistoryRetentionDays is the number of days exchange_rate_history
+	// rows are kept. Matching DefaultSystemParamHistoryRetentionDays (90 days)
+	// preserves three months of daily audit trail, covers the FIFA 2026 tournament
+	// window, and keeps the table comfortably under 100 rows at normal refresh
+	// cadence (1 row/day). The daily purge job deletes rows whose effective_at
+	// is strictly before this cutoff.
+	DefaultFXHistoryRetentionDays = 90 // fx.history_retention_days
 )
 
 // Worker and system-purge system parameter keys.
@@ -80,4 +88,10 @@ const (
 	// Older entries are removed by the worker on each purge tick.
 	// is_runtime=FALSE: worker restart required to apply a new value.
 	ParamKeySystemParamHistoryRetentionDays = "system.param_history_retention_days"
+
+	// ParamKeyFXHistoryRetentionDays is the number of days exchange_rate_history
+	// rows are retained. Rows whose effective_at is strictly before
+	// (now - retention) are deleted by the daily purge job.
+	// is_runtime=FALSE: worker restart required to apply a new value.
+	ParamKeyFXHistoryRetentionDays = "fx.history_retention_days"
 )

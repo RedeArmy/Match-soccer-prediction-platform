@@ -209,6 +209,12 @@ type PredictionRepository interface {
 	// A batch failure is non-fatal: the scoring service logs the error and
 	// proceeds because the score updates have already been committed.
 	InsertScoringBatch(ctx context.Context, entries []domain.PredictionScoreLog) error
+	// GetScoringCfgSnapshot returns the scoring configuration from the earliest
+	// prediction_score_log row for matchID. ScoreMatch uses this to replay with
+	// the original config rather than the current scoring_rules, preventing
+	// leaderboard inconsistency when rules change between a failure and its
+	// DLQ replay. Returns (nil, nil) when no log entry exists for the match.
+	GetScoringCfgSnapshot(ctx context.Context, matchID int) (*domain.ScoringCfgSnapshot, error)
 }
 
 // QuinielaRepository defines the persistence operations for the Quiniela
@@ -753,6 +759,11 @@ type Purger interface {
 	// computed by the caller. Failures are non-fatal: the worker retries on the
 	// next purge tick.
 	PurgeOldParamHistory(ctx context.Context, before time.Time) (int64, error)
+	// PurgeOldFXHistory removes exchange_rate_history rows whose effective_at
+	// is strictly before before. Returns the number of rows deleted.
+	// Bounded by fx.history_retention_days (default 90 days). Non-fatal:
+	// the worker retries on the next purge tick.
+	PurgeOldFXHistory(ctx context.Context, before time.Time) (int64, error)
 }
 
 // ScoringRuleRepository defines persistence operations for per-phase scoring

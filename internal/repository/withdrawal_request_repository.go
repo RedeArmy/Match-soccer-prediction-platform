@@ -136,6 +136,9 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 			RETURNING `+withdrawalColumns,
 			req.UserID, req.AmountCents, req.Currency, req.Method, payoutJSON, req.GTQReservedCents,
 		)
+		if isUniqueViolation(err) {
+			return apperrors.Conflict("a withdrawal request is already pending for this user")
+		}
 		if err != nil {
 			return err
 		}

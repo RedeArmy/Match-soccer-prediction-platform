@@ -20,6 +20,12 @@ const (
 	// payment intent remains valid. After expiry the customer must restart checkout.
 	DefaultPaymentIntentTTLMinutes = 60 // payment.intent_ttl_minutes
 
+	// DefaultPaymentIntentMaxCents is the maximum payment intent amount in GTQ
+	// minor units (50 000 = Q500.00). Prevents malicious or buggy clients from
+	// creating absurdly large PayPal orders whose webhook credit would exceed any
+	// reasonable deposit. Operators can raise this via system_params.
+	DefaultPaymentIntentMaxCents = 50_000 // payment.intent_max_cents
+
 	// DefaultUSDGTQRate is the GTQ centavos per USD dollar used as the fallback
 	// exchange rate when the payment.usd_gtq_rate system param is absent.
 	// 790 = Q7.90 per $1 USD (approximate market rate at quiniela launch).
@@ -73,6 +79,10 @@ const (
 	// ParamKeyPaymentIntentTTLMinutes is the number of minutes a pending PayPal
 	// payment intent remains valid. is_runtime=TRUE: tunable without restart.
 	ParamKeyPaymentIntentTTLMinutes = "payment.intent_ttl_minutes"
+	// ParamKeyPaymentIntentMaxCents is the upper bound on a payment intent's
+	// amount_cents. Requests above this value are rejected with 422 before a
+	// PayPal order is created. is_runtime=TRUE: tunable without restart.
+	ParamKeyPaymentIntentMaxCents = "payment.intent_max_cents"
 
 	// ParamKeyUSDGTQRate is the GTQ centavos per USD dollar used to convert
 	// USD PayPal withdrawal amounts into GTQ centavos for balance reservation.

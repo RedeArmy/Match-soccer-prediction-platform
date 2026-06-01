@@ -130,6 +130,9 @@ func (s *Server) buildHandlers(
 	// Store auditSvc on the server so the shutdown path can call Drain() to
 	// wait for in-flight audit writes before closing the database pool.
 	s.auditSvc = auditSvc
+	if err := auditSvc.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
+		s.log.Warn("audit: RegisterMetrics failed", zap.Error(err))
+	}
 
 	// Re-wire paramSvc with the now-available audit service so that Set/BulkSet
 	// calls from admin handlers are recorded in the audit trail, and with a

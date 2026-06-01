@@ -71,6 +71,10 @@ type paramSpec struct {
 //   - 000147_seed_usd_gtq_rate_param            (+1)
 //   - 000148_seed_exchange_rate_margin_param    (+1)
 //   - 000150_seed_fx_system_params              (+4)
+//   - 000151_seed_payment_intent_max_cents_param (+1)
+//   - 000153_seed_admin_rate_limit_params        (+2)
+//   - 000154_seed_audit_max_in_flight_param      (+1)
+//   - 000155_seed_fx_history_retention_param     (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -126,9 +130,11 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyMessagingStreamWorkerCount, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamWorkerCount), paramType: "int", category: "messaging", isRuntime: false},
 	{key: domain.ParamKeyMessagingStreamReadBlockSec, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamReadBlockSec), paramType: "int", category: "messaging", isRuntime: false},
 
-	// Audit retry policy — not runtime: restart required.
+	// Audit retry policy and goroutine cap — not runtime: restart required.
 	{key: domain.ParamKeyAuditMaxRetries, defaultValue: strconv.Itoa(domain.DefaultAuditMaxRetries), paramType: "int", category: "system", isRuntime: false},
 	{key: domain.ParamKeyAuditRetryDelayMs, defaultValue: strconv.Itoa(domain.DefaultAuditRetryDelayMs), paramType: "int", category: "system", isRuntime: false},
+	// audit.max_in_flight (migration 000154); not runtime — restart required.
+	{key: domain.ParamKeyAuditMaxInFlight, defaultValue: strconv.Itoa(domain.DefaultAuditMaxInFlight), paramType: "int", category: "system", isRuntime: false},
 
 	// Worker: snapshot generation — not runtime: worker restart required.
 	{key: domain.ParamKeyWorkerSnapshotConcurrency, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotConcurrency), paramType: "int", category: "worker", isRuntime: false},
@@ -145,6 +151,10 @@ var allParams = []paramSpec{
 	// API rate limiting — not runtime: LimiterStore is constructed once at startup; restart required.
 	{key: domain.ParamKeyAPIRateLimitRatePerSec, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitRatePerSec), paramType: "int", category: "api", isRuntime: false},
 	{key: domain.ParamKeyAPIRateLimitBurst, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitBurst), paramType: "int", category: "api", isRuntime: false},
+	// Admin panel rate limiting (migration 000153); not runtime — restart required.
+	// Independent from the general user bucket; applied at the /api/v1/admin subrouter.
+	{key: domain.ParamKeyAdminRateLimitRatePerSec, defaultValue: strconv.Itoa(domain.DefaultAdminRateLimitRatePerSec), paramType: "int", category: "admin", isRuntime: false},
+	{key: domain.ParamKeyAdminRateLimitBurst, defaultValue: strconv.Itoa(domain.DefaultAdminRateLimitBurst), paramType: "int", category: "admin", isRuntime: false},
 	// Idempotency middleware — not runtime: TTL and key limit are fixed at server startup.
 	{key: domain.ParamKeyAPIIdempotencyTTLHours, defaultValue: strconv.Itoa(domain.DefaultAPIIdempotencyTTLHours), paramType: "int", category: "api", isRuntime: false},
 	{key: domain.ParamKeyAPIIdempotencyKeyMaxLen, defaultValue: strconv.Itoa(domain.DefaultAPIIdempotencyKeyMaxLen), paramType: "int", category: "api", isRuntime: false},
@@ -184,6 +194,8 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyBankTransferMinAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMinAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyBankTransferMaxAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMaxAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyPaymentIntentTTLMinutes, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentTTLMinutes), paramType: "int", category: "payment", isRuntime: true},
+	// Payment intent amount cap (migration 000151); runtime — tunable without restart.
+	{key: domain.ParamKeyPaymentIntentMaxCents, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentMaxCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyUSDGTQRate, defaultValue: strconv.Itoa(domain.DefaultUSDGTQRate), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyExchangeRateMarginBPS, defaultValue: strconv.Itoa(domain.DefaultExchangeRateMarginBPS), paramType: "int", category: "payment", isRuntime: true},
 
@@ -192,6 +204,8 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyFXSellMarginBPS, defaultValue: strconv.Itoa(domain.DefaultFXSellMarginBPS), paramType: "int", category: "fx", isRuntime: true},
 	{key: domain.ParamKeyFXDisplayDecimals, defaultValue: strconv.Itoa(domain.DefaultFXDisplayDecimals), paramType: "int", category: "fx", isRuntime: true},
 	{key: domain.ParamKeyFXStaleThresholdH, defaultValue: strconv.Itoa(domain.DefaultFXStaleThresholdH), paramType: "int", category: "fx", isRuntime: true},
+	// FX history retention (migration 000155); not runtime — worker restart required.
+	{key: domain.ParamKeyFXHistoryRetentionDays, defaultValue: strconv.Itoa(domain.DefaultFXHistoryRetentionDays), paramType: "int", category: "fx", isRuntime: false},
 
 	// Notifications — runtime: thresholds and recipient list are tunable without restart.
 	{key: domain.ParamKeyNotifyBankTransferStaleSec, defaultValue: strconv.Itoa(domain.DefaultNotifyBankTransferStaleSec), paramType: "int", category: "notify", isRuntime: true},

@@ -330,6 +330,7 @@ var paramIntConstraints = map[string]paramIntRange{
 	// Audit retry policy
 	domain.ParamKeyAuditMaxRetries:   {1, 10},
 	domain.ParamKeyAuditRetryDelayMs: {10, 10_000},
+	domain.ParamKeyAuditMaxInFlight:  {10, 10_000}, // 10 min; 10 000 would be excessive but valid upper bound
 
 	// DLQ
 	domain.ParamKeyDLQSampleSize:         {1, 100},
@@ -365,8 +366,10 @@ var paramIntConstraints = map[string]paramIntRange{
 	// Rate limiter params are is_runtime=FALSE (LimiterStore built at startup); a
 	// restart is required to apply changes. Bounds prevent nonsensical values from
 	// being accepted via the admin API.
-	domain.ParamKeyAPIRateLimitRatePerSec: {1, 1_000}, // 1 token/s – 1 000 token/s
-	domain.ParamKeyAPIRateLimitBurst:      {1, 1_000}, // min 1; 1 000 burst is already very generous
+	domain.ParamKeyAPIRateLimitRatePerSec:   {1, 1_000}, // 1 token/s – 1 000 token/s
+	domain.ParamKeyAPIRateLimitBurst:        {1, 1_000}, // min 1; 1 000 burst is already very generous
+	domain.ParamKeyAdminRateLimitRatePerSec: {1, 100},   // 1 token/s – 100 token/s (admin ops should be deliberate)
+	domain.ParamKeyAdminRateLimitBurst:      {1, 100},   // min 1; 100 burst cap for admin
 	// IP rate limiting (L1 global, L2 webhook) — is_runtime=FALSE; restart required.
 	domain.ParamKeyIPRateLimitGlobalRPS:    {1, 10_000}, // 1–10K tokens/sec
 	domain.ParamKeyIPRateLimitGlobalBurst:  {1, 10_000}, // min 1; 10K burst is already very generous
@@ -378,6 +381,7 @@ var paramIntConstraints = map[string]paramIntRange{
 
 	// System param history retention (is_runtime=FALSE; worker restart required)
 	domain.ParamKeySystemParamHistoryRetentionDays: {1, 365}, // 1 day – 1 year
+	domain.ParamKeyFXHistoryRetentionDays:          {7, 730}, // 1 week – 2 years
 
 	// Payment / balance (is_runtime = TRUE; changes take effect within cache window)
 	domain.ParamKeyPaymentMaxUploadBytes:      {102_400, 52_428_800}, // 100 KB – 50 MB
@@ -385,7 +389,8 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyWithdrawalMaxCents:         {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
 	domain.ParamKeyBankTransferMinAmountCents: {100, 1_000_000},      // 1 GTQ – 10 000 GTQ
 	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
-	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 10_080},           // 5 min – 1 week
+	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 1_440},            // 5 min – 24 h
+	domain.ParamKeyPaymentIntentMaxCents:      {1, 10_000_000},       // Q0.01 – Q100 000.00
 	domain.ParamKeyUSDGTQRate:                 {100, 10_000},         // Q1.00 – Q100.00 per USD
 	domain.ParamKeyExchangeRateMarginBPS:      {0, 500},              // 0 (no markup) – 500 bps (5 %)
 	domain.ParamKeyFXBuyMarginBPS:             {0, 500},              // 0 – 500 bps (5 %) buy-side margin

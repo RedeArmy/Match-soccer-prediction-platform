@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -750,4 +753,133 @@ func TestSchedulerHealthChecker_WeeklyJobOverdue_Error(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("overdue weekly: status = %q; want %q", result.Status, "error")
 	}
+}
+
+// ── RegisterMetrics tests ─────────────────────────────────────────────────────
+
+func TestSchedulerRegisterMetrics_NoopMeter_NoError(t *testing.T) {
+	t.Parallel()
+	s := scheduler.New(scheduler.Config{Log: zap.NewNop()})
+	s.RegisterInterval("job-a", 5*time.Minute, func(_ context.Context) error { return nil })
+
+	if err := s.RegisterMetrics(noop.NewMeterProvider().Meter("test"), 3.0); err != nil {
+		t.Fatalf("RegisterMetrics with noop meter returned error: %v", err)
+	}
+}
+
+func TestSchedulerRegisterMetrics_CallbackEmitsOnTime(t *testing.T) {
+	// The job has fired recently — gauge must be 0 (not overdue).
+	t.Parallel()
+
+	base := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	clock := &stubClock{t: base}
+	s := scheduler.New(scheduler.Config{Clock: clock, Log: zap.NewNop()})
+	s.RegisterInterval("on-time", 5*time.Minute, func(_ context.Context) error { return nil })
+	s.RunWithTick(context.Background(), base)
+
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	defer provider.Shutdown(context.Background()) //nolint:errcheck
+
+	if err := s.RegisterMetrics(provider.Meter("test"), 3.0); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	// Advance to just inside the threshold (3×5 min = 15 min; advance 14 min).
+	clock.t = base.Add(14 * time.Minute)
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	val := findSchedulerGauge(t, rm, "on-time")
+	if val != 0 {
+		t.Errorf("on-time job: wcq_scheduler_job_overdue = %d; want 0", val)
+	}
+}
+
+func TestSchedulerRegisterMetrics_CallbackEmitsOverdue(t *testing.T) {
+	// The job is overdue — gauge must be 1.
+	t.Parallel()
+
+	base := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	clock := &stubClock{t: base}
+	s := scheduler.New(scheduler.Config{Clock: clock, Log: zap.NewNop()})
+	s.RegisterInterval("stalled", 5*time.Minute, func(_ context.Context) error { return nil })
+	s.RunWithTick(context.Background(), base)
+
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	defer provider.Shutdown(context.Background()) //nolint:errcheck
+
+	if err := s.RegisterMetrics(provider.Meter("test"), 3.0); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	// Advance past threshold (3×5 min = 15 min; advance 16 min).
+	clock.t = base.Add(16 * time.Minute)
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	val := findSchedulerGauge(t, rm, "stalled")
+	if val != 1 {
+		t.Errorf("overdue job: wcq_scheduler_job_overdue = %d; want 1", val)
+	}
+}
+
+func TestSchedulerRegisterMetrics_StartupGraceEmitsZero(t *testing.T) {
+	// A job that has never fired must emit 0, not 1.
+	t.Parallel()
+
+	clock := &stubClock{t: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)}
+	s := scheduler.New(scheduler.Config{Clock: clock, Log: zap.NewNop()})
+	s.RegisterInterval("never-ran", 5*time.Minute, func(_ context.Context) error { return nil })
+
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	defer provider.Shutdown(context.Background()) //nolint:errcheck
+
+	if err := s.RegisterMetrics(provider.Meter("test"), 3.0); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	val := findSchedulerGauge(t, rm, "never-ran")
+	if val != 0 {
+		t.Errorf("startup grace: wcq_scheduler_job_overdue = %d; want 0", val)
+	}
+}
+
+// findSchedulerGauge returns the wcq_scheduler_job_overdue value for the
+// given job_name label, or fails the test if the data point is not found.
+func findSchedulerGauge(t *testing.T, rm metricdata.ResourceMetrics, jobName string) int64 {
+	t.Helper()
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "wcq_scheduler_job_overdue" {
+				continue
+			}
+			gauge, ok := m.Data.(metricdata.Gauge[int64])
+			if !ok {
+				t.Fatalf("wcq_scheduler_job_overdue is not Gauge[int64]")
+			}
+			for _, dp := range gauge.DataPoints {
+				for _, attr := range dp.Attributes.ToSlice() {
+					if string(attr.Key) == "job_name" && attr.Value.AsString() == jobName {
+						return dp.Value
+					}
+				}
+			}
+		}
+	}
+	t.Fatalf("wcq_scheduler_job_overdue{job_name=%q} not found in collected metrics", jobName)
+	return -1
 }
