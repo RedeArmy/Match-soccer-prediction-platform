@@ -255,8 +255,10 @@ func (s *ExchangeRateServiceImpl) RefreshRate(ctx context.Context) (*domain.Exch
 
 	// Persist to history.
 	fetchedAt := time.Now()
+	var apiVersion string
 	if raw != nil {
 		fetchedAt = raw.FetchedAt
+		apiVersion = raw.ApiVersion
 	}
 	rec := &domain.ExchangeRateRecord{
 		ReferenceRate: rates.ReferenceRate,
@@ -265,6 +267,7 @@ func (s *ExchangeRateServiceImpl) RefreshRate(ctx context.Context) (*domain.Exch
 		BuyMarginPct:  rates.BuyMarginPct,
 		SellMarginPct: rates.SellMarginPct,
 		Source:        source,
+		ApiVersion:    apiVersion,
 		Stale:         stale,
 		IsOverride:    false,
 		FetchedAt:     fetchedAt,

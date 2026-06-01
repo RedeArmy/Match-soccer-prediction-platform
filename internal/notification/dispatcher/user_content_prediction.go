@@ -6,9 +6,11 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
 
-func buildPredictionConfirmedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPredictionConfirmedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PredictionConfirmedPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Prediction confirmed", "Predicción confirmada", locale),
 		body: localeStr(
@@ -17,12 +19,14 @@ func buildPredictionConfirmedContent(entry *notification.OutboxEntry, locale Loc
 			locale,
 		),
 		actionURL: "/api/v1/predictions/me",
-	}
+	}, nil
 }
 
-func buildPredictionDeadlineApproachContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPredictionDeadlineApproachContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PredictionDeadlinePayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Prediction deadline approaching", "Límite de predicción se acerca", locale),
 		body: localeStr(
@@ -31,12 +35,14 @@ func buildPredictionDeadlineApproachContent(entry *notification.OutboxEntry, loc
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
-	}
+	}, nil
 }
 
-func buildPredictionMissingReminderContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPredictionMissingReminderContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PredictionDeadlinePayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Missing prediction reminder", "Recordatorio de predicción pendiente", locale),
 		body: localeStr(
@@ -45,12 +51,14 @@ func buildPredictionMissingReminderContent(entry *notification.OutboxEntry, loca
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
-	}
+	}, nil
 }
 
-func buildPredictionLockedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPredictionLockedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PredictionLockedPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Predictions locked", "Predicciones cerradas", locale),
 		body: localeStr(
@@ -59,12 +67,14 @@ func buildPredictionLockedContent(entry *notification.OutboxEntry, locale Locale
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
-	}
+	}, nil
 }
 
-func buildPredictionScoredContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPredictionScoredContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PredictionScoredPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Match scored", "Partido puntuado", locale),
 		body: localeStr(
@@ -73,12 +83,14 @@ func buildPredictionScoredContent(entry *notification.OutboxEntry, locale Locale
 			locale,
 		),
 		actionURL: "/api/v1/predictions/me",
-	}
+	}, nil
 }
 
-func buildMatchResultEnteredContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildMatchResultEnteredContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.MatchEventPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Match result entered", "Resultado registrado", locale),
 		body: localeStr(
@@ -87,12 +99,14 @@ func buildMatchResultEnteredContent(entry *notification.OutboxEntry, locale Loca
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
-	}
+	}, nil
 }
 
-func buildMatchPostponedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildMatchPostponedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.MatchEventPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Match postponed", "Partido aplazado", locale),
 		body: localeStr(
@@ -101,12 +115,14 @@ func buildMatchPostponedContent(entry *notification.OutboxEntry, locale Locale) 
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
-	}
+	}, nil
 }
 
-func buildMatchCancelledContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildMatchCancelledContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.MatchEventPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Match cancelled", "Partido cancelado", locale),
 		body: localeStr(
@@ -115,5 +131,5 @@ func buildMatchCancelledContent(entry *notification.OutboxEntry, locale Locale) 
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
-	}
+	}, nil
 }

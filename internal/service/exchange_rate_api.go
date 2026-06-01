@@ -15,6 +15,9 @@ const (
 	exchangeRateAPITimeout     = 5 * time.Second
 	exchangeRateAPIBodyLimit   = 64 * 1024 // 64 KB
 	exchangeRateAPISourceName  = "exchangerate-api"
+	// exchangeRateAPIVersion reflects the "v6" path segment in the URL above.
+	// Update when migrating to a new endpoint version.
+	exchangeRateAPIVersion = "v6"
 )
 
 // exchangeRateAPIResponse is the relevant subset of the exchangerate-api.com
@@ -95,6 +98,7 @@ func (f *ExchangeRateAPIFetcher) FetchCurrent(ctx context.Context) (*RawRate, er
 	return &RawRate{
 		ReferenceRate: rate,
 		Source:        exchangeRateAPISourceName,
+		ApiVersion:    exchangeRateAPIVersion,
 		FetchedAt:     time.Now(),
 	}, nil
 }

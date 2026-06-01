@@ -73,3 +73,7 @@ script if it becomes observable in production.
 - `internal/middleware/rate_limit.go` — `LimiterStore`, `Allower` interface
 - `internal/middleware/rate_limit_redis.go` — `RedisRateStore`
 - `internal/api/server_routes.go:Routes()` — selection logic (lines ~230-246)
+
+See also **ADR 0013** for the IP-specific fail-open policy and the observability
+signals (`wcq_rate_limit_fail_open_total`, `wcq_ip_ratelimit_store_mode`) that
+make the fallback visible in Grafana.

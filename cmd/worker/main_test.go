@@ -637,10 +637,12 @@ type stubPurger struct {
 	quinielaCalled  int
 	snapshotCalled  int
 	fxHistoryCalled int
+	outboxCalled    int
 	userCount       int64
 	quinielaCount   int64
 	snapshotCount   int64
 	fxHistoryCount  int64
+	outboxCount     int64
 	err             error
 }
 
@@ -672,8 +674,13 @@ func (s *stubPurger) PurgeOldFXHistory(_ context.Context, _ time.Time) (int64, e
 	return s.fxHistoryCount, s.err
 }
 
+func (s *stubPurger) PurgeOldOutboxEntries(_ context.Context, _ time.Time) (int64, error) {
+	s.outboxCalled++
+	return s.outboxCount, s.err
+}
+
 func TestMonitorPurge_NilPurger_ReturnsImmediately(t *testing.T) {
-	monitorPurge(context.Background(), nil, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 5, nil, zap.NewNop())
+	monitorPurge(context.Background(), nil, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 30*24*time.Hour, 5, nil, zap.NewNop())
 }
 
 func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
@@ -681,7 +688,7 @@ func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	cancel()
 
 	purger := &stubPurger{}
-	monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 5, nil, zap.NewNop())
+	monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 30*24*time.Hour, 5, nil, zap.NewNop())
 
 	if purger.userCalled != 0 {
 		t.Errorf("expected no purge calls with cancelled context, got %d", purger.userCalled)
@@ -698,7 +705,7 @@ func TestMonitorPurge_OnTick_CallsPurge(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 5, tickC, zap.NewNop())
+		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 30*24*time.Hour, 5, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -729,7 +736,7 @@ func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 5, tickC, zap.NewNop())
+		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 30*24*time.Hour, 5, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -757,7 +764,7 @@ func TestMonitorPurge_OnTick_CallsFXHistoryPurge(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 5, tickC, zap.NewNop())
+		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 30*24*time.Hour, 5, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -769,6 +776,31 @@ func TestMonitorPurge_OnTick_CallsFXHistoryPurge(t *testing.T) {
 
 	if purger.fxHistoryCalled != 1 {
 		t.Errorf("expected PurgeOldFXHistory called once, got %d", purger.fxHistoryCalled)
+	}
+}
+
+func TestMonitorPurge_OnTick_CallsOutboxPurge(t *testing.T) {
+	purger := &stubPurger{outboxCount: 5}
+	tickC := make(chan time.Time, 1)
+	tickC <- time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 90*24*time.Hour, 30*24*time.Hour, 5, tickC, zap.NewNop())
+		close(done)
+	}()
+
+	for len(tickC) > 0 {
+		runtime.Gosched()
+	}
+	cancel()
+	<-done
+
+	if purger.outboxCalled != 1 {
+		t.Errorf("expected PurgeOldOutboxEntries called once, got %d", purger.outboxCalled)
 	}
 }
 

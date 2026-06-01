@@ -15,6 +15,9 @@ const (
 	openExchangeTimeout     = 5 * time.Second
 	openExchangeBodyLimit   = 64 * 1024 // 64 KB
 	openExchangeSourceName  = "openexchangerates"
+	// openExchangeAPIVersion is the OpenExchangeRates REST API version.
+	// Their /api/latest.json endpoint is part of the v1 API.
+	openExchangeAPIVersion = "v1"
 )
 
 // openExchangeResponse is the relevant subset of the openexchangerates.org
@@ -103,6 +106,7 @@ func (f *OpenExchangeFetcher) FetchCurrent(ctx context.Context) (*RawRate, error
 	return &RawRate{
 		ReferenceRate: rate,
 		Source:        openExchangeSourceName,
+		ApiVersion:    openExchangeAPIVersion,
 		FetchedAt:     time.Now(),
 	}, nil
 }

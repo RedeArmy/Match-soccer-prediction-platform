@@ -77,12 +77,12 @@ test-cover:
 		-coverpkg=./... \
 		./...
 
-## check-coverage: Fail if total test coverage is below MIN_COVERAGE (default: 70%).
+## check-coverage: Fail if total test coverage is below MIN_COVERAGE (default: 80%).
 ##                 Reads coverage.out produced by `make test-cover`.
 ##                 Acts as a local fallback for the SonarCloud quality gate so a
 ##                 coverage drop is caught even when sonarcloud.io is unavailable.
-##                 Override: make check-coverage MIN_COVERAGE=80
-MIN_COVERAGE ?= 70
+##                 Override: make check-coverage MIN_COVERAGE=85
+MIN_COVERAGE ?= 80
 check-coverage:
 	@[ -f coverage.out ] || { \
 		echo "coverage.out not found — run 'make test-cover' first"; exit 1; \
@@ -261,8 +261,9 @@ bench-save:
 	@echo "Results saved to .bench/current.txt"
 	@echo "To update the baseline: cp .bench/current.txt .bench/baseline.txt"
 
-## bench-compare: Run benchmarks and diff against .bench/baseline.txt using benchstat.
+## bench-compare: Run benchmarks, diff against .bench/baseline.txt, and fail on regressions >20%.
 ##                Requires a baseline: run 'make bench-save' and commit .bench/baseline.txt first.
+##                Update the baseline with 'make bench-save' when a regression is intentional.
 bench-compare:
 	@if [ ! -f .bench/baseline.txt ]; then \
 		echo "No baseline found at .bench/baseline.txt. Run 'make bench-save' first."; \
@@ -274,7 +275,9 @@ bench-compare:
 		./internal/service/... \
 		./internal/api/... \
 	> .bench/current.txt
-	go run golang.org/x/perf/cmd/benchstat .bench/baseline.txt .bench/current.txt
+	go run golang.org/x/perf/cmd/benchstat .bench/baseline.txt .bench/current.txt \
+		| tee /tmp/bench-delta.txt
+	python3 scripts/bench-gate.py /tmp/bench-delta.txt
 
 ## load-test: Fire an HTTP load test against a running server (manual use only — not in CI).
 ##            Requires hey: go install github.com/rakyll/hey@latest

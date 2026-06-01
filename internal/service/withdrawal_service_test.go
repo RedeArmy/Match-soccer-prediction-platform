@@ -28,7 +28,7 @@ func (r *withdrawalReqRepoStub) CreateAndReserve(_ context.Context, req *domain.
 	return nil
 }
 func (r *withdrawalReqRepoStub) GetByID(_ context.Context, _ int) (*domain.WithdrawalRequest, error) {
-	return r.req, r.err
+	return r.req, r.err // repository interface — name unchanged
 }
 func (r *withdrawalReqRepoStub) ListByUser(_ context.Context, _ int) ([]*domain.WithdrawalRequest, error) {
 	return r.reqs, r.err
@@ -175,13 +175,13 @@ func TestWithdrawalService_Create_RepoErrorPropagates(t *testing.T) {
 	}
 }
 
-// ── GetByID ───────────────────────────────────────────────────────────────────
+// ── AdminGetByID ──────────────────────────────────────────────────────────────
 
-func TestWithdrawalService_GetByID_ReturnsRequest(t *testing.T) {
+func TestWithdrawalService_AdminGetByID_ReturnsRequest(t *testing.T) {
 	req := &domain.WithdrawalRequest{ID: 7, AmountCents: 5000}
 	svc := newWithdrawalSvc(&withdrawalReqRepoStub{req: req}, nil)
 
-	got, err := svc.GetByID(context.Background(), 7)
+	got, err := svc.AdminGetByID(context.Background(), 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,10 +190,10 @@ func TestWithdrawalService_GetByID_ReturnsRequest(t *testing.T) {
 	}
 }
 
-func TestWithdrawalService_GetByID_NotFound(t *testing.T) {
+func TestWithdrawalService_AdminGetByID_NotFound(t *testing.T) {
 	svc := newWithdrawalSvc(&withdrawalReqRepoStub{req: nil}, nil)
 
-	got, err := svc.GetByID(context.Background(), 999)
+	got, err := svc.AdminGetByID(context.Background(), 999)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -372,6 +372,7 @@ func AllParamKeys() []string {
 		ParamKeyPurgeRetentionDays,
 		ParamKeySystemParamHistoryRetentionDays,
 		ParamKeyFXHistoryRetentionDays,
+		ParamKeyOutboxRetentionDays,
 		// API
 		ParamKeyAPIBodySizeLimitBytes,
 		ParamKeyAPIRateLimitRatePerSec,

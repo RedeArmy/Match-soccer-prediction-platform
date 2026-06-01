@@ -50,6 +50,13 @@ func validateWorker(cfg *Config) error {
 		if err := validateProductionDatabaseTLS(cfg.Database.DSN); err != nil {
 			return err
 		}
+		if cfg.Redis.Password == "" {
+			return errors.New(
+				"redis.password must not be empty outside development (WCQ_REDIS_PASSWORD): " +
+					"an unauthenticated Redis instance exposes rate-limit state and leader-election locks. " +
+					"Set WCQ_REDIS_PASSWORD or WCQ_ENVIRONMENT=development",
+			)
+		}
 		if err := validateN8nConfig(cfg.N8n); err != nil {
 			return err
 		}
@@ -111,6 +118,31 @@ func Warnings(cfg *Config) []string {
 		w = append(w, "database.dsn: sslmode=require encrypts the connection but does not "+
 			"verify the server certificate. Use sslmode=verify-full for strict TLS "+
 			"(prevents MITM attacks). Update WCQ_DATABASE_DSN.")
+	}
+	// Advisory: Redis without a password exposes idempotency keys, rate-limit
+	// state, push-digest deduplication, and leader-election locks to any process
+	// on the same network. In production, Redis should always require
+	// authentication. Set WCQ_REDIS_PASSWORD.
+	if !cfg.IsDevelopment() && cfg.Redis.Password == "" {
+		w = append(w, "redis.password is empty: Redis is running without authentication. "+
+			"Idempotency keys, rate-limit state, and leader-election locks are exposed "+
+			"to any process on the same network. Set WCQ_REDIS_PASSWORD.")
+	}
+	// Advisory: metrics disabled means all 11 Grafana dashboards show no data and
+	// all OTel instruments are silently discarded. An operator who deploys without
+	// this flag set will see empty dashboards and may incorrectly assume the
+	// monitoring stack is broken rather than the flag being unset.
+	if !cfg.IsDevelopment() && !cfg.Metrics.Enabled {
+		w = append(w, "metrics.enabled=false: Prometheus metrics are disabled and all OTel "+
+			"instruments are silently discarded. Grafana dashboards will show no data. "+
+			"Set WCQ_METRICS_ENABLED=true in production.")
+	}
+	// Advisory: tracing disabled means distributed traces are not exported and
+	// Grafana Tempo / trace views will be empty in non-development environments.
+	if !cfg.IsDevelopment() && !cfg.Tracing.Enabled {
+		w = append(w, "tracing.enabled=false: distributed tracing is disabled and all spans "+
+			"are discarded. Grafana Tempo trace views will be empty. "+
+			"Set WCQ_TRACING_ENABLED=true in production.")
 	}
 	return w
 }
@@ -180,6 +212,15 @@ func validateProductionConfig(cfg *Config) error {
 	}
 	if err := validateProductionDatabaseTLS(cfg.Database.DSN); err != nil {
 		return err
+	}
+	if cfg.Redis.Password == "" {
+		return errors.New(
+			"redis.password must not be empty outside development (WCQ_REDIS_PASSWORD): " +
+				"an unauthenticated Redis instance exposes idempotency keys, rate-limit state, " +
+				"and leader-election locks to any process on the same network. " +
+				"An attacker who reads Redis can delete idempotency entries to replay payment webhooks. " +
+				"Authenticate Redis or acknowledge the risk by setting WCQ_ENVIRONMENT=development",
+		)
 	}
 	if err := validateCORSOrigins(cfg.CORS.AllowedOrigins, cfg.Environment); err != nil {
 		return err

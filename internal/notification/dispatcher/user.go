@@ -406,7 +406,17 @@ func (d *UserDispatcher) resolveContent(ctx context.Context, entry *notification
 			}
 		}
 	}
-	return buildUserContent(entry, locale)
+	c, err := buildUserContent(entry, locale)
+	if err != nil {
+		log.Warn("dispatcher: payload decode failed — falling back to generic notification content",
+			zap.String("event_type", string(entry.EventType)),
+			zap.Int64("outbox_id", entry.ID),
+			zap.Error(err),
+		)
+		c = defaultUserContent(locale)
+		c.locale = locale
+	}
+	return c
 }
 
 // resolveLocaleForUser applies the three-level locale resolution priority:

@@ -18,6 +18,10 @@ const (
 	banguatTimeout    = 10 * time.Second
 	banguatBodyLimit  = 512 * 1024 // 512 KB — far exceeds any realistic XML response
 	banguatSourceName = "banguat"
+	// banguatAPIVersion identifies the wire format of the Banguat feed.
+	// Banguat publishes no version in their URL; "xml" denotes the current
+	// XML schema.  Update if Banguat migrates to a JSON or versioned endpoint.
+	banguatAPIVersion = "xml"
 )
 
 // banguatRootXML is the outer envelope of the Banguat dolares feed.
@@ -128,6 +132,7 @@ func (f *BanguatFetcher) FetchCurrent(ctx context.Context) (*RawRate, error) {
 	return &RawRate{
 		ReferenceRate: sellRate,
 		Source:        banguatSourceName,
+		ApiVersion:    banguatAPIVersion,
 		FetchedAt:     time.Now(),
 	}, nil
 }

@@ -359,7 +359,8 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyWorkerSchedPushPruneIntervalSec:       {3_600, 604_800}, // 1 h – 7 days
 
 	// System
-	domain.ParamKeyPurgeRetentionDays: {1, 365},
+	domain.ParamKeyPurgeRetentionDays:  {1, 365},
+	domain.ParamKeyOutboxRetentionDays: {1, 365}, // 1 day – 1 year
 
 	// API
 	domain.ParamKeyAPIBodySizeLimitBytes: {1_024, 10_485_760}, // 1 KB – 10 MB

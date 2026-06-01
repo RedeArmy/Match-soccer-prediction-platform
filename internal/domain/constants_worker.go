@@ -47,6 +47,12 @@ const (
 	// cadence (1 row/day). The daily purge job deletes rows whose effective_at
 	// is strictly before this cutoff.
 	DefaultFXHistoryRetentionDays = 90 // fx.history_retention_days
+
+	// DefaultOutboxRetentionDays is the number of days terminal-state (done/failed)
+	// domain_outbox rows are retained before the daily purge job deletes them.
+	// 30 days covers the full FIFA 2026 tournament window and provides a month of
+	// operational history for debugging notification delivery issues.
+	DefaultOutboxRetentionDays = 30 // worker.outbox_retention_days
 )
 
 // Worker and system-purge system parameter keys.
@@ -94,4 +100,10 @@ const (
 	// (now - retention) are deleted by the daily purge job.
 	// is_runtime=FALSE: worker restart required to apply a new value.
 	ParamKeyFXHistoryRetentionDays = "fx.history_retention_days"
+
+	// ParamKeyOutboxRetentionDays is the number of days terminal-state (done/failed)
+	// domain_outbox rows are retained. Rows whose created_at is strictly before
+	// (now - retention) are deleted by the daily purge job.
+	// is_runtime=FALSE: worker restart required to apply a new value.
+	ParamKeyOutboxRetentionDays = "worker.outbox_retention_days"
 )

@@ -144,6 +144,7 @@ var allParams = []paramSpec{
 	// Worker: background maintenance — not runtime: worker restart required.
 	{key: domain.ParamKeyWorkerDLQMonitorIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerDLQMonitorIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerPurgeIntervalHours, defaultValue: strconv.Itoa(domain.DefaultWorkerPurgeIntervalHours), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyOutboxRetentionDays, defaultValue: strconv.Itoa(domain.DefaultOutboxRetentionDays), paramType: "int", category: "worker", isRuntime: false},
 
 	// API request limits — not runtime: restart required.
 	{key: domain.ParamKeyAPIBodySizeLimitBytes, defaultValue: strconv.Itoa(domain.DefaultAPIBodySizeLimitBytes), paramType: "int", category: "api", isRuntime: false},

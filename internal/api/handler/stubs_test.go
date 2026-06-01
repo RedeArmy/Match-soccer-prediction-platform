@@ -325,7 +325,7 @@ type stubWithdrawalSvc struct {
 func (s *stubWithdrawalSvc) Create(_ context.Context, _, _ int, _ string, _ domain.WithdrawalMethod, _ map[string]string) (*domain.WithdrawalRequest, error) {
 	return s.req, s.err
 }
-func (s *stubWithdrawalSvc) GetByID(_ context.Context, _ int) (*domain.WithdrawalRequest, error) {
+func (s *stubWithdrawalSvc) AdminGetByID(_ context.Context, _ int) (*domain.WithdrawalRequest, error) {
 	return s.req, s.err
 }
 func (s *stubWithdrawalSvc) ListByUser(_ context.Context, _ int) ([]*domain.WithdrawalRequest, error) {

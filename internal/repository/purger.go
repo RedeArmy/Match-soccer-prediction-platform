@@ -132,4 +132,19 @@ func (p *PostgresPurger) PurgeOldFXHistory(ctx context.Context, before time.Time
 	return tag.RowsAffected(), nil
 }
 
+// PurgeOldOutboxEntries deletes domain_outbox rows in terminal state (done or
+// failed) whose created_at is strictly before the given cutoff. The partial
+// index idx_outbox_completed_created_at (migration 000157) restricts the scan
+// to terminal-state rows only, leaving pending and processing rows untouched.
+func (p *PostgresPurger) PurgeOldOutboxEntries(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := p.db.Exec(ctx,
+		`DELETE FROM domain_outbox
+		  WHERE status IN ('done', 'failed')
+		    AND created_at < $1`, before)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 var _ Purger = (*PostgresPurger)(nil)
