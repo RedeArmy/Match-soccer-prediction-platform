@@ -9,8 +9,9 @@ export default defineConfig({
     globals:     true,
     setupFiles:  ['./src/test/setup.ts'],
     coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json-summary'],
+      provider:         'v8',
+      reportsDirectory: './coverage',
+      reporter:         ['text', 'json-summary', 'lcov'],
       // Scope: only files with unit tests. api.ts and api-types.ts are
       // integration-level (require network mocks) and are excluded here;
       // they are covered by E2E tests (Playwright).
