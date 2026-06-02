@@ -7,13 +7,6 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { LoadingSpinner } from '@/components/shared/LoadingState'
 
-const countries = [
-  { code: 'GT', label: 'Guatemala' },
-  { code: 'MX', label: 'México' },
-  { code: 'CA', label: 'Canadá' },
-  { code: 'US', label: 'Estados Unidos' },
-  { code: 'OTHER', label: 'Otro' },
-]
 
 export default function OnboardingPage() {
   const { getToken } = useAuth()
