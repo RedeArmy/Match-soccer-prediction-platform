@@ -1,0 +1,154 @@
+@import './tokens.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--border-subtle);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-inter), system-ui, sans-serif;
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Prevent white flash on Clerk-embedded pages */
+  #clerk-components {
+    background-color: var(--bg-elevated) !important;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--blue-950);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--blue-600);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--blue-500);
+  }
+}
+
+@layer components {
+  /* Card surfaces */
+  .card {
+    background: var(--gradient-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+  }
+
+  .card-elevated {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-card);
+  }
+
+  /* Input base */
+  .input-base {
+    background: var(--bg-interactive);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-input);
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    width: 100%;
+    transition: border-color 0.15s ease;
+  }
+  .input-base:focus {
+    outline: none;
+    border-color: var(--gold-400);
+    box-shadow: 0 0 0 2px rgba(212, 160, 23, 0.2);
+  }
+  .input-base::placeholder {
+    color: var(--text-muted);
+  }
+
+  /* Gold CTA button */
+  .btn-gold {
+    background: var(--gradient-gold);
+    color: var(--blue-950);
+    font-weight: 700;
+    border-radius: var(--radius-card);
+    padding: 0.625rem 1.5rem;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+  }
+  .btn-gold:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+  }
+  .btn-gold:active {
+    transform: translateY(0);
+  }
+
+  /* Ghost button */
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text-primary);
+    border-radius: var(--radius-card);
+    padding: 0.625rem 1.5rem;
+    transition: background 0.15s ease;
+  }
+  .btn-ghost:hover {
+    background: var(--bg-interactive);
+  }
+
+  /* Hero gradient background with CSS stadium light effect */
+  .hero-bg {
+    background: var(--gradient-hero);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-bg::before {
+    content: '';
+    position: absolute;
+    top: -40%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80%;
+    height: 60%;
+    background: radial-gradient(ellipse, rgba(30, 77, 140, 0.4) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-bg::after {
+    content: '';
+    position: absolute;
+    bottom: -20%;
+    left: 10%;
+    width: 60%;
+    height: 40%;
+    background: radial-gradient(ellipse, rgba(212, 160, 23, 0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Status badge variants */
+  .badge-active   { background: rgba(39, 174, 96, 0.15);  color: var(--green-300); border: 1px solid rgba(39, 174, 96, 0.3); }
+  .badge-upcoming { background: rgba(212, 160, 23, 0.15); color: var(--gold-300);  border: 1px solid rgba(212, 160, 23, 0.3); }
+  .badge-ended    { background: rgba(90, 106, 126, 0.15); color: var(--text-muted); border: 1px solid rgba(90, 106, 126, 0.3); }
+  .badge-pending  { background: rgba(212, 160, 23, 0.15); color: var(--gold-300);  border: 1px solid rgba(212, 160, 23, 0.3); }
+  .badge-rejected { background: rgba(204, 34, 34, 0.15);  color: var(--red-300);   border: 1px solid rgba(204, 34, 34, 0.3); }
+  .badge-approved { background: rgba(39, 174, 96, 0.15);  color: var(--green-300); border: 1px solid rgba(39, 174, 96, 0.3); }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .font-display { font-family: var(--font-bebas), Impact, sans-serif; letter-spacing: 0.04em; }
+  .font-score   { font-family: var(--font-jetbrains), ui-monospace, monospace; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
