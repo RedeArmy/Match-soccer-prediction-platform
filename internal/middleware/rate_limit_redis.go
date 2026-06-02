@@ -15,14 +15,30 @@ import (
 // At most burst requests are allowed within each window.
 //
 // Redis errors are fail-open: a connectivity problem does not block traffic.
-// The EXPIRE is set to 2 seconds (one full window beyond the current second)
-// to guarantee the key is cleaned up while avoiding premature eviction.
+// The TTL is set atomically with the first INCR via a Lua script to 2 seconds
+// (one full window beyond the current second), preventing unbounded key growth
+// if the process crashes between the counter write and the expiry set.
 type RedisRateStore struct {
 	rc            redis.UniversalClient
 	burst         int
 	log           *zap.Logger
 	failOpenTotal metric.Int64Counter // incremented on every Redis-unavailable fail-open
 }
+
+// incrWindowScript atomically increments the per-key fixed-window counter and
+// sets the TTL only on the first increment (count == 1). Atomic execution via
+// Lua prevents a crash between INCR and EXPIRE from leaving a key without a TTL
+// and leaking Redis memory across 1-second window keys.
+//
+// KEYS[1] = counter key; ARGV[1] = TTL in whole seconds.
+// Returns the new counter value.
+var incrWindowScript = redis.NewScript(`
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`)
 
 // NewRedisRateStore constructs a RedisRateStore. ratePerSec is accepted for
 // API symmetry with NewLimiterStore but is unused — the burst cap controls the
@@ -55,20 +71,14 @@ func (s *RedisRateStore) Allow(ctx context.Context, key string) (bool, int) {
 	sec := time.Now().Unix()
 	rk := fmt.Sprintf("rl:%s:%d", key, sec)
 
-	count, err := s.rc.Incr(ctx, rk).Result()
+	count, err := incrWindowScript.Run(ctx, s.rc, []string{rk}, 2).Int64()
 	if err != nil {
-		s.log.Warn("redis rate limiter: INCR failed, failing open",
+		s.log.Warn("redis rate limiter: script failed, failing open",
 			zap.String("key", key), zap.Error(err))
 		if s.failOpenTotal != nil {
 			s.failOpenTotal.Add(ctx, 1)
 		}
 		return true, 0
-	}
-	if count == 1 {
-		if err := s.rc.Expire(ctx, rk, 2*time.Second).Err(); err != nil {
-			s.log.Warn("redis rate limiter: EXPIRE failed",
-				zap.String("key", key), zap.Error(err))
-		}
 	}
 	if int(count) > s.burst {
 		return false, 1

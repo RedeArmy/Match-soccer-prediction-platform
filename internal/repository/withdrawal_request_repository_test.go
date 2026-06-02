@@ -105,11 +105,18 @@ func TestWithdrawalRequestRepository_ListByUser_ReturnsAll(t *testing.T) {
 	cleanTables(t)
 	u := seedUserWithBalance(t, 30000)
 	u2 := seedUserWithBalance(t, 5000)
-	seedWithdrawalRequest(t, u.ID, 1000)
+	admin := seedUser(t)
+
+	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
+
+	// First request: reject it so u's pending slot is freed before creating req2.
+	req1 := seedWithdrawalRequest(t, u.ID, 1000)
+	if _, err := repo.RejectAndRelease(context.Background(), int(req1.ID), admin.ID, "test"); err != nil {
+		t.Fatalf("RejectAndRelease: %v", err)
+	}
 	seedWithdrawalRequest(t, u.ID, 2000)
 	seedWithdrawalRequest(t, u2.ID, 3000)
 
-	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 	results, err := repo.ListByUser(context.Background(), u.ID)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -121,14 +128,17 @@ func TestWithdrawalRequestRepository_ListByUser_ReturnsAll(t *testing.T) {
 
 func TestWithdrawalRequestRepository_ListPending_ReturnsOnlyPending(t *testing.T) {
 	cleanTables(t)
-	u := seedUserWithBalance(t, 20000)
+	u1 := seedUserWithBalance(t, 20000)
+	u2 := seedUserWithBalance(t, 20000)
 	admin := seedUser(t)
-	seedWithdrawalRequest(t, u.ID, 1000)
-	seedWithdrawalRequest(t, u.ID, 2000)
-	req := seedWithdrawalRequest(t, u.ID, 3000)
 
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
-	if _, err := repo.Approve(context.Background(), int(req.ID), admin.ID, "ok"); err != nil {
+
+	// u1 has a pending request; u2's request is approved — ListPending must
+	// exclude the approved row and return only the pending one.
+	seedWithdrawalRequest(t, u1.ID, 1000)
+	req2 := seedWithdrawalRequest(t, u2.ID, 2000)
+	if _, err := repo.Approve(context.Background(), int(req2.ID), admin.ID, "ok"); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 
@@ -136,8 +146,24 @@ func TestWithdrawalRequestRepository_ListPending_ReturnsOnlyPending(t *testing.T
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if len(pending) != 2 {
-		t.Errorf("expected 2 pending, got %d", len(pending))
+	if len(pending) != 1 {
+		t.Errorf("expected 1 pending, got %d", len(pending))
+	}
+}
+
+func TestWithdrawalRequestRepository_CreateAndReserve_DuplicatePendingConflict(t *testing.T) {
+	cleanTables(t)
+	u := seedUserWithBalance(t, 20000)
+	seedWithdrawalRequest(t, u.ID, 5000)
+
+	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
+	req2 := &domain.WithdrawalRequest{
+		UserID: u.ID, AmountCents: 3000, GTQReservedCents: 3000, Currency: "GTQ",
+		Method: domain.WithdrawalMethodBankGT,
+	}
+	err := repo.CreateAndReserve(context.Background(), req2)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict for duplicate pending withdrawal, got %v", err)
 	}
 }
 

@@ -179,6 +179,9 @@ func TestLoad_DefaultEnvironmentIsProduction(t *testing.T) {
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_testsecret")
 	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 	setProductionStorageEnv(t)
 
 	cfg, err := config.Load()
@@ -251,6 +254,9 @@ func TestLoad_ProductionWithClerkSettings_ReturnsNoError(t *testing.T) {
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
 	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 	setProductionStorageEnv(t)
 
 	if _, err := config.Load(); err != nil {
@@ -400,6 +406,10 @@ func TestLoad_DevelopmentWithInMemoryBus_ReturnsNoError(t *testing.T) {
 
 func TestLoadWorker_ValidConfig_ReturnsNoError(t *testing.T) {
 	// LoadWorker does not require WCQ_SERVER_PORT.
+	// Production (default environment) now requires a Redis password and metrics enabled.
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 	_, err := config.LoadWorker()
 	if err != nil {
 		t.Fatalf("expected no error for minimal worker config, got: %v", err)
@@ -407,6 +417,9 @@ func TestLoadWorker_ValidConfig_ReturnsNoError(t *testing.T) {
 }
 
 func TestLoadWorker_DefaultHealthPort(t *testing.T) {
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 	cfg, err := config.LoadWorker()
 	if err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
@@ -418,6 +431,9 @@ func TestLoadWorker_DefaultHealthPort(t *testing.T) {
 
 func TestLoadWorker_HealthPortOverride(t *testing.T) {
 	t.Setenv("WCQ_WORKER_HEALTHPORT", portOverride)
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 
 	cfg, err := config.LoadWorker()
 	if err != nil {
@@ -458,6 +474,9 @@ func TestLoadWorker_InvalidLogEncoding_ReturnsError(t *testing.T) {
 
 func TestLoadWorker_ProductionWithN8nBaseURLAndNoSecret_ReturnsError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 	t.Setenv("WCQ_N8N_BASEURL", "http://n8n:5678")
 	// WCQ_N8N_WEBHOOKSECRET intentionally not set.
 
@@ -472,6 +491,9 @@ func TestLoadWorker_ProductionWithN8nBaseURLAndNoSecret_ReturnsError(t *testing.
 
 func TestLoadWorker_ProductionWithN8nWebhookURLAndNoSecret_ReturnsError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 	t.Setenv("WCQ_N8N_WEBHOOKURL", "http://n8n:5678/webhook/admin")
 	// WCQ_N8N_WEBHOOKSECRET intentionally not set.
 
@@ -486,6 +508,9 @@ func TestLoadWorker_ProductionWithN8nWebhookURLAndNoSecret_ReturnsError(t *testi
 
 func TestLoadWorker_ProductionWithN8nAndSecret_IsAccepted(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 	t.Setenv("WCQ_N8N_BASEURL", "http://n8n:5678")
 	t.Setenv("WCQ_N8N_WEBHOOKSECRET", "test-secret-value")
 
@@ -554,6 +579,9 @@ func setProductionBaseEnv(t *testing.T) {
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
 	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 }
 
 func TestLoad_ProductionWithLocalStorage_ReturnsError(t *testing.T) {
@@ -867,6 +895,9 @@ func setProductionCORSBase(t *testing.T) {
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_testsecret")
 	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
 	setProductionStorageEnv(t)
 }
 
@@ -950,13 +981,31 @@ func TestLoad_ProductionWithSSLDisabledInDSN_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestLoad_ProductionWithSSLRequireInDSN_IsAccepted(t *testing.T) {
+func TestLoad_ProductionWithSSLRequireInDSN_ReturnsError(t *testing.T) {
 	setFullProductionEnv(t)
 	t.Setenv("WCQ_DATABASE_DSN", "postgres://user:pass@host:5432/db?sslmode=require")
 	t.Setenv("WCQ_LOGGER_ENCODING", "json")
 
-	if _, err := config.Load(); err != nil {
-		t.Fatalf("expected no error for sslmode=require in production, got: %v", err)
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for sslmode=require in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "sslmode=require") {
+		t.Errorf("expected error to reference sslmode=require, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithSSLRequireInKeywordDSN_ReturnsError(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_DATABASE_DSN", "host=db.example.com user=app password=secret dbname=quiniela sslmode=require")
+	t.Setenv("WCQ_LOGGER_ENCODING", "json")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for keyword=value DSN with sslmode=require in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "sslmode=require") {
+		t.Errorf("expected error to reference sslmode=require, got: %v", err)
 	}
 }
 
@@ -1004,6 +1053,10 @@ func setFullProductionEnv(t *testing.T) {
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
 	setProductionPaymentEnv(t)
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	t.Setenv("WCQ_METRICS_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
+	t.Setenv("WCQ_TRACING_ENABLED", "true") // required in production (hard error if false)
 	setProductionStorageEnv(t)
 }
 
@@ -1067,5 +1120,159 @@ func TestWarnings_ConnMaxLifetimeNonZero_NoWarning(t *testing.T) {
 		if strings.Contains(msg, "ConnMaxLifetime") || strings.Contains(msg, "connMaxLifetime") {
 			t.Errorf("unexpected ConnMaxLifetime warning when value is non-zero: %v", msg)
 		}
+	}
+}
+
+// Metrics disabled is now a hard error in production — no advisory in Warnings().
+// The following tests verify the hard gate in validateProductionConfig and
+// validateWorker instead.
+
+func TestLoad_ProductionWithoutMetricsEnabled_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	setProductionPaymentEnv(t)
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	// WCQ_METRICS_ENABLED intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for disabled metrics in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_METRICS_ENABLED") {
+		t.Errorf("expected error to reference WCQ_METRICS_ENABLED, got: %v", err)
+	}
+}
+
+func TestLoadWorker_ProductionWithoutMetricsEnabled_ReturnsError(t *testing.T) {
+	t.Setenv("WCQ_REDIS_PASSWORD", "test-redis-password")
+	// WCQ_METRICS_ENABLED intentionally not set — default environment is production.
+
+	_, err := config.LoadWorker()
+	if err == nil {
+		t.Fatal("expected error for disabled metrics in production worker config, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_METRICS_ENABLED") {
+		t.Errorf("expected error to reference WCQ_METRICS_ENABLED, got: %v", err)
+	}
+}
+
+func TestWarnings_DoesNotEmitMetricsAdvisory(t *testing.T) {
+	// metrics.enabled is now a hard error in validateProductionConfig and
+	// validateWorker; Warnings() no longer emits a metrics advisory since the
+	// process would have already refused to start without metrics enabled.
+	cfg := &config.Config{}
+	w := config.Warnings(cfg)
+	for _, msg := range w {
+		if strings.Contains(msg, "metrics.enabled") {
+			t.Errorf("Warnings() must not emit a metrics advisory (it is a hard error): %v", msg)
+		}
+	}
+}
+
+func TestLoad_ProductionWithTracingDisabled_ReturnsError(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_TRACING_ENABLED", "false")
+	t.Setenv("WCQ_LOGGER_ENCODING", "json")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for tracing.enabled=false in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "tracing.enabled") {
+		t.Errorf("expected error to reference tracing.enabled, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithTracingEnabled_IsAccepted(t *testing.T) {
+	setFullProductionEnv(t)
+	t.Setenv("WCQ_TRACING_ENABLED", "true")
+	t.Setenv("WCQ_LOGGER_ENCODING", "json")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error with tracing enabled in production, got: %v", err)
+	}
+}
+
+func TestLoad_DevelopmentWithTracingDisabled_IsAccepted(t *testing.T) {
+	// In development, tracing is optional — no enforcement.
+	setRequiredEnv(t)
+	t.Setenv("WCQ_TRACING_ENABLED", "false")
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("expected no error in dev with tracing disabled, got: %v", err)
+	}
+}
+
+func TestWarnings_DoesNotEmitTracingAdvisory(t *testing.T) {
+	// Tracing is now a hard error, not a warning — Warnings() must not emit
+	// a tracing advisory to avoid confusion when the hard error fires first.
+	cfg := &config.Config{}
+	w := config.Warnings(cfg)
+	for _, msg := range w {
+		if strings.Contains(msg, "tracing") {
+			t.Errorf("Warnings() must not emit a tracing advisory (it is a hard error now): %v", msg)
+		}
+	}
+}
+
+func TestWarnings_ProductionWithEmptyRedisPassword_ReturnsWarning(t *testing.T) {
+	cfg := &config.Config{}
+	// Zero-value Config: Environment is "" which IsDevelopment() treats as production,
+	// and Redis.Password is "" — both conditions for the advisory to fire.
+	w := config.Warnings(cfg)
+	found := false
+	for _, msg := range w {
+		if strings.Contains(msg, "redis") || strings.Contains(msg, "Redis") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected Redis password advisory in Warnings output, got: %v", w)
+	}
+}
+
+func TestWarnings_DevelopmentWithEmptyRedisPassword_NoWarning(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Environment = "dev"
+	w := config.Warnings(cfg)
+	for _, msg := range w {
+		if strings.Contains(msg, "redis") || strings.Contains(msg, "Redis") {
+			t.Errorf("unexpected Redis warning in development environment: %v", msg)
+		}
+	}
+}
+
+func TestLoad_ProductionWithoutRedisPassword_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	setProductionPaymentEnv(t)
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+	// WCQ_REDIS_PASSWORD intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing Redis password in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_REDIS_PASSWORD") {
+		t.Errorf("expected error to reference WCQ_REDIS_PASSWORD, got: %v", err)
+	}
+}
+
+func TestLoadWorker_ProductionWithoutRedisPassword_ReturnsError(t *testing.T) {
+	// Default environment is production; LoadWorker rejects empty Redis passwords
+	// outside development via validateWorker.
+	// WCQ_REDIS_PASSWORD intentionally not set.
+	_, err := config.LoadWorker()
+	if err == nil {
+		t.Fatal("expected error for missing Redis password in production worker config, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_REDIS_PASSWORD") {
+		t.Errorf("expected error to reference WCQ_REDIS_PASSWORD, got: %v", err)
 	}
 }

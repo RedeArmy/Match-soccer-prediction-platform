@@ -20,11 +20,26 @@ const (
 	// payment intent remains valid. After expiry the customer must restart checkout.
 	DefaultPaymentIntentTTLMinutes = 60 // payment.intent_ttl_minutes
 
+	// DefaultPaymentIntentMaxCents is the maximum payment intent amount in GTQ
+	// minor units (50 000 = Q500.00). Prevents malicious or buggy clients from
+	// creating absurdly large PayPal orders whose webhook credit would exceed any
+	// reasonable deposit. Operators can raise this via system_params.
+	DefaultPaymentIntentMaxCents = 50_000 // payment.intent_max_cents
+
 	// DefaultUSDGTQRate is the GTQ centavos per USD dollar used as the fallback
 	// exchange rate when the payment.usd_gtq_rate system param is absent.
 	// 790 = Q7.90 per $1 USD (approximate market rate at quiniela launch).
 	// Formula: gtq_reserved_cents = usd_cents * DefaultUSDGTQRate / 100.
 	DefaultUSDGTQRate = 790 // payment.usd_gtq_rate
+
+	// USDGTQRateMinCentavos and USDGTQRateMaxCentavos are the inclusive bounds for
+	// the payment.usd_gtq_rate system parameter, expressed in GTQ centavos per USD.
+	// 100 = Q1.00/USD (far below any real-world rate; guards against zero/near-zero).
+	// 10 000 = Q100.00/USD (well above any realistic rate; guards against data errors).
+	// Referenced by both writeUSDGTQRate (service layer) and paramIntConstraints
+	// (system_param_service) to ensure both stay in sync from a single source of truth.
+	USDGTQRateMinCentavos = 100    // Q1.00 per USD
+	USDGTQRateMaxCentavos = 10_000 // Q100.00 per USD
 
 	// DefaultExchangeRateMarginBPS is the unified safety markup used by the
 	// simple single-rate model (Phase 4 prior implementation, kept for migration
@@ -51,6 +66,22 @@ const (
 	// considered stale and an n8n alert fires.
 	// 26 h gives a 2-hour grace window past the next scheduled daily refresh.
 	DefaultFXStaleThresholdH = 26 // fx.stale_threshold_h
+
+	// HTTP client timeouts for the three FX data sources.
+	// All are is_runtime=FALSE: the HTTP clients are built once at worker startup.
+	// A worker restart is required to apply a changed value.
+
+	// DefaultFXBanguatTimeoutSec is the request timeout for the Banguat XML feed.
+	// 10 s is generous for a government endpoint that can be slow under load.
+	DefaultFXBanguatTimeoutSec = 10 // fx.banguat_timeout_sec
+
+	// DefaultFXExchangeRateAPITimeoutSec is the request timeout for
+	// v6.exchangerate-api.com. 5 s is standard for a commercial REST API.
+	DefaultFXExchangeRateAPITimeoutSec = 5 // fx.exchange_rate_api_timeout_sec
+
+	// DefaultFXOpenExchangeTimeoutSec is the request timeout for
+	// openexchangerates.org. 5 s matches the ExchangeRate-API default.
+	DefaultFXOpenExchangeTimeoutSec = 5 // fx.open_exchange_timeout_sec
 )
 
 // Payment, withdrawal, and bank-transfer system parameter keys.
@@ -73,6 +104,10 @@ const (
 	// ParamKeyPaymentIntentTTLMinutes is the number of minutes a pending PayPal
 	// payment intent remains valid. is_runtime=TRUE: tunable without restart.
 	ParamKeyPaymentIntentTTLMinutes = "payment.intent_ttl_minutes"
+	// ParamKeyPaymentIntentMaxCents is the upper bound on a payment intent's
+	// amount_cents. Requests above this value are rejected with 422 before a
+	// PayPal order is created. is_runtime=TRUE: tunable without restart.
+	ParamKeyPaymentIntentMaxCents = "payment.intent_max_cents"
 
 	// ParamKeyUSDGTQRate is the GTQ centavos per USD dollar used to convert
 	// USD PayPal withdrawal amounts into GTQ centavos for balance reservation.
@@ -103,4 +138,20 @@ const (
 	// triggers an n8n stale-rate alert.  Default: 26 h.
 	// is_runtime=TRUE.
 	ParamKeyFXStaleThresholdH = "fx.stale_threshold_h"
+
+	// HTTP client timeout params for the three FX data sources.
+	// All are is_runtime=FALSE: changing them requires a worker restart.
+
+	// ParamKeyFXBanguatTimeoutSec is the HTTP request timeout in seconds for
+	// the Banguat XML feed. Raise when the feed is slow; lower when you want
+	// faster failover to the next source.
+	ParamKeyFXBanguatTimeoutSec = "fx.banguat_timeout_sec"
+
+	// ParamKeyFXExchangeRateAPITimeoutSec is the HTTP request timeout in seconds
+	// for v6.exchangerate-api.com.
+	ParamKeyFXExchangeRateAPITimeoutSec = "fx.exchange_rate_api_timeout_sec"
+
+	// ParamKeyFXOpenExchangeTimeoutSec is the HTTP request timeout in seconds
+	// for openexchangerates.org.
+	ParamKeyFXOpenExchangeTimeoutSec = "fx.open_exchange_timeout_sec"
 )

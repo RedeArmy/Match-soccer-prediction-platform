@@ -31,14 +31,19 @@ primary_region = 'mia'
   auto_start_machines  = false
   min_machines_running = 1
 
-  # Liveness check: if /health returns non-2xx for the grace + timeout period,
-  # Fly will restart the machine automatically.
+  # Readiness check: /health/ready runs all registered health.Checkers,
+  # including the scheduler dead-man's switch (schedulerHealthChecker).
+  # If the check returns non-2xx for the grace + timeout period, Fly restarts
+  # the machine automatically — catching a silent scheduler stall before
+  # the FX rate or notification jobs drift.
+  # /health (liveness) is intentionally NOT used here: liveness only confirms
+  # the process is alive, not that periodic jobs are firing.
   [[http_service.checks]]
     interval     = '15s'
     timeout      = '10s'
     grace_period = '15s'
     method       = 'GET'
-    path         = '/health'
+    path         = '/health/ready'
 
 # Memory and GC tuning for a 256 MB Fly.io machine:
 #

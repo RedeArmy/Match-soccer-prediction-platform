@@ -38,7 +38,7 @@ var ErrInvalidToken = errors.New("token is invalid or expired")
 // IdentityProvider validates a raw Bearer token and returns the provider's
 // opaque identifier for the authenticated principal (the "subject"). The
 // subject is stored in the request context and used downstream to resolve
-// the internal User row (e.g. via GetByClerkSubject).
+// the internal User row (e.g. via GetByExternalSubject).
 //
 // Implementations must be safe for concurrent use by multiple goroutines.
 //

@@ -34,7 +34,7 @@ func ResolveUser(userRepo repository.UserRepository, log *zap.Logger) func(http.
 				WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
 				return
 			}
-			user, err := userRepo.GetByClerkSubject(r.Context(), subject)
+			user, err := userRepo.GetByExternalSubject(r.Context(), subject)
 			if err != nil {
 				WriteError(w, r, log, apperrors.Internal(err))
 				return

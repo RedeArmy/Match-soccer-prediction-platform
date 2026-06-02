@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // SystemParamType constrains the Value interpretation for a SystemParam row.
 // The infrastructure layer is responsible for parsing the raw text Value into
@@ -46,4 +49,34 @@ type SystemParamHistory struct {
 	ActorID   int
 	Action    string
 	ChangedAt time.Time
+}
+
+// ParamDiff holds the projected old→new change for a single system param,
+// returned by BulkPreview. IsSensitive is set when the key belongs to a
+// category (scoring.* or payment.*) whose change has systemic impact and
+// therefore requires explicit operator confirmation in a live BulkSet call.
+type ParamDiff struct {
+	Key         string
+	OldValue    string
+	NewValue    string
+	IsSensitive bool
+}
+
+// sensitiveParamPrefixes are the system-param key prefixes that require
+// explicit confirmation before a BulkSet modifies them.
+//
+// scoring.* — affects every future match result calculation.
+// payment.* — affects user-facing financial limits and exchange rates.
+// fx.*       — controls live buy/sell exchange rates shown to users.
+var sensitiveParamPrefixes = []string{"scoring.", "payment.", "fx."}
+
+// IsSensitiveParamKey returns true when key belongs to a category whose
+// incorrect change has systemic or financial impact on all future operations.
+func IsSensitiveParamKey(key string) bool {
+	for _, prefix := range sensitiveParamPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }

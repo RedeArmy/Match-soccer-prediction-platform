@@ -23,7 +23,7 @@ func (r *stubUserRepo) Create(_ context.Context, _ *domain.User) error { return 
 func (r *stubUserRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
 	return r.user, r.err
 }
-func (r *stubUserRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
+func (r *stubUserRepo) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return r.user, r.err
 }
 func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }
@@ -325,7 +325,7 @@ type stubWithdrawalSvc struct {
 func (s *stubWithdrawalSvc) Create(_ context.Context, _, _ int, _ string, _ domain.WithdrawalMethod, _ map[string]string) (*domain.WithdrawalRequest, error) {
 	return s.req, s.err
 }
-func (s *stubWithdrawalSvc) GetByID(_ context.Context, _ int) (*domain.WithdrawalRequest, error) {
+func (s *stubWithdrawalSvc) AdminGetByID(_ context.Context, _ int) (*domain.WithdrawalRequest, error) {
 	return s.req, s.err
 }
 func (s *stubWithdrawalSvc) ListByUser(_ context.Context, _ int) ([]*domain.WithdrawalRequest, error) {

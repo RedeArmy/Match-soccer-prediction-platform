@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -59,6 +61,12 @@ var auditPolicyMu sync.RWMutex
 var auditMaxAttempts = 2
 var auditRetryDelay = 250 * time.Millisecond
 
+// auditMaxInFlight is the ceiling on concurrently executing audit goroutines.
+// Log calls that would push inFlight above this value are dropped immediately
+// (incrementing dropped) rather than spawning an unbounded number of goroutines
+// under sustained DB pressure. Defaults to DefaultAuditMaxInFlight (1 000).
+var auditMaxInFlight int64 = domain.DefaultAuditMaxInFlight
+
 // ConfigureAuditRetry sets the retry policy for all auditService instances.
 // Safe to call concurrently; uses auditPolicyMu. Zero or negative values are
 // ignored, preserving the current setting.
@@ -71,6 +79,18 @@ func ConfigureAuditRetry(maxAttempts, retryDelayMs int) {
 	if retryDelayMs > 0 {
 		auditRetryDelay = time.Duration(retryDelayMs) * time.Millisecond
 	}
+}
+
+// ConfigureAuditMaxInFlight sets the maximum number of concurrently running
+// audit goroutines for all auditService instances. Zero or negative values are
+// ignored. Safe to call concurrently; uses auditPolicyMu.
+func ConfigureAuditMaxInFlight(n int) {
+	if n <= 0 {
+		return
+	}
+	auditPolicyMu.Lock()
+	auditMaxInFlight = int64(n)
+	auditPolicyMu.Unlock()
 }
 
 // AuditLogger records significant administrative and system actions to an
@@ -128,6 +148,11 @@ type AuditService interface {
 	// and warrants investigation. Expose this counter in health checks or
 	// Prometheus scraping so alert rules can page on-call when it increments.
 	Dropped() int64
+	// RegisterMetrics wires the wcq_audit_in_flight observable gauge into the
+	// given OTel meter. Call once at startup after the meter provider is ready.
+	// The gauge mirrors InFlight() so Prometheus can alert when goroutine count
+	// climbs toward the MaxInFlight limit under DB pressure.
+	RegisterMetrics(meter metric.Meter) error
 }
 
 // auditService is the concrete implementation of AuditLogger.
@@ -197,7 +222,26 @@ func (s *auditService) Log(
 	// disconnect or request timeout cannot abort the INSERT. WithoutCancel
 	// preserves context values (trace ID, request ID) for observability.
 	detached := context.WithoutCancel(ctx)
-	s.inFlight.Add(1)
+
+	// Enforce the in-flight ceiling BEFORE adding to wg so Drain() never
+	// blocks on a goroutine that was rejected. Read limit under the lock so a
+	// concurrent ConfigureAuditMaxInFlight sees a consistent value.
+	current := s.inFlight.Add(1)
+	auditPolicyMu.RLock()
+	limit := auditMaxInFlight
+	auditPolicyMu.RUnlock()
+	if limit > 0 && current > limit {
+		s.inFlight.Add(-1)
+		s.dropped.Add(1)
+		s.log.Error("audit: max_in_flight limit reached — entry dropped",
+			zap.String("action", action),
+			zap.Int64("in_flight", current),
+			zap.Int64("limit", limit),
+			zap.Bool("audit_lost", true),
+		)
+		return
+	}
+
 	s.wg.Add(1)
 	go func() {
 		// recover() must be the innermost deferred call (i.e. last registered,
@@ -322,6 +366,35 @@ func (s *auditService) InFlight() int64 {
 // fallback write also failed. Alert when this counter is non-zero.
 func (s *auditService) Dropped() int64 {
 	return s.dropped.Load()
+}
+
+// RegisterMetrics registers the wcq_audit_in_flight observable gauge and the
+// wcq_audit_dropped_total observable gauge with the given OTel meter. Both
+// read atomics that are already maintained by Log; no extra synchronisation
+// is needed. Call once at startup after the global meter provider is ready.
+func (s *auditService) RegisterMetrics(meter metric.Meter) error {
+	inFlightGauge, err := meter.Int64ObservableGauge("wcq_audit_in_flight",
+		metric.WithDescription("Number of audit-log goroutines currently executing. "+
+			"A sustained value above 500 indicates DB pressure; above 1 000 entries are dropped."),
+	)
+	if err != nil {
+		return fmt.Errorf("audit metrics: wcq_audit_in_flight: %w", err)
+	}
+	droppedGauge, err := meter.Int64ObservableGauge("wcq_audit_dropped_total",
+		metric.WithDescription("Cumulative audit entries permanently lost since process start. "+
+			"Non-zero means the audit trail has gaps (panic + fallback both failed, or max_in_flight exceeded)."),
+	)
+	if err != nil {
+		return fmt.Errorf("audit metrics: wcq_audit_dropped_total: %w", err)
+	}
+	if _, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		o.ObserveInt64(inFlightGauge, s.inFlight.Load())
+		o.ObserveInt64(droppedGauge, s.dropped.Load())
+		return nil
+	}, inFlightGauge, droppedGauge); err != nil {
+		return fmt.Errorf("audit metrics: register callback: %w", err)
+	}
+	return nil
 }
 
 var _ AuditService = (*auditService)(nil)

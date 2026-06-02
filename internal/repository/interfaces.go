@@ -48,11 +48,11 @@ var ErrPaymentIntentAlreadyCaptured = errors.New("payment intent already capture
 type UserRepository interface {
 	Create(ctx context.Context, user *domain.User) error
 	GetByID(ctx context.Context, id int) (*domain.User, error)
-	// GetByClerkSubject resolves a Clerk opaque subject (e.g. "user_2abc…") to
-	// an internal User. Returns nil, nil when no matching row exists so callers
-	// can distinguish "not found" from a database error without importing
-	// apperrors directly.
-	GetByClerkSubject(ctx context.Context, subject string) (*domain.User, error)
+	// GetByExternalSubject resolves an identity-provider subject (the JWT "sub"
+	// claim) to an internal User. Returns nil, nil when no matching row exists
+	// so callers can distinguish "not found" from a database error without
+	// importing apperrors directly.
+	GetByExternalSubject(ctx context.Context, subject string) (*domain.User, error)
 	Update(ctx context.Context, user *domain.User) error
 	Delete(ctx context.Context, id int) error
 	List(ctx context.Context) ([]*domain.User, error)
@@ -209,6 +209,12 @@ type PredictionRepository interface {
 	// A batch failure is non-fatal: the scoring service logs the error and
 	// proceeds because the score updates have already been committed.
 	InsertScoringBatch(ctx context.Context, entries []domain.PredictionScoreLog) error
+	// GetScoringCfgSnapshot returns the scoring configuration from the earliest
+	// prediction_score_log row for matchID. ScoreMatch uses this to replay with
+	// the original config rather than the current scoring_rules, preventing
+	// leaderboard inconsistency when rules change between a failure and its
+	// DLQ replay. Returns (nil, nil) when no log entry exists for the match.
+	GetScoringCfgSnapshot(ctx context.Context, matchID int) (*domain.ScoringCfgSnapshot, error)
 }
 
 // QuinielaRepository defines the persistence operations for the Quiniela
@@ -753,6 +759,19 @@ type Purger interface {
 	// computed by the caller. Failures are non-fatal: the worker retries on the
 	// next purge tick.
 	PurgeOldParamHistory(ctx context.Context, before time.Time) (int64, error)
+	// PurgeOldFXHistory removes exchange_rate_history rows whose effective_at
+	// is strictly before before. Returns the number of rows deleted.
+	// Bounded by fx.history_retention_days (default 90 days). Non-fatal:
+	// the worker retries on the next purge tick.
+	PurgeOldFXHistory(ctx context.Context, before time.Time) (int64, error)
+	// PurgeOldOutboxEntries removes domain_outbox rows in terminal state
+	// (done or failed) whose created_at is strictly before before. Pending and
+	// processing rows are never deleted. Returns the number of rows removed.
+	// The idx_outbox_completed_created_at partial index (migration 000157)
+	// makes this an efficient range scan. Bounded by
+	// worker.outbox_retention_days (default 30 days). Non-fatal: the worker
+	// retries on the next purge tick.
+	PurgeOldOutboxEntries(ctx context.Context, before time.Time) (int64, error)
 }
 
 // ScoringRuleRepository defines persistence operations for per-phase scoring

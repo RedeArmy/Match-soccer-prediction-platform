@@ -139,7 +139,7 @@ func TestAdminRoutes_Unauthenticated_Return401(t *testing.T) {
 // TestAdminRoutes_AuthenticatedUser_DBUnavailable_Returns500 verifies that once
 // a request carries a valid Bearer token, RequireRole advances past the JWT
 // check to the database-lookup phase. The fake pool is unreachable, so
-// GetByClerkSubject fails with a connection error and the middleware responds
+// GetByExternalSubject fails with a connection error and the middleware responds
 // with 500.
 //
 // A real JWKS server is used here so that RequireAuth can validate the token.

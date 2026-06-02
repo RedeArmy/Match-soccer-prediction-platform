@@ -15,7 +15,7 @@ import (
 )
 
 // clerkSyncRepo provides per-method error control for ClerkUserSyncer tests.
-// Unlike stubUserRepo (ranking_service_test.go), this stub lets GetByClerkSubject,
+// Unlike stubUserRepo (ranking_service_test.go), this stub lets GetByExternalSubject,
 // Create, Update, and Delete return independent errors.
 type clerkSyncRepo struct {
 	existingUser *domain.User
@@ -34,7 +34,7 @@ func (r *clerkSyncRepo) Create(_ context.Context, u *domain.User) error {
 func (r *clerkSyncRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
 	return nil, nil
 }
-func (r *clerkSyncRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
+func (r *clerkSyncRepo) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return r.existingUser, r.getErr
 }
 func (r *clerkSyncRepo) Update(_ context.Context, _ *domain.User) error { return r.updateErr }
@@ -158,7 +158,7 @@ func TestClerkUserSyncer_Upsert_NewUser_CallsCreate(t *testing.T) {
 }
 
 func TestClerkUserSyncer_Upsert_ExistingUser_CallsUpdate(t *testing.T) {
-	existing := &domain.User{ID: 7, Name: "Old Name", Email: "old@example.com", ClerkSubject: "user_abc"}
+	existing := &domain.User{ID: 7, Name: "Old Name", Email: "old@example.com", ExternalSubject: "user_abc"}
 	repo := &clerkSyncRepo{existingUser: existing}
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_2", Address: "new@example.com"}}
@@ -236,7 +236,7 @@ func TestClerkUserSyncer_Upsert_CreateError_Propagates(t *testing.T) {
 }
 
 func TestClerkUserSyncer_Upsert_UpdateError_Propagates(t *testing.T) {
-	existing := &domain.User{ID: 3, ClerkSubject: "user_x"}
+	existing := &domain.User{ID: 3, ExternalSubject: "user_x"}
 	repo := &clerkSyncRepo{existingUser: existing, updateErr: errors.New("update failed")}
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_1", Address: "a@b.com"}}
@@ -294,7 +294,7 @@ func TestClerkUserSyncer_PrimaryEmail_EmptyList_EmptyEmail(t *testing.T) {
 // SoftDelete resolves the Clerk subject to an internal user ID and delegates
 // to userRepo.Delete with that ID.
 func TestClerkUserSyncer_SoftDelete_ExistingUser_CallsDeleteByID(t *testing.T) {
-	existing := &domain.User{ID: 42, ClerkSubject: "user_del"}
+	existing := &domain.User{ID: 42, ExternalSubject: "user_del"}
 	repo := &clerkSyncRepo{existingUser: existing}
 	svc := newClerkSyncer(repo)
 
@@ -337,7 +337,7 @@ func TestClerkUserSyncer_SoftDelete_GetBySubjectError_ReturnsInternal(t *testing
 // TestClerkUserSyncer_SoftDelete_DeleteError_Propagates verifies that a DB
 // error during the Delete call is surfaced so Clerk retries the delivery.
 func TestClerkUserSyncer_SoftDelete_DeleteError_Propagates(t *testing.T) {
-	existing := &domain.User{ID: 7, ClerkSubject: "user_x"}
+	existing := &domain.User{ID: 7, ExternalSubject: "user_x"}
 	repo := &clerkSyncRepo{existingUser: existing, deleteErr: errors.New("update failed")}
 	svc := newClerkSyncer(repo)
 
@@ -369,7 +369,7 @@ func TestClerkUserSyncer_Upsert_NewUser_CreatesKYCProfileStub(t *testing.T) {
 // that EnsureStub is NOT called for an update (existing user), because the stub
 // was already created at their original registration.
 func TestClerkUserSyncer_Upsert_ExistingUser_DoesNotCreateKYCProfileStub(t *testing.T) {
-	existing := &domain.User{ID: 11, ClerkSubject: "user_existing"}
+	existing := &domain.User{ID: 11, ExternalSubject: "user_existing"}
 	repo := &clerkSyncRepo{existingUser: existing}
 	kycRepo := &kycProfileStubForSync{}
 	svc := NewClerkUserSyncService(repo, kycRepo, zap.NewNop())

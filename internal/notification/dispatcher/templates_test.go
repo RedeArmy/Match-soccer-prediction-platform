@@ -305,7 +305,10 @@ func TestBuildUserContent_ActionURL_PopulatedForKnownEvents(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewOutboxEntry: %v", err)
 			}
-			got := buildUserContent(entry, LocaleEN)
+			got, err := buildUserContent(entry, LocaleEN)
+			if err != nil {
+				t.Fatalf("buildUserContent: unexpected error: %v", err)
+			}
 			if got.actionURL != tc.want {
 				t.Errorf("actionURL = %q; want %q", got.actionURL, tc.want)
 			}
@@ -328,5 +331,72 @@ func TestFormatCents_NonZero(t *testing.T) {
 	got := formatCents(150050, "USD")
 	if got != "1500.50 USD" {
 		t.Errorf("formatCents(150050, USD) = %q; want %q", got, "1500.50 USD")
+	}
+}
+
+// ── Payload decode error path tests ──────────────────────────────────────────
+
+// TestBuildUserContent_MalformedPayload verifies that a content builder returns
+// an error (not zero-value content) when the outbox entry payload is invalid
+// JSON. This guards against the P1-001 failure mode where users would receive
+// "Your payment of 0.00 GTQ has been confirmed" due to a silent decode error.
+func TestBuildUserContent_MalformedPayload_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	// Payment and prediction events carry amounts/team names that are visible
+	// to users — these are the highest-priority cases to protect.
+	eventTypes := []notification.EventType{
+		notification.EventPaymentConfirmed,
+		notification.EventWithdrawalApproved,
+		notification.EventWithdrawalCompleted,
+		notification.EventPredictionScored,
+		notification.EventPaymentBankTransferApproved,
+	}
+
+	for _, et := range eventTypes {
+		et := et
+		t.Run(string(et), func(t *testing.T) {
+			t.Parallel()
+			entry := &notification.OutboxEntry{
+				EventType: et,
+				Payload:   []byte(`{invalid json`),
+			}
+			_, err := buildUserContent(entry, LocaleEN)
+			if err == nil {
+				t.Errorf("buildUserContent(%s) with malformed payload: expected error, got nil — "+
+					"zero-value content (e.g. '0.00 GTQ') would be delivered to the user", et)
+			}
+		})
+	}
+}
+
+// TestBuildEmailData_MalformedPayload_FallsBackToGenericLayout verifies that
+// admin email builders fall back to the generic layout instead of producing
+// misleading zero-value detail rows (e.g. "Amount: 0.00 GTQ").
+func TestBuildEmailData_MalformedPayload_FallsBackToGenericLayout(t *testing.T) {
+	t.Parallel()
+
+	eventTypes := []notification.EventType{
+		notification.EventAdminBankTransferPending,
+		notification.EventAdminWithdrawalPending,
+		notification.EventAdminHighValueWithdrawal,
+	}
+
+	for _, et := range eventTypes {
+		et := et
+		t.Run(string(et), func(t *testing.T) {
+			t.Parallel()
+			entry := &notification.OutboxEntry{
+				EventType:   et,
+				AggregateID: "42",
+				Payload:     []byte(`{invalid json`),
+			}
+			data := buildEmailData(entry)
+			// Falls back to generic layout: subject starts with [ADMIN ALERT]
+			if data.Subject != "[ADMIN ALERT] "+string(et) {
+				t.Errorf("buildEmailData(%s) with malformed payload: subject = %q; "+
+					"want generic fallback %q", et, data.Subject, "[ADMIN ALERT] "+string(et))
+			}
+		})
 	}
 }

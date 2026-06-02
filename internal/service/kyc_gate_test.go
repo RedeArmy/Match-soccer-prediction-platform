@@ -63,7 +63,7 @@ type kycUserRepoStub struct {
 func (r *kycUserRepoStub) GetByID(_ context.Context, _ int) (*domain.User, error) {
 	return r.user, r.err
 }
-func (r *kycUserRepoStub) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
+func (r *kycUserRepoStub) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return nil, nil
 }
 func (r *kycUserRepoStub) Create(_ context.Context, _ *domain.User) error { return nil }

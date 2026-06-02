@@ -266,7 +266,7 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 	// first-winner allocation fair and auditable for a sports pool context.
 	remainder := prizePool % result.WinnerCount
 
-	credits, freezes, freezeUserIDs := buildPrizeAllocations(result.Entries, quinielaID, prizePerWinner, remainder)
+	credits, freezes, frozen := buildPrizeAllocations(result.Entries, quinielaID, prizePerWinner, remainder)
 
 	if err := s.quinielaRepo.DistributePrizesAtomically(ctx, quinielaID, q.EntryFee, credits, freezes); err != nil {
 		if errors.Is(err, apperrors.ErrConflict) {
@@ -282,12 +282,17 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 		return err
 	}
 
-	// Fire outbox notifications for frozen winners outside the transaction.
-	// Each call re-freezes idempotently (safe) and writes the outbox event.
-	for _, userID := range freezeUserIDs {
-		if _, notifyErr := s.prizeCrediter.CreditPrize(ctx, userID, prizePerWinner, int64(quinielaID), "quiniela"); notifyErr != nil {
+	// Fire the outbox notification for each frozen winner. The kyc_events audit
+	// row and kyc_profiles freeze were committed atomically inside the distribution
+	// transaction by applyPrizeFreezeTx; this loop is solely responsible for
+	// triggering the n8n kyc-winner-freeze workflow via the outbox.
+	// NotifyFreezeOnly is used instead of CreditPrize to avoid re-checking the
+	// KYC tier: a tier upgrade between the atomic commit and this loop could
+	// cause CreditPrize to credit a balance that was already frozen.
+	for _, fw := range frozen {
+		if notifyErr := s.prizeCrediter.NotifyFreezeOnly(ctx, fw.userID, fw.amount, int64(quinielaID), "quiniela"); notifyErr != nil {
 			s.log.Warn("prize_freeze_notify_failed",
-				zap.Int("user_id", userID),
+				zap.Int("user_id", fw.userID),
 				zap.Int("quiniela_id", quinielaID),
 				zap.Error(notifyErr),
 			)
@@ -306,6 +311,16 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 	return nil
 }
 
+// frozenWinner pairs a user with the exact prize amount frozen for them during
+// prize distribution. Carrying the per-winner amount (including the
+// integer-division remainder assigned to the first-ranked winner) ensures the
+// post-transaction outbox-notification loop passes the correct figure to
+// CreditPrize rather than the base prizePerWinner.
+type frozenWinner struct {
+	userID int
+	amount int
+}
+
 // buildPrizeAllocations partitions winning leaderboard entries into direct
 // credits (KYCTierTwo and above) and KYC-freeze holds (below KYCTierTwo).
 //
@@ -313,10 +328,10 @@ func (s *adminGroupService) DistributePrizes(ctx context.Context, quinielaID, ad
 // added to the first prize winner's amount so the full pool is always
 // distributed with no cents silently discarded. remainder is always
 // < WinnerCount, so the maximum per-winner difference is 1 cent.
-func buildPrizeAllocations(entries []*domain.LeaderboardEntry, quinielaID, prizePerWinner, remainder int) ([]repository.PrizeCredit, []repository.PrizeFreeze, []int) {
+func buildPrizeAllocations(entries []*domain.LeaderboardEntry, quinielaID, prizePerWinner, remainder int) ([]repository.PrizeCredit, []repository.PrizeFreeze, []frozenWinner) {
 	var credits []repository.PrizeCredit
 	var freezes []repository.PrizeFreeze
-	var freezeUserIDs []int
+	var frozen []frozenWinner
 	remainderAssigned := false
 	for _, entry := range entries {
 		if !entry.PrizeWinner || entry.User == nil {
@@ -346,10 +361,10 @@ func buildPrizeAllocations(entries []*domain.LeaderboardEntry, quinielaID, prize
 				AmountCents: amount,
 				Reason:      reason,
 			})
-			freezeUserIDs = append(freezeUserIDs, entry.User.ID)
+			frozen = append(frozen, frozenWinner{userID: entry.User.ID, amount: amount})
 		}
 	}
-	return credits, freezes, freezeUserIDs
+	return credits, freezes, frozen
 }
 
 var _ AdminGroupService = (*adminGroupService)(nil)

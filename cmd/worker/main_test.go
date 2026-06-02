@@ -633,13 +633,17 @@ func TestCheckDLQEvent_NonNilNotifier_FiresWebhook(t *testing.T) {
 
 // stubPurger implements repository.Purger for monitorPurge unit tests.
 type stubPurger struct {
-	userCalled     int
-	quinielaCalled int
-	snapshotCalled int
-	userCount      int64
-	quinielaCount  int64
-	snapshotCount  int64
-	err            error
+	userCalled      int
+	quinielaCalled  int
+	snapshotCalled  int
+	fxHistoryCalled int
+	outboxCalled    int
+	userCount       int64
+	quinielaCount   int64
+	snapshotCount   int64
+	fxHistoryCount  int64
+	outboxCount     int64
+	err             error
 }
 
 func (s *stubPurger) PurgeDeletedUsers(_ context.Context, _ time.Time) (int64, error) {
@@ -665,8 +669,18 @@ func (s *stubPurger) PurgeOldParamHistory(_ context.Context, _ time.Time) (int64
 	return 0, s.err
 }
 
+func (s *stubPurger) PurgeOldFXHistory(_ context.Context, _ time.Time) (int64, error) {
+	s.fxHistoryCalled++
+	return s.fxHistoryCount, s.err
+}
+
+func (s *stubPurger) PurgeOldOutboxEntries(_ context.Context, _ time.Time) (int64, error) {
+	s.outboxCalled++
+	return s.outboxCount, s.err
+}
+
 func TestMonitorPurge_NilPurger_ReturnsImmediately(t *testing.T) {
-	monitorPurge(context.Background(), nil, 24*time.Hour, 90*24*time.Hour, 5, nil, zap.NewNop())
+	monitorPurge(context.Background(), nil, purgePolicy{retention: 24 * time.Hour, paramHistoryRetention: 90 * 24 * time.Hour, fxHistoryRetention: 90 * 24 * time.Hour, outboxRetention: 30 * 24 * time.Hour, snapshotKeepCount: 5}, nil, zap.NewNop())
 }
 
 func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
@@ -674,7 +688,7 @@ func TestMonitorPurge_CancelledContext_ReturnsWithoutTick(t *testing.T) {
 	cancel()
 
 	purger := &stubPurger{}
-	monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 5, nil, zap.NewNop())
+	monitorPurge(ctx, purger, purgePolicy{retention: 24 * time.Hour, paramHistoryRetention: 90 * 24 * time.Hour, fxHistoryRetention: 90 * 24 * time.Hour, outboxRetention: 30 * 24 * time.Hour, snapshotKeepCount: 5}, nil, zap.NewNop())
 
 	if purger.userCalled != 0 {
 		t.Errorf("expected no purge calls with cancelled context, got %d", purger.userCalled)
@@ -691,7 +705,7 @@ func TestMonitorPurge_OnTick_CallsPurge(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 5, tickC, zap.NewNop())
+		monitorPurge(ctx, purger, purgePolicy{retention: 24 * time.Hour, paramHistoryRetention: 90 * 24 * time.Hour, fxHistoryRetention: 90 * 24 * time.Hour, outboxRetention: 30 * 24 * time.Hour, snapshotKeepCount: 5}, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -722,7 +736,7 @@ func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		monitorPurge(ctx, purger, 24*time.Hour, 90*24*time.Hour, 5, tickC, zap.NewNop())
+		monitorPurge(ctx, purger, purgePolicy{retention: 24 * time.Hour, paramHistoryRetention: 90 * 24 * time.Hour, fxHistoryRetention: 90 * 24 * time.Hour, outboxRetention: 30 * 24 * time.Hour, snapshotKeepCount: 5}, tickC, zap.NewNop())
 		close(done)
 	}()
 
@@ -737,6 +751,56 @@ func TestMonitorPurge_PurgeError_LogsAndContinues(t *testing.T) {
 	}
 	if purger.snapshotCalled != 1 {
 		t.Errorf("expected PurgeOldSnapshots called once despite error, got %d", purger.snapshotCalled)
+	}
+}
+
+func TestMonitorPurge_OnTick_CallsFXHistoryPurge(t *testing.T) {
+	purger := &stubPurger{fxHistoryCount: 3}
+	tickC := make(chan time.Time, 1)
+	tickC <- time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		monitorPurge(ctx, purger, purgePolicy{retention: 24 * time.Hour, paramHistoryRetention: 90 * 24 * time.Hour, fxHistoryRetention: 90 * 24 * time.Hour, outboxRetention: 30 * 24 * time.Hour, snapshotKeepCount: 5}, tickC, zap.NewNop())
+		close(done)
+	}()
+
+	for len(tickC) > 0 {
+		runtime.Gosched()
+	}
+	cancel()
+	<-done
+
+	if purger.fxHistoryCalled != 1 {
+		t.Errorf("expected PurgeOldFXHistory called once, got %d", purger.fxHistoryCalled)
+	}
+}
+
+func TestMonitorPurge_OnTick_CallsOutboxPurge(t *testing.T) {
+	purger := &stubPurger{outboxCount: 5}
+	tickC := make(chan time.Time, 1)
+	tickC <- time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		monitorPurge(ctx, purger, purgePolicy{retention: 24 * time.Hour, paramHistoryRetention: 90 * 24 * time.Hour, fxHistoryRetention: 90 * 24 * time.Hour, outboxRetention: 30 * 24 * time.Hour, snapshotKeepCount: 5}, tickC, zap.NewNop())
+		close(done)
+	}()
+
+	for len(tickC) > 0 {
+		runtime.Gosched()
+	}
+	cancel()
+	<-done
+
+	if purger.outboxCalled != 1 {
+		t.Errorf("expected PurgeOldOutboxEntries called once, got %d", purger.outboxCalled)
 	}
 }
 
@@ -910,7 +974,7 @@ type stubUserRepoForWorker struct {
 func (r *stubUserRepoForWorker) GetByID(_ context.Context, _ int) (*domain.User, error) {
 	return r.user, r.err
 }
-func (r *stubUserRepoForWorker) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
+func (r *stubUserRepoForWorker) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return r.user, r.err
 }
 func (r *stubUserRepoForWorker) Create(_ context.Context, _ *domain.User) error { return r.err }
@@ -1025,6 +1089,9 @@ func (s *stubParamSvc) BulkSet(_ context.Context, _ map[string]string, _ int) er
 	return nil
 }
 func (s *stubParamSvc) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubParamSvc) BulkPreview(_ context.Context, _ map[string]string) ([]domain.ParamDiff, error) {
 	return nil, nil
 }
 func (s *stubParamSvc) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {

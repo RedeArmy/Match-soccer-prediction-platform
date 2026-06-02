@@ -255,8 +255,10 @@ func (s *ExchangeRateServiceImpl) RefreshRate(ctx context.Context) (*domain.Exch
 
 	// Persist to history.
 	fetchedAt := time.Now()
+	var apiVersion string
 	if raw != nil {
 		fetchedAt = raw.FetchedAt
+		apiVersion = raw.ApiVersion
 	}
 	rec := &domain.ExchangeRateRecord{
 		ReferenceRate: rates.ReferenceRate,
@@ -265,6 +267,7 @@ func (s *ExchangeRateServiceImpl) RefreshRate(ctx context.Context) (*domain.Exch
 		BuyMarginPct:  rates.BuyMarginPct,
 		SellMarginPct: rates.SellMarginPct,
 		Source:        source,
+		ApiVersion:    apiVersion,
 		Stale:         stale,
 		IsOverride:    false,
 		FetchedAt:     fetchedAt,
@@ -448,10 +451,9 @@ func computeRates(reference decimal.Decimal, buyBPS, sellBPS int, source string,
 // Formula: centavos = floor(sellRate × 100).
 func (s *ExchangeRateServiceImpl) writeUSDGTQRate(ctx context.Context, sellRate decimal.Decimal) error {
 	centavos := sellRate.Mul(decimal.NewFromInt(100)).Floor().IntPart()
-	const minCentavos, maxCentavos = int64(100), int64(10_000)
-	if centavos < minCentavos || centavos > maxCentavos {
+	if centavos < domain.USDGTQRateMinCentavos || centavos > domain.USDGTQRateMaxCentavos {
 		return fmt.Errorf("sell rate %s → %d centavos is outside [%d, %d]",
-			sellRate, centavos, minCentavos, maxCentavos)
+			sellRate, centavos, domain.USDGTQRateMinCentavos, domain.USDGTQRateMaxCentavos)
 	}
 	_, err := s.params.Set(ctx, domain.ParamKeyUSDGTQRate, strconv.FormatInt(centavos, 10), systemActorID)
 	return err

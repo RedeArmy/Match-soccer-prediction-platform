@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# pre-commit: runs two safety checks before every commit.
+# pre-commit: runs three safety checks before every commit.
 #
-#  1. Swagger regeneration — when handler annotations change, docs/ is updated
-#     and staged automatically so the commit always includes an up-to-date spec.
+#  0. .env guard — unconditionally blocks staging any .env* file (except
+#     .env.example). Requires no external tools. A staged .env file always
+#     indicates an accidental `git add -f .env`; rejecting it here is cheaper
+#     than scrubbing credentials from git history later.
 #
-#  2. Secret scan — if gitleaks is installed, staged files are checked for
+#  1. Secret scan — if gitleaks is installed, staged files are checked for
 #     accidental credentials (API keys, passwords, private keys). The hook
 #     skips this check when gitleaks is absent so developers can still commit
 #     before installing it, but a CI gate enforces the same scan on every PR.
+#
+#  2. Swagger regeneration — when handler annotations change, docs/ is updated
+#     and staged automatically so the commit always includes an up-to-date spec.
 #
 # Install once after cloning:
 #   make hooks
@@ -21,6 +26,30 @@ set -euo pipefail
 # shell that does not source ~/.bashrc or ~/.zshrc, so ~/go/bin is absent
 # from PATH. Prepend it explicitly so `swag` and `gitleaks` are found.
 export PATH="$PATH:$(go env GOPATH)/bin"
+
+# ── 0. .env guard ─────────────────────────────────────────────────────────────
+# .env files contain real database passwords, API keys, and signing secrets.
+# They are in .gitignore but can still be staged with `git add -f .env`.
+# This check requires no external tools and fires before the more expensive
+# gitleaks scan, giving a clear, actionable error message immediately.
+# .env.example is explicitly allowed — it holds safe placeholder values and
+# IS committed as the configuration reference.
+
+staged_env=$(git diff --cached --name-only | grep -E '^\.env(\..*)?$' | grep -v '^\.env\.example$' || true)
+if [ -n "$staged_env" ]; then
+    echo ""
+    echo "ERROR: .env file staged — commit blocked."
+    echo ""
+    echo "  Staged file(s):"
+    echo "$staged_env" | sed 's/^/    /'
+    echo ""
+    echo "  .env files contain real credentials and must never reach version control."
+    echo "  Remove them from staging with:"
+    echo "    git restore --staged $staged_env"
+    echo ""
+    echo "  If you meant to commit configuration documentation, use .env.example instead."
+    exit 1
+fi
 
 # ── 1. Secret scan ────────────────────────────────────────────────────────────
 

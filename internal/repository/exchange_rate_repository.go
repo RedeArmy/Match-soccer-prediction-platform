@@ -45,9 +45,9 @@ func (r *postgresExchangeRateRepository) Save(ctx context.Context, rec *domain.E
 	const q = `
 		INSERT INTO exchange_rate_history
 		    (reference_rate, buy_rate, sell_rate, buy_margin_pct, sell_margin_pct,
-		     source, stale, is_override, override_reason, override_by,
+		     source, api_version, stale, is_override, override_reason, override_by,
 		     fetched_at, effective_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 
 	_, err := r.db.Exec(ctx, q,
 		rec.ReferenceRate.String(),
@@ -56,6 +56,7 @@ func (r *postgresExchangeRateRepository) Save(ctx context.Context, rec *domain.E
 		rec.BuyMarginPct.String(),
 		rec.SellMarginPct.String(),
 		rec.Source,
+		rec.ApiVersion,
 		rec.Stale,
 		rec.IsOverride,
 		nullableString(rec.OverrideReason),
@@ -72,7 +73,7 @@ func (r *postgresExchangeRateRepository) Save(ctx context.Context, rec *domain.E
 func (r *postgresExchangeRateRepository) GetLatest(ctx context.Context) (*domain.ExchangeRateRecord, error) {
 	const q = `
 		SELECT id, reference_rate, buy_rate, sell_rate, buy_margin_pct, sell_margin_pct,
-		       source, stale, is_override,
+		       source, api_version, stale, is_override,
 		       COALESCE(override_reason, '') AS override_reason,
 		       override_by, fetched_at, effective_at, created_at
 		FROM exchange_rate_history
@@ -85,7 +86,7 @@ func (r *postgresExchangeRateRepository) GetLatest(ctx context.Context) (*domain
 func (r *postgresExchangeRateRepository) GetHistory(ctx context.Context, limit, offset int) ([]*domain.ExchangeRateRecord, error) {
 	const q = `
 		SELECT id, reference_rate, buy_rate, sell_rate, buy_margin_pct, sell_margin_pct,
-		       source, stale, is_override,
+		       source, api_version, stale, is_override,
 		       COALESCE(override_reason, '') AS override_reason,
 		       override_by, fetched_at, effective_at, created_at
 		FROM exchange_rate_history
@@ -98,7 +99,7 @@ func (r *postgresExchangeRateRepository) GetHistory(ctx context.Context, limit, 
 func (r *postgresExchangeRateRepository) GetOverrides(ctx context.Context, limit int) ([]*domain.ExchangeRateRecord, error) {
 	const q = `
 		SELECT id, reference_rate, buy_rate, sell_rate, buy_margin_pct, sell_margin_pct,
-		       source, stale, is_override,
+		       source, api_version, stale, is_override,
 		       COALESCE(override_reason, '') AS override_reason,
 		       override_by, fetched_at, effective_at, created_at
 		FROM exchange_rate_history
@@ -157,7 +158,7 @@ func scanExchangeRateRecord(s scanner) (*domain.ExchangeRateRecord, error) {
 	err := s.Scan(
 		&rec.ID,
 		&refStr, &buyStr, &sellStr, &buyMrgStr, &sellMrgStr,
-		&rec.Source, &rec.Stale, &rec.IsOverride,
+		&rec.Source, &rec.ApiVersion, &rec.Stale, &rec.IsOverride,
 		&rec.OverrideReason, &rec.OverrideBy,
 		&rec.FetchedAt, &rec.EffectiveAt, &rec.CreatedAt,
 	)

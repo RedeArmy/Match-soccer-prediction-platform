@@ -531,6 +531,119 @@ func TestSystemParamService_Set_HookNotCalledOnRepoError(t *testing.T) {
 	}
 }
 
+// ── BulkPreview ───────────────────────────────────────────────────────────────
+
+func TestSystemParamService_BulkPreview_ReturnsDiffs(t *testing.T) {
+	repo := &stubSystemParamRepo{param: param("scoring.exact_score", "5")}
+	svc := newParamSvc(repo)
+
+	diffs, err := svc.BulkPreview(context.Background(), map[string]string{"scoring.exact_score": "7"})
+	if err != nil {
+		t.Fatalf(svcUnexpectedErr, err)
+	}
+	if len(diffs) != 1 {
+		t.Fatalf("expected 1 diff, got %d", len(diffs))
+	}
+	d := diffs[0]
+	if d.Key != "scoring.exact_score" {
+		t.Errorf("key: got %q, want %q", d.Key, "scoring.exact_score")
+	}
+	if d.OldValue != "5" {
+		t.Errorf("old_value: got %q, want %q", d.OldValue, "5")
+	}
+	if d.NewValue != "7" {
+		t.Errorf("new_value: got %q, want %q", d.NewValue, "7")
+	}
+	if !d.IsSensitive {
+		t.Error("expected IsSensitive=true for scoring.* key")
+	}
+}
+
+func TestSystemParamService_BulkPreview_NonSensitiveKey_IsSensitiveFalse(t *testing.T) {
+	repo := &stubSystemParamRepo{param: param("cache.match_ttl_seconds", "60")}
+	svc := newParamSvc(repo)
+
+	diffs, err := svc.BulkPreview(context.Background(), map[string]string{"cache.match_ttl_seconds": "120"})
+	if err != nil {
+		t.Fatalf(svcUnexpectedErr, err)
+	}
+	if len(diffs) != 1 || diffs[0].IsSensitive {
+		t.Errorf("expected IsSensitive=false for cache.* key, got %+v", diffs)
+	}
+}
+
+func TestSystemParamService_BulkPreview_FXKey_IsSensitiveTrue(t *testing.T) {
+	repo := &stubSystemParamRepo{param: param("fx.buy_margin_bps", "150")}
+	svc := newParamSvc(repo)
+
+	diffs, err := svc.BulkPreview(context.Background(), map[string]string{"fx.buy_margin_bps": "200"})
+	if err != nil {
+		t.Fatalf(svcUnexpectedErr, err)
+	}
+	if len(diffs) != 1 || !diffs[0].IsSensitive {
+		t.Errorf("expected IsSensitive=true for fx.* key, got %+v", diffs)
+	}
+}
+
+func TestSystemParamService_BulkPreview_SortedByKey(t *testing.T) {
+	repo := &stubSystemParamRepo{param: param("x", "1")}
+	svc := newParamSvc(repo)
+
+	diffs, err := svc.BulkPreview(context.Background(), map[string]string{
+		"z.param": "1",
+		"a.param": "2",
+		"m.param": "3",
+	})
+	if err != nil {
+		t.Fatalf(svcUnexpectedErr, err)
+	}
+	if len(diffs) != 3 {
+		t.Fatalf("expected 3 diffs, got %d", len(diffs))
+	}
+	if diffs[0].Key > diffs[1].Key || diffs[1].Key > diffs[2].Key {
+		t.Errorf("diffs not sorted by key: %v %v %v", diffs[0].Key, diffs[1].Key, diffs[2].Key)
+	}
+}
+
+func TestSystemParamService_BulkPreview_InvalidValue_ReturnsError(t *testing.T) {
+	p := &domain.SystemParam{Key: "n", Value: "5", Type: domain.SystemParamTypeInt}
+	repo := &stubSystemParamRepo{param: p}
+	svc := newParamSvc(repo)
+
+	_, err := svc.BulkPreview(context.Background(), map[string]string{"n": "not-a-number"})
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+}
+
+func TestSystemParamService_BulkPreview_NoWrites(t *testing.T) {
+	p := param("scoring.exact_score", "5")
+	repo := &stubSystemParamRepo{param: p}
+	svc := newParamSvc(repo)
+
+	if _, err := svc.BulkPreview(context.Background(), map[string]string{"scoring.exact_score": "10"}); err != nil {
+		t.Fatalf(svcUnexpectedErr, err)
+	}
+	// BulkSet on the stub sets err to nil and would not change param.Value,
+	// but we confirm the repo.param value is unchanged (preview did not call Set).
+	got, _ := svc.Get(context.Background(), "scoring.exact_score")
+	if got == nil || got.Value != "5" {
+		t.Errorf("BulkPreview must not write: expected value %q, got %v", "5", got)
+	}
+}
+
+func TestSystemParamService_BulkPreview_AbsentKey_OldValueEmpty(t *testing.T) {
+	svc := newParamSvc(&stubSystemParamRepo{param: nil}) // key absent
+
+	diffs, err := svc.BulkPreview(context.Background(), map[string]string{"new.key": "v"})
+	if err != nil {
+		t.Fatalf(svcUnexpectedErr, err)
+	}
+	if len(diffs) != 1 || diffs[0].OldValue != "" {
+		t.Errorf("expected empty OldValue for absent key, got %+v", diffs)
+	}
+}
+
 func TestSystemParamService_MultipleHooksForSameKey_AllCalled(t *testing.T) {
 	svc := NewSystemParamService(&stubSystemParamRepo{param: param("k", "v")}, nil, zap.NewNop())
 

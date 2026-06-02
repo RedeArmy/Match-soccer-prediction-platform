@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -389,4 +392,269 @@ func TestAuditService_Log_CancelledContext_WriteStillCompletes(t *testing.T) {
 	if n != 1 {
 		t.Errorf("expected 1 audit entry despite cancelled context, got %d", n)
 	}
+}
+
+// ── MaxInFlight enforcement tests ─────────────────────────────────────────────
+
+// TestAuditService_MaxInFlight_DropsOverLimit verifies that Log() drops entries
+// and increments Dropped() when the in-flight count exceeds the configured limit.
+func TestAuditService_MaxInFlight_DropsOverLimit(t *testing.T) {
+	// Lower the global limit to 1 for this test; restore afterwards.
+	orig := auditMaxInFlight
+	auditMaxInFlight = 1
+	defer func() { auditMaxInFlight = orig }()
+
+	release := make(chan struct{})
+	repo := &blockingAuditLogRepo{release: release}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	// First Log: occupies the single in-flight slot.
+	svc.Log(context.Background(), nil, nil, "first", nil, nil, nil)
+
+	// Poll until the goroutine is blocked inside Create.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if svc.InFlight() == 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// Second Log: must be dropped because limit == 1 and one goroutine is already running.
+	svc.Log(context.Background(), nil, nil, "dropped", nil, nil, nil)
+
+	// Unblock and wait for the first goroutine to finish.
+	close(release)
+	svc.Drain()
+
+	if got := svc.Dropped(); got != 1 {
+		t.Errorf("expected Dropped() == 1 after exceeding limit, got %d", got)
+	}
+}
+
+// TestAuditService_MaxInFlight_AllowsAtLimit verifies that exactly limit
+// goroutines can be in flight simultaneously without any being dropped.
+func TestAuditService_MaxInFlight_AllowsAtLimit(t *testing.T) {
+	const limit = 3
+	orig := auditMaxInFlight
+	auditMaxInFlight = limit
+	defer func() { auditMaxInFlight = orig }()
+
+	release := make(chan struct{})
+	repo := &blockingAuditLogRepo{release: release}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	for i := 0; i < limit; i++ {
+		svc.Log(context.Background(), nil, nil, "ok", nil, nil, nil)
+	}
+	close(release)
+	svc.Drain()
+
+	if got := svc.Dropped(); got != 0 {
+		t.Errorf("expected Dropped() == 0 for %d goroutines at limit %d, got %d", limit, limit, got)
+	}
+}
+
+// ── RegisterMetrics tests ─────────────────────────────────────────────────────
+
+func TestAuditService_RegisterMetrics_NoopMeter_NoError(t *testing.T) {
+	svc := NewAuditService(&stubAuditLogRepo{}, 5*time.Second, zap.NewNop())
+	if err := svc.RegisterMetrics(noop.NewMeterProvider().Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics with noop meter returned error: %v", err)
+	}
+}
+
+func TestAuditService_RegisterMetrics_CallbackReadsInFlight(t *testing.T) {
+	release := make(chan struct{})
+	repo := &blockingAuditLogRepo{release: release}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	defer provider.Shutdown(context.Background()) //nolint:errcheck
+
+	if err := svc.RegisterMetrics(provider.Meter("test")); err != nil {
+		t.Fatalf("RegisterMetrics: %v", err)
+	}
+
+	// Put one goroutine in flight.
+	svc.Log(context.Background(), nil, nil, "in-flight", nil, nil, nil)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if svc.InFlight() == 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// Find wcq_audit_in_flight; it must equal 1.
+	got, found := collectGaugeInt64(rm, "wcq_audit_in_flight")
+	if !found {
+		t.Error("wcq_audit_in_flight not found in collected metrics")
+	} else if got != 1 {
+		t.Errorf("wcq_audit_in_flight = %d; want 1", got)
+	}
+
+	close(release)
+	svc.Drain()
+}
+
+// ── ConfigureAuditRetry tests ─────────────────────────────────────────────────
+
+func TestConfigureAuditRetry_AppliesPositiveValues(t *testing.T) {
+	origAttempts := auditMaxAttempts
+	origDelay := auditRetryDelay
+	defer func() {
+		auditMaxAttempts = origAttempts
+		auditRetryDelay = origDelay
+	}()
+
+	ConfigureAuditRetry(5, 100)
+
+	auditPolicyMu.RLock()
+	gotAttempts := auditMaxAttempts
+	gotDelay := auditRetryDelay
+	auditPolicyMu.RUnlock()
+
+	if gotAttempts != 5 {
+		t.Errorf("auditMaxAttempts = %d; want 5", gotAttempts)
+	}
+	if gotDelay != 100*time.Millisecond {
+		t.Errorf("auditRetryDelay = %v; want 100ms", gotDelay)
+	}
+}
+
+func TestConfigureAuditRetry_IgnoresNonPositiveValues(t *testing.T) {
+	origAttempts := auditMaxAttempts
+	origDelay := auditRetryDelay
+	defer func() {
+		auditMaxAttempts = origAttempts
+		auditRetryDelay = origDelay
+	}()
+
+	ConfigureAuditRetry(0, 0)
+
+	auditPolicyMu.RLock()
+	gotAttempts := auditMaxAttempts
+	gotDelay := auditRetryDelay
+	auditPolicyMu.RUnlock()
+
+	if gotAttempts != origAttempts {
+		t.Errorf("auditMaxAttempts changed to %d; want %d (unchanged)", gotAttempts, origAttempts)
+	}
+	if gotDelay != origDelay {
+		t.Errorf("auditRetryDelay changed to %v; want %v (unchanged)", gotDelay, origDelay)
+	}
+}
+
+// ── ConfigureAuditMaxInFlight tests ──────────────────────────────────────────
+
+func TestConfigureAuditMaxInFlight_AppliesPositiveValue(t *testing.T) {
+	orig := auditMaxInFlight
+	defer func() { auditMaxInFlight = orig }()
+
+	ConfigureAuditMaxInFlight(42)
+
+	if got := auditMaxInFlight; got != 42 {
+		t.Errorf("auditMaxInFlight = %d; want 42", got)
+	}
+}
+
+func TestConfigureAuditMaxInFlight_IgnoresNonPositiveValue(t *testing.T) {
+	orig := auditMaxInFlight
+	defer func() { auditMaxInFlight = orig }()
+
+	ConfigureAuditMaxInFlight(0)
+	if got := auditMaxInFlight; got != orig {
+		t.Errorf("auditMaxInFlight changed to %d; want %d (unchanged)", got, orig)
+	}
+
+	ConfigureAuditMaxInFlight(-1)
+	if got := auditMaxInFlight; got != orig {
+		t.Errorf("auditMaxInFlight changed to %d after negative input; want %d (unchanged)", got, orig)
+	}
+}
+
+// ── ListAuditLogs / ListAuditLogsByEntity delegation tests ───────────────────
+
+// listableAuditLogRepo extends stubAuditLogRepo with deterministic return values
+// so delegation can be verified.
+type listableAuditLogRepo struct {
+	stubAuditLogRepo
+	entries   []*domain.AuditLog
+	nextToken string
+	listErr   error
+}
+
+func (r *listableAuditLogRepo) List(_ context.Context, _ repository.AuditLogFilters, _ repository.CursorPage) ([]*domain.AuditLog, string, error) {
+	return r.entries, r.nextToken, r.listErr
+}
+func (r *listableAuditLogRepo) ListByEntity(_ context.Context, _ string, _ int, _ repository.CursorPage) ([]*domain.AuditLog, string, error) {
+	return r.entries, r.nextToken, r.listErr
+}
+
+func TestAuditService_ListAuditLogs_DelegatesToRepo(t *testing.T) {
+	want := []*domain.AuditLog{{Action: "match.created"}}
+	repo := &listableAuditLogRepo{entries: want, nextToken: "tok123"}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	ar, ok := svc.(AuditReader)
+	if !ok {
+		t.Fatal("auditService does not implement AuditReader")
+	}
+	got, nextTok, err := ar.ListAuditLogs(context.Background(), repository.AuditLogFilters{}, repository.CursorPage{})
+	if err != nil {
+		t.Fatalf("ListAuditLogs: %v", err)
+	}
+	if len(got) != 1 || got[0].Action != "match.created" {
+		t.Errorf("ListAuditLogs returned unexpected entries: %v", got)
+	}
+	if nextTok != "tok123" {
+		t.Errorf("ListAuditLogs next token = %q; want %q", nextTok, "tok123")
+	}
+}
+
+func TestAuditService_ListAuditLogsByEntity_DelegatesToRepo(t *testing.T) {
+	want := []*domain.AuditLog{{Action: "user.banned"}}
+	repo := &listableAuditLogRepo{entries: want, nextToken: ""}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	ar, ok := svc.(AuditReader)
+	if !ok {
+		t.Fatal("auditService does not implement AuditReader")
+	}
+	got, nextTok, err := ar.ListAuditLogsByEntity(context.Background(), "user", 7, repository.CursorPage{})
+	if err != nil {
+		t.Fatalf("ListAuditLogsByEntity: %v", err)
+	}
+	if len(got) != 1 || got[0].Action != "user.banned" {
+		t.Errorf("ListAuditLogsByEntity returned unexpected entries: %v", got)
+	}
+	if nextTok != "" {
+		t.Errorf("ListAuditLogsByEntity next token = %q; want empty", nextTok)
+	}
+}
+
+// collectGaugeInt64 finds the first data point of the named Gauge[int64] metric
+// in rm and returns its value. Returns (0, false) when the metric is absent,
+// has the wrong data type, or has no data points.
+func collectGaugeInt64(rm metricdata.ResourceMetrics, metricName string) (int64, bool) {
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != metricName {
+				continue
+			}
+			g, ok := m.Data.(metricdata.Gauge[int64])
+			if !ok || len(g.DataPoints) == 0 {
+				return 0, false
+			}
+			return g.DataPoints[0].Value, true
+		}
+	}
+	return 0, false
 }

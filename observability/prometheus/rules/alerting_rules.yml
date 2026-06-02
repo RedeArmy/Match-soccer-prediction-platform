@@ -16,6 +16,11 @@
 #   wcq_rate_limit_fail_open_total        Int64Counter  (per-user Redis rate limiter)
 #   wcq_idempotency_degraded_total        Int64Counter  (idempotency Redis store degraded)
 #   wcq_balance_ledger_row_count          Int64ObservableGauge  (estimated balance_ledger rows)
+#   wcq_scheduler_job_overdue             Int64ObservableGauge  (label: job_name; 1=overdue 0=ok)
+#   wcq_fx_rate_age_seconds               Float64ObservableGauge  (seconds since last successful FX fetch)
+#   wcq_audit_in_flight                   Int64ObservableGauge  (concurrent audit goroutines)
+#   wcq_audit_dropped_total               Int64ObservableGauge  (cumulative lost entries)
+#   wcq_scoring_dlq_depth                 Int64ObservableGauge  (label: event_type; Redis DLQ depth)
 #
 # Alertmanager routing (alertmanager.yml):
 #   severity=critical, workflow=payment-error-escalation → n8n-payment-escalation
@@ -441,4 +446,180 @@ groups:
             before the table reaches ~50M rows to avoid autovacuum pressure and
             index bloat. Consult docs/capacity.md for pool sizing guidance and
             schedule within the next maintenance window.
+
+  # ---------------------------------------------------------------------------
+  # Scheduler dead-man's switch
+  #   wcq_scheduler_job_overdue emits 1 when a registered scheduler job has not
+  #   fired within threshold × its expected interval (threshold=3.0 by default).
+  #   A non-zero value means a periodic job is silently stalled — the most
+  #   common causes are Redis leader-election lock contention and worker process
+  #   crashes.
+  #
+  #   The threshold already provides a built-in grace window (3× the normal
+  #   interval for interval-based jobs, 75 h for daily jobs), so for: 5m avoids
+  #   flapping on brief transients while still firing well before the impact of
+  #   a stalled job (e.g. stale FX rate) is detected by users.
+  #
+  #   The Fly.io readiness probe (/health/ready) will restart the worker machine
+  #   when this condition is true; this alert provides the Prometheus signal so
+  #   on-call can investigate root cause before the restart loop amplifies the
+  #   problem (e.g. a deadlocked Redis lock).
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.scheduler
+    interval: 30s
+    rules:
+
+      - alert: WCQSchedulerJobOverdue
+        expr: wcq_scheduler_job_overdue > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqschedulerjoboverdue"
+          summary: "Scheduler job {{ $labels.job_name }} overdue"
+          description: >
+            The scheduler job "{{ $labels.job_name }}" has not fired within its
+            overdue threshold (3× expected interval). The worker's /health/ready
+            probe will also fail, triggering a Fly.io machine restart.
+            Investigate Redis leader-election (TryAcquire may be stuck on a stale
+            lock) and check worker logs for job execution errors.  For the
+            payment.exchange_rate_refresh job, a stale rate will also be caught
+            by WCQFXRateStale within 26 h.
+
+  # ---------------------------------------------------------------------------
+  # FX rate staleness
+  #   wcq_fx_rate_age_seconds is a Float64ObservableGauge emitted by
+  #   ExchangeRateServiceImpl.RegisterMetrics via OTel callback.  It reports
+  #   the wall-clock age of the last successfully fetched exchange rate.
+  #
+  #   n8n also receives stale-rate notifications (via NotifyFXRateStale) but
+  #   n8n itself may be unavailable during an outage.  This Prometheus rule
+  #   provides an independent second signal so on-call is paged regardless of
+  #   n8n availability.
+  #
+  #   Threshold: 93 600 s = 26 h, matching DefaultFXStaleThresholdH (26 h).
+  #   The daily RefreshRate job fires at 10:30 AM; a 26 h threshold gives a
+  #   2-hour grace window past the next scheduled run before the alert fires.
+  #   for: 0m fires immediately on the first evaluation that exceeds 26 h —
+  #   by that point the rate has already been stale for over a day and
+  #   withdrawal reservations are using an incorrect GTQ/USD conversion.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.fx
+    interval: 30s
+    rules:
+
+      - alert: WCQFXRateStale
+        expr: wcq_fx_rate_age_seconds > 93600
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+          workflow: payment-error-escalation
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqfxratestale"
+          summary: "FX rate stale for > 26 h — withdrawal reservations at risk"
+          description: >
+            The exchange rate has not been refreshed for
+            {{ $value | humanizeDuration }}, exceeding the 26 h staleness
+            threshold (DefaultFXStaleThresholdH).  PayPal withdrawal balance
+            reservations are converting USD→GTQ using an outdated rate, which
+            may over- or under-reserve user balances.  Check the
+            payment.exchange_rate_refresh scheduler job (see WCQSchedulerJobOverdue),
+            verify that the Banguat and fallback APIs are reachable, and
+            trigger a manual rate refresh via PUT /admin/exchange-rate if needed.
+
+  # ---------------------------------------------------------------------------
+  # Audit goroutine pile-up
+  #   wcq_audit_in_flight is the number of goroutines currently executing inside
+  #   auditService.Log. Each goroutine waits up to writeTimeout × maxAttempts
+  #   (default 5 s × 2 = 10 s) for the DB write to complete.
+  #
+  #   Under normal load this is near-zero (goroutines complete almost instantly).
+  #   A sustained non-zero value indicates DB pressure. At 500 goroutines the
+  #   operator should investigate; at 1 000 (DefaultAuditMaxInFlight) the service
+  #   starts dropping entries to prevent OOM.
+  #
+  #   for: 2m avoids false positives from brief DB hiccups; the alert firing
+  #   means the DB has been degraded for at least 2 consecutive minutes.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.audit
+    interval: 30s
+    rules:
+
+      - alert: WCQAuditGoroutineBacklog
+        expr: wcq_audit_in_flight > 500
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqauditgoroutinebacklog"
+          summary: "Audit goroutine backlog above 500 — DB pressure suspected"
+          description: >
+            wcq_audit_in_flight is {{ $value | humanize }}, indicating that
+            audit-log goroutines are queuing faster than the DB can drain them.
+            At the default limit of 1 000 (audit.max_in_flight) new audit entries
+            will be dropped and wcq_audit_dropped_total will increment.
+            Investigate DB connectivity and query latency.  Check
+            audit.write_timeout_seconds and audit.max_retries system params;
+            consider temporarily increasing audit.max_in_flight if the backlog
+            is from a benign spike rather than sustained degradation.
+
+  # ---------------------------------------------------------------------------
+  # Scoring DLQ depth (Redis)
+  #   wcq_scoring_dlq_depth{event_type=...} is the number of scoring events
+  #   that exhausted all handler retry attempts and landed in the Redis DLQ.
+  #
+  #   event_type="match.finished" — the ScoreMatch handler failed for a match.
+  #     A non-zero value means predictions for that match are NOT scored and the
+  #     leaderboard is stale. Requires immediate operator attention.
+  #     The worker's /health/ready probe also trips via DLQChecker.
+  #
+  #   event_type="match.started" — the match-started handler failed.
+  #     Lower operational impact (no scoring involved) but still abnormal.
+  #
+  #   Both alerts use for: 0m because a non-zero DLQ depth is always a
+  #   deliberate failure condition (all retries exhausted) that requires
+  #   manual operator action: POST /admin/dlq/replay.
+  # ---------------------------------------------------------------------------
+  - name: wcq.alerts.scoring_dlq
+    interval: 30s
+    rules:
+
+      - alert: WCQScoringDLQNonEmpty
+        expr: wcq_scoring_dlq_depth{event_type="match.finished"} > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqscoringdlqnonempty"
+          summary: "Scoring DLQ non-empty — match predictions not scored"
+          description: >
+            wcq_scoring_dlq_depth{event_type="match.finished"} is
+            {{ $value | humanize }}. One or more match scoring events exhausted
+            all handler retry attempts (messaging.max_retries) and were moved to
+            the Redis DLQ (key: dlq:match.finished).  Predictions for the
+            affected match(es) have NOT been scored and the leaderboard is stale.
+            Replay the DLQ immediately via POST /admin/dlq/replay, then
+            verify leaderboard snapshots with GET /admin/leaderboard.
+            The worker /health/ready probe also fails while the DLQ is non-empty.
+
+      - alert: WCQMatchStartedDLQNonEmpty
+        expr: wcq_scoring_dlq_depth{event_type="match.started"} > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqmatchstarteddlqnonempty"
+          summary: "Match-started DLQ non-empty — match lifecycle event failed"
+          description: >
+            wcq_scoring_dlq_depth{event_type="match.started"} is
+            {{ $value | humanize }}. One or more match-started events exhausted
+            all handler retry attempts and were moved to the Redis DLQ
+            (key: dlq:match.started).  No scoring is affected, but match
+            lifecycle state may be inconsistent.  Replay via POST /admin/dlq/replay
+            and verify affected match status in the admin panel.
 

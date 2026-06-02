@@ -13,7 +13,9 @@ const (
 )
 
 // contentBuilderFunc renders the notification content for a specific event type.
-type contentBuilderFunc func(entry *notification.OutboxEntry, locale Locale) userContent
+// It returns an error when the outbox entry's payload cannot be decoded; callers
+// must fall back to defaultUserContent rather than delivering zero-value fields.
+type contentBuilderFunc func(entry *notification.OutboxEntry, locale Locale) (userContent, error)
 
 // contentRegistry maps each event type to its content builder function.
 // Lookups are O(1); adding a new event type requires one registry entry and
@@ -66,20 +68,23 @@ func init() {
 
 // resolveUserContent maps an outbox entry to its title/body/actionURL for the
 // given locale via a registry lookup. CC=2: one map lookup, no switch.
-func resolveUserContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func resolveUserContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	if build, ok := contentRegistry[entry.EventType]; ok {
 		return build(entry, locale)
 	}
-	return defaultUserContent(locale)
+	return defaultUserContent(locale), nil
 }
 
 // buildUserContent returns the rendered notification content for the given
 // event. The locale field is attached here so builder functions do not need to
 // set it individually.
-func buildUserContent(entry *notification.OutboxEntry, locale Locale) userContent {
-	c := resolveUserContent(entry, locale)
+func buildUserContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
+	c, err := resolveUserContent(entry, locale)
+	if err != nil {
+		return userContent{}, err
+	}
 	c.locale = locale
-	return c
+	return c, nil
 }
 
 // defaultUserContent is the fallback for event types not registered in contentRegistry.

@@ -60,11 +60,11 @@ burst sizes we operate. Token bucket is simpler and already available via
 
 ## Known limitations
 
-The `RedisRateStore` uses separate `INCR` and `EXPIRE` commands, which are not
-atomic. If the process crashes between the two, a key without TTL accumulates
-but does not affect subsequent seconds (each second uses a timestamp-scoped key).
-The risk is a memory leak in Redis, not a rate-limit bypass. Mitigated by a Lua
-script if it becomes observable in production.
+None outstanding. The original `INCR` + `EXPIRE` non-atomicity (risk: unbounded
+key growth on crash) was resolved by replacing the two-command sequence with the
+`incrWindowScript` Lua script in `rate_limit_redis.go`. The TTL is now set
+atomically on the first increment, matching the pattern used in
+`push_digest_redis.go` and `pkg/dsem/redis.go`.
 
 ---
 
@@ -73,3 +73,7 @@ script if it becomes observable in production.
 - `internal/middleware/rate_limit.go` — `LimiterStore`, `Allower` interface
 - `internal/middleware/rate_limit_redis.go` — `RedisRateStore`
 - `internal/api/server_routes.go:Routes()` — selection logic (lines ~230-246)
+
+See also **ADR 0013** for the IP-specific fail-open policy and the observability
+signals (`wcq_rate_limit_fail_open_total`, `wcq_ip_ratelimit_store_mode`) that
+make the fallback visible in Grafana.

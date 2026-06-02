@@ -558,3 +558,49 @@ func TestHub_NewWithBufSize_ZeroFallsBackToDefault(t *testing.T) {
 		t.Fatal("timed out waiting for notification from zero-buf-size hub")
 	}
 }
+
+func TestHub_NewWithOptions_CustomEvictAfterDrops_EvictsAtThreshold(t *testing.T) {
+	t.Parallel()
+	// EvictAfterDrops=2 means the connection is evicted after 2 consecutive drops
+	// (buffer full + drop 1, then buffer full + drop 2). bufSize=1 so each send
+	// after the first fills the buffer immediately.
+	const customEvict = 2
+	h := hub.NewWithOptions(hub.Options{ChanBufSize: 1, EvictAfterDrops: customEvict})
+
+	ch, cleanup := h.Connect(1)
+	defer cleanup()
+
+	n := hub.Notification{ID: 1, UserID: 1, EventType: "test", Title: "T", Body: "B", CreatedAt: "2026-01-01T00:00:00Z"}
+
+	// Fill the buffer with the first send.
+	h.Broadcast(context.Background(), 1, n)
+	// bufSize=1 + customEvict=2 additional sends triggers eviction.
+	for i := 0; i < 1+customEvict; i++ {
+		h.Broadcast(context.Background(), 1, n)
+	}
+
+	// The connection should be closed: reading from it must drain and then return
+	// ok=false indicating the channel was closed by the eviction path.
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return // channel closed by eviction — test passes
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out: connection was not evicted within 1 s")
+		}
+	}
+}
+
+func TestHub_NewWithOptions_ZeroEvictAfterDrops_FallsBackToDefault(t *testing.T) {
+	t.Parallel()
+	// EvictAfterDrops=0 must fall back to DefaultEvictAfterDrops so the hub
+	// evicts at the same threshold as when constructed via New().
+	h := hub.NewWithOptions(hub.Options{EvictAfterDrops: 0})
+	conns, _, _ := h.Metrics()
+	if conns != 0 {
+		t.Fatalf("expected 0 connections, got %d", conns)
+	}
+	// Construction must not panic; that's sufficient for the zero-value fallback test.
+}

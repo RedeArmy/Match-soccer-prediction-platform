@@ -58,18 +58,18 @@ func TestUserRepository_GetByID_NotFound_ReturnsNil(t *testing.T) {
 	}
 }
 
-func TestUserRepository_GetByClerkSubject_Found(t *testing.T) {
+func TestUserRepository_GetByExternalSubject_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
 	repo := repository.NewPostgresUserRepository(testDB)
 
-	// Set a clerk_subject via Update so GetByClerkSubject can find it.
-	u.ClerkSubject = "user_clerk_abc123"
+	// Set a external_subject via Update so GetByExternalSubject can find it.
+	u.ExternalSubject = "user_clerk_abc123"
 	if err := repo.Update(context.Background(), u); err != nil {
-		t.Fatalf("set clerk_subject: %v", err)
+		t.Fatalf("set external_subject: %v", err)
 	}
 
-	got, err := repo.GetByClerkSubject(context.Background(), "user_clerk_abc123")
+	got, err := repo.GetByExternalSubject(context.Background(), "user_clerk_abc123")
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -81,11 +81,11 @@ func TestUserRepository_GetByClerkSubject_Found(t *testing.T) {
 	}
 }
 
-func TestUserRepository_GetByClerkSubject_NotFound_ReturnsNil(t *testing.T) {
+func TestUserRepository_GetByExternalSubject_NotFound_ReturnsNil(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresUserRepository(testDB)
 
-	got, err := repo.GetByClerkSubject(context.Background(), "user_nonexistent")
+	got, err := repo.GetByExternalSubject(context.Background(), "user_nonexistent")
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}

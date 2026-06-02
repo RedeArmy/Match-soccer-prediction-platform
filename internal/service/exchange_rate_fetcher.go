@@ -35,6 +35,12 @@ type RawRate struct {
 	// Source is the canonical provider name ("banguat", "exchangerate-api",
 	// "openexchangerates"). Matches ExchangeRateFetcher.Source().
 	Source string
+	// ApiVersion is the short revision identifier of the provider API endpoint
+	// that answered this request: "v6" (ExchangeRate-API), "v1"
+	// (OpenExchangeRates), "xml" (Banguat XML feed).  Stored in
+	// exchange_rate_history.api_version for post-incident debugging when a
+	// provider changes its feed format or endpoint version.
+	ApiVersion string
 	// FetchedAt is the wall-clock time at which the provider responded.
 	FetchedAt time.Time
 }

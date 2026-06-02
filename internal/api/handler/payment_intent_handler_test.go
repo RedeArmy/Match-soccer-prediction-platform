@@ -36,7 +36,7 @@ func postIntentAuthenticated(t *testing.T, router http.Handler, body string, use
 	return rec
 }
 
-var callerUser = &domain.User{ID: 7, ClerkSubject: "user_abc"}
+var callerUser = &domain.User{ID: 7, ExternalSubject: "user_abc"}
 
 func TestPaymentIntentHandler_Create_Returns201(t *testing.T) {
 	svc := &stubPaymentIntentSvc{intent: &domain.PaymentIntent{

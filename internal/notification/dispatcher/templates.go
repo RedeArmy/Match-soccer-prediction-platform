@@ -98,7 +98,9 @@ func renderEmail(entry *notification.OutboxEntry) (subject, html string, err err
 
 // emailDataBuilder constructs the template data bag for a single admin/system event.
 // The now parameter is a pre-formatted UTC timestamp shared across the render call.
-type emailDataBuilder func(entry *notification.OutboxEntry, now string) emailData
+// It returns an error when the outbox entry's payload cannot be decoded; buildEmailData
+// falls back to the generic layout in that case so no admin alert is silently dropped.
+type emailDataBuilder func(entry *notification.OutboxEntry, now string) (emailData, error)
 
 // emailBuilders is the exhaustive registry mapping every admin/system EventType to
 // its dedicated template builder. Events absent from this map fall through to the
@@ -144,23 +146,29 @@ var emailBuilders = map[notification.EventType]emailDataBuilder{
 }
 
 // buildEmailData extracts a human-readable subject, headline, and detail table
-// from the outbox entry. It falls back to a generic layout for event types that
-// have no dedicated builder so new events are always delivered even before a
-// custom template is written. TestAllAdminEvents_HaveEmailBuilder enforces that
-// every admin/system event eventually gets a real builder.
+// from the outbox entry. It falls back to the generic layout when the dedicated
+// builder fails to decode the payload or when no builder is registered for the
+// event type. This ensures no admin alert is silently dropped due to a schema
+// mismatch or missing migration.
 func buildEmailData(entry *notification.OutboxEntry) emailData {
 	now := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
 	if build, ok := emailBuilders[entry.EventType]; ok {
-		return build(entry, now)
+		data, err := build(entry, now)
+		if err != nil {
+			return buildGenericLayout(entry, now)
+		}
+		return data
 	}
 	return buildGenericLayout(entry, now)
 }
 
 // ── Bank Transfer ─────────────────────────────────────────────────────────────
 
-func buildAdminBankTransferPending(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminBankTransferPending(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminBankTransferPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[ACTION REQUIRED] Bank transfer proof awaiting review",
@@ -173,12 +181,14 @@ func buildAdminBankTransferPending(entry *notification.OutboxEntry, now string) 
 			"Submitted", now,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildAdminBankTransferStale(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminBankTransferStale(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminBankTransferPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[URGENT] Bank transfer proof overdue — no admin action in 12+ hours",
@@ -191,12 +201,14 @@ func buildAdminBankTransferStale(entry *notification.OutboxEntry, now string) em
 			"Pending Since", p.PendingSince,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildAdminBankTransferQueueDepth(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminBankTransferQueueDepth(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminBankTransferPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType:   string(entry.EventType),
 		Subject:     "[ACTION REQUIRED] Bank transfer queue is backing up",
@@ -204,14 +216,16 @@ func buildAdminBankTransferQueueDepth(entry *notification.OutboxEntry, now strin
 		Body:        "The bank transfer review queue has reached a high depth. Please process pending proofs to avoid further delays.",
 		Details:     details("Queue Depth", fmt.Sprintf("%d", p.QueueDepth)),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Withdrawal ────────────────────────────────────────────────────────────────
 
-func buildAdminWithdrawalPending(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminWithdrawalPending(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminWithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[ACTION REQUIRED] Withdrawal request awaiting approval",
@@ -224,12 +238,14 @@ func buildAdminWithdrawalPending(entry *notification.OutboxEntry, now string) em
 			"Submitted", now,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildAdminWithdrawalStale(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminWithdrawalStale(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminWithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[URGENT] Withdrawal request overdue — no admin action in 24+ hours",
@@ -242,12 +258,14 @@ func buildAdminWithdrawalStale(entry *notification.OutboxEntry, now string) emai
 			"Pending Since", p.PendingSince,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildAdminHighValueWithdrawal(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminHighValueWithdrawal(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminWithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[CRITICAL] High-value withdrawal request requires immediate review",
@@ -259,14 +277,16 @@ func buildAdminHighValueWithdrawal(entry *notification.OutboxEntry, now string) 
 			"Amount", formatCents(p.AmountCents, p.Currency),
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Payment / financial ───────────────────────────────────────────────────────
 
-func buildAdminPaymentDispute(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminPaymentDispute(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[ACTION REQUIRED] Payment dispute reported",
@@ -277,14 +297,16 @@ func buildAdminPaymentDispute(entry *notification.OutboxEntry, now string) email
 			"Detail", p.Detail,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Scheduler digest events ───────────────────────────────────────────────────
 
-func buildAdminPendingReminder(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminPendingReminder(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminPendingReminderPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	d := details(
 		"Pending Transfers", fmt.Sprintf("%d", p.PendingTransfers),
 		"Pending Withdrawals", fmt.Sprintf("%d", p.PendingWithdrawals),
@@ -299,12 +321,14 @@ func buildAdminPendingReminder(entry *notification.OutboxEntry, now string) emai
 		Body:        fmt.Sprintf("%d bank transfer proof(s) and %d withdrawal request(s) are awaiting your review.", p.PendingTransfers, p.PendingWithdrawals),
 		Details:     d,
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildAdminDailySummary(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminDailySummary(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminDailySummaryPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   fmt.Sprintf("[DAILY SUMMARY] Operations summary for %s", p.Date),
@@ -321,12 +345,14 @@ func buildAdminDailySummary(entry *notification.OutboxEntry, now string) emailDa
 			"Pending Withdrawals", fmt.Sprintf("%d", p.PendingWithdrawals),
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildAdminWeeklyReport(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminWeeklyReport(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminWeeklyReportPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	d := details(
 		"Period", fmt.Sprintf("%s – %s", p.WeekStartDate, p.WeekEndDate),
 		"Total Revenue", formatCents(p.TotalRevenueCents, "GTQ"),
@@ -345,14 +371,16 @@ func buildAdminWeeklyReport(entry *notification.OutboxEntry, now string) emailDa
 		Body:        fmt.Sprintf("Weekly summary for the period %s to %s.", p.WeekStartDate, p.WeekEndDate),
 		Details:     d,
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Match / scoring admin events ──────────────────────────────────────────────
 
-func buildAdminMatchResultPending(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminMatchResultPending(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.AdminMatchResultPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   fmt.Sprintf("[ACTION REQUIRED] Match result not entered — %s vs %s", p.HomeTeam, p.AwayTeam),
@@ -365,12 +393,14 @@ func buildAdminMatchResultPending(entry *notification.OutboxEntry, now string) e
 			"Minutes Elapsed", fmt.Sprintf("%d", p.MinutesElapsed),
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildAdminScoringDiscrepancy(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminScoringDiscrepancy(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[CRITICAL] Scoring discrepancy detected — manual review required",
@@ -382,14 +412,16 @@ func buildAdminScoringDiscrepancy(entry *notification.OutboxEntry, now string) e
 			"Severity", p.Severity,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Group moderation ──────────────────────────────────────────────────────────
 
-func buildAdminGroupReported(entry *notification.OutboxEntry, now string) emailData {
+func buildAdminGroupReported(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[ACTION REQUIRED] Quiniela group reported by a user",
@@ -400,14 +432,16 @@ func buildAdminGroupReported(entry *notification.OutboxEntry, now string) emailD
 			"Detail", p.Detail,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Circuit breaker ───────────────────────────────────────────────────────────
 
-func buildSystemCircuitBreakerOpened(entry *notification.OutboxEntry, now string) emailData {
+func buildSystemCircuitBreakerOpened(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[CRITICAL] Circuit breaker opened — " + p.Component,
@@ -419,12 +453,14 @@ func buildSystemCircuitBreakerOpened(entry *notification.OutboxEntry, now string
 			"Severity", p.Severity,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildSystemCircuitBreakerHalfOpen(entry *notification.OutboxEntry, now string) emailData {
+func buildSystemCircuitBreakerHalfOpen(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[WARNING] Circuit breaker in half-open state — " + p.Component,
@@ -436,14 +472,16 @@ func buildSystemCircuitBreakerHalfOpen(entry *notification.OutboxEntry, now stri
 			"Severity", p.Severity,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Webhook security ──────────────────────────────────────────────────────────
 
-func buildSystemWebhookSignatureFailed(entry *notification.OutboxEntry, now string) emailData {
+func buildSystemWebhookSignatureFailed(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[SECURITY] Webhook signature verification failed",
@@ -454,12 +492,14 @@ func buildSystemWebhookSignatureFailed(entry *notification.OutboxEntry, now stri
 			"Detail", p.Detail,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildSystemWebhookSignatureRepeated(entry *notification.OutboxEntry, now string) emailData {
+func buildSystemWebhookSignatureRepeated(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[SECURITY] Repeated webhook signature failures",
@@ -470,14 +510,16 @@ func buildSystemWebhookSignatureRepeated(entry *notification.OutboxEntry, now st
 			"Detail", p.Detail,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Infrastructure integrity ──────────────────────────────────────────────────
 
-func buildSystemTxRetryExhausted(entry *notification.OutboxEntry, now string) emailData {
+func buildSystemTxRetryExhausted(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	d := details(
 		"Component", p.Component,
 		"Detail", p.Detail,
@@ -493,12 +535,14 @@ func buildSystemTxRetryExhausted(entry *notification.OutboxEntry, now string) em
 		Body:        "A database transaction has exhausted all retry attempts and was abandoned. Data integrity may be at risk. Immediate investigation is required to determine whether any domain writes were lost.",
 		Details:     d,
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildSystemBalanceLedgerMismatch(entry *notification.OutboxEntry, now string) emailData {
+func buildSystemBalanceLedgerMismatch(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[CRITICAL] Balance ledger mismatch detected — financial integrity at risk",
@@ -510,14 +554,16 @@ func buildSystemBalanceLedgerMismatch(entry *notification.OutboxEntry, now strin
 			"Severity", p.Severity,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Abuse / anomaly detection ─────────────────────────────────────────────────
 
-func buildSystemRateLimitAbuse(entry *notification.OutboxEntry, now string) emailData {
+func buildSystemRateLimitAbuse(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[SECURITY] Suspected rate limit abuse detected",
@@ -528,12 +574,14 @@ func buildSystemRateLimitAbuse(entry *notification.OutboxEntry, now string) emai
 			"Detail", p.Detail,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
-func buildSystemIdempotencyCollision(entry *notification.OutboxEntry, now string) emailData {
+func buildSystemIdempotencyCollision(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[WARNING] Idempotency key collision detected",
@@ -544,14 +592,16 @@ func buildSystemIdempotencyCollision(entry *notification.OutboxEntry, now string
 			"Detail", p.Detail,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
-func buildSystemFileStoreUnavailable(entry *notification.OutboxEntry, now string) emailData {
+func buildSystemFileStoreUnavailable(entry *notification.OutboxEntry, now string) (emailData, error) {
 	var p notification.SystemAlertPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return emailData{}, err
+	}
 	return emailData{
 		EventType: string(entry.EventType),
 		Subject:   "[CRITICAL] File storage service unavailable",
@@ -563,7 +613,7 @@ func buildSystemFileStoreUnavailable(entry *notification.OutboxEntry, now string
 			"Severity", p.Severity,
 		),
 		GeneratedAt: now,
-	}
+	}, nil
 }
 
 // ── Generic fallback ──────────────────────────────────────────────────────────
