@@ -3,11 +3,11 @@
 // the response body before returning, which breaks streaming.
 // The Clerk JWT is injected server-side via the Authorization header.
 import { auth } from '@clerk/nextjs/server'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 
 const BACKEND = process.env.BACKEND_INTERNAL_URL!
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export async function GET(): Promise<NextResponse> {
   const { getToken } = await auth()
   const token = await getToken()
 

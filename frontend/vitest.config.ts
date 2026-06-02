@@ -8,6 +8,24 @@ export default defineConfig({
     environment: 'jsdom',
     globals:     true,
     setupFiles:  ['./src/test/setup.ts'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary'],
+      // Scope: only files with unit tests. api.ts and api-types.ts are
+      // integration-level (require network mocks) and are excluded here;
+      // they are covered by E2E tests (Playwright).
+      include: [
+        'src/lib/utils.ts',
+        'src/lib/sse.ts',
+        'src/components/shared/**/*.tsx',
+      ],
+      thresholds: {
+        lines:      80,
+        functions:  80,
+        branches:   80,
+        statements: 80,
+      },
+    },
   },
   resolve: {
     alias: {

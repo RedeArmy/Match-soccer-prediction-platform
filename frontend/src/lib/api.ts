@@ -22,7 +22,6 @@ import type {
   InboxResponse,
   PreferenceResponse,
   CursorPaged,
-  Paged,
   DashboardStatsResponse,
   SSEStatsResponse,
   SystemParamResponse,

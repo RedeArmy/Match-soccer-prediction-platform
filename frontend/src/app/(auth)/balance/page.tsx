@@ -1,12 +1,11 @@
 'use client'
 
 import { useAuth } from '@clerk/nextjs'
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useExchangeRate } from '@/hooks/useExchangeRate'
 import { BalanceCard } from '@/components/balance/BalanceCard'
 import { LoadingState } from '@/components/shared/LoadingState'
-import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatGTQ, formatUSD, formatDate, gtqToUSD } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
 import type { LedgerEntry } from '@/lib/api-types'

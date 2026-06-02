@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { serverAPI } from '@/lib/api'
-import { formatRate, formatDateTime } from '@/lib/utils'
+import { formatDateTime } from '@/lib/utils'
 import { ImagePlaceholder } from '@/components/shared/ImagePlaceholder'
 import { UserPlus, Target, Trophy, TrendingUp } from 'lucide-react'
 import { ExchangeRateTicker } from '@/components/exchange/RateTicker'
