@@ -2,7 +2,7 @@ package webpush_test
 
 import (
 	"context"
-	"crypto/elliptic"
+	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
@@ -23,12 +23,12 @@ import (
 // which makes SendNotification return an error before the HTTP request is issued.
 func genSubscriptionKeys(t *testing.T) (p256dh, auth string) {
 	t.Helper()
-	_, x, y, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
+	privKey, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("genSubscriptionKeys: P256 GenerateKey: %v", err)
 	}
-	// Marshal returns the 65-byte uncompressed point: 0x04 || x || y
-	p256dhBytes := elliptic.Marshal(elliptic.P256(), x, y)
+	// Bytes returns the 65-byte uncompressed point: 0x04 || x || y
+	p256dhBytes := privKey.PublicKey().Bytes()
 	authBytes := make([]byte, 16)
 	if _, err := rand.Read(authBytes); err != nil {
 		t.Fatalf("genSubscriptionKeys: rand.Read: %v", err)

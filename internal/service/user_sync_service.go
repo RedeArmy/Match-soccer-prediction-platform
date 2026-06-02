@@ -84,10 +84,10 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 	}
 
 	user := &domain.User{
-		Name:         name,
-		Email:        email,
+		Name:            name,
+		Email:           email,
 		ExternalSubject: subject,
-		Role:         domain.RoleUser,
+		Role:            domain.RoleUser,
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return err

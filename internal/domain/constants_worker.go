@@ -88,7 +88,7 @@ const (
 	ParamKeyWorkerSchedMatchResultIntervalSec     = "worker.sched_match_result_interval_sec"
 	ParamKeyWorkerSchedPendingReminderIntervalSec = "worker.sched_pending_reminder_interval_sec"
 	ParamKeyWorkerSchedStaleEscalationIntervalSec = "worker.sched_stale_escalation_interval_sec"
-	ParamKeyWorkerSchedPushPruneIntervalSec = "worker.sched_push_prune_interval_sec"
+	ParamKeyWorkerSchedPushPruneIntervalSec       = "worker.sched_push_prune_interval_sec"
 
 	// Leaderboard broadcaster retry policy (is_runtime=FALSE: worker restart required).
 	// ParamKeyWorkerLeaderboardPublishMaxAttempts is the maximum Redis PUBLISH

@@ -21,8 +21,8 @@ const errMsgDuplicateGroupName = "a group with this name already exists"
 
 // PostgresQuinielaRepository is the PostgreSQL-backed implementation of QuinielaRepository.
 type PostgresQuinielaRepository struct {
-	db               *pgxpool.Pool
-	log              *zap.Logger
+	db                *pgxpool.Pool
+	log               *zap.Logger
 	freezeSkipCounter metric.Int64Counter // nil until RegisterMetrics is called
 }
 

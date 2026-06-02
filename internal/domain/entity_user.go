@@ -20,16 +20,16 @@ type User struct {
 	Email           string
 	Role            UserRole
 	ExternalSubject string // opaque identity-provider subject (JWT "sub"); empty for legacy rows
-	BannedAt      *time.Time
-	BannedBy      *int
-	BanReason     string
-	BalanceCents  int     // spendable funds in minor currency units; never negative
-	ReservedCents int     // funds locked for pending withdrawal requests
-	KYCTier       KYCTier // denormalised from kyc_profiles.tier; updated by KYCService
-	Locale        string  // BCP-47 tag ("es" or "en"); defaults to "es" for new users
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	DeletedAt     *time.Time // nil for active users; set when the record is soft-deleted
+	BannedAt        *time.Time
+	BannedBy        *int
+	BanReason       string
+	BalanceCents    int     // spendable funds in minor currency units; never negative
+	ReservedCents   int     // funds locked for pending withdrawal requests
+	KYCTier         KYCTier // denormalised from kyc_profiles.tier; updated by KYCService
+	Locale          string  // BCP-47 tag ("es" or "en"); defaults to "es" for new users
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DeletedAt       *time.Time // nil for active users; set when the record is soft-deleted
 }
 
 // UserRole is a typed string that constrains the roles a User may hold.

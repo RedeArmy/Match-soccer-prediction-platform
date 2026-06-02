@@ -493,27 +493,11 @@ func TestAuditService_RegisterMetrics_CallbackReadsInFlight(t *testing.T) {
 	}
 
 	// Find wcq_audit_in_flight; it must equal 1.
-	found := false
-	for _, sm := range rm.ScopeMetrics {
-		for _, m := range sm.Metrics {
-			if m.Name != "wcq_audit_in_flight" {
-				continue
-			}
-			g, ok := m.Data.(metricdata.Gauge[int64])
-			if !ok {
-				t.Fatalf("wcq_audit_in_flight is not Gauge[int64]")
-			}
-			if len(g.DataPoints) == 0 {
-				t.Fatal("wcq_audit_in_flight has no data points")
-			}
-			found = true
-			if got := g.DataPoints[0].Value; got != 1 {
-				t.Errorf("wcq_audit_in_flight = %d; want 1", got)
-			}
-		}
-	}
+	got, found := collectGaugeInt64(rm, "wcq_audit_in_flight")
 	if !found {
 		t.Error("wcq_audit_in_flight not found in collected metrics")
+	} else if got != 1 {
+		t.Errorf("wcq_audit_in_flight = %d; want 1", got)
 	}
 
 	close(release)
@@ -654,4 +638,23 @@ func TestAuditService_ListAuditLogsByEntity_DelegatesToRepo(t *testing.T) {
 	if nextTok != "" {
 		t.Errorf("ListAuditLogsByEntity next token = %q; want empty", nextTok)
 	}
+}
+
+// collectGaugeInt64 finds the first data point of the named Gauge[int64] metric
+// in rm and returns its value. Returns (0, false) when the metric is absent,
+// has the wrong data type, or has no data points.
+func collectGaugeInt64(rm metricdata.ResourceMetrics, metricName string) (int64, bool) {
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != metricName {
+				continue
+			}
+			g, ok := m.Data.(metricdata.Gauge[int64])
+			if !ok || len(g.DataPoints) == 0 {
+				return 0, false
+			}
+			return g.DataPoints[0].Value, true
+		}
+	}
+	return 0, false
 }

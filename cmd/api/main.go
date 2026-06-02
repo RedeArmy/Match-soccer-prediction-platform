@@ -280,7 +280,7 @@ func startMetricsServer(cfg *config.Config, handler http.Handler, log *zap.Logge
 	if handler == nil || cfg.Server.MetricsPort == "" {
 		return
 	}
-	ln, err := net.Listen("tcp", ":"+cfg.Server.MetricsPort)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", ":"+cfg.Server.MetricsPort)
 	if err != nil {
 		log.Error("metrics server: failed to bind port",
 			zap.String("port", cfg.Server.MetricsPort),

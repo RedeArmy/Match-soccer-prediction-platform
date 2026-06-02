@@ -107,9 +107,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyUSDGTQRate":                 ParamKeyUSDGTQRate,
 		"ParamKeyExchangeRateMarginBPS":      ParamKeyExchangeRateMarginBPS,
 		"ParamKeyFXBuyMarginBPS":             ParamKeyFXBuyMarginBPS,
-		"ParamKeyFXSellMarginBPS":                  ParamKeyFXSellMarginBPS,
-		"ParamKeyFXDisplayDecimals":                ParamKeyFXDisplayDecimals,
-		"ParamKeyFXStaleThresholdH":                ParamKeyFXStaleThresholdH,
+		"ParamKeyFXSellMarginBPS":            ParamKeyFXSellMarginBPS,
+		"ParamKeyFXDisplayDecimals":          ParamKeyFXDisplayDecimals,
+		"ParamKeyFXStaleThresholdH":          ParamKeyFXStaleThresholdH,
 		// FX source HTTP client timeouts (migration 000161)
 		"ParamKeyFXBanguatTimeoutSec":         ParamKeyFXBanguatTimeoutSec,
 		"ParamKeyFXExchangeRateAPITimeoutSec": ParamKeyFXExchangeRateAPITimeoutSec,
@@ -144,7 +144,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyWorkerSchedMatchResultIntervalSec":     ParamKeyWorkerSchedMatchResultIntervalSec,
 		"ParamKeyWorkerSchedPendingReminderIntervalSec": ParamKeyWorkerSchedPendingReminderIntervalSec,
 		"ParamKeyWorkerSchedStaleEscalationIntervalSec": ParamKeyWorkerSchedStaleEscalationIntervalSec,
-		"ParamKeyWorkerSchedPushPruneIntervalSec":         ParamKeyWorkerSchedPushPruneIntervalSec,
+		"ParamKeyWorkerSchedPushPruneIntervalSec":       ParamKeyWorkerSchedPushPruneIntervalSec,
 		// Leaderboard broadcaster retry policy (migration 000160)
 		"ParamKeyWorkerLeaderboardPublishMaxAttempts": ParamKeyWorkerLeaderboardPublishMaxAttempts,
 		"ParamKeyWorkerLeaderboardPublishBaseDelayMs": ParamKeyWorkerLeaderboardPublishBaseDelayMs,
@@ -165,10 +165,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifyOutboxLagCriticalSec": ParamKeyNotifyOutboxLagCriticalSec,
 		"ParamKeyNotifyDLQWarningThreshold":  ParamKeyNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params (migration 000113)
-		"ParamKeyNotifySSEChanBufSize":              ParamKeyNotifySSEChanBufSize,
-		"ParamKeyNotifySSEMaxConnsPerUser":          ParamKeyNotifySSEMaxConnsPerUser,
+		"ParamKeyNotifySSEChanBufSize":     ParamKeyNotifySSEChanBufSize,
+		"ParamKeyNotifySSEMaxConnsPerUser": ParamKeyNotifySSEMaxConnsPerUser,
 		// SSE eviction threshold (migration 000160)
-		"ParamKeyNotifySSEEvictAfterDrops":         ParamKeyNotifySSEEvictAfterDrops,
+		"ParamKeyNotifySSEEvictAfterDrops":          ParamKeyNotifySSEEvictAfterDrops,
 		"ParamKeyNotifyOutboxStaleLockThresholdSec": ParamKeyNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		"ParamKeyKYCTier1DepositLimitCents":       ParamKeyKYCTier1DepositLimitCents,
@@ -301,9 +301,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultWorkerSchedPendingReminderIntervalSec": DefaultWorkerSchedPendingReminderIntervalSec,
 		"DefaultWorkerSchedStaleEscalationIntervalSec": DefaultWorkerSchedStaleEscalationIntervalSec,
 		"DefaultWorkerSchedPushPruneIntervalSec":       DefaultWorkerSchedPushPruneIntervalSec,
-			// Leaderboard broadcaster retry policy (migration 000160)
-			"DefaultWorkerLeaderboardPublishMaxAttempts": DefaultWorkerLeaderboardPublishMaxAttempts,
-			"DefaultWorkerLeaderboardPublishBaseDelayMs": DefaultWorkerLeaderboardPublishBaseDelayMs,
+		// Leaderboard broadcaster retry policy (migration 000160)
+		"DefaultWorkerLeaderboardPublishMaxAttempts": DefaultWorkerLeaderboardPublishMaxAttempts,
+		"DefaultWorkerLeaderboardPublishBaseDelayMs": DefaultWorkerLeaderboardPublishBaseDelayMs,
 		// Email render timeout (migration 000108)
 		"DefaultNotifyRenderTimeoutMs": DefaultNotifyRenderTimeoutMs,
 		// Notification DLQ replay worker (migration 000110)
@@ -321,10 +321,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultNotifyOutboxLagCriticalSec": DefaultNotifyOutboxLagCriticalSec,
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params (migration 000113)
-		"DefaultNotifySSEChanBufSize":              DefaultNotifySSEChanBufSize,
-		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
-			// SSE eviction threshold (migration 000160)
-			"DefaultNotifySSEEvictAfterDrops":         DefaultNotifySSEEvictAfterDrops,
+		"DefaultNotifySSEChanBufSize":     DefaultNotifySSEChanBufSize,
+		"DefaultNotifySSEMaxConnsPerUser": DefaultNotifySSEMaxConnsPerUser,
+		// SSE eviction threshold (migration 000160)
+		"DefaultNotifySSEEvictAfterDrops":          DefaultNotifySSEEvictAfterDrops,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
@@ -347,10 +347,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// Exchange rate safety margin (migration 000148)
 		"DefaultExchangeRateMarginBPS": DefaultExchangeRateMarginBPS,
 		// Competitive margin engine (migration 000150)
-		"DefaultFXBuyMarginBPS":              DefaultFXBuyMarginBPS,
-		"DefaultFXSellMarginBPS":             DefaultFXSellMarginBPS,
-		"DefaultFXDisplayDecimals":           DefaultFXDisplayDecimals,
-		"DefaultFXStaleThresholdH":           DefaultFXStaleThresholdH,
+		"DefaultFXBuyMarginBPS":    DefaultFXBuyMarginBPS,
+		"DefaultFXSellMarginBPS":   DefaultFXSellMarginBPS,
+		"DefaultFXDisplayDecimals": DefaultFXDisplayDecimals,
+		"DefaultFXStaleThresholdH": DefaultFXStaleThresholdH,
 		// FX source HTTP client timeouts (migration 000161)
 		"DefaultFXBanguatTimeoutSec":         DefaultFXBanguatTimeoutSec,
 		"DefaultFXExchangeRateAPITimeoutSec": DefaultFXExchangeRateAPITimeoutSec,
@@ -708,9 +708,9 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultWorkerSchedPendingReminderIntervalSec": DefaultWorkerSchedPendingReminderIntervalSec,
 		"DefaultWorkerSchedStaleEscalationIntervalSec": DefaultWorkerSchedStaleEscalationIntervalSec,
 		"DefaultWorkerSchedPushPruneIntervalSec":       DefaultWorkerSchedPushPruneIntervalSec,
-			// Leaderboard broadcaster retry policy (migration 000160)
-			"DefaultWorkerLeaderboardPublishMaxAttempts": DefaultWorkerLeaderboardPublishMaxAttempts,
-			"DefaultWorkerLeaderboardPublishBaseDelayMs": DefaultWorkerLeaderboardPublishBaseDelayMs,
+		// Leaderboard broadcaster retry policy (migration 000160)
+		"DefaultWorkerLeaderboardPublishMaxAttempts": DefaultWorkerLeaderboardPublishMaxAttempts,
+		"DefaultWorkerLeaderboardPublishBaseDelayMs": DefaultWorkerLeaderboardPublishBaseDelayMs,
 		// Email render timeout (migration 000108)
 		"DefaultNotifyRenderTimeoutMs": DefaultNotifyRenderTimeoutMs,
 		// Notification DLQ replay worker (migration 000110)
@@ -728,9 +728,9 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyOutboxLagCriticalSec": DefaultNotifyOutboxLagCriticalSec,
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params
-		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
-			// SSE eviction threshold (migration 000160)
-			"DefaultNotifySSEEvictAfterDrops":         DefaultNotifySSEEvictAfterDrops,
+		"DefaultNotifySSEMaxConnsPerUser": DefaultNotifySSEMaxConnsPerUser,
+		// SSE eviction threshold (migration 000160)
+		"DefaultNotifySSEEvictAfterDrops":          DefaultNotifySSEEvictAfterDrops,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000144)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
@@ -753,10 +753,10 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		// Exchange rate safety margin (migration 000148)
 		"DefaultExchangeRateMarginBPS": DefaultExchangeRateMarginBPS,
 		// Competitive margin engine (migration 000150)
-		"DefaultFXBuyMarginBPS":              DefaultFXBuyMarginBPS,
-		"DefaultFXSellMarginBPS":             DefaultFXSellMarginBPS,
-		"DefaultFXDisplayDecimals":           DefaultFXDisplayDecimals,
-		"DefaultFXStaleThresholdH":           DefaultFXStaleThresholdH,
+		"DefaultFXBuyMarginBPS":    DefaultFXBuyMarginBPS,
+		"DefaultFXSellMarginBPS":   DefaultFXSellMarginBPS,
+		"DefaultFXDisplayDecimals": DefaultFXDisplayDecimals,
+		"DefaultFXStaleThresholdH": DefaultFXStaleThresholdH,
 		// FX source HTTP client timeouts (migration 000161)
 		"DefaultFXBanguatTimeoutSec":         DefaultFXBanguatTimeoutSec,
 		"DefaultFXExchangeRateAPITimeoutSec": DefaultFXExchangeRateAPITimeoutSec,

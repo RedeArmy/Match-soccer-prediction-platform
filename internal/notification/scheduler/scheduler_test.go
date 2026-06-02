@@ -871,15 +871,24 @@ func findSchedulerGauge(t *testing.T, rm metricdata.ResourceMetrics, jobName str
 			if !ok {
 				t.Fatalf("wcq_scheduler_job_overdue is not Gauge[int64]")
 			}
-			for _, dp := range gauge.DataPoints {
-				for _, attr := range dp.Attributes.ToSlice() {
-					if string(attr.Key) == "job_name" && attr.Value.AsString() == jobName {
-						return dp.Value
-					}
-				}
+			if v, found := gaugeDataPointByJobName(gauge, jobName); found {
+				return v
 			}
 		}
 	}
 	t.Fatalf("wcq_scheduler_job_overdue{job_name=%q} not found in collected metrics", jobName)
 	return -1
+}
+
+// gaugeDataPointByJobName searches gauge data points for one whose job_name
+// attribute equals jobName and returns its value.
+func gaugeDataPointByJobName(gauge metricdata.Gauge[int64], jobName string) (int64, bool) {
+	for _, dp := range gauge.DataPoints {
+		for _, attr := range dp.Attributes.ToSlice() {
+			if string(attr.Key) == "job_name" && attr.Value.AsString() == jobName {
+				return dp.Value, true
+			}
+		}
+	}
+	return 0, false
 }

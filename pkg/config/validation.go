@@ -231,7 +231,7 @@ func validateProductionConfig(cfg *Config) error {
 				"without traces. Configure an OTLP-compatible backend (Grafana Tempo, Jaeger, " +
 				"or a cloud provider's trace ingest) and set WCQ_TRACING_OTLPENDPOINT, then " +
 				"set WCQ_TRACING_ENABLED=true. Alternatively set WCQ_ENVIRONMENT=development " +
-				"to acknowledge the degraded observability.",
+				"to acknowledge the degraded observability",
 		)
 	}
 	if err := validateCORSOrigins(cfg.CORS.AllowedOrigins, cfg.Environment); err != nil {
