@@ -377,3 +377,123 @@ func TestPostgresPurger_EraseUserPII_CancelledContext_ReturnsError(t *testing.T)
 		t.Error("expected error with cancelled context, got nil")
 	}
 }
+
+// ── PurgeOldFXHistory ─────────────────────────────────────────────────────────
+
+func TestPostgresPurger_PurgeOldFXHistory_DeletesExpiredRows(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	if _, err := testDB.Exec(ctx,
+		`INSERT INTO exchange_rate_history
+		   (reference_rate, buy_rate, sell_rate, buy_margin_pct, sell_margin_pct, source, effective_at)
+		 VALUES (7.75, 7.87, 7.63, 0.015, 0.015, 'banguat', NOW() - INTERVAL '91 days')`,
+	); err != nil {
+		t.Fatalf("insert old fx history row: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	cutoff := time.Now().Add(-90 * 24 * time.Hour)
+	n, err := purger.PurgeOldFXHistory(ctx, cutoff)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1 purged fx history row, got %d", n)
+	}
+}
+
+func TestPostgresPurger_PurgeOldFXHistory_PreservesRecentRows(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	if _, err := testDB.Exec(ctx,
+		`INSERT INTO exchange_rate_history
+		   (reference_rate, buy_rate, sell_rate, buy_margin_pct, sell_margin_pct, source, effective_at)
+		 VALUES (7.75, 7.87, 7.63, 0.015, 0.015, 'banguat', NOW())`,
+	); err != nil {
+		t.Fatalf("insert recent fx history row: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	cutoff := time.Now().Add(-90 * 24 * time.Hour)
+	n, err := purger.PurgeOldFXHistory(ctx, cutoff)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 purged rows (recent row within retention), got %d", n)
+	}
+}
+
+// ── PurgeOldOutboxEntries ─────────────────────────────────────────────────────
+
+func TestPostgresPurger_PurgeOldOutboxEntries_DeletesTerminalExpiredRows(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	if _, err := testDB.Exec(ctx,
+		`INSERT INTO domain_outbox
+		   (event_type, aggregate_id, aggregate_type, payload, status, created_at)
+		 VALUES ('test.event', '1', 'test', '{}', 'done', NOW() - INTERVAL '31 days')`,
+	); err != nil {
+		t.Fatalf("insert old outbox row: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	cutoff := time.Now().Add(-30 * 24 * time.Hour)
+	n, err := purger.PurgeOldOutboxEntries(ctx, cutoff)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1 purged outbox entry, got %d", n)
+	}
+}
+
+func TestPostgresPurger_PurgeOldOutboxEntries_PreservesRecentRows(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	if _, err := testDB.Exec(ctx,
+		`INSERT INTO domain_outbox
+		   (event_type, aggregate_id, aggregate_type, payload, status, created_at)
+		 VALUES ('test.event', '1', 'test', '{}', 'done', NOW())`,
+	); err != nil {
+		t.Fatalf("insert recent outbox row: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	cutoff := time.Now().Add(-30 * 24 * time.Hour)
+	n, err := purger.PurgeOldOutboxEntries(ctx, cutoff)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 purged rows (row is recent), got %d", n)
+	}
+}
+
+func TestPostgresPurger_PurgeOldOutboxEntries_PreservesPendingRows(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	// pending status — must never be purged regardless of age
+	if _, err := testDB.Exec(ctx,
+		`INSERT INTO domain_outbox
+		   (event_type, aggregate_id, aggregate_type, payload, status, created_at)
+		 VALUES ('test.event', '1', 'test', '{}', 'pending', NOW() - INTERVAL '31 days')`,
+	); err != nil {
+		t.Fatalf("insert old pending outbox row: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	cutoff := time.Now().Add(-30 * 24 * time.Hour)
+	n, err := purger.PurgeOldOutboxEntries(ctx, cutoff)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 purged rows (pending rows must not be purged), got %d", n)
+	}
+}

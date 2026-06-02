@@ -101,7 +101,21 @@ func rateRecordToResponse(r *domain.ExchangeRateRecord) ExchangeRateRecordRespon
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 // GetCurrent handles GET /api/v1/admin/exchange-rate/current.
-// Returns the current buy/sell rates with full margin detail.
+//
+// @Summary      Get current exchange rate (admin)
+// @Description  Returns the current GTQ/USD rates with full detail: reference
+//
+//	rate, buy/sell rates, margin percentages, source, staleness flag,
+//	and whether the current rate is an admin override. Requires admin role.
+//
+// @Tags         admin-exchange-rate
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  handler.ExchangeRatesResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/exchange-rate/current [get]
 func (h *AdminExchangeRateHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 	rates, err := h.svc.GetCurrentRates(r.Context())
 	if err != nil {
@@ -112,8 +126,23 @@ func (h *AdminExchangeRateHandler) GetCurrent(w http.ResponseWriter, r *http.Req
 }
 
 // GetHistory handles GET /api/v1/admin/exchange-rate/history.
-// Returns a paginated list of rate history rows, newest first.
-// Query params: ?limit=50&offset=0
+//
+// @Summary      List exchange rate history (admin)
+// @Description  Returns a paginated list of all GTQ/USD rate records, newest
+//
+//	first. Each row captures the rates and margins at the time of the
+//	automated refresh or admin override. Requires admin role.
+//
+// @Tags         admin-exchange-rate
+// @Produce      json
+// @Security     BearerAuth
+// @Param        limit   query     int  false  "Maximum records to return (1–200, default 50)"
+// @Param        offset  query     int  false  "Number of records to skip (default 0)"
+// @Success      200  {array}   handler.ExchangeRateRecordResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/exchange-rate/history [get]
 func (h *AdminExchangeRateHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePaginationParams(r)
 	if limit <= 0 || limit > 200 {
@@ -145,8 +174,27 @@ type overrideRateRequest struct {
 }
 
 // Override handles POST /api/v1/admin/exchange-rate/override.
-// Sets a manual reference rate with a required reason. Invalidates the cache.
-// Requires admin role (enforced at router level).
+//
+// @Summary      Override exchange rate (admin)
+// @Description  Sets a manual GTQ/USD reference rate, bypassing the automated
+//
+//	daily fetch. The provided rate is stored with is_override=true in
+//	exchange_rate_history. A reason of at least 10 characters is
+//	required and recorded for audit purposes. The cache is invalidated
+//	immediately so subsequent requests use the new rate. Requires admin role.
+//
+// @Tags         admin-exchange-rate
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      handler.overrideRateRequest  true  "New reference rate and reason"
+// @Success      200  {object}  handler.ExchangeRatesResponse
+// @Failure      400  {object}  handler.ErrorResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422  {object}  handler.ErrorResponse  "Invalid rate or reason too short"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/exchange-rate/override [post]
 func (h *AdminExchangeRateHandler) Override(w http.ResponseWriter, r *http.Request) {
 	var req overrideRateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -190,8 +238,23 @@ func (h *AdminExchangeRateHandler) Override(w http.ResponseWriter, r *http.Reque
 }
 
 // Refresh handles POST /api/v1/admin/exchange-rate/refresh.
-// Triggers an immediate fetch outside the scheduled window.
-// Useful for manual correction after a data outage.
+//
+// @Summary      Refresh exchange rate (admin)
+// @Description  Triggers an immediate GTQ/USD rate fetch from the configured
+//
+//	external sources (Banguat → ExchangeRateAPI → OpenExchange fallback
+//	chain), outside the normal daily scheduled window. Useful for manual
+//	correction after a data outage or when the stale flag is set.
+//	Requires admin role.
+//
+// @Tags         admin-exchange-rate
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  handler.ExchangeRatesResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      500  {object}  handler.ErrorResponse  "All external sources failed"
+// @Router       /api/v1/admin/exchange-rate/refresh [post]
 func (h *AdminExchangeRateHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	rates, err := h.svc.RefreshRate(r.Context())
 	if err != nil {

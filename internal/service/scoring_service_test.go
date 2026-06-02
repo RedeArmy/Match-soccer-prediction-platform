@@ -423,6 +423,9 @@ func (r *failOnUpdateRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]i
 func (r *failOnUpdateRepo) InsertScoringBatch(_ context.Context, _ []domain.PredictionScoreLog) error {
 	return nil
 }
+func (r *failOnUpdateRepo) GetScoringCfgSnapshot(_ context.Context, _ int) (*domain.ScoringCfgSnapshot, error) {
+	return nil, nil
+}
 func (r *failOnUpdateRepo) ScoreMatchBatch(_ context.Context, _ int, scorer func([]*domain.Prediction) (map[int]int, error), _ int) error {
 	// Call scorer so service-layer logic executes, then simulate the write failure.
 	if _, err := scorer(r.list); err != nil {
@@ -466,6 +469,48 @@ func TestScoreMatch_Idempotent_ReplayProducesSameScores(t *testing.T) {
 		if firstRun[p.ID] != *p.Points {
 			t.Errorf("prediction %d: first run=%d replay=%d (not idempotent)", p.ID, firstRun[p.ID], *p.Points)
 		}
+	}
+}
+
+// TestScoreMatch_ReplayUsesSnapshotConfig verifies that when
+// GetScoringCfgSnapshot returns a non-nil snapshot (prior log entry exists),
+// ScoreMatch applies the snapshot's config rather than the current
+// configForPhase, so DLQ replays are immune to rule changes made after the
+// original scoring run.
+func TestScoreMatch_ReplayUsesSnapshotConfig(t *testing.T) {
+	home, away := 2, 1
+	match := &domain.Match{
+		ID: 1, Status: domain.MatchStatusFinished,
+		HomeScore: &home, AwayScore: &away, Phase: domain.PhaseGroupStage,
+	}
+	preds := []*domain.Prediction{
+		{ID: 1, HomeScore: 2, AwayScore: 1}, // exact match
+	}
+
+	// Snapshot uses exact=99 — a sentinel value clearly different from any
+	// real default, so if the service falls back to configForPhase (default=5)
+	// the test will catch it.
+	snapshot := &domain.ScoringCfgSnapshot{
+		ExactScore: 99, CorrectOutcome: 2, GoalDifference: 1,
+	}
+	predRepo := &stubPredRepo{list: preds, cfgSnapshot: snapshot}
+	// stubScoringRuleRepo returns a rule with ExactScore=3; noopSystemParamService
+	// returns system-param defaults (ExactScore=5). Neither must be used when a
+	// snapshot is present.
+	svc := NewScoringService(
+		&stubMatchRepo{match: match}, predRepo,
+		&stubScoringRuleRepo{}, &noopSystemParamService{}, zap.NewNop(),
+	)
+
+	if err := svc.ScoreMatch(context.Background(), 1); err != nil {
+		t.Fatalf("ScoreMatch: %v", err)
+	}
+	if len(predRepo.updated) == 0 {
+		t.Fatal("no predictions updated")
+	}
+	if *predRepo.updated[0].Points != 99 {
+		t.Errorf("replay used wrong config: got points=%d, want 99 (snapshot exact score)",
+			*predRepo.updated[0].Points)
 	}
 }
 

@@ -155,6 +155,9 @@ func (s *stubParamService) BulkSet(_ context.Context, _ map[string]string, _ int
 func (s *stubParamService) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
 	return nil, nil
 }
+func (s *stubParamService) BulkPreview(_ context.Context, _ map[string]string) ([]domain.ParamDiff, error) {
+	return nil, nil
+}
 func (s *stubParamService) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
 	return nil, "", nil
 }

@@ -100,6 +100,24 @@ func TestPaymentIntentService_Create_NegativeAmountReturnsValidation(t *testing.
 	}
 }
 
+func TestPaymentIntentService_Create_AmountAtMaxAllowed(t *testing.T) {
+	svc := newIntentSvc(&stubIntentRepo{})
+
+	_, err := svc.Create(context.Background(), 1, domain.DefaultPaymentIntentMaxCents, "GTQ")
+	if err != nil {
+		t.Fatalf("amount at max should be accepted, got %v", err)
+	}
+}
+
+func TestPaymentIntentService_Create_AmountOverMaxReturnsValidation(t *testing.T) {
+	svc := newIntentSvc(&stubIntentRepo{})
+
+	_, err := svc.Create(context.Background(), 1, domain.DefaultPaymentIntentMaxCents+1, "GTQ")
+	if err == nil {
+		t.Fatal("expected validation error for amount above max, got nil")
+	}
+}
+
 func TestPaymentIntentService_Create_RepoErrorPropagates(t *testing.T) {
 	svc := newIntentSvc(&stubIntentRepo{createErr: errors.New("db error")})
 

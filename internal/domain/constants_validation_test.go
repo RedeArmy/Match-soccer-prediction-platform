@@ -15,7 +15,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (118 total) ─────────────────────────────────────
+	// ── ParamKey* enumeration (137 total) ─────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":      ParamKeyScoringExactScore,
@@ -48,6 +48,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyAuditWriteTimeout": ParamKeyAuditWriteTimeout,
 		"ParamKeyAuditMaxRetries":   ParamKeyAuditMaxRetries,
 		"ParamKeyAuditRetryDelayMs": ParamKeyAuditRetryDelayMs,
+		"ParamKeyAuditMaxInFlight":  ParamKeyAuditMaxInFlight,
 		// Auth
 		"ParamKeyAuthValidationTimeout": ParamKeyAuthValidationTimeout,
 		// DLQ
@@ -67,12 +68,16 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// System
 		"ParamKeyPurgeRetentionDays":              ParamKeyPurgeRetentionDays,
 		"ParamKeySystemParamHistoryRetentionDays": ParamKeySystemParamHistoryRetentionDays,
+		"ParamKeyFXHistoryRetentionDays":          ParamKeyFXHistoryRetentionDays,
+		"ParamKeyOutboxRetentionDays":             ParamKeyOutboxRetentionDays,
 		// API
-		"ParamKeyAPIBodySizeLimitBytes":   ParamKeyAPIBodySizeLimitBytes,
-		"ParamKeyAPIRateLimitRatePerSec":  ParamKeyAPIRateLimitRatePerSec,
-		"ParamKeyAPIRateLimitBurst":       ParamKeyAPIRateLimitBurst,
-		"ParamKeyAPIIdempotencyTTLHours":  ParamKeyAPIIdempotencyTTLHours,
-		"ParamKeyAPIIdempotencyKeyMaxLen": ParamKeyAPIIdempotencyKeyMaxLen,
+		"ParamKeyAPIBodySizeLimitBytes":    ParamKeyAPIBodySizeLimitBytes,
+		"ParamKeyAPIRateLimitRatePerSec":   ParamKeyAPIRateLimitRatePerSec,
+		"ParamKeyAPIRateLimitBurst":        ParamKeyAPIRateLimitBurst,
+		"ParamKeyAdminRateLimitRatePerSec": ParamKeyAdminRateLimitRatePerSec,
+		"ParamKeyAdminRateLimitBurst":      ParamKeyAdminRateLimitBurst,
+		"ParamKeyAPIIdempotencyTTLHours":   ParamKeyAPIIdempotencyTTLHours,
+		"ParamKeyAPIIdempotencyKeyMaxLen":  ParamKeyAPIIdempotencyKeyMaxLen,
 		// IP rate limiting (migration 000142)
 		"ParamKeyIPRateLimitGlobalRPS":    ParamKeyIPRateLimitGlobalRPS,
 		"ParamKeyIPRateLimitGlobalBurst":  ParamKeyIPRateLimitGlobalBurst,
@@ -98,12 +103,17 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyBankTransferMinAmountCents": ParamKeyBankTransferMinAmountCents,
 		"ParamKeyBankTransferMaxAmountCents": ParamKeyBankTransferMaxAmountCents,
 		"ParamKeyPaymentIntentTTLMinutes":    ParamKeyPaymentIntentTTLMinutes,
+		"ParamKeyPaymentIntentMaxCents":      ParamKeyPaymentIntentMaxCents,
 		"ParamKeyUSDGTQRate":                 ParamKeyUSDGTQRate,
 		"ParamKeyExchangeRateMarginBPS":      ParamKeyExchangeRateMarginBPS,
 		"ParamKeyFXBuyMarginBPS":             ParamKeyFXBuyMarginBPS,
 		"ParamKeyFXSellMarginBPS":            ParamKeyFXSellMarginBPS,
 		"ParamKeyFXDisplayDecimals":          ParamKeyFXDisplayDecimals,
 		"ParamKeyFXStaleThresholdH":          ParamKeyFXStaleThresholdH,
+		// FX source HTTP client timeouts (migration 000161)
+		"ParamKeyFXBanguatTimeoutSec":         ParamKeyFXBanguatTimeoutSec,
+		"ParamKeyFXExchangeRateAPITimeoutSec": ParamKeyFXExchangeRateAPITimeoutSec,
+		"ParamKeyFXOpenExchangeTimeoutSec":    ParamKeyFXOpenExchangeTimeoutSec,
 		// Notification subsystem
 		"ParamKeyNotifyBankTransferStaleSec":            ParamKeyNotifyBankTransferStaleSec,
 		"ParamKeyNotifyWithdrawalStaleSec":              ParamKeyNotifyWithdrawalStaleSec,
@@ -135,6 +145,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyWorkerSchedPendingReminderIntervalSec": ParamKeyWorkerSchedPendingReminderIntervalSec,
 		"ParamKeyWorkerSchedStaleEscalationIntervalSec": ParamKeyWorkerSchedStaleEscalationIntervalSec,
 		"ParamKeyWorkerSchedPushPruneIntervalSec":       ParamKeyWorkerSchedPushPruneIntervalSec,
+		// Leaderboard broadcaster retry policy (migration 000160)
+		"ParamKeyWorkerLeaderboardPublishMaxAttempts": ParamKeyWorkerLeaderboardPublishMaxAttempts,
+		"ParamKeyWorkerLeaderboardPublishBaseDelayMs": ParamKeyWorkerLeaderboardPublishBaseDelayMs,
 		// Email render timeout (migration 000108)
 		"ParamKeyNotifyRenderTimeoutMs": ParamKeyNotifyRenderTimeoutMs,
 		// Notification DLQ replay worker (migration 000110)
@@ -152,8 +165,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyNotifyOutboxLagCriticalSec": ParamKeyNotifyOutboxLagCriticalSec,
 		"ParamKeyNotifyDLQWarningThreshold":  ParamKeyNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params (migration 000113)
-		"ParamKeyNotifySSEChanBufSize":              ParamKeyNotifySSEChanBufSize,
-		"ParamKeyNotifySSEMaxConnsPerUser":          ParamKeyNotifySSEMaxConnsPerUser,
+		"ParamKeyNotifySSEChanBufSize":     ParamKeyNotifySSEChanBufSize,
+		"ParamKeyNotifySSEMaxConnsPerUser": ParamKeyNotifySSEMaxConnsPerUser,
+		// SSE eviction threshold (migration 000160)
+		"ParamKeyNotifySSEEvictAfterDrops":          ParamKeyNotifySSEEvictAfterDrops,
 		"ParamKeyNotifyOutboxStaleLockThresholdSec": ParamKeyNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		"ParamKeyKYCTier1DepositLimitCents":       ParamKeyKYCTier1DepositLimitCents,
@@ -215,6 +230,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultAuditWriteTimeoutSeconds":     DefaultAuditWriteTimeoutSeconds,
 		"DefaultAuditMaxRetries":              DefaultAuditMaxRetries,
 		"DefaultAuditRetryDelayMs":            DefaultAuditRetryDelayMs,
+		"DefaultAuditMaxInFlight":             DefaultAuditMaxInFlight,
 		// Worker
 		"DefaultWorkerSnapshotConcurrency":   DefaultWorkerSnapshotConcurrency,
 		"DefaultWorkerSnapshotRetryBaseMs":   DefaultWorkerSnapshotRetryBaseMs,
@@ -224,10 +240,14 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// System
 		"DefaultPurgeRetentionDays":              DefaultPurgeRetentionDays,
 		"DefaultSystemParamHistoryRetentionDays": DefaultSystemParamHistoryRetentionDays,
+		"DefaultFXHistoryRetentionDays":          DefaultFXHistoryRetentionDays,
+		"DefaultOutboxRetentionDays":             DefaultOutboxRetentionDays,
 		// API
-		"DefaultAPIBodySizeLimitBytes":  DefaultAPIBodySizeLimitBytes,
-		"DefaultAPIRateLimitRatePerSec": DefaultAPIRateLimitRatePerSec,
-		"DefaultAPIRateLimitBurst":      DefaultAPIRateLimitBurst,
+		"DefaultAPIBodySizeLimitBytes":    DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIRateLimitRatePerSec":   DefaultAPIRateLimitRatePerSec,
+		"DefaultAPIRateLimitBurst":        DefaultAPIRateLimitBurst,
+		"DefaultAdminRateLimitRatePerSec": DefaultAdminRateLimitRatePerSec,
+		"DefaultAdminRateLimitBurst":      DefaultAdminRateLimitBurst,
 		// IP rate limiting (migration 000142)
 		"DefaultIPRateLimitGlobalRPS":    DefaultIPRateLimitGlobalRPS,
 		"DefaultIPRateLimitGlobalBurst":  DefaultIPRateLimitGlobalBurst,
@@ -242,6 +262,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultBankTransferMinAmountCents": DefaultBankTransferMinAmountCents,
 		"DefaultBankTransferMaxAmountCents": DefaultBankTransferMaxAmountCents,
 		"DefaultPaymentIntentTTLMinutes":    DefaultPaymentIntentTTLMinutes,
+		"DefaultPaymentIntentMaxCents":      DefaultPaymentIntentMaxCents,
 		// API (idempotency)
 		"DefaultAPIIdempotencyTTLHours":  DefaultAPIIdempotencyTTLHours,
 		"DefaultAPIIdempotencyKeyMaxLen": DefaultAPIIdempotencyKeyMaxLen,
@@ -280,6 +301,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultWorkerSchedPendingReminderIntervalSec": DefaultWorkerSchedPendingReminderIntervalSec,
 		"DefaultWorkerSchedStaleEscalationIntervalSec": DefaultWorkerSchedStaleEscalationIntervalSec,
 		"DefaultWorkerSchedPushPruneIntervalSec":       DefaultWorkerSchedPushPruneIntervalSec,
+		// Leaderboard broadcaster retry policy (migration 000160)
+		"DefaultWorkerLeaderboardPublishMaxAttempts": DefaultWorkerLeaderboardPublishMaxAttempts,
+		"DefaultWorkerLeaderboardPublishBaseDelayMs": DefaultWorkerLeaderboardPublishBaseDelayMs,
 		// Email render timeout (migration 000108)
 		"DefaultNotifyRenderTimeoutMs": DefaultNotifyRenderTimeoutMs,
 		// Notification DLQ replay worker (migration 000110)
@@ -297,8 +321,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultNotifyOutboxLagCriticalSec": DefaultNotifyOutboxLagCriticalSec,
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params (migration 000113)
-		"DefaultNotifySSEChanBufSize":              DefaultNotifySSEChanBufSize,
-		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
+		"DefaultNotifySSEChanBufSize":     DefaultNotifySSEChanBufSize,
+		"DefaultNotifySSEMaxConnsPerUser": DefaultNotifySSEMaxConnsPerUser,
+		// SSE eviction threshold (migration 000160)
+		"DefaultNotifySSEEvictAfterDrops":          DefaultNotifySSEEvictAfterDrops,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000129, 000144)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
@@ -325,6 +351,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultFXSellMarginBPS":   DefaultFXSellMarginBPS,
 		"DefaultFXDisplayDecimals": DefaultFXDisplayDecimals,
 		"DefaultFXStaleThresholdH": DefaultFXStaleThresholdH,
+		// FX source HTTP client timeouts (migration 000161)
+		"DefaultFXBanguatTimeoutSec":         DefaultFXBanguatTimeoutSec,
+		"DefaultFXExchangeRateAPITimeoutSec": DefaultFXExchangeRateAPITimeoutSec,
+		"DefaultFXOpenExchangeTimeoutSec":    DefaultFXOpenExchangeTimeoutSec,
 		// String defaults — not in the int defaults map; documented separately.
 		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
 		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
@@ -332,7 +362,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 125 // update when adding a new ParamKey* constant
+		const expectedCount = 137 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -340,7 +370,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 114 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin)
+		const expectedCount = 126 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -413,6 +443,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyAuditWriteTimeout", ParamKeyAuditWriteTimeout, "audit"},
 		{"ParamKeyAuditMaxRetries", ParamKeyAuditMaxRetries, "audit"},
 		{"ParamKeyAuditRetryDelayMs", ParamKeyAuditRetryDelayMs, "audit"},
+		{"ParamKeyAuditMaxInFlight", ParamKeyAuditMaxInFlight, "audit"},
 		// Auth (key prefix "auth"; DB category is "system")
 		{"ParamKeyAuthValidationTimeout", ParamKeyAuthValidationTimeout, "auth"},
 		// DLQ
@@ -432,10 +463,14 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		// System
 		{"ParamKeyPurgeRetentionDays", ParamKeyPurgeRetentionDays, "system"},
 		{"ParamKeySystemParamHistoryRetentionDays", ParamKeySystemParamHistoryRetentionDays, "system"},
+		{"ParamKeyFXHistoryRetentionDays", ParamKeyFXHistoryRetentionDays, "fx"},
+		{"ParamKeyOutboxRetentionDays", ParamKeyOutboxRetentionDays, "worker"},
 		// API
 		{"ParamKeyAPIBodySizeLimitBytes", ParamKeyAPIBodySizeLimitBytes, "api"},
 		{"ParamKeyAPIRateLimitRatePerSec", ParamKeyAPIRateLimitRatePerSec, "api"},
 		{"ParamKeyAPIRateLimitBurst", ParamKeyAPIRateLimitBurst, "api"},
+		{"ParamKeyAdminRateLimitRatePerSec", ParamKeyAdminRateLimitRatePerSec, "admin"},
+		{"ParamKeyAdminRateLimitBurst", ParamKeyAdminRateLimitBurst, "admin"},
 		{"ParamKeyAPIIdempotencyTTLHours", ParamKeyAPIIdempotencyTTLHours, "api"},
 		{"ParamKeyAPIIdempotencyKeyMaxLen", ParamKeyAPIIdempotencyKeyMaxLen, "api"},
 		// IP rate limiting (migration 000142)
@@ -463,12 +498,17 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyBankTransferMinAmountCents", ParamKeyBankTransferMinAmountCents, "payment"},
 		{"ParamKeyBankTransferMaxAmountCents", ParamKeyBankTransferMaxAmountCents, "payment"},
 		{"ParamKeyPaymentIntentTTLMinutes", ParamKeyPaymentIntentTTLMinutes, "payment"},
+		{"ParamKeyPaymentIntentMaxCents", ParamKeyPaymentIntentMaxCents, "payment"},
 		{"ParamKeyUSDGTQRate", ParamKeyUSDGTQRate, "payment"},
 		{"ParamKeyExchangeRateMarginBPS", ParamKeyExchangeRateMarginBPS, "payment"},
 		{"ParamKeyFXBuyMarginBPS", ParamKeyFXBuyMarginBPS, "fx"},
 		{"ParamKeyFXSellMarginBPS", ParamKeyFXSellMarginBPS, "fx"},
 		{"ParamKeyFXDisplayDecimals", ParamKeyFXDisplayDecimals, "fx"},
 		{"ParamKeyFXStaleThresholdH", ParamKeyFXStaleThresholdH, "fx"},
+		// FX source HTTP client timeouts (migration 000161)
+		{"ParamKeyFXBanguatTimeoutSec", ParamKeyFXBanguatTimeoutSec, "fx"},
+		{"ParamKeyFXExchangeRateAPITimeoutSec", ParamKeyFXExchangeRateAPITimeoutSec, "fx"},
+		{"ParamKeyFXOpenExchangeTimeoutSec", ParamKeyFXOpenExchangeTimeoutSec, "fx"},
 		// Notification subsystem
 		{"ParamKeyNotifyBankTransferStaleSec", ParamKeyNotifyBankTransferStaleSec, "notify"},
 		{"ParamKeyNotifyWithdrawalStaleSec", ParamKeyNotifyWithdrawalStaleSec, "notify"},
@@ -500,6 +540,9 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyWorkerSchedPendingReminderIntervalSec", ParamKeyWorkerSchedPendingReminderIntervalSec, "worker"},
 		{"ParamKeyWorkerSchedStaleEscalationIntervalSec", ParamKeyWorkerSchedStaleEscalationIntervalSec, "worker"},
 		{"ParamKeyWorkerSchedPushPruneIntervalSec", ParamKeyWorkerSchedPushPruneIntervalSec, "worker"},
+		// Leaderboard broadcaster retry policy (migration 000160)
+		{"ParamKeyWorkerLeaderboardPublishMaxAttempts", ParamKeyWorkerLeaderboardPublishMaxAttempts, "worker"},
+		{"ParamKeyWorkerLeaderboardPublishBaseDelayMs", ParamKeyWorkerLeaderboardPublishBaseDelayMs, "worker"},
 		// Email render timeout (migration 000108)
 		{"ParamKeyNotifyRenderTimeoutMs", ParamKeyNotifyRenderTimeoutMs, "notify"},
 		// Notification DLQ replay worker (migration 000110)
@@ -519,6 +562,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		// Phase 7 infrastructure params (migration 000113)
 		{"ParamKeyNotifySSEChanBufSize", ParamKeyNotifySSEChanBufSize, "notify"},
 		{"ParamKeyNotifySSEMaxConnsPerUser", ParamKeyNotifySSEMaxConnsPerUser, "notify"},
+		// SSE eviction threshold (migration 000160)
+		{"ParamKeyNotifySSEEvictAfterDrops", ParamKeyNotifySSEEvictAfterDrops, "notify"},
 		{"ParamKeyNotifyOutboxStaleLockThresholdSec", ParamKeyNotifyOutboxStaleLockThresholdSec, "notify"},
 		// KYC / AML (migrations 000121, 000124, 000125)
 		{"ParamKeyKYCTier1DepositLimitCents", ParamKeyKYCTier1DepositLimitCents, "kyc"},
@@ -596,6 +641,7 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultAuditWriteTimeoutSeconds":     DefaultAuditWriteTimeoutSeconds,
 		"DefaultAuditMaxRetries":              DefaultAuditMaxRetries,
 		"DefaultAuditRetryDelayMs":            DefaultAuditRetryDelayMs,
+		"DefaultAuditMaxInFlight":             DefaultAuditMaxInFlight,
 		// Worker
 		"DefaultWorkerSnapshotConcurrency":   DefaultWorkerSnapshotConcurrency,
 		"DefaultWorkerSnapshotRetryBaseMs":   DefaultWorkerSnapshotRetryBaseMs,
@@ -605,12 +651,16 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		// System
 		"DefaultPurgeRetentionDays":              DefaultPurgeRetentionDays,
 		"DefaultSystemParamHistoryRetentionDays": DefaultSystemParamHistoryRetentionDays,
+		"DefaultFXHistoryRetentionDays":          DefaultFXHistoryRetentionDays,
+		"DefaultOutboxRetentionDays":             DefaultOutboxRetentionDays,
 		// API
-		"DefaultAPIBodySizeLimitBytes":   DefaultAPIBodySizeLimitBytes,
-		"DefaultAPIRateLimitRatePerSec":  DefaultAPIRateLimitRatePerSec,
-		"DefaultAPIRateLimitBurst":       DefaultAPIRateLimitBurst,
-		"DefaultAPIIdempotencyTTLHours":  DefaultAPIIdempotencyTTLHours,
-		"DefaultAPIIdempotencyKeyMaxLen": DefaultAPIIdempotencyKeyMaxLen,
+		"DefaultAPIBodySizeLimitBytes":    DefaultAPIBodySizeLimitBytes,
+		"DefaultAPIRateLimitRatePerSec":   DefaultAPIRateLimitRatePerSec,
+		"DefaultAPIRateLimitBurst":        DefaultAPIRateLimitBurst,
+		"DefaultAdminRateLimitRatePerSec": DefaultAdminRateLimitRatePerSec,
+		"DefaultAdminRateLimitBurst":      DefaultAdminRateLimitBurst,
+		"DefaultAPIIdempotencyTTLHours":   DefaultAPIIdempotencyTTLHours,
+		"DefaultAPIIdempotencyKeyMaxLen":  DefaultAPIIdempotencyKeyMaxLen,
 		// IP rate limiting (migration 000142)
 		"DefaultIPRateLimitGlobalRPS":    DefaultIPRateLimitGlobalRPS,
 		"DefaultIPRateLimitGlobalBurst":  DefaultIPRateLimitGlobalBurst,
@@ -625,6 +675,7 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultBankTransferMinAmountCents": DefaultBankTransferMinAmountCents,
 		"DefaultBankTransferMaxAmountCents": DefaultBankTransferMaxAmountCents,
 		"DefaultPaymentIntentTTLMinutes":    DefaultPaymentIntentTTLMinutes,
+		"DefaultPaymentIntentMaxCents":      DefaultPaymentIntentMaxCents,
 		// Circuit breaker
 		"DefaultBreakerPaypalCertMaxFails":    DefaultBreakerPaypalCertMaxFails,
 		"DefaultBreakerPaypalCertCooldownSec": DefaultBreakerPaypalCertCooldownSec,
@@ -657,6 +708,9 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultWorkerSchedPendingReminderIntervalSec": DefaultWorkerSchedPendingReminderIntervalSec,
 		"DefaultWorkerSchedStaleEscalationIntervalSec": DefaultWorkerSchedStaleEscalationIntervalSec,
 		"DefaultWorkerSchedPushPruneIntervalSec":       DefaultWorkerSchedPushPruneIntervalSec,
+		// Leaderboard broadcaster retry policy (migration 000160)
+		"DefaultWorkerLeaderboardPublishMaxAttempts": DefaultWorkerLeaderboardPublishMaxAttempts,
+		"DefaultWorkerLeaderboardPublishBaseDelayMs": DefaultWorkerLeaderboardPublishBaseDelayMs,
 		// Email render timeout (migration 000108)
 		"DefaultNotifyRenderTimeoutMs": DefaultNotifyRenderTimeoutMs,
 		// Notification DLQ replay worker (migration 000110)
@@ -674,7 +728,9 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultNotifyOutboxLagCriticalSec": DefaultNotifyOutboxLagCriticalSec,
 		"DefaultNotifyDLQWarningThreshold":  DefaultNotifyDLQWarningThreshold,
 		// Phase 7 infrastructure params
-		"DefaultNotifySSEMaxConnsPerUser":          DefaultNotifySSEMaxConnsPerUser,
+		"DefaultNotifySSEMaxConnsPerUser": DefaultNotifySSEMaxConnsPerUser,
+		// SSE eviction threshold (migration 000160)
+		"DefaultNotifySSEEvictAfterDrops":          DefaultNotifySSEEvictAfterDrops,
 		"DefaultNotifyOutboxStaleLockThresholdSec": DefaultNotifyOutboxStaleLockThresholdSec,
 		// KYC / AML (migrations 000121, 000124, 000125, 000144)
 		"DefaultKYCTier1DepositLimitCents":       DefaultKYCTier1DepositLimitCents,
@@ -701,6 +757,10 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultFXSellMarginBPS":   DefaultFXSellMarginBPS,
 		"DefaultFXDisplayDecimals": DefaultFXDisplayDecimals,
 		"DefaultFXStaleThresholdH": DefaultFXStaleThresholdH,
+		// FX source HTTP client timeouts (migration 000161)
+		"DefaultFXBanguatTimeoutSec":         DefaultFXBanguatTimeoutSec,
+		"DefaultFXExchangeRateAPITimeoutSec": DefaultFXExchangeRateAPITimeoutSec,
+		"DefaultFXOpenExchangeTimeoutSec":    DefaultFXOpenExchangeTimeoutSec,
 	}
 
 	for name, value := range defaults {

@@ -50,6 +50,30 @@ func validateWorker(cfg *Config) error {
 		if err := validateProductionDatabaseTLS(cfg.Database.DSN); err != nil {
 			return err
 		}
+		if cfg.Redis.Password == "" {
+			return errors.New(
+				"redis.password must not be empty outside development (WCQ_REDIS_PASSWORD): " +
+					"an unauthenticated Redis instance exposes rate-limit state and leader-election locks. " +
+					"Set WCQ_REDIS_PASSWORD or WCQ_ENVIRONMENT=development",
+			)
+		}
+		if !cfg.Metrics.Enabled {
+			return errors.New(
+				"metrics.enabled must be true outside development (WCQ_METRICS_ENABLED=true): " +
+					"a non-development deployment without Prometheus metrics has no operational " +
+					"visibility. All Grafana dashboards will show empty panels and no alert will " +
+					"fire on degraded behaviour. Set WCQ_METRICS_ENABLED=true or " +
+					"WCQ_ENVIRONMENT=development",
+			)
+		}
+		if !cfg.Tracing.Enabled {
+			return errors.New(
+				"tracing.enabled must be true outside development (WCQ_TRACING_ENABLED=true): " +
+					"a non-development worker deployment without distributed tracing cannot " +
+					"correlate scoring, notification, and DLQ events across worker ↔ API " +
+					"boundaries. Set WCQ_TRACING_ENABLED=true or WCQ_ENVIRONMENT=development",
+			)
+		}
 		if err := validateN8nConfig(cfg.N8n); err != nil {
 			return err
 		}
@@ -103,14 +127,14 @@ func Warnings(cfg *Config) []string {
 		w = append(w, "database.connMaxLifetime is 0 (disabled): connections are never recycled; "+
 			"this may prevent clean failover after a network partition (WCQ_DATABASE_CONNMAXLIFETIME)")
 	}
-	// Advisory: sslmode=require encrypts the connection but does not verify the
-	// server certificate, leaving it vulnerable to MITM attacks.  sslmode=verify-full
-	// is the recommended production setting and costs nothing extra on Fly Postgres.
-	// sslmode=disable is already rejected at startup by validateProductionDatabaseTLS.
-	if !cfg.IsDevelopment() && strings.Contains(cfg.Database.DSN, "sslmode=require") {
-		w = append(w, "database.dsn: sslmode=require encrypts the connection but does not "+
-			"verify the server certificate. Use sslmode=verify-full for strict TLS "+
-			"(prevents MITM attacks). Update WCQ_DATABASE_DSN.")
+	// Advisory: Redis without a password exposes idempotency keys, rate-limit
+	// state, push-digest deduplication, and leader-election locks to any process
+	// on the same network. In production, Redis should always require
+	// authentication. Set WCQ_REDIS_PASSWORD.
+	if !cfg.IsDevelopment() && cfg.Redis.Password == "" {
+		w = append(w, "redis.password is empty: Redis is running without authentication. "+
+			"Idempotency keys, rate-limit state, and leader-election locks are exposed "+
+			"to any process on the same network. Set WCQ_REDIS_PASSWORD.")
 	}
 	return w
 }
@@ -181,6 +205,35 @@ func validateProductionConfig(cfg *Config) error {
 	if err := validateProductionDatabaseTLS(cfg.Database.DSN); err != nil {
 		return err
 	}
+	if cfg.Redis.Password == "" {
+		return errors.New(
+			"redis.password must not be empty outside development (WCQ_REDIS_PASSWORD): " +
+				"an unauthenticated Redis instance exposes idempotency keys, rate-limit state, " +
+				"and leader-election locks to any process on the same network. " +
+				"An attacker who reads Redis can delete idempotency entries to replay payment webhooks. " +
+				"Authenticate Redis or acknowledge the risk by setting WCQ_ENVIRONMENT=development",
+		)
+	}
+	if !cfg.Metrics.Enabled {
+		return errors.New(
+			"metrics.enabled must be true outside development (WCQ_METRICS_ENABLED=true): " +
+				"a non-development deployment without Prometheus metrics has no operational " +
+				"visibility. All Grafana dashboards will show empty panels and no alert will " +
+				"fire on degraded behaviour. Set WCQ_METRICS_ENABLED=true or " +
+				"WCQ_ENVIRONMENT=development",
+		)
+	}
+	if !cfg.Tracing.Enabled {
+		return errors.New(
+			"tracing.enabled must be true outside development (WCQ_TRACING_ENABLED=true): " +
+				"a non-development deployment without distributed tracing has no cross-service " +
+				"visibility. Incidents cannot be diagnosed across API → DB → worker boundaries " +
+				"without traces. Configure an OTLP-compatible backend (Grafana Tempo, Jaeger, " +
+				"or a cloud provider's trace ingest) and set WCQ_TRACING_OTLPENDPOINT, then " +
+				"set WCQ_TRACING_ENABLED=true. Alternatively set WCQ_ENVIRONMENT=development " +
+				"to acknowledge the degraded observability",
+		)
+	}
 	if err := validateCORSOrigins(cfg.CORS.AllowedOrigins, cfg.Environment); err != nil {
 		return err
 	}
@@ -190,23 +243,36 @@ func validateProductionConfig(cfg *Config) error {
 	return validateStorageDriver(cfg.Storage)
 }
 
-// validateProductionDatabaseTLS rejects database DSNs that explicitly disable
-// TLS via sslmode=disable.  The check covers both PostgreSQL DSN formats:
+// validateProductionDatabaseTLS rejects database DSNs that do not use strict
+// TLS certificate verification.  Two modes are rejected:
+//
+//   - sslmode=disable: transmits all data in plaintext.
+//   - sslmode=require: encrypts the wire but does not verify the server
+//     certificate, leaving the connection vulnerable to MITM attacks on any
+//     network segment between the application and the database.
+//
+// The check covers both PostgreSQL DSN formats:
 //
 //   - URL:            postgres://user:pass@host/db?sslmode=disable
 //   - keyword=value:  host=localhost sslmode=disable
 //
 // When sslmode is absent the connection uses pgx's default ("prefer"), which
-// is acceptable; operators who want strict certificate verification should set
-// sslmode=verify-full.  The check is a substring search: PostgreSQL has no
-// sslmode value prefixed with "disable" other than "disable" itself, so there
-// are no false positives.
+// attempts encryption and falls back gracefully — acceptable for non-critical
+// environments but operators should prefer sslmode=verify-full in production.
+// The check is a substring search; PostgreSQL has no sslmode value prefixed
+// with "disable" or "require" other than those strings themselves.
 func validateProductionDatabaseTLS(dsn string) error {
 	if strings.Contains(dsn, "sslmode=disable") {
 		return errors.New(
 			"database.dsn: sslmode=disable is not permitted outside development (WCQ_DATABASE_DSN); " +
-				"use sslmode=require to encrypt the connection, or sslmode=verify-full for " +
-				"strict certificate verification",
+				"use sslmode=verify-full to encrypt the connection with certificate verification",
+		)
+	}
+	if strings.Contains(dsn, "sslmode=require") {
+		return errors.New(
+			"database.dsn: sslmode=require is not permitted outside development (WCQ_DATABASE_DSN); " +
+				"it encrypts the wire but does not verify the server certificate, leaving the " +
+				"connection vulnerable to MITM attacks. Use sslmode=verify-full",
 		)
 	}
 	return nil

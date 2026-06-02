@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -231,6 +232,133 @@ func TestSetupMetrics_Enabled_LogsAndReturnsHandler(t *testing.T) {
 	defer cancel()
 	if err := shutdown(ctx); err != nil {
 		t.Fatalf("shutdown(enabled): %v", err)
+	}
+}
+
+func TestSetupMetrics_Disabled_ReturnsNilHandler(t *testing.T) {
+	log := newTestLogger(t)
+	cfg := &config.Config{Metrics: config.MetricsConfig{Enabled: false}}
+
+	_, handler, shutdown, err := setupMetrics(cfg, log)
+
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if handler != nil {
+		t.Fatal("expected nil handler when metrics are disabled")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := shutdown(ctx); err != nil {
+		t.Fatalf("shutdown(disabled): %v", err)
+	}
+}
+
+// ── setupTracing ──────────────────────────────────────────────────────────────
+
+func TestSetupTracing_Disabled_ReturnsNoopShutdown(t *testing.T) {
+	log := newTestLogger(t)
+	cfg := &config.Config{}
+	cfg.Tracing.Enabled = false
+
+	shutdown, err := setupTracing(context.Background(), cfg, log)
+
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if shutdown == nil {
+		t.Fatal("expected non-nil shutdown function even when disabled")
+	}
+	if err := shutdown(context.Background()); err != nil {
+		t.Fatalf("noop shutdown: %v", err)
+	}
+}
+
+func TestSetupTracing_Enabled_ValidEndpoint_ReturnsShutdown(t *testing.T) {
+	log := newTestLogger(t)
+	cfg := &config.Config{}
+	cfg.Tracing.Enabled = true
+	// An unreachable endpoint is fine at setup time: OTLP exporters connect
+	// lazily on first export, not during provider construction.
+	cfg.Tracing.OTLPEndpoint = "http://localhost:4318"
+	cfg.Tracing.ServiceName = "test-api"
+	cfg.Tracing.ServiceVersion = "0.0.1"
+	cfg.Tracing.SampleRate = 1.0
+
+	shutdown, err := setupTracing(context.Background(), cfg, log)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = shutdown(ctx) // shutdown may error if the endpoint is unreachable — expected in tests
+	}()
+}
+
+// ── startMetricsServer ────────────────────────────────────────────────────────
+
+func TestStartMetricsServer_NilHandler_IsNoOp(t *testing.T) {
+	log := newTestLogger(t)
+	cfg := &config.Config{Server: config.ServerConfig{MetricsPort: "9999"}}
+	// Must not panic, must not bind to any port.
+	startMetricsServer(cfg, nil, log)
+}
+
+func TestStartMetricsServer_EmptyPort_IsNoOp(t *testing.T) {
+	log := newTestLogger(t)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	cfg := &config.Config{Server: config.ServerConfig{MetricsPort: ""}}
+	// Must not panic, must not bind to any port.
+	startMetricsServer(cfg, handler, log)
+}
+
+func TestStartMetricsServer_PortInUse_LogsErrorAndReturns(t *testing.T) {
+	// Occupy a port so that startMetricsServer's net.Listen call fails.
+	// The function must log the error synchronously and return — not panic.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer ln.Close()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+
+	log := newTestLogger(t)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	cfg := &config.Config{Server: config.ServerConfig{MetricsPort: port}}
+
+	// Port already in use — must log the error and return without panic.
+	startMetricsServer(cfg, handler, log)
+}
+
+func TestStartMetricsServerOn_ServesMetricsEndpoint(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	// Do NOT defer ln.Close() — startMetricsServerOn takes ownership of ln.
+
+	log := newTestLogger(t)
+	called := make(chan struct{}, 1)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	startMetricsServerOn(ln, handler, 5*time.Second, log)
+
+	resp, err := http.Get("http://" + ln.Addr().String() + "/metrics")
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status: got %d, want 200", resp.StatusCode)
+	}
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Error("handler was not called within 1 second")
 	}
 }
 

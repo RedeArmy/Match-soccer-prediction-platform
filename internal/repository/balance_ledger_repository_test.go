@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
@@ -348,6 +349,147 @@ func TestBalanceLedgerRepository_CreditIdempotent_UserNotFound(t *testing.T) {
 //
 // Each goroutine either credits 1000 or debits 1000.  Starting balance is set
 // high enough (N*1000) so no Debit fails with insufficient-funds.
+// ── SumTransactionsByUserAndPeriod ────────────────────────────────────────────
+//
+// These tests exercise the AML velocity-check SQL directly against PostgreSQL.
+// The KYC gate (kyc_gate.go) relies on this function for every deposit,
+// withdrawal, and KYC review — a bug in the query would silently bypass all
+// rolling-window velocity limits.
+
+// TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_FiltersKind verifies
+// that only ledger rows whose kind matches one of the requested kinds are
+// included in the sum. Rows of other kinds within the same time window must
+// not contribute to the result.
+func TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_FiltersKind(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUserWithBalance(t, 10_000)
+	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
+
+	// Credit 3 000 via bank_transfer and 2 000 via prize — both are deposit-kind.
+	if err := repo.Credit(ctx, u.ID, 3_000, domain.LedgerKindBankTransfer, 0, "", 0); err != nil {
+		t.Fatalf("credit bank_transfer: %v", err)
+	}
+	if err := repo.Credit(ctx, u.ID, 2_000, domain.LedgerKindPrize, 0, "", 0); err != nil {
+		t.Fatalf("credit prize: %v", err)
+	}
+	// Debit 1 000 via entry_fee — must be excluded from the deposit-kinds query.
+	if err := repo.Debit(ctx, u.ID, 1_000, domain.LedgerKindEntryFee, 0, "", 0); err != nil {
+		t.Fatalf("debit entry_fee: %v", err)
+	}
+
+	sum, err := repo.SumTransactionsByUserAndPeriod(ctx, u.ID,
+		[]domain.BalanceLedgerKind{domain.LedgerKindBankTransfer, domain.LedgerKindPrize},
+		time.Now().Add(-time.Hour),
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	// Only bank_transfer (3 000) + prize (2 000) should be counted.
+	const want int64 = 5_000
+	if sum != want {
+		t.Errorf("sum = %d, want %d (entry_fee row must be excluded)", sum, want)
+	}
+}
+
+// TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_EnforcesTimeWindow
+// verifies that rows created before the `since` threshold are excluded even
+// when their kind matches. Only rows within the rolling window must be counted.
+func TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_EnforcesTimeWindow(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUserWithBalance(t, 0)
+
+	// Insert a row with a backdated created_at that falls outside the 24-hour
+	// window. Inserted directly to control the timestamp; no balance_cents
+	// consistency required for this read-only aggregate query.
+	if _, err := testDB.Exec(ctx,
+		`INSERT INTO balance_ledger (user_id, delta_cents, kind, balance_after, created_at)
+		 VALUES ($1, 9000, 'bank_transfer', 9000, $2)`,
+		u.ID, time.Now().Add(-25*time.Hour),
+	); err != nil {
+		t.Fatalf("insert old ledger row: %v", err)
+	}
+
+	// Insert a recent row within the window.
+	if _, err := testDB.Exec(ctx,
+		`INSERT INTO balance_ledger (user_id, delta_cents, kind, balance_after, created_at)
+		 VALUES ($1, 4000, 'bank_transfer', 13000, $2)`,
+		u.ID, time.Now().Add(-30*time.Minute),
+	); err != nil {
+		t.Fatalf("insert recent ledger row: %v", err)
+	}
+
+	sum, err := repository.NewPostgresBalanceLedgerRepository(testDB).
+		SumTransactionsByUserAndPeriod(ctx, u.ID,
+			[]domain.BalanceLedgerKind{domain.LedgerKindBankTransfer},
+			time.Now().Add(-24*time.Hour),
+		)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	// Only the recent row (4 000) should be summed; the 25-hour-old row is outside
+	// the window.
+	const want int64 = 4_000
+	if sum != want {
+		t.Errorf("sum = %d, want %d (old row must be excluded by time filter)", sum, want)
+	}
+}
+
+// TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_ReturnsZeroForNoRows
+// verifies that the function returns 0 when no rows match (empty table, wrong
+// kind, or time window before all data). This guards against NULL propagation
+// from SUM() that would bypass velocity checks by making comparisons undefined.
+func TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_ReturnsZeroForNoRows(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
+
+	sum, err := repo.SumTransactionsByUserAndPeriod(ctx, u.ID,
+		[]domain.BalanceLedgerKind{domain.LedgerKindBankTransfer},
+		time.Now().Add(-24*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if sum != 0 {
+		t.Errorf("sum = %d, want 0 for empty table", sum)
+	}
+}
+
+// TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_IsolatesUser verifies
+// that transactions belonging to other users are never included in the sum,
+// even when their kind and timestamp match the query parameters.
+func TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_IsolatesUser(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	userA := seedUserWithBalance(t, 10_000)
+	userB := seedUserWithBalance(t, 10_000)
+	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
+
+	// Both users receive a bank_transfer credit.
+	if err := repo.Credit(ctx, userA.ID, 5_000, domain.LedgerKindBankTransfer, 0, "", 0); err != nil {
+		t.Fatalf("credit userA: %v", err)
+	}
+	if err := repo.Credit(ctx, userB.ID, 7_000, domain.LedgerKindBankTransfer, 0, "", 0); err != nil {
+		t.Fatalf("credit userB: %v", err)
+	}
+
+	// Query only for userA — userB's 7 000 must not appear in the result.
+	sum, err := repo.SumTransactionsByUserAndPeriod(ctx, userA.ID,
+		[]domain.BalanceLedgerKind{domain.LedgerKindBankTransfer},
+		time.Now().Add(-time.Hour),
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	const want int64 = 5_000
+	if sum != want {
+		t.Errorf("sum = %d, want %d (userB row must be excluded)", sum, want)
+	}
+}
+
 func TestBalanceLedgerRepository_ConcurrentCreditAndDebit(t *testing.T) {
 	if testDB == nil {
 		t.Skip("integration test: no test database available")

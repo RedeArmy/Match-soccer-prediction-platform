@@ -98,7 +98,10 @@ func (s *Server) buildHandlers(
 	params service.SystemParamService,
 	scorer service.MatchScorer,
 ) appHandlers {
-	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
+	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db, repository.WithQuinielaLogger(s.log))
+	if err := quinielaRepo.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
+		s.log.Warn("quinielaRepo: RegisterMetrics failed (wcq_prize_freeze_skipped_total unavailable)", zap.Error(err))
+	}
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
 	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(s.db)
 	tournamentRepo := repository.NewPostgresTournamentRepository(s.db)
@@ -130,6 +133,9 @@ func (s *Server) buildHandlers(
 	// Store auditSvc on the server so the shutdown path can call Drain() to
 	// wait for in-flight audit writes before closing the database pool.
 	s.auditSvc = auditSvc
+	if err := auditSvc.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
+		s.log.Warn("audit: RegisterMetrics failed", zap.Error(err))
+	}
 
 	// Re-wire paramSvc with the now-available audit service so that Set/BulkSet
 	// calls from admin handlers are recorded in the audit trail, and with a
@@ -214,13 +220,7 @@ func (s *Server) buildHandlers(
 		params.GetInt(ctx, domain.ParamKeyBreakerFileStoreMaxFails, domain.DefaultBreakerFileStoreMaxFails),
 		time.Duration(params.GetInt(ctx, domain.ParamKeyBreakerFileStoreCooldownSec, domain.DefaultBreakerFileStoreCooldownSec))*time.Second,
 	)
-	if s.notifier != nil {
-		fileStoreBreaker.SetOnStateChange(func(name string, from, to breaker.State, openedAt time.Time) {
-			if to == breaker.StateOpen {
-				s.notifier.NotifyCircuitBreakerOpen(context.Background(), name, to.String(), openedAt)
-			}
-		})
-	}
+	s.registerFileBreakerNotifier(fileStoreBreaker)
 	resiStore := storage.NewResilientFileStore(fileStore, fileStoreBreaker, s.log)
 	fileStore = resiStore
 	if err := breaker.RegisterGauge(otel.GetMeterProvider().Meter("wcq"), fileStoreBreaker); err != nil {
@@ -331,15 +331,37 @@ func (s *Server) buildHandlers(
 
 	// Wire observability notifier into payment-path handlers. Each handler
 	// defines its own narrow interface so the import graph stays acyclic.
-	if s.notifier != nil {
-		h.bankTransfer.SetNotifier(s.notifier)
-		h.paymentWebhook.SetNotifier(s.notifier)
-		h.withdrawal.SetNotifier(s.notifier)
-	}
+	s.wirePaymentNotifiers(&h)
 
 	h.adminExchangeRate, h.exchangeRate = s.buildFXModule(ctx, paramSvcWithAudit, auditSvc)
 
 	return h
+}
+
+// registerFileBreakerNotifier wires s.notifier into the file-store circuit
+// breaker so that an open-circuit event triggers an n8n alert. Extracted from
+// buildHandlers to keep its cognitive complexity within the allowed limit.
+func (s *Server) registerFileBreakerNotifier(b *breaker.Breaker) {
+	if s.notifier == nil {
+		return
+	}
+	b.SetOnStateChange(func(name string, _ breaker.State, to breaker.State, openedAt time.Time) {
+		if to == breaker.StateOpen {
+			s.notifier.NotifyCircuitBreakerOpen(context.Background(), name, to.String(), openedAt)
+		}
+	})
+}
+
+// wirePaymentNotifiers attaches the observability notifier to the three
+// payment-path handlers that expose a SetNotifier interface. Extracted from
+// buildHandlers to keep its cognitive complexity within the allowed limit.
+func (s *Server) wirePaymentNotifiers(h *appHandlers) {
+	if s.notifier == nil {
+		return
+	}
+	h.bankTransfer.SetNotifier(s.notifier)
+	h.paymentWebhook.SetNotifier(s.notifier)
+	h.withdrawal.SetNotifier(s.notifier)
 }
 
 // buildFXModule constructs the exchange-rate service, registers its OTel

@@ -40,13 +40,18 @@ type ExchangeRates struct {
 // ExchangeRateRecord is the persisted form stored in exchange_rate_history.
 // One row is inserted per RefreshRate or OverrideRate call.
 type ExchangeRateRecord struct {
-	ID             int64
-	ReferenceRate  decimal.Decimal
-	BuyRate        decimal.Decimal
-	SellRate       decimal.Decimal
-	BuyMarginPct   decimal.Decimal
-	SellMarginPct  decimal.Decimal
-	Source         string
+	ID            int64
+	ReferenceRate decimal.Decimal
+	BuyRate       decimal.Decimal
+	SellRate      decimal.Decimal
+	BuyMarginPct  decimal.Decimal
+	SellMarginPct decimal.Decimal
+	Source        string
+	// ApiVersion is the short revision identifier of the provider API that
+	// answered the fetch request: "v6" (ExchangeRate-API), "v1"
+	// (OpenExchangeRates), "xml" (Banguat XML feed), or "" for admin overrides
+	// and stale-fallback rows where no external call is made.
+	ApiVersion     string
 	Stale          bool
 	IsOverride     bool
 	OverrideReason string // non-empty only when IsOverride=true

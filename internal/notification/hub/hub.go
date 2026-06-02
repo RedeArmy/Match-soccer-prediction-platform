@@ -42,9 +42,14 @@ import (
 )
 
 const (
-	defaultChanBufSize = 32
-	evictAfterDrops    = 5
+	defaultChanBufSize     = 32
+	defaultEvictAfterDrops = 5
 )
+
+// DefaultEvictAfterDrops is the default number of consecutive failed sends
+// before a slow/dead SSE connection is evicted. Exported so callers can
+// reference it when constructing Options.
+const DefaultEvictAfterDrops = defaultEvictAfterDrops
 
 // DefaultMaxConnsPerUser is the default maximum number of concurrent SSE
 // connections allowed per authenticated user. NewWithOptions uses this value
@@ -120,6 +125,10 @@ type Options struct {
 	// allowed per user. Connect returns a nil channel when this limit is
 	// reached. Values ≤ 0 disable the cap (unlimited).
 	MaxConnsPerUser int
+	// EvictAfterDrops is the number of consecutive failed sends on a single
+	// connection before the hub evicts it. Values ≤ 0 fall back to
+	// DefaultEvictAfterDrops (5).
+	EvictAfterDrops int
 }
 
 // Hub is a thread-safe registry of SSE client channels.
@@ -128,7 +137,8 @@ type Hub struct {
 	clients         map[int]map[string]*connEntry
 	metrics         hubMetrics
 	chanBufSize     int
-	maxConnsPerUser int // 0 = unlimited
+	maxConnsPerUser int   // 0 = unlimited
+	evictAfterDrops int32 // consecutive-drop threshold; always > 0
 }
 
 type hubMetrics struct {
@@ -154,15 +164,20 @@ func NewWithBufSize(n int) *Hub {
 }
 
 // NewWithOptions constructs a Hub with the given options.
-// ChanBufSize ≤ 0 falls back to 32; MaxConnsPerUser ≤ 0 disables the cap.
+// ChanBufSize ≤ 0 falls back to 32; MaxConnsPerUser ≤ 0 disables the cap;
+// EvictAfterDrops ≤ 0 falls back to DefaultEvictAfterDrops (5).
 func NewWithOptions(opts Options) *Hub {
 	if opts.ChanBufSize <= 0 {
 		opts.ChanBufSize = defaultChanBufSize
+	}
+	if opts.EvictAfterDrops <= 0 {
+		opts.EvictAfterDrops = defaultEvictAfterDrops
 	}
 	return &Hub{
 		clients:         make(map[int]map[string]*connEntry),
 		chanBufSize:     opts.ChanBufSize,
 		maxConnsPerUser: opts.MaxConnsPerUser,
+		evictAfterDrops: int32(opts.EvictAfterDrops),
 	}
 }
 
@@ -261,7 +276,7 @@ func (h *Hub) Broadcast(ctx context.Context, userID int, n Notification) {
 			s.entry.drops.Store(0) // reset consecutive-drop counter on success
 		} else {
 			h.metrics.dropped.Add(1)
-			if s.entry.drops.Add(1) >= evictAfterDrops {
+			if s.entry.drops.Add(1) >= h.evictAfterDrops {
 				toEvict = append(toEvict, s.connID)
 			}
 		}

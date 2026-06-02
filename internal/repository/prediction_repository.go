@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -698,6 +699,34 @@ func (r *PostgresPredictionRepository) InsertScoringBatch(ctx context.Context, e
 		return apperrors.Internal(err)
 	}
 	return nil
+}
+
+// GetScoringCfgSnapshot returns the scoring config recorded in the earliest
+// prediction_score_log entry for matchID — i.e., the config that was active
+// when the match was first successfully scored. Returns (nil, nil) when no
+// log row exists (first-time scoring; caller should use configForPhase).
+func (r *PostgresPredictionRepository) GetScoringCfgSnapshot(ctx context.Context, matchID int) (*domain.ScoringCfgSnapshot, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	var s domain.ScoringCfgSnapshot
+	err := r.db.QueryRow(ctx, `
+		SELECT cfg_exact_score, cfg_correct_outcome, cfg_goal_diff,
+		       cfg_extra_time_bonus, cfg_penalties_bonus
+		  FROM prediction_score_log
+		 WHERE match_id = $1
+		 ORDER BY scored_at ASC
+		 LIMIT 1
+	`, matchID).Scan(
+		&s.ExactScore, &s.CorrectOutcome, &s.GoalDifference,
+		&s.ExtraTimeBonus, &s.PenaltiesBonus,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return &s, nil
 }
 
 var _ PredictionRepository = (*PostgresPredictionRepository)(nil)

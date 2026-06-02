@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -69,6 +70,10 @@ type SystemParamService interface {
 	// Each key-value pair is upserted atomically. actorID is recorded as
 	// the editor for the audit trail.
 	BulkSet(ctx context.Context, params map[string]string, actorID int) error
+	// BulkPreview validates all params and returns the projected old→new diff
+	// for each key without writing anything. IsSensitive is set for keys in
+	// categories (scoring.*, payment.*) that require operator confirmation.
+	BulkPreview(ctx context.Context, params map[string]string) ([]domain.ParamDiff, error)
 	// ResetToDefault restores the operational value of key to the immutable
 	// default_value set by the seeding migration. The cache entry is evicted
 	// and any registered mutation hooks are fired, identical to Set.
@@ -330,6 +335,7 @@ var paramIntConstraints = map[string]paramIntRange{
 	// Audit retry policy
 	domain.ParamKeyAuditMaxRetries:   {1, 10},
 	domain.ParamKeyAuditRetryDelayMs: {10, 10_000},
+	domain.ParamKeyAuditMaxInFlight:  {10, 10_000}, // 10 min; 10 000 would be excessive but valid upper bound
 
 	// DLQ
 	domain.ParamKeyDLQSampleSize:         {1, 100},
@@ -356,17 +362,23 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyWorkerSchedPendingReminderIntervalSec: {60, 86_400},     // 1 min – 24 h
 	domain.ParamKeyWorkerSchedStaleEscalationIntervalSec: {60, 86_400},     // 1 min – 24 h
 	domain.ParamKeyWorkerSchedPushPruneIntervalSec:       {3_600, 604_800}, // 1 h – 7 days
+	// Leaderboard broadcaster retry policy (migration 000160, is_runtime=FALSE).
+	domain.ParamKeyWorkerLeaderboardPublishMaxAttempts: {1, 10},     // 1 – 10 PUBLISH attempts
+	domain.ParamKeyWorkerLeaderboardPublishBaseDelayMs: {10, 5_000}, // 10 ms – 5 s base backoff
 
 	// System
-	domain.ParamKeyPurgeRetentionDays: {1, 365},
+	domain.ParamKeyPurgeRetentionDays:  {1, 365},
+	domain.ParamKeyOutboxRetentionDays: {1, 365}, // 1 day – 1 year
 
 	// API
 	domain.ParamKeyAPIBodySizeLimitBytes: {1_024, 10_485_760}, // 1 KB – 10 MB
 	// Rate limiter params are is_runtime=FALSE (LimiterStore built at startup); a
 	// restart is required to apply changes. Bounds prevent nonsensical values from
 	// being accepted via the admin API.
-	domain.ParamKeyAPIRateLimitRatePerSec: {1, 1_000}, // 1 token/s – 1 000 token/s
-	domain.ParamKeyAPIRateLimitBurst:      {1, 1_000}, // min 1; 1 000 burst is already very generous
+	domain.ParamKeyAPIRateLimitRatePerSec:   {1, 1_000}, // 1 token/s – 1 000 token/s
+	domain.ParamKeyAPIRateLimitBurst:        {1, 1_000}, // min 1; 1 000 burst is already very generous
+	domain.ParamKeyAdminRateLimitRatePerSec: {1, 100},   // 1 token/s – 100 token/s (admin ops should be deliberate)
+	domain.ParamKeyAdminRateLimitBurst:      {1, 100},   // min 1; 100 burst cap for admin
 	// IP rate limiting (L1 global, L2 webhook) — is_runtime=FALSE; restart required.
 	domain.ParamKeyIPRateLimitGlobalRPS:    {1, 10_000}, // 1–10K tokens/sec
 	domain.ParamKeyIPRateLimitGlobalBurst:  {1, 10_000}, // min 1; 10K burst is already very generous
@@ -378,20 +390,26 @@ var paramIntConstraints = map[string]paramIntRange{
 
 	// System param history retention (is_runtime=FALSE; worker restart required)
 	domain.ParamKeySystemParamHistoryRetentionDays: {1, 365}, // 1 day – 1 year
+	domain.ParamKeyFXHistoryRetentionDays:          {7, 730}, // 1 week – 2 years
 
 	// Payment / balance (is_runtime = TRUE; changes take effect within cache window)
-	domain.ParamKeyPaymentMaxUploadBytes:      {102_400, 52_428_800}, // 100 KB – 50 MB
-	domain.ParamKeyWithdrawalMinCents:         {100, 1_000_000},      // 1 GTQ – 10 000 GTQ
-	domain.ParamKeyWithdrawalMaxCents:         {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
-	domain.ParamKeyBankTransferMinAmountCents: {100, 1_000_000},      // 1 GTQ – 10 000 GTQ
-	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
-	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 10_080},           // 5 min – 1 week
-	domain.ParamKeyUSDGTQRate:                 {100, 10_000},         // Q1.00 – Q100.00 per USD
-	domain.ParamKeyExchangeRateMarginBPS:      {0, 500},              // 0 (no markup) – 500 bps (5 %)
-	domain.ParamKeyFXBuyMarginBPS:             {0, 500},              // 0 – 500 bps (5 %) buy-side margin
-	domain.ParamKeyFXSellMarginBPS:            {0, 500},              // 0 – 500 bps (5 %) sell-side margin
-	domain.ParamKeyFXDisplayDecimals:          {2, 8},                // 2 – 8 decimal places for display
-	domain.ParamKeyFXStaleThresholdH:          {1, 72},               // 1 h – 72 h stale threshold
+	domain.ParamKeyPaymentMaxUploadBytes:      {102_400, 52_428_800},                                        // 100 KB – 50 MB
+	domain.ParamKeyWithdrawalMinCents:         {100, 1_000_000},                                             // 1 GTQ – 10 000 GTQ
+	domain.ParamKeyWithdrawalMaxCents:         {1_000, 100_000_000},                                         // 10 GTQ – 1 000 000 GTQ
+	domain.ParamKeyBankTransferMinAmountCents: {100, 1_000_000},                                             // 1 GTQ – 10 000 GTQ
+	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},                                         // 10 GTQ – 1 000 000 GTQ
+	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 1_440},                                                   // 5 min – 24 h
+	domain.ParamKeyPaymentIntentMaxCents:      {1, 10_000_000},                                              // Q0.01 – Q100 000.00
+	domain.ParamKeyUSDGTQRate:                 {domain.USDGTQRateMinCentavos, domain.USDGTQRateMaxCentavos}, // Q1.00 – Q100.00 per USD
+	domain.ParamKeyExchangeRateMarginBPS:      {0, 500},                                                     // 0 (no markup) – 500 bps (5 %)
+	domain.ParamKeyFXBuyMarginBPS:             {0, 500},                                                     // 0 – 500 bps (5 %) buy-side margin
+	domain.ParamKeyFXSellMarginBPS:            {0, 500},                                                     // 0 – 500 bps (5 %) sell-side margin
+	domain.ParamKeyFXDisplayDecimals:          {2, 8},                                                       // 2 – 8 decimal places for display
+	domain.ParamKeyFXStaleThresholdH:          {1, 72},                                                      // 1 h – 72 h stale threshold
+	// FX source HTTP client timeouts (migration 000161, is_runtime=FALSE).
+	domain.ParamKeyFXBanguatTimeoutSec:         {1, 60}, // 1 s – 60 s
+	domain.ParamKeyFXExchangeRateAPITimeoutSec: {1, 60}, // 1 s – 60 s
+	domain.ParamKeyFXOpenExchangeTimeoutSec:    {1, 60}, // 1 s – 60 s
 
 	// Idempotency middleware (is_runtime=FALSE; restart required)
 	domain.ParamKeyAPIIdempotencyTTLHours:  {1, 720},   // 1 h – 30 days
@@ -455,8 +473,10 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyNotifyDLQWarningThreshold:  {1, 10_000}, // 1 – 10 000 unresolved entries
 
 	// Phase 7 infrastructure params (migration 000113, is_runtime=FALSE).
-	domain.ParamKeyNotifySSEChanBufSize:              {8, 1_024},   // 8 – 1 024 slots per connection
-	domain.ParamKeyNotifySSEMaxConnsPerUser:          {0, 100},     // 0 = unlimited; 100 is very generous
+	domain.ParamKeyNotifySSEChanBufSize:     {8, 1_024}, // 8 – 1 024 slots per connection
+	domain.ParamKeyNotifySSEMaxConnsPerUser: {0, 100},   // 0 = unlimited; 100 is very generous
+	// SSE eviction threshold (migration 000160, is_runtime=FALSE).
+	domain.ParamKeyNotifySSEEvictAfterDrops:          {2, 50},      // 2 – 50 consecutive drops before eviction
 	domain.ParamKeyNotifyOutboxStaleLockThresholdSec: {60, 86_400}, // 60 s – 24 hours
 
 	// KYC / AML per-transaction caps (migration 000121, is_runtime=TRUE).
@@ -714,6 +734,33 @@ func (s *systemParamService) BulkSet(ctx context.Context, params map[string]stri
 		s.audit.Log(ctx, &actorID, &role, domain.AuditActionParamUpdated, &resType, nil, map[string]any{"keys": keys})
 	}
 	return nil
+}
+
+// BulkPreview validates every param in the map and returns the projected
+// old→new diff for each key without persisting any change. Validation runs
+// identically to BulkSet — a single invalid value aborts the preview and
+// returns an error. IsSensitive is set for scoring.*, payment.*, and fx.* keys.
+// Results are sorted by key for a stable response across calls.
+func (s *systemParamService) BulkPreview(ctx context.Context, params map[string]string) ([]domain.ParamDiff, error) {
+	diffs := make([]domain.ParamDiff, 0, len(params))
+	for key, newValue := range params {
+		existing, err := s.validateAndGetExisting(ctx, key, newValue)
+		if err != nil {
+			return nil, fmt.Errorf("param %q: %w", key, err)
+		}
+		old := ""
+		if existing != nil {
+			old = existing.Value
+		}
+		diffs = append(diffs, domain.ParamDiff{
+			Key:         key,
+			OldValue:    old,
+			NewValue:    newValue,
+			IsSensitive: domain.IsSensitiveParamKey(key),
+		})
+	}
+	sort.Slice(diffs, func(i, j int) bool { return diffs[i].Key < diffs[j].Key })
+	return diffs, nil
 }
 
 // GetHistory returns mutation history for key, newest-first. Returns an empty

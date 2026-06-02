@@ -208,6 +208,7 @@ type stubAdminParamSvc struct {
 	param   *domain.SystemParam
 	params  []*domain.SystemParam
 	history []*domain.SystemParamHistory
+	diffs   []domain.ParamDiff
 	err     error
 }
 
@@ -234,6 +235,9 @@ func (s *stubAdminParamSvc) BulkSet(_ context.Context, _ map[string]string, _ in
 }
 func (s *stubAdminParamSvc) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
 	return s.param, s.err
+}
+func (s *stubAdminParamSvc) BulkPreview(_ context.Context, _ map[string]string) ([]domain.ParamDiff, error) {
+	return s.diffs, s.err
 }
 func (s *stubAdminParamSvc) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
 	return s.history, "", s.err

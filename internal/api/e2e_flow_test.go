@@ -121,7 +121,7 @@ func seedE2EUser(t *testing.T, email, clerkSubject string, role domain.UserRole)
 	t.Helper()
 	var id int
 	err := e2eDB.QueryRow(context.Background(),
-		`INSERT INTO users (name, email, role, clerk_subject) VALUES ($1, $2, $3, $4) RETURNING id`,
+		`INSERT INTO users (name, email, role, external_subject) VALUES ($1, $2, $3, $4) RETURNING id`,
 		email, email, string(role), clerkSubject,
 	).Scan(&id)
 	if err != nil {

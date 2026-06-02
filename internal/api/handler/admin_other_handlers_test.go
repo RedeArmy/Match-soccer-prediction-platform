@@ -785,6 +785,102 @@ func TestAdminParamBulkSet_NoCallerInContext_Returns401(t *testing.T) {
 	}
 }
 
+func TestAdminParamBulkSet_DryRun_Returns200WithDiffs(t *testing.T) {
+	diffs := []domain.ParamDiff{
+		{Key: "cache.match_ttl_seconds", OldValue: "60", NewValue: "120", IsSensitive: false},
+	}
+	svc := &stubAdminParamSvc{diffs: diffs}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminOtherPathSysParamsBulk,
+			`{"params":{"cache.match_ttl_seconds":"120"},"dry_run":true}`),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"diffs"`) {
+		t.Errorf("expected diffs field in response, got: %s", w.Body.String())
+	}
+}
+
+func TestAdminParamBulkSet_DryRun_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminParamSvc{err: errors.New("preview failed")}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminOtherPathSysParamsBulk,
+			`{"params":{"k":"v"},"dry_run":true}`),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+func TestAdminParamBulkSet_SensitiveKeyWithoutConfirmation_Returns422(t *testing.T) {
+	svc := &stubAdminParamSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminOtherPathSysParamsBulk,
+			`{"params":{"scoring.exact_score":"0"}}`),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "scoring.exact_score") {
+		t.Errorf("expected sensitive key name in error body, got: %s", w.Body.String())
+	}
+}
+
+func TestAdminParamBulkSet_FXSensitiveKeyWithoutConfirmation_Returns422(t *testing.T) {
+	svc := &stubAdminParamSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminOtherPathSysParamsBulk,
+			`{"params":{"fx.buy_margin_bps":"300"}}`),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "fx.buy_margin_bps") {
+		t.Errorf("expected sensitive key name in error body, got: %s", w.Body.String())
+	}
+}
+
+func TestAdminParamBulkSet_SensitiveKeyWithConfirmation_Returns204(t *testing.T) {
+	svc := &stubAdminParamSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminOtherPathSysParamsBulk,
+			`{"params":{"scoring.exact_score":"7"},"confirm_sensitive_changes":true}`),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusNoContent {
+		t.Errorf(fmtExpect204, w.Code)
+	}
+}
+
+func TestAdminParamBulkSet_DryRunWithSensitiveKey_ShowsSensitiveFlag(t *testing.T) {
+	diffs := []domain.ParamDiff{
+		{Key: "scoring.exact_score", OldValue: "5", NewValue: "0", IsSensitive: true},
+	}
+	svc := &stubAdminParamSvc{diffs: diffs}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPost, adminOtherPathSysParamsBulk,
+			`{"params":{"scoring.exact_score":"0"},"dry_run":true}`),
+		adminCaller,
+	)
+	w := doReq(newAdminParamRouter(svc), req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"is_sensitive":true`) {
+		t.Errorf("expected is_sensitive:true in dry-run response, got: %s", w.Body.String())
+	}
+}
+
 func TestAdminParamReset_Success_Returns200(t *testing.T) {
 	p := &domain.SystemParam{Key: "scoring.exact", Value: "5", DefaultValue: "5"}
 	svc := &stubAdminParamSvc{param: p}

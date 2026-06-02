@@ -6,9 +6,11 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
 
-func buildPaymentConfirmedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPaymentConfirmedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PaymentPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Payment confirmed", "Pago confirmado", locale),
 		body: localeStr(
@@ -17,12 +19,14 @@ func buildPaymentConfirmedContent(entry *notification.OutboxEntry, locale Locale
 			locale,
 		),
 		actionURL: urlBalance,
-	}
+	}, nil
 }
 
-func buildPaymentFailedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPaymentFailedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PaymentPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Payment failed", "Pago fallido", locale),
 		body: localeStr(
@@ -31,12 +35,14 @@ func buildPaymentFailedContent(entry *notification.OutboxEntry, locale Locale) u
 			locale,
 		),
 		actionURL: "/api/v1/payment-intents",
-	}
+	}, nil
 }
 
-func buildPaymentBankTransferSubmittedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPaymentBankTransferSubmittedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.BankTransferPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Bank transfer proof submitted", "Comprobante de transferencia enviado", locale),
 		body: localeStr(
@@ -45,12 +51,14 @@ func buildPaymentBankTransferSubmittedContent(entry *notification.OutboxEntry, l
 			locale,
 		),
 		actionURL: "/api/v1/bank-transfers",
-	}
+	}, nil
 }
 
-func buildPaymentBankTransferApprovedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPaymentBankTransferApprovedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.BankTransferPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Bank transfer approved", "Transferencia bancaria aprobada", locale),
 		body: localeStr(
@@ -59,12 +67,14 @@ func buildPaymentBankTransferApprovedContent(entry *notification.OutboxEntry, lo
 			locale,
 		),
 		actionURL: urlBalance,
-	}
+	}, nil
 }
 
-func buildPaymentBankTransferRejectedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPaymentBankTransferRejectedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.BankTransferPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Bank transfer rejected", "Transferencia bancaria rechazada", locale),
 		body: localeStr(
@@ -73,12 +83,14 @@ func buildPaymentBankTransferRejectedContent(entry *notification.OutboxEntry, lo
 			locale,
 		),
 		actionURL: "/api/v1/bank-transfers",
-	}
+	}, nil
 }
 
-func buildPaymentPendingTimeoutContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildPaymentPendingTimeoutContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PaymentPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Payment expired", "Pago expirado", locale),
 		body: localeStr(
@@ -87,12 +99,14 @@ func buildPaymentPendingTimeoutContent(entry *notification.OutboxEntry, locale L
 			locale,
 		),
 		actionURL: "/api/v1/payment-intents",
-	}
+	}, nil
 }
 
-func buildWithdrawalRequestedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildWithdrawalRequestedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.WithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Withdrawal requested", "Retiro solicitado", locale),
 		body: localeStr(
@@ -101,12 +115,14 @@ func buildWithdrawalRequestedContent(entry *notification.OutboxEntry, locale Loc
 			locale,
 		),
 		actionURL: urlWithdrawals,
-	}
+	}, nil
 }
 
-func buildWithdrawalApprovedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildWithdrawalApprovedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.WithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Withdrawal approved", "Retiro aprobado", locale),
 		body: localeStr(
@@ -115,12 +131,14 @@ func buildWithdrawalApprovedContent(entry *notification.OutboxEntry, locale Loca
 			locale,
 		),
 		actionURL: urlWithdrawals,
-	}
+	}, nil
 }
 
-func buildWithdrawalRejectedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildWithdrawalRejectedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.WithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Withdrawal rejected", "Retiro rechazado", locale),
 		body: localeStr(
@@ -129,12 +147,14 @@ func buildWithdrawalRejectedContent(entry *notification.OutboxEntry, locale Loca
 			locale,
 		),
 		actionURL: urlWithdrawals,
-	}
+	}, nil
 }
 
-func buildWithdrawalCompletedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildWithdrawalCompletedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.WithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Withdrawal completed", "Retiro completado", locale),
 		body: localeStr(
@@ -143,12 +163,14 @@ func buildWithdrawalCompletedContent(entry *notification.OutboxEntry, locale Loc
 			locale,
 		),
 		actionURL: urlBalance,
-	}
+	}, nil
 }
 
-func buildWithdrawalFailedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildWithdrawalFailedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.WithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Withdrawal failed", "Retiro fallido", locale),
 		body: localeStr(
@@ -157,12 +179,14 @@ func buildWithdrawalFailedContent(entry *notification.OutboxEntry, locale Locale
 			locale,
 		),
 		actionURL: urlWithdrawals,
-	}
+	}, nil
 }
 
-func buildWithdrawalProcessingContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildWithdrawalProcessingContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.WithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Withdrawal being processed", "Retiro en proceso", locale),
 		body: localeStr(
@@ -171,12 +195,14 @@ func buildWithdrawalProcessingContent(entry *notification.OutboxEntry, locale Lo
 			locale,
 		),
 		actionURL: urlWithdrawals,
-	}
+	}, nil
 }
 
-func buildWithdrawalPendingTimeoutContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildWithdrawalPendingTimeoutContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.WithdrawalPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Withdrawal request expired", "Solicitud de retiro expirada", locale),
 		body: localeStr(
@@ -185,5 +211,5 @@ func buildWithdrawalPendingTimeoutContent(entry *notification.OutboxEntry, local
 			locale,
 		),
 		actionURL: urlWithdrawals,
-	}
+	}, nil
 }

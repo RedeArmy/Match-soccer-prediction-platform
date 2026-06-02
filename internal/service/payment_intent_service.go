@@ -41,6 +41,10 @@ func (s *paymentIntentService) Create(ctx context.Context, userID, amountCents i
 	if amountCents <= 0 {
 		return nil, apperrors.Validation("amount_cents must be positive")
 	}
+	maxCents := s.params.GetInt(ctx, domain.ParamKeyPaymentIntentMaxCents, domain.DefaultPaymentIntentMaxCents)
+	if amountCents > maxCents {
+		return nil, apperrors.Validation(fmt.Sprintf("amount_cents exceeds maximum of %d", maxCents))
+	}
 	if currency == "" {
 		currency = "GTQ"
 	}

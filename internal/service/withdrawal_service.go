@@ -23,8 +23,12 @@ type WithdrawalService interface {
 	// Create creates a withdrawal request and reserves the balance.
 	// Returns Conflict when available balance is insufficient.
 	Create(ctx context.Context, userID, amountCents int, currency string, method domain.WithdrawalMethod, payoutDetails map[string]string) (*domain.WithdrawalRequest, error)
-	// GetByID returns the request or nil when not found.
-	GetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
+	// AdminGetByID returns the request or nil when not found.
+	// The "Admin" prefix signals that this method is intended for admin callers
+	// only. User-facing lookups must go through ListByUser, which is
+	// ownership-scoped. Calling AdminGetByID from a user-facing handler without
+	// an explicit ownership check would be an IDOR.
+	AdminGetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
 	// ListByUser returns all requests for a user.
 	ListByUser(ctx context.Context, userID int) ([]*domain.WithdrawalRequest, error)
 	// ListPending returns all pending requests for admin review.
@@ -144,7 +148,7 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 	return req, nil
 }
 
-func (s *withdrawalService) GetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error) {
+func (s *withdrawalService) AdminGetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error) {
 	return s.withdrawalRepo.GetByID(ctx, id)
 }
 

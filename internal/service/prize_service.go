@@ -40,6 +40,15 @@ type PrizeCrediter interface {
 	// refID and refType identify the originating record (e.g. a quiniela ID and
 	// "quiniela") and are stored on the balance_ledger row for audit traceability.
 	CreditPrize(ctx context.Context, userID, prizeCents int, refID int64, refType string) (credited bool, err error)
+
+	// NotifyFreezeOnly fires the KYC winner-freeze outbox notification for a
+	// winner whose prize was already frozen atomically by DistributePrizesAtomically.
+	// Unlike CreditPrize, it does NOT re-check the KYC tier or re-write the ledger.
+	// It is called by DistributePrizes after the atomic distribution transaction
+	// commits, solely to trigger the n8n notification workflow. Using this instead
+	// of CreditPrize eliminates the race window where a KYC tier upgrade between
+	// the atomic tx commit and the post-loop could cause an unintended balance credit.
+	NotifyFreezeOnly(ctx context.Context, userID, prizeCents int, refID int64, refType string) error
 }
 
 type prizeService struct {
@@ -122,6 +131,18 @@ func (s *prizeService) notifyKYCWinnerFreeze(ctx context.Context, userID, prizeC
 	if s.notifier != nil {
 		s.notifier.NotifyKYCWinnerFreeze(ctx, userID, prizeCents, traceID)
 	}
+}
+
+// NotifyFreezeOnly fires the outbox notification for a winner whose prize was
+// already frozen atomically in DistributePrizesAtomically. It does not re-check
+// the KYC tier, update the ledger, or re-write kyc_profiles — those were
+// committed in the atomic transaction. This eliminates the race window where
+// a tier upgrade between the atomic commit and the post-loop could otherwise
+// cause CreditPrize to credit a balance that the transaction froze.
+func (s *prizeService) NotifyFreezeOnly(ctx context.Context, userID, prizeCents int, _ int64, _ string) error {
+	traceID := kycTraceID(ctx)
+	s.notifyKYCWinnerFreeze(ctx, userID, prizeCents, traceID)
+	return nil
 }
 
 // kycTraceID extracts the W3C trace ID from the context span, or returns an

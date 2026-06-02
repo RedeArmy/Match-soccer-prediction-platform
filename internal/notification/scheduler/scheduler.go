@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/pkg/health"
@@ -220,29 +222,69 @@ func (c *schedulerHealthChecker) Check(_ context.Context) health.Result {
 		if j.lastRun.IsZero() {
 			continue // startup grace: job has not yet had a chance to fire
 		}
-		maxAge := c.maxAge(j)
-		if age := now.Sub(j.lastRun); age > maxAge {
+		limit := jobMaxAge(j, c.threshold)
+		if age := now.Sub(j.lastRun); age > limit {
 			return health.Result{
 				Status: "error",
 				Error: fmt.Sprintf("scheduler: job %q overdue — last fired %v ago (threshold %v)",
-					j.name, age.Round(time.Second), maxAge.Round(time.Second)),
+					j.name, age.Round(time.Second), limit.Round(time.Second)),
 			}
 		}
 	}
 	return health.Result{Status: "ok"}
 }
 
-func (c *schedulerHealthChecker) maxAge(j *job) time.Duration {
+// jobMaxAge returns the maximum tolerated age for job j given the overdue
+// threshold multiplier. It is shared by the health checker and the OTel metric
+// callback so both use identical staleness semantics.
+func jobMaxAge(j *job, threshold float64) time.Duration {
 	switch j.spec.kind {
 	case kindInterval:
-		return time.Duration(float64(j.spec.interval) * c.threshold)
+		return time.Duration(float64(j.spec.interval) * threshold)
 	case kindDaily:
 		// Allow threshold × 24 h plus a 1-hour grace for clock skew / DST.
-		return time.Duration(float64(25*time.Hour) * c.threshold)
+		return time.Duration(float64(25*time.Hour) * threshold)
 	default: // kindWeekly
 		// Allow threshold × 7 days plus a 1-hour grace.
-		return time.Duration(float64(7*24*time.Hour+time.Hour) * c.threshold)
+		return time.Duration(float64(7*24*time.Hour+time.Hour) * threshold)
 	}
+}
+
+// RegisterMetrics wires the wcq_scheduler_job_overdue OTel gauge. Call once
+// after all jobs are registered and before Run.
+//
+// The gauge emits one series per job (label: job_name). The value is 1 when
+// the job is overdue by more than threshold × its expected interval, 0
+// otherwise (including the startup grace period before the first run). The
+// threshold must match the value passed to HealthChecker so the Prometheus
+// alert and the Fly.io readiness probe trip on the same condition.
+//
+// "job_name" is used instead of the reserved Prometheus "job" label so the
+// OTel→Prometheus bridge does not collide with the scrape-target job label.
+func (s *Scheduler) RegisterMetrics(meter metric.Meter, threshold float64) error {
+	g, err := meter.Int64ObservableGauge("wcq_scheduler_job_overdue",
+		metric.WithDescription(
+			"1 when a scheduler job is overdue by more than threshold × its expected interval, 0 otherwise",
+		),
+	)
+	if err != nil {
+		return fmt.Errorf("scheduler metrics: wcq_scheduler_job_overdue: %w", err)
+	}
+	_, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		now := s.clock.Now()
+		for _, j := range s.jobs {
+			overdue := int64(0)
+			if !j.lastRun.IsZero() && now.Sub(j.lastRun) > jobMaxAge(j, threshold) {
+				overdue = 1
+			}
+			o.ObserveInt64(g, overdue, metric.WithAttributes(attribute.String("job_name", j.name)))
+		}
+		return nil
+	}, g)
+	if err != nil {
+		return fmt.Errorf("scheduler metrics: register callback: %w", err)
+	}
+	return nil
 }
 
 // shouldRun returns true when job j is due at time now.

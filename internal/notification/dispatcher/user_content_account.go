@@ -6,9 +6,11 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
 
-func buildAccountWelcomeContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildAccountWelcomeContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.AccountWelcomePayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Welcome to World Cup Quiniela!", "¡Bienvenido a World Cup Quiniela!", locale),
 		body: localeStr(
@@ -17,10 +19,10 @@ func buildAccountWelcomeContent(entry *notification.OutboxEntry, locale Locale) 
 			locale,
 		),
 		actionURL: urlGroupsMe,
-	}
+	}, nil
 }
 
-func buildAccountBalanceCreditedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildAccountBalanceCreditedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	return buildBalanceMovementContent(entry, locale,
 		"Balance credited", "Saldo acreditado",
 		"%s has been added to your account. New balance: %s.",
@@ -28,7 +30,7 @@ func buildAccountBalanceCreditedContent(entry *notification.OutboxEntry, locale 
 	)
 }
 
-func buildAccountBalanceDebitedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildAccountBalanceDebitedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	return buildBalanceMovementContent(entry, locale,
 		"Balance debited", "Saldo debitado",
 		"%s has been deducted from your account. New balance: %s.",
@@ -36,9 +38,11 @@ func buildAccountBalanceDebitedContent(entry *notification.OutboxEntry, locale L
 	)
 }
 
-func buildBalanceMovementContent(entry *notification.OutboxEntry, locale Locale, titleEN, titleES, bodyFmtEN, bodyFmtES string) userContent {
+func buildBalanceMovementContent(entry *notification.OutboxEntry, locale Locale, titleEN, titleES, bodyFmtEN, bodyFmtES string) (userContent, error) {
 	var p notification.AccountBalancePayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr(titleEN, titleES, locale),
 		body: localeStr(
@@ -47,12 +51,14 @@ func buildBalanceMovementContent(entry *notification.OutboxEntry, locale Locale,
 			locale,
 		),
 		actionURL: urlBalance,
-	}
+	}, nil
 }
 
-func buildAccountLowBalanceContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildAccountLowBalanceContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.AccountBalancePayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Low balance alert", "Alerta de saldo bajo", locale),
 		body: localeStr(
@@ -61,5 +67,5 @@ func buildAccountLowBalanceContent(entry *notification.OutboxEntry, locale Local
 			locale,
 		),
 		actionURL: urlBalance,
-	}
+	}, nil
 }

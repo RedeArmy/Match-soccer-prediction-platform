@@ -32,7 +32,8 @@ type stubPredRepo struct {
 	list          []*domain.Prediction
 	err           error
 	updated       []*domain.Prediction
-	upsertCreated bool // controls the created bool returned by Upsert
+	upsertCreated bool                       // controls the created bool returned by Upsert
+	cfgSnapshot   *domain.ScoringCfgSnapshot // returned by GetScoringCfgSnapshot; nil = no prior log
 }
 
 func (r *stubPredRepo) Create(_ context.Context, _ *domain.Prediction) error { return r.err }
@@ -100,6 +101,9 @@ func (r *stubPredRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, 
 }
 func (r *stubPredRepo) InsertScoringBatch(_ context.Context, _ []domain.PredictionScoreLog) error {
 	return r.err
+}
+func (r *stubPredRepo) GetScoringCfgSnapshot(_ context.Context, _ int) (*domain.ScoringCfgSnapshot, error) {
+	return r.cfgSnapshot, r.err
 }
 func (r *stubPredRepo) ScoreMatchBatch(_ context.Context, _ int, scorer func([]*domain.Prediction) (map[int]int, error), _ int) error {
 	points, err := scorer(r.list)

@@ -24,10 +24,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -264,25 +266,43 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	return nil
 }
 
-// startMetricsServer starts a minimal HTTP server that exposes /metrics on a
-// dedicated internal port with no authentication. It is a no-op when handler
-// is nil or MetricsPort is not set. The server is intentionally excluded from
-// the graceful-shutdown sequence: Prometheus scrapers tolerate brief gaps during
-// pod restarts, and the port must be network-isolated from the internet.
+// startMetricsServer binds to the configured MetricsPort and serves /metrics
+// with no authentication on a dedicated internal port. It is a no-op when
+// handler is nil or MetricsPort is not set.
+//
+// Port binding happens synchronously so that a misconfigured or occupied port
+// is detected immediately and logged — not silently swallowed in a background
+// goroutine. The HTTP serving loop runs in a goroutine after binding succeeds.
+// The server is intentionally excluded from the graceful-shutdown sequence:
+// Prometheus scrapers tolerate brief gaps during pod restarts, and the port
+// must be network-isolated from the internet.
 func startMetricsServer(cfg *config.Config, handler http.Handler, log *zap.Logger) {
 	if handler == nil || cfg.Server.MetricsPort == "" {
 		return
 	}
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", ":"+cfg.Server.MetricsPort)
+	if err != nil {
+		log.Error("metrics server: failed to bind port",
+			zap.String("port", cfg.Server.MetricsPort),
+			zap.Error(err),
+		)
+		return
+	}
+	startMetricsServerOn(ln, handler, cfg.Server.ReadTimeout, log)
+}
+
+// startMetricsServerOn serves /metrics on an already-bound listener. Extracted
+// from startMetricsServer to allow testing without a real port allocation.
+func startMetricsServerOn(ln net.Listener, handler http.Handler, readTimeout time.Duration, log *zap.Logger) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", handler)
 	srv := &http.Server{
-		Addr:              ":" + cfg.Server.MetricsPort,
 		Handler:           mux,
-		ReadHeaderTimeout: cfg.Server.ReadTimeout,
+		ReadHeaderTimeout: readTimeout,
 	}
 	go func() {
-		log.Sugar().Infof("metrics server listening on :%s (internal — no auth)", cfg.Server.MetricsPort)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Sugar().Infof("metrics server listening on %s (internal — no auth)", ln.Addr().String())
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("metrics server stopped unexpectedly", zap.Error(err))
 		}
 	}()

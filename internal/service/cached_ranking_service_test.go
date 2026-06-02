@@ -341,3 +341,69 @@ func TestCachedRankingService_GetPhaseLeaderboard_SetError_StillReturnsData(t *t
 		t.Errorf("expected 1 entry despite cache set error, got %d", len(got.Entries))
 	}
 }
+
+// ── UpdateTTL / effectiveTTL ──────────────────────────────────────────────────
+
+// ttlTrackingCache wraps stubCacheStore and records the TTL passed to the most
+// recent Set call. Used to verify that UpdateTTL propagates to cache writes.
+type ttlTrackingCache struct {
+	*stubCacheStore
+	lastSetTTL time.Duration
+}
+
+func (c *ttlTrackingCache) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
+	c.lastSetTTL = ttl
+	return c.stubCacheStore.Set(ctx, key, value, ttl)
+}
+
+func TestCachedRankingService_UpdateTTL_AffectsCacheWriteTTL(t *testing.T) {
+	t.Parallel()
+	// Arrange: construct with an initial TTL, then change it.
+	inner := &stubRanker{entries: []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1}, TotalPoints: 10, Rank: 1},
+	}}
+	spy := &ttlTrackingCache{stubCacheStore: newStubCache()}
+	initialTTL := 60 * time.Second
+	updatedTTL := 120 * time.Second
+
+	svc := NewCachedRankingService(inner, spy, initialTTL, zap.NewNop())
+
+	// First call: cache miss → stores with initialTTL.
+	if _, err := svc.GetLeaderboard(context.Background(), 1); err != nil {
+		t.Fatalf("unexpected error on first call: %v", err)
+	}
+	if spy.lastSetTTL != initialTTL {
+		t.Errorf("first Set TTL: got %v; want %v", spy.lastSetTTL, initialTTL)
+	}
+
+	// UpdateTTL, then query a fresh quiniela ID (guaranteed cache miss since it
+	// was never populated). stubCacheStore.Delete is a spy that does not evict
+	// from the data map, so a different quiniela ID is the reliable approach.
+	svc.UpdateTTL(updatedTTL)
+
+	if _, err := svc.GetLeaderboard(context.Background(), 2); err != nil {
+		t.Fatalf("unexpected error on second call: %v", err)
+	}
+	if spy.lastSetTTL != updatedTTL {
+		t.Errorf("second Set TTL after UpdateTTL: got %v; want %v", spy.lastSetTTL, updatedTTL)
+	}
+}
+
+func TestCachedRankingService_UpdateTTL_ZeroDuration_DisablesEffectiveTTL(t *testing.T) {
+	t.Parallel()
+	inner := &stubRanker{entries: []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 2}, TotalPoints: 5, Rank: 1},
+	}}
+	spy := &ttlTrackingCache{stubCacheStore: newStubCache()}
+	svc := NewCachedRankingService(inner, spy, 30*time.Second, zap.NewNop())
+
+	svc.UpdateTTL(0)
+	svc.InvalidateLeaderboard(context.Background(), 2)
+
+	if _, err := svc.GetLeaderboard(context.Background(), 2); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spy.lastSetTTL != 0 {
+		t.Errorf("expected zero TTL after UpdateTTL(0), got %v", spy.lastSetTTL)
+	}
+}

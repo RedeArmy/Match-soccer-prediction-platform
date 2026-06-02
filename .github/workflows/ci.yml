@@ -315,8 +315,17 @@ jobs:
           ignore-unfixed: true
 
   # --------------------------------------------------------------------------
-  # Validate n8n workflow JSON — prevents malformed files from breaking the
-  # n8n instance on startup. Does not test workflow execution.
+  # Validate n8n workflow JSON structure — prevents malformed or wired-wrong
+  # workflows from reaching the n8n instance. scripts/validate-n8n-workflows.py
+  # checks beyond raw JSON syntax:
+  #   - Required fields present: name, nodes (non-empty), connections (object)
+  #   - Node-level integrity: id (unique), name, type, typeVersion, position
+  #   - At least one trigger node per workflow (webhook, scheduleTrigger, etc.)
+  #   - Webhook nodes have a non-empty path parameter
+  #   - Cross-workflow webhook path uniqueness (silent collision = one workflow
+  #     stops receiving events)
+  #   - Connection graph referential integrity (source and destination node names
+  #     reference real nodes in the same workflow)
   # --------------------------------------------------------------------------
   validate-n8n:
     name: Validate n8n workflows
@@ -331,16 +340,8 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Validate workflow JSON
-        run: |
-          fail=0
-          for f in observability/n8n/workflows/*.json; do
-            if ! jq empty "$f" 2>/dev/null; then
-              echo "::error file=$f::Invalid JSON in n8n workflow: $f"
-              fail=1
-            fi
-          done
-          exit $fail
+      - name: Validate workflow structure
+        run: python3 scripts/validate-n8n-workflows.py
 
   # --------------------------------------------------------------------------
   # Migration roundtrip — CI gate for down migrations
@@ -375,14 +376,21 @@ jobs:
         run: make test-migrate-roundtrip
 
   # --------------------------------------------------------------------------
-  # Benchmark smoke + drift report — informational, never blocks the PR.
+  # Benchmark regression gate — blocks the PR on statistically significant
+  # regressions > 20 % versus the committed .bench/baseline.txt.
   #
-  # benchstat compares the current run against .bench/baseline.txt and
-  # publishes a delta table to the job summary.  It exits 0 regardless of
-  # whether it detects a performance regression — the tool does not support
-  # exit-code-based regression gating.  Engineers should review the summary
-  # table and update the baseline with `make bench-save` if the change is
-  # intentional.  No merge is blocked by this job.
+  # Why 20 %: GitHub Actions ubuntu runners exhibit ≈ ±10 % timing variance
+  # between runs.  A 20 % threshold sits safely above that noise floor while
+  # catching real hot-path regressions (e.g. an extra allocation in ScoreMatch
+  # that would cause the scoring worker to fall behind during match-end events).
+  #
+  # benchstat marks statistically insignificant changes with "~" — those are
+  # never treated as regressions regardless of the raw delta.  scripts/bench-gate.py
+  # parses the benchstat output and exits 1 if any benchmark shows a significant
+  # positive delta above the threshold.
+  #
+  # To accept an intentional regression: run `make bench-save`, commit
+  # .bench/baseline.txt, and the gate will pass on the next run.
   # --------------------------------------------------------------------------
   benchmark:
     name: Benchmarks
@@ -415,15 +423,23 @@ jobs:
             ./internal/api/... \
           | tee /tmp/bench-current.txt
 
-      # benchstat prints a delta table to the job summary.  If no baseline
-      # exists yet, the step is skipped.  The step always exits 0 — benchstat
-      # does not exit non-zero on detected regressions; the table is
-      # informational only.  Update the baseline with `make bench-save`.
-      - name: Drift report vs baseline
+      # Regression gate: compare current run against baseline and fail if any
+      # benchmark regresses more than 20 % with statistical significance (p<0.05).
+      # The delta table is always published to the job summary so engineers can
+      # review it even when the gate passes.
+      # If no baseline exists yet (first run), the step is skipped.
+      - name: Regression gate vs baseline
         run: |
           if [ ! -f .bench/baseline.txt ]; then
-            echo "No baseline found — skipping drift report." >> "$GITHUB_STEP_SUMMARY"
+            echo "No baseline found — skipping regression gate." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          go run golang.org/x/perf/cmd/benchstat .bench/baseline.txt /tmp/bench-current.txt \
-            >> "$GITHUB_STEP_SUMMARY"
+          go run golang.org/x/perf/cmd/benchstat \
+            .bench/baseline.txt /tmp/bench-current.txt \
+            | tee /tmp/bench-delta.txt
+          cat /tmp/bench-delta.txt >> "$GITHUB_STEP_SUMMARY"
+          if ! python3 scripts/bench-gate.py /tmp/bench-delta.txt; then
+            echo "::error::Benchmark regression >20% detected. See job summary for details." \
+              "Run 'make bench-save' and commit .bench/baseline.txt to accept the change."
+            exit 1
+          fi

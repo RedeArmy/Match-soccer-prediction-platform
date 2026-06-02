@@ -34,7 +34,7 @@ func (r *stubUserRepo) Create(_ context.Context, _ *domain.User) error { return 
 func (r *stubUserRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
 	return r.user, r.err
 }
-func (r *stubUserRepo) GetByClerkSubject(_ context.Context, _ string) (*domain.User, error) {
+func (r *stubUserRepo) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return r.user, r.err
 }
 func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }

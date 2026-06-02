@@ -66,17 +66,36 @@ const (
 var testDB *pgxpool.Pool
 
 func TestMain(m *testing.M) {
-	var cleanup func()
-	testDB, cleanup = mustSetupDB()
+	pool, cleanup := trySetupDB()
+	if pool == nil {
+		// Docker is unavailable. Exit cleanly (code 0) rather than letting
+		// individual tests panic on a nil testDB pointer. go test treats
+		// exit 0 as success — effectively "all tests skipped".
+		os.Exit(0)
+	}
+	testDB = pool
 	code := m.Run()
-	cleanup()
+	if cleanup != nil {
+		cleanup()
+	}
 	os.Exit(code)
 }
 
-// mustSetupDB starts a PostgreSQL container, runs migrations, and returns a
-// ready connection pool together with a cleanup function. Extracted from
-// TestMain to keep its cognitive complexity within the allowed limit.
-func mustSetupDB() (*pgxpool.Pool, func()) {
+// skipIfNoDB skips the calling test when the PostgreSQL container is
+// unavailable (Docker not running). Every seed helper and cleanTables call
+// this so individual test functions need no nil-guard on testDB.
+func skipIfNoDB(t *testing.T) {
+	t.Helper()
+	if testDB == nil {
+		t.Skip("requires Docker — start the Docker daemon or run with make test")
+	}
+}
+
+// trySetupDB starts a PostgreSQL container, runs migrations, and returns a
+// ready connection pool together with a cleanup function. When Docker is
+// unavailable it logs a warning and returns (nil, nil) so that TestMain can
+// set testDB=nil and individual tests skip gracefully instead of panicking.
+func trySetupDB() (*pgxpool.Pool, func()) {
 	ctx := context.Background()
 
 	container, err := tcpostgres.Run(ctx, dbImage,
@@ -86,7 +105,8 @@ func mustSetupDB() (*pgxpool.Pool, func()) {
 		tcpostgres.BasicWaitStrategies(),
 	)
 	if err != nil {
-		log.Fatalf("start postgres container: %v", err)
+		log.Printf("repository tests: PostgreSQL container unavailable (Docker not running?): %v — all DB tests will be skipped", err)
+		return nil, nil
 	}
 
 	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -121,6 +141,7 @@ func mustSetupDB() (*pgxpool.Pool, func()) {
 // starts with an empty database. RESTART IDENTITY resets serial sequences.
 func cleanTables(t *testing.T) {
 	t.Helper()
+	skipIfNoDB(t)
 	_, err := testDB.Exec(context.Background(),
 		`TRUNCATE leaderboard_snapshots, payment_records, audit_log, system_params,
 		         tournament_slots, tiebreaker_config, group_memberships, tiebreakers,
@@ -139,6 +160,7 @@ func isNotFound(err error) bool {
 
 func seedUser(t *testing.T) *domain.User {
 	t.Helper()
+	skipIfNoDB(t)
 	repo := repository.NewPostgresUserRepository(testDB)
 	code := nextCode()
 	u := &domain.User{Name: "User " + code, Email: code + "@example.com", Role: domain.RoleUser}
@@ -155,6 +177,7 @@ func seedMatch(t *testing.T) *domain.Match {
 
 func seedMatchWithPhase(t *testing.T, phase domain.MatchPhase) *domain.Match {
 	t.Helper()
+	skipIfNoDB(t)
 	repo := repository.NewPostgresMatchRepository(testDB)
 	m := &domain.Match{
 		HomeTeam:  repoBrazil,
@@ -175,6 +198,7 @@ func seedMatchWithPhase(t *testing.T, phase domain.MatchPhase) *domain.Match {
 
 func seedQuiniela(t *testing.T, ownerID int) *domain.Quiniela {
 	t.Helper()
+	skipIfNoDB(t)
 	repo := repository.NewPostgresQuinielaRepository(testDB)
 	q := &domain.Quiniela{Name: fmt.Sprintf("Oficina %s", nextCode()), OwnerID: ownerID, InviteCode: nextCode(), Currency: defaultCurrency}
 	if err := repo.Create(context.Background(), q); err != nil {
@@ -195,6 +219,7 @@ func seedQuinielaWithMaxMembers(t *testing.T, ownerID int, _ *int) *domain.Quini
 // user for the caller to use as the over-limit joiner.
 func fillGroupToCapacity(t *testing.T, quinielaID, currentCount int) {
 	t.Helper()
+	skipIfNoDB(t)
 	now := time.Now().UTC()
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 	for i := currentCount; i < domain.MaxMembersPerGroup; i++ {
@@ -208,6 +233,7 @@ func fillGroupToCapacity(t *testing.T, quinielaID, currentCount int) {
 
 func seedMembership(t *testing.T, quinielaID, userID int, status domain.MembershipStatus, paid bool) *domain.GroupMembership {
 	t.Helper()
+	skipIfNoDB(t)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 	now := time.Now().UTC()
 	m := &domain.GroupMembership{
@@ -228,6 +254,7 @@ func seedMembership(t *testing.T, quinielaID, userID int, status domain.Membersh
 // truncate cities/states/countries, so their migration data is always available.
 func seedMatchWithStadium(t *testing.T) *domain.Match {
 	t.Helper()
+	skipIfNoDB(t)
 	var cityID int
 	if err := testDB.QueryRow(context.Background(),
 		`SELECT ci.id FROM cities ci
@@ -265,6 +292,7 @@ func seedMatchWithStadium(t *testing.T) *domain.Match {
 
 func seedActiveMembership(t *testing.T, quinielaID, userID int) *domain.GroupMembership {
 	t.Helper()
+	skipIfNoDB(t)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 	now := time.Now()
 	m := &domain.GroupMembership{
@@ -282,6 +310,7 @@ func seedActiveMembership(t *testing.T, quinielaID, userID int) *domain.GroupMem
 
 func seedPaymentRecord(t *testing.T, quinielaID, userID int) *domain.PaymentRecord {
 	t.Helper()
+	skipIfNoDB(t)
 	repo := repository.NewPostgresPaymentRecordRepository(testDB)
 	pr := &domain.PaymentRecord{
 		QuinielaID: quinielaID,
@@ -300,6 +329,7 @@ func seedPaymentRecord(t *testing.T, quinielaID, userID int) *domain.PaymentReco
 // tiebreaker_config_id. Must be called after cleanTables.
 func seedTiebreakerConfig(t *testing.T) *domain.TiebreakerConfig {
 	t.Helper()
+	skipIfNoDB(t)
 	repo := repository.NewPostgresTiebreakerConfigRepository(testDB)
 	cfg, err := repo.Upsert(context.Background(), "Total goals in the Final")
 	if err != nil {
@@ -310,6 +340,7 @@ func seedTiebreakerConfig(t *testing.T) *domain.TiebreakerConfig {
 
 func seedSystemParam(t *testing.T, key, value, category string) *domain.SystemParam {
 	t.Helper()
+	skipIfNoDB(t)
 	var p domain.SystemParam
 	err := testDB.QueryRow(context.Background(),
 		`INSERT INTO system_params (key, value, default_value, category)

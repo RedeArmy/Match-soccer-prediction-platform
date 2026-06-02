@@ -186,3 +186,30 @@ func TestPaymentService_ListByQuiniela_ReturnsRecords(t *testing.T) {
 		t.Errorf("expected 1 record, got %v err=%v", got, err)
 	}
 }
+
+func TestPaymentService_List_DelegatesToRepoWithFiltersAndPagination(t *testing.T) {
+	records := []*domain.PaymentRecord{
+		{ID: 1, UserID: 10, Amount: 500},
+		{ID: 2, UserID: 11, Amount: 300},
+	}
+	svc := newPaymentSvc(&stubPaymentRepo{records: records})
+
+	got, err := svc.List(context.Background(),
+		repository.PaymentFilters{}, repository.Pagination{Limit: 10})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 records, got %d", len(got))
+	}
+}
+
+func TestPaymentService_List_RepoError_Propagates(t *testing.T) {
+	svc := newPaymentSvc(&stubPaymentRepo{err: errors.New("db failure")})
+
+	_, err := svc.List(context.Background(),
+		repository.PaymentFilters{}, repository.Pagination{Limit: 10})
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+}

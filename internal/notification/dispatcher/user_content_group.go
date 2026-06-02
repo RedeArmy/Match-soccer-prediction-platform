@@ -6,9 +6,11 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
 
-func buildGroupJoinRequestedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildGroupJoinRequestedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.GroupJoinPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("New join request", "Nueva solicitud de unión", locale),
 		body: localeStr(
@@ -17,12 +19,14 @@ func buildGroupJoinRequestedContent(entry *notification.OutboxEntry, locale Loca
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlGroupMembers, p.QuinielaID),
-	}
+	}, nil
 }
 
-func buildGroupJoinApprovedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildGroupJoinApprovedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.GroupJoinPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Group join approved", "Solicitud de grupo aprobada", locale),
 		body: localeStr(
@@ -31,12 +35,14 @@ func buildGroupJoinApprovedContent(entry *notification.OutboxEntry, locale Local
 			locale,
 		),
 		actionURL: fmt.Sprintf("/api/v1/groups/%d", p.QuinielaID),
-	}
+	}, nil
 }
 
-func buildGroupJoinRejectedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildGroupJoinRejectedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.GroupJoinPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Group join request rejected", "Solicitud de grupo rechazada", locale),
 		body: localeStr(
@@ -45,12 +51,14 @@ func buildGroupJoinRejectedContent(entry *notification.OutboxEntry, locale Local
 			locale,
 		),
 		actionURL: urlGroupsMe,
-	}
+	}, nil
 }
 
-func buildGroupDisbandedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildGroupDisbandedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.GroupDisbandedPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Group disbanded", "Grupo disuelto", locale),
 		body: localeStr(
@@ -59,12 +67,14 @@ func buildGroupDisbandedContent(entry *notification.OutboxEntry, locale Locale) 
 			locale,
 		),
 		actionURL: urlGroupsMe,
-	}
+	}, nil
 }
 
-func buildGroupDeadline24hContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildGroupDeadline24hContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.GroupDeadlinePayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Group deadline in 24 hours", "Límite de grupo en 24 horas", locale),
 		body: localeStr(
@@ -73,12 +83,14 @@ func buildGroupDeadline24hContent(entry *notification.OutboxEntry, locale Locale
 			locale,
 		),
 		actionURL: fmt.Sprintf("/api/v1/groups/%d", p.QuinielaID),
-	}
+	}, nil
 }
 
-func buildGroupLeaderboardMilestoneContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildGroupLeaderboardMilestoneContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.GroupLeaderboardMilestonePayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Leaderboard milestone", "Hito en el marcador", locale),
 		body: localeStr(
@@ -87,12 +99,14 @@ func buildGroupLeaderboardMilestoneContent(entry *notification.OutboxEntry, loca
 			locale,
 		),
 		actionURL: fmt.Sprintf("/api/v1/groups/%d/leaderboard", p.QuinielaID),
-	}
+	}, nil
 }
 
-func buildGroupMemberJoinedContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildGroupMemberJoinedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.GroupJoinPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("New member joined your group", "Nuevo miembro en tu grupo", locale),
 		body: localeStr(
@@ -101,12 +115,14 @@ func buildGroupMemberJoinedContent(entry *notification.OutboxEntry, locale Local
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlGroupMembers, p.QuinielaID),
-	}
+	}, nil
 }
 
-func buildGroupMemberLeftContent(entry *notification.OutboxEntry, locale Locale) userContent {
+func buildGroupMemberLeftContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.GroupJoinPayload
-	_ = entry.DecodePayload(&p)
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
 	return userContent{
 		title: localeStr("Member left the group", "Miembro abandonó el grupo", locale),
 		body: localeStr(
@@ -115,5 +131,5 @@ func buildGroupMemberLeftContent(entry *notification.OutboxEntry, locale Locale)
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlGroupMembers, p.QuinielaID),
-	}
+	}, nil
 }

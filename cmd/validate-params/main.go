@@ -71,6 +71,13 @@ type paramSpec struct {
 //   - 000147_seed_usd_gtq_rate_param            (+1)
 //   - 000148_seed_exchange_rate_margin_param    (+1)
 //   - 000150_seed_fx_system_params              (+4)
+//   - 000151_seed_payment_intent_max_cents_param (+1)
+//   - 000153_seed_admin_rate_limit_params        (+2)
+//   - 000154_seed_audit_max_in_flight_param      (+1)
+//   - 000155_seed_fx_history_retention_param     (+1)
+//   - 000158_seed_outbox_retention_param         (+1)
+//   - 000160_seed_sse_broadcaster_params         (+3)
+//   - 000161_seed_fx_source_timeout_params       (+3)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -126,9 +133,11 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyMessagingStreamWorkerCount, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamWorkerCount), paramType: "int", category: "messaging", isRuntime: false},
 	{key: domain.ParamKeyMessagingStreamReadBlockSec, defaultValue: strconv.Itoa(domain.DefaultMessagingStreamReadBlockSec), paramType: "int", category: "messaging", isRuntime: false},
 
-	// Audit retry policy — not runtime: restart required.
+	// Audit retry policy and goroutine cap — not runtime: restart required.
 	{key: domain.ParamKeyAuditMaxRetries, defaultValue: strconv.Itoa(domain.DefaultAuditMaxRetries), paramType: "int", category: "system", isRuntime: false},
 	{key: domain.ParamKeyAuditRetryDelayMs, defaultValue: strconv.Itoa(domain.DefaultAuditRetryDelayMs), paramType: "int", category: "system", isRuntime: false},
+	// audit.max_in_flight (migration 000154); not runtime — restart required.
+	{key: domain.ParamKeyAuditMaxInFlight, defaultValue: strconv.Itoa(domain.DefaultAuditMaxInFlight), paramType: "int", category: "system", isRuntime: false},
 
 	// Worker: snapshot generation — not runtime: worker restart required.
 	{key: domain.ParamKeyWorkerSnapshotConcurrency, defaultValue: strconv.Itoa(domain.DefaultWorkerSnapshotConcurrency), paramType: "int", category: "worker", isRuntime: false},
@@ -138,6 +147,7 @@ var allParams = []paramSpec{
 	// Worker: background maintenance — not runtime: worker restart required.
 	{key: domain.ParamKeyWorkerDLQMonitorIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerDLQMonitorIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerPurgeIntervalHours, defaultValue: strconv.Itoa(domain.DefaultWorkerPurgeIntervalHours), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyOutboxRetentionDays, defaultValue: strconv.Itoa(domain.DefaultOutboxRetentionDays), paramType: "int", category: "worker", isRuntime: false},
 
 	// API request limits — not runtime: restart required.
 	{key: domain.ParamKeyAPIBodySizeLimitBytes, defaultValue: strconv.Itoa(domain.DefaultAPIBodySizeLimitBytes), paramType: "int", category: "api", isRuntime: false},
@@ -145,6 +155,10 @@ var allParams = []paramSpec{
 	// API rate limiting — not runtime: LimiterStore is constructed once at startup; restart required.
 	{key: domain.ParamKeyAPIRateLimitRatePerSec, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitRatePerSec), paramType: "int", category: "api", isRuntime: false},
 	{key: domain.ParamKeyAPIRateLimitBurst, defaultValue: strconv.Itoa(domain.DefaultAPIRateLimitBurst), paramType: "int", category: "api", isRuntime: false},
+	// Admin panel rate limiting (migration 000153); not runtime — restart required.
+	// Independent from the general user bucket; applied at the /api/v1/admin subrouter.
+	{key: domain.ParamKeyAdminRateLimitRatePerSec, defaultValue: strconv.Itoa(domain.DefaultAdminRateLimitRatePerSec), paramType: "int", category: "admin", isRuntime: false},
+	{key: domain.ParamKeyAdminRateLimitBurst, defaultValue: strconv.Itoa(domain.DefaultAdminRateLimitBurst), paramType: "int", category: "admin", isRuntime: false},
 	// Idempotency middleware — not runtime: TTL and key limit are fixed at server startup.
 	{key: domain.ParamKeyAPIIdempotencyTTLHours, defaultValue: strconv.Itoa(domain.DefaultAPIIdempotencyTTLHours), paramType: "int", category: "api", isRuntime: false},
 	{key: domain.ParamKeyAPIIdempotencyKeyMaxLen, defaultValue: strconv.Itoa(domain.DefaultAPIIdempotencyKeyMaxLen), paramType: "int", category: "api", isRuntime: false},
@@ -184,6 +198,8 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyBankTransferMinAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMinAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyBankTransferMaxAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMaxAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyPaymentIntentTTLMinutes, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentTTLMinutes), paramType: "int", category: "payment", isRuntime: true},
+	// Payment intent amount cap (migration 000151); runtime — tunable without restart.
+	{key: domain.ParamKeyPaymentIntentMaxCents, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentMaxCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyUSDGTQRate, defaultValue: strconv.Itoa(domain.DefaultUSDGTQRate), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyExchangeRateMarginBPS, defaultValue: strconv.Itoa(domain.DefaultExchangeRateMarginBPS), paramType: "int", category: "payment", isRuntime: true},
 
@@ -192,6 +208,12 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyFXSellMarginBPS, defaultValue: strconv.Itoa(domain.DefaultFXSellMarginBPS), paramType: "int", category: "fx", isRuntime: true},
 	{key: domain.ParamKeyFXDisplayDecimals, defaultValue: strconv.Itoa(domain.DefaultFXDisplayDecimals), paramType: "int", category: "fx", isRuntime: true},
 	{key: domain.ParamKeyFXStaleThresholdH, defaultValue: strconv.Itoa(domain.DefaultFXStaleThresholdH), paramType: "int", category: "fx", isRuntime: true},
+	// FX history retention (migration 000155); not runtime — worker restart required.
+	{key: domain.ParamKeyFXHistoryRetentionDays, defaultValue: strconv.Itoa(domain.DefaultFXHistoryRetentionDays), paramType: "int", category: "fx", isRuntime: false},
+	// FX source HTTP client timeouts (migration 000161); not runtime — worker restart required.
+	{key: domain.ParamKeyFXBanguatTimeoutSec, defaultValue: strconv.Itoa(domain.DefaultFXBanguatTimeoutSec), paramType: "int", category: "fx", isRuntime: false},
+	{key: domain.ParamKeyFXExchangeRateAPITimeoutSec, defaultValue: strconv.Itoa(domain.DefaultFXExchangeRateAPITimeoutSec), paramType: "int", category: "fx", isRuntime: false},
+	{key: domain.ParamKeyFXOpenExchangeTimeoutSec, defaultValue: strconv.Itoa(domain.DefaultFXOpenExchangeTimeoutSec), paramType: "int", category: "fx", isRuntime: false},
 
 	// Notifications — runtime: thresholds and recipient list are tunable without restart.
 	{key: domain.ParamKeyNotifyBankTransferStaleSec, defaultValue: strconv.Itoa(domain.DefaultNotifyBankTransferStaleSec), paramType: "int", category: "notify", isRuntime: true},
@@ -236,6 +258,9 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyWorkerSchedPendingReminderIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPendingReminderIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerSchedStaleEscalationIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedStaleEscalationIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerSchedPushPruneIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPushPruneIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	// Leaderboard broadcaster retry policy (migration 000160); not runtime — worker restart required.
+	{key: domain.ParamKeyWorkerLeaderboardPublishMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultWorkerLeaderboardPublishMaxAttempts), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerLeaderboardPublishBaseDelayMs, defaultValue: strconv.Itoa(domain.DefaultWorkerLeaderboardPublishBaseDelayMs), paramType: "int", category: "worker", isRuntime: false},
 	// Email render timeout (migration 000108); runtime — takes effect within 30 s cache window.
 	{key: domain.ParamKeyNotifyRenderTimeoutMs, defaultValue: strconv.Itoa(domain.DefaultNotifyRenderTimeoutMs), paramType: "int", category: "notify", isRuntime: true},
 
@@ -262,6 +287,8 @@ var allParams = []paramSpec{
 	// Per-user SSE connection cap (migration 000136); not runtime — hub rebuilt at startup.
 	// 0 = unlimited; default 5 allows multi-tab/device without unbounded heap growth.
 	{key: domain.ParamKeyNotifySSEMaxConnsPerUser, defaultValue: strconv.Itoa(domain.DefaultNotifySSEMaxConnsPerUser), paramType: "int", category: "notify", isRuntime: false},
+	// SSE eviction threshold (migration 000160); not runtime — hub rebuilt at startup.
+	{key: domain.ParamKeyNotifySSEEvictAfterDrops, defaultValue: strconv.Itoa(domain.DefaultNotifySSEEvictAfterDrops), paramType: "int", category: "notify", isRuntime: false},
 	{key: domain.ParamKeyNotifyOutboxStaleLockThresholdSec, defaultValue: strconv.Itoa(domain.DefaultNotifyOutboxStaleLockThresholdSec), paramType: "int", category: "notify", isRuntime: false},
 
 	// KYC/AML gate params (migrations 000121 + 000125); runtime — all limits are enforced
@@ -325,7 +352,7 @@ func run() error {
 func validateFromParams(dbParams []dbParam) error {
 	dbMap := buildParamMap(dbParams)
 	errors := validateAllParams(dbMap)
-	checkUnexpectedParams(dbParams)
+	errors = append(errors, checkUnexpectedParams(dbParams)...)
 	return reportResults(errors)
 }
 
@@ -428,13 +455,23 @@ func printValidParam(spec paramSpec, db dbParam) {
 	fmt.Printf("✅ %s = %s (%s, %s)\n", spec.key, db.value, db.paramType, db.category)
 }
 
-func checkUnexpectedParams(dbParams []dbParam) {
+// checkUnexpectedParams returns an error for each DB row whose key has no
+// corresponding ParamKey* constant in domain/constants.go. An unexpected row
+// means a seeding migration added a key without also adding a Go constant and
+// wiring it into allParams — the row is dead weight that operators cannot
+// manage via the admin API.
+func checkUnexpectedParams(dbParams []dbParam) []string {
 	expectedKeys := buildExpectedKeysSet()
+	var errs []string
 	for _, db := range dbParams {
 		if !expectedKeys[db.key] {
-			fmt.Printf("⚠️  UNEXPECTED PARAM IN DB: %s (not defined in constants.go) — consider removing or documenting\n", db.key)
+			errs = append(errs, fmt.Sprintf(
+				"❌ ORPHAN PARAM IN DB: %q has no ParamKey* constant — add a constant and paramSpec, or remove the row via a cleanup migration",
+				db.key,
+			))
 		}
 	}
+	return errs
 }
 
 func buildExpectedKeysSet() map[string]bool {

@@ -16,6 +16,17 @@ const (
 	DefaultAPIRateLimitRatePerSec = 10 // api.rate_limit_rate_per_sec (tokens/second)
 	DefaultAPIRateLimitBurst      = 30 // api.rate_limit_burst (max burst size)
 
+	// Admin-panel rate limiting: tighter per-admin-user token bucket applied
+	// independently at the /api/v1/admin subrouter. Separate from the general
+	// user bucket so a single admin running a script loop cannot exhaust their
+	// shared quota for other endpoints. 2 req/s with a burst of 10 allows
+	// comfortable manual panel use while blocking automated tight loops against
+	// expensive bulk endpoints (POST /admin/system-params/bulk,
+	// POST /admin/groups/{id}/distribute-prizes). In-process only (no Redis key
+	// sharing with the general user bucket). is_runtime=FALSE: restart required.
+	DefaultAdminRateLimitRatePerSec = 2  // admin.rate_limit_rate_per_sec (tokens/second)
+	DefaultAdminRateLimitBurst      = 10 // admin.rate_limit_burst (max burst size)
+
 	// IP-based rate limiting (L1 global + L2 webhook).
 	//
 	// L1 global: one token-bucket per source IP across all /api/v1 routes.
@@ -75,6 +86,13 @@ const (
 	// ParamKeyAPIRateLimitBurst is the maximum burst size of the per-user token
 	// bucket. is_runtime=FALSE: restart required.
 	ParamKeyAPIRateLimitBurst = "api.rate_limit_burst"
+
+	// Admin-panel per-user rate limiting (is_runtime=FALSE: restart required).
+	// ParamKeyAdminRateLimitRatePerSec is the token refill rate for the
+	// /api/v1/admin subrouter, independent from the general user bucket.
+	ParamKeyAdminRateLimitRatePerSec = "admin.rate_limit_rate_per_sec"
+	// ParamKeyAdminRateLimitBurst is the maximum burst size for the admin bucket.
+	ParamKeyAdminRateLimitBurst = "admin.rate_limit_burst"
 
 	// IP-based rate limiting (L1 global bucket; is_runtime=FALSE: restart required).
 	// ParamKeyIPRateLimitGlobalRPS is the per-IP refill rate (tokens/second) for

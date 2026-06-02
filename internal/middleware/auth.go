@@ -54,7 +54,7 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 // at least one of the specified roles. It must be placed after RequireAuth in
 // the middleware chain so that a valid Clerk subject is already in the context.
 //
-// The subject is resolved to an internal User row via GetByClerkSubject. If the
+// The subject is resolved to an internal User row via GetByExternalSubject. If the
 // subject has no matching row - i.e. the user-sync webhook has not yet fired -
 // the request is rejected with 401. If the user exists but lacks the required
 // role, the request is rejected with 403.
@@ -86,7 +86,7 @@ func requireRoleHandler(next http.Handler, userRepo repository.UserRepository, l
 
 // resolveRequestUser returns the domain.User for the current request.
 // It first checks the context (set by ResolveUser or a prior RequireRole call)
-// and falls back to a database lookup via GetByClerkSubject. On any failure it
+// and falls back to a database lookup via GetByExternalSubject. On any failure it
 // writes the appropriate error response and returns (nil, r, false). On success
 // it returns (user, r, true); when the user was fetched from the database r
 // carries an updated context with the user stored under contextKeyUser so that
@@ -101,7 +101,7 @@ func resolveRequestUser(w http.ResponseWriter, r *http.Request, userRepo reposit
 		WriteError(w, r, log, apperrors.Unauthorised(apperrors.MsgUnauthorised))
 		return nil, r, false
 	}
-	user, err := userRepo.GetByClerkSubject(r.Context(), subject)
+	user, err := userRepo.GetByExternalSubject(r.Context(), subject)
 	if err != nil {
 		WriteError(w, r, log, apperrors.Internal(err))
 		return nil, r, false

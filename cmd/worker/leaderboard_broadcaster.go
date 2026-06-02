@@ -15,20 +15,6 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
-const (
-	// publishMaxAttempts is the maximum number of PUBLISH attempts per user signal
-	// before the broadcaster gives up and logs a warning. The bounded retry window
-	// (50 ms + 100 ms = 150 ms max wait) is small enough to keep quiniela-parallel
-	// goroutines from stalling the post-scoring pipeline.
-	//
-	// Safety net: even when all retries are exhausted and the client never receives
-	// the leaderboard.updated signal, the SSE client will see fresh data on its
-	// next scheduled poll or page reload. The cache TTL (ParamKeyCacheLeaderboardTTL,
-	// default 60 s) bounds the maximum stale window.
-	publishMaxAttempts = 3
-	publishBaseDelay   = 50 * time.Millisecond
-)
-
 // ActiveMemberLister is the narrow read capability that redisPubLeaderboardBroadcaster
 // needs from the membership store. Accepting this interface rather than the full
 // GroupMembershipRepository keeps the dependency surface minimal and makes
@@ -86,6 +72,8 @@ type redisPubLeaderboardBroadcaster struct {
 	client      redis.Cmdable
 	memberRepo  ActiveMemberLister
 	concurrency int
+	maxAttempts int
+	baseDelay   time.Duration
 	log         *zap.Logger
 }
 
@@ -143,23 +131,32 @@ func (b *redisPubLeaderboardBroadcaster) broadcastForQuiniela(ctx context.Contex
 	}
 }
 
-// publishWithRetry attempts to PUBLISH payload up to publishMaxAttempts times
-// with exponential backoff (50 ms → 100 ms). Context cancellation aborts
+// publishWithRetry attempts to PUBLISH payload up to b.maxAttempts times with
+// exponential backoff starting at b.baseDelay. Context cancellation aborts
 // remaining attempts immediately. All errors are logged and swallowed: a missed
 // leaderboard signal is recoverable via the cache TTL safety net.
 func (b *redisPubLeaderboardBroadcaster) publishWithRetry(ctx context.Context, payload string, uid, quinielaID int) {
-	delay := publishBaseDelay
-	for attempt := 1; attempt <= publishMaxAttempts; attempt++ {
+	maxAttempts := b.maxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = domain.DefaultWorkerLeaderboardPublishMaxAttempts
+	}
+	baseDelay := b.baseDelay
+	if baseDelay <= 0 {
+		baseDelay = time.Duration(domain.DefaultWorkerLeaderboardPublishBaseDelayMs) * time.Millisecond
+	}
+
+	delay := baseDelay
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		err := b.client.Publish(ctx, "user_notifications", payload).Err()
 		if err == nil {
 			return
 		}
-		if attempt == publishMaxAttempts {
+		if attempt == maxAttempts {
 			b.log.Warn("leaderboard broadcaster: redis publish failed after retries",
 				append([]zap.Field{
 					zap.Int("user_id", uid),
 					zap.Int("quiniela_id", quinielaID),
-					zap.Int("attempts", publishMaxAttempts),
+					zap.Int("attempts", maxAttempts),
 					zap.Error(err),
 				}, tracing.LogFields(ctx)...)...)
 			return
