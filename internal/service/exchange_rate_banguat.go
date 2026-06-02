@@ -11,11 +11,12 @@ import (
 
 	"github.com/shopspring/decimal"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
 const (
 	banguatURL        = "https://www.banguat.gob.gt/variables/xml/dolares.xml"
-	banguatTimeout    = 10 * time.Second
 	banguatBodyLimit  = 512 * 1024 // 512 KB — far exceeds any realistic XML response
 	banguatSourceName = "banguat"
 	// banguatAPIVersion identifies the wire format of the Banguat feed.
@@ -57,22 +58,29 @@ type BanguatFetcher struct {
 }
 
 // NewBanguatFetcher constructs a BanguatFetcher pointed at the real Banguat
-// production endpoint.
+// production endpoint using the default timeout (domain.DefaultFXBanguatTimeoutSec).
 func NewBanguatFetcher() *BanguatFetcher {
-	return newBanguatFetcher(banguatURL)
+	return newBanguatFetcher(banguatURL, time.Duration(domain.DefaultFXBanguatTimeoutSec)*time.Second)
 }
 
-// NewBanguatFetcherWithURL constructs a BanguatFetcher pointed at url.
-// Intended for use in tests that substitute a local httptest.Server.
+// NewBanguatFetcherWithTimeout constructs a BanguatFetcher pointed at the real
+// Banguat production endpoint with a configurable timeout. Use when reading
+// the timeout from system_params at worker startup.
+func NewBanguatFetcherWithTimeout(timeout time.Duration) *BanguatFetcher {
+	return newBanguatFetcher(banguatURL, timeout)
+}
+
+// NewBanguatFetcherWithURL constructs a BanguatFetcher pointed at url using
+// the default timeout. Intended for tests that substitute a local httptest.Server.
 func NewBanguatFetcherWithURL(url string) *BanguatFetcher {
-	return newBanguatFetcher(url)
+	return newBanguatFetcher(url, time.Duration(domain.DefaultFXBanguatTimeoutSec)*time.Second)
 }
 
-func newBanguatFetcher(url string) *BanguatFetcher {
+func newBanguatFetcher(url string, timeout time.Duration) *BanguatFetcher {
 	return &BanguatFetcher{
 		url: url,
 		client: &http.Client{
-			Timeout:   banguatTimeout,
+			Timeout:   timeout,
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		},
 	}

@@ -98,7 +98,10 @@ func (s *Server) buildHandlers(
 	params service.SystemParamService,
 	scorer service.MatchScorer,
 ) appHandlers {
-	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db)
+	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db, repository.WithQuinielaLogger(s.log))
+	if err := quinielaRepo.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
+		s.log.Warn("quinielaRepo: RegisterMetrics failed (wcq_prize_freeze_skipped_total unavailable)", zap.Error(err))
+	}
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
 	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(s.db)
 	tournamentRepo := repository.NewPostgresTournamentRepository(s.db)

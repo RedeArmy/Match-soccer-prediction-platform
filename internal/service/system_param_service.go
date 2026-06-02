@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -69,6 +70,10 @@ type SystemParamService interface {
 	// Each key-value pair is upserted atomically. actorID is recorded as
 	// the editor for the audit trail.
 	BulkSet(ctx context.Context, params map[string]string, actorID int) error
+	// BulkPreview validates all params and returns the projected old→new diff
+	// for each key without writing anything. IsSensitive is set for keys in
+	// categories (scoring.*, payment.*) that require operator confirmation.
+	BulkPreview(ctx context.Context, params map[string]string) ([]domain.ParamDiff, error)
 	// ResetToDefault restores the operational value of key to the immutable
 	// default_value set by the seeding migration. The cache entry is evicted
 	// and any registered mutation hooks are fired, identical to Set.
@@ -388,19 +393,23 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyFXHistoryRetentionDays:          {7, 730}, // 1 week – 2 years
 
 	// Payment / balance (is_runtime = TRUE; changes take effect within cache window)
-	domain.ParamKeyPaymentMaxUploadBytes:      {102_400, 52_428_800}, // 100 KB – 50 MB
-	domain.ParamKeyWithdrawalMinCents:         {100, 1_000_000},      // 1 GTQ – 10 000 GTQ
-	domain.ParamKeyWithdrawalMaxCents:         {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
-	domain.ParamKeyBankTransferMinAmountCents: {100, 1_000_000},      // 1 GTQ – 10 000 GTQ
-	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},  // 10 GTQ – 1 000 000 GTQ
-	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 1_440},            // 5 min – 24 h
-	domain.ParamKeyPaymentIntentMaxCents:      {1, 10_000_000},       // Q0.01 – Q100 000.00
-	domain.ParamKeyUSDGTQRate:                 {100, 10_000},         // Q1.00 – Q100.00 per USD
-	domain.ParamKeyExchangeRateMarginBPS:      {0, 500},              // 0 (no markup) – 500 bps (5 %)
-	domain.ParamKeyFXBuyMarginBPS:             {0, 500},              // 0 – 500 bps (5 %) buy-side margin
-	domain.ParamKeyFXSellMarginBPS:            {0, 500},              // 0 – 500 bps (5 %) sell-side margin
-	domain.ParamKeyFXDisplayDecimals:          {2, 8},                // 2 – 8 decimal places for display
-	domain.ParamKeyFXStaleThresholdH:          {1, 72},               // 1 h – 72 h stale threshold
+	domain.ParamKeyPaymentMaxUploadBytes:      {102_400, 52_428_800},                                        // 100 KB – 50 MB
+	domain.ParamKeyWithdrawalMinCents:         {100, 1_000_000},                                             // 1 GTQ – 10 000 GTQ
+	domain.ParamKeyWithdrawalMaxCents:         {1_000, 100_000_000},                                         // 10 GTQ – 1 000 000 GTQ
+	domain.ParamKeyBankTransferMinAmountCents: {100, 1_000_000},                                             // 1 GTQ – 10 000 GTQ
+	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},                                         // 10 GTQ – 1 000 000 GTQ
+	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 1_440},                                                   // 5 min – 24 h
+	domain.ParamKeyPaymentIntentMaxCents:      {1, 10_000_000},                                              // Q0.01 – Q100 000.00
+	domain.ParamKeyUSDGTQRate:                 {domain.USDGTQRateMinCentavos, domain.USDGTQRateMaxCentavos}, // Q1.00 – Q100.00 per USD
+	domain.ParamKeyExchangeRateMarginBPS:      {0, 500},                                                     // 0 (no markup) – 500 bps (5 %)
+	domain.ParamKeyFXBuyMarginBPS:             {0, 500},                                                     // 0 – 500 bps (5 %) buy-side margin
+	domain.ParamKeyFXSellMarginBPS:            {0, 500},                                                     // 0 – 500 bps (5 %) sell-side margin
+	domain.ParamKeyFXDisplayDecimals:          {2, 8},                                                       // 2 – 8 decimal places for display
+	domain.ParamKeyFXStaleThresholdH:          {1, 72},                                                      // 1 h – 72 h stale threshold
+	// FX source HTTP client timeouts (migration 000161, is_runtime=FALSE).
+	domain.ParamKeyFXBanguatTimeoutSec:         {1, 60}, // 1 s – 60 s
+	domain.ParamKeyFXExchangeRateAPITimeoutSec: {1, 60}, // 1 s – 60 s
+	domain.ParamKeyFXOpenExchangeTimeoutSec:    {1, 60}, // 1 s – 60 s
 
 	// Idempotency middleware (is_runtime=FALSE; restart required)
 	domain.ParamKeyAPIIdempotencyTTLHours:  {1, 720},   // 1 h – 30 days
@@ -725,6 +734,33 @@ func (s *systemParamService) BulkSet(ctx context.Context, params map[string]stri
 		s.audit.Log(ctx, &actorID, &role, domain.AuditActionParamUpdated, &resType, nil, map[string]any{"keys": keys})
 	}
 	return nil
+}
+
+// BulkPreview validates every param in the map and returns the projected
+// old→new diff for each key without persisting any change. Validation runs
+// identically to BulkSet — a single invalid value aborts the preview and
+// returns an error. IsSensitive is set for scoring.*, payment.*, and fx.* keys.
+// Results are sorted by key for a stable response across calls.
+func (s *systemParamService) BulkPreview(ctx context.Context, params map[string]string) ([]domain.ParamDiff, error) {
+	diffs := make([]domain.ParamDiff, 0, len(params))
+	for key, newValue := range params {
+		existing, err := s.validateAndGetExisting(ctx, key, newValue)
+		if err != nil {
+			return nil, fmt.Errorf("param %q: %w", key, err)
+		}
+		old := ""
+		if existing != nil {
+			old = existing.Value
+		}
+		diffs = append(diffs, domain.ParamDiff{
+			Key:         key,
+			OldValue:    old,
+			NewValue:    newValue,
+			IsSensitive: domain.IsSensitiveParamKey(key),
+		})
+	}
+	sort.Slice(diffs, func(i, j int) bool { return diffs[i].Key < diffs[j].Key })
+	return diffs, nil
 }
 
 // GetHistory returns mutation history for key, newest-first. Returns an empty

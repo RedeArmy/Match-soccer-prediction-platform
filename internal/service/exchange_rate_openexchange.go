@@ -8,11 +8,12 @@ import (
 
 	"github.com/shopspring/decimal"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
 const (
 	openExchangeURLTemplate = "https://openexchangerates.org/api/latest.json?app_id=%s&symbols=GTQ"
-	openExchangeTimeout     = 5 * time.Second
 	openExchangeBodyLimit   = 64 * 1024 // 64 KB
 	openExchangeSourceName  = "openexchangerates"
 	// openExchangeAPIVersion is the OpenExchangeRates REST API version.
@@ -47,24 +48,33 @@ type OpenExchangeFetcher struct {
 }
 
 // NewOpenExchangeFetcher constructs the fetcher pointed at the real
-// openexchangerates.org endpoint. appID may be empty.
+// openexchangerates.org endpoint using the default timeout. appID may be empty.
 func NewOpenExchangeFetcher(appID string) *OpenExchangeFetcher {
-	return newOpenExchangeFetcher(appID, openExchangeURLTemplate)
+	return newOpenExchangeFetcher(appID, openExchangeURLTemplate,
+		time.Duration(domain.DefaultFXOpenExchangeTimeoutSec)*time.Second)
+}
+
+// NewOpenExchangeFetcherWithTimeout constructs the fetcher pointed at the real
+// openexchangerates.org endpoint with a configurable timeout. Use when reading
+// the timeout from system_params at worker startup.
+func NewOpenExchangeFetcherWithTimeout(appID string, timeout time.Duration) *OpenExchangeFetcher {
+	return newOpenExchangeFetcher(appID, openExchangeURLTemplate, timeout)
 }
 
 // NewOpenExchangeFetcherWithURL constructs the fetcher with a custom URL
-// template. Intended for tests that substitute a local httptest.Server.
-// urlTemplate must contain one %s placeholder for the app ID.
+// template and the default timeout. Intended for tests that substitute a local
+// httptest.Server. urlTemplate must contain one %s placeholder for the app ID.
 func NewOpenExchangeFetcherWithURL(appID, urlTemplate string) *OpenExchangeFetcher {
-	return newOpenExchangeFetcher(appID, urlTemplate)
+	return newOpenExchangeFetcher(appID, urlTemplate,
+		time.Duration(domain.DefaultFXOpenExchangeTimeoutSec)*time.Second)
 }
 
-func newOpenExchangeFetcher(appID, urlTemplate string) *OpenExchangeFetcher {
+func newOpenExchangeFetcher(appID, urlTemplate string, timeout time.Duration) *OpenExchangeFetcher {
 	return &OpenExchangeFetcher{
 		appID:       appID,
 		urlTemplate: urlTemplate,
 		client: &http.Client{
-			Timeout:   openExchangeTimeout,
+			Timeout:   timeout,
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		},
 	}

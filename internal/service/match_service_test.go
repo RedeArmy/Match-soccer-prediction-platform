@@ -113,6 +113,9 @@ func (*noopSystemParamService) BulkSet(_ context.Context, _ map[string]string, _
 func (*noopSystemParamService) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
 	return nil, nil
 }
+func (*noopSystemParamService) BulkPreview(_ context.Context, _ map[string]string) ([]domain.ParamDiff, error) {
+	return nil, nil
+}
 func (*noopSystemParamService) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
 	return nil, "", nil
 }

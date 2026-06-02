@@ -1,11 +1,15 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -141,25 +145,51 @@ func (h *AdminSystemParamHandler) Set(w http.ResponseWriter, r *http.Request) {
 
 type bulkSetParamRequest struct {
 	Params map[string]string `json:"params"`
+	// DryRun, when true, validates all params and returns the projected
+	// old→new diffs without persisting any change. Useful for previewing
+	// the impact of a bulk update before committing.
+	DryRun bool `json:"dry_run"`
+	// ConfirmSensitiveChanges must be true when the request modifies any
+	// scoring.* or payment.* parameter in a live (non-dry-run) BulkSet.
+	// Omitting it on a request that touches sensitive keys returns 422.
+	ConfirmSensitiveChanges bool `json:"confirm_sensitive_changes"`
 }
 
 // BulkSet handles POST /admin/system-params/bulk.
+//
+// # Dry-run mode
+//
+// When dry_run=true the request validates all params and returns a
+// BulkPreviewResponse showing the projected old→new diff for each key
+// (HTTP 200). No parameters are written. Use this before a live call
+// to review the impact, especially for sensitive parameters.
+//
+// # Sensitive-parameter confirmation
+//
+// Params in the scoring.* and payment.* categories affect all future match
+// scoring and user-facing financial limits respectively. A live BulkSet
+// (dry_run=false) that includes any such key returns 422 unless the request
+// also sets confirm_sensitive_changes=true. The error message names the
+// affected keys so the operator can review before re-submitting.
 //
 // @Summary      Bulk-update system parameters
 // @Description  Updates multiple system parameters in a single atomic operation.
 //
 //	Each key-value pair is upserted. The params map must not be empty.
-//	Requires admin role.
+//	Set dry_run=true to preview changes. Set confirm_sensitive_changes=true
+//	when the update includes scoring.* or payment.* keys. Requires admin role.
 //
 // @Tags         admin-system-params
 // @Accept       json
+// @Produce      json
 // @Security     BearerAuth
-// @Param        body  body  handler.bulkSetParamRequest  true  "Map of key -> value pairs"
-// @Success      204
-// @Failure      401  {object}  handler.ErrorResponse
-// @Failure      403  {object}  handler.ErrorResponse  "Caller is not an admin"
-// @Failure      422  {object}  handler.ErrorResponse  "params map is empty"
-// @Failure      500  {object}  handler.ErrorResponse
+// @Param        body  body  handler.bulkSetParamRequest  true  "Params map; optional dry_run and confirm_sensitive_changes flags"
+// @Success      200   {object}  handler.BulkPreviewResponse  "dry_run=true: projected diffs (no write)"
+// @Success      204   "Live update applied"
+// @Failure      401   {object}  handler.ErrorResponse
+// @Failure      403   {object}  handler.ErrorResponse  "Caller is not an admin"
+// @Failure      422   {object}  handler.ErrorResponse  "Validation error or sensitive keys without confirmation"
+// @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/system-params/bulk [post]
 func (h *AdminSystemParamHandler) BulkSet(w http.ResponseWriter, r *http.Request) {
 	caller, ok := middleware.UserFromContext(r.Context())
@@ -178,11 +208,51 @@ func (h *AdminSystemParamHandler) BulkSet(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if req.DryRun {
+		diffs, err := h.svc.BulkPreview(r.Context(), req.Params)
+		if err != nil {
+			writeError(w, r, h.log, err)
+			return
+		}
+		resp := BulkPreviewResponse{Diffs: make([]ParamDiffResponse, len(diffs))}
+		for i, d := range diffs {
+			resp.Diffs[i] = paramDiffToResponse(d)
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	if !req.ConfirmSensitiveChanges {
+		if keys := sensitiveKeysIn(req.Params); len(keys) > 0 {
+			writeError(w, r, h.log, apperrors.Validation(
+				fmt.Sprintf("sensitive params require confirm_sensitive_changes=true: %s",
+					strings.Join(keys, ", ")),
+			))
+			return
+		}
+	}
+
 	if err := h.svc.BulkSet(r.Context(), req.Params, caller.ID); err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// sensitiveKeysIn returns the sorted list of keys in params that belong to a
+// sensitive category (scoring.*, payment.*). Returns nil when none match.
+func sensitiveKeysIn(params map[string]string) []string {
+	var keys []string
+	for k := range params {
+		if domain.IsSensitiveParamKey(k) {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Reset handles POST /admin/system-params/{key}/reset.

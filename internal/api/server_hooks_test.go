@@ -67,6 +67,9 @@ func (s *hookParamSvc) BulkSet(_ context.Context, _ map[string]string, _ int) er
 func (s *hookParamSvc) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
 	return nil, nil
 }
+func (s *hookParamSvc) BulkPreview(_ context.Context, _ map[string]string) ([]domain.ParamDiff, error) {
+	return nil, nil
+}
 func (s *hookParamSvc) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
 	return nil, "", nil
 }

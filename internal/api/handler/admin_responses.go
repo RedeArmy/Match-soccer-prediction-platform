@@ -83,6 +83,22 @@ type AuditLogResponse struct {
 	CreatedAt    string         `json:"created_at"`
 }
 
+// ParamDiffResponse shows the projected old→new change for a single system
+// param, returned by BulkSet with dry_run=true.
+type ParamDiffResponse struct {
+	Key         string `json:"key"`
+	OldValue    string `json:"old_value"`
+	NewValue    string `json:"new_value"`
+	IsSensitive bool   `json:"is_sensitive"`
+}
+
+// BulkPreviewResponse is the response body for POST /admin/system-params/bulk
+// with dry_run=true. No parameters are written; the diffs show the projected
+// impact including which keys would require confirm_sensitive_changes=true.
+type BulkPreviewResponse struct {
+	Diffs []ParamDiffResponse `json:"diffs"`
+}
+
 // SystemParamResponse is the JSON representation of a SystemParam.
 type SystemParamResponse struct {
 	Key          string `json:"key"`
@@ -286,6 +302,15 @@ func auditLogToResponse(a *domain.AuditLog) AuditLogResponse {
 		resp.ActorRole = &s
 	}
 	return resp
+}
+
+func paramDiffToResponse(d domain.ParamDiff) ParamDiffResponse {
+	return ParamDiffResponse{
+		Key:         d.Key,
+		OldValue:    d.OldValue,
+		NewValue:    d.NewValue,
+		IsSensitive: d.IsSensitive,
+	}
 }
 
 func systemParamToResponse(p *domain.SystemParam) SystemParamResponse {

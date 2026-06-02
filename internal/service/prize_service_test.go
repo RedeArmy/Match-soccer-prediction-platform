@@ -256,3 +256,33 @@ func TestPrizeService_CreditPrize_OutboxWriteError_DoesNotPropagate(t *testing.T
 		t.Error("expected credited=false even when outbox write fails")
 	}
 }
+
+// ── NotifyFreezeOnly ──────────────────────────────────────────────────────────
+
+func TestPrizeService_NotifyFreezeOnly_WritesOutboxAndReturnsNil(t *testing.T) {
+	// NotifyFreezeOnly must write the outbox event for the notification workflow
+	// and return nil. The KYC gate and ledger must not be touched — those were
+	// committed in the atomic distribution transaction before this call.
+	ob := &prizeOutboxStub{}
+	svc := NewPrizeService(&prizeLedgerStub{}, &prizeKYCGateStub{}, &prizeKYCSvcStub{}, ob, nil, zap.NewNop())
+
+	err := svc.NotifyFreezeOnly(context.Background(), 42, 10_000, 1, "quiniela")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ob.written {
+		t.Error("expected outbox Write to be called for the freeze notification")
+	}
+}
+
+func TestPrizeService_NotifyFreezeOnly_OutboxWriteError_IsSwallowed(t *testing.T) {
+	// Notification failures must not block the caller — a failed notification
+	// for an already-committed freeze is recoverable via the DLQ.
+	ob := &prizeOutboxStub{writeErr: errors.New("outbox failure")}
+	svc := NewPrizeService(&prizeLedgerStub{}, &prizeKYCGateStub{}, &prizeKYCSvcStub{}, ob, nil, zap.NewNop())
+
+	err := svc.NotifyFreezeOnly(context.Background(), 7, 5_000, 2, "quiniela")
+	if err != nil {
+		t.Fatalf("outbox write error must not propagate from NotifyFreezeOnly; got: %v", err)
+	}
+}

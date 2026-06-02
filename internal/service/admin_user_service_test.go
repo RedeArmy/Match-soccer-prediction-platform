@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
 const (
@@ -268,4 +269,67 @@ func (r *transferTestMemberRepo) OldestActiveMember(_ context.Context, _, _ int)
 func (r *transferTestMemberRepo) SetRole(_ context.Context, membershipID int, _ domain.MembershipRole) error {
 	r.setRoleCalled = membershipID
 	return nil
+}
+
+// ── ListFiltered ───────────────────────────────────────────────────────────────
+
+func TestAdminUserService_ListFiltered_DelegatesToRepo(t *testing.T) {
+	users := []*domain.User{{ID: 10, Name: "Alice"}, {ID: 11, Name: "Bob"}}
+	ur := &stubUserRepo{users: users}
+	svc := newAdminUserSvc(ur, &stubMemberRepo{})
+
+	got, cursor, err := svc.ListFiltered(context.Background(),
+		repository.UserFilters{}, repository.CursorPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != len(users) {
+		t.Errorf("expected %d users, got %d", len(users), len(got))
+	}
+	if cursor != "" {
+		t.Errorf("expected empty cursor, got %q", cursor)
+	}
+}
+
+func TestAdminUserService_ListFiltered_RepoError_Propagates(t *testing.T) {
+	ur := &stubUserRepo{err: errors.New("db error")}
+	svc := newAdminUserSvc(ur, &stubMemberRepo{})
+
+	_, _, err := svc.ListFiltered(context.Background(),
+		repository.UserFilters{}, repository.CursorPage{Limit: 10})
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+}
+
+// ── GetProfile ─────────────────────────────────────────────────────────────────
+
+func TestAdminUserService_GetProfile_ReturnsAggregatedView(t *testing.T) {
+	user := &domain.User{ID: 5, Name: "Carlos"}
+	memberships := []*domain.GroupMembership{{ID: 1, QuinielaID: 10, UserID: 5}}
+
+	ur := &stubUserRepo{user: user}
+	mr := &stubMemberRepo{memberships: memberships}
+	svc := newAdminUserSvc(ur, mr)
+
+	profile, err := svc.GetProfile(context.Background(), 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if profile.User == nil || profile.User.ID != 5 {
+		t.Errorf("expected user ID 5, got %+v", profile.User)
+	}
+	if len(profile.Memberships) != 1 {
+		t.Errorf("expected 1 membership, got %d", len(profile.Memberships))
+	}
+}
+
+func TestAdminUserService_GetProfile_UserNotFound_ReturnsError(t *testing.T) {
+	ur := &stubUserRepo{err: errors.New("not found")}
+	svc := newAdminUserSvc(ur, &stubMemberRepo{})
+
+	_, err := svc.GetProfile(context.Background(), 99)
+	if err == nil {
+		t.Fatal("expected error when user not found, got nil")
+	}
 }

@@ -415,6 +415,9 @@ func AllParamKeys() []string {
 		ParamKeyFXSellMarginBPS,
 		ParamKeyFXDisplayDecimals,
 		ParamKeyFXStaleThresholdH,
+		ParamKeyFXBanguatTimeoutSec,
+		ParamKeyFXExchangeRateAPITimeoutSec,
+		ParamKeyFXOpenExchangeTimeoutSec,
 		// Notification subsystem (constants_notify.go)
 		ParamKeyNotifyBankTransferStaleSec,
 		ParamKeyNotifyWithdrawalStaleSec,

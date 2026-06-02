@@ -169,12 +169,29 @@ func TestBuildExpectedKeysSet_ContainsAllParamKeys(t *testing.T) {
 	}
 }
 
-func TestCheckUnexpectedParams_NoPanic(t *testing.T) {
-	known := []dbParam{{key: allParams[0].key}}
-	unknown := []dbParam{{key: "unknown.key.xyz"}}
-	// These just print to stdout; we verify they don't panic.
-	checkUnexpectedParams(known)
-	checkUnexpectedParams(unknown)
+func TestCheckUnexpectedParams_KnownKey_ReturnsNoErrors(t *testing.T) {
+	errs := checkUnexpectedParams([]dbParam{{key: allParams[0].key}})
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for a known key, got %v", errs)
+	}
+}
+
+func TestCheckUnexpectedParams_OrphanKey_ReturnsError(t *testing.T) {
+	errs := checkUnexpectedParams([]dbParam{{key: "orphan.key.xyz"}})
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error for orphan key, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestCheckUnexpectedParams_MixedKeys_OnlyOrphansError(t *testing.T) {
+	params := []dbParam{
+		{key: allParams[0].key},    // known
+		{key: "orphan.legacy.key"}, // orphan
+	}
+	errs := checkUnexpectedParams(params)
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error (orphan only), got %d: %v", len(errs), errs)
+	}
 }
 
 func TestReportResults_NoErrors_ReturnsNil(t *testing.T) {
@@ -288,18 +305,18 @@ func TestValidateFromParams_MissingParam_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestValidateFromParams_UnexpectedParamInDB_NoPanic(t *testing.T) {
+func TestValidateFromParams_OrphanParamInDB_ReturnsError(t *testing.T) {
 	saved := allParams
 	allParams = []paramSpec{{key: "a.b", defaultValue: "5", paramType: "int", category: "group"}}
 	defer func() { allParams = saved }()
 
-	// DB contains a.b (valid) plus an unknown key — checkUnexpectedParams prints warning, no panic.
+	// DB contains a.b (valid) plus an orphan key with no Go constant — must fail.
 	params := []dbParam{
 		{key: "a.b", value: "5", defaultValue: "5", paramType: "int", category: "group", description: "ok"},
-		{key: "unknown.key", value: "x", defaultValue: "x", paramType: "string", category: "other", description: "?"},
+		{key: "orphan.legacy.key", value: "x", defaultValue: "x", paramType: "string", category: "other", description: "?"},
 	}
-	if err := validateFromParams(params); err != nil {
-		t.Errorf("unexpected error: %v", err)
+	if err := validateFromParams(params); err == nil {
+		t.Fatal("expected error for orphan DB param, got nil")
 	}
 }
 
@@ -324,183 +341,35 @@ func TestRun_MissingEnvVar_PropagatesError(t *testing.T) {
 	}
 }
 
-// TestAllParamsHaveConstant verifies that every paramSpec in allParams references
-// a valid ParamKey constant from domain/constants.go. This catches typos and
-// ensures the validator stays synchronized with the domain package.
+// TestAllParamsHaveConstant verifies bidirectional coverage between allParams
+// and domain.AllParamKeys():
+//
+//   - Every paramSpec key must appear in domain.AllParamKeys() — catches typos
+//     and keys added to allParams without a corresponding Go constant.
+//   - Every domain.AllParamKeys() entry must have a paramSpec — catches constants
+//     added to constants.go without being wired into the validator.
+//
+// Previously this test maintained a ~140-entry hardcoded map that had to be
+// kept in sync manually. Using domain.AllParamKeys() removes that maintenance
+// burden: the test is automatically correct whenever AllParamKeys() is updated.
 func TestAllParamsHaveConstant(t *testing.T) {
-	// Map of all valid ParamKey constants (keep in sync with domain/constants.go)
-	validKeys := map[string]bool{
-		domain.ParamKeyScoringExactScore:        true,
-		domain.ParamKeyScoringCorrectOutcome:    true,
-		domain.ParamKeyScoringGoalDiff:          true,
-		domain.ParamKeyScoringExtraTimeBonus:    true,
-		domain.ParamKeyScoringPenaltiesBonus:    true,
-		domain.ParamKeyScoringUpdateChunkSize:   true,
-		domain.ParamKeyPredictionDeadlineMin:    true,
-		domain.ParamKeyGroupMinMembers:          true,
-		domain.ParamKeyGroupMaxSize:             true,
-		domain.ParamKeyGroupInviteCodeLength:    true,
-		domain.ParamKeyConflictStaleDays:        true,
-		domain.ParamKeyConflictMaxScan:          true,
-		domain.ParamKeyPaginationDefaultLimit:   true,
-		domain.ParamKeyPaginationMaxLimit:       true,
-		domain.ParamKeyTournamentWinPoints:      true,
-		domain.ParamKeyAdminBulkMaxItems:        true,
-		domain.ParamKeyCacheMatchTTL:            true,
-		domain.ParamKeyCacheLeaderboardTTL:      true,
-		domain.ParamKeyCacheDashboardTTLSeconds: true,
-		domain.ParamKeyAuditWriteTimeout:        true,
-		domain.ParamKeyAuthValidationTimeout:    true,
-		domain.ParamKeyPurgeRetentionDays:       true,
-		domain.ParamKeyDLQSampleSize:            true,
-		domain.ParamKeyDLQReplayDefaultLimit:    true,
-		domain.ParamKeyMessagingMaxRetries:      true,
-		domain.ParamKeyMessagingStreamMaxLen:    true,
-		// Added by migration 000055
-		domain.ParamKeyMessagingStreamWorkerCount:  true,
-		domain.ParamKeyMessagingStreamReadBlockSec: true,
-		domain.ParamKeyAuditMaxRetries:             true,
-		domain.ParamKeyAuditRetryDelayMs:           true,
-		domain.ParamKeyWorkerSnapshotConcurrency:   true,
-		domain.ParamKeyWorkerSnapshotRetryBaseMs:   true,
-		domain.ParamKeyWorkerSnapshotMaxAttempts:   true,
-		domain.ParamKeyWorkerDLQMonitorIntervalSec: true,
-		domain.ParamKeyWorkerPurgeIntervalHours:    true,
-		domain.ParamKeyAPIBodySizeLimitBytes:       true,
-		domain.ParamKeySnapshotKeepLatestCount:     true,
-		// Added by migration 000073
-		domain.ParamKeyPaymentMaxUploadBytes: true,
-		domain.ParamKeyWithdrawalMinCents:    true,
-		domain.ParamKeyWithdrawalMaxCents:    true,
-		// Added by migration 000074
-		domain.ParamKeyBankTransferMinAmountCents: true,
-		domain.ParamKeyBankTransferMaxAmountCents: true,
-		// Added by migration 000076
-		domain.ParamKeyPaymentIntentTTLMinutes: true,
-		// Added by migration 000079
-		domain.ParamKeyAPIRateLimitRatePerSec: true,
-		domain.ParamKeyAPIRateLimitBurst:      true,
-		// Added by migration 000080
-		domain.ParamKeyAPIIdempotencyTTLHours:       true,
-		domain.ParamKeyAPIIdempotencyKeyMaxLen:      true,
-		domain.ParamKeyBreakerPaypalCertMaxFails:    true,
-		domain.ParamKeyBreakerPaypalCertCooldownSec: true,
-		domain.ParamKeyBreakerFileStoreMaxFails:     true,
-		domain.ParamKeyBreakerFileStoreCooldownSec:  true,
-		domain.ParamKeyTxRetryMaxAttempts:           true,
-		domain.ParamKeyTxRetryBaseDelayMs:           true,
-		domain.ParamKeyTxRetryMaxDelayMs:            true,
-		// Added by migration 000087
-		domain.ParamKeyNotifyBankTransferStaleSec:            true,
-		domain.ParamKeyNotifyWithdrawalStaleSec:              true,
-		domain.ParamKeyNotifyHighValueWithdrawalCents:        true,
-		domain.ParamKeyNotifyPendingReminderIntervalSec:      true,
-		domain.ParamKeyNotifyPredictionDeadlineLeadMin1:      true,
-		domain.ParamKeyNotifyPredictionDeadlineLeadMin2:      true,
-		domain.ParamKeyNotifyPredictionMissingLeadMin:        true,
-		domain.ParamKeyNotifyBankTransferQueueDepthThreshold: true,
-		domain.ParamKeyNotifyAdminEmails:                     true,
-		domain.ParamKeyNotifyWebPushVAPIDPublicKey:           true,
-		domain.ParamKeyNotifyWebPushVAPIDSubject:             true,
-		// Added by migration 000088
-		domain.ParamKeyNotifySSEHeartbeatIntervalSec: true,
-		domain.ParamKeyNotifyWebPushTTLSec:           true,
-		// Added by migration 000089
-		domain.ParamKeyNotifyPushIconURL:  true,
-		domain.ParamKeyNotifyPushBadgeURL: true,
-		// Added by migration 000090
-		domain.ParamKeyNotifySchedulerTimezone: true,
-		// Added by migration 000094
-		domain.ParamKeyNotifyDefaultLocale: true,
-		// Added by migration 000099
-		domain.ParamKeyNotifyTemplateCacheTTLSec: true,
-		domain.ParamKeyNotifyPushTitleMaxChars:   true,
-		domain.ParamKeyNotifyPushBodyMaxChars:    true,
-		// Added by migration 000102
-		domain.ParamKeyNotifyPushSubRetentionDays: true,
-		// Added by migration 000103
-		domain.ParamKeyNotifyFromAddress: true,
-		// Added by migration 000105
-		domain.ParamKeyNotifyPushDigestWindowSec: true,
-		domain.ParamKeyNotifyPushDigestThreshold: true,
-		// Added by migration 000106
-		domain.ParamKeySystemParamHistoryRetentionDays: true,
-		// Added by migration 000107
-		domain.ParamKeyWorkerSchedPredDeadlineIntervalSec:    true,
-		domain.ParamKeyWorkerSchedMatchResultIntervalSec:     true,
-		domain.ParamKeyWorkerSchedPendingReminderIntervalSec: true,
-		domain.ParamKeyWorkerSchedStaleEscalationIntervalSec: true,
-		domain.ParamKeyWorkerSchedPushPruneIntervalSec:       true,
-		domain.ParamKeyNotifyRenderTimeoutMs:                 true,
-		// Added by migration 000110
-		domain.ParamKeyNotifyDLQReplayBatchSize:       true,
-		domain.ParamKeyNotifyDLQReplayPollIntervalSec: true,
-		domain.ParamKeyNotifyDLQReplayMaxAttempts:     true,
-		domain.ParamKeyNotifyDLQReplayAlertThreshold:  true,
-		// Added by migration 000111
-		domain.ParamKeyNotifyOutboxBatchSize:            true,
-		domain.ParamKeyNotifyOutboxPollIntervalSec:      true,
-		domain.ParamKeyNotifyOutboxLockDurationSec:      true,
-		domain.ParamKeyNotifyOutboxMaxAttempts:          true,
-		domain.ParamKeyNotifyOutboxLagAlertThresholdSec: true,
-		// Added by migration 000112
-		domain.ParamKeyNotifyOutboxLagCriticalSec: true,
-		domain.ParamKeyNotifyDLQWarningThreshold:  true,
-		// Added by migration 000113
-		domain.ParamKeyNotifySSEChanBufSize:              true,
-		domain.ParamKeyNotifyOutboxStaleLockThresholdSec: true,
-		// Added by migration 000136
-		domain.ParamKeyNotifySSEMaxConnsPerUser: true,
-		// Added by migration 000114
-		domain.ParamKeyBreakerCacheMaxFails:    true,
-		domain.ParamKeyBreakerCacheCooldownSec: true,
-		// Added by migrations 000121 + 000125
-		domain.ParamKeyKYCTier1DepositLimitCents:       true,
-		domain.ParamKeyKYCTier2DepositLimitCents:       true,
-		domain.ParamKeyKYCTier2PayoutLimitCents:        true,
-		domain.ParamKeyKYCAMLThresholdCents:            true,
-		domain.ParamKeyKYCReviewIntervalDays:           true,
-		domain.ParamKeyKYCMaxDocUploadBytes:            true,
-		domain.ParamKeyKYCTier1DepositVelocityCents:    true,
-		domain.ParamKeyKYCTier2DepositVelocityCents:    true,
-		domain.ParamKeyKYCTier1WithdrawalVelocityCents: true,
-		domain.ParamKeyKYCTier2WithdrawalVelocityCents: true,
-		domain.ParamKeyKYCRiskDashboardCacheTTLSec:     true,
-		// Added by migration 000129
-		domain.ParamKeyKYCIPVelocityWindowMinutes:  true,
-		domain.ParamKeyKYCIPVelocityMaxSubmissions: true,
-		// IP rate limiting (migration 000142)
-		domain.ParamKeyIPRateLimitGlobalRPS:    true,
-		domain.ParamKeyIPRateLimitGlobalBurst:  true,
-		domain.ParamKeyIPRateLimitWebhookRPS:   true,
-		domain.ParamKeyIPRateLimitWebhookBurst: true,
-		// KYC document retention (migration 000144)
-		domain.ParamKeyKYCDocRetentionYears: true,
-		// USD/GTQ exchange rate (migration 000147)
-		domain.ParamKeyUSDGTQRate: true,
-		// Exchange rate safety margin (migration 000148)
-		domain.ParamKeyExchangeRateMarginBPS: true,
-		// Competitive FX margin engine (migration 000150)
-		domain.ParamKeyFXBuyMarginBPS:    true,
-		domain.ParamKeyFXSellMarginBPS:   true,
-		domain.ParamKeyFXDisplayDecimals: true,
-		domain.ParamKeyFXStaleThresholdH: true,
-		// Payment intent amount cap (migration 000151)
-		domain.ParamKeyPaymentIntentMaxCents: true,
-		// Admin panel rate limiting (migration 000153)
-		domain.ParamKeyAdminRateLimitRatePerSec: true,
-		domain.ParamKeyAdminRateLimitBurst:      true,
-		// Audit goroutine ceiling (migration 000154)
-		domain.ParamKeyAuditMaxInFlight: true,
-		// FX history retention (migration 000155)
-		domain.ParamKeyFXHistoryRetentionDays: true,
-		// Outbox terminal-row retention (migration 000158)
-		domain.ParamKeyOutboxRetentionDays: true,
+	domainKeys := make(map[string]bool, len(domain.AllParamKeys()))
+	for _, k := range domain.AllParamKeys() {
+		domainKeys[k] = true
 	}
 
+	// allParams → domain: every paramSpec must reference a known constant.
 	for _, spec := range allParams {
-		if !validKeys[spec.key] {
-			t.Errorf("paramSpec references unknown key %q - not a valid ParamKey* constant", spec.key)
+		if !domainKeys[spec.key] {
+			t.Errorf("paramSpec references unknown key %q — not in domain.AllParamKeys()", spec.key)
+		}
+	}
+
+	// domain → allParams: every constant must have a paramSpec entry.
+	allParamsKeys := buildExpectedKeysSet()
+	for _, k := range domain.AllParamKeys() {
+		if !allParamsKeys[k] {
+			t.Errorf("domain.AllParamKeys() contains %q but it has no paramSpec in allParams — add it or remove the constant", k)
 		}
 	}
 }
@@ -565,7 +434,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 131 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125, +2 ip velocity from 000129, +1 sse max conns from 000136, +1 scoring chunk size from 000138, +4 ip rate limit from 000142, +1 kyc doc retention from 000144, +1 usd_gtq_rate from 000147, +1 exchange_rate_margin from 000148, +4 fx margin from 000150, +1 intent_max_cents from 000151, +2 admin rate limit from 000153, +1 audit max_in_flight from 000154, +1 fx history retention from 000155, +1 outbox retention from 000158)
+	const expectedCount = 137 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125, +2 ip velocity from 000129, +1 sse max conns from 000136, +1 scoring chunk size from 000138, +4 ip rate limit from 000142, +1 kyc doc retention from 000144, +1 usd_gtq_rate from 000147, +1 exchange_rate_margin from 000148, +4 fx margin from 000150, +1 intent_max_cents from 000151, +2 admin rate limit from 000153, +1 audit max_in_flight from 000154, +1 fx history retention from 000155, +1 outbox retention from 000158, +3 sse evict+lb publish from 000160, +3 fx timeouts from 000161)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

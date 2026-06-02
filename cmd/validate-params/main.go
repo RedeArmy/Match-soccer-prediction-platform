@@ -77,6 +77,7 @@ type paramSpec struct {
 //   - 000155_seed_fx_history_retention_param     (+1)
 //   - 000158_seed_outbox_retention_param         (+1)
 //   - 000160_seed_sse_broadcaster_params         (+3)
+//   - 000161_seed_fx_source_timeout_params       (+3)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -209,6 +210,10 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyFXStaleThresholdH, defaultValue: strconv.Itoa(domain.DefaultFXStaleThresholdH), paramType: "int", category: "fx", isRuntime: true},
 	// FX history retention (migration 000155); not runtime — worker restart required.
 	{key: domain.ParamKeyFXHistoryRetentionDays, defaultValue: strconv.Itoa(domain.DefaultFXHistoryRetentionDays), paramType: "int", category: "fx", isRuntime: false},
+	// FX source HTTP client timeouts (migration 000161); not runtime — worker restart required.
+	{key: domain.ParamKeyFXBanguatTimeoutSec, defaultValue: strconv.Itoa(domain.DefaultFXBanguatTimeoutSec), paramType: "int", category: "fx", isRuntime: false},
+	{key: domain.ParamKeyFXExchangeRateAPITimeoutSec, defaultValue: strconv.Itoa(domain.DefaultFXExchangeRateAPITimeoutSec), paramType: "int", category: "fx", isRuntime: false},
+	{key: domain.ParamKeyFXOpenExchangeTimeoutSec, defaultValue: strconv.Itoa(domain.DefaultFXOpenExchangeTimeoutSec), paramType: "int", category: "fx", isRuntime: false},
 
 	// Notifications — runtime: thresholds and recipient list are tunable without restart.
 	{key: domain.ParamKeyNotifyBankTransferStaleSec, defaultValue: strconv.Itoa(domain.DefaultNotifyBankTransferStaleSec), paramType: "int", category: "notify", isRuntime: true},
@@ -347,7 +352,7 @@ func run() error {
 func validateFromParams(dbParams []dbParam) error {
 	dbMap := buildParamMap(dbParams)
 	errors := validateAllParams(dbMap)
-	checkUnexpectedParams(dbParams)
+	errors = append(errors, checkUnexpectedParams(dbParams)...)
 	return reportResults(errors)
 }
 
@@ -450,13 +455,23 @@ func printValidParam(spec paramSpec, db dbParam) {
 	fmt.Printf("✅ %s = %s (%s, %s)\n", spec.key, db.value, db.paramType, db.category)
 }
 
-func checkUnexpectedParams(dbParams []dbParam) {
+// checkUnexpectedParams returns an error for each DB row whose key has no
+// corresponding ParamKey* constant in domain/constants.go. An unexpected row
+// means a seeding migration added a key without also adding a Go constant and
+// wiring it into allParams — the row is dead weight that operators cannot
+// manage via the admin API.
+func checkUnexpectedParams(dbParams []dbParam) []string {
 	expectedKeys := buildExpectedKeysSet()
+	var errs []string
 	for _, db := range dbParams {
 		if !expectedKeys[db.key] {
-			fmt.Printf("⚠️  UNEXPECTED PARAM IN DB: %s (not defined in constants.go) — consider removing or documenting\n", db.key)
+			errs = append(errs, fmt.Sprintf(
+				"❌ ORPHAN PARAM IN DB: %q has no ParamKey* constant — add a constant and paramSpec, or remove the row via a cleanup migration",
+				db.key,
+			))
 		}
 	}
+	return errs
 }
 
 func buildExpectedKeysSet() map[string]bool {

@@ -451,10 +451,9 @@ func computeRates(reference decimal.Decimal, buyBPS, sellBPS int, source string,
 // Formula: centavos = floor(sellRate × 100).
 func (s *ExchangeRateServiceImpl) writeUSDGTQRate(ctx context.Context, sellRate decimal.Decimal) error {
 	centavos := sellRate.Mul(decimal.NewFromInt(100)).Floor().IntPart()
-	const minCentavos, maxCentavos = int64(100), int64(10_000)
-	if centavos < minCentavos || centavos > maxCentavos {
+	if centavos < domain.USDGTQRateMinCentavos || centavos > domain.USDGTQRateMaxCentavos {
 		return fmt.Errorf("sell rate %s → %d centavos is outside [%d, %d]",
-			sellRate, centavos, minCentavos, maxCentavos)
+			sellRate, centavos, domain.USDGTQRateMinCentavos, domain.USDGTQRateMaxCentavos)
 	}
 	_, err := s.params.Set(ctx, domain.ParamKeyUSDGTQRate, strconv.FormatInt(centavos, 10), systemActorID)
 	return err

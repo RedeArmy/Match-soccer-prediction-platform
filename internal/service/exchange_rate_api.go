@@ -8,11 +8,12 @@ import (
 
 	"github.com/shopspring/decimal"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
 const (
 	exchangeRateAPIURLTemplate = "https://v6.exchangerate-api.com/v6/%s/pair/USD/GTQ"
-	exchangeRateAPITimeout     = 5 * time.Second
 	exchangeRateAPIBodyLimit   = 64 * 1024 // 64 KB
 	exchangeRateAPISourceName  = "exchangerate-api"
 	// exchangeRateAPIVersion reflects the "v6" path segment in the URL above.
@@ -45,24 +46,33 @@ type ExchangeRateAPIFetcher struct {
 }
 
 // NewExchangeRateAPIFetcher constructs the fetcher pointed at the real
-// v6.exchangerate-api.com endpoint. apiKey may be empty.
+// v6.exchangerate-api.com endpoint using the default timeout. apiKey may be empty.
 func NewExchangeRateAPIFetcher(apiKey string) *ExchangeRateAPIFetcher {
-	return newExchangeRateAPIFetcher(apiKey, exchangeRateAPIURLTemplate)
+	return newExchangeRateAPIFetcher(apiKey, exchangeRateAPIURLTemplate,
+		time.Duration(domain.DefaultFXExchangeRateAPITimeoutSec)*time.Second)
+}
+
+// NewExchangeRateAPIFetcherWithTimeout constructs the fetcher pointed at the
+// real v6.exchangerate-api.com endpoint with a configurable timeout. Use when
+// reading the timeout from system_params at worker startup.
+func NewExchangeRateAPIFetcherWithTimeout(apiKey string, timeout time.Duration) *ExchangeRateAPIFetcher {
+	return newExchangeRateAPIFetcher(apiKey, exchangeRateAPIURLTemplate, timeout)
 }
 
 // NewExchangeRateAPIFetcherWithURL constructs the fetcher with a custom URL
-// template. Intended for tests that substitute a local httptest.Server.
-// urlTemplate must contain one %s placeholder for the API key.
+// template and the default timeout. Intended for tests that substitute a local
+// httptest.Server. urlTemplate must contain one %s placeholder for the API key.
 func NewExchangeRateAPIFetcherWithURL(apiKey, urlTemplate string) *ExchangeRateAPIFetcher {
-	return newExchangeRateAPIFetcher(apiKey, urlTemplate)
+	return newExchangeRateAPIFetcher(apiKey, urlTemplate,
+		time.Duration(domain.DefaultFXExchangeRateAPITimeoutSec)*time.Second)
 }
 
-func newExchangeRateAPIFetcher(apiKey, urlTemplate string) *ExchangeRateAPIFetcher {
+func newExchangeRateAPIFetcher(apiKey, urlTemplate string, timeout time.Duration) *ExchangeRateAPIFetcher {
 	return &ExchangeRateAPIFetcher{
 		apiKey:      apiKey,
 		urlTemplate: urlTemplate,
 		client: &http.Client{
-			Timeout:   exchangeRateAPITimeout,
+			Timeout:   timeout,
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		},
 	}

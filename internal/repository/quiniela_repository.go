@@ -3,11 +3,15 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -17,12 +21,47 @@ const errMsgDuplicateGroupName = "a group with this name already exists"
 
 // PostgresQuinielaRepository is the PostgreSQL-backed implementation of QuinielaRepository.
 type PostgresQuinielaRepository struct {
-	db *pgxpool.Pool
+	db               *pgxpool.Pool
+	log              *zap.Logger
+	freezeSkipCounter metric.Int64Counter // nil until RegisterMetrics is called
+}
+
+// QuinielaRepoOption is a functional option for NewPostgresQuinielaRepository.
+type QuinielaRepoOption func(*PostgresQuinielaRepository)
+
+// WithQuinielaLogger wires a structured logger into the repository. When omitted
+// the repository defaults to zap.NewNop() — callers that do not need log output
+// require no change.
+func WithQuinielaLogger(log *zap.Logger) QuinielaRepoOption {
+	return func(r *PostgresQuinielaRepository) { r.log = log }
 }
 
 // NewPostgresQuinielaRepository constructs a PostgresQuinielaRepository.
-func NewPostgresQuinielaRepository(db *pgxpool.Pool) *PostgresQuinielaRepository {
-	return &PostgresQuinielaRepository{db: db}
+// Pass WithQuinielaLogger to enable structured error logging.
+func NewPostgresQuinielaRepository(db *pgxpool.Pool, opts ...QuinielaRepoOption) *PostgresQuinielaRepository {
+	r := &PostgresQuinielaRepository{db: db, log: zap.NewNop()}
+	for _, o := range opts {
+		o(r)
+	}
+	return r
+}
+
+// RegisterMetrics wires the wcq_prize_freeze_skipped_total counter so that
+// missing kyc_profiles rows during prize distribution are visible in Prometheus.
+// Call once at startup after the global meter provider is initialised. Safe to
+// skip in tests — nil counter is a no-op in applyPrizeFreezeTx.
+func (r *PostgresQuinielaRepository) RegisterMetrics(meter metric.Meter) error {
+	c, err := meter.Int64Counter(
+		"wcq_prize_freeze_skipped_total",
+		metric.WithDescription("Number of prize distribution freeze operations silently skipped "+
+			"because the winner's kyc_profiles row was missing. Non-zero values indicate a "+
+			"data integrity violation requiring manual kyc_profiles backfill."),
+	)
+	if err != nil {
+		return err
+	}
+	r.freezeSkipCounter = c
+	return nil
 }
 
 const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, status, created_at, updated_at, deleted_at"
@@ -355,7 +394,7 @@ func (r *PostgresQuinielaRepository) DistributePrizesAtomically(
 			}
 		}
 		for _, f := range freezes {
-			if err := applyPrizeFreezeTx(ctx, tx, f); err != nil {
+			if err := r.applyPrizeFreezeTx(ctx, tx, f); err != nil {
 				return err
 			}
 		}
@@ -426,31 +465,62 @@ func applyPrizeCreditTx(ctx context.Context, tx pgx.Tx, c PrizeCredit) error {
 	})
 }
 
-// applyPrizeFreezeTx freezes the prize share of a single KYC-gated winner
-// inside an open transaction by setting balance_frozen on their kyc_profile.
-// Every user is guaranteed to have a kyc_profiles row (created at registration
-// via EnsureStub and backfilled by migration 000133), so RowsAffected() == 0
-// indicates an unexpected data integrity issue and is logged at Error level
-// rather than rolling back the entire distribution.
-func applyPrizeFreezeTx(ctx context.Context, tx pgx.Tx, f PrizeFreeze) error {
-	_, err := tx.Exec(ctx,
-		`UPDATE kyc_profiles
-		    SET balance_frozen      = TRUE,
-		        frozen_amount_cents = $2,
-		        frozen_reason       = $3,
-		        updated_at          = NOW()
-		  WHERE user_id = $1`,
-		f.UserID, f.AmountCents, f.Reason,
-	)
+// applyPrizeFreezeTx freezes the prize share of a single KYC-gated winner and
+// writes the kyc_events audit row inside the same transaction. Atomically
+// committing both writes closes the window where a crash after the freeze but
+// before the audit event left the compliance trail incomplete.
+//
+// Missing row handling: EnsureStub at registration and migration 000133
+// guarantee every user has a kyc_profiles row, so pgx.ErrNoRows is an
+// invariant violation. The method does not return an error in that case to
+// avoid rolling back the entire distribution and denying prizes to all other
+// winners; instead it logs at Error and increments wcq_prize_freeze_skipped_total.
+func (r *PostgresQuinielaRepository) applyPrizeFreezeTx(ctx context.Context, tx pgx.Tx, f PrizeFreeze) error {
+	var profileID int
+	var status string
+	err := tx.QueryRow(ctx, `
+		UPDATE kyc_profiles
+		   SET balance_frozen      = TRUE,
+		       frozen_amount_cents = $2,
+		       frozen_reason       = $3,
+		       updated_at          = NOW()
+		 WHERE user_id = $1
+		RETURNING id, status
+	`, f.UserID, f.AmountCents, f.Reason).Scan(&profileID, &status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			r.log.Error("prize_freeze_skipped: kyc_profiles row missing for winner",
+				zap.Int("user_id", f.UserID),
+				zap.Int("amount_cents", f.AmountCents),
+			)
+			if r.freezeSkipCounter != nil {
+				r.freezeSkipCounter.Add(ctx, 1)
+			}
+			return nil
+		}
+		return apperrors.Internal(err)
+	}
+	metadata := fmt.Sprintf(`{"frozen_amount_cents":%d}`, f.AmountCents)
+	traceID := traceIDFromContext(ctx)
+	_, err = tx.Exec(ctx, `
+		INSERT INTO kyc_events
+		      (profile_id, profile_type, event_type, old_status, new_status, reason, metadata, trace_id)
+		VALUES ($1, 'user', 'frozen', $2, $2, $3, $4::jsonb, $5)
+	`, profileID, status, f.Reason, metadata, traceID)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
-	// RowsAffected() == 0 means the kyc_profiles row is missing. EnsureStub at
-	// registration and migration 000133 guarantee every user has a row, so this
-	// is an invariant violation. We intentionally do not return an error: doing so
-	// would roll back the entire distribution and deny prizes to all other winners.
-	// The operator can backfill the missing row without re-running distribution.
 	return nil
+}
+
+// traceIDFromContext extracts the W3C trace ID from the context span.
+// Returns an empty string when no valid span is present.
+func traceIDFromContext(ctx context.Context) string {
+	sc := trace.SpanFromContext(ctx).SpanContext()
+	if !sc.IsValid() {
+		return ""
+	}
+	return sc.TraceID().String()
 }
 
 var _ QuinielaRepository = (*PostgresQuinielaRepository)(nil)

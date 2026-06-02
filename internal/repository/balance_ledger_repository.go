@@ -54,7 +54,7 @@ func (r *PostgresBalanceLedgerRepository) Credit(ctx context.Context, userID, de
 func (r *PostgresBalanceLedgerRepository) Debit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
-	return withTx(ctx, r.db, "BalanceLedgerRepository.Debit", func(tx pgx.Tx) error {
+	return withRetryTx(ctx, r.db, "BalanceLedgerRepository.Debit", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
 			UPDATE users
@@ -104,7 +104,7 @@ func (r *PostgresBalanceLedgerRepository) Reserve(ctx context.Context, userID, a
 func (r *PostgresBalanceLedgerRepository) ReleaseReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
-	return withTx(ctx, r.db, "BalanceLedgerRepository.ReleaseReservation", func(tx pgx.Tx) error {
+	return withRetryTx(ctx, r.db, "BalanceLedgerRepository.ReleaseReservation", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
 			UPDATE users
@@ -134,7 +134,7 @@ func (r *PostgresBalanceLedgerRepository) ReleaseReservation(ctx context.Context
 func (r *PostgresBalanceLedgerRepository) CommitReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
-	return withTx(ctx, r.db, "BalanceLedgerRepository.CommitReservation", func(tx pgx.Tx) error {
+	return withRetryTx(ctx, r.db, "BalanceLedgerRepository.CommitReservation", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
 			UPDATE users

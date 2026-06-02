@@ -314,6 +314,25 @@ func (s *stubPrizeCrediter) CreditPrize(_ context.Context, _, _ int, _ int64, _ 
 	return s.credited, s.err
 }
 
+func (s *stubPrizeCrediter) NotifyFreezeOnly(_ context.Context, _, _ int, _ int64, _ string) error {
+	return s.err
+}
+
+// capturingPrizeCrediter records NotifyFreezeOnly calls for assertion in tests
+// that verify the post-distribution notification loop passes the correct amount.
+type capturingPrizeCrediter struct {
+	notifyCalls []struct{ userID, amount int }
+}
+
+func (c *capturingPrizeCrediter) CreditPrize(_ context.Context, _, _ int, _ int64, _ string) (bool, error) {
+	return false, nil
+}
+
+func (c *capturingPrizeCrediter) NotifyFreezeOnly(_ context.Context, userID, amount int, _ int64, _ string) error {
+	c.notifyCalls = append(c.notifyCalls, struct{ userID, amount int }{userID, amount})
+	return nil
+}
+
 func newDistributeSvc(q *stubQuinielaRepo, ranker *noopRanker, prize *stubPrizeCrediter) AdminGroupService {
 	svc := NewAdminGroupService(q, &stubMemberRepo{}, &noopSnapshotter{}, ranker, &noopAuditLogger{}, zap.NewNop())
 	if prize != nil {
@@ -609,5 +628,48 @@ func TestAdminGroupService_DistributePrizes_RemainderWithKYCFreeze(t *testing.T)
 	total := gotFreezeAmounts[0] + gotCreditAmounts[0] + gotCreditAmounts[1]
 	if total != 10_000 {
 		t.Errorf("total distributed %d cents; want 10 000", total)
+	}
+}
+
+// TestAdminGroupService_DistributePrizes_PostLoopPassesCorrectAmountForFrozenWinner
+// verifies that the amount forwarded to CreditPrize in the post-transaction
+// notification loop matches the amount stored in the atomic freeze — including
+// the integer-division remainder for the first-ranked frozen winner.
+// This guards against the bug where the post-loop previously passed
+// prizePerWinner (without remainder) instead of the winner's actual amount.
+func TestAdminGroupService_DistributePrizes_PostLoopPassesCorrectAmountForFrozenWinner(t *testing.T) {
+	// Pool = 10 000, 3 winners → prizePerWinner=3 333, remainder=1.
+	// Winner 1 is Tier0 (freeze path) and should have gotten 3 334.
+	// The post-loop must call CreditPrize with 3 334, not 3 333.
+	crediter := &capturingPrizeCrediter{}
+	qr := &captureDistributeRepo{
+		quiniela: &domain.Quiniela{ID: 8, EntryFee: 10_000},
+	}
+	ranker := &noopRanker{result: &LeaderboardResult{
+		Entries: []*domain.LeaderboardEntry{
+			{User: &domain.User{ID: 1, KYCTier: domain.KYCTierUnverified}, PrizeWinner: true}, // gets remainder
+			{User: &domain.User{ID: 2, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+			{User: &domain.User{ID: 3, KYCTier: domain.KYCTierTwo}, PrizeWinner: true},
+		},
+		ActivePaidMembers: 1,
+		WinnerCount:       3,
+		EligibleForPrizes: true,
+	}}
+	svc := NewAdminGroupService(qr, &stubMemberRepo{}, &noopSnapshotter{}, ranker, &noopAuditLogger{}, zap.NewNop())
+	svc.(*adminGroupService).SetPrizeCrediter(crediter)
+
+	if err := svc.DistributePrizes(context.Background(), 8, 99); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(crediter.notifyCalls) != 1 {
+		t.Fatalf("expected 1 NotifyFreezeOnly call (one frozen winner), got %d", len(crediter.notifyCalls))
+	}
+	if crediter.notifyCalls[0].userID != 1 {
+		t.Errorf("NotifyFreezeOnly called for user %d; want 1", crediter.notifyCalls[0].userID)
+	}
+	if crediter.notifyCalls[0].amount != 3_334 {
+		t.Errorf("NotifyFreezeOnly amount: got %d; want 3 334 (prizePerWinner 3 333 + remainder 1)",
+			crediter.notifyCalls[0].amount)
 	}
 }

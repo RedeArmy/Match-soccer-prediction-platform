@@ -258,7 +258,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		service.WithScoringMeter(meter),
 	)
 
-	quinielaRepo := repository.NewPostgresQuinielaRepository(db)
+	quinielaRepo := repository.NewPostgresQuinielaRepository(db, repository.WithQuinielaLogger(log))
 	memberRepo := repository.NewPostgresGroupMembershipRepository(db)
 	userRepo := repository.NewPostgresUserRepository(db)
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(db)
@@ -453,10 +453,15 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// Falls back to ExchangeRate-API and OpenExchangeRates when Banguat is down.
 	// On all-source failure: stale fallback + n8n /webhook/fx-rate-stale alert.
 	fxRepo := repository.NewPostgresExchangeRateRepository(db)
+	// FX source timeouts are is_runtime=FALSE: read once at worker startup;
+	// changing them requires a worker restart.
+	fxBanguatTimeout := time.Duration(params.GetInt(ctx, domain.ParamKeyFXBanguatTimeoutSec, domain.DefaultFXBanguatTimeoutSec)) * time.Second
+	fxExchangeRateAPITimeout := time.Duration(params.GetInt(ctx, domain.ParamKeyFXExchangeRateAPITimeoutSec, domain.DefaultFXExchangeRateAPITimeoutSec)) * time.Second
+	fxOpenExchangeTimeout := time.Duration(params.GetInt(ctx, domain.ParamKeyFXOpenExchangeTimeoutSec, domain.DefaultFXOpenExchangeTimeoutSec)) * time.Second
 	fxFetcher := service.NewMultiSourceFetcher(log,
-		service.NewBanguatFetcher(),
-		service.NewExchangeRateAPIFetcher(cfg.ExchangeRate.ExchangeRateAPIKey),
-		service.NewOpenExchangeFetcher(cfg.ExchangeRate.OpenExchangeRatesAppID),
+		service.NewBanguatFetcherWithTimeout(fxBanguatTimeout),
+		service.NewExchangeRateAPIFetcherWithTimeout(cfg.ExchangeRate.ExchangeRateAPIKey, fxExchangeRateAPITimeout),
+		service.NewOpenExchangeFetcherWithTimeout(cfg.ExchangeRate.OpenExchangeRatesAppID, fxOpenExchangeTimeout),
 	)
 	fxNotifier := setupObservabilityNotifier(cfg, log)
 	fxImpl := service.NewExchangeRateServiceImpl(fxFetcher, fxRepo, params, fxNotifier, log)

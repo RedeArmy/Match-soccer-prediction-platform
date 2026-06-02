@@ -15,7 +15,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (134 total) ─────────────────────────────────────
+	// ── ParamKey* enumeration (137 total) ─────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":      ParamKeyScoringExactScore,
@@ -107,9 +107,13 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyUSDGTQRate":                 ParamKeyUSDGTQRate,
 		"ParamKeyExchangeRateMarginBPS":      ParamKeyExchangeRateMarginBPS,
 		"ParamKeyFXBuyMarginBPS":             ParamKeyFXBuyMarginBPS,
-		"ParamKeyFXSellMarginBPS":            ParamKeyFXSellMarginBPS,
-		"ParamKeyFXDisplayDecimals":          ParamKeyFXDisplayDecimals,
-		"ParamKeyFXStaleThresholdH":          ParamKeyFXStaleThresholdH,
+		"ParamKeyFXSellMarginBPS":                  ParamKeyFXSellMarginBPS,
+		"ParamKeyFXDisplayDecimals":                ParamKeyFXDisplayDecimals,
+		"ParamKeyFXStaleThresholdH":                ParamKeyFXStaleThresholdH,
+		// FX source HTTP client timeouts (migration 000161)
+		"ParamKeyFXBanguatTimeoutSec":         ParamKeyFXBanguatTimeoutSec,
+		"ParamKeyFXExchangeRateAPITimeoutSec": ParamKeyFXExchangeRateAPITimeoutSec,
+		"ParamKeyFXOpenExchangeTimeoutSec":    ParamKeyFXOpenExchangeTimeoutSec,
 		// Notification subsystem
 		"ParamKeyNotifyBankTransferStaleSec":            ParamKeyNotifyBankTransferStaleSec,
 		"ParamKeyNotifyWithdrawalStaleSec":              ParamKeyNotifyWithdrawalStaleSec,
@@ -343,10 +347,14 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// Exchange rate safety margin (migration 000148)
 		"DefaultExchangeRateMarginBPS": DefaultExchangeRateMarginBPS,
 		// Competitive margin engine (migration 000150)
-		"DefaultFXBuyMarginBPS":    DefaultFXBuyMarginBPS,
-		"DefaultFXSellMarginBPS":   DefaultFXSellMarginBPS,
-		"DefaultFXDisplayDecimals": DefaultFXDisplayDecimals,
-		"DefaultFXStaleThresholdH": DefaultFXStaleThresholdH,
+		"DefaultFXBuyMarginBPS":              DefaultFXBuyMarginBPS,
+		"DefaultFXSellMarginBPS":             DefaultFXSellMarginBPS,
+		"DefaultFXDisplayDecimals":           DefaultFXDisplayDecimals,
+		"DefaultFXStaleThresholdH":           DefaultFXStaleThresholdH,
+		// FX source HTTP client timeouts (migration 000161)
+		"DefaultFXBanguatTimeoutSec":         DefaultFXBanguatTimeoutSec,
+		"DefaultFXExchangeRateAPITimeoutSec": DefaultFXExchangeRateAPITimeoutSec,
+		"DefaultFXOpenExchangeTimeoutSec":    DefaultFXOpenExchangeTimeoutSec,
 		// String defaults — not in the int defaults map; documented separately.
 		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
 		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
@@ -354,7 +362,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 134 // update when adding a new ParamKey* constant
+		const expectedCount = 137 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -362,7 +370,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 123 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention)
+		const expectedCount = 126 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -497,6 +505,10 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyFXSellMarginBPS", ParamKeyFXSellMarginBPS, "fx"},
 		{"ParamKeyFXDisplayDecimals", ParamKeyFXDisplayDecimals, "fx"},
 		{"ParamKeyFXStaleThresholdH", ParamKeyFXStaleThresholdH, "fx"},
+		// FX source HTTP client timeouts (migration 000161)
+		{"ParamKeyFXBanguatTimeoutSec", ParamKeyFXBanguatTimeoutSec, "fx"},
+		{"ParamKeyFXExchangeRateAPITimeoutSec", ParamKeyFXExchangeRateAPITimeoutSec, "fx"},
+		{"ParamKeyFXOpenExchangeTimeoutSec", ParamKeyFXOpenExchangeTimeoutSec, "fx"},
 		// Notification subsystem
 		{"ParamKeyNotifyBankTransferStaleSec", ParamKeyNotifyBankTransferStaleSec, "notify"},
 		{"ParamKeyNotifyWithdrawalStaleSec", ParamKeyNotifyWithdrawalStaleSec, "notify"},
@@ -741,10 +753,14 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		// Exchange rate safety margin (migration 000148)
 		"DefaultExchangeRateMarginBPS": DefaultExchangeRateMarginBPS,
 		// Competitive margin engine (migration 000150)
-		"DefaultFXBuyMarginBPS":    DefaultFXBuyMarginBPS,
-		"DefaultFXSellMarginBPS":   DefaultFXSellMarginBPS,
-		"DefaultFXDisplayDecimals": DefaultFXDisplayDecimals,
-		"DefaultFXStaleThresholdH": DefaultFXStaleThresholdH,
+		"DefaultFXBuyMarginBPS":              DefaultFXBuyMarginBPS,
+		"DefaultFXSellMarginBPS":             DefaultFXSellMarginBPS,
+		"DefaultFXDisplayDecimals":           DefaultFXDisplayDecimals,
+		"DefaultFXStaleThresholdH":           DefaultFXStaleThresholdH,
+		// FX source HTTP client timeouts (migration 000161)
+		"DefaultFXBanguatTimeoutSec":         DefaultFXBanguatTimeoutSec,
+		"DefaultFXExchangeRateAPITimeoutSec": DefaultFXExchangeRateAPITimeoutSec,
+		"DefaultFXOpenExchangeTimeoutSec":    DefaultFXOpenExchangeTimeoutSec,
 	}
 
 	for name, value := range defaults {
