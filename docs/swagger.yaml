@@ -184,6 +184,13 @@ definitions:
           type: integer
         type: array
     type: object
+  internal_api_handler.BulkPreviewResponse:
+    properties:
+      diffs:
+        items:
+          $ref: '#/definitions/internal_api_handler.ParamDiffResponse'
+        type: array
+    type: object
   internal_api_handler.CityResponse:
     properties:
       id:
@@ -596,6 +603,17 @@ definitions:
       page:
         $ref: '#/definitions/internal_api_handler.PageMeta'
     type: object
+  internal_api_handler.ParamDiffResponse:
+    properties:
+      is_sensitive:
+        type: boolean
+      key:
+        type: string
+      new_value:
+        type: string
+      old_value:
+        type: string
+    type: object
   internal_api_handler.PaymentDashboardStatsResponse:
     properties:
       confirmed:
@@ -937,6 +955,18 @@ definitions:
     type: object
   internal_api_handler.bulkSetParamRequest:
     properties:
+      confirm_sensitive_changes:
+        description: |-
+          ConfirmSensitiveChanges must be true when the request modifies any
+          scoring.* or payment.* parameter in a live (non-dry-run) BulkSet.
+          Omitting it on a request that touches sensitive keys returns 422.
+        type: boolean
+      dry_run:
+        description: |-
+          DryRun, when true, validates all params and returns the projected
+          old→new diffs without persisting any change. Useful for previewing
+          the impact of a bulk update before committing.
+        type: boolean
       params:
         additionalProperties:
           type: string
@@ -3527,15 +3557,21 @@ paths:
       - application/json
       description: Updates multiple system parameters in a single atomic operation.
       parameters:
-      - description: Map of key -> value pairs
+      - description: Params map; optional dry_run and confirm_sensitive_changes flags
         in: body
         name: body
         required: true
         schema:
           $ref: '#/definitions/internal_api_handler.bulkSetParamRequest'
+      produces:
+      - application/json
       responses:
+        "200":
+          description: 'dry_run=true: projected diffs (no write)'
+          schema:
+            $ref: '#/definitions/internal_api_handler.BulkPreviewResponse'
         "204":
-          description: No Content
+          description: Live update applied
         "401":
           description: Unauthorized
           schema:
@@ -3545,7 +3581,7 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "422":
-          description: params map is empty
+          description: Validation error or sensitive keys without confirmation
           schema:
             $ref: '#/definitions/internal_api_handler.ErrorResponse'
         "500":

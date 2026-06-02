@@ -3229,13 +3229,16 @@ const docTemplate = `{
                 "consumes": [
                     "application/json"
                 ],
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "admin-system-params"
                 ],
                 "summary": "Bulk-update system parameters",
                 "parameters": [
                     {
-                        "description": "Map of key -\u003e value pairs",
+                        "description": "Params map; optional dry_run and confirm_sensitive_changes flags",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -3245,8 +3248,14 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "dry_run=true: projected diffs (no write)",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.BulkPreviewResponse"
+                        }
+                    },
                     "204": {
-                        "description": "No Content"
+                        "description": "Live update applied"
                     },
                     "401": {
                         "description": "Unauthorized",
@@ -3261,7 +3270,7 @@ const docTemplate = `{
                         }
                     },
                     "422": {
-                        "description": "params map is empty",
+                        "description": "Validation error or sensitive keys without confirmation",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -6235,6 +6244,17 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.BulkPreviewResponse": {
+            "type": "object",
+            "properties": {
+                "diffs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.ParamDiffResponse"
+                    }
+                }
+            }
+        },
         "internal_api_handler.CityResponse": {
             "type": "object",
             "properties": {
@@ -6853,6 +6873,23 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.ParamDiffResponse": {
+            "type": "object",
+            "properties": {
+                "is_sensitive": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "new_value": {
+                    "type": "string"
+                },
+                "old_value": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.PaymentDashboardStatsResponse": {
             "type": "object",
             "properties": {
@@ -7376,6 +7413,14 @@ const docTemplate = `{
         "internal_api_handler.bulkSetParamRequest": {
             "type": "object",
             "properties": {
+                "confirm_sensitive_changes": {
+                    "description": "ConfirmSensitiveChanges must be true when the request modifies any\nscoring.* or payment.* parameter in a live (non-dry-run) BulkSet.\nOmitting it on a request that touches sensitive keys returns 422.",
+                    "type": "boolean"
+                },
+                "dry_run": {
+                    "description": "DryRun, when true, validates all params and returns the projected\nold→new diffs without persisting any change. Useful for previewing\nthe impact of a bulk update before committing.",
+                    "type": "boolean"
+                },
                 "params": {
                     "type": "object",
                     "additionalProperties": {
