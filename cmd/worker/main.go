@@ -489,21 +489,23 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	logWarnOnErr(log, "scheduler: RegisterMetrics failed", notifScheduler.RegisterMetrics(meter, 3.0))
 
 	return startWorker(ctx, workerDeps{
-		cfg:                        cfg,
-		bus:                        bus,
-		scorer:                     scorer,
-		snapshotter:                snapshotter,
-		predRepo:                   predRepo,
-		invalidators:               invalidators,
-		broadcaster:                broadcaster,
-		snapshotLocker:             &redisSnapshotLocker{client: rc, ttl: snapshotLockTTL},
-		snapshotCfg:                snapCfg,
-		purger:                     purger,
-		purgeRetention:             purgeRetention,
-		paramHistoryRetention:      paramHistoryRetention,
-		fxHistoryRetention:         fxHistoryRetention,
-		outboxRetention:            outboxRetention,
-		snapshotKeepCount:          snapshotKeepLatestCount,
+		cfg:            cfg,
+		bus:            bus,
+		scorer:         scorer,
+		snapshotter:    snapshotter,
+		predRepo:       predRepo,
+		invalidators:   invalidators,
+		broadcaster:    broadcaster,
+		snapshotLocker: &redisSnapshotLocker{client: rc, ttl: snapshotLockTTL},
+		snapshotCfg:    snapCfg,
+		purger:         purger,
+		purgePol: purgePolicy{
+			retention:             purgeRetention,
+			paramHistoryRetention: paramHistoryRetention,
+			fxHistoryRetention:    fxHistoryRetention,
+			outboxRetention:       outboxRetention,
+			snapshotKeepCount:     snapshotKeepLatestCount,
+		},
 		rc:                         rc,
 		checkers:                   checkers,
 		metricsHandler:             metricsHandler,
@@ -918,11 +920,7 @@ type workerDeps struct {
 	snapshotLocker             SnapshotLocker
 	snapshotCfg                snapshotConfig
 	purger                     repository.Purger
-	purgeRetention             time.Duration
-	paramHistoryRetention      time.Duration
-	fxHistoryRetention         time.Duration
-	outboxRetention            time.Duration
-	snapshotKeepCount          int
+	purgePol                   purgePolicy
 	rc                         *redis.Client
 	checkers                   []health.Checker
 	metricsHandler             http.Handler // nil when metrics are disabled
@@ -999,7 +997,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 		defer purgeDone.Done()
 		defer recoverGoroutine("purgeDaemon", log)
 		defer purgeTicker.Stop()
-		monitorPurge(ctx, deps.purger, deps.purgeRetention, deps.paramHistoryRetention, deps.fxHistoryRetention, deps.outboxRetention, deps.snapshotKeepCount, purgeTicker.C, log)
+		monitorPurge(ctx, deps.purger, deps.purgePol, purgeTicker.C, log)
 	}()
 
 	// Outbox worker — polls domain_outbox and dispatches admin/system notifications.
@@ -1076,14 +1074,25 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	return runErr
 }
 
+// purgePolicy bundles all retention windows and limits used by the purge daemon.
+// Grouping them into one value keeps monitorPurge and executePurgeTick within
+// the seven-parameter limit enforced by the linter.
+type purgePolicy struct {
+	retention             time.Duration
+	paramHistoryRetention time.Duration
+	fxHistoryRetention    time.Duration
+	outboxRetention       time.Duration
+	snapshotKeepCount     int
+}
+
 // monitorPurge runs until ctx is cancelled, permanently removing soft-deleted
-// users and quinielas older than retention on each tick received from tickC.
+// users and quinielas older than pol.retention on each tick received from tickC.
 // Errors are logged at Warn level and swallowed: a failed purge tick is retried
 // on the next interval, so transient DB hiccups do not stop the worker.
 //
 // If purger is nil (e.g. in unit tests where the database is not available),
 // the function returns immediately.
-func monitorPurge(ctx context.Context, purger repository.Purger, retention, paramHistoryRetention, fxHistoryRetention, outboxRetention time.Duration, snapshotKeepCount int, tickC <-chan time.Time, log *zap.Logger) {
+func monitorPurge(ctx context.Context, purger repository.Purger, pol purgePolicy, tickC <-chan time.Time, log *zap.Logger) {
 	if purger == nil {
 		return
 	}
@@ -1092,7 +1101,7 @@ func monitorPurge(ctx context.Context, purger repository.Purger, retention, para
 		case <-ctx.Done():
 			return
 		case <-tickC:
-			executePurgeTick(ctx, purger, retention, paramHistoryRetention, fxHistoryRetention, outboxRetention, snapshotKeepCount, log)
+			executePurgeTick(ctx, purger, pol, log)
 		}
 	}
 }
@@ -1100,8 +1109,8 @@ func monitorPurge(ctx context.Context, purger repository.Purger, retention, para
 // executePurgeTick runs one purge cycle: soft-deleted rows, snapshots, param
 // history, FX history, and terminal outbox entries. Each operation is
 // independent and non-fatal — a failure is logged and the next tick retries.
-func executePurgeTick(ctx context.Context, purger repository.Purger, retention, paramHistoryRetention, fxHistoryRetention, outboxRetention time.Duration, snapshotKeepCount int, log *zap.Logger) {
-	olderThan := time.Now().Add(-retention)
+func executePurgeTick(ctx context.Context, purger repository.Purger, pol purgePolicy, log *zap.Logger) {
+	olderThan := time.Now().Add(-pol.retention)
 	if n, err := purger.PurgeDeletedUsers(ctx, olderThan); err != nil {
 		log.Warn("worker: purge deleted users failed", zap.Error(err))
 	} else if n > 0 {
@@ -1112,24 +1121,24 @@ func executePurgeTick(ctx context.Context, purger repository.Purger, retention, 
 	} else if n > 0 {
 		log.Info("worker: purged soft-deleted quinielas", zap.Int64("count", n))
 	}
-	if n, err := purger.PurgeOldSnapshots(ctx, snapshotKeepCount); err != nil {
+	if n, err := purger.PurgeOldSnapshots(ctx, pol.snapshotKeepCount); err != nil {
 		log.Warn("worker: purge old snapshots failed", zap.Error(err))
 	} else if n > 0 {
 		log.Info("worker: purged old leaderboard snapshots", zap.Int64("count", n))
 	}
-	historyBefore := time.Now().Add(-paramHistoryRetention)
+	historyBefore := time.Now().Add(-pol.paramHistoryRetention)
 	if n, err := purger.PurgeOldParamHistory(ctx, historyBefore); err != nil {
 		log.Warn("worker: purge param history failed", zap.Error(err))
 	} else if n > 0 {
 		log.Info("worker: purged old param history rows", zap.Int64("count", n))
 	}
-	fxBefore := time.Now().Add(-fxHistoryRetention)
+	fxBefore := time.Now().Add(-pol.fxHistoryRetention)
 	if n, err := purger.PurgeOldFXHistory(ctx, fxBefore); err != nil {
 		log.Warn("worker: purge fx history failed", zap.Error(err))
 	} else if n > 0 {
 		log.Info("worker: purged old exchange rate history rows", zap.Int64("count", n))
 	}
-	outboxBefore := time.Now().Add(-outboxRetention)
+	outboxBefore := time.Now().Add(-pol.outboxRetention)
 	if n, err := purger.PurgeOldOutboxEntries(ctx, outboxBefore); err != nil {
 		log.Warn("worker: purge old outbox entries failed", zap.Error(err))
 	} else if n > 0 {

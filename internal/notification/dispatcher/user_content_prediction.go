@@ -23,31 +23,34 @@ func buildPredictionConfirmedContent(entry *notification.OutboxEntry, locale Loc
 }
 
 func buildPredictionDeadlineApproachContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
-	var p notification.PredictionDeadlinePayload
-	if err := entry.DecodePayload(&p); err != nil {
-		return userContent{}, err
-	}
-	return userContent{
-		title: localeStr("Prediction deadline approaching", "Límite de predicción se acerca", locale),
-		body: localeStr(
-			fmt.Sprintf("%s vs %s kicks off in %d minutes — submit your prediction now.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
-			fmt.Sprintf("%s vs %s empieza en %d minutos — envía tu predicción ahora.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
-			locale,
-		),
-		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
-	}, nil
+	return buildPredictionDeadlineContent(entry, locale,
+		"Prediction deadline approaching", "Límite de predicción se acerca",
+		"%s vs %s kicks off in %d minutes — submit your prediction now.",
+		"%s vs %s empieza en %d minutos — envía tu predicción ahora.",
+	)
 }
 
 func buildPredictionMissingReminderContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
+	return buildPredictionDeadlineContent(entry, locale,
+		"Missing prediction reminder", "Recordatorio de predicción pendiente",
+		"You haven't predicted %s vs %s yet. Deadline is in %d minutes.",
+		"Aún no has predicho %s vs %s. El límite cierra en %d minutos.",
+	)
+}
+
+// buildPredictionDeadlineContent decodes a PredictionDeadlinePayload and
+// constructs notification content from the given locale strings.
+// enBodyFmt and esBodyFmt must supply three verbs: %s (HomeTeam), %s (AwayTeam), %d (MinutesLeft).
+func buildPredictionDeadlineContent(entry *notification.OutboxEntry, locale Locale, enTitle, esTitle, enBodyFmt, esBodyFmt string) (userContent, error) {
 	var p notification.PredictionDeadlinePayload
 	if err := entry.DecodePayload(&p); err != nil {
 		return userContent{}, err
 	}
 	return userContent{
-		title: localeStr("Missing prediction reminder", "Recordatorio de predicción pendiente", locale),
+		title: localeStr(enTitle, esTitle, locale),
 		body: localeStr(
-			fmt.Sprintf("You haven't predicted %s vs %s yet. Deadline is in %d minutes.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
-			fmt.Sprintf("Aún no has predicho %s vs %s. El límite cierra en %d minutos.", p.HomeTeam, p.AwayTeam, p.MinutesLeft),
+			fmt.Sprintf(enBodyFmt, p.HomeTeam, p.AwayTeam, p.MinutesLeft),
+			fmt.Sprintf(esBodyFmt, p.HomeTeam, p.AwayTeam, p.MinutesLeft),
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
@@ -87,47 +90,42 @@ func buildPredictionScoredContent(entry *notification.OutboxEntry, locale Locale
 }
 
 func buildMatchResultEnteredContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
-	var p notification.MatchEventPayload
-	if err := entry.DecodePayload(&p); err != nil {
-		return userContent{}, err
-	}
-	return userContent{
-		title: localeStr("Match result entered", "Resultado registrado", locale),
-		body: localeStr(
-			fmt.Sprintf("The result for %s vs %s has been recorded.", p.HomeTeam, p.AwayTeam),
-			fmt.Sprintf("El resultado de %s vs %s ha sido registrado.", p.HomeTeam, p.AwayTeam),
-			locale,
-		),
-		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
-	}, nil
+	return buildMatchEventContent(entry, locale,
+		"Match result entered", "Resultado registrado",
+		"The result for %s vs %s has been recorded.",
+		"El resultado de %s vs %s ha sido registrado.",
+	)
 }
 
 func buildMatchPostponedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
-	var p notification.MatchEventPayload
-	if err := entry.DecodePayload(&p); err != nil {
-		return userContent{}, err
-	}
-	return userContent{
-		title: localeStr("Match postponed", "Partido aplazado", locale),
-		body: localeStr(
-			fmt.Sprintf("%s vs %s has been postponed.", p.HomeTeam, p.AwayTeam),
-			fmt.Sprintf("%s vs %s ha sido aplazado.", p.HomeTeam, p.AwayTeam),
-			locale,
-		),
-		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
-	}, nil
+	return buildMatchEventContent(entry, locale,
+		"Match postponed", "Partido aplazado",
+		"%s vs %s has been postponed.",
+		"%s vs %s ha sido aplazado.",
+	)
 }
 
 func buildMatchCancelledContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
+	return buildMatchEventContent(entry, locale,
+		"Match cancelled", "Partido cancelado",
+		"%s vs %s has been cancelled.",
+		"%s vs %s ha sido cancelado.",
+	)
+}
+
+// buildMatchEventContent decodes a MatchEventPayload and constructs notification
+// content from the given locale strings.
+// enBodyFmt and esBodyFmt must supply two verbs: %s (HomeTeam) and %s (AwayTeam).
+func buildMatchEventContent(entry *notification.OutboxEntry, locale Locale, enTitle, esTitle, enBodyFmt, esBodyFmt string) (userContent, error) {
 	var p notification.MatchEventPayload
 	if err := entry.DecodePayload(&p); err != nil {
 		return userContent{}, err
 	}
 	return userContent{
-		title: localeStr("Match cancelled", "Partido cancelado", locale),
+		title: localeStr(enTitle, esTitle, locale),
 		body: localeStr(
-			fmt.Sprintf("%s vs %s has been cancelled.", p.HomeTeam, p.AwayTeam),
-			fmt.Sprintf("%s vs %s ha sido cancelado.", p.HomeTeam, p.AwayTeam),
+			fmt.Sprintf(enBodyFmt, p.HomeTeam, p.AwayTeam),
+			fmt.Sprintf(esBodyFmt, p.HomeTeam, p.AwayTeam),
 			locale,
 		),
 		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
