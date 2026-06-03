@@ -244,6 +244,27 @@ jobs:
       - name: Check service coverage
         run: make check-coverage-service
 
+      # ── Frontend coverage for SonarCloud ─────────────────────────────────
+      # Generates frontend/coverage/lcov.info consumed by
+      # sonar.javascript.lcov.reportPaths in sonar-project.properties.
+      # Node version matches the Dockerfile (node:22-alpine).
+      # Must run after Go coverage steps so coverage.out is already on disk;
+      # must run before SonarCloud so both reports are ready for the scanner.
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+        working-directory: frontend
+
+      - name: Frontend tests with LCOV coverage
+        run: ./node_modules/.bin/vitest run --coverage
+        working-directory: frontend
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@383f7e52eae3ab0510c3cb0e7d9d150bbaeab838 # v3
         env:

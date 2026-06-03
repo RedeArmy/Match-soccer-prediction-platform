@@ -24,7 +24,9 @@ services:
     ports:
       # Expose on 127.0.0.1 only to prevent accidental exposure on networked
       # interfaces when developing on a shared or public network.
-      - "127.0.0.1:5432:5432"
+      # Override POSTGRES_HOST_PORT in .env if port 5432 is already taken on
+      # your machine (e.g. a system-managed Postgres instance).
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
