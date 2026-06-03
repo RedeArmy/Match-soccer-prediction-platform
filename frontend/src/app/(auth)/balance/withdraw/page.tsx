@@ -28,7 +28,7 @@ export default function WithdrawPage() {
 
   const available = balance?.available_cents ?? 0
   const kycApproved = kyc?.status === 'approved'
-  const amountCents = Math.round(parseFloat(amount) * 100)
+  const amountCents = Math.round(Number.parseFloat(amount) * 100)
   const valid = amountCents > 0 && amountCents <= available
 
   const mutation = useMutation({
@@ -107,8 +107,9 @@ export default function WithdrawPage() {
 
         {/* Amount */}
         <div>
-          <label className="block text-sm text-text-secondary mb-1.5">Monto a retirar (GTQ)</label>
+          <label htmlFor="withdraw-amount" className="block text-sm text-text-secondary mb-1.5">Monto a retirar (GTQ)</label>
           <input
+            id="withdraw-amount"
             type="number"
             min="50" step="0.01"
             max={available / 100}

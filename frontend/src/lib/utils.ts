@@ -88,8 +88,8 @@ export function formatCountdown(iso: string): string {
 // ── Exchange rate formatters ──────────────────────────────────────────────────
 
 export function formatRate(rate: string): string {
-  const n = parseFloat(rate)
-  return isNaN(n) ? rate : n.toFixed(4)
+  const n = Number.parseFloat(rate)
+  return Number.isNaN(n) ? rate : n.toFixed(4)
 }
 
 // ── General ───────────────────────────────────────────────────────────────────

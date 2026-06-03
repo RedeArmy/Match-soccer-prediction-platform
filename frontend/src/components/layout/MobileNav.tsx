@@ -25,11 +25,15 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
     <>
       {/* Backdrop */}
       <div
+        role="button"
+        tabIndex={0}
+        aria-label="Cerrar menú"
         className={cn(
           'fixed inset-0 z-40 bg-blue-950/80 backdrop-blur-sm transition-opacity md:hidden',
           open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
         )}
         onClick={onClose}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClose() }}
       />
 
       {/* Drawer */}

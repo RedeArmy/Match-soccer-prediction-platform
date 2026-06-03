@@ -33,9 +33,9 @@ const labels: Record<string, string> = {
 }
 
 interface StatusBadgeProps {
-  status:    string
-  className?: string
-  size?:     'sm' | 'md'
+  readonly status:    string
+  readonly className?: string
+  readonly size?:     'sm' | 'md'
 }
 
 export function StatusBadge({ status, className, size = 'md' }: StatusBadgeProps) {

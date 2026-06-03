@@ -24,7 +24,7 @@ export default function DepositPage() {
   const [error, setError] = useState('')
 
   const gtqEquiv = rate && amountUSD
-    ? formatGTQ(Math.round(usdToGTQ(parseFloat(amountUSD), rate.buy_rate) * 100))
+    ? formatGTQ(Math.round(usdToGTQ(Number.parseFloat(amountUSD), rate.buy_rate) * 100))
     : null
 
   // Recurrente / PayPal: create payment intent
@@ -32,7 +32,7 @@ export default function DepositPage() {
     mutationFn: async () => {
       const token = await getToken()
       const isUSD = method === 'paypal'
-      const rawAmount = isUSD ? parseFloat(amountUSD) : parseFloat(amountGTQ)
+      const rawAmount = isUSD ? Number.parseFloat(amountUSD) : Number.parseFloat(amountGTQ)
       const cents = Math.round(rawAmount * 100)
       return api.createPaymentIntent(token!, {
         amount_cents: cents,
@@ -41,7 +41,7 @@ export default function DepositPage() {
       }, crypto.randomUUID())
     },
     onSuccess: (data) => {
-      if (data.redirect_url) window.location.href = data.redirect_url
+      if (data.redirect_url) globalThis.location.href = data.redirect_url
     },
     onError: (e: Error) => setError(e.message),
   })
@@ -179,8 +179,9 @@ export default function DepositPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-text-secondary mb-1.5">Monto depositado (GTQ)</label>
+              <label htmlFor="bank-amount" className="block text-sm text-text-secondary mb-1.5">Monto depositado (GTQ)</label>
               <input
+                id="bank-amount"
                 type="number"
                 min="10" max="1000000" step="0.01"
                 value={amountGTQ}

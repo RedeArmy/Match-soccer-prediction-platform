@@ -2,11 +2,11 @@ import { ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ImagePlaceholderProps {
-  aspectRatio?: string
-  label?:       string
-  dataSrc?:     string
-  className?:   string
-  rounded?:     boolean
+  readonly aspectRatio?: string
+  readonly label?:       string
+  readonly dataSrc?:     string
+  readonly className?:   string
+  readonly rounded?:     boolean
 }
 
 export function ImagePlaceholder({

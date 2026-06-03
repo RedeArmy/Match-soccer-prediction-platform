@@ -77,9 +77,8 @@ export default function AdminExchangeRatePage() {
     <div className="space-y-6">
       <h1 className="font-display text-3xl text-white">TIPO DE CAMBIO</h1>
 
-      {isLoading ? (
-        <LoadingState rows={3} />
-      ) : rate ? (
+      {isLoading && <LoadingState rows={3} />}
+      {!isLoading && rate && (
         <div className="grid sm:grid-cols-3 gap-4">
           {[
             { label: 'Referencia',  value: formatRate(rate.reference_rate), color: 'text-text-primary' },
@@ -95,7 +94,7 @@ export default function AdminExchangeRatePage() {
             </div>
           ))}
         </div>
-      ) : null}
+      )}
 
       {rate && (
         <div className="flex items-center gap-3 text-xs text-text-muted">

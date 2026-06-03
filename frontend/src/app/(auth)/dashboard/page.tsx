@@ -87,9 +87,8 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            {loadingGroups ? (
-              <LoadingState rows={2} />
-            ) : !groups?.length ? (
+            {loadingGroups && <LoadingState rows={2} />}
+            {!loadingGroups && groups?.length === 0 && (
               <EmptyState
                 title="Aún no tienes quinielas"
                 description="Únete a un torneo para empezar a predecir"
@@ -100,9 +99,10 @@ export default function DashboardPage() {
                   </Link>
                 }
               />
-            ) : (
+            )}
+            {!loadingGroups && (groups?.length ?? 0) > 0 && (
               <div className="space-y-2">
-                {groups.map(g => (
+                {groups?.map(g => (
                   <div key={g.id} className="card p-4 flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-text-primary truncate">{g.name}</p>
@@ -130,13 +130,13 @@ export default function DashboardPage() {
               <Link href="/balance" className="text-xs text-gold-400 hover:text-gold-300">Ver todo →</Link>
             </div>
 
-            {loadingLedger ? (
-              <LoadingState rows={3} />
-            ) : !ledger?.data.length ? (
+            {loadingLedger && <LoadingState rows={3} />}
+            {!loadingLedger && ledger?.data.length === 0 && (
               <p className="text-sm text-text-muted py-4 text-center">Sin transacciones aún</p>
-            ) : (
+            )}
+            {!loadingLedger && (ledger?.data.length ?? 0) > 0 && (
               <div className="space-y-1.5">
-                {ledger.data.map(entry => (
+                {ledger?.data.map(entry => (
                   <div key={entry.id} className="card p-3 flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs text-text-primary truncate">{entry.description || entry.type}</p>

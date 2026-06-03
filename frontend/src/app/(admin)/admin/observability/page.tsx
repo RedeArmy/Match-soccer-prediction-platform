@@ -38,9 +38,8 @@ export default function AdminObservabilityPage() {
           <Wifi className="w-4 h-4 text-blue-400" />
           SSE Hub
         </h2>
-        {sseLoading ? (
-          <LoadingState rows={1} />
-        ) : sseStats ? (
+        {sseLoading && <LoadingState rows={1} />}
+        {!sseLoading && sseStats && (
           <div className="grid sm:grid-cols-3 gap-4">
             {[
               { label: 'Usuarios conectados', value: sseStats.connected_users },
@@ -53,7 +52,8 @@ export default function AdminObservabilityPage() {
               </div>
             ))}
           </div>
-        ) : (
+        )}
+        {!sseLoading && !sseStats && (
           <p className="text-text-muted text-sm">No disponible</p>
         )}
       </section>
@@ -64,24 +64,24 @@ export default function AdminObservabilityPage() {
           <Activity className="w-4 h-4 text-gold-400" />
           Circuit Breakers
         </h2>
-        {breakersLoading ? (
-          <LoadingState rows={2} />
-        ) : !breakers?.length ? (
+        {breakersLoading && <LoadingState rows={2} />}
+        {!breakersLoading && breakers?.length === 0 && (
           <p className="text-text-muted text-sm">Sin circuit breakers registrados</p>
-        ) : (
+        )}
+        {!breakersLoading && (breakers?.length ?? 0) > 0 && (
           <div className="card divide-y divide-blue-800/50">
-            {breakers.map(b => (
-              <div key={b.name} className="flex items-center justify-between gap-3 px-4 py-3">
-                <div>
-                  <p className="text-sm font-mono text-text-primary">{b.name}</p>
-                  <p className="text-xs text-text-muted">Fallos: {b.failures}</p>
+            {breakers?.map(b => {
+              const cbStatus = b.state === 'closed' ? 'approved' : b.state === 'open' ? 'rejected' : 'pending'
+              return (
+                <div key={b.name} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-mono text-text-primary">{b.name}</p>
+                    <p className="text-xs text-text-muted">Fallos: {b.failures}</p>
+                  </div>
+                  <StatusBadge status={cbStatus} size="sm" />
                 </div>
-                <StatusBadge
-                  status={b.state === 'closed' ? 'approved' : b.state === 'open' ? 'rejected' : 'pending'}
-                  size="sm"
-                />
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </section>

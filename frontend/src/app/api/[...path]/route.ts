@@ -26,8 +26,11 @@ async function proxy(req: NextRequest, ctx: Context, method: string): Promise<Ne
   const { getToken } = await auth()
   const token = await getToken()
 
+  // [...]path captures everything AFTER /api/ in the frontend URL.
+  // Prepend /api/ so the upstream path matches the backend routing table.
+  // e.g. frontend /api/v1/users/me → segments ['v1','users','me'] → backend /api/v1/users/me
   const upstreamPath = path.join('/')
-  const url = `${BACKEND}/${upstreamPath}${req.nextUrl.search}`
+  const url = `${BACKEND}/api/${upstreamPath}${req.nextUrl.search}`
 
   const headers: Record<string, string> = {
     'X-Request-ID':    req.headers.get('x-request-id') ?? crypto.randomUUID(),

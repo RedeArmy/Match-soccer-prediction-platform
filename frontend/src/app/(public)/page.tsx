@@ -30,7 +30,7 @@ export default async function LandingPage() {
             <div className="inline-flex items-center gap-2 bg-blue-900/80 border border-blue-700 px-3 py-1.5 rounded-full text-xs text-text-secondary mb-2">
               <TrendingUp className="w-3 h-3 text-gold-400" />
               <span className="font-score">
-                1 USD = <span className="text-gold-400 font-medium">Q{parseFloat(rate.sell_rate).toFixed(2)}</span> GTQ
+                1 USD = <span className="text-gold-400 font-medium">Q{Number.parseFloat(rate.sell_rate).toFixed(2)}</span> GTQ
               </span>
               {rate.stale && <span className="text-red-400 text-[10px]">desactualizado</span>}
             </div>
@@ -78,10 +78,10 @@ export default async function LandingPage() {
               <TrendingUp className="w-4 h-4 text-gold-400" />
               <span className="text-text-secondary">Tipo de cambio:</span>
               <span className="font-score text-gold-400 font-medium">
-                Q{parseFloat(rate.sell_rate).toFixed(4)} / USD
+                Q{Number.parseFloat(rate.sell_rate).toFixed(4)} / USD
               </span>
               <span className="text-text-muted text-xs">
-                (compra: Q{parseFloat(rate.buy_rate).toFixed(4)})
+                (compra: Q{Number.parseFloat(rate.buy_rate).toFixed(4)})
               </span>
             </div>
             <span className="text-text-muted text-xs">

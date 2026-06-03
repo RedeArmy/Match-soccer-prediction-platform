@@ -24,5 +24,10 @@ services:
       NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL:  /onboarding
       # Points to the host machine where the Go backend runs locally
       BACKEND_INTERNAL_URL: http://host.docker.internal:8080
+    # host.docker.internal does not resolve automatically on Linux — this
+    # maps it to the host gateway so the frontend container can reach the
+    # locally-running Go backend.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - quiniela_net
