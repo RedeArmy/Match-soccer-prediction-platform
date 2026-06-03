@@ -262,7 +262,7 @@ jobs:
         working-directory: frontend
 
       - name: Frontend tests with LCOV coverage
-        run: npx vitest run --coverage
+        run: ./node_modules/.bin/vitest run --coverage
         working-directory: frontend
 
       - name: SonarCloud Scan

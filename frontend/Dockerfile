@@ -10,7 +10,7 @@ CMD ["npm", "run", "dev"]
 
 # ── Builder ──────────────────────────────────────────────────────────────────
 FROM base AS builder
-RUN npm ci --frozen-lockfile
+RUN npm ci --frozen-lockfile --ignore-scripts
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # Clerk publishable key must be available at build time for static pages
@@ -28,8 +28,10 @@ RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs --chmod=555 /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs --chmod=555 /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs --chmod=444 /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs --chmod=444 /app/.next/static ./.next/static
+# Directories need the execute bit for traversal; files stay read-only (444).
+RUN find /app -type d -exec chmod 555 {} \;
 
 USER nextjs
 EXPOSE 3000

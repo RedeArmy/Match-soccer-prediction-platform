@@ -1,21 +1,21 @@
 import { cn } from '@/lib/utils'
 
 interface LoadingStateProps {
-  className?: string
-  rows?:      number
+  readonly className?: string
+  readonly rows?:      number
 }
 
 export function LoadingState({ className, rows = 3 }: LoadingStateProps) {
   return (
     <div className={cn('space-y-3 animate-pulse', className)}>
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="h-16 rounded-xl bg-blue-800/50" />
+      {Array.from({ length: rows }, (_, i) => `skeleton-${i}`).map(key => (
+        <div key={key} className="h-16 rounded-xl bg-blue-800/50" />
       ))}
     </div>
   )
 }
 
-export function LoadingSpinner({ size = 20, className }: { size?: number; className?: string }) {
+export function LoadingSpinner({ size = 20, className }: Readonly<{ size?: number; className?: string }>) {
   return (
     <svg
       width={size}

@@ -32,7 +32,7 @@ import type {
 // ── Base fetch ────────────────────────────────────────────────────────────────
 
 class APIClient {
-  private base: string
+  private readonly base: string
 
   constructor(base = '') {
     this.base = base

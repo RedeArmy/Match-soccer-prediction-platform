@@ -29,7 +29,7 @@ export function centsToGTQ(cents: number): number {
 
 // Convert GTQ amount to USD using sell rate (user pays sell rate to deposit USD)
 export function gtqToUSD(gtqAmount: number, sellRate: string): number {
-  const rate = parseFloat(sellRate)
+  const rate = Number.parseFloat(sellRate)
   if (!rate || rate === 0) return 0
   return gtqAmount / rate
 }

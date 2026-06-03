@@ -52,7 +52,7 @@ export default function DepositPage() {
       if (!file) throw new Error('Adjunta el comprobante')
       const token = await getToken()
       const fd = new FormData()
-      fd.append('amount_cents', String(Math.round(parseFloat(amountGTQ) * 100)))
+      fd.append('amount_cents', String(Math.round(Number.parseFloat(amountGTQ) * 100)))
       fd.append('currency', 'GTQ')
       fd.append('file', file)
       return api.uploadBankTransfer(token!, fd, crypto.randomUUID())
@@ -140,12 +140,13 @@ export default function DepositPage() {
             </p>
             {rate && (
               <p className="text-xs text-text-muted">
-                Tasa compra: <span className="text-gold-400">Q{parseFloat(rate.buy_rate).toFixed(4)} / USD</span>
+                Tasa compra: <span className="text-gold-400">Q{Number.parseFloat(rate.buy_rate).toFixed(4)} / USD</span>
               </p>
             )}
             <div>
-              <label className="block text-sm text-text-secondary mb-1.5">Monto (USD)</label>
+              <label htmlFor="deposit-usd-amount" className="block text-sm text-text-secondary mb-1.5">Monto (USD)</label>
               <input
+                id="deposit-usd-amount"
                 type="number"
                 min="1" max="10000" step="0.01"
                 value={amountUSD}
@@ -192,9 +193,9 @@ export default function DepositPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-text-secondary mb-1.5">
+              <p className="block text-sm text-text-secondary mb-1.5">
                 Comprobante (JPEG, PNG, WebP, PDF — máx. 5 MB)
-              </label>
+              </p>
               <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-blue-600 rounded-xl p-6 cursor-pointer hover:border-gold-400 transition-colors">
                 <Upload className="w-6 h-6 text-blue-400" />
                 <span className="text-sm text-text-secondary">
