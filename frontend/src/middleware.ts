@@ -97,7 +97,7 @@ export const config = {
     // Skip Next.js internals and static files.
     // Written as a plain string literal (not String.raw) because Next.js
     // parses this config statically and does not evaluate JS expressions.
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)", // NOSONAR
     // Always run for API routes
     "/(api|trpc)(.*)",
   ],
