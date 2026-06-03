@@ -4641,7 +4641,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns group metadata by ID.",
+                "description": "Returns group metadata by ID. Requires active group membership.",
                 "produces": [
                     "application/json"
                 ],
@@ -4663,6 +4663,18 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.GroupResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Not an active member of this group",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
                     },
                     "404": {
@@ -4809,6 +4821,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Not an active member of this group",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -4831,7 +4849,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all memberships for the given group.",
+                "description": "Returns all memberships for the given group. Requires active group membership.",
                 "produces": [
                     "application/json"
                 ],
@@ -4865,6 +4883,18 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.Paged-internal_api_handler_MemberResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Not an active member of this group",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
                     },
                     "500": {
