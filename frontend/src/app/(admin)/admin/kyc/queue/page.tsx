@@ -143,7 +143,7 @@ export default function AdminKYCQueuePage() {
                 Cancelar
               </button>
               <button
-                onClick={() => reject.mutate({ profileID: rejectTarget as number, reason: rejectReason })}
+                onClick={() => reject.mutate({ profileID: rejectTarget, reason: rejectReason })}
                 disabled={reject.isPending || !rejectReason.trim()}
                 className="flex-1 text-sm py-2 bg-red-500 hover:bg-red-400 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
               >

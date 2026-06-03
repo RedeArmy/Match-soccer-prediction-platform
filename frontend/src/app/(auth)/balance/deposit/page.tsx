@@ -112,8 +112,9 @@ export default function DepositPage() {
               Serás redirigido al portal de pago.
             </p>
             <div>
-              <label className="block text-sm text-text-secondary mb-1.5">Monto (GTQ)</label>
+              <label htmlFor="deposit-gtq-amount" className="block text-sm text-text-secondary mb-1.5">Monto (GTQ)</label>
               <input
+                id="deposit-gtq-amount"
                 type="number"
                 min="10" max="100000" step="0.01"
                 value={amountGTQ}

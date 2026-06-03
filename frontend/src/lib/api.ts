@@ -45,7 +45,7 @@ class APIClient {
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(init.headers as Record<string, string> ?? {}),
+      ...(init.headers as Record<string, string>),
     }
     if (token) headers['Authorization'] = `Bearer ${token}`
 

@@ -17,7 +17,7 @@ export function ExchangeRateTicker() {
           <TrendingUp className="w-4 h-4 text-gold-400" />
           <span className="text-text-secondary">Tipo de cambio en tiempo real:</span>
           <span className="font-score text-gold-400 font-semibold">
-            Q{parseFloat(rate.sell_rate).toFixed(4)} / USD
+            Q{Number.parseFloat(rate.sell_rate).toFixed(4)} / USD
           </span>
         </div>
         <span className="text-text-muted text-xs">
