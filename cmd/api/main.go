@@ -266,9 +266,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	return nil
 }
 
-// startMetricsServer binds to the configured MetricsPort and serves /metrics
-// with no authentication on a dedicated internal port. It is a no-op when
-// handler is nil or MetricsPort is not set.
+// startMetricsServer binds to the configured MetricsBindAddr:MetricsPort and
+// serves /metrics with no authentication on a dedicated internal port. It is a
+// no-op when handler is nil or MetricsPort is not set.
 //
 // Port binding happens synchronously so that a misconfigured or occupied port
 // is detected immediately and logged — not silently swallowed in a background
@@ -276,14 +276,20 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 // The server is intentionally excluded from the graceful-shutdown sequence:
 // Prometheus scrapers tolerate brief gaps during pod restarts, and the port
 // must be network-isolated from the internet.
+//
+// MetricsBindAddr controls which network interface is used:
+//   - "" (default): all interfaces (0.0.0.0) — required when Prometheus scrapes
+//     from a separate container or Fly.io private network.
+//   - "127.0.0.1": loopback only — use when Prometheus is colocated on the same host.
 func startMetricsServer(cfg *config.Config, handler http.Handler, log *zap.Logger) {
 	if handler == nil || cfg.Server.MetricsPort == "" {
 		return
 	}
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", ":"+cfg.Server.MetricsPort)
+	addr := cfg.Server.MetricsBindAddr + ":" + cfg.Server.MetricsPort
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
 	if err != nil {
-		log.Error("metrics server: failed to bind port",
-			zap.String("port", cfg.Server.MetricsPort),
+		log.Error("metrics server: failed to bind",
+			zap.String("addr", addr),
 			zap.Error(err),
 		)
 		return

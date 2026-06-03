@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +36,42 @@ func writeJSON(w http.ResponseWriter, status int, v any) { middleware.WriteJSON(
 // writeError delegates to middleware.WriteError, the single canonical error serialiser.
 func writeError(w http.ResponseWriter, r *http.Request, log *zap.Logger, err error) {
 	middleware.WriteError(w, r, log, err)
+}
+
+// requireCaller resolves the authenticated caller from the request context.
+// It writes a 401 response and returns (nil, false) when no user is present,
+// which happens only if the request bypassed RequireAuth middleware (should
+// never occur in production but guards the handler defensively).
+func requireCaller(w http.ResponseWriter, r *http.Request, log *zap.Logger) (*domain.User, bool) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, log, apperrors.Unauthorised(msgAuthRequired))
+	}
+	return caller, ok
+}
+
+// groupMemberChecker is the narrow slice of service.GroupAuthz consumed by
+// requireGroupMember. Declared here so helpers.go stays import-free of the
+// full service package while still being testable with a simple stub.
+type groupMemberChecker interface {
+	RequireActiveMember(ctx context.Context, quinielaID, callerID int) error
+}
+
+// requireGroupMember resolves the caller and verifies active membership in
+// quinielaID. It writes the appropriate error response and returns (nil, false)
+// when either check fails. Handlers that need the caller for other work after
+// the membership check should call requireCaller and authz.RequireActiveMember
+// separately; this helper is for the common case where both are needed together.
+func requireGroupMember(w http.ResponseWriter, r *http.Request, log *zap.Logger, authz groupMemberChecker, quinielaID int) (*domain.User, bool) {
+	caller, ok := requireCaller(w, r, log)
+	if !ok {
+		return nil, false
+	}
+	if err := authz.RequireActiveMember(r.Context(), quinielaID, caller.ID); err != nil {
+		writeError(w, r, log, err)
+		return nil, false
+	}
+	return caller, true
 }
 
 // decodeJSON reads the request body and decodes it as JSON into a value of

@@ -75,9 +75,10 @@ type paramSpec struct {
 //   - 000153_seed_admin_rate_limit_params        (+2)
 //   - 000154_seed_audit_max_in_flight_param      (+1)
 //   - 000155_seed_fx_history_retention_param     (+1)
-//   - 000158_seed_outbox_retention_param         (+1)
-//   - 000160_seed_sse_broadcaster_params         (+3)
-//   - 000161_seed_fx_source_timeout_params       (+3)
+//   - 000158_seed_outbox_retention_param              (+1)
+//   - 000160_seed_sse_broadcaster_params              (+3)
+//   - 000161_seed_fx_source_timeout_params            (+3)
+//   - 000162_seed_payment_intent_retention_param      (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -148,6 +149,7 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyWorkerDLQMonitorIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerDLQMonitorIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerPurgeIntervalHours, defaultValue: strconv.Itoa(domain.DefaultWorkerPurgeIntervalHours), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyOutboxRetentionDays, defaultValue: strconv.Itoa(domain.DefaultOutboxRetentionDays), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyPaymentIntentRetentionDays, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentRetentionDays), paramType: "int", category: "payment", isRuntime: false},
 
 	// API request limits — not runtime: restart required.
 	{key: domain.ParamKeyAPIBodySizeLimitBytes, defaultValue: strconv.Itoa(domain.DefaultAPIBodySizeLimitBytes), paramType: "int", category: "api", isRuntime: false},

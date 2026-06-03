@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -148,6 +149,46 @@ func TestNewUnlimitedLimiterStore_NeverThrottles(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("request %d: expected 200 from unlimited store, got %d", i+1, w.Code)
 		}
+	}
+}
+
+// ── LimiterStore.Update ───────────────────────────────────────────────────────
+
+func TestLimiterStore_Update_NewKeysUseNewRate(t *testing.T) {
+	store := middleware.NewLimiterStore(1.0, 1)
+
+	// Exhaust the burst for "alice" under the old rate.
+	store.Allow(context.Background(), "alice")
+	allowed, _ := store.Allow(context.Background(), "alice")
+	if allowed {
+		t.Fatal("second request should have been throttled before Update")
+	}
+
+	// Raise to a generous rate; entirely new keys should use the new burst.
+	store.Update(100.0, 100)
+	// "bob" is a new key created after Update — must use the new burst.
+	allowed, _ = store.Allow(context.Background(), "bob")
+	if !allowed {
+		t.Error("new key after Update should be permitted under the new rate")
+	}
+}
+
+func TestLimiterStore_Update_EvictsExistingKeys(t *testing.T) {
+	store := middleware.NewLimiterStore(1.0, 1)
+
+	// Saturate "alice" under the old 1-token burst.
+	store.Allow(context.Background(), "alice")
+	allowed, _ := store.Allow(context.Background(), "alice")
+	if allowed {
+		t.Fatal("should have been throttled before Update")
+	}
+
+	// After Update, the existing bucket for "alice" is evicted; the next
+	// Allow creates a fresh bucket with the new burst of 10.
+	store.Update(10.0, 10)
+	allowed, _ = store.Allow(context.Background(), "alice")
+	if !allowed {
+		t.Error("alice should be permitted after Update evicted the old bucket")
 	}
 }
 

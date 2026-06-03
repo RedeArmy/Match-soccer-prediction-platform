@@ -772,6 +772,15 @@ type Purger interface {
 	// worker.outbox_retention_days (default 30 days). Non-fatal: the worker
 	// retries on the next purge tick.
 	PurgeOldOutboxEntries(ctx context.Context, before time.Time) (int64, error)
+	// PurgeExpiredPaymentIntents removes payment_intents rows that are still in
+	// status='pending' and whose expires_at is strictly before before.
+	// Captured intents are financial records and are never removed by this method.
+	// Bounded by payment.intent_retention_days (default 7 days) applied AFTER
+	// expiry: a row with expires_at = T is eligible for deletion once
+	// before = T - retention, giving operators a post-expiry window to audit.
+	// Returns the number of rows deleted. Non-fatal: the worker retries on the
+	// next purge tick.
+	PurgeExpiredPaymentIntents(ctx context.Context, before time.Time) (int64, error)
 }
 
 // ScoringRuleRepository defines persistence operations for per-phase scoring

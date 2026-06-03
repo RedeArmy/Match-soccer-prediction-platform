@@ -179,6 +179,22 @@ func (s *stubRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.Matc
 	return &service.LeaderboardResult{Entries: s.entries}, nil
 }
 
+// stubGroupAuthz implements service.GroupAuthz with configurable returns.
+// memberErr controls RequireActiveMember; ownerErr controls RequireOwner.
+// Both default to nil (allow), so tests that do not care about authz can
+// use &stubGroupAuthz{} without extra setup.
+type stubGroupAuthz struct {
+	memberErr error
+	ownerErr  error
+}
+
+func (s *stubGroupAuthz) RequireActiveMember(_ context.Context, _, _ int) error {
+	return s.memberErr
+}
+func (s *stubGroupAuthz) RequireOwner(_ context.Context, _, _ int) error {
+	return s.ownerErr
+}
+
 // stubUserStatsSvc implements service.MyStatsGetter with configurable returns.
 type stubUserStatsSvc struct {
 	stats *domain.UserStats

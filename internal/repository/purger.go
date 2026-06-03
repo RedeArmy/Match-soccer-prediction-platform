@@ -147,4 +147,29 @@ func (p *PostgresPurger) PurgeOldOutboxEntries(ctx context.Context, before time.
 	return tag.RowsAffected(), nil
 }
 
+// PurgeExpiredPaymentIntents removes payment_intents rows that are still
+// pending (status='pending') and whose expires_at is strictly before before.
+// Captured intents are financial records and are intentionally excluded — they
+// represent completed payments and must not be purged.
+//
+// The before parameter is the expiry cutoff. The worker computes it as:
+//
+//	before = NOW() - payment.intent_retention_days
+//
+// so an intent that expired 7+ days ago is removed on the next daily tick.
+// The partial filter on status='pending' keeps the scan bounded: captured rows
+// are never touched regardless of their expires_at value.
+func (p *PostgresPurger) PurgeExpiredPaymentIntents(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := p.db.Exec(ctx,
+		`DELETE FROM payment_intents
+		  WHERE status    = 'pending'
+		    AND expires_at < $1`,
+		before,
+	)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 var _ Purger = (*PostgresPurger)(nil)

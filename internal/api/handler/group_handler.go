@@ -15,16 +15,19 @@ import (
 type GroupHandler struct {
 	quinielaSvc service.QuinielaService
 	memberSvc   service.GroupMembershipService
+	authz       service.GroupAuthz
 	log         *zap.Logger
 }
 
 // NewGroupHandler constructs a GroupHandler.
+// authz enforces that only active group members may read group details and member lists.
 func NewGroupHandler(
 	quinielaSvc service.QuinielaService,
 	memberSvc service.GroupMembershipService,
+	authz service.GroupAuthz,
 	log *zap.Logger,
 ) *GroupHandler {
-	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, log: log}
+	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, authz: authz, log: log}
 }
 
 // renameGroupRequest is the JSON body accepted by PATCH /api/v1/groups/{id}.
@@ -91,12 +94,18 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 // GetByID handles GET /api/v1/groups/{id}.
 //
 // @Summary      Get a group
-// @Description  Returns group metadata by ID.
+// @Description  Returns group metadata by ID. Requires active group membership.
+//
+//	The response includes the current invite code, which must not leak
+//	to non-members — anyone holding it can join the group unsolicited.
+//
 // @Tags         groups
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id   path      int  true  "Group ID"
 // @Success      200  {object}  handler.GroupResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Not an active member of this group"
 // @Failure      404  {object}  handler.ErrorResponse
 // @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/{id} [get]
@@ -106,6 +115,11 @@ func (h *GroupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, err)
 		return
 	}
+
+	if _, ok := requireGroupMember(w, r, h.log, h.authz, id); !ok {
+		return
+	}
+
 	quiniela, err := h.quinielaSvc.GetByID(r.Context(), id)
 	if err != nil {
 		writeError(w, r, h.log, err)
@@ -201,8 +215,10 @@ func (h *GroupHandler) JoinWithBalance(w http.ResponseWriter, r *http.Request) {
 // ListMembers handles GET /api/v1/groups/{id}/members.
 //
 // @Summary      List group members
-// @Description  Returns all memberships for the given group.
+// @Description  Returns all memberships for the given group. Requires active group membership.
 //
+//	Each membership record includes the paid status (whether the member has
+//	paid their entry fee), which must only be visible to fellow members.
 //	Supports optional pagination via ?limit and ?offset (defaults to unbounded).
 //
 // @Tags         groups
@@ -212,12 +228,18 @@ func (h *GroupHandler) JoinWithBalance(w http.ResponseWriter, r *http.Request) {
 // @Param        limit   query  int  false  "Maximum number of results to return (0 = unbounded)"
 // @Param        offset  query  int  false  "Number of results to skip (default: 0)"
 // @Success      200     {object}  handler.Paged[handler.MemberResponse]
+// @Failure      401     {object}  handler.ErrorResponse
+// @Failure      403     {object}  handler.ErrorResponse  "Not an active member of this group"
 // @Failure      500     {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/{id}/members [get]
 func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
 		writeError(w, r, h.log, err)
+		return
+	}
+
+	if _, ok := requireGroupMember(w, r, h.log, h.authz, id); !ok {
 		return
 	}
 

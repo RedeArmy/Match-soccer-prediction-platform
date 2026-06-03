@@ -9,6 +9,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
 // Compile-time check: CachedRankingService must implement Ranker.
@@ -26,18 +27,56 @@ var _ Ranker = (*CachedRankingService)(nil)
 // cache.leaderboard_ttl_seconds takes effect for all subsequent cache writes
 // without requiring a process restart. Call UpdateTTL after reading the new
 // value from SystemParamService.
+//
+// Snapshot fallback (optional, enabled via WithSnapshotFallback):
+// On a cold-cache miss for GetLeaderboard, the service tries the latest DB
+// snapshot before falling back to a full live computation. For groups with
+// many predictions (>10k rows) this avoids an expensive GROUP BY aggregation
+// on every Redis restart or cache eviction, replacing it with a fast indexed
+// snapshot lookup plus a batch user-name enrichment.
+// Phase leaderboards always compute live (no per-phase snapshots).
 type CachedRankingService struct {
-	inner Ranker
-	store cache.Store
-	ttlNs atomic.Int64 // nanoseconds; read/written atomically
-	log   *zap.Logger
+	inner      Ranker
+	store      cache.Store
+	ttlNs      atomic.Int64 // nanoseconds; read/written atomically
+	log        *zap.Logger
+	snapRepo   repository.LeaderboardSnapshotRepository // nil when snapshot fallback is disabled
+	userRepo   repository.UserRepository                // nil when snapshot fallback is disabled
+	memberRepo repository.GroupMembershipRepository     // nil when snapshot fallback is disabled
+}
+
+// CachedRankingOption is a functional option for CachedRankingService.
+type CachedRankingOption func(*CachedRankingService)
+
+// WithSnapshotFallback enables the snapshot-backed cold-cache path for
+// GetLeaderboard. When the Redis cache misses and a snapshot is available in
+// the DB, the result is built from the snapshot + a user batch-lookup (one
+// query) + active-paid count — avoiding the expensive GROUP BY aggregation
+// over raw predictions.
+//
+// snapRepo provides the latest snapshot per quiniela. userRepo enriches
+// snapshot entries with user display names. memberRepo provides the
+// authoritative active-paid count for prize metadata.
+func WithSnapshotFallback(
+	snapRepo repository.LeaderboardSnapshotRepository,
+	userRepo repository.UserRepository,
+	memberRepo repository.GroupMembershipRepository,
+) CachedRankingOption {
+	return func(s *CachedRankingService) {
+		s.snapRepo = snapRepo
+		s.userRepo = userRepo
+		s.memberRepo = memberRepo
+	}
 }
 
 // NewCachedRankingService wraps ranker with leaderboard caching.
 // ttl is the initial cache duration; call UpdateTTL to change it at runtime.
-func NewCachedRankingService(ranker Ranker, store cache.Store, ttl time.Duration, log *zap.Logger) *CachedRankingService {
+func NewCachedRankingService(ranker Ranker, store cache.Store, ttl time.Duration, log *zap.Logger, opts ...CachedRankingOption) *CachedRankingService {
 	s := &CachedRankingService{inner: ranker, store: store, log: log}
 	s.ttlNs.Store(ttl.Nanoseconds())
+	for _, o := range opts {
+		o(s)
+	}
 	return s
 }
 
@@ -52,7 +91,14 @@ func (s *CachedRankingService) effectiveTTL() time.Duration {
 }
 
 // GetLeaderboard returns the cached LeaderboardResult for the given quiniela
-// when available, or falls through to the inner Ranker and caches the result.
+// when available. On a cache miss the read cascade is:
+//
+//  1. Redis cache (fast, sub-millisecond on hit)
+//  2. Latest DB snapshot (WithSnapshotFallback only) — avoids a full GROUP BY
+//     aggregation over raw predictions when the cache is cold (e.g. after a
+//     Redis restart). Uses snapshot entries + batch user-name enrichment.
+//  3. Full live computation via the inner Ranker (always available as fallback)
+//
 // The full LeaderboardResult (including prize metadata) is cached so that
 // ActivePaidMembers, WinnerCount, and EligibleForPrizes are consistent with
 // the cached entries and do not require a separate DB round-trip on cache hit.
@@ -61,6 +107,16 @@ func (s *CachedRankingService) GetLeaderboard(ctx context.Context, quinielaID in
 	if cached, ok := cacheGet[*LeaderboardResult](ctx, s.store, key, s.log); ok {
 		return cached, nil
 	}
+
+	// Snapshot fallback: cheaper than live computation for large groups.
+	if s.snapRepo != nil {
+		if result, ok, err := s.resultFromSnapshot(ctx, quinielaID); err == nil && ok {
+			cacheSet(ctx, s.store, key, result, s.effectiveTTL(), s.log)
+			return result, nil
+		}
+		// Snapshot miss or enrichment failure: fall through to full computation.
+	}
+
 	result, err := s.inner.GetLeaderboard(ctx, quinielaID)
 	if err != nil {
 		return nil, err
@@ -69,6 +125,83 @@ func (s *CachedRankingService) GetLeaderboard(ctx context.Context, quinielaID in
 		cacheSet(ctx, s.store, key, result, s.effectiveTTL(), s.log)
 	}
 	return result, nil
+}
+
+// resultFromSnapshot attempts to build a LeaderboardResult from the latest DB
+// snapshot for quinielaID without executing the expensive GROUP BY aggregation
+// over raw predictions.
+//
+// It executes two DB queries:
+//  1. LeaderboardSnapshotRepository.GetLatest — indexed lookup (fast).
+//  2. UserRepository.ListByIDs — batch fetch of display names.
+//  3. GroupMembershipRepository.CountActivePaid — authoritative prize count.
+//
+// Returns (result, true, nil) on success, (nil, false, nil) when no snapshot
+// exists yet, and (nil, false, err) when the snapshot lookup or enrichment fails.
+// The caller falls through to full live computation on any non-success case.
+func (s *CachedRankingService) resultFromSnapshot(ctx context.Context, quinielaID int) (*LeaderboardResult, bool, error) {
+	snap, err := s.snapRepo.GetLatest(ctx, quinielaID)
+	if err != nil {
+		s.log.Warn("snapshot fallback: GetLatest failed, falling back to live computation",
+			zap.Int("quiniela_id", quinielaID),
+			zap.Error(err),
+		)
+		return nil, false, err
+	}
+	if snap == nil || len(snap.Entries) == 0 {
+		return nil, false, nil // no snapshot yet — caller does full computation
+	}
+
+	// Batch-fetch user display names for all entries in the snapshot.
+	userIDs := make([]int, 0, len(snap.Entries))
+	for _, e := range snap.Entries {
+		userIDs = append(userIDs, e.UserID)
+	}
+	users, err := s.userRepo.ListByIDs(ctx, userIDs)
+	if err != nil {
+		s.log.Warn("snapshot fallback: user enrichment failed, falling back to live computation",
+			zap.Int("quiniela_id", quinielaID),
+			zap.Error(err),
+		)
+		return nil, false, err
+	}
+	userByID := make(map[int]*domain.User, len(users))
+	for _, u := range users {
+		userByID[u.ID] = u
+	}
+
+	// Authoritative active-paid count for prize metadata.
+	activePaid, err := s.memberRepo.CountActivePaid(ctx, quinielaID)
+	if err != nil {
+		s.log.Warn("snapshot fallback: CountActivePaid failed, falling back to live computation",
+			zap.Int("quiniela_id", quinielaID),
+			zap.Error(err),
+		)
+		return nil, false, err
+	}
+
+	entries := make([]*domain.LeaderboardEntry, 0, len(snap.Entries))
+	for _, se := range snap.Entries {
+		u, ok := userByID[se.UserID]
+		if !ok {
+			// Soft-deleted user — skip (matches live computation behaviour).
+			continue
+		}
+		entries = append(entries, &domain.LeaderboardEntry{
+			User:        u,
+			Rank:        se.Rank,
+			TotalPoints: se.TotalPoints,
+			PrizeWinner: se.PrizeWinner,
+		})
+	}
+
+	result := &LeaderboardResult{
+		Entries:           entries,
+		ActivePaidMembers: activePaid,
+		WinnerCount:       domain.WinnerCount(activePaid),
+		EligibleForPrizes: domain.EligibleForPayments(activePaid),
+	}
+	return result, true, nil
 }
 
 // GetPhaseLeaderboard returns the cached phase LeaderboardResult when available,

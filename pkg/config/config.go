@@ -244,6 +244,13 @@ type ServerConfig struct {
 	// Defaults to "9091". Set via WCQ_SERVER_METRICSPORT.
 	// An empty string disables the dedicated metrics server.
 	MetricsPort string `mapstructure:"metricsPort"`
+	// MetricsBindAddr is the network address the metrics server binds to.
+	// An empty string binds to all interfaces (0.0.0.0), which is required
+	// when Prometheus scrapes from a separate container or Fly.io private
+	// network.  Set to "127.0.0.1" when Prometheus runs on the same host
+	// and network isolation via the loopback interface is preferred.
+	// Set via WCQ_SERVER_METRICSBINDADDR.  Defaults to "" (all interfaces).
+	MetricsBindAddr string `mapstructure:"metricsBindAddr"`
 }
 
 // DatabaseConfig carries the connection string and pool settings for the
