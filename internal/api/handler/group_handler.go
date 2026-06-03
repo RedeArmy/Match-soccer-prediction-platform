@@ -110,20 +110,13 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/{id} [get]
 func (h *GroupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
-	caller, ok := middleware.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
-		return
-	}
-
 	id, err := pathID(r, "id")
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
 
-	if err := h.authz.RequireActiveMember(r.Context(), id, caller.ID); err != nil {
-		writeError(w, r, h.log, err)
+	if _, ok := requireGroupMember(w, r, h.log, h.authz, id); !ok {
 		return
 	}
 
@@ -240,20 +233,13 @@ func (h *GroupHandler) JoinWithBalance(w http.ResponseWriter, r *http.Request) {
 // @Failure      500     {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/{id}/members [get]
 func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
-	caller, ok := middleware.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
-		return
-	}
-
 	id, err := pathID(r, "id")
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
 
-	if err := h.authz.RequireActiveMember(r.Context(), id, caller.ID); err != nil {
-		writeError(w, r, h.log, err)
+	if _, ok := requireGroupMember(w, r, h.log, h.authz, id); !ok {
 		return
 	}
 

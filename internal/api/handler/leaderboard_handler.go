@@ -6,9 +6,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
-	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/service"
-	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // LeaderboardHandler handles HTTP requests for group leaderboard endpoints.
@@ -54,20 +52,13 @@ func NewLeaderboardHandler(ranker service.Ranker, authz service.GroupAuthz, log 
 // @Failure      500    {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/{id}/leaderboard [get]
 func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
-	caller, ok := middleware.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
-		return
-	}
-
 	id, err := pathID(r, "id")
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
 
-	if err := h.authz.RequireActiveMember(r.Context(), id, caller.ID); err != nil {
-		writeError(w, r, h.log, err)
+	if _, ok := requireGroupMember(w, r, h.log, h.authz, id); !ok {
 		return
 	}
 
