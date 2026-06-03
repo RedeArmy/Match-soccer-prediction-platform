@@ -70,6 +70,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeySystemParamHistoryRetentionDays": ParamKeySystemParamHistoryRetentionDays,
 		"ParamKeyFXHistoryRetentionDays":          ParamKeyFXHistoryRetentionDays,
 		"ParamKeyOutboxRetentionDays":             ParamKeyOutboxRetentionDays,
+		"ParamKeyPaymentIntentRetentionDays":      ParamKeyPaymentIntentRetentionDays,
 		// API
 		"ParamKeyAPIBodySizeLimitBytes":    ParamKeyAPIBodySizeLimitBytes,
 		"ParamKeyAPIRateLimitRatePerSec":   ParamKeyAPIRateLimitRatePerSec,
@@ -362,7 +363,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 137 // update when adding a new ParamKey* constant
+		const expectedCount = 138 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -465,6 +466,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeySystemParamHistoryRetentionDays", ParamKeySystemParamHistoryRetentionDays, "system"},
 		{"ParamKeyFXHistoryRetentionDays", ParamKeyFXHistoryRetentionDays, "fx"},
 		{"ParamKeyOutboxRetentionDays", ParamKeyOutboxRetentionDays, "worker"},
+		{"ParamKeyPaymentIntentRetentionDays", ParamKeyPaymentIntentRetentionDays, "payment"},
 		// API
 		{"ParamKeyAPIBodySizeLimitBytes", ParamKeyAPIBodySizeLimitBytes, "api"},
 		{"ParamKeyAPIRateLimitRatePerSec", ParamKeyAPIRateLimitRatePerSec, "api"},
