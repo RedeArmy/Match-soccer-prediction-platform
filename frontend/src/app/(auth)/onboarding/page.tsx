@@ -61,10 +61,11 @@ export default function OnboardingPage() {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-text-secondary mb-1.5">
+            <label htmlFor="onboarding-display-name" className="block text-sm text-text-secondary mb-1.5">
               Nombre para mostrar <span className="text-text-muted">(opcional)</span>
             </label>
             <input
+              id="onboarding-display-name"
               type="text"
               value={displayName}
               onChange={e => setDisplayName(e.target.value)}

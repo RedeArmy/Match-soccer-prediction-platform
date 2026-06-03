@@ -7,6 +7,8 @@ import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Activity, Wifi, AlertTriangle } from 'lucide-react'
 
+const CB_BADGE_STATUS: Record<string, string> = { closed: 'approved', open: 'rejected' }
+
 export default function AdminObservabilityPage() {
   const { getToken } = useAuth()
 
@@ -71,7 +73,7 @@ export default function AdminObservabilityPage() {
         {!breakersLoading && (breakers?.length ?? 0) > 0 && (
           <div className="card divide-y divide-blue-800/50">
             {breakers?.map(b => {
-              const cbStatus = b.state === 'closed' ? 'approved' : b.state === 'open' ? 'rejected' : 'pending'
+              const cbStatus = CB_BADGE_STATUS[b.state] ?? 'pending'
               return (
                 <div key={b.name} className="flex items-center justify-between gap-3 px-4 py-3">
                   <div>

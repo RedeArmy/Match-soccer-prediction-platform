@@ -65,9 +65,9 @@ export default function AdminExchangeRatePage() {
 
   const chartData = history?.data.map(e => ({
     date:      new Date(e.effective_at).toLocaleDateString('es-GT'),
-    reference: parseFloat(e.reference_rate),
-    compra:    parseFloat(e.buy_rate),
-    venta:     parseFloat(e.sell_rate),
+    reference: Number.parseFloat(e.reference_rate),
+    compra:    Number.parseFloat(e.buy_rate),
+    venta:     Number.parseFloat(e.sell_rate),
     override:  e.is_override,
   })).reverse() ?? []
 
@@ -140,10 +140,11 @@ export default function AdminExchangeRatePage() {
 
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-text-secondary mb-1.5">
+            <label htmlFor="override-rate" className="block text-sm text-text-secondary mb-1.5">
               Tasa de referencia (ej. 7.8500)
             </label>
             <input
+              id="override-rate"
               type="number"
               min="1" max="20" step="0.0001"
               value={overrideRate}
@@ -153,10 +154,11 @@ export default function AdminExchangeRatePage() {
             />
           </div>
           <div>
-            <label className="block text-sm text-text-secondary mb-1.5">
+            <label htmlFor="override-reason" className="block text-sm text-text-secondary mb-1.5">
               Razón (mín. 10 caracteres)
             </label>
             <input
+              id="override-reason"
               type="text"
               value={overrideReason}
               onChange={e => setOverrideReason(e.target.value)}

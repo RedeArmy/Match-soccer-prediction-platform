@@ -84,7 +84,7 @@ export default function WithdrawPage() {
 
         {/* Method */}
         <div>
-          <label className="block text-sm text-text-secondary mb-2">Método de retiro</label>
+          <p className="block text-sm text-text-secondary mb-2">Método de retiro</p>
           <div className="flex gap-2">
             {([
               { id: 'bank_gt', label: 'Banco GT',  icon: <Banknote className="w-4 h-4" /> },

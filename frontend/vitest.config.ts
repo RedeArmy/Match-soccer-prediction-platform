@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
+import { resolve } from 'node:path'
 
 export default defineConfig({
   plugins: [react()],
@@ -9,7 +9,7 @@ export default defineConfig({
     globals:     true,
     setupFiles:  ['./src/test/setup.ts'],
     env: {
-      BACKEND_INTERNAL_URL: 'http://backend:8080',
+      BACKEND_INTERNAL_URL: 'https://backend:8080',
     },
     coverage: {
       provider:         'v8',
