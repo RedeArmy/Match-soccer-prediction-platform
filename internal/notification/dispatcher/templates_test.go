@@ -236,12 +236,14 @@ func TestBuildEmailData_DetailsOrdering_Deterministic(t *testing.T) {
 		t.Fatalf("NewOutboxEntry: %v", err)
 	}
 
-	_, html1, _ := renderEmail(entry)
-	_, html2, _ := renderEmail(entry)
-	_, html3, _ := renderEmail(entry)
+	// Use a fixed timestamp so the rendered HTML is fully deterministic.
+	const fixedNow = "2025-01-01 00:00:00 UTC"
+	_, html1, _ := renderEmailAt(entry, fixedNow)
+	_, html2, _ := renderEmailAt(entry, fixedNow)
+	_, html3, _ := renderEmailAt(entry, fixedNow)
 
 	if html1 != html2 || html2 != html3 {
-		t.Error("renderEmail output is not deterministic across invocations")
+		t.Error("renderEmailAt output is not deterministic across invocations")
 	}
 
 	// Proof ID must appear before User ID, which must appear before Amount.

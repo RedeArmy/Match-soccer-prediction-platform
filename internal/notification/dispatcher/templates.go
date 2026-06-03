@@ -88,7 +88,13 @@ var baseTemplate = template.Must(template.New("base").Parse(`<!DOCTYPE html>
 // renderEmail returns the email subject and HTML body for the given outbox entry.
 // For unknown event types a generic template is used so no admin alert is silently dropped.
 func renderEmail(entry *notification.OutboxEntry) (subject, html string, err error) {
-	data := buildEmailData(entry)
+	return renderEmailAt(entry, time.Now().UTC().Format("2006-01-02 15:04:05 UTC"))
+}
+
+// renderEmailAt is the testable form of renderEmail; callers supply an explicit
+// pre-formatted timestamp so the rendered output is fully deterministic.
+func renderEmailAt(entry *notification.OutboxEntry, now string) (subject, html string, err error) {
+	data := buildEmailDataAt(entry, now)
 	var buf bytes.Buffer
 	if err := baseTemplate.Execute(&buf, data); err != nil {
 		return "", "", fmt.Errorf("dispatcher: render template: %w", err)
@@ -151,7 +157,12 @@ var emailBuilders = map[notification.EventType]emailDataBuilder{
 // event type. This ensures no admin alert is silently dropped due to a schema
 // mismatch or missing migration.
 func buildEmailData(entry *notification.OutboxEntry) emailData {
-	now := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
+	return buildEmailDataAt(entry, time.Now().UTC().Format("2006-01-02 15:04:05 UTC"))
+}
+
+// buildEmailDataAt is the testable form of buildEmailData; accepting an explicit
+// pre-formatted timestamp makes output fully deterministic in unit tests.
+func buildEmailDataAt(entry *notification.OutboxEntry, now string) emailData {
 	if build, ok := emailBuilders[entry.EventType]; ok {
 		data, err := build(entry, now)
 		if err != nil {
