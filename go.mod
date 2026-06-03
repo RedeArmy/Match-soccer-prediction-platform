@@ -1,6 +1,6 @@
 module github.com/rede/world-cup-quiniela
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
@@ -16,6 +16,7 @@ require (
 	github.com/lestrrat-go/jwx/v2 v2.1.6
 	github.com/redis/go-redis/v9 v9.19.0
 	github.com/rs/cors v1.11.1
+	github.com/shopspring/decimal v1.4.0
 	github.com/spf13/viper v1.21.0
 	github.com/svix/svix-webhooks v1.91.1
 	github.com/swaggo/http-swagger/v2 v2.0.2
@@ -36,7 +37,6 @@ require (
 )
 
 require (
-	github.com/shopspring/decimal v1.4.0 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260421165255-392afab6f40e // indirect
 	golang.org/x/vuln v1.3.0 // indirect

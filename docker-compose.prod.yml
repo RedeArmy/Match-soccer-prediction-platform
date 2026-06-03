@@ -1,0 +1,111 @@
+# Production orchestration — all 4 services: postgres, redis, backend, frontend.
+# The existing docker-compose.yml is kept for local dev (infra only).
+# Usage: docker compose -f docker-compose.prod.yml up --build -d
+
+networks:
+  quiniela-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-quiniela}
+      POSTGRES_USER:     ${POSTGRES_USER:-quiniela}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [quiniela-net]
+    healthcheck:
+      test:         ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quiniela} -d ${POSTGRES_DB:-quiniela}"]
+      interval:     10s
+      timeout:      5s
+      retries:      5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks: [quiniela-net]
+    healthcheck:
+      test:     ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout:  3s
+      retries:  5
+
+  backend:
+    build:
+      context:    .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      WCQ_DATABASE_DSN:              postgres://${POSTGRES_USER:-quiniela}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quiniela}?sslmode=disable
+      WCQ_REDIS_ADDR:                redis:6379
+      WCQ_REDIS_PASSWORD:            ${REDIS_PASSWORD}
+      WCQ_ENVIRONMENT:               production
+      WCQ_CORS_ALLOWEDORIGINS:       ${FRONTEND_PUBLIC_URL},http://frontend:3000
+      WCQ_CLERK_JWKSURL:             ${CLERK_JWKS_URL}
+      WCQ_CLERK_WEBHOOKSECRET:       ${CLERK_WEBHOOK_SECRET}
+      WCQ_EVENTBUS_DRIVER:           redis
+      WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET: ${RECURRENTE_WEBHOOK_SECRET}
+      WCQ_PAYMENT_PAYPALWEBHOOKID:   ${PAYPAL_WEBHOOK_ID}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [quiniela-net]
+    healthcheck:
+      test:         ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval:     15s
+      timeout:      5s
+      start_period: 20s
+      retries:      3
+
+  worker:
+    build:
+      context:    .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    environment:
+      WCQ_DATABASE_DSN:    postgres://${POSTGRES_USER:-quiniela}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quiniela}?sslmode=disable
+      WCQ_REDIS_ADDR:      redis:6379
+      WCQ_REDIS_PASSWORD:  ${REDIS_PASSWORD}
+      WCQ_ENVIRONMENT:     production
+      WCQ_EVENTBUS_DRIVER: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [quiniela-net]
+
+  frontend:
+    build:
+      context:    ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY:                  ${CLERK_SECRET_KEY}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL:     /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL:     /sign-up
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL:  /dashboard
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL:  /onboarding
+      BACKEND_INTERNAL_URL:              http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [quiniela-net]
+    ports:
+      - "3000:3000"

@@ -1,0 +1,28 @@
+# Next.js
+.next/
+out/
+
+# Node
+node_modules/
+
+# Build
+dist/
+
+# Env files (never commit)
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Test coverage
+coverage/
+playwright-report/
+test-results/
+frontend/tsconfig.tsbuildinfo

@@ -9,6 +9,15 @@ API_BIN     := $(BINARY_DIR)/api
 MIGRATE_BIN := $(BINARY_DIR)/migrate
 WORKER_BIN  := $(BINARY_DIR)/worker
 
+# Load .env into Make variables so POSTGRES_HOST_PORT and other overrides
+# are picked up automatically without requiring `source .env` first.
+-include .env
+
+# Host port for the local Postgres Docker container.
+# Override in .env (POSTGRES_HOST_PORT=5435) if port 5432 is already in use
+# by a system-managed Postgres instance.
+POSTGRES_HOST_PORT ?= 5432
+
 # Default target: build all binaries.
 .DEFAULT_GOAL := build
 
@@ -26,7 +35,7 @@ build:
 run:
 	WCQ_ENVIRONMENT=dev \
 	WCQ_LOGGER_ENCODING=console \
-	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:5432/quiniela?sslmode=disable \
+	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:$(POSTGRES_HOST_PORT)/quiniela?sslmode=disable \
 	go run ./cmd/api
 
 ## run-worker: Run the background worker with local development settings
@@ -34,7 +43,7 @@ run:
 run-worker:
 	WCQ_ENVIRONMENT=dev \
 	WCQ_LOGGER_ENCODING=console \
-	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:5432/quiniela?sslmode=disable \
+	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:$(POSTGRES_HOST_PORT)/quiniela?sslmode=disable \
 	WCQ_EVENTBUS_DRIVER=redis \
 	go run ./cmd/worker
 
@@ -208,7 +217,7 @@ schema-dump:
 		--no-owner \
 		--no-acl \
 		--no-comments \
-		"postgres://quiniela:quiniela@localhost:5432/quiniela?sslmode=disable" \
+		"postgres://quiniela:quiniela@localhost:$(POSTGRES_HOST_PORT)/quiniela?sslmode=disable" \
 	| grep -v "^--" \
 	| sed '/^$$/N;/^\n$$/d' \
 	> migrations/baseline/schema.sql
@@ -220,7 +229,7 @@ schema-dump:
 ##                  Verifies that every ParamKey* constant has a matching row in system_params
 ##                  with correct type, category, and description.
 validate-params:
-	@DATABASE_URL="postgres://quiniela:quiniela@localhost:5432/quiniela?sslmode=disable" \
+	@DATABASE_URL="postgres://quiniela:quiniela@localhost:$(POSTGRES_HOST_PORT)/quiniela?sslmode=disable" \
 	go run ./cmd/validate-params
 
 ## swagger-gen: Generate OpenAPI spec and Swagger UI assets from handler annotations.
