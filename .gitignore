@@ -69,3 +69,15 @@ go.work.sum
 /worker
 /genschema
 /validate-params
+
+# ── Local storage driver uploads ──────────────────────────────────────────────
+# The local storage driver (WCQ_STORAGE_DRIVER=local, development only) writes
+# uploaded files to an "uploads/" directory relative to the binary's working
+# directory. Production uses cloud storage (S3/GDrive/OneDrive) and this
+# directory is never created there — but ignoring it here prevents accidentally
+# staging user-uploaded files (KYC documents, bank transfer proofs) during
+# local development.
+# NewLocalFileStore creates the directory automatically via os.MkdirAll, so
+# no .gitkeep is required.
+/uploads/
+cmd/api/uploads/

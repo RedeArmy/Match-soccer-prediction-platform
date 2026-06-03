@@ -146,12 +146,20 @@ func TestUnmarshal_TamperedCiphertext_ReturnsError(t *testing.T) {
 	blob, _ := payoutenc.Marshal(enc, map[string]string{"k": "v"})
 
 	// Flip a byte in the base64 value to corrupt the GCM tag.
+	// Use a replacement that is guaranteed to differ from the original
+	// character so the corruption is always real regardless of what the
+	// random nonce produces.
 	s := string(blob)
 	idx := strings.Index(s, `"_enc":"`) + len(`"_enc":"`)
 	if idx < len(`"_enc":"`) {
 		t.Fatal("could not find _enc value")
 	}
-	corrupted := s[:idx] + "A" + s[idx+1:]
+	orig := s[idx]
+	replacement := byte('A')
+	if orig == 'A' {
+		replacement = 'B'
+	}
+	corrupted := s[:idx] + string(replacement) + s[idx+1:]
 
 	if _, err := payoutenc.Unmarshal(enc, []byte(corrupted)); err == nil {
 		t.Error("expected error for tampered ciphertext")

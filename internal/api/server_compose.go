@@ -46,7 +46,11 @@ type kycModuleDeps struct {
 }
 
 // appHandlers groups all route handlers; fields are unexported and used only within Routes.
+// paramSvc is the audit-enabled SystemParamService forwarded so that Routes()
+// can register mutation hooks (e.g. admin rate-limit tuning) after constructing
+// the stores that depend on param values.
 type appHandlers struct {
+	paramSvc           service.SystemParamService // audit-enabled; for mutation hooks in Routes()
 	match              *handler.MatchHandler
 	prediction         *handler.PredictionHandler
 	group              *handler.GroupHandler
@@ -161,7 +165,14 @@ func (s *Server) buildHandlers(
 
 	ranker := service.NewRankingService(quinielaRepo, repos.pred, repos.user, repos.member, tiebreakerRepo, tiebreakerConfigRepo, s.log)
 	if cacheStore != nil {
-		cachedRanker := service.NewCachedRankingService(ranker, cacheStore, leaderboardTTL, s.log)
+		cachedRanker := service.NewCachedRankingService(ranker, cacheStore, leaderboardTTL, s.log,
+			// Snapshot fallback: on cold-cache misses for large quinielas (>10k
+			// predictions), serve from the last DB snapshot + user enrichment instead
+			// of a full GROUP BY aggregation over raw predictions. The scoring worker
+			// writes a snapshot after every match scoring run, so the snapshot is
+			// typically at most one match behind the live leaderboard.
+			service.WithSnapshotFallback(snapRepo, repos.user, repos.member),
+		)
 		s.wireLeaderboardTTLHook(paramSvcWithAudit, cachedRanker)
 		ranker = cachedRanker
 	}
@@ -251,6 +262,7 @@ func (s *Server) buildHandlers(
 	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, kycGate, outboxWriter, auditSvc, s.log)
 
 	h := appHandlers{
+		paramSvc: paramSvcWithAudit,
 		notification: handler.NewNotificationHandler(handler.NotificationHandlerConfig{
 			NotifRepo:         notifRepo,
 			PrefRepo:          prefRepo,
@@ -262,8 +274,8 @@ func (s *Server) buildHandlers(
 		}),
 		match:              handler.NewMatchHandler(matchSvc, s.log),
 		prediction:         handler.NewPredictionHandler(predSvc, s.log),
-		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, s.log),
-		leaderboard:        handler.NewLeaderboardHandler(ranker, s.log),
+		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, groupAuthz, s.log),
+		leaderboard:        handler.NewLeaderboardHandler(ranker, groupAuthz, s.log),
 		userStats:          handler.NewUserStatsHandler(userStatsSvc, s.log),
 		tiebreaker:         handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
 		tournament:         handler.NewTournamentHandler(tournamentSvc, s.log),

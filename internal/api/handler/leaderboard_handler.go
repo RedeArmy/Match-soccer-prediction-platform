@@ -12,12 +12,14 @@ import (
 // LeaderboardHandler handles HTTP requests for group leaderboard endpoints.
 type LeaderboardHandler struct {
 	ranker service.Ranker
+	authz  service.GroupAuthz
 	log    *zap.Logger
 }
 
 // NewLeaderboardHandler constructs a LeaderboardHandler.
-func NewLeaderboardHandler(ranker service.Ranker, log *zap.Logger) *LeaderboardHandler {
-	return &LeaderboardHandler{ranker: ranker, log: log}
+// authz enforces that only active group members may read standings.
+func NewLeaderboardHandler(ranker service.Ranker, authz service.GroupAuthz, log *zap.Logger) *LeaderboardHandler {
+	return &LeaderboardHandler{ranker: ranker, authz: authz, log: log}
 }
 
 // GetLeaderboard handles GET /api/v1/groups/{id}/leaderboard.
@@ -45,6 +47,7 @@ func NewLeaderboardHandler(ranker service.Ranker, log *zap.Logger) *LeaderboardH
 // @Success      200    {object}  handler.LeaderboardResponse
 // @Failure      400    {object}  handler.ErrorResponse  "Unknown phase value"
 // @Failure      401    {object}  handler.ErrorResponse
+// @Failure      403    {object}  handler.ErrorResponse  "Not an active member of this group"
 // @Failure      404    {object}  handler.ErrorResponse
 // @Failure      500    {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/{id}/leaderboard [get]
@@ -52,6 +55,10 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 	id, err := pathID(r, "id")
 	if err != nil {
 		writeError(w, r, h.log, err)
+		return
+	}
+
+	if _, ok := requireGroupMember(w, r, h.log, h.authz, id); !ok {
 		return
 	}
 

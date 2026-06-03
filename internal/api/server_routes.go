@@ -289,6 +289,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	adminRatePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAdminRateLimitRatePerSec, domain.DefaultAdminRateLimitRatePerSec))
 	adminRateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAdminRateLimitBurst, domain.DefaultAdminRateLimitBurst)
 	adminRateStore := middleware.NewLimiterStore(adminRatePerSec, adminRateBurst)
+	// Wire mutation hook so that an admin updating admin.rate_limit_rate_per_sec
+	// or admin.rate_limit_burst takes effect immediately for the in-process store.
+	// Per-user and IP rate limiters are Redis-backed in production and still
+	// require a restart — documented in constants_api.go.
+	s.wireAdminRateLimitHook(h.paramSvc, adminRateStore)
 
 	// d bundles the shared values passed to every /api/v1 route group helper.
 	// Ordering within r.Route is preserved by the explicit call sequence below.
@@ -431,10 +436,15 @@ func (s *Server) registerLocalSubscribers(ctx context.Context, scorer service.Ma
 func (s *Server) registerPublicRoutes(r chi.Router) {
 	r.Get("/health", s.handleHealth)
 	r.Get("/health/ready", s.handleReadiness)
-	r.Get("/swagger/*", httpSwagger.Handler(
-		httpSwagger.URL("/swagger/doc.json"),
-		httpSwagger.DeepLinking(true),
-	))
+	// Swagger UI is only served in development. Exposing it in production
+	// would advertise every admin endpoint, payment webhook, and KYC route
+	// to any observer — a significant reconnaissance surface.
+	if s.cfg.IsDevelopment() {
+		r.Get("/swagger/*", httpSwagger.Handler(
+			httpSwagger.URL("/swagger/doc.json"),
+			httpSwagger.DeepLinking(true),
+		))
+	}
 	// Service Worker and push assets must be served at the root scope so the
 	// SW controls all pages. The embedded FS is compiled into the binary.
 	staticSub, _ := fs.Sub(staticFiles, "static")

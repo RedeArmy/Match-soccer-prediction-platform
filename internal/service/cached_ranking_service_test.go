@@ -12,6 +12,23 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 )
 
+// ── snapshot / user / member stubs for snapshot-fallback tests ───────────────
+
+type snapFallbackSnapshotRepo struct {
+	snap *domain.LeaderboardSnapshot
+	err  error
+}
+
+func (r *snapFallbackSnapshotRepo) GetLatest(_ context.Context, _ int) (*domain.LeaderboardSnapshot, error) {
+	return r.snap, r.err
+}
+func (r *snapFallbackSnapshotRepo) Create(_ context.Context, _ *domain.LeaderboardSnapshot) error {
+	return nil
+}
+func (r *snapFallbackSnapshotRepo) ListByQuiniela(_ context.Context, _, _ int) ([]*domain.LeaderboardSnapshot, error) {
+	return nil, nil
+}
+
 const (
 	cachedUnexpectedErrorFmt = "unexpected error: %v"
 	fmtInnerCalledOnce       = "expected inner called once, called %d times"
@@ -386,6 +403,219 @@ func TestCachedRankingService_UpdateTTL_AffectsCacheWriteTTL(t *testing.T) {
 	}
 	if spy.lastSetTTL != updatedTTL {
 		t.Errorf("second Set TTL after UpdateTTL: got %v; want %v", spy.lastSetTTL, updatedTTL)
+	}
+}
+
+// ── WithSnapshotFallback ──────────────────────────────────────────────────────
+
+func TestCachedRankingService_SnapshotFallback_ServedOnColdCacheMiss(t *testing.T) {
+	t.Parallel()
+	snap := &domain.LeaderboardSnapshot{
+		QuinielaID: 1,
+		Entries: []domain.LeaderboardSnapshotEntry{
+			{UserID: 10, Rank: 1, TotalPoints: 15, PrizeWinner: true},
+		},
+	}
+	users := []*domain.User{{ID: 10, Name: "Alice"}}
+
+	inner := &stubRanker{} // never called when snapshot hit
+	st := newStubCache()
+	svc := NewCachedRankingService(inner, st, 30*time.Second, zap.NewNop(),
+		WithSnapshotFallback(
+			&snapFallbackSnapshotRepo{snap: snap},
+			&stubUserRepo{users: users},
+			&stubMemberRepo{activeCount: 5},
+		),
+	)
+
+	result, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("expected 1 entry from snapshot, got %d", len(result.Entries))
+	}
+	if result.Entries[0].User.Name != "Alice" {
+		t.Errorf("expected user Alice, got %q", result.Entries[0].User.Name)
+	}
+	if result.Entries[0].Rank != 1 {
+		t.Errorf("expected rank 1, got %d", result.Entries[0].Rank)
+	}
+	if result.ActivePaidMembers != 5 {
+		t.Errorf("expected 5 active paid members, got %d", result.ActivePaidMembers)
+	}
+	if inner.called != 0 {
+		t.Errorf("inner ranker should not be called on snapshot hit, called %d times", inner.called)
+	}
+}
+
+func TestCachedRankingService_SnapshotFallback_FallsBackToInnerWhenNoSnapshot(t *testing.T) {
+	t.Parallel()
+	inner := &stubRanker{entries: []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1, Name: "Bob"}, TotalPoints: 10, Rank: 1},
+	}}
+	st := newStubCache()
+	svc := NewCachedRankingService(inner, st, 30*time.Second, zap.NewNop(),
+		WithSnapshotFallback(
+			&snapFallbackSnapshotRepo{snap: nil}, // no snapshot exists yet
+			&stubUserRepo{},
+			&stubMemberRepo{activeCount: 3},
+		),
+	)
+
+	result, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inner.called != 1 {
+		t.Errorf("inner ranker should be called once when snapshot is nil, called %d times", inner.called)
+	}
+	if len(result.Entries) != 1 || result.Entries[0].User.Name != "Bob" {
+		t.Errorf("expected result from inner ranker")
+	}
+}
+
+func TestCachedRankingService_SnapshotFallback_FallsBackToInnerOnSnapshotRepoError(t *testing.T) {
+	t.Parallel()
+	inner := &stubRanker{entries: []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1, Name: "Carol"}, TotalPoints: 5, Rank: 1},
+	}}
+	st := newStubCache()
+	svc := NewCachedRankingService(inner, st, 30*time.Second, zap.NewNop(),
+		WithSnapshotFallback(
+			&snapFallbackSnapshotRepo{err: errors.New("db error")},
+			&stubUserRepo{},
+			&stubMemberRepo{},
+		),
+	)
+
+	result, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inner.called != 1 {
+		t.Errorf("inner ranker should be called once on snapshot repo error, called %d", inner.called)
+	}
+	if len(result.Entries) == 0 || result.Entries[0].User.Name != "Carol" {
+		t.Error("expected result from inner ranker on snapshot error")
+	}
+}
+
+func TestCachedRankingService_SnapshotFallback_FallsBackOnUserEnrichmentError(t *testing.T) {
+	t.Parallel()
+	snap := &domain.LeaderboardSnapshot{
+		QuinielaID: 1,
+		Entries:    []domain.LeaderboardSnapshotEntry{{UserID: 10, Rank: 1, TotalPoints: 5}},
+	}
+	inner := &stubRanker{entries: []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 10, Name: "Dave"}, TotalPoints: 5, Rank: 1},
+	}}
+	st := newStubCache()
+	svc := NewCachedRankingService(inner, st, 30*time.Second, zap.NewNop(),
+		WithSnapshotFallback(
+			&snapFallbackSnapshotRepo{snap: snap},
+			&stubUserRepo{err: errors.New("db error")},
+			&stubMemberRepo{},
+		),
+	)
+
+	result, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inner.called != 1 {
+		t.Errorf("inner ranker should be called once on user enrichment error, called %d", inner.called)
+	}
+	_ = result
+}
+
+func TestCachedRankingService_SnapshotFallback_FallsBackOnCountActivePaidError(t *testing.T) {
+	t.Parallel()
+	snap := &domain.LeaderboardSnapshot{
+		QuinielaID: 1,
+		Entries:    []domain.LeaderboardSnapshotEntry{{UserID: 10, Rank: 1, TotalPoints: 5}},
+	}
+	inner := &stubRanker{entries: []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 10, Name: "Eve"}, TotalPoints: 5, Rank: 1},
+	}}
+	st := newStubCache()
+	svc := NewCachedRankingService(inner, st, 30*time.Second, zap.NewNop(),
+		WithSnapshotFallback(
+			&snapFallbackSnapshotRepo{snap: snap},
+			&stubUserRepo{users: []*domain.User{{ID: 10, Name: "Eve"}}},
+			&stubMemberRepo{countActiveErr: errors.New("db error")}, // uses countActiveErr not err
+		),
+	)
+
+	result, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inner.called != 1 {
+		t.Errorf("inner ranker should be called once on CountActivePaid error, called %d", inner.called)
+	}
+	_ = result
+}
+
+func TestCachedRankingService_SnapshotFallback_CachesSnapshotResult(t *testing.T) {
+	t.Parallel()
+	snap := &domain.LeaderboardSnapshot{
+		QuinielaID: 1,
+		Entries:    []domain.LeaderboardSnapshotEntry{{UserID: 10, Rank: 1, TotalPoints: 8}},
+	}
+	inner := &stubRanker{}
+	st := newStubCache()
+	svc := NewCachedRankingService(inner, st, 30*time.Second, zap.NewNop(),
+		WithSnapshotFallback(
+			&snapFallbackSnapshotRepo{snap: snap},
+			&stubUserRepo{users: []*domain.User{{ID: 10, Name: "Frank"}}},
+			&stubMemberRepo{activeCount: 2},
+		),
+	)
+
+	// First call: cold cache, should use snapshot and populate cache.
+	if _, err := svc.GetLeaderboard(context.Background(), 1); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	// Second call: should be served from cache without calling inner.
+	if _, err := svc.GetLeaderboard(context.Background(), 1); err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if inner.called != 0 {
+		t.Errorf("inner ranker should never be called when snapshot + cache are working, called %d", inner.called)
+	}
+}
+
+func TestCachedRankingService_SnapshotFallback_SkipsDeletedUsers(t *testing.T) {
+	t.Parallel()
+	// Snapshot references user 99 which is soft-deleted (not in users table).
+	snap := &domain.LeaderboardSnapshot{
+		QuinielaID: 1,
+		Entries: []domain.LeaderboardSnapshotEntry{
+			{UserID: 99, Rank: 1, TotalPoints: 10},
+			{UserID: 10, Rank: 2, TotalPoints: 5},
+		},
+	}
+	// Only user 10 is returned; user 99 is absent (soft-deleted).
+	users := []*domain.User{{ID: 10, Name: "Grace"}}
+	st := newStubCache()
+	svc := NewCachedRankingService(&stubRanker{}, st, 30*time.Second, zap.NewNop(),
+		WithSnapshotFallback(
+			&snapFallbackSnapshotRepo{snap: snap},
+			&stubUserRepo{users: users},
+			&stubMemberRepo{activeCount: 2},
+		),
+	)
+
+	result, err := svc.GetLeaderboard(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Entries) != 1 {
+		t.Errorf("expected 1 entry (soft-deleted user skipped), got %d", len(result.Entries))
+	}
+	if result.Entries[0].User.Name != "Grace" {
+		t.Errorf("expected Grace, got %q", result.Entries[0].User.Name)
 	}
 }
 

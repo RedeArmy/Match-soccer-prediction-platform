@@ -329,6 +329,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	fxHistoryRetention := time.Duration(fxHistoryRetentionDays) * 24 * time.Hour
 	outboxRetentionDays := params.GetInt(ctx, domain.ParamKeyOutboxRetentionDays, domain.DefaultOutboxRetentionDays)
 	outboxRetention := time.Duration(outboxRetentionDays) * 24 * time.Hour
+	intentRetentionDays := params.GetInt(ctx, domain.ParamKeyPaymentIntentRetentionDays, domain.DefaultPaymentIntentRetentionDays)
+	intentExpiredRetention := time.Duration(intentRetentionDays) * 24 * time.Hour
 
 	// Leader election for the DLQ monitor via a PostgreSQL session-level
 	// advisory lock. A 15-second timeout is added to ctx to bound the
@@ -500,11 +502,12 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		snapshotCfg:    snapCfg,
 		purger:         purger,
 		purgePol: purgePolicy{
-			retention:             purgeRetention,
-			paramHistoryRetention: paramHistoryRetention,
-			fxHistoryRetention:    fxHistoryRetention,
-			outboxRetention:       outboxRetention,
-			snapshotKeepCount:     snapshotKeepLatestCount,
+			retention:              purgeRetention,
+			paramHistoryRetention:  paramHistoryRetention,
+			fxHistoryRetention:     fxHistoryRetention,
+			outboxRetention:        outboxRetention,
+			snapshotKeepCount:      snapshotKeepLatestCount,
+			intentExpiredRetention: intentExpiredRetention,
 		},
 		rc:                         rc,
 		checkers:                   checkers,
@@ -1078,11 +1081,12 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 // Grouping them into one value keeps monitorPurge and executePurgeTick within
 // the seven-parameter limit enforced by the linter.
 type purgePolicy struct {
-	retention             time.Duration
-	paramHistoryRetention time.Duration
-	fxHistoryRetention    time.Duration
-	outboxRetention       time.Duration
-	snapshotKeepCount     int
+	retention              time.Duration
+	paramHistoryRetention  time.Duration
+	fxHistoryRetention     time.Duration
+	outboxRetention        time.Duration
+	snapshotKeepCount      int
+	intentExpiredRetention time.Duration // window after expiry before deletion
 }
 
 // monitorPurge runs until ctx is cancelled, permanently removing soft-deleted
@@ -1103,6 +1107,21 @@ func monitorPurge(ctx context.Context, purger repository.Purger, pol purgePolicy
 		case <-tickC:
 			executePurgeTick(ctx, purger, pol, log)
 		}
+	}
+}
+
+// purgeExpiredIntents deletes expired pending payment intents when the policy
+// retention window is set. Extracted from executePurgeTick to keep that
+// function's cognitive complexity within the project ceiling.
+func purgeExpiredIntents(ctx context.Context, purger repository.Purger, pol purgePolicy, log *zap.Logger) {
+	if pol.intentExpiredRetention <= 0 {
+		return
+	}
+	intentBefore := time.Now().Add(-pol.intentExpiredRetention)
+	if n, err := purger.PurgeExpiredPaymentIntents(ctx, intentBefore); err != nil {
+		log.Warn("worker: purge expired payment intents failed", zap.Error(err))
+	} else if n > 0 {
+		log.Info("worker: purged expired pending payment intents", zap.Int64("count", n))
 	}
 }
 
@@ -1144,6 +1163,9 @@ func executePurgeTick(ctx context.Context, purger repository.Purger, pol purgePo
 	} else if n > 0 {
 		log.Info("worker: purged old terminal outbox entries", zap.Int64("count", n))
 	}
+	// Purge expired pending payment intents. Zero retention (unset or zero-value
+	// policy) disables this step — safe default for tests without a DB.
+	purgeExpiredIntents(ctx, purger, pol, log)
 }
 
 // monitorDLQ runs until ctx is cancelled, logging the size of every

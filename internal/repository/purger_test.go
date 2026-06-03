@@ -474,6 +474,81 @@ func TestPostgresPurger_PurgeOldOutboxEntries_PreservesRecentRows(t *testing.T) 
 	}
 }
 
+func TestPostgresPurger_PurgeExpiredPaymentIntents_DeletesExpiredPendingRows(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+
+	// Insert a pending intent whose expires_at is 8 days in the past.
+	intent := seedPaymentIntent(t, u.ID, 1000)
+	if _, err := testDB.Exec(ctx,
+		`UPDATE payment_intents SET expires_at = NOW() - INTERVAL '8 days' WHERE id = $1`, intent.ID,
+	); err != nil {
+		t.Fatalf("backdate expires_at: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	cutoff := time.Now().Add(-7 * 24 * time.Hour) // 7-day post-expiry window
+	n, err := purger.PurgeExpiredPaymentIntents(ctx, cutoff)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1 purged intent, got %d", n)
+	}
+}
+
+func TestPostgresPurger_PurgeExpiredPaymentIntents_PreservesRecentlyExpiredRows(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+
+	// Intent expired yesterday — within the 7-day retention window.
+	intent := seedPaymentIntent(t, u.ID, 1000)
+	if _, err := testDB.Exec(ctx,
+		`UPDATE payment_intents SET expires_at = NOW() - INTERVAL '1 day' WHERE id = $1`, intent.ID,
+	); err != nil {
+		t.Fatalf("backdate expires_at: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	n, err := purger.PurgeExpiredPaymentIntents(ctx, cutoff)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 purged rows (within retention window), got %d", n)
+	}
+}
+
+func TestPostgresPurger_PurgeExpiredPaymentIntents_PreservesCapturedIntents(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+
+	// Captured intent — must never be purged regardless of expires_at.
+	intent := seedPaymentIntent(t, u.ID, 1000)
+	if _, err := testDB.Exec(ctx,
+		`UPDATE payment_intents
+		    SET status = 'captured', capture_id = 'cap_test',
+		        expires_at = NOW() - INTERVAL '30 days'
+		  WHERE id = $1`, intent.ID,
+	); err != nil {
+		t.Fatalf("mark captured: %v", err)
+	}
+
+	purger := repository.NewPostgresPurger(testDB)
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	n, err := purger.PurgeExpiredPaymentIntents(ctx, cutoff)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 purged rows (captured intents must not be purged), got %d", n)
+	}
+}
+
 func TestPostgresPurger_PurgeOldOutboxEntries_PreservesPendingRows(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()

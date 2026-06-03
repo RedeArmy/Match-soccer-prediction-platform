@@ -121,7 +121,13 @@ func pendingMembership() *domain.GroupMembership {
 
 func newGroupHandler(t *testing.T, qs *stubQuinielaSvc, ms *stubMemberSvc) *handler.GroupHandler {
 	t.Helper()
-	return handler.NewGroupHandler(qs, ms, zaptest.NewLogger(t))
+	return handler.NewGroupHandler(qs, ms, &stubGroupAuthz{}, zaptest.NewLogger(t))
+}
+
+// newGroupHandlerWithAuthz is used by tests that need to control the authz outcome.
+func newGroupHandlerWithAuthz(t *testing.T, qs *stubQuinielaSvc, ms *stubMemberSvc, authz *stubGroupAuthz) *handler.GroupHandler {
+	t.Helper()
+	return handler.NewGroupHandler(qs, ms, authz, zaptest.NewLogger(t))
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
@@ -419,6 +425,29 @@ func TestGroupGetByID_Returns500_OnServiceError(t *testing.T) {
 	}
 }
 
+func TestGroupGetByID_NonMember_Returns403(t *testing.T) {
+	authz := &stubGroupAuthz{memberErr: apperrors.Forbidden("caller is not an active member of this group")}
+	h := newGroupHandlerWithAuthz(t, &stubQuinielaSvc{quiniela: fixedQuiniela()}, &stubMemberSvc{}, authz)
+	req := httptest.NewRequest(http.MethodGet, groupByIDPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for non-member GetByID, got %d", rec.Code)
+	}
+}
+
+func TestGroupGetByID_Unauthenticated_Returns401(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: fixedQuiniela()}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodGet, groupByIDPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouterNoUser(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for unauthenticated GetByID, got %d", rec.Code)
+	}
+}
+
 func TestGroupJoin_Returns400_OnMalformedJSON(t *testing.T) {
 	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
 	req := httptest.NewRequest(http.MethodPost, groupsJoinPath, bytes.NewBufferString(`{bad`))
@@ -543,6 +572,29 @@ func TestGroupListMembers_Returns500_OnServiceError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+func TestGroupListMembers_NonMember_Returns403(t *testing.T) {
+	authz := &stubGroupAuthz{memberErr: apperrors.Forbidden("caller is not an active member of this group")}
+	h := newGroupHandlerWithAuthz(t, &stubQuinielaSvc{}, &stubMemberSvc{}, authz)
+	req := httptest.NewRequest(http.MethodGet, groupMembersPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for non-member ListMembers, got %d", rec.Code)
+	}
+}
+
+func TestGroupListMembers_Unauthenticated_Returns401(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodGet, groupMembersPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouterNoUser(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for unauthenticated ListMembers, got %d", rec.Code)
 	}
 }
 
