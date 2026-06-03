@@ -8,17 +8,32 @@ export default defineConfig({
     environment: 'jsdom',
     globals:     true,
     setupFiles:  ['./src/test/setup.ts'],
+    env: {
+      BACKEND_INTERNAL_URL: 'http://backend:8080',
+    },
     coverage: {
       provider:         'v8',
       reportsDirectory: './coverage',
       reporter:         ['text', 'json-summary', 'lcov'],
-      // Scope: only files with unit tests. api.ts and api-types.ts are
-      // integration-level (require network mocks) and are excluded here;
-      // they are covered by E2E tests (Playwright).
       include: [
         'src/lib/utils.ts',
         'src/lib/sse.ts',
         'src/components/shared/**/*.tsx',
+        'src/lib/api.ts',
+        'src/lib/auth.ts',
+        'src/app/api/health/route.ts',
+        'src/app/api/[...path]/route.ts',
+        'src/app/api/notifications/stream/route.ts',
+        'src/hooks/useBalance.ts',
+        'src/hooks/useExchangeRate.ts',
+        'src/hooks/useKYCStatus.ts',
+        'src/hooks/useSSE.ts',
+        'src/components/layout/Footer.tsx',
+        'src/components/layout/Header.tsx',
+        'src/components/layout/AdminSidebar.tsx',
+        'src/components/layout/MobileNav.tsx',
+        'src/components/balance/BalanceCard.tsx',
+        'src/components/exchange/RateTicker.tsx',
       ],
       thresholds: {
         lines:      80,

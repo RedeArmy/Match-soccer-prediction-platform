@@ -9,7 +9,7 @@ if (typeof Blob !== 'undefined') {
       return new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.addEventListener('load', () => resolve(reader.result as ArrayBuffer))
-        reader.addEventListener('error', () => reject(reader.error))
+        reader.addEventListener('error', () => reject(reader.error ?? new Error('FileReader error')))
         reader.readAsArrayBuffer(this)
       })
     }

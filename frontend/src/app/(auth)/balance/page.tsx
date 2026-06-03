@@ -73,11 +73,11 @@ export default function BalancePage() {
           Historial de transacciones
         </h2>
 
-        {isLoading ? (
-          <LoadingState rows={6} />
-        ) : !allEntries.length ? (
+        {isLoading && <LoadingState rows={6} />}
+        {!isLoading && allEntries.length === 0 && (
           <p className="text-text-muted text-sm text-center py-8">Sin transacciones aún</p>
-        ) : (
+        )}
+        {!isLoading && allEntries.length > 0 && (
           <div className="card divide-y divide-blue-800/50">
             {allEntries.map((entry: LedgerEntry) => (
               <div key={entry.id} className="flex items-center justify-between gap-3 px-4 py-3">

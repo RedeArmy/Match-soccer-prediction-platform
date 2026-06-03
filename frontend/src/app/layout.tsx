@@ -46,7 +46,7 @@ const clerkAppearance = {
   },
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <ClerkProvider appearance={clerkAppearance}>
       <html lang="es" className={inter.variable} suppressHydrationWarning>

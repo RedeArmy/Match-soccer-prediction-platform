@@ -1,11 +1,11 @@
 import { cn } from '@/lib/utils'
 
 interface EmptyStateProps {
-  title:       string
-  description?: string
-  action?:     React.ReactNode
-  className?:  string
-  icon?:       React.ReactNode
+  readonly title:       string
+  readonly description?: string
+  readonly action?:     React.ReactNode
+  readonly className?:  string
+  readonly icon?:       React.ReactNode
 }
 
 export function EmptyState({ title, description, action, className, icon }: EmptyStateProps) {
