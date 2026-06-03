@@ -1110,6 +1110,21 @@ func monitorPurge(ctx context.Context, purger repository.Purger, pol purgePolicy
 	}
 }
 
+// purgeExpiredIntents deletes expired pending payment intents when the policy
+// retention window is set. Extracted from executePurgeTick to keep that
+// function's cognitive complexity within the project ceiling.
+func purgeExpiredIntents(ctx context.Context, purger repository.Purger, pol purgePolicy, log *zap.Logger) {
+	if pol.intentExpiredRetention <= 0 {
+		return
+	}
+	intentBefore := time.Now().Add(-pol.intentExpiredRetention)
+	if n, err := purger.PurgeExpiredPaymentIntents(ctx, intentBefore); err != nil {
+		log.Warn("worker: purge expired payment intents failed", zap.Error(err))
+	} else if n > 0 {
+		log.Info("worker: purged expired pending payment intents", zap.Int64("count", n))
+	}
+}
+
 // executePurgeTick runs one purge cycle: soft-deleted rows, snapshots, param
 // history, FX history, and terminal outbox entries. Each operation is
 // independent and non-fatal — a failure is logged and the next tick retries.
@@ -1148,19 +1163,9 @@ func executePurgeTick(ctx context.Context, purger repository.Purger, pol purgePo
 	} else if n > 0 {
 		log.Info("worker: purged old terminal outbox entries", zap.Int64("count", n))
 	}
-	// Purge expired pending payment intents. The cutoff is the expiry timestamp
-	// minus the post-expiry retention window, so an intent that expired today is
-	// not removed until intentExpiredRetention has elapsed. Zero retention
-	// (unset or zero-value policy) disables this step rather than deleting all
-	// expired intents immediately — safe default for tests without a DB.
-	if pol.intentExpiredRetention > 0 {
-		intentBefore := time.Now().Add(-pol.intentExpiredRetention)
-		if n, err := purger.PurgeExpiredPaymentIntents(ctx, intentBefore); err != nil {
-			log.Warn("worker: purge expired payment intents failed", zap.Error(err))
-		} else if n > 0 {
-			log.Info("worker: purged expired pending payment intents", zap.Int64("count", n))
-		}
-	}
+	// Purge expired pending payment intents. Zero retention (unset or zero-value
+	// policy) disables this step — safe default for tests without a DB.
+	purgeExpiredIntents(ctx, purger, pol, log)
 }
 
 // monitorDLQ runs until ctx is cancelled, logging the size of every
