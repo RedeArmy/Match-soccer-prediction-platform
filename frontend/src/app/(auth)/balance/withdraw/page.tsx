@@ -142,8 +142,9 @@ export default function WithdrawPage() {
         {/* PayPal field */}
         {method === 'paypal' && (
           <div>
-            <label className="block text-sm text-text-secondary mb-1.5">Correo PayPal</label>
+            <label htmlFor="withdraw-paypal-email" className="block text-sm text-text-secondary mb-1.5">Correo PayPal</label>
             <input
+              id="withdraw-paypal-email"
               type="email"
               value={paypalEmail}
               onChange={e => setPaypalEmail(e.target.value)}

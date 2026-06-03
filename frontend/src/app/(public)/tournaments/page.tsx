@@ -36,17 +36,17 @@ export default function TournamentsPage() {
         </div>
 
         {/* Content */}
-        {isLoading ? (
-          <LoadingState rows={6} />
-        ) : !groups?.length ? (
+        {isLoading && <LoadingState rows={6} />}
+        {!isLoading && groups?.length === 0 && (
           <EmptyState
             title="No hay torneos disponibles"
             description="Vuelve pronto para ver las próximas quinielas"
             icon={<Trophy className="w-10 h-10" />}
           />
-        ) : (
+        )}
+        {!isLoading && (groups?.length ?? 0) > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {groups.map(g => (
+            {groups?.map(g => (
               <div key={g.id} className="card overflow-hidden group hover:border-blue-600/80 transition-colors">
                 <ImagePlaceholder
                   aspectRatio="16/9"

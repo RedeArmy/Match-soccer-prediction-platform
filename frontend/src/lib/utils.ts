@@ -36,7 +36,7 @@ export function gtqToUSD(gtqAmount: number, sellRate: string): number {
 
 // Convert USD amount to GTQ using buy rate (we buy USD at buy rate)
 export function usdToGTQ(usdAmount: number, buyRate: string): number {
-  const rate = parseFloat(buyRate)
+  const rate = Number.parseFloat(buyRate)
   if (!rate) return 0
   return usdAmount * rate
 }

@@ -6,8 +6,8 @@ import { X, Home, Trophy, LayoutDashboard, Wallet, User, LogOut } from 'lucide-r
 import { cn } from '@/lib/utils'
 
 interface MobileNavProps {
-  open:    boolean
-  onClose: () => void
+  readonly open:    boolean
+  readonly onClose: () => void
 }
 
 const navItems = [

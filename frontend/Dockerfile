@@ -4,7 +4,7 @@ COPY package*.json ./
 
 # ── Dev ─────────────────────────────────────────────────────────────────────
 FROM base AS dev
-RUN npm ci
+RUN npm ci --ignore-scripts
 EXPOSE 3000
 CMD ["npm", "run", "dev"]
 
@@ -28,7 +28,10 @@ RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
+# NOSONAR — --chmod=444 (r--r--r--) removes all write and execute bits; the subsequent
+# RUN step restores only the directory execute bit so Node can traverse the tree.
 COPY --from=builder --chown=nextjs:nodejs --chmod=444 /app/.next/standalone ./
+# NOSONAR — same rationale as above; static assets are read-only by design.
 COPY --from=builder --chown=nextjs:nodejs --chmod=444 /app/.next/static ./.next/static
 # Directories need the execute bit for traversal; files stay read-only (444).
 RUN find /app -type d -exec chmod 555 {} \;

@@ -12,7 +12,7 @@ if (typeof Blob !== 'undefined') {
         const reader = new FileReader()
         reader.addEventListener('load', () => resolve(reader.result as ArrayBuffer))
         reader.addEventListener('error', () => reject(reader.error ?? new Error('FileReader error')))
-        reader.readAsArrayBuffer(this)
+        reader.readAsArrayBuffer(this) // NOSONAR — Blob#arrayBuffer() cannot be used here: it would recurse into this same polyfill
       })
     }
   }
