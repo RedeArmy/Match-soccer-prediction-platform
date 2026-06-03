@@ -32,6 +32,10 @@ func setDefaults(v *viper.Viper) {
 	// an internal-only port.  9091 mirrors the worker health port convention
 	// while avoiding collision with the Prometheus server itself (9090).
 	v.SetDefault("server.metricsPort", "9091")
+	// server.metricsBindAddr defaults to "" (all interfaces) so Prometheus
+	// scrapers in separate containers or on Fly.io's private 6PN network can
+	// reach the endpoint.  Set to "127.0.0.1" when co-locating Prometheus.
+	v.SetDefault("server.metricsBindAddr", "")
 	v.SetDefault("server.readTimeout", 10*time.Second)
 	v.SetDefault("server.writeTimeout", 30*time.Second)
 	v.SetDefault("server.idleTimeout", 60*time.Second)

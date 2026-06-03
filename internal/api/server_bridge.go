@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
 	"github.com/rede/world-cup-quiniela/internal/service"
 )
@@ -126,6 +127,37 @@ func leaderboardTTLHook(paramSvc service.SystemParamService, ranker *service.Cac
 		)) * time.Second
 		ranker.UpdateTTL(newTTL)
 		ranker.InvalidateAll(ctx)
+	}
+}
+
+// adminRateLimitHook returns a mutation hook that updates the in-process admin
+// rate-limiter token bucket whenever an admin changes admin.rate_limit_rate_per_sec
+// or admin.rate_limit_burst via the system_params API.
+//
+// The admin rate limiter is always in-process (never Redis-backed), so Update()
+// takes effect immediately on the running process without a restart.
+// The per-user and IP rate limiters are Redis-backed in production; changing
+// their params still requires a process restart (documented in constants_api.go).
+func adminRateLimitHook(paramSvc service.SystemParamService, store *middleware.LimiterStore) func(context.Context) {
+	return func(ctx context.Context) {
+		newRate := float64(paramSvc.GetInt(
+			ctx, domain.ParamKeyAdminRateLimitRatePerSec, domain.DefaultAdminRateLimitRatePerSec,
+		))
+		newBurst := paramSvc.GetInt(
+			ctx, domain.ParamKeyAdminRateLimitBurst, domain.DefaultAdminRateLimitBurst,
+		)
+		store.Update(newRate, newBurst)
+	}
+}
+
+// wireAdminRateLimitHook registers mutation hooks so that when an admin updates
+// admin.rate_limit_rate_per_sec or admin.rate_limit_burst, the in-process token
+// bucket is updated immediately without a process restart.
+func (s *Server) wireAdminRateLimitHook(paramSvc service.SystemParamService, store *middleware.LimiterStore) {
+	if mh, ok := paramSvc.(service.MutationHookRegisterer); ok {
+		hook := adminRateLimitHook(paramSvc, store)
+		mh.RegisterMutationHook(domain.ParamKeyAdminRateLimitRatePerSec, hook)
+		mh.RegisterMutationHook(domain.ParamKeyAdminRateLimitBurst, hook)
 	}
 }
 

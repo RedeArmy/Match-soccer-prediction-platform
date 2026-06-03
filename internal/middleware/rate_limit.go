@@ -94,6 +94,26 @@ func (s *LimiterStore) Allow(_ context.Context, key string) (bool, int) {
 	return true, 0
 }
 
+// Update atomically replaces the rate and burst parameters for all new keys
+// created after this call. Existing per-key token buckets are evicted so they
+// are recreated with the new parameters on the next Allow call. This enables
+// runtime tuning of rate limits via system_params mutation hooks without a
+// process restart.
+//
+// Note: Redis-backed rate stores (RedisRateStore) do not implement Update;
+// adjusting their limits requires a process restart. This method is safe for
+// in-process stores and the admin rate limiter (always in-process).
+func (s *LimiterStore) Update(ratePerSec float64, burst int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.r = rate.Limit(ratePerSec)
+	s.burst = burst
+	// Evict all existing per-key buckets so the next Allow call for each key
+	// creates a fresh bucket with the new parameters. All callers briefly see
+	// a full burst allowance after the update — acceptable for incident response.
+	s.entries = make(map[string]*limiterEntry)
+}
+
 // evictLocked removes entries not accessed within limiterTTL. Must be called
 // with s.mu held.
 func (s *LimiterStore) evictLocked() {

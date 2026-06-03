@@ -64,6 +64,14 @@ const (
 	// 30 days covers the full FIFA 2026 tournament window and provides a month of
 	// operational history for debugging notification delivery issues.
 	DefaultOutboxRetentionDays = 30 // worker.outbox_retention_days
+
+	// DefaultPaymentIntentRetentionDays is the number of days expired (status=pending,
+	// expires_at elapsed) payment intent rows are kept after expiry before the daily
+	// purge job deletes them. Captured intents are financial records and are never
+	// purged. 7 days after expiry gives operators time to investigate any PayPal
+	// delivery anomalies before the row is gone; at ~1 row/deposit attempt the
+	// table stays well under 10k rows under normal load.
+	DefaultPaymentIntentRetentionDays = 7 // payment.intent_retention_days
 )
 
 // Worker and system-purge system parameter keys.
@@ -125,4 +133,11 @@ const (
 	// (now - retention) are deleted by the daily purge job.
 	// is_runtime=FALSE: worker restart required to apply a new value.
 	ParamKeyOutboxRetentionDays = "worker.outbox_retention_days"
+
+	// ParamKeyPaymentIntentRetentionDays is the number of days expired
+	// (status=pending AND expires_at < NOW()) payment_intents rows are kept
+	// after expiry before the daily purge job deletes them. Only uncaptured
+	// expired rows are removed; captured rows are retained indefinitely as
+	// financial records. is_runtime=FALSE: worker restart required.
+	ParamKeyPaymentIntentRetentionDays = "payment.intent_retention_days"
 )

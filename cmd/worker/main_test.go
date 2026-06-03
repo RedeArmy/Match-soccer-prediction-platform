@@ -638,11 +638,13 @@ type stubPurger struct {
 	snapshotCalled  int
 	fxHistoryCalled int
 	outboxCalled    int
+	intentCalled    int
 	userCount       int64
 	quinielaCount   int64
 	snapshotCount   int64
 	fxHistoryCount  int64
 	outboxCount     int64
+	intentCount     int64
 	err             error
 }
 
@@ -677,6 +679,11 @@ func (s *stubPurger) PurgeOldFXHistory(_ context.Context, _ time.Time) (int64, e
 func (s *stubPurger) PurgeOldOutboxEntries(_ context.Context, _ time.Time) (int64, error) {
 	s.outboxCalled++
 	return s.outboxCount, s.err
+}
+
+func (s *stubPurger) PurgeExpiredPaymentIntents(_ context.Context, _ time.Time) (int64, error) {
+	s.intentCalled++
+	return s.intentCount, s.err
 }
 
 func TestMonitorPurge_NilPurger_ReturnsImmediately(t *testing.T) {
@@ -723,6 +730,40 @@ func TestMonitorPurge_OnTick_CallsPurge(t *testing.T) {
 	}
 	if purger.snapshotCalled != 1 {
 		t.Errorf("expected PurgeOldSnapshots called once, got %d", purger.snapshotCalled)
+	}
+}
+
+func TestExecutePurgeTick_WithIntentRetention_PurgesExpiredIntents(t *testing.T) {
+	purger := &stubPurger{intentCount: 3}
+	pol := purgePolicy{
+		retention:              24 * time.Hour,
+		paramHistoryRetention:  90 * 24 * time.Hour,
+		fxHistoryRetention:     90 * 24 * time.Hour,
+		outboxRetention:        30 * 24 * time.Hour,
+		snapshotKeepCount:      5,
+		intentExpiredRetention: 7 * 24 * time.Hour,
+	}
+	executePurgeTick(context.Background(), purger, pol, zap.NewNop())
+
+	if purger.intentCalled != 1 {
+		t.Errorf("expected PurgeExpiredPaymentIntents called once, got %d", purger.intentCalled)
+	}
+}
+
+func TestExecutePurgeTick_ZeroIntentRetention_SkipsIntentPurge(t *testing.T) {
+	purger := &stubPurger{}
+	pol := purgePolicy{
+		retention:             24 * time.Hour,
+		paramHistoryRetention: 90 * 24 * time.Hour,
+		fxHistoryRetention:    90 * 24 * time.Hour,
+		outboxRetention:       30 * 24 * time.Hour,
+		snapshotKeepCount:     5,
+		// intentExpiredRetention deliberately zero: purge must be skipped
+	}
+	executePurgeTick(context.Background(), purger, pol, zap.NewNop())
+
+	if purger.intentCalled != 0 {
+		t.Errorf("expected PurgeExpiredPaymentIntents skipped when retention=0, got %d calls", purger.intentCalled)
 	}
 }
 

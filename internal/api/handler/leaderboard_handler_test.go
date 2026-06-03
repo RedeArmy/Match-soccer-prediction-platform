@@ -12,6 +12,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
@@ -19,13 +20,24 @@ const (
 	leaderboardAlice     = "Alice"
 	leaderboardPath      = "/groups/1/leaderboard"
 	leaderboardPhasePath = "/groups/1/leaderboard?phase=group_stage"
+	leaderboardCallerID  = 99
 )
 
 // routeLeaderboard wires a LeaderboardHandler into a chi router for testing.
-func routeLeaderboard(t *testing.T, ranker *stubRanker) http.Handler {
+// A default caller (ID = leaderboardCallerID) is injected into every request
+// via middleware, mirroring the ResolveUser middleware present in production.
+// Tests that exercise the unauthenticated path should build the handler
+// directly without this helper.
+func routeLeaderboard(t *testing.T, ranker *stubRanker, authz *stubGroupAuthz) http.Handler {
 	t.Helper()
 	r := chi.NewRouter()
-	h := handler.NewLeaderboardHandler(ranker, zaptest.NewLogger(t))
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := middleware.ContextWithUser(r.Context(), &domain.User{ID: leaderboardCallerID})
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	})
+	h := handler.NewLeaderboardHandler(ranker, authz, zaptest.NewLogger(t))
 	r.Get("/groups/{id}/leaderboard", h.GetLeaderboard)
 	return r
 }
@@ -36,7 +48,7 @@ func TestGetLeaderboard_EmptyGroup_Returns200WithEmptyArray(t *testing.T) {
 	ranker := &stubRanker{entries: nil}
 	req := httptest.NewRequest(http.MethodGet, leaderboardPath, nil)
 	w := httptest.NewRecorder()
-	routeLeaderboard(t, ranker).ServeHTTP(w, req)
+	routeLeaderboard(t, ranker, &stubGroupAuthz{}).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
@@ -61,7 +73,7 @@ func TestGetLeaderboard_WithEntries_Returns200WithRankedList(t *testing.T) {
 	ranker := &stubRanker{entries: entries}
 	req := httptest.NewRequest(http.MethodGet, leaderboardPath, nil)
 	w := httptest.NewRecorder()
-	routeLeaderboard(t, ranker).ServeHTTP(w, req)
+	routeLeaderboard(t, ranker, &stubGroupAuthz{}).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
@@ -88,7 +100,7 @@ func TestGetLeaderboard_WithPhaseParam_Returns200(t *testing.T) {
 	ranker := &stubRanker{entries: entries}
 	req := httptest.NewRequest(http.MethodGet, leaderboardPhasePath, nil)
 	w := httptest.NewRecorder()
-	routeLeaderboard(t, ranker).ServeHTTP(w, req)
+	routeLeaderboard(t, ranker, &stubGroupAuthz{}).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
@@ -106,7 +118,7 @@ func TestGetLeaderboard_UnknownPhase_Returns422(t *testing.T) {
 	ranker := &stubRanker{}
 	req := httptest.NewRequest(http.MethodGet, "/groups/1/leaderboard?phase=unknown_phase", nil)
 	w := httptest.NewRecorder()
-	routeLeaderboard(t, ranker).ServeHTTP(w, req)
+	routeLeaderboard(t, ranker, &stubGroupAuthz{}).ServeHTTP(w, req)
 
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422 for unknown phase, got %d", w.Code)
@@ -117,7 +129,7 @@ func TestGetLeaderboard_ServiceError_Returns500(t *testing.T) {
 	ranker := &stubRanker{err: apperrors.Internal(errors.New("db down"))}
 	req := httptest.NewRequest(http.MethodGet, leaderboardPath, nil)
 	w := httptest.NewRecorder()
-	routeLeaderboard(t, ranker).ServeHTTP(w, req)
+	routeLeaderboard(t, ranker, &stubGroupAuthz{}).ServeHTTP(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, w.Code)
@@ -128,7 +140,7 @@ func TestGetLeaderboard_NotFound_Returns404(t *testing.T) {
 	ranker := &stubRanker{err: apperrors.NotFound("quiniela not found")}
 	req := httptest.NewRequest(http.MethodGet, leaderboardPath, nil)
 	w := httptest.NewRecorder()
-	routeLeaderboard(t, ranker).ServeHTTP(w, req)
+	routeLeaderboard(t, ranker, &stubGroupAuthz{}).ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf(fmtExpect404, w.Code)
@@ -139,7 +151,7 @@ func TestGetLeaderboard_QuinielaIDInResponse(t *testing.T) {
 	ranker := &stubRanker{entries: nil}
 	req := httptest.NewRequest(http.MethodGet, leaderboardPath, nil)
 	w := httptest.NewRecorder()
-	routeLeaderboard(t, ranker).ServeHTTP(w, req)
+	routeLeaderboard(t, ranker, &stubGroupAuthz{}).ServeHTTP(w, req)
 
 	var resp handler.LeaderboardResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
@@ -154,7 +166,7 @@ func TestGetLeaderboard_NoPhaseParam_PhaseOmittedFromResponse(t *testing.T) {
 	ranker := &stubRanker{entries: nil}
 	req := httptest.NewRequest(http.MethodGet, leaderboardPath, nil)
 	w := httptest.NewRecorder()
-	routeLeaderboard(t, ranker).ServeHTTP(w, req)
+	routeLeaderboard(t, ranker, &stubGroupAuthz{}).ServeHTTP(w, req)
 
 	var resp handler.LeaderboardResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
@@ -162,5 +174,35 @@ func TestGetLeaderboard_NoPhaseParam_PhaseOmittedFromResponse(t *testing.T) {
 	}
 	if resp.Phase != "" {
 		t.Errorf("expected phase to be empty for overall leaderboard, got %q", resp.Phase)
+	}
+}
+
+func TestGetLeaderboard_NonMember_Returns403(t *testing.T) {
+	ranker := &stubRanker{}
+	authz := &stubGroupAuthz{memberErr: apperrors.Forbidden("caller is not an active member of this group")}
+	req := httptest.NewRequest(http.MethodGet, leaderboardPath, nil)
+	w := httptest.NewRecorder()
+	routeLeaderboard(t, ranker, authz).ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for non-member, got %d", w.Code)
+	}
+}
+
+func TestGetLeaderboard_Unauthenticated_Returns401(t *testing.T) {
+	ranker := &stubRanker{}
+	// Build the handler directly — no user-injection middleware — to simulate
+	// a request that bypassed RequireAuth (should never happen in production,
+	// but the handler must still guard against it).
+	r := chi.NewRouter()
+	h := handler.NewLeaderboardHandler(ranker, &stubGroupAuthz{}, zaptest.NewLogger(t))
+	r.Get("/groups/{id}/leaderboard", h.GetLeaderboard)
+
+	req := httptest.NewRequest(http.MethodGet, leaderboardPath, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 when no user in context, got %d", w.Code)
 	}
 }

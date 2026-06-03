@@ -367,8 +367,9 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyWorkerLeaderboardPublishBaseDelayMs: {10, 5_000}, // 10 ms – 5 s base backoff
 
 	// System
-	domain.ParamKeyPurgeRetentionDays:  {1, 365},
-	domain.ParamKeyOutboxRetentionDays: {1, 365}, // 1 day – 1 year
+	domain.ParamKeyPurgeRetentionDays:         {1, 365},
+	domain.ParamKeyOutboxRetentionDays:        {1, 365}, // 1 day – 1 year
+	domain.ParamKeyPaymentIntentRetentionDays: {1, 90},  // 1 day – 90 days post-expiry
 
 	// API
 	domain.ParamKeyAPIBodySizeLimitBytes: {1_024, 10_485_760}, // 1 KB – 10 MB

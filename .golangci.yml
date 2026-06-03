@@ -150,8 +150,12 @@ linters:
           - wrapcheck
 
     # Generated Swagger docs should not be linted.
+    # frontend/node_modules contains vendored Go code from npm packages (e.g.
+    # flatted) that golangci-lint picks up via filesystem traversal. This code
+    # is not part of the Go module and must never be linted or modified.
     paths:
       - "docs/"
+      - "frontend/"
 
 formatters:
   enable:
@@ -167,6 +171,7 @@ formatters:
   exclusions:
     paths:
       - "docs/"
+      - "frontend/"
 
 issues:
   # Show all issues, not just the first 3 per linter.
