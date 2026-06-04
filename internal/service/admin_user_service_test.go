@@ -190,6 +190,9 @@ func (r *unbanGetByIDErrRepo) Unban(_ context.Context, _ int) error { return nil
 func (r *unbanGetByIDErrRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
 	return nil, errors.New(adminUserDBError)
 }
+func (r *unbanGetByIDErrRepo) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
 
 // listByUserErrMemberRepo fails on ListByUser so transferOwnedGroups returns an error.
 type listByUserErrMemberRepo struct {

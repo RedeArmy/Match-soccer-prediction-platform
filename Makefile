@@ -36,6 +36,8 @@ run:
 	WCQ_ENVIRONMENT=dev \
 	WCQ_LOGGER_ENCODING=console \
 	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:$(POSTGRES_HOST_PORT)/quiniela?sslmode=disable \
+	WCQ_CLERK_JWKSURL=$(WCQ_CLERK_JWKSURL) \
+	WCQ_CLERK_WEBHOOKSECRET=$(WCQ_CLERK_WEBHOOKSECRET) \
 	go run ./cmd/api
 
 ## run-worker: Run the background worker with local development settings
@@ -45,6 +47,8 @@ run-worker:
 	WCQ_LOGGER_ENCODING=console \
 	WCQ_DATABASE_DSN=postgres://quiniela:quiniela@localhost:$(POSTGRES_HOST_PORT)/quiniela?sslmode=disable \
 	WCQ_EVENTBUS_DRIVER=redis \
+	WCQ_CLERK_JWKSURL=$(WCQ_CLERK_JWKSURL) \
+	WCQ_CLERK_WEBHOOKSECRET=$(WCQ_CLERK_WEBHOOKSECRET) \
 	go run ./cmd/worker
 
 ## test: Run the full test suite with race detection enabled
@@ -191,7 +195,7 @@ check-env:
 
 ## migrate: Apply pending database schema migrations
 migrate:
-	go run ./cmd/migrate
+	WCQ_DATABASE_DSN=$(WCQ_DATABASE_DSN) go run ./cmd/migrate
 
 ## migrate-fresh: Bootstrap a new environment from the consolidated baseline DDL.
 ##                Applies migrations/baseline/schema.sql directly (skips running
@@ -201,11 +205,11 @@ migrate:
 ##                has data. Regenerate the baseline with `make schema-dump` after
 ##                adding new migrations.
 migrate-fresh:
-	go run ./cmd/migrate --fresh
+	WCQ_DATABASE_DSN=$(WCQ_DATABASE_DSN) go run ./cmd/migrate --fresh
 
 ## migrate-fresh-seed: Same as migrate-fresh but also inserts development fixtures.
 migrate-fresh-seed:
-	go run ./cmd/migrate --fresh --seed
+	WCQ_DATABASE_DSN=$(WCQ_DATABASE_DSN) go run ./cmd/migrate --fresh --seed
 
 ## schema-dump: Regenerate migrations/baseline/schema.sql from the running database.
 ##              Run this after adding new migrations so migrate-fresh stays current.
