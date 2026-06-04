@@ -85,18 +85,18 @@ export default function TournamentsPage() {
                 <div className="grid grid-cols-2 gap-2 text-xs text-text-muted">
                   <div className="flex items-center gap-1.5">
                     <Trophy className="h-3.5 w-3.5 text-gold-400" />
-                    <span>{t('tournaments.prize')}: {formatGTQ(group.prize_pool_cents)}</span>
+                    <span suppressHydrationWarning>{t('tournaments.prize')}: {formatGTQ(group.prize_pool_cents)}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Users className="h-3.5 w-3.5 text-blue-300" />
                     <span>{group.member_count}/{group.max_members} {t('tournaments.members')}</span>
                   </div>
                   <div className="col-span-2">
-                    {t('tournaments.entry')}: <span className="text-gold-400">{formatGTQ(group.entry_fee_cents)}</span>
+                    {t('tournaments.entry')}: <span suppressHydrationWarning className="text-gold-400">{formatGTQ(group.entry_fee_cents)}</span>
                   </div>
                   <div className="col-span-2 flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5 text-text-muted" />
-                    <span>{formatCountdown(group.deadline_at)}</span>
+                    <span suppressHydrationWarning>{formatCountdown(group.deadline_at)}</span>
                   </div>
                 </div>
 
