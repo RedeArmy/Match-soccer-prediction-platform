@@ -94,6 +94,36 @@ func TestUserRepository_GetByExternalSubject_NotFound_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestUserRepository_GetByEmail_Found(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	got, err := repo.GetByEmail(context.Background(), u.Email)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected user, got nil")
+	}
+	if got.ID != u.ID {
+		t.Errorf(fmtIDMismatch, got.ID, u.ID)
+	}
+}
+
+func TestUserRepository_GetByEmail_NotFound_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	got, err := repo.GetByEmail(context.Background(), "nobody@example.com")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for unknown email, got %+v", got)
+	}
+}
+
 func TestUserRepository_Update_Found(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)

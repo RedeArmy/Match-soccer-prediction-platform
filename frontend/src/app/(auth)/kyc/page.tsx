@@ -19,6 +19,13 @@ const docTypes = [
 
 const statusSteps = ["unverified", "submitted", "under_review", "approved"];
 
+const statusLabels: Record<string, string> = {
+  unverified: "Sin verificar",
+  submitted: "Enviado",
+  under_review: "En revisión",
+  approved: "Aprobado",
+};
+
 export default function KYCPage() {
   const { getToken } = useAuth();
   const qc = useQueryClient();
@@ -101,12 +108,6 @@ export default function KYCPage() {
         <div className="flex items-center justify-between relative">
           {statusSteps.map((step, i) => {
             const done = i <= currentStep;
-            const labels: Record<string, string> = {
-              unverified: "Sin verificar",
-              submitted: "Enviado",
-              under_review: "En revisión",
-              approved: "Aprobado",
-            };
             return (
               <div
                 key={step}
@@ -124,7 +125,7 @@ export default function KYCPage() {
                 <span
                   className={`text-[10px] text-center ${done ? "text-gold-400" : "text-text-muted"}`}
                 >
-                  {labels[step]}
+                  {statusLabels[step]}
                 </span>
                 {i < statusSteps.length - 1 && (
                   <div
@@ -218,9 +219,6 @@ export default function KYCPage() {
             ))}
           </div>
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          {success && <p className="text-green-400 text-sm">{success}</p>}
-
           <button
             onClick={() => {
               setError("");
@@ -269,6 +267,11 @@ export default function KYCPage() {
               <LoadingSpinner size={16} /> Cargando documento...
             </div>
           )}
+        </div>
+      )}
+
+      {(error || success) && (
+        <div>
           {error && <p className="text-red-400 text-sm">{error}</p>}
           {success && <p className="text-green-400 text-sm">{success}</p>}
         </div>

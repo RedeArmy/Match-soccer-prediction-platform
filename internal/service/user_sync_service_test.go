@@ -20,6 +20,7 @@ import (
 type clerkSyncRepo struct {
 	existingUser *domain.User
 	getErr       error
+	getEmailErr  error
 	createErr    error
 	updateErr    error
 	deleteErr    error
@@ -38,7 +39,7 @@ func (r *clerkSyncRepo) GetByExternalSubject(_ context.Context, _ string) (*doma
 	return r.existingUser, r.getErr
 }
 func (r *clerkSyncRepo) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
-	return nil, nil
+	return nil, r.getEmailErr
 }
 func (r *clerkSyncRepo) Update(_ context.Context, _ *domain.User) error { return r.updateErr }
 func (r *clerkSyncRepo) Delete(_ context.Context, id int) error {
@@ -246,6 +247,27 @@ func TestClerkUserSyncer_Upsert_UpdateError_Propagates(t *testing.T) {
 
 	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_1", emails); err == nil {
 		t.Fatal("expected error from Update, got nil")
+	}
+}
+
+func TestClerkUserSyncer_Upsert_GetByEmailError_ReturnsInternal(t *testing.T) {
+	repo := &clerkSyncRepo{getEmailErr: errors.New("db timeout")}
+	svc := newClerkSyncer(repo)
+	emails := []ClerkEmail{{ID: "em_1", Address: "a@b.com"}}
+
+	err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_1", emails)
+	if !errors.Is(err, apperrors.ErrInternal) {
+		t.Errorf("expected internal error from GetByEmail failure, got %v", err)
+	}
+}
+
+func TestClerkUserSyncer_Upsert_UpdateAfterCreate_Error_Propagates(t *testing.T) {
+	repo := &clerkSyncRepo{updateErr: errors.New("update failed")}
+	svc := newClerkSyncer(repo)
+	emails := []ClerkEmail{{ID: "em_1", Address: "a@b.com"}}
+
+	if err := svc.Upsert(context.Background(), "user_new", "A", "B", "em_1", emails); err == nil {
+		t.Fatal("expected error from Update after Create, got nil")
 	}
 }
 
