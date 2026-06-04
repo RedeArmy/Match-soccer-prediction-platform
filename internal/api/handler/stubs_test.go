@@ -26,6 +26,9 @@ func (r *stubUserRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
 func (r *stubUserRepo) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return r.user, r.err
 }
+func (r *stubUserRepo) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return r.user, r.err
+}
 func (r *stubUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }
 func (r *stubUserRepo) Delete(_ context.Context, _ int) error          { return r.err }
 func (r *stubUserRepo) List(_ context.Context) ([]*domain.User, error) { return nil, r.err }

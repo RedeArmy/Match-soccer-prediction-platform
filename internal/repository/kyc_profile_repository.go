@@ -512,7 +512,7 @@ const kycProfileCols = `
 	submitted_at, reviewed_at, reviewed_by, rejection_reason,
 	risk_score, pep_flag, sanctions_flag,
 	balance_frozen, frozen_amount_cents, frozen_reason,
-	next_review_at, submission_ip, created_at, updated_at`
+	next_review_at, submission_ip::text, created_at, updated_at`
 
 const kycProfileSelectAll = `SELECT` + kycProfileCols + ` FROM kyc_profiles`
 const kycProfileSelectByUserID = kycProfileSelectAll + ` WHERE user_id = $1`

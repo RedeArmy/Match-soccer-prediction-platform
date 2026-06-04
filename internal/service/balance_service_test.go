@@ -27,6 +27,9 @@ func (r *balanceSvcUserRepo) GetByID(_ context.Context, _ int) (*domain.User, er
 func (r *balanceSvcUserRepo) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return nil, r.err
 }
+func (r *balanceSvcUserRepo) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return nil, r.err
+}
 func (r *balanceSvcUserRepo) Update(_ context.Context, _ *domain.User) error { return r.err }
 func (r *balanceSvcUserRepo) Delete(_ context.Context, _ int) error          { return r.err }
 func (r *balanceSvcUserRepo) List(_ context.Context) ([]*domain.User, error) {

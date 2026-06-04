@@ -66,6 +66,9 @@ func (r *kycUserRepoStub) GetByID(_ context.Context, _ int) (*domain.User, error
 func (r *kycUserRepoStub) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return nil, nil
 }
+func (r *kycUserRepoStub) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
 func (r *kycUserRepoStub) Create(_ context.Context, _ *domain.User) error { return nil }
 func (r *kycUserRepoStub) Update(_ context.Context, _ *domain.User) error { return nil }
 func (r *kycUserRepoStub) Delete(_ context.Context, _ int) error          { return nil }

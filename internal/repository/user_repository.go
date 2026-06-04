@@ -99,6 +99,13 @@ func (r *PostgresUserRepository) GetByExternalSubject(ctx context.Context, subje
 	return scanUser(row)
 }
 
+func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
+	row := r.db.QueryRow(ctx,
+		`SELECT `+userColumns+` FROM users WHERE email=$1`+activeOnly, email,
+	)
+	return scanUser(row)
+}
+
 func (r *PostgresUserRepository) Update(ctx context.Context, u *domain.User) error {
 	var externalSubject *string
 	if u.ExternalSubject != "" {
