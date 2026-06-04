@@ -7,8 +7,11 @@ import { useKYCStatus } from "@/hooks/useKYCStatus";
 import { api } from "@/lib/api";
 import { sniffMIME, isAllowedUploadType } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { LoadingState, LoadingSpinner } from "@/components/shared/LoadingState";
-import { ShieldCheck, Upload, CheckCircle2 } from "lucide-react";
+import { LoadingState } from "@/components/shared/LoadingState";
+import { FormFeedback } from "@/components/shared/FormFeedback";
+import { FileUploadField } from "@/components/shared/FileUploadField";
+import { SubmitButton } from "@/components/shared/SubmitButton";
+import { ShieldCheck, CheckCircle2 } from "lucide-react";
 
 const docTypes = [
   { id: "gov_id", label: "DPI / Pasaporte (frente)" },
@@ -219,20 +222,15 @@ export default function KYCPage() {
             ))}
           </div>
 
-          <button
+          <SubmitButton
+            isPending={submitProfile.isPending}
             onClick={() => {
               setError("");
               submitProfile.mutate();
             }}
-            disabled={submitProfile.isPending}
-            className="btn-gold w-full flex items-center justify-center gap-2"
           >
-            {submitProfile.isPending ? (
-              <LoadingSpinner size={18} />
-            ) : (
-              "Enviar información"
-            )}
-          </button>
+            Enviar información
+          </SubmitButton>
         </div>
       )}
 
@@ -246,19 +244,11 @@ export default function KYCPage() {
 
           <div className="grid sm:grid-cols-2 gap-3">
             {docTypes.map(({ id, label }) => (
-              <label
+              <FileUploadField
                 key={id}
-                className="flex flex-col items-center gap-2 border-2 border-dashed border-blue-600 rounded-xl p-4 cursor-pointer hover:border-gold-400 transition-colors text-center"
-              >
-                <Upload className="w-6 h-6 text-blue-400" />
-                <span className="text-sm text-text-secondary">{label}</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  onChange={(e) => handleDocUpload(e, id)}
-                  className="sr-only"
-                />
-              </label>
+                label={label}
+                onChange={(e) => handleDocUpload(e, id)}
+              />
             ))}
           </div>
 
@@ -270,12 +260,7 @@ export default function KYCPage() {
         </div>
       )}
 
-      {(error || success) && (
-        <div>
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          {success && <p className="text-green-400 text-sm">{success}</p>}
-        </div>
-      )}
+      <FormFeedback error={error} success={success} />
     </div>
   );
 }
