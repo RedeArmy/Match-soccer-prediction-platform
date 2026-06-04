@@ -72,7 +72,7 @@ describe('useBalance', () => {
   })
 
   it('returns balance data when getBalance resolves', async () => {
-    const balance = { available_cents: 50000, reserved_cents: 0, pending_cents: 0 }
+    const balance = { available_cents: 50000, reserved_cents: 0, pending_cents: 0, currency: 'GTQ' }
     vi.mocked(api.getBalance).mockResolvedValueOnce(balance)
 
     const { result } = renderHook(() => useBalance(), { wrapper: makeWrapper() })
@@ -125,7 +125,7 @@ describe('useSSE', () => {
     const { onConnectionChange } = vi.mocked(createSSEManager).mock.calls[0][0]
 
     act(() => {
-      onConnectionChange('connected')
+      onConnectionChange?.('connected')
     })
 
     expect(result.current.status).toBe('connected')
@@ -158,7 +158,7 @@ describe('useSSE', () => {
     }
 
     act(() => {
-      onNotification(payload)
+      onNotification?.(payload)
     })
 
     expect(result.current.lastNotification).toEqual(payload)

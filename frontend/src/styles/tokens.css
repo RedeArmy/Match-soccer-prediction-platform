@@ -1,6 +1,5 @@
-/* Phase 3 — Design tokens: Americas 2026 palette */
+/* Enterprise World Cup 2026 inspired palette */
 :root {
-  /* ── Primary: Deep Americas Blue (USA national) ── */
   --blue-950: #050D1A;
   --blue-900: #0A1628;
   --blue-800: #0D1F3C;
@@ -12,7 +11,6 @@
   --blue-200: #89BCE8;
   --blue-100: #D0E8F7;
 
-  /* ── Accent: Eagle Gold (trophy / USA) ── */
   --gold-600: #A07810;
   --gold-500: #C9940A;
   --gold-400: #D4A017;
@@ -20,7 +18,6 @@
   --gold-200: #F5E098;
   --gold-100: #FDF6DC;
 
-  /* ── Energy: México Verde ── */
   --green-700: #0D5C2E;
   --green-600: #117A3D;
   --green-500: #1A8C4E;
@@ -28,7 +25,6 @@
   --green-300: #52C97D;
   --green-100: #D4F5E3;
 
-  /* ── Danger: México Rojo / Canada Red ── */
   --red-700: #8B1A1A;
   --red-600: #B22222;
   --red-500: #CC2222;
@@ -36,12 +32,10 @@
   --red-300: #F08080;
   --red-100: #FDEAEA;
 
-  /* ── Maple: Canada secondary ── */
   --maple-500: #D44500;
   --maple-400: #E85D1A;
   --maple-300: #F5935A;
 
-  /* ── Neutral ── */
   --neutral-950: #080808;
   --neutral-900: #111111;
   --neutral-850: #161616;
@@ -55,29 +49,26 @@
   --neutral-100: #F5F5F5;
   --neutral-50:  #FAFAFA;
 
-  /* ── Semantic surfaces (dark-first) ── */
-  --bg-base:        var(--blue-950);
-  --bg-elevated:    var(--blue-900);
-  --bg-overlay:     var(--blue-800);
-  --bg-interactive: var(--blue-700);
+  --bg-base:        #070A0F;
+  --bg-elevated:    #0D1420;
+  --bg-overlay:     #111C2C;
+  --bg-interactive: #16243A;
 
-  --text-primary:   #F0F4FA;
-  --text-secondary: #A8B8CC;
-  --text-muted:     #5A6A7E;
+  --text-primary:   #F4F7FB;
+  --text-secondary: #B5C2D1;
+  --text-muted:     #748398;
   --text-gold:      var(--gold-400);
   --text-green:     var(--green-400);
   --text-red:       var(--red-400);
 
-  /* ── Gradients ── */
-  --gradient-hero: linear-gradient(135deg, #050D1A 0%, #0D1F3C 50%, #1A3A6B 100%);
+  --gradient-hero: linear-gradient(135deg, #070A0F 0%, #0A1628 42%, #102B3F 72%, #0D5C2E 125%);
   --gradient-gold: linear-gradient(90deg, var(--gold-600), var(--gold-300));
-  --gradient-card: linear-gradient(180deg, var(--blue-800) 0%, var(--blue-900) 100%);
+  --gradient-card: linear-gradient(180deg, rgba(17, 28, 44, 0.96) 0%, rgba(10, 22, 40, 0.96) 100%);
+  --gradient-field: linear-gradient(90deg, var(--red-500), var(--gold-400), var(--green-400), var(--blue-400));
 
-  /* ── Border ── */
-  --border-subtle: rgba(42, 68, 107, 0.6);
-  --border-strong: var(--blue-600);
+  --border-subtle: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(137, 188, 232, 0.34);
 
-  /* ── Radius ── */
   --radius-card:  8px;
   --radius-input: 4px;
   --radius-badge: 4px;

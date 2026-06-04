@@ -31,7 +31,7 @@ vi.mock('next/server', () => {
 })
 
 import { auth } from '@clerk/nextjs/server'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 
 // ── Fetch mock ────────────────────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ vi.stubGlobal('fetch', mockFetch)
 
 // Use the mocked NextRequest so .nextUrl is available
 function makeReq(url = 'http://localhost/api/v1/matches', init?: RequestInit): NextRequest {
-  return new NextRequest(url, init)
+  return new NextRequest(url, init as ConstructorParameters<typeof NextRequest>[1])
 }
 
 // ── health/route ──────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  outputFileTracingRoot: process.cwd(),
   experimental: {
     serverActions: {
       allowedOrigins: appUrl ? [appUrl] : ['http://localhost:3000'],

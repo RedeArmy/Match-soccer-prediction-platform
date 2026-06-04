@@ -1,127 +1,117 @@
+'use client'
+
 import Link from 'next/link'
-import { serverAPI } from '@/lib/api'
+import { useExchangeRate } from '@/hooks/useExchangeRate'
 import { formatDateTime } from '@/lib/utils'
-import { ImagePlaceholder } from '@/components/shared/ImagePlaceholder'
-import { UserPlus, Target, Trophy, TrendingUp } from 'lucide-react'
 import { ExchangeRateTicker } from '@/components/exchange/RateTicker'
+import { useI18n } from '@/lib/i18n'
+import { ArrowRight, CircleDollarSign, ShieldCheck, Target, TrendingUp, Trophy, Users } from 'lucide-react'
 
-export const revalidate = 60
+export default function LandingPage() {
+  const { data: rate } = useExchangeRate()
+  const { t } = useI18n()
 
-async function getExchangeRate() {
-  try {
-    return await serverAPI().getExchangeRate()
-  } catch {
-    return null
-  }
-}
-
-export default async function LandingPage() {
-  const rate = await getExchangeRate()
+  const steps = [
+    { step: '01', icon: Users, title: t('landing.step1Title'), desc: t('landing.step1Desc'), accent: 'text-blue-300' },
+    { step: '02', icon: Target, title: t('landing.step2Title'), desc: t('landing.step2Desc'), accent: 'text-green-300' },
+    { step: '03', icon: Trophy, title: t('landing.step3Title'), desc: t('landing.step3Desc'), accent: 'text-gold-300' },
+  ]
 
   return (
     <div className="flex flex-col">
-
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="hero-bg relative min-h-[85dvh] flex flex-col items-center justify-center text-center px-4 py-16">
-        <div className="relative z-10 max-w-3xl mx-auto space-y-6">
-
-          {/* Rate pill */}
-          {rate && (
-            <div className="inline-flex items-center gap-2 bg-blue-900/80 border border-blue-700 px-3 py-1.5 rounded-full text-xs text-text-secondary mb-2">
-              <TrendingUp className="w-3 h-3 text-gold-400" />
-              <span className="font-score">
-                1 USD = <span className="text-gold-400 font-medium">Q{Number.parseFloat(rate.sell_rate).toFixed(2)}</span> GTQ
-              </span>
-              {rate.stale && <span className="text-red-400 text-[10px]">desactualizado</span>}
+      <section className="hero-bg relative min-h-[78dvh] px-4 py-16">
+        <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="space-y-7">
+            <div className="inline-flex items-center gap-2 rounded border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs uppercase text-text-secondary">
+              <ShieldCheck className="h-3.5 w-3.5 text-green-300" />
+              {t('landing.eyebrow')}
             </div>
-          )}
 
-          <h1 className="font-display text-6xl sm:text-8xl text-white leading-none">
-            QUINIELA
-            <br />
-            <span className="bg-gold-gradient bg-clip-text text-transparent">
-              MUNDIAL 2026
-            </span>
-          </h1>
+            <div className="space-y-4">
+              <h1 className="max-w-3xl font-display text-5xl leading-[0.95] text-white sm:text-7xl">
+                {t('landing.title')}
+              </h1>
+              <p className="max-w-2xl text-balance text-lg text-text-secondary sm:text-xl">
+                {t('landing.subtitle')}
+              </p>
+            </div>
 
-          <p className="text-lg sm:text-xl text-text-secondary max-w-xl mx-auto">
-            Predice los resultados. Compite con tus amigos. Gana premios reales en quetzales.
-          </p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link href="/dashboard" className="btn-gold px-7 py-3 text-base">
+                {t('landing.primary')}
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link href="/tournaments" className="btn-ghost px-7 py-3 text-base">
+                {t('landing.secondary')}
+              </Link>
+            </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-            <Link href="/sign-up" className="btn-gold text-base px-8 py-3 inline-block">
-              Regístrate Gratis
-            </Link>
-            <Link href="/tournaments" className="btn-ghost text-base px-8 py-3 inline-block">
-              Ver Torneos
-            </Link>
+            {rate && (
+              <div className="flex max-w-xl flex-wrap items-center gap-3 rounded border border-white/10 bg-black/18 p-3 text-sm">
+                <TrendingUp className="h-4 w-4 text-gold-400" />
+                <span className="text-text-secondary">{t('landing.rate')}</span>
+                <span className="font-score font-semibold text-gold-300">
+                  Q{Number.parseFloat(rate.sell_rate).toFixed(4)} / USD
+                </span>
+                <span className="text-xs text-text-muted">
+                  {t('common.updated')}: {formatDateTime(rate.effective_at)}
+                </span>
+                {rate.stale && <span className="text-xs text-red-300">{t('common.stale')}</span>}
+              </div>
+            )}
           </div>
-        </div>
 
-        {/* Hero banner placeholder */}
-        <div className="absolute inset-0 z-0 opacity-20">
-          <ImagePlaceholder
-            aspectRatio="21/9"
-            label="Tournament hero banner"
-            dataSrc="/images/hero-banner.jpg"
-            rounded={false}
-            className="w-full h-full"
-          />
+          <div className="panel p-5">
+            <div className="wc26-stripe mb-5" />
+            <div className="grid gap-3">
+              {[
+                { icon: Target, label: t('common.predictions'), value: '64+', color: 'text-green-300' },
+                { icon: Trophy, label: t('common.tournaments'), value: '48', color: 'text-gold-300' },
+                { icon: CircleDollarSign, label: t('common.balance'), value: 'GTQ', color: 'text-blue-300' },
+              ].map(({ icon: Icon, label, value, color }) => (
+                <div key={label} className="flex items-center justify-between rounded border border-white/10 bg-white/[0.035] p-4">
+                  <div className="flex items-center gap-3">
+                    <Icon className={`h-5 w-5 ${color}`} />
+                    <span className="text-sm text-text-secondary">{label}</span>
+                  </div>
+                  <span className="font-score text-xl font-semibold text-white">{value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 rounded border border-white/10 bg-[#070A0F]/40 p-4">
+              <p className="text-sm font-semibold text-text-primary">{t('landing.opsTitle')}</p>
+              <p className="mt-1 text-sm text-text-secondary">{t('landing.opsCopy')}</p>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── Exchange rate strip ───────────────────────────────────────────── */}
-      {rate && (
-        <div className="bg-blue-900 border-y border-blue-800">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="w-4 h-4 text-gold-400" />
-              <span className="text-text-secondary">Tipo de cambio:</span>
-              <span className="font-score text-gold-400 font-medium">
-                Q{Number.parseFloat(rate.sell_rate).toFixed(4)} / USD
-              </span>
-              <span className="text-text-muted text-xs">
-                (compra: Q{Number.parseFloat(rate.buy_rate).toFixed(4)})
-              </span>
+      <section className="px-4 py-16">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-8 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+            <div>
+              <p className="text-xs uppercase text-gold-300">{t('common.event')}</p>
+              <h2 className="mt-2 font-display text-4xl text-white">{t('landing.howTitle')}</h2>
             </div>
-            <span className="text-text-muted text-xs">
-              Actualizado: {formatDateTime(rate.effective_at)}
-              {rate.stale && <span className="ml-1 text-red-400">⚠ desactualizado</span>}
-            </span>
+            <div className="hidden h-px flex-1 bg-white/10 sm:block" />
           </div>
-        </div>
-      )}
 
-      {/* ── How it works ─────────────────────────────────────────────────── */}
-      <section className="py-20 px-4">
-        <div className="mx-auto max-w-5xl">
-          <h2 className="font-display text-4xl text-center text-white mb-12">CÓMO FUNCIONA</h2>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { step: '01', icon: UserPlus, title: 'Regístrate',     desc: 'Crea tu cuenta en segundos con email o Google.' },
-              { step: '02', icon: Target,   title: 'Predice',        desc: 'Elige el marcador de cada partido antes de que empiece.' },
-              { step: '03', icon: Trophy,   title: 'Gana Premios',   desc: 'Acumula puntos y comparte el pozo de tu quiniela.' },
-            ].map(({ step, icon: Icon, title, desc }) => (
-              <div key={step} className="card p-6 flex flex-col items-center text-center gap-4">
-                <ImagePlaceholder aspectRatio="1/1" label="Step illustration" className="w-20 h-20" />
-                <div className="w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-                  <Icon className="w-5 h-5 text-gold-400" />
+          <div className="grid gap-4 md:grid-cols-3">
+            {steps.map(({ step, icon: Icon, title, desc, accent }) => (
+              <article key={step} className="card p-5">
+                <div className="mb-5 flex items-center justify-between">
+                  <span className="font-score text-xs text-text-muted">{step}</span>
+                  <Icon className={`h-5 w-5 ${accent}`} />
                 </div>
-                <div>
-                  <div className="font-score text-gold-600 text-xs mb-1">{step}</div>
-                  <h3 className="font-display text-xl text-white mb-2">{title}</h3>
-                  <p className="text-text-secondary text-sm">{desc}</p>
-                </div>
-              </div>
+                <h3 className="text-lg font-semibold text-white">{title}</h3>
+                <p className="mt-2 text-sm text-text-secondary">{desc}</p>
+              </article>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── Live rate ticker (client-side, auto-refreshes) ────────────────── */}
       <ExchangeRateTicker />
-
     </div>
   )
 }
