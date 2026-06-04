@@ -163,12 +163,12 @@ function getTranslation(key: string, locale: Locale): string | undefined {
 export function I18nProvider({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const [locale, setLocaleState] = useState<Locale>("es");
+  const [locale, setLocale] = useState<Locale>("es");
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("quiniela-locale");
+    const stored = globalThis.localStorage.getItem("quiniela-locale");
     if (stored === "es" || stored === "en") {
-      setLocaleState(stored);
+      setLocale(stored);
       document.documentElement.lang = stored;
     }
   }, []);
@@ -177,8 +177,8 @@ export function I18nProvider({
     () => ({
       locale,
       setLocale: (nextLocale) => {
-        setLocaleState(nextLocale);
-        window.localStorage.setItem("quiniela-locale", nextLocale);
+        setLocale(nextLocale);
+        globalThis.localStorage.setItem("quiniela-locale", nextLocale);
         document.documentElement.lang = nextLocale;
       },
       t: (key) =>
