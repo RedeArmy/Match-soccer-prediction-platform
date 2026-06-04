@@ -1,98 +1,94 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
-import { useAuth } from '@clerk/nextjs'
-import { api } from '@/lib/api'
-import { StatusBadge } from '@/components/shared/StatusBadge'
-import { LoadingState } from '@/components/shared/LoadingState'
-import { EmptyState } from '@/components/shared/EmptyState'
-import { ImagePlaceholder } from '@/components/shared/ImagePlaceholder'
-import { formatGTQ, formatCountdown } from '@/lib/utils'
-import { Trophy, Users, Clock } from 'lucide-react'
+import { Clock, Trophy, Users } from 'lucide-react'
 import Link from 'next/link'
+import { StatusBadge } from '@/components/shared/StatusBadge'
+import { formatGTQ, formatCountdown } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n'
+
+const featuredGroups = [
+  {
+    id: 1,
+    name: 'World Cup 2026 Global Pool',
+    status: 'open',
+    prize_pool_cents: 2500000,
+    entry_fee_cents: 5000,
+    member_count: 128,
+    max_members: 500,
+    deadline_at: '2026-06-11T18:00:00Z',
+  },
+  {
+    id: 2,
+    name: 'Americas Knockout Challenge',
+    status: 'upcoming',
+    prize_pool_cents: 1200000,
+    entry_fee_cents: 2500,
+    member_count: 64,
+    max_members: 256,
+    deadline_at: '2026-06-28T18:00:00Z',
+  },
+  {
+    id: 3,
+    name: 'Finals Elite Quiniela',
+    status: 'upcoming',
+    prize_pool_cents: 800000,
+    entry_fee_cents: 10000,
+    member_count: 24,
+    max_members: 100,
+    deadline_at: '2026-07-04T18:00:00Z',
+  },
+]
 
 export default function TournamentsPage() {
-  const { getToken, isSignedIn } = useAuth()
-
-  const { data: groups, isLoading } = useQuery({
-    queryKey: ['public-groups'],
-    queryFn:  async () => {
-      if (isSignedIn) {
-        const token = await getToken()
-        return api.getMyGroups(token!)
-      }
-      return []
-    },
-  })
+  const { t } = useI18n()
 
   return (
-    <div className="py-8 px-4">
-      <div className="mx-auto max-w-6xl">
-
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="font-display text-4xl text-white mb-2">TORNEOS</h1>
-          <p className="text-text-secondary">Explora las quinielas disponibles y únete a las que más te interesen</p>
-        </div>
-
-        {/* Content */}
-        {isLoading && <LoadingState rows={6} />}
-        {!isLoading && groups?.length === 0 && (
-          <EmptyState
-            title="No hay torneos disponibles"
-            description="Vuelve pronto para ver las próximas quinielas"
-            icon={<Trophy className="w-10 h-10" />}
-          />
-        )}
-        {!isLoading && (groups?.length ?? 0) > 0 && (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {groups?.map(g => (
-              <div key={g.id} className="card overflow-hidden group hover:border-blue-600/80 transition-colors">
-                <ImagePlaceholder
-                  aspectRatio="16/9"
-                  label={`${g.name} banner`}
-                  className="rounded-none"
-                />
-
-                <div className="p-5 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <h2 className="font-display text-xl text-white leading-tight">{g.name}</h2>
-                    <StatusBadge status={g.status} size="sm" />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs text-text-muted">
-                    <div className="flex items-center gap-1.5">
-                      <Trophy className="w-3 h-3 text-gold-400" />
-                      <span>Pozo: {formatGTQ(g.prize_pool_cents)}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Users className="w-3 h-3 text-blue-400" />
-                      <span>{g.member_count}/{g.max_members ?? '∞'}</span>
-                    </div>
-                    {g.entry_fee_cents > 0 && (
-                      <div className="col-span-2">
-                        Inscripción: <span className="text-gold-400">{formatGTQ(g.entry_fee_cents)}</span>
-                      </div>
-                    )}
-                    {g.deadline_at && (
-                      <div className="flex items-center gap-1.5 col-span-2">
-                        <Clock className="w-3 h-3 text-text-muted" />
-                        <span>{formatCountdown(g.deadline_at)}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <Link
-                    href={`/tournaments/${g.id}`}
-                    className="btn-gold w-full text-center text-sm py-2 block mt-2"
-                  >
-                    {g.status === 'open' ? 'Entrar' : 'Ver detalles'}
-                  </Link>
-                </div>
-              </div>
-            ))}
+    <div className="px-4 py-8">
+      <div className="mx-auto max-w-7xl">
+        <section className="panel mb-8 overflow-hidden">
+          <div className="wc26-stripe" />
+          <div className="p-5">
+            <p className="text-xs uppercase text-gold-300">{t('common.event')}</p>
+            <h1 className="mt-2 font-display text-4xl text-white">{t('tournaments.title')}</h1>
+            <p className="mt-1 text-text-secondary">{t('tournaments.subtitle')}</p>
           </div>
-        )}
+        </section>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {featuredGroups.map((group) => (
+            <article key={group.id} className="card overflow-hidden transition-colors hover:border-gold-400/30">
+              <div className="h-2 bg-gradient-to-r from-red-500 via-gold-400 to-green-400" />
+              <div className="p-5">
+                <div className="mb-4 flex items-start justify-between gap-2">
+                  <h2 className="text-lg font-semibold leading-tight text-white">{group.name}</h2>
+                  <StatusBadge status={group.status} size="sm" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs text-text-muted">
+                  <div className="flex items-center gap-1.5">
+                    <Trophy className="h-3.5 w-3.5 text-gold-400" />
+                    <span>{t('tournaments.prize')}: {formatGTQ(group.prize_pool_cents)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5 text-blue-300" />
+                    <span>{group.member_count}/{group.max_members} {t('tournaments.members')}</span>
+                  </div>
+                  <div className="col-span-2">
+                    {t('tournaments.entry')}: <span className="text-gold-400">{formatGTQ(group.entry_fee_cents)}</span>
+                  </div>
+                  <div className="col-span-2 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-text-muted" />
+                    <span>{formatCountdown(group.deadline_at)}</span>
+                  </div>
+                </div>
+
+                <Link href="/dashboard" className="btn-gold mt-5 w-full py-2 text-center text-sm">
+                  {group.status === 'open' ? t('tournaments.enter') : t('tournaments.details')}
+                </Link>
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
     </div>
   )

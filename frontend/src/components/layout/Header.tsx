@@ -4,53 +4,63 @@ import Link from 'next/link'
 import { UserButton, SignedIn, SignedOut } from '@clerk/nextjs'
 import { useExchangeRate } from '@/hooks/useExchangeRate'
 import { formatRate } from '@/lib/utils'
-import { TrendingUp, Menu } from 'lucide-react'
+import { LayoutDashboard, Menu, TrendingUp, Trophy, Wallet } from 'lucide-react'
 import { useState } from 'react'
 import { MobileNav } from './MobileNav'
+import { LanguageSwitcher } from './LanguageSwitcher'
+import { useI18n } from '@/lib/i18n'
 
 export function Header() {
   const { data: rate } = useExchangeRate()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { t } = useI18n()
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-blue-800/60 bg-blue-950/90 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#070A0F]/88 backdrop-blur-md">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-14 items-center justify-between gap-4">
-
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 shrink-0">
-              <span className="font-display text-2xl text-gold-400 leading-none">QM</span>
-              <span className="hidden sm:block text-sm text-text-secondary font-medium">Mundial 2026</span>
+          <div className="flex h-16 items-center justify-between gap-4">
+            <Link href="/" className="flex shrink-0 items-center gap-2">
+              <span className="grid h-9 w-9 place-items-center rounded border border-gold-400/40 bg-gold-400/10 font-display text-xl leading-none text-gold-300">
+                Q26
+              </span>
+              <span className="hidden sm:block">
+                <span className="block text-sm font-semibold text-text-primary">{t('common.brand')}</span>
+                <span className="block text-[11px] uppercase text-text-muted">{t('common.event')}</span>
+              </span>
             </Link>
 
-            {/* Nav links — desktop */}
-            <nav className="hidden md:flex items-center gap-6">
-              <Link href="/tournaments" className="text-sm text-text-secondary hover:text-text-primary transition-colors">
-                Torneos
+            <nav className="hidden items-center gap-1 rounded border border-white/10 bg-white/[0.03] p-1 md:flex">
+              <Link href="/tournaments" className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-white/[0.05] hover:text-text-primary">
+                <Trophy className="h-3.5 w-3.5" />
+                {t('common.tournaments')}
               </Link>
               <SignedIn>
-                <Link href="/dashboard" className="text-sm text-text-secondary hover:text-text-primary transition-colors">
-                  Dashboard
+                <Link href="/dashboard" className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-white/[0.05] hover:text-text-primary">
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                  {t('common.dashboard')}
                 </Link>
-                <Link href="/balance" className="text-sm text-text-secondary hover:text-text-primary transition-colors">
-                  Balance
+                <Link href="/balance" className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-white/[0.05] hover:text-text-primary">
+                  <Wallet className="h-3.5 w-3.5" />
+                  {t('common.balance')}
                 </Link>
               </SignedIn>
             </nav>
 
-            {/* Right side */}
             <div className="flex items-center gap-3">
-              {/* Exchange rate ticker */}
               {rate && (
-                <div className="hidden sm:flex items-center gap-1 text-xs text-text-muted bg-blue-900 px-2 py-1 rounded">
-                  <TrendingUp className="w-3 h-3 text-gold-400" />
+                <div className="hidden items-center gap-1 rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-text-muted lg:flex">
+                  <TrendingUp className="h-3 w-3 text-gold-400" />
                   <span className="font-score">
                     Q{formatRate(rate.sell_rate)}/<span className="text-text-secondary">USD</span>
                   </span>
-                  {rate.stale && <span className="text-red-400 ml-1">●</span>}
+                  {rate.stale && <span className="ml-1 text-red-400">●</span>}
                 </div>
               )}
+
+              <div className="hidden sm:block">
+                <LanguageSwitcher />
+              </div>
 
               <SignedIn>
                 <UserButton
@@ -63,21 +73,20 @@ export function Header() {
               </SignedIn>
 
               <SignedOut>
-                <Link href="/sign-in" className="btn-ghost text-sm py-1.5 px-3">
-                  Iniciar sesión
+                <Link href="/sign-in" className="btn-ghost px-3 py-1.5 text-sm">
+                  {t('common.signIn')}
                 </Link>
-                <Link href="/sign-up" className="btn-gold text-sm py-1.5 px-3">
-                  Registrarse
+                <Link href="/sign-up" className="btn-gold hidden px-3 py-1.5 text-sm sm:inline-flex">
+                  {t('common.signUp')}
                 </Link>
               </SignedOut>
 
-              {/* Mobile menu button */}
               <button
-                className="md:hidden p-1.5 text-text-secondary hover:text-text-primary"
+                className="p-1.5 text-text-secondary hover:text-text-primary md:hidden"
                 onClick={() => setMobileOpen(true)}
-                aria-label="Abrir menú"
+                aria-label={t('common.openMenu')}
               >
-                <Menu className="w-5 h-5" />
+                <Menu className="h-5 w-5" />
               </button>
             </div>
           </div>

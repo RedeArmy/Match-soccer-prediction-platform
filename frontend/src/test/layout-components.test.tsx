@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react'
 import React from 'react'
+import { I18nProvider } from '@/lib/i18n'
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -46,12 +47,16 @@ import { MobileNav }       from '@/components/layout/MobileNav'
 import { BalanceCard }     from '@/components/balance/BalanceCard'
 import { ExchangeRateTicker } from '@/components/exchange/RateTicker'
 
+function render(ui: React.ReactElement) {
+  return rtlRender(<I18nProvider>{ui}</I18nProvider>)
+}
+
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 describe('Footer', () => {
-  it('renders "QM" brand text', () => {
+  it('renders "Q26" brand text', () => {
     render(<Footer />)
-    expect(screen.getByText('QM')).toBeInTheDocument()
+    expect(screen.getByText('Q26')).toBeInTheDocument()
   })
 
   it('renders "Torneos" link with href=/tournaments', () => {
@@ -70,8 +75,8 @@ describe('Header', () => {
 
   it('renders logo link', () => {
     render(<Header />)
-    // The logo link wraps "QM" text
-    const logo = screen.getAllByText('QM')[0]
+    // The logo link wraps "Q26" text
+    const logo = screen.getAllByText('Q26')[0]
     expect(logo).toBeInTheDocument()
   })
 
@@ -91,9 +96,9 @@ describe('Header', () => {
     expect(screen.queryByText(/7\./)).toBeNull()
   })
 
-  it('renders mobile menu button with aria-label="Abrir menú"', () => {
+  it('renders mobile menu button with aria-label="Abrir menu"', () => {
     render(<Header />)
-    expect(screen.getByRole('button', { name: 'Abrir menú' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Abrir menu' })).toBeInTheDocument()
   })
 })
 
@@ -188,10 +193,10 @@ describe('BalanceCard', () => {
       isLoading: false,
     } as never)
     render(<BalanceCard />)
-    const toggleBtn = screen.getByRole('button', { name: /→ USD/ })
+    const toggleBtn = screen.getByRole('button', { name: /-> USD/ })
     expect(toggleBtn).toBeInTheDocument()
     fireEvent.click(toggleBtn)
-    expect(screen.getByRole('button', { name: /→ GTQ/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /-> GTQ/ })).toBeInTheDocument()
   })
 })
 
