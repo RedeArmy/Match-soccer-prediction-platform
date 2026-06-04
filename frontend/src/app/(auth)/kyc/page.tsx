@@ -30,54 +30,15 @@ const statusLabels: Record<string, string> = {
   approved: "Aprobado",
 };
 
-const profileFields: {
-  name: string;
-  label: string;
-  type: string;
-  placeholder: string;
-}[] = [
-  {
-    name: "full_name",
-    label: "Nombre completo",
-    type: "text",
-    placeholder: "Nombre Apellido",
-  },
-  {
-    name: "date_of_birth",
-    label: "Fecha de nacimiento",
-    type: "date",
-    placeholder: "",
-  },
-  {
-    name: "nationality",
-    label: "Nacionalidad",
-    type: "text",
-    placeholder: "Guatemala",
-  },
-  {
-    name: "document_number",
-    label: "Número de documento",
-    type: "text",
-    placeholder: "0000 00000 0000",
-  },
-  {
-    name: "address_line",
-    label: "Dirección",
-    type: "text",
-    placeholder: "Calle, No.",
-  },
-  {
-    name: "city",
-    label: "Ciudad",
-    type: "text",
-    placeholder: "Ciudad de Guatemala",
-  },
-  {
-    name: "postal_code",
-    label: "Código postal",
-    type: "text",
-    placeholder: "01001",
-  },
+// prettier-ignore
+const profileFields: { name: string; label: string; type: string; placeholder: string }[] = [
+  { name: "full_name",       label: "Nombre completo",      type: "text", placeholder: "Nombre Apellido"    },
+  { name: "date_of_birth",   label: "Fecha de nacimiento",  type: "date", placeholder: ""                   },
+  { name: "nationality",     label: "Nacionalidad",         type: "text", placeholder: "Guatemala"          },
+  { name: "document_number", label: "Número de documento",  type: "text", placeholder: "0000 00000 0000"    },
+  { name: "address_line",    label: "Dirección",            type: "text", placeholder: "Calle, No."         },
+  { name: "city",            label: "Ciudad",               type: "text", placeholder: "Ciudad de Guatemala" },
+  { name: "postal_code",     label: "Código postal",        type: "text", placeholder: "01001"              },
 ];
 
 export default function KYCPage() {
