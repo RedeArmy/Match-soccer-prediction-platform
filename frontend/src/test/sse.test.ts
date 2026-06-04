@@ -44,7 +44,9 @@ describe('createSSEManager', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     es = new MockEventSource('/api/notifications/stream')
-    vi.spyOn(globalThis, 'EventSource' as never).mockImplementation(() => es as never)
+    vi.spyOn(globalThis, 'EventSource').mockImplementation(function MockedEventSource() {
+      return es
+    } as unknown as typeof EventSource)
   })
 
   afterEach(() => {

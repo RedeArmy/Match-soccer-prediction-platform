@@ -4,6 +4,7 @@ import { EmptyState }     from '@/components/shared/EmptyState'
 import { LoadingState, LoadingSpinner } from '@/components/shared/LoadingState'
 import { StatusBadge }    from '@/components/shared/StatusBadge'
 import { FormFeedback }   from '@/components/shared/FormFeedback'
+import { FormField }      from '@/components/shared/FormField'
 import { FileUploadField } from '@/components/shared/FileUploadField'
 import { SubmitButton }   from '@/components/shared/SubmitButton'
 
@@ -149,6 +150,18 @@ describe('FormFeedback', () => {
 })
 
 // ── FileUploadField ───────────────────────────────────────────────────────────
+
+describe('FormField', () => {
+  it('renders label and children', () => {
+    render(
+      <FormField label="Score">
+        <input aria-label="Score input" />
+      </FormField>,
+    )
+    expect(screen.getByText('Score')).toBeInTheDocument()
+    expect(screen.getByLabelText('Score input')).toBeInTheDocument()
+  })
+})
 
 describe('FileUploadField', () => {
   it('renders label text', () => {

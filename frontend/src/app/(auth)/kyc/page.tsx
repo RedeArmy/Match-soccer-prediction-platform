@@ -7,7 +7,7 @@ import { useKYCStatus } from "@/hooks/useKYCStatus";
 import { api } from "@/lib/api";
 import { sniffMIME, isAllowedUploadType } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { LoadingState } from "@/components/shared/LoadingState";
+import { LoadingSpinner, LoadingState } from "@/components/shared/LoadingState";
 import { FormFeedback } from "@/components/shared/FormFeedback";
 import { FormField } from "@/components/shared/FormField";
 import { FileUploadField } from "@/components/shared/FileUploadField";

@@ -1,24 +1,29 @@
+'use client'
+
 import Link from 'next/link'
+import { useI18n } from '@/lib/i18n'
 
 export function Footer() {
-  return (
-    <footer className="border-t border-blue-800/60 bg-blue-950 mt-auto">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+  const { t } = useI18n()
 
+  return (
+    <footer className="mt-auto border-t border-white/10 bg-[#070A0F]">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="wc26-stripe mb-6" />
+        <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
           <div className="flex items-center gap-2">
-            <span className="font-display text-2xl text-gold-400">QM</span>
-            <span className="text-text-muted text-sm">Mundial 2026</span>
+            <span className="grid h-8 w-8 place-items-center rounded border border-gold-400/40 bg-gold-400/10 font-display text-lg text-gold-300">Q26</span>
+            <span className="text-sm text-text-muted">{t('common.event')}</span>
           </div>
 
           <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-text-muted">
-            <Link href="/tournaments" className="hover:text-text-secondary transition-colors">Torneos</Link>
-            <Link href="/sign-in"    className="hover:text-text-secondary transition-colors">Iniciar sesión</Link>
-            <Link href="/sign-up"    className="hover:text-text-secondary transition-colors">Registrarse</Link>
+            <Link href="/tournaments" className="transition-colors hover:text-text-secondary">{t('common.tournaments')}</Link>
+            <Link href="/sign-in" className="transition-colors hover:text-text-secondary">{t('common.signIn')}</Link>
+            <Link href="/sign-up" className="transition-colors hover:text-text-secondary">{t('common.signUp')}</Link>
           </nav>
 
-          <p className="text-xs text-text-muted text-center md:text-right max-w-xs">
-            Juega responsablemente. Solo para mayores de 18 años.
+          <p className="max-w-xs text-center text-xs text-text-muted md:text-right">
+            {t('common.responsible')}
           </p>
         </div>
       </div>
