@@ -82,7 +82,8 @@ export function Header() {
               </SignedOut>
 
               <button
-                className="p-1.5 text-text-secondary hover:text-text-primary md:hidden"
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded border border-white/10 bg-white/[0.04] text-text-secondary transition-colors hover:border-gold-400/40 hover:text-text-primary md:hidden"
                 onClick={() => setMobileOpen(true)}
                 aria-label={t('common.openMenu')}
               >

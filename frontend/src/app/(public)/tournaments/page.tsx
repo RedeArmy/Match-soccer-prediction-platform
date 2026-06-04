@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatGTQ, formatCountdown } from '@/lib/utils'
 import { useI18n } from '@/lib/i18n'
+import { WorldCupPoolBuilder } from '@/components/quiniela/WorldCupPoolBuilder'
 
 const featuredGroups = [
   {
@@ -47,12 +48,29 @@ export default function TournamentsPage() {
       <div className="mx-auto max-w-7xl">
         <section className="panel mb-8 overflow-hidden">
           <div className="wc26-stripe" />
-          <div className="p-5">
-            <p className="text-xs uppercase text-gold-300">{t('common.event')}</p>
-            <h1 className="mt-2 font-display text-4xl text-white">{t('tournaments.title')}</h1>
-            <p className="mt-1 text-text-secondary">{t('tournaments.subtitle')}</p>
+          <div className="flex flex-col gap-4 p-5 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs uppercase text-gold-300">{t('common.event')}</p>
+              <h1 className="mt-2 font-display text-4xl text-white sm:text-5xl">{t('tournaments.title')}</h1>
+              <p className="mt-1 max-w-2xl text-text-secondary">{t('tournaments.subtitle')}</p>
+            </div>
+            <Link href="/sign-up" className="btn-gold w-full py-2 text-sm md:w-auto">
+              {t('tournaments.createPick')}
+            </Link>
           </div>
         </section>
+
+        <WorldCupPoolBuilder />
+
+        <div className="mt-8 mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase text-gold-300">{t('tournaments.marketplace')}</p>
+            <h2 className="text-2xl font-semibold text-white">{t('tournaments.availablePools')}</h2>
+          </div>
+          <span className="hidden rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-text-muted sm:inline-flex">
+            {featuredGroups.length} {t('tournaments.options')}
+          </span>
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {featuredGroups.map((group) => (

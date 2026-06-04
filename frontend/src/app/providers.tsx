@@ -9,8 +9,8 @@ export function Providers({ children }: Readonly<{ children: React.ReactNode }>)
     new QueryClient({
       defaultOptions: {
         queries: {
-          staleTime:            60_000,   // 60s — matches exchange rate refetch interval
-          gcTime:               300_000,  // 5m garbage collection
+          staleTime:            60_000,
+          gcTime:               300_000,
           retry:                1,
           refetchOnWindowFocus: false,
         },
