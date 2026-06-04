@@ -138,7 +138,8 @@ class APIClient {
   // ── Predictions ───────────────────────────────────────────────────────────
 
   getMyPredictions(token: string): Promise<PredictionResponse[]> {
-    return this.request('/api/v1/predictions/me', {}, token)
+    return this.request<{ data: PredictionResponse[] }>('/api/v1/predictions/me', {}, token)
+      .then((r) => r.data)
   }
 
   submitPrediction(token: string, data: { match_id: number; home_score: number; away_score: number }): Promise<PredictionResponse> {
