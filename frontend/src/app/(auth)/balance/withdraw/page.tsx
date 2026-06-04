@@ -8,6 +8,7 @@ import { useBalance } from "@/hooks/useBalance";
 import { useKYCStatus } from "@/hooks/useKYCStatus";
 import { formatGTQ } from "@/lib/utils";
 import { FormFeedback } from "@/components/shared/FormFeedback";
+import { FormField } from "@/components/shared/FormField";
 import { SubmitButton } from "@/components/shared/SubmitButton";
 import { ShieldAlert, Banknote, Globe } from "lucide-react";
 import Link from "next/link";
@@ -181,10 +182,7 @@ export default function WithdrawPage() {
                 placeholder: "Nombre completo",
               },
             ].map(({ value, setter, label, placeholder }) => (
-              <div key={label}>
-                <label className="block text-sm text-text-secondary mb-1.5">
-                  {label}
-                </label>
+              <FormField key={label} label={label} spacing="normal">
                 <input
                   type="text"
                   value={value}
@@ -192,7 +190,7 @@ export default function WithdrawPage() {
                   placeholder={placeholder}
                   className="input-base"
                 />
-              </div>
+              </FormField>
             ))}
           </>
         )}

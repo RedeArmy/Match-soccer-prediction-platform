@@ -9,6 +9,7 @@ import { sniffMIME, isAllowedUploadType } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { FormFeedback } from "@/components/shared/FormFeedback";
+import { FormField } from "@/components/shared/FormField";
 import { FileUploadField } from "@/components/shared/FileUploadField";
 import { SubmitButton } from "@/components/shared/SubmitButton";
 import { ShieldCheck, CheckCircle2 } from "lucide-react";
@@ -28,6 +29,56 @@ const statusLabels: Record<string, string> = {
   under_review: "En revisión",
   approved: "Aprobado",
 };
+
+const profileFields: {
+  name: string;
+  label: string;
+  type: string;
+  placeholder: string;
+}[] = [
+  {
+    name: "full_name",
+    label: "Nombre completo",
+    type: "text",
+    placeholder: "Nombre Apellido",
+  },
+  {
+    name: "date_of_birth",
+    label: "Fecha de nacimiento",
+    type: "date",
+    placeholder: "",
+  },
+  {
+    name: "nationality",
+    label: "Nacionalidad",
+    type: "text",
+    placeholder: "Guatemala",
+  },
+  {
+    name: "document_number",
+    label: "Número de documento",
+    type: "text",
+    placeholder: "0000 00000 0000",
+  },
+  {
+    name: "address_line",
+    label: "Dirección",
+    type: "text",
+    placeholder: "Calle, No.",
+  },
+  {
+    name: "city",
+    label: "Ciudad",
+    type: "text",
+    placeholder: "Ciudad de Guatemala",
+  },
+  {
+    name: "postal_code",
+    label: "Código postal",
+    type: "text",
+    placeholder: "01001",
+  },
+];
 
 export default function KYCPage() {
   const { getToken } = useAuth();
@@ -161,54 +212,8 @@ export default function KYCPage() {
           </h2>
 
           <div className="grid sm:grid-cols-2 gap-4">
-            {[
-              {
-                name: "full_name",
-                label: "Nombre completo",
-                type: "text",
-                placeholder: "Nombre Apellido",
-              },
-              {
-                name: "date_of_birth",
-                label: "Fecha de nacimiento",
-                type: "date",
-                placeholder: "",
-              },
-              {
-                name: "nationality",
-                label: "Nacionalidad",
-                type: "text",
-                placeholder: "Guatemala",
-              },
-              {
-                name: "document_number",
-                label: "Número de documento",
-                type: "text",
-                placeholder: "0000 00000 0000",
-              },
-              {
-                name: "address_line",
-                label: "Dirección",
-                type: "text",
-                placeholder: "Calle, No.",
-              },
-              {
-                name: "city",
-                label: "Ciudad",
-                type: "text",
-                placeholder: "Ciudad de Guatemala",
-              },
-              {
-                name: "postal_code",
-                label: "Código postal",
-                type: "text",
-                placeholder: "01001",
-              },
-            ].map(({ name, label, type, placeholder }) => (
-              <div key={name}>
-                <label className="block text-sm text-text-secondary mb-1">
-                  {label}
-                </label>
+            {profileFields.map(({ name, label, type, placeholder }) => (
+              <FormField key={name} label={label}>
                 <input
                   type={type}
                   value={form[name as keyof typeof form]}
@@ -218,7 +223,7 @@ export default function KYCPage() {
                   placeholder={placeholder}
                   className="input-base"
                 />
-              </div>
+              </FormField>
             ))}
           </div>
 
