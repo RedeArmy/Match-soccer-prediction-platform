@@ -1018,6 +1018,9 @@ func (r *stubUserRepoForWorker) GetByID(_ context.Context, _ int) (*domain.User,
 func (r *stubUserRepoForWorker) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return r.user, r.err
 }
+func (r *stubUserRepoForWorker) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return r.user, r.err
+}
 func (r *stubUserRepoForWorker) Create(_ context.Context, _ *domain.User) error { return r.err }
 func (r *stubUserRepoForWorker) Update(_ context.Context, _ *domain.User) error { return r.err }
 func (r *stubUserRepoForWorker) Delete(_ context.Context, _ int) error          { return r.err }
