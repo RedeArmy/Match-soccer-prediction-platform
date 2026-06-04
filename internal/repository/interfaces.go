@@ -53,6 +53,10 @@ type UserRepository interface {
 	// so callers can distinguish "not found" from a database error without
 	// importing apperrors directly.
 	GetByExternalSubject(ctx context.Context, subject string) (*domain.User, error)
+	// GetByEmail resolves an email address to an internal User. Returns nil, nil
+	// when no matching row exists. Used by the Clerk sync service to reattach
+	// an existing account when external_subject is absent (e.g. manual seeding).
+	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	Update(ctx context.Context, user *domain.User) error
 	Delete(ctx context.Context, id int) error
 	List(ctx context.Context) ([]*domain.User, error)

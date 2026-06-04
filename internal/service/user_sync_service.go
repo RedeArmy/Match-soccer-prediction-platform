@@ -69,6 +69,16 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 		return apperrors.Internal(err)
 	}
 
+	// Fallback: if no user is found by subject, try by email. This handles
+	// accounts that were manually seeded or created without external_subject
+	// (e.g. direct SQL inserts during local development).
+	if existing == nil && email != "" {
+		existing, err = s.userRepo.GetByEmail(ctx, email)
+		if err != nil {
+			return apperrors.Internal(err)
+		}
+	}
+
 	if existing != nil {
 		existing.Name = name
 		existing.Email = email
@@ -90,6 +100,12 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 		Role:            domain.RoleUser,
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
+		return err
+	}
+	// Create's RETURNING clause overwrites user.ExternalSubject with NULL.
+	// Restore it before calling Update so the subject is persisted correctly.
+	user.ExternalSubject = subject
+	if err := s.userRepo.Update(ctx, user); err != nil {
 		return err
 	}
 	s.log.Info("clerk sync: created user",

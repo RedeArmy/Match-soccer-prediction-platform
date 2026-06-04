@@ -37,6 +37,9 @@ func (r *clerkSyncRepo) GetByID(_ context.Context, _ int) (*domain.User, error) 
 func (r *clerkSyncRepo) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
 	return r.existingUser, r.getErr
 }
+func (r *clerkSyncRepo) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
 func (r *clerkSyncRepo) Update(_ context.Context, _ *domain.User) error { return r.updateErr }
 func (r *clerkSyncRepo) Delete(_ context.Context, id int) error {
 	r.deletedID = id
