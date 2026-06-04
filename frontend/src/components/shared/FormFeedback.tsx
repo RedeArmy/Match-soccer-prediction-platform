@@ -1,7 +1,7 @@
 interface FormFeedbackProps {
-  error?: string;
-  success?: string;
-  center?: boolean;
+  readonly error?: string;
+  readonly success?: string;
+  readonly center?: boolean;
 }
 
 export function FormFeedback({ error, success, center }: FormFeedbackProps) {

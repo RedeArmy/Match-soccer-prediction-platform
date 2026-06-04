@@ -64,19 +64,9 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 		return apperrors.Validation("webhook payload contains an invalid user name")
 	}
 
-	existing, err := s.userRepo.GetByExternalSubject(ctx, subject)
+	existing, err := s.findExistingUser(ctx, subject, email)
 	if err != nil {
-		return apperrors.Internal(err)
-	}
-
-	// Fallback: if no user is found by subject, try by email. This handles
-	// accounts that were manually seeded or created without external_subject
-	// (e.g. direct SQL inserts during local development).
-	if existing == nil && email != "" {
-		existing, err = s.userRepo.GetByEmail(ctx, email)
-		if err != nil {
-			return apperrors.Internal(err)
-		}
+		return err
 	}
 
 	if existing != nil {
@@ -126,6 +116,24 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 		)
 	}
 	return nil
+}
+
+// findExistingUser resolves an internal user by Clerk subject, falling back to
+// email lookup when no row matches the subject. The fallback reattaches accounts
+// that were seeded without external_subject (e.g. direct SQL inserts in development).
+func (s *clerkUserSyncService) findExistingUser(ctx context.Context, subject, email string) (*domain.User, error) {
+	existing, err := s.userRepo.GetByExternalSubject(ctx, subject)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	if existing != nil || email == "" {
+		return existing, nil
+	}
+	existing, err = s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return existing, nil
 }
 
 // resolvePrimaryEmail returns the email address whose ID matches primaryEmailID.

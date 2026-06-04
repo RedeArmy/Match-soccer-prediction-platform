@@ -1,7 +1,7 @@
 interface FormFieldProps {
-  label: string;
-  spacing?: "tight" | "normal";
-  children: React.ReactNode;
+  readonly label: string;
+  readonly spacing?: "tight" | "normal";
+  readonly children: React.ReactNode;
 }
 
 export function FormField({

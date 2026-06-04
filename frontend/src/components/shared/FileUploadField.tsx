@@ -1,10 +1,10 @@
 import { Upload } from "lucide-react";
 
 interface FileUploadFieldProps {
-  label: string;
-  accept?: string;
-  fileName?: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  readonly label: string;
+  readonly accept?: string;
+  readonly fileName?: string;
+  readonly onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 export function FileUploadField({

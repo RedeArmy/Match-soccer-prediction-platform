@@ -1,10 +1,10 @@
 import { LoadingSpinner } from "@/components/shared/LoadingState";
 
 interface SubmitButtonProps {
-  isPending: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-  children: React.ReactNode;
+  readonly isPending: boolean;
+  readonly disabled?: boolean;
+  readonly onClick?: () => void;
+  readonly children: React.ReactNode;
 }
 
 export function SubmitButton({
