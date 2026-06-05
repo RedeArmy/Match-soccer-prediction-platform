@@ -87,7 +87,7 @@ class APIClient {
     return this.request('/api/v1/users/me/balance', {}, token)
   }
 
-  getLedger(token: string, cursor?: string, limit = 50): Promise<CursorPaged<LedgerEntry>> {
+  getLedger(token: string, cursor?: string, limit = 50): Promise<LedgerEntry[]> {
     const q = new URLSearchParams({ limit: String(limit) })
     if (cursor) q.set('cursor', cursor)
     return this.request(`/api/v1/users/me/balance/ledger?${q}`, {}, token)
@@ -138,7 +138,8 @@ class APIClient {
   // ── Predictions ───────────────────────────────────────────────────────────
 
   getMyPredictions(token: string): Promise<PredictionResponse[]> {
-    return this.request('/api/v1/predictions/me', {}, token)
+    return this.request<{ data: PredictionResponse[] }>('/api/v1/predictions/me', {}, token)
+      .then((r) => r.data)
   }
 
   submitPrediction(token: string, data: { match_id: number; home_score: number; away_score: number }): Promise<PredictionResponse> {

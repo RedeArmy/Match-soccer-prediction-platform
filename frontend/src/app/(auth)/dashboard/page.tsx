@@ -139,12 +139,12 @@ export default function DashboardPage() {
             </div>
 
             {loadingLedger && <LoadingState rows={3} />}
-            {!loadingLedger && (ledger?.data?.length ?? 0) === 0 && (
+            {!loadingLedger && (ledger?.length ?? 0) === 0 && (
               <p className="py-4 text-center text-sm text-text-muted">{t('dashboard.noTransactions')}</p>
             )}
-            {!loadingLedger && (ledger?.data?.length ?? 0) > 0 && (
+            {!loadingLedger && (ledger?.length ?? 0) > 0 && (
               <div className="space-y-1.5">
-                {ledger?.data?.map((entry) => (
+                {ledger?.map((entry) => (
                   <div key={entry.id} className="card flex items-center justify-between gap-2 p-3">
                     <div className="min-w-0">
                       <p className="truncate text-xs text-text-primary">{entry.description || entry.type}</p>
