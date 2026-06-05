@@ -14,6 +14,8 @@ bin/
 *.out
 coverage.html
 coverage.out
+*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
 
 # ── Dependency directories ────────────────────────────────────────────────────
 # The module cache is managed by `go mod download` and must not be committed.

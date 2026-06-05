@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatGTQ, formatCountdown } from '@/lib/utils'
 import { useI18n } from '@/lib/i18n'
-import { WorldCupPoolBuilder } from '@/components/quiniela/WorldCupPoolBuilder'
 
 const featuredGroups = [
   {
@@ -60,9 +59,7 @@ export default function TournamentsPage() {
           </div>
         </section>
 
-        <WorldCupPoolBuilder />
-
-        <div className="mt-8 mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase text-gold-300">{t('tournaments.marketplace')}</p>
             <h2 className="text-2xl font-semibold text-white">{t('tournaments.availablePools')}</h2>

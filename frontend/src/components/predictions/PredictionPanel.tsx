@@ -14,7 +14,7 @@ import {
 import { api } from "@/lib/api";
 import type { MatchResponse, PredictionResponse } from "@/lib/api-types";
 import { isPhaseVisible } from "@/lib/feature-flags";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -22,12 +22,16 @@ import { useI18n } from "@/lib/i18n";
 
 type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved";
+type GroupFilter = "all" | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
+
+const GROUPS: Exclude<GroupFilter, "all">[] = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
 export function PredictionPanel() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
-  const { t } = useI18n();
+  const { t, teamName, phaseName, formatKickoff, timeZone } = useI18n();
   const [filter, setFilter] = useState<Filter>("all");
+  const [selectedGroup, setSelectedGroup] = useState<GroupFilter>("all");
   const [drafts, setDrafts] = useState<DraftScores>({});
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -111,17 +115,34 @@ export function PredictionPanel() {
       .sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
   }, [matchesQuery.data]);
 
-  const visibleMatches = sortedMatches.filter((match) => {
+  const groupFilteredMatches = sortedMatches.filter((match) => {
+    if (selectedGroup === "all") return true;
+    return normalizeGroup(match.group_label) === selectedGroup;
+  });
+
+  const visibleMatches = groupFilteredMatches.filter((match) => {
     const hasPrediction = predictionByMatch.has(match.id);
     if (filter === "pending") return !hasPrediction;
     if (filter === "saved") return hasPrediction;
     return true;
   });
 
+  const groupCounts = useMemo(() => {
+    const counts = new Map<GroupFilter, number>([["all", sortedMatches.length]]);
+    for (const group of GROUPS) counts.set(group, 0);
+    for (const match of sortedMatches) {
+      const group = normalizeGroup(match.group_label);
+      if (group) counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    return counts;
+  }, [sortedMatches]);
+
   const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
 
   return (
-    <section className="panel p-4 sm:p-5">
+    <section className="panel overflow-hidden">
+      <div className="wc26-stripe" />
+      <div className="p-4 sm:p-5">
       <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
         <div>
           <div className="mb-2 flex items-center gap-2">
@@ -135,7 +156,7 @@ export function PredictionPanel() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 rounded border border-white/10 bg-white/[0.035] p-1">
+        <div className="flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] p-1">
           <SlidersHorizontal className="ml-2 h-4 w-4 text-text-muted" />
           {(
             [
@@ -158,6 +179,44 @@ export function PredictionPanel() {
               {label}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gold-300">
+              {t("predictions.groupSelector")}
+            </p>
+            <p className="text-sm text-text-secondary">
+              {selectedGroup === "all"
+                ? t("predictions.groupSelectorAll")
+                : `${t("predictions.groupSelected")} ${selectedGroup}`}
+            </p>
+          </div>
+          <span className="text-xs text-text-muted">
+            {visibleMatches.length} {t("predictions.matches")}
+          </span>
+        </div>
+
+        <div className="grid gap-2 lg:grid-cols-[minmax(7rem,0.7fr)_minmax(0,2fr)]">
+          <GroupButton
+            label={t("predictions.groupAll")}
+            count={groupCounts.get("all") ?? 0}
+            active={selectedGroup === "all"}
+            onClick={() => setSelectedGroup("all")}
+          />
+          <div className="grid grid-cols-4 gap-2">
+            {GROUPS.map((group) => (
+              <GroupButton
+                key={group}
+                label={group}
+                count={groupCounts.get(group) ?? 0}
+                active={selectedGroup === group}
+                onClick={() => setSelectedGroup(group)}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -232,18 +291,21 @@ export function PredictionPanel() {
                     </div>
 
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                      <TeamLabel label={match.home_team} align="right" />
+                      <TeamLabel label={teamName(match.home_team)} align="right" />
                       <span className="font-score text-xs text-text-muted">
                         vs
                       </span>
-                      <TeamLabel label={match.away_team} align="left" />
+                      <TeamLabel label={teamName(match.away_team)} align="left" />
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
                       <span className="inline-flex items-center gap-1.5">
                         <CalendarClock className="h-3.5 w-3.5" />
                         {t("predictions.kickoff")}:{" "}
-                        {formatDateTime(match.kickoff_at)}
+                        <span suppressHydrationWarning>{formatKickoff(match.kickoff_at)}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5" suppressHydrationWarning>
+                        {t("predictions.timezone")}: {timeZone}
                       </span>
                       {match.stadium && (
                         <span className="inline-flex items-center gap-1.5">
@@ -254,7 +316,7 @@ export function PredictionPanel() {
                       {(match.phase || match.group_label) && (
                         <span>
                           {t("predictions.phase")}:{" "}
-                          {match.phase ?? match.group_label}
+                          {phaseName(match.phase ?? match.group_label)}
                         </span>
                       )}
                       {prediction?.points !== null &&
@@ -313,7 +375,45 @@ export function PredictionPanel() {
       <p className="mt-4 text-xs text-text-muted">
         {t("predictions.exactHint")}
       </p>
+      </div>
     </section>
+  );
+}
+
+function normalizeGroup(group: string | null | undefined): Exclude<GroupFilter, "all"> | null {
+  const value = group?.trim().toUpperCase().replace(/^GROUP\s+/, "").replace(/^GRUPO\s+/, "");
+  return GROUPS.includes(value as Exclude<GroupFilter, "all">)
+    ? (value as Exclude<GroupFilter, "all">)
+    : null;
+}
+
+function GroupButton({
+  label,
+  count,
+  active,
+  onClick,
+}: Readonly<{
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex min-h-14 flex-col items-center justify-center rounded-xl border px-2 py-2 text-center transition-colors",
+        active
+          ? "border-gold-400 bg-gold-400 text-blue-950 shadow-lg shadow-gold-400/10"
+          : "border-white/10 bg-white/[0.035] text-text-secondary hover:border-gold-400/40 hover:text-white",
+      )}
+    >
+      <span className="text-sm font-bold uppercase">{label}</span>
+      <span className={cn("mt-0.5 text-[10px]", active ? "text-blue-900/80" : "text-text-muted")}>
+        {count}
+      </span>
+    </button>
   );
 }
 
