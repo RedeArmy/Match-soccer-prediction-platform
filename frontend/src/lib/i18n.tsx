@@ -7,6 +7,71 @@ export type Locale = "es" | "en";
 type LeafEntry = Record<Locale, string>;
 type TranslationNode = { [key: string]: LeafEntry | TranslationNode };
 
+const localeTags: Record<Locale, string> = {
+  es: "es-GT",
+  en: "en-GB",
+};
+
+const teamTranslations: Record<string, LeafEntry> = {
+  "algeria": { es: "Argelia", en: "Algeria" },
+  "argentina": { es: "Argentina", en: "Argentina" },
+  "australia": { es: "Australia", en: "Australia" },
+  "belgium": { es: "Bélgica", en: "Belgium" },
+  "brazil": { es: "Brasil", en: "Brazil" },
+  "canada": { es: "Canadá", en: "Canada" },
+  "cape verde": { es: "Cabo Verde", en: "Cape Verde" },
+  "colombia": { es: "Colombia", en: "Colombia" },
+  "croatia": { es: "Croacia", en: "Croatia" },
+  "curacao": { es: "Curazao", en: "Curaçao" },
+  "curaçao": { es: "Curazao", en: "Curaçao" },
+  "czech republic": { es: "República Checa", en: "Czech Republic" },
+  "ecuador": { es: "Ecuador", en: "Ecuador" },
+  "egypt": { es: "Egipto", en: "Egypt" },
+  "england": { es: "Inglaterra", en: "England" },
+  "france": { es: "Francia", en: "France" },
+  "germany": { es: "Alemania", en: "Germany" },
+  "ghana": { es: "Ghana", en: "Ghana" },
+  "guatemala": { es: "Guatemala", en: "Guatemala" },
+  "haiti": { es: "Haití", en: "Haiti" },
+  "italy": { es: "Italia", en: "Italy" },
+  "ivory coast": { es: "Costa de Marfil", en: "Ivory Coast" },
+  "cote d'ivoire": { es: "Costa de Marfil", en: "Côte d'Ivoire" },
+  "côte d'ivoire": { es: "Costa de Marfil", en: "Côte d'Ivoire" },
+  "japan": { es: "Japón", en: "Japan" },
+  "jordan": { es: "Jordania", en: "Jordan" },
+  "mexico": { es: "México", en: "Mexico" },
+  "morocco": { es: "Marruecos", en: "Morocco" },
+  "new zealand": { es: "Nueva Zelanda", en: "New Zealand" },
+  "nigeria": { es: "Nigeria", en: "Nigeria" },
+  "panama": { es: "Panamá", en: "Panama" },
+  "paraguay": { es: "Paraguay", en: "Paraguay" },
+  "portugal": { es: "Portugal", en: "Portugal" },
+  "saudi arabia": { es: "Arabia Saudita", en: "Saudi Arabia" },
+  "scotland": { es: "Escocia", en: "Scotland" },
+  "south africa": { es: "Sudáfrica", en: "South Africa" },
+  "south korea": { es: "Corea del Sur", en: "South Korea" },
+  "spain": { es: "España", en: "Spain" },
+  "switzerland": { es: "Suiza", en: "Switzerland" },
+  "tunisia": { es: "Túnez", en: "Tunisia" },
+  "uruguay": { es: "Uruguay", en: "Uruguay" },
+  "usa": { es: "Estados Unidos", en: "United States" },
+  "united states": { es: "Estados Unidos", en: "United States" },
+  "uzbekistan": { es: "Uzbekistán", en: "Uzbekistan" },
+};
+
+const phaseTranslations: Record<string, LeafEntry> = {
+  "group_stage": { es: "Fase de Grupos", en: "Group Stage" },
+  "group stage": { es: "Fase de Grupos", en: "Group Stage" },
+  "round_of_32": { es: "Dieciseisavos de Final", en: "Round of 32" },
+  "round_of_16": { es: "Octavos de Final", en: "Round of 16" },
+  "quarter_final": { es: "Cuartos de Final", en: "Quarter-Final" },
+  "quarterfinal": { es: "Cuartos de Final", en: "Quarter-Final" },
+  "semi_final": { es: "Semifinal", en: "Semi-Final" },
+  "semifinal": { es: "Semifinal", en: "Semi-Final" },
+  "third_place": { es: "Tercer Lugar", en: "Third Place" },
+  "final": { es: "Final", en: "Final" },
+};
+
 // prettier-ignore
 const translations: TranslationNode = {
   common: {
@@ -114,33 +179,21 @@ const translations: TranslationNode = {
     availablePools:{ es: 'Pools disponibles',                                  en: 'Available pools'                          },
     options:    { es: 'opciones',                                               en: 'options'                                  },
   },
-  quiniela: {
-    eyebrow:          { es: 'Constructor de quiniela',                         en: 'Quiniela builder'                         },
-    title:            { es: 'Elige clasificados por grupo',                    en: 'Pick group qualifiers'                    },
-    subtitle:         { es: 'Una experiencia compacta para seleccionar ganadores, revisar progreso y avanzar hacia terceros lugares y fase final.', en: 'A compact experience to select winners, review progress, and move into best third-place teams and knockout rounds.' },
-    progress:         { es: 'Progreso',                                        en: 'Progress'                                 },
-    groupTabs:        { es: 'Navegacion de grupos',                            en: 'Group navigation'                         },
-    selectTwo:        { es: 'Selecciona dos equipos',                          en: 'Select two teams'                         },
-    summaryTitle:     { es: 'Resumen de picks',                                en: 'Picks summary'                            },
-    summaryCopy:      { es: 'Controla el flujo completo de la quiniela desde una vista lateral clara y accionable.', en: 'Control the full quiniela flow from a clear, actionable side view.' },
-    completed:        { es: 'Grupos completos',                                en: 'Completed groups'                         },
-    picks:            { es: 'Picks',                                           en: 'Picks'                                    },
-    phaseGroups:      { es: 'Fase de grupos',                                  en: 'Group stage'                              },
-    phaseThirds:      { es: 'Mejores terceros',                                en: 'Best third-place teams'                   },
-    phaseKnockout:    { es: 'Llaves finales',                                  en: 'Knockout bracket'                         },
-    qualifiers:       { es: 'Clasificados proyectados',                        en: 'Projected qualifiers'                     },
-    emptyQualifiers:  { es: 'Selecciona equipos para generar tu ruta.',         en: 'Select teams to generate your route.'     },
-    continue:         { es: 'Continuar quiniela',                              en: 'Continue quiniela'                        },
-  },
   predictions: {
     title:        { es: 'Panel de predicciones',     en: 'Prediction panel'          },
-    subtitle:     { es: 'Agrega o actualiza marcadores antes de que inicie cada partido.', en: 'Add or update scores before each match kicks off.' },
+    subtitle:     { es: 'Lista de predicciones por partido. Filtra por grupo y guarda marcadores antes del inicio.', en: 'Match-by-match prediction list. Filter by group and save scores before kick-off.' },
     filterAll:    { es: 'Todos',                     en: 'All'                        },
     filterPending:{ es: 'Pendientes',                en: 'Pending'                    },
     filterSaved:  { es: 'Guardados',                 en: 'Saved'                      },
+    groupSelector:{ es: 'Grupos',                    en: 'Groups'                     },
+    groupSelectorAll:{ es: 'Mostrando partidos de todos los grupos', en: 'Showing matches from all groups' },
+    groupSelected:{ es: 'Mostrando Grupo',           en: 'Showing Group'              },
+    groupAll:     { es: 'Todos',                     en: 'All'                        },
+    matches:      { es: 'partidos',                  en: 'matches'                    },
     noMatches:    { es: 'No hay partidos programados', en: 'No scheduled matches'     },
     noMatchesDesc:{ es: 'Cuando el calendario este disponible, podras capturar tus marcadores aqui.', en: 'When the calendar is available, you will capture your scores here.' },
     kickoff:      { es: 'Inicio',                    en: 'Kickoff'                    },
+    timezone:     { es: 'Hora local',                en: 'Local time'                 },
     phase:        { es: 'Fase',                      en: 'Phase'                      },
     venue:        { es: 'Sede',                      en: 'Venue'                      },
     saved:        { es: 'Guardado',                  en: 'Saved'                      },
@@ -164,8 +217,12 @@ const translations: TranslationNode = {
 
 interface I18nContextValue {
   locale: Locale;
+  timeZone: string;
   setLocale: (locale: Locale) => void;
   t: (key: string) => string;
+  formatKickoff: (iso: string | null | undefined) => string;
+  phaseName: (phase: string | null | undefined) => string;
+  teamName: (name: string | null | undefined) => string;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -186,6 +243,7 @@ export function I18nProvider({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const [locale, setLocale] = useState<Locale>("es");
+  const [timeZone, setTimeZone] = useState("UTC");
 
   useEffect(() => {
     const stored = globalThis.localStorage.getItem("quiniela-locale");
@@ -193,11 +251,16 @@ export function I18nProvider({
       setLocale(stored);
       document.documentElement.lang = stored;
     }
+    setTimeZone(
+      Intl.DateTimeFormat().resolvedOptions().timeZone ||
+        "America/Guatemala",
+    );
   }, []);
 
   const value = useMemo<I18nContextValue>(
     () => ({
       locale,
+      timeZone,
       setLocale: (nextLocale) => {
         setLocale(nextLocale);
         globalThis.localStorage.setItem("quiniela-locale", nextLocale);
@@ -205,11 +268,55 @@ export function I18nProvider({
       },
       t: (key) =>
         getTranslation(key, locale) ?? getTranslation(key, "es") ?? key,
+      formatKickoff: (iso) => formatLocalizedDateTime(iso, locale, timeZone),
+      phaseName: (phase) => translateDictionaryValue(phase, phaseTranslations, locale),
+      teamName: (name) => translateDictionaryValue(name, teamTranslations, locale),
     }),
-    [locale],
+    [locale, timeZone],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+function normalizeDictionaryKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function translateDictionaryValue(
+  value: string | null | undefined,
+  dictionary: Record<string, LeafEntry>,
+  locale: Locale,
+): string {
+  if (!value) return "—";
+  const direct = dictionary[value.trim().toLowerCase()];
+  const normalised = dictionary[normalizeDictionaryKey(value)];
+  return (direct ?? normalised)?.[locale] ?? value;
+}
+
+function formatLocalizedDateTime(
+  iso: string | null | undefined,
+  locale: Locale,
+  timeZone: string,
+): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat(localeTags[locale], {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+    timeZoneName: "short",
+  }).format(date);
 }
 
 export function useI18n() {
