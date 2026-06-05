@@ -98,6 +98,32 @@ export interface LedgerEntry {
 // ── Match ─────────────────────────────────────────────────────────────────────
 export type MatchStatus = 'scheduled' | 'in_progress' | 'finished' | 'cancelled'
 
+export interface CountryInfo {
+  id:   number
+  name: string
+  code: string
+}
+
+export interface StateInfo {
+  id:      number
+  name:    string
+  code:    string
+  country: CountryInfo
+}
+
+export interface CityInfo {
+  id:    number
+  name:  string
+  state: StateInfo
+}
+
+export interface StadiumInfo {
+  id:       number
+  name:     string
+  city:     CityInfo
+  capacity: number
+}
+
 export interface MatchResponse {
   id:          number
   home_team:   string
@@ -105,8 +131,8 @@ export interface MatchResponse {
   home_score:  number | null
   away_score:  number | null
   status:      MatchStatus
-  starts_at:   string
-  stadium:     string | null
+  kickoff_at:  string | null
+  stadium:     StadiumInfo | null
   phase:       string | null
   group_label: string | null
 }

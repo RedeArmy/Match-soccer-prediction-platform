@@ -104,10 +104,8 @@ export function PredictionPanel() {
   });
 
   const sortedMatches = useMemo(() => {
-    return [...(matchesQuery.data ?? [])].sort(
-      (a, b) =>
-        new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
-    );
+    const ts = (s: string | null) => (s ? new Date(s).getTime() : Infinity)
+    return [...(matchesQuery.data ?? [])].sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
   }, [matchesQuery.data]);
 
   const visibleMatches = sortedMatches.filter((match) => {
@@ -192,7 +190,7 @@ export function PredictionPanel() {
               away: prediction?.away_score ?? 0,
             };
             const locked =
-              new Date(match.starts_at).getTime() <= Date.now() ||
+              (match.kickoff_at !== null && new Date(match.kickoff_at).getTime() <= Date.now()) ||
               match.status !== "scheduled";
             const pending =
               mutation.isPending && mutation.variables?.match.id === match.id;
@@ -242,12 +240,12 @@ export function PredictionPanel() {
                       <span className="inline-flex items-center gap-1.5">
                         <CalendarClock className="h-3.5 w-3.5" />
                         {t("predictions.kickoff")}:{" "}
-                        {formatDateTime(match.starts_at)}
+                        {formatDateTime(match.kickoff_at)}
                       </span>
                       {match.stadium && (
                         <span className="inline-flex items-center gap-1.5">
                           <MapPin className="h-3.5 w-3.5" />
-                          {match.stadium}
+                          {match.stadium.name}
                         </span>
                       )}
                       {(match.phase || match.group_label) && (
