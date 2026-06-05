@@ -59,9 +59,9 @@ describe('Footer', () => {
     expect(screen.getByText('Q26')).toBeInTheDocument()
   })
 
-  it('renders "Torneos" link with href=/tournaments', () => {
+  it('renders "Fan Fest" link with href=/tournaments', () => {
     render(<Footer />)
-    const link = screen.getByRole('link', { name: 'Torneos' })
+    const link = screen.getByRole('link', { name: 'Fan Fest' })
     expect(link).toHaveAttribute('href', '/tournaments')
   })
 })
