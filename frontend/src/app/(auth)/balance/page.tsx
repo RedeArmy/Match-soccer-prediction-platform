@@ -23,7 +23,7 @@ export default function BalancePage() {
       const token = await getToken()
       return api.getLedger(token!, pageParam, 50)
     },
-    getNextPageParam: page => page.has_more ? page.next_cursor : undefined,
+    getNextPageParam: () => undefined,
   })
 
   // Infinite scroll
@@ -39,7 +39,7 @@ export default function BalancePage() {
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  const allEntries = data?.pages.flatMap(p => p.data) ?? []
+  const allEntries = data?.pages.flat() ?? []
 
   function display(cents: number) {
     if (showUSD && rate) return formatUSD(Math.round(gtqToUSD(cents / 100, rate.sell_rate) * 100))

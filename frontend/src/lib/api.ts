@@ -87,7 +87,7 @@ class APIClient {
     return this.request('/api/v1/users/me/balance', {}, token)
   }
 
-  getLedger(token: string, cursor?: string, limit = 50): Promise<CursorPaged<LedgerEntry>> {
+  getLedger(token: string, cursor?: string, limit = 50): Promise<LedgerEntry[]> {
     const q = new URLSearchParams({ limit: String(limit) })
     if (cursor) q.set('cursor', cursor)
     return this.request(`/api/v1/users/me/balance/ledger?${q}`, {}, token)
