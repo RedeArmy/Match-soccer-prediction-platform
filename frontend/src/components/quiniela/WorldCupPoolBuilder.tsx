@@ -20,9 +20,13 @@ type Group = {
   teams: Team[]
 }
 
-const groups: Group[] = groupsData as Group[]
+const groups: Group[] = groupsData
 
 const phases = ['quiniela.phaseGroups', 'quiniela.phaseThirds', 'quiniela.phaseKnockout']
+
+function teamName(teams: Team[], code: string): string {
+  return teams.find((team) => team.code === code)?.name ?? code
+}
 
 export function WorldCupPoolBuilder() {
   const { t } = useI18n()
@@ -46,7 +50,7 @@ export function WorldCupPoolBuilder() {
           group: group.id,
           code,
           rank: index + 1,
-          team: group.teams.find((team) => team.code === code)?.name ?? code,
+          team: teamName(group.teams, code),
         })),
       ),
     [picks],
