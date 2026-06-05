@@ -43,27 +43,39 @@ export function usdToGTQ(usdAmount: number, buyRate: string): number {
 
 // ── Date formatters ───────────────────────────────────────────────────────────
 
-export function formatDate(iso: string): string {
+function parseDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+export function formatDate(iso: string | null | undefined): string {
+  const d = parseDate(iso)
+  if (!d) return '—'
   return new Intl.DateTimeFormat('es-GT', {
     year:  'numeric',
     month: 'short',
     day:   'numeric',
-  }).format(new Date(iso))
+  }).format(d)
 }
 
-export function formatDateTime(iso: string): string {
+export function formatDateTime(iso: string | null | undefined): string {
+  const d = parseDate(iso)
+  if (!d) return '—'
   return new Intl.DateTimeFormat('es-GT', {
     year:   'numeric',
     month:  'short',
     day:    'numeric',
     hour:   '2-digit',
     minute: '2-digit',
-  }).format(new Date(iso))
+  }).format(d)
 }
 
-export function formatRelative(iso: string): string {
+export function formatRelative(iso: string | null | undefined): string {
+  const d = parseDate(iso)
+  if (!d) return '—'
   const rtf = new Intl.RelativeTimeFormat('es', { numeric: 'auto' })
-  const diff = (new Date(iso).getTime() - Date.now()) / 1000
+  const diff = (d.getTime() - Date.now()) / 1000
 
   if (Math.abs(diff) < 60)     return rtf.format(Math.round(diff), 'second')
   if (Math.abs(diff) < 3600)   return rtf.format(Math.round(diff / 60), 'minute')
@@ -72,17 +84,19 @@ export function formatRelative(iso: string): string {
   return formatDate(iso)
 }
 
-export function formatCountdown(iso: string): string {
-  const diff = new Date(iso).getTime() - Date.now()
+export function formatCountdown(iso: string | null | undefined): string {
+  const d = parseDate(iso)
+  if (!d) return '—'
+  const diff = d.getTime() - Date.now()
   if (diff <= 0) return 'Finalizado'
 
-  const d = Math.floor(diff / 86_400_000)
-  const h = Math.floor((diff % 86_400_000) / 3_600_000)
-  const m = Math.floor((diff % 3_600_000) / 60_000)
+  const days  = Math.floor(diff / 86_400_000)
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000)
+  const mins  = Math.floor((diff % 3_600_000) / 60_000)
 
-  if (d > 0) return `${d}d ${h}h`
-  if (h > 0) return `${h}h ${m}m`
-  return `${m}m`
+  if (days  > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${mins}m`
+  return `${mins}m`
 }
 
 // ── Exchange rate formatters ──────────────────────────────────────────────────
