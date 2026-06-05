@@ -5,7 +5,7 @@ import { UserButton, SignedIn, SignedOut } from '@clerk/nextjs'
 import { useExchangeRate } from '@/hooks/useExchangeRate'
 import { formatRate } from '@/lib/utils'
 import { LayoutDashboard, Menu, TrendingUp, Trophy, Wallet } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { MobileNav } from './MobileNav'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import { useI18n } from '@/lib/i18n'
@@ -58,31 +58,11 @@ export function Header() {
                 </div>
               )}
 
-              <div className="hidden sm:block">
-                <LanguageSwitcher />
-              </div>
-
-              <SignedIn>
-                <UserButton
-                  appearance={{
-                    elements: {
-                      avatarBox: 'w-8 h-8',
-                    },
-                  }}
-                />
-              </SignedIn>
-
-              <SignedOut>
-                <Link href="/sign-in" className="btn-ghost px-3 py-1.5 text-sm">
-                  {t('common.signIn')}
-                </Link>
-                <Link href="/sign-up" className="btn-gold hidden px-3 py-1.5 text-sm sm:inline-flex">
-                  {t('common.signUp')}
-                </Link>
-              </SignedOut>
+              <AuthSection t={t} />
 
               <button
-                className="p-1.5 text-text-secondary hover:text-text-primary md:hidden"
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded border border-white/10 bg-white/[0.04] text-text-secondary transition-colors hover:border-gold-400/40 hover:text-text-primary md:hidden"
                 onClick={() => setMobileOpen(true)}
                 aria-label={t('common.openMenu')}
               >
@@ -94,6 +74,32 @@ export function Header() {
       </header>
 
       <MobileNav open={mobileOpen} onClose={() => setMobileOpen(false)} />
+    </>
+  )
+}
+
+function AuthSection({ t }: Readonly<{ t: (key: string) => string }>) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
+  if (!mounted) return <div className="flex items-center gap-3" />
+
+  return (
+    <>
+      <div className="hidden sm:block">
+        <LanguageSwitcher />
+      </div>
+      <SignedIn>
+        <UserButton appearance={{ elements: { avatarBox: 'w-8 h-8' } }} />
+      </SignedIn>
+      <SignedOut>
+        <Link href="/sign-in" className="btn-ghost px-3 py-1.5 text-sm">
+          {t('common.signIn')}
+        </Link>
+        <Link href="/sign-up" className="btn-gold hidden px-3 py-1.5 text-sm sm:inline-flex">
+          {t('common.signUp')}
+        </Link>
+      </SignedOut>
     </>
   )
 }
