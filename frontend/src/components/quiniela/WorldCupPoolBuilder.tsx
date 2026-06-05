@@ -144,26 +144,15 @@ export function WorldCupPoolBuilder() {
             </div>
 
             <div className="mb-5 flex gap-2 overflow-x-auto pb-1 no-scrollbar" aria-label={t('quiniela.groupTabs')}>
-              {groups.map((group) => {
-                const isActive = group.id === activeGroup.id
-                const isComplete = (picks[group.id] ?? []).length >= 2
-                return (
-                  <button
-                    key={group.id}
-                    type="button"
-                    onClick={() => setSelectedGroup(group.id)}
-                    className={cn(
-                      'flex min-w-24 items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-colors',
-                      isActive
-                        ? 'border-gold-400 bg-gold-400 text-blue-950'
-                        : 'border-white/10 bg-white/[0.035] text-text-secondary hover:border-gold-400/40 hover:text-white',
-                    )}
-                  >
-                    {isComplete ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
-                    {group.label.replace('Grupo ', '')}
-                  </button>
-                )
-              })}
+              {groups.map((group) => (
+                <GroupTab
+                  key={group.id}
+                  group={group}
+                  isActive={group.id === activeGroup.id}
+                  isComplete={(picks[group.id] ?? []).length >= 2}
+                  onClick={() => setSelectedGroup(group.id)}
+                />
+              ))}
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-black/20 p-4 sm:p-5">
@@ -176,37 +165,14 @@ export function WorldCupPoolBuilder() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                {activeGroup.teams.map((team) => {
-                  const selectedIndex = activePicks.indexOf(team.code)
-                  const selected = selectedIndex >= 0
-
-                  return (
-                    <button
-                      key={team.code}
-                      type="button"
-                      onClick={() => togglePick(team.code)}
-                      className={cn(
-                        'group rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5',
-                        selected
-                          ? 'border-gold-400/70 bg-gold-400/12 shadow-lg shadow-gold-400/10'
-                          : 'border-white/10 bg-white/[0.035] hover:border-white/25 hover:bg-white/[0.06]',
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={cn('grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-sm font-black text-blue-950', team.accent)}>
-                          {team.code}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-base font-semibold text-white">{team.name}</span>
-                          <span className="mt-0.5 block text-xs text-text-muted">{team.seed}</span>
-                        </span>
-                        <span className={cn('grid h-8 w-8 place-items-center rounded-full border text-xs font-bold', selected ? 'border-gold-400 bg-gold-400 text-blue-950' : 'border-white/15 text-text-muted')}>
-                          {selected ? selectedIndex + 1 : '+'}
-                        </span>
-                      </div>
-                    </button>
-                  )
-                })}
+                {activeGroup.teams.map((team) => (
+                  <TeamCard
+                    key={team.code}
+                    team={team}
+                    selectedIndex={activePicks.indexOf(team.code)}
+                    onToggle={() => togglePick(team.code)}
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -227,12 +193,7 @@ export function WorldCupPoolBuilder() {
 
           <div className="mt-6 space-y-2">
             {phases.map((phase, index) => (
-              <div key={phase} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3">
-                <span className={cn('grid h-8 w-8 place-items-center rounded-full text-xs font-bold', index === 0 ? 'bg-gold-400 text-blue-950' : 'bg-white/10 text-text-muted')}>
-                  {index + 1}
-                </span>
-                <span className="text-sm font-medium text-text-primary">{t(phase)}</span>
-              </div>
+              <PhaseStep key={phase} label={t(phase)} step={index + 1} isActive={index === 0} />
             ))}
           </div>
 
@@ -265,6 +226,77 @@ export function WorldCupPoolBuilder() {
         </aside>
       </div>
     </section>
+  )
+}
+
+function GroupTab({
+  group,
+  isActive,
+  isComplete,
+  onClick,
+}: Readonly<{ group: Group; isActive: boolean; isComplete: boolean; onClick: () => void }>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex min-w-24 items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-colors',
+        isActive
+          ? 'border-gold-400 bg-gold-400 text-blue-950'
+          : 'border-white/10 bg-white/[0.035] text-text-secondary hover:border-gold-400/40 hover:text-white',
+      )}
+    >
+      {isComplete ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+      {group.label.replace('Grupo ', '')}
+    </button>
+  )
+}
+
+function TeamCard({
+  team,
+  selectedIndex,
+  onToggle,
+}: Readonly<{ team: Team; selectedIndex: number; onToggle: () => void }>) {
+  const selected = selectedIndex >= 0
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        'group rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5',
+        selected
+          ? 'border-gold-400/70 bg-gold-400/12 shadow-lg shadow-gold-400/10'
+          : 'border-white/10 bg-white/[0.035] hover:border-white/25 hover:bg-white/[0.06]',
+      )}
+    >
+      <div className="flex items-center gap-3">
+        <span className={cn('grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-sm font-black text-blue-950', team.accent)}>
+          {team.code}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base font-semibold text-white">{team.name}</span>
+          <span className="mt-0.5 block text-xs text-text-muted">{team.seed}</span>
+        </span>
+        <span className={cn('grid h-8 w-8 place-items-center rounded-full border text-xs font-bold', selected ? 'border-gold-400 bg-gold-400 text-blue-950' : 'border-white/15 text-text-muted')}>
+          {selected ? selectedIndex + 1 : '+'}
+        </span>
+      </div>
+    </button>
+  )
+}
+
+function PhaseStep({
+  label,
+  step,
+  isActive,
+}: Readonly<{ label: string; step: number; isActive: boolean }>) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3">
+      <span className={cn('grid h-8 w-8 place-items-center rounded-full text-xs font-bold', isActive ? 'bg-gold-400 text-blue-950' : 'bg-white/10 text-text-muted')}>
+        {step}
+      </span>
+      <span className="text-sm font-medium text-text-primary">{label}</span>
+    </div>
   )
 }
 
