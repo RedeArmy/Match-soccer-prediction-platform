@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { ArrowRight, CheckCircle2, Circle, Crown, Shield, Sparkles, Trophy, Users } from 'lucide-react'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
+import groupsData from './groups.json'
 
 type Team = {
   code: string
@@ -19,52 +20,7 @@ type Group = {
   teams: Team[]
 }
 
-const groups: Group[] = [
-  {
-    id: 'A',
-    label: 'Grupo A',
-    venue: 'Ciudad de México',
-    teams: [
-      { code: 'MEX', name: 'México', seed: 'Anfitrión', accent: 'from-green-400 to-red-400' },
-      { code: 'RSA', name: 'Sudáfrica', seed: 'CAF', accent: 'from-green-400 to-gold-300' },
-      { code: 'KOR', name: 'Corea del Sur', seed: 'AFC', accent: 'from-red-400 to-blue-300' },
-      { code: 'CZE', name: 'República Checa', seed: 'UEFA', accent: 'from-blue-300 to-red-400' },
-    ],
-  },
-  {
-    id: 'B',
-    label: 'Grupo B',
-    venue: 'Toronto',
-    teams: [
-      { code: 'CAN', name: 'Canadá', seed: 'Anfitrión', accent: 'from-red-400 to-white' },
-      { code: 'SUI', name: 'Suiza', seed: 'UEFA', accent: 'from-red-500 to-red-300' },
-      { code: 'JPN', name: 'Japón', seed: 'AFC', accent: 'from-white to-red-300' },
-      { code: 'NGA', name: 'Nigeria', seed: 'CAF', accent: 'from-green-400 to-green-700' },
-    ],
-  },
-  {
-    id: 'C',
-    label: 'Grupo C',
-    venue: 'Miami',
-    teams: [
-      { code: 'BRA', name: 'Brasil', seed: 'CONMEBOL', accent: 'from-green-400 to-gold-300' },
-      { code: 'MAR', name: 'Marruecos', seed: 'CAF', accent: 'from-red-500 to-green-400' },
-      { code: 'HAI', name: 'Haití', seed: 'Concacaf', accent: 'from-blue-400 to-red-400' },
-      { code: 'SCO', name: 'Escocia', seed: 'UEFA', accent: 'from-blue-500 to-white' },
-    ],
-  },
-  {
-    id: 'D',
-    label: 'Grupo D',
-    venue: 'Los Ángeles',
-    teams: [
-      { code: 'USA', name: 'Estados Unidos', seed: 'Anfitrión', accent: 'from-blue-400 to-red-400' },
-      { code: 'PAR', name: 'Paraguay', seed: 'CONMEBOL', accent: 'from-red-400 to-blue-300' },
-      { code: 'AUS', name: 'Australia', seed: 'AFC', accent: 'from-gold-300 to-green-400' },
-      { code: 'TUN', name: 'Túnez', seed: 'CAF', accent: 'from-red-500 to-white' },
-    ],
-  },
-]
+const groups: Group[] = groupsData as Group[]
 
 const phases = ['quiniela.phaseGroups', 'quiniela.phaseThirds', 'quiniela.phaseKnockout']
 
