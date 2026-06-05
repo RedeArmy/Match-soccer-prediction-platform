@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { MatchResponse, PredictionResponse } from "@/lib/api-types";
+import { isPhaseVisible } from "@/lib/feature-flags";
 import { cn, formatDateTime } from "@/lib/utils";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -105,7 +106,9 @@ export function PredictionPanel() {
 
   const sortedMatches = useMemo(() => {
     const ts = (s: string | null) => (s ? new Date(s).getTime() : Infinity)
-    return [...(matchesQuery.data ?? [])].sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
+    return [...(matchesQuery.data ?? [])]
+      .filter((m) => isPhaseVisible(m.phase))
+      .sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
   }, [matchesQuery.data]);
 
   const visibleMatches = sortedMatches.filter((match) => {
