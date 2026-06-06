@@ -109,7 +109,9 @@ const DefaultConflictMaxScan = 5000
 // in migrations/000040_seed_system_params.up.sql and its follow-up migrations.
 const (
 	// Group configuration
-	DefaultGroupInviteCodeLength = 10 // group.invite_code_length
+	DefaultGroupInviteCodeLength = 10    // group.invite_code_length
+	DefaultGroupEntryFeeCents    = 3000  // group.entry_fee_cents  (Q30.00)
+	DefaultGroupCurrency         = "GTQ" // group.currency
 
 	// Pagination
 	DefaultPaginationDefaultLimit = 50  // pagination.default_limit
@@ -191,6 +193,12 @@ const (
 	// ParamKeyGroupInviteCodeLength is the number of characters in a generated
 	// invite code. Defaults to DefaultGroupInviteCodeLength (10).
 	ParamKeyGroupInviteCodeLength = "group.invite_code_length"
+	// ParamKeyGroupEntryFeeCents is the entry fee in cents applied to every new
+	// quiniela group. Defaults to DefaultGroupEntryFeeCents (3000 = Q30.00).
+	ParamKeyGroupEntryFeeCents = "group.entry_fee_cents"
+	// ParamKeyGroupCurrency is the ISO 4217 currency code for group entry fees.
+	// Defaults to DefaultGroupCurrency ("GTQ").
+	ParamKeyGroupCurrency = "group.currency"
 	// ParamKeyConflictStaleDays is the age in days after which a pending payment
 	// or membership is flagged as a conflict. Defaults to DefaultConflictStaleDays (7).
 	ParamKeyConflictStaleDays = "conflict.stale_days"
@@ -328,6 +336,8 @@ func AllParamKeys() []string {
 		ParamKeyGroupMinMembers,
 		ParamKeyGroupMaxSize,
 		ParamKeyGroupInviteCodeLength,
+		ParamKeyGroupEntryFeeCents,
+		ParamKeyGroupCurrency,
 		// Conflict
 		ParamKeyConflictStaleDays,
 		ParamKeyConflictMaxScan,

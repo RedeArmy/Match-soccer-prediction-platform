@@ -15,7 +15,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (137 total) ─────────────────────────────────────
+	// ── ParamKey* enumeration (139 total) ─────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":      ParamKeyScoringExactScore,
@@ -30,6 +30,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyGroupMinMembers":       ParamKeyGroupMinMembers,
 		"ParamKeyGroupMaxSize":          ParamKeyGroupMaxSize,
 		"ParamKeyGroupInviteCodeLength": ParamKeyGroupInviteCodeLength,
+		"ParamKeyGroupEntryFeeCents":    ParamKeyGroupEntryFeeCents,
+		"ParamKeyGroupCurrency":         ParamKeyGroupCurrency,
 		// Conflict
 		"ParamKeyConflictStaleDays": ParamKeyConflictStaleDays,
 		"ParamKeyConflictMaxScan":   ParamKeyConflictMaxScan,
@@ -363,7 +365,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 138 // update when adding a new ParamKey* constant
+		const expectedCount = 140 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -426,6 +428,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyGroupMinMembers", ParamKeyGroupMinMembers, "group"},
 		{"ParamKeyGroupMaxSize", ParamKeyGroupMaxSize, "group"},
 		{"ParamKeyGroupInviteCodeLength", ParamKeyGroupInviteCodeLength, "group"},
+		{"ParamKeyGroupEntryFeeCents", ParamKeyGroupEntryFeeCents, "group"},
+		{"ParamKeyGroupCurrency", ParamKeyGroupCurrency, "group"},
 		// Conflict
 		{"ParamKeyConflictStaleDays", ParamKeyConflictStaleDays, "conflict"},
 		{"ParamKeyConflictMaxScan", ParamKeyConflictMaxScan, "conflict"},
@@ -616,6 +620,7 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultScoringUpdateChunkSize": DefaultScoringUpdateChunkSize,
 		// Group
 		"DefaultGroupInviteCodeLength": DefaultGroupInviteCodeLength,
+		"DefaultGroupEntryFeeCents":    DefaultGroupEntryFeeCents,
 		// Prediction
 		"DefaultPredictionDeadlineMin": DefaultPredictionDeadlineMin,
 		// Pagination

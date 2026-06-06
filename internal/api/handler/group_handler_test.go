@@ -121,13 +121,13 @@ func pendingMembership() *domain.GroupMembership {
 
 func newGroupHandler(t *testing.T, qs *stubQuinielaSvc, ms *stubMemberSvc) *handler.GroupHandler {
 	t.Helper()
-	return handler.NewGroupHandler(qs, ms, &stubGroupAuthz{}, zaptest.NewLogger(t))
+	return handler.NewGroupHandler(qs, ms, &stubGroupAuthz{}, &stubSystemParamSvc{}, zaptest.NewLogger(t))
 }
 
 // newGroupHandlerWithAuthz is used by tests that need to control the authz outcome.
 func newGroupHandlerWithAuthz(t *testing.T, qs *stubQuinielaSvc, ms *stubMemberSvc, authz *stubGroupAuthz) *handler.GroupHandler {
 	t.Helper()
-	return handler.NewGroupHandler(qs, ms, authz, zaptest.NewLogger(t))
+	return handler.NewGroupHandler(qs, ms, authz, &stubSystemParamSvc{}, zaptest.NewLogger(t))
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────

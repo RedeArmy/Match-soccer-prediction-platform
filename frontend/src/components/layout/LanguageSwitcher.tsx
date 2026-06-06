@@ -1,6 +1,5 @@
 'use client'
 
-import { Languages } from 'lucide-react'
 import { useI18n, type Locale } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -13,11 +12,10 @@ export function LanguageSwitcher({ compact = false }: Readonly<{ compact?: boole
     <div
       className={cn(
         'inline-flex items-center border border-white/10 bg-white/[0.04] p-1',
-        compact ? 'w-full justify-between rounded-md' : 'rounded',
+        compact ? 'rounded-md' : 'rounded',
       )}
       aria-label={t('common.language')}
     >
-      <Languages className={cn('text-text-muted', compact ? 'ml-2 h-4 w-4' : 'h-3.5 w-3.5')} />
       <div className="flex">
         {locales.map((item) => (
           <button

@@ -19,17 +19,32 @@ type GroupResponse struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+// MyGroupResponse is the enriched view returned by GET /api/v1/groups/me.
+// It combines the group metadata with the caller's membership status so the
+// dashboard can render both the group name and the membership state.
+type MyGroupResponse struct {
+	ID               int    `json:"id"`
+	Name             string `json:"name"`
+	GroupStatus      string `json:"group_status"`
+	MembershipStatus string `json:"membership_status"`
+	Role             string `json:"role"`
+	InviteCode       string `json:"invite_code"`
+	EntryFee         int    `json:"entry_fee"`
+	Currency         string `json:"currency"`
+}
+
 // MemberResponse is the JSON representation of a GroupMembership.
 type MemberResponse struct {
-	ID         int     `json:"id"`
-	QuinielaID int     `json:"quiniela_id"`
-	UserID     int     `json:"user_id"`
-	Role       string  `json:"role"`
-	Status     string  `json:"status"`
-	Paid       bool    `json:"paid"`
-	JoinedAt   *string `json:"joined_at"`
-	CreatedAt  string  `json:"created_at"`
-	UpdatedAt  string  `json:"updated_at"`
+	ID          int     `json:"id"`
+	QuinielaID  int     `json:"quiniela_id"`
+	UserID      int     `json:"user_id"`
+	DisplayName string  `json:"display_name"`
+	Role        string  `json:"role"`
+	Status      string  `json:"status"`
+	Paid        bool    `json:"paid"`
+	JoinedAt    *string `json:"joined_at"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
 }
 
 func groupToResponse(q *domain.Quiniela) GroupResponse {
@@ -53,14 +68,15 @@ func groupToResponse(q *domain.Quiniela) GroupResponse {
 
 func memberToResponse(m *domain.GroupMembership) MemberResponse {
 	resp := MemberResponse{
-		ID:         m.ID,
-		QuinielaID: m.QuinielaID,
-		UserID:     m.UserID,
-		Role:       string(m.Role),
-		Status:     string(m.Status),
-		Paid:       m.Paid,
-		CreatedAt:  m.CreatedAt.Format(timeFormat),
-		UpdatedAt:  m.UpdatedAt.Format(timeFormat),
+		ID:          m.ID,
+		QuinielaID:  m.QuinielaID,
+		UserID:      m.UserID,
+		DisplayName: m.DisplayName,
+		Role:        string(m.Role),
+		Status:      string(m.Status),
+		Paid:        m.Paid,
+		CreatedAt:   m.CreatedAt.Format(timeFormat),
+		UpdatedAt:   m.UpdatedAt.Format(timeFormat),
 	}
 	if m.JoinedAt != nil {
 		s := m.JoinedAt.Format(timeFormat)

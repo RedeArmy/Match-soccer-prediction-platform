@@ -187,16 +187,17 @@ describe('BalanceCard', () => {
     expect(screen.getByText(/500/)).toBeInTheDocument()
   })
 
-  it('toggle button switches currency display label', () => {
+  it('shows no manual currency toggle — currency follows locale', () => {
     vi.mocked(useBalance).mockReturnValue({
       data: { available_cents: 50000, reserved_cents: 0, pending_cents: 0 },
       isLoading: false,
     } as never)
     render(<BalanceCard />)
-    const toggleBtn = screen.getByRole('button', { name: /-> USD/ })
-    expect(toggleBtn).toBeInTheDocument()
-    fireEvent.click(toggleBtn)
-    expect(screen.getByRole('button', { name: /-> GTQ/ })).toBeInTheDocument()
+    // Currency is now automatic (locale-driven), so no toggle buttons should exist
+    expect(screen.queryByRole('button', { name: /-> USD/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /-> GTQ/ })).toBeNull()
+    // Default locale is Spanish → GTQ; Q500.00 for 50000 cents
+    expect(screen.getByText(/500/)).toBeInTheDocument()
   })
 })
 

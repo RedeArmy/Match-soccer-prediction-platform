@@ -16,6 +16,7 @@ type GroupHandler struct {
 	quinielaSvc service.QuinielaService
 	memberSvc   service.GroupMembershipService
 	authz       service.GroupAuthz
+	params      service.SystemParamService
 	log         *zap.Logger
 }
 
@@ -25,9 +26,10 @@ func NewGroupHandler(
 	quinielaSvc service.QuinielaService,
 	memberSvc service.GroupMembershipService,
 	authz service.GroupAuthz,
+	params service.SystemParamService,
 	log *zap.Logger,
 ) *GroupHandler {
-	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, authz: authz, log: log}
+	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, authz: authz, params: params, log: log}
 }
 
 // renameGroupRequest is the JSON body accepted by PATCH /api/v1/groups/{id}.
@@ -36,10 +38,9 @@ type renameGroupRequest struct {
 }
 
 // createGroupRequest is the JSON body accepted by POST /api/v1/groups.
+// Entry fee and currency are resolved from system_params; callers supply only the name.
 type createGroupRequest struct {
-	Name     string `json:"name"`
-	EntryFee int    `json:"entry_fee"`
-	Currency string `json:"currency"`
+	Name string `json:"name"`
 }
 
 // joinGroupRequest is the JSON body accepted by POST /api/v1/groups/join.
@@ -78,11 +79,15 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx := r.Context()
+	entryFee := h.params.GetInt(ctx, domain.ParamKeyGroupEntryFeeCents, domain.DefaultGroupEntryFeeCents)
+	currency := h.params.GetString(ctx, domain.ParamKeyGroupCurrency, domain.DefaultGroupCurrency)
+
 	quiniela := &domain.Quiniela{
 		Name:     req.Name,
 		OwnerID:  caller.ID,
-		EntryFee: req.EntryFee,
-		Currency: req.Currency,
+		EntryFee: entryFee,
+		Currency: currency,
 	}
 	if err := h.quinielaSvc.Create(r.Context(), quiniela); err != nil {
 		writeError(w, r, h.log, err)
@@ -417,9 +422,18 @@ func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, err)
 		return
 	}
-	out := make([]MemberResponse, len(members))
+	out := make([]MyGroupResponse, len(members))
 	for i, m := range members {
-		out[i] = memberToResponse(m)
+		out[i] = MyGroupResponse{
+			ID:               m.QuinielaID,
+			Name:             m.GroupName,
+			GroupStatus:      m.GroupStatus,
+			MembershipStatus: string(m.Status),
+			Role:             string(m.Role),
+			InviteCode:       m.InviteCode,
+			EntryFee:         m.EntryFee,
+			Currency:         m.Currency,
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -1,18 +1,15 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
 import { ArrowDownCircle, ArrowUpCircle, Wallet } from 'lucide-react'
 import { useBalance } from '@/hooks/useBalance'
-import { useExchangeRate } from '@/hooks/useExchangeRate'
-import { formatGTQ, formatUSD, gtqToUSD } from '@/lib/utils'
+import { useCurrency } from '@/hooks/useCurrency'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { useI18n } from '@/lib/i18n'
 
 export function BalanceCard() {
   const { data: balance, isLoading } = useBalance()
-  const { data: rate } = useExchangeRate()
-  const [showUSD, setShowUSD] = useState(false)
+  const { fmt } = useCurrency()
   const { t } = useI18n()
 
   if (isLoading) return <LoadingState rows={1} className="h-40" />
@@ -21,32 +18,17 @@ export function BalanceCard() {
   const reserved = balance?.reserved_cents ?? 0
   const pending = balance?.pending_cents ?? 0
 
-  function displayAmount(cents: number) {
-    if (showUSD && rate) {
-      return formatUSD(gtqToUSD(cents / 100, rate.sell_rate) * 100)
-    }
-    return formatGTQ(cents)
-  }
-
   return (
     <div className="card-elevated space-y-4 p-5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Wallet className="h-4 w-4 text-gold-400" />
-          <span className="text-sm font-semibold text-text-secondary">{t('balanceCard.title')}</span>
-        </div>
-        <button
-          onClick={() => setShowUSD((value) => !value)}
-          className="text-xs text-text-muted transition-colors hover:text-gold-400"
-        >
-          {showUSD ? '-> GTQ' : '-> USD'}
-        </button>
+      <div className="flex items-center gap-2">
+        <Wallet className="h-4 w-4 text-gold-400" />
+        <span className="text-sm font-semibold text-text-secondary">{t('balanceCard.title')}</span>
       </div>
 
       <div>
         <p className="mb-0.5 text-xs text-text-muted">{t('balanceCard.available')}</p>
         <p className="font-score text-3xl font-semibold leading-none text-white">
-          {displayAmount(available)}
+          {fmt(available)}
         </p>
       </div>
 
@@ -54,13 +36,13 @@ export function BalanceCard() {
         {reserved > 0 && (
           <div>
             <span className="text-gold-400">{t('balanceCard.reserved')}: </span>
-            {displayAmount(reserved)}
+            {fmt(reserved)}
           </div>
         )}
         {pending > 0 && (
           <div>
             <span className="text-blue-300">{t('balanceCard.pending')}: </span>
-            {displayAmount(pending)}
+            {fmt(pending)}
           </div>
         )}
       </div>

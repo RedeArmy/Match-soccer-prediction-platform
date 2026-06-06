@@ -5,11 +5,13 @@ import { useExchangeRate } from '@/hooks/useExchangeRate'
 import { formatDateTime } from '@/lib/utils'
 import { ExchangeRateTicker } from '@/components/exchange/RateTicker'
 import { useI18n } from '@/lib/i18n'
+import { useCurrency } from '@/hooks/useCurrency'
 import { ArrowRight, CircleDollarSign, ShieldCheck, Target, TrendingUp, Trophy, Users } from 'lucide-react'
 
 export default function LandingPage() {
   const { data: rate } = useExchangeRate()
   const { t } = useI18n()
+  const { isUSD } = useCurrency()
 
   const steps = [
     { step: '01', icon: Users, title: t('landing.step1Title'), desc: t('landing.step1Desc'), accent: 'text-blue-300' },
@@ -67,7 +69,7 @@ export default function LandingPage() {
               {[
                 { icon: Target, label: t('common.predictions'), value: '64+', color: 'text-green-300' },
                 { icon: Trophy, label: t('common.tournaments'), value: '48', color: 'text-gold-300' },
-                { icon: CircleDollarSign, label: t('common.balance'), value: 'GTQ', color: 'text-blue-300' },
+                { icon: CircleDollarSign, label: t('common.balance'), value: isUSD ? 'USD' : 'GTQ', color: 'text-blue-300' },
               ].map(({ icon: Icon, label, value, color }) => (
                 <div key={label} className="flex items-center justify-between rounded border border-white/10 bg-white/[0.035] p-4">
                   <div className="flex items-center gap-3">

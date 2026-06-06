@@ -6,7 +6,7 @@ import { useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useBalance } from "@/hooks/useBalance";
 import { useKYCStatus } from "@/hooks/useKYCStatus";
-import { formatGTQ } from "@/lib/utils";
+import { useCurrency } from "@/hooks/useCurrency";
 import { FormFeedback } from "@/components/shared/FormFeedback";
 import { FormField } from "@/components/shared/FormField";
 import { SubmitButton } from "@/components/shared/SubmitButton";
@@ -18,6 +18,7 @@ type Method = "bank_gt" | "paypal";
 export default function WithdrawPage() {
   const { getToken } = useAuth();
   const { data: balance } = useBalance();
+  const { fmt } = useCurrency();
   const { data: kyc } = useKYCStatus();
   const [method, setMethod] = useState<Method>("bank_gt");
   const [amount, setAmount] = useState("");
@@ -92,7 +93,7 @@ export default function WithdrawPage() {
           Disponible para retirar
         </span>
         <span className="font-score text-xl text-white">
-          {formatGTQ(available)}
+          {fmt(available)}
         </span>
       </div>
 
@@ -223,7 +224,7 @@ export default function WithdrawPage() {
             mutation.mutate();
           }}
         >
-          {`Retirar ${formatGTQ(amountCents)}`}
+          {`Retirar ${fmt(amountCents)}`}
         </SubmitButton>
 
         <FormFeedback error={error} success={success} center />

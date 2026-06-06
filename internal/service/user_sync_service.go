@@ -24,7 +24,7 @@ type ClerkEmail struct {
 // and idempotent DB persistence (create-or-update, soft-delete). The handler
 // is responsible only for signature verification and JSON parsing.
 type ClerkUserSyncer interface {
-	Upsert(ctx context.Context, subject, firstName, lastName, primaryEmailID string, emails []ClerkEmail) error
+	Upsert(ctx context.Context, subject, firstName, lastName, username, primaryEmailID string, emails []ClerkEmail) error
 	// SoftDelete marks the internal user row as deleted when Clerk fires a
 	// user.deleted event. The call is idempotent: if no matching active row
 	// exists (already deleted or never synced) the call is a no-op.
@@ -48,7 +48,7 @@ func NewClerkUserSyncService(userRepo repository.UserRepository, kycProfileRepo 
 // Upsert creates or updates an internal User from a Clerk user.created /
 // user.updated webhook payload. It resolves the primary email, validates it,
 // normalises the display name, and delegates to the repository.
-func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, lastName, primaryEmailID string, emails []ClerkEmail) error {
+func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, lastName, username, primaryEmailID string, emails []ClerkEmail) error {
 	email := s.resolvePrimaryEmail(emails, primaryEmailID)
 	if email != "" {
 		if err := domain.ValidateEmail(email); err != nil {
@@ -71,6 +71,7 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 
 	if existing != nil {
 		existing.Name = name
+		existing.Username = strings.TrimSpace(username)
 		existing.Email = email
 		existing.ExternalSubject = subject
 		if err := s.userRepo.Update(ctx, existing); err != nil {
@@ -85,6 +86,7 @@ func (s *clerkUserSyncService) Upsert(ctx context.Context, subject, firstName, l
 
 	user := &domain.User{
 		Name:            name,
+		Username:        strings.TrimSpace(username),
 		Email:           email,
 		ExternalSubject: subject,
 		Role:            domain.RoleUser,

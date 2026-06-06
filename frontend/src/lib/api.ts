@@ -7,7 +7,9 @@ import type {
   UserResponse,
   BalanceResponse,
   LedgerEntry,
+  QuinielaResponse,
   GroupResponse,
+  GroupDetailResponse,
   MemberResponse,
   LeaderboardEntry,
   MatchResponse,
@@ -99,7 +101,7 @@ class APIClient {
     return this.request('/api/v1/groups/me', {}, token)
   }
 
-  getGroup(token: string, id: number): Promise<GroupResponse> {
+  getGroup(token: string, id: number): Promise<GroupDetailResponse> {
     return this.request(`/api/v1/groups/${id}`, {}, token)
   }
 
@@ -110,10 +112,11 @@ class APIClient {
   }
 
   getGroupMembers(token: string, id: number): Promise<MemberResponse[]> {
-    return this.request(`/api/v1/groups/${id}/members`, {}, token)
+    return this.request<{ data: MemberResponse[] }>(`/api/v1/groups/${id}/members`, {}, token)
+      .then((r) => r.data)
   }
 
-  createGroup(token: string, data: { name: string }): Promise<GroupResponse> {
+  createGroup(token: string, data: { name: string }): Promise<QuinielaResponse> {
     return this.request('/api/v1/groups', { method: 'POST', body: JSON.stringify(data) }, token)
   }
 

@@ -10,6 +10,7 @@ import {
   Save,
   SlidersHorizontal,
   Target,
+  Timer,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { MatchResponse, PredictionResponse } from "@/lib/api-types";
@@ -22,16 +23,16 @@ import { useI18n } from "@/lib/i18n";
 
 type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved";
-type GroupFilter = "all" | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
+type GroupLabel = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L";
 
-const GROUPS: Exclude<GroupFilter, "all">[] = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const GROUPS: GroupLabel[] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
 
 export function PredictionPanel() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
-  const { t, teamName, phaseName, formatKickoff, timeZone } = useI18n();
+  const { t, teamName, phaseName, formatKickoff } = useI18n();
   const [filter, setFilter] = useState<Filter>("all");
-  const [selectedGroup, setSelectedGroup] = useState<GroupFilter>("all");
+  const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
   const [drafts, setDrafts] = useState<DraftScores>({});
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -115,10 +116,9 @@ export function PredictionPanel() {
       .sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
   }, [matchesQuery.data]);
 
-  const groupFilteredMatches = sortedMatches.filter((match) => {
-    if (selectedGroup === "all") return true;
-    return normalizeGroup(match.group_label) === selectedGroup;
-  });
+  const groupFilteredMatches = sortedMatches.filter(
+    (match) => normalizeGroup(match.group_label) === selectedGroup,
+  );
 
   const visibleMatches = groupFilteredMatches.filter((match) => {
     const hasPrediction = predictionByMatch.has(match.id);
@@ -127,17 +127,7 @@ export function PredictionPanel() {
     return true;
   });
 
-  const groupCounts = useMemo(() => {
-    const counts = new Map<GroupFilter, number>([["all", sortedMatches.length]]);
-    for (const group of GROUPS) counts.set(group, 0);
-    for (const match of sortedMatches) {
-      const group = normalizeGroup(match.group_label);
-      if (group) counts.set(group, (counts.get(group) ?? 0) + 1);
-    }
-    return counts;
-  }, [sortedMatches]);
-
-  const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
+const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
 
   return (
     <section className="panel overflow-hidden">
@@ -183,15 +173,13 @@ export function PredictionPanel() {
       </div>
 
       <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
-        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-3 flex items-end justify-between gap-2">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-gold-300">
               {t("predictions.groupSelector")}
             </p>
             <p className="text-sm text-text-secondary">
-              {selectedGroup === "all"
-                ? t("predictions.groupSelectorAll")
-                : `${t("predictions.groupSelected")} ${selectedGroup}`}
+              {`${t("predictions.groupSelected")} ${selectedGroup}`}
             </p>
           </div>
           <span className="text-xs text-text-muted">
@@ -199,24 +187,15 @@ export function PredictionPanel() {
           </span>
         </div>
 
-        <div className="grid gap-2 lg:grid-cols-[minmax(7rem,0.7fr)_minmax(0,2fr)]">
-          <GroupButton
-            label={t("predictions.groupAll")}
-            count={groupCounts.get("all") ?? 0}
-            active={selectedGroup === "all"}
-            onClick={() => setSelectedGroup("all")}
-          />
-          <div className="grid grid-cols-4 gap-2">
-            {GROUPS.map((group) => (
-              <GroupButton
-                key={group}
-                label={group}
-                count={groupCounts.get(group) ?? 0}
-                active={selectedGroup === group}
-                onClick={() => setSelectedGroup(group)}
-              />
-            ))}
-          </div>
+        <div className="grid grid-cols-6 gap-2 lg:grid-cols-12">
+          {GROUPS.map((group) => (
+            <GroupButton
+              key={group}
+              label={group}
+              active={selectedGroup === group}
+              onClick={() => setSelectedGroup(group)}
+            />
+          ))}
         </div>
       </div>
 
@@ -304,9 +283,6 @@ export function PredictionPanel() {
                         {t("predictions.kickoff")}:{" "}
                         <span suppressHydrationWarning>{formatKickoff(match.kickoff_at)}</span>
                       </span>
-                      <span className="inline-flex items-center gap-1.5" suppressHydrationWarning>
-                        {t("predictions.timezone")}: {timeZone}
-                      </span>
                       {match.stadium && (
                         <span className="inline-flex items-center gap-1.5">
                           <MapPin className="h-3.5 w-3.5" />
@@ -319,6 +295,7 @@ export function PredictionPanel() {
                           {phaseName(match.phase ?? match.group_label)}
                         </span>
                       )}
+                      <MatchCountdown kickoffAt={match.kickoff_at} />
                       {prediction?.points !== null &&
                         prediction?.points !== undefined && (
                           <span className="text-gold-300">
@@ -380,21 +357,17 @@ export function PredictionPanel() {
   );
 }
 
-function normalizeGroup(group: string | null | undefined): Exclude<GroupFilter, "all"> | null {
+function normalizeGroup(group: string | null | undefined): GroupLabel | null {
   const value = group?.trim().toUpperCase().replace(/^GROUP\s+/, "").replace(/^GRUPO\s+/, "");
-  return GROUPS.includes(value as Exclude<GroupFilter, "all">)
-    ? (value as Exclude<GroupFilter, "all">)
-    : null;
+  return GROUPS.includes(value as GroupLabel) ? (value as GroupLabel) : null;
 }
 
 function GroupButton({
   label,
-  count,
   active,
   onClick,
 }: Readonly<{
   label: string;
-  count: number;
   active: boolean;
   onClick: () => void;
 }>) {
@@ -410,10 +383,37 @@ function GroupButton({
       )}
     >
       <span className="text-sm font-bold uppercase">{label}</span>
-      <span className={cn("mt-0.5 text-[10px]", active ? "text-blue-900/80" : "text-text-muted")}>
-        {count}
-      </span>
     </button>
+  );
+}
+
+function MatchCountdown({ kickoffAt }: Readonly<{ kickoffAt: string | null | undefined }>) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!kickoffAt) return null;
+  const diff = new Date(kickoffAt).getTime() - now;
+  if (diff <= 0) return null;
+
+  const days  = Math.floor(diff / 86_400_000);
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000);
+  const mins  = Math.floor((diff % 3_600_000) / 60_000);
+  const secs  = Math.floor((diff % 60_000) / 1_000);
+
+  const label =
+    days > 0  ? `${days}d ${hours}h ${mins}m` :
+    hours > 0 ? `${hours}h ${mins}m ${secs}s` :
+                `${mins}m ${secs}s`;
+
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums text-gold-300">
+      <Timer className="h-3 w-3 shrink-0" />
+      {label}
+    </span>
   );
 }
 

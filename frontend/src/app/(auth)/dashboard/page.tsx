@@ -1,25 +1,34 @@
 'use client'
 
+import { useState } from 'react'
 import { useAuth, useUser } from '@clerk/nextjs'
 import { useQuery } from '@tanstack/react-query'
-import { ShieldAlert, Trophy } from 'lucide-react'
+import { Plus, ShieldAlert, Trophy, Users } from 'lucide-react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import { useSSE } from '@/hooks/useSSE'
 import { useKYCStatus } from '@/hooks/useKYCStatus'
 import { BalanceCard } from '@/components/balance/BalanceCard'
+import { GroupDialog } from '@/components/groups/GroupDialog'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { PredictionPanel } from '@/components/predictions/PredictionPanel'
-import { formatGTQ, formatDate } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
+import { useCurrency } from '@/hooks/useCurrency'
 import { useI18n } from '@/lib/i18n'
+
+type DialogTab = 'create' | 'join'
 
 export default function DashboardPage() {
   const { getToken } = useAuth()
   const { user } = useUser()
   const { t } = useI18n()
+  const { fmt } = useCurrency()
   useSSE()
+
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogTab, setDialogTab] = useState<DialogTab>('create')
 
   const { data: kyc } = useKYCStatus()
   const { data: groups, isLoading: loadingGroups } = useQuery({
@@ -37,6 +46,11 @@ export default function DashboardPage() {
       return api.getLedger(token!, undefined, 5)
     },
   })
+
+  function openDialog(tab: DialogTab) {
+    setDialogTab(tab)
+    setDialogOpen(true)
+  }
 
   const kycApproved = kyc?.status === 'approved'
   const displayName = (user?.firstName ?? t('dashboard.player')).toUpperCase()
@@ -88,13 +102,28 @@ export default function DashboardPage() {
 
         <div className="space-y-6 lg:col-span-3">
           <section>
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
                 {t('dashboard.myPools')}
               </h2>
-              <Link href="/tournaments" className="text-xs text-gold-400 hover:text-gold-300">
-                {t('dashboard.exploreTournaments')}
-              </Link>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openDialog('join')}
+                  className="btn-ghost flex items-center gap-1.5 px-3 py-1.5 text-xs"
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  {t('groups.joinBtn')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openDialog('create')}
+                  className="btn-gold flex items-center gap-1.5 px-3 py-1.5 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t('groups.createBtn')}
+                </button>
+              </div>
             </div>
 
             {loadingGroups && <LoadingState rows={2} />}
@@ -103,7 +132,15 @@ export default function DashboardPage() {
                 title={t('dashboard.noPools')}
                 description={t('dashboard.noPoolsDesc')}
                 icon={<Trophy className="h-8 w-8" />}
-                action={<Link href="/tournaments" className="btn-gold px-4 py-2 text-sm">{t('common.tournaments')}</Link>}
+                action={
+                  <button
+                    type="button"
+                    onClick={() => openDialog('create')}
+                    className="btn-gold px-4 py-2 text-sm"
+                  >
+                    {t('groups.createAction')}
+                  </button>
+                }
               />
             )}
             {!loadingGroups && (groups?.length ?? 0) > 0 && (
@@ -112,12 +149,9 @@ export default function DashboardPage() {
                   <div key={group.id} className="card flex items-center justify-between gap-3 p-4">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-text-primary">{group.name}</p>
-                      <p className="text-xs text-text-muted">
-                        {group.member_count} {t('dashboard.participants')}
-                      </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <StatusBadge status={group.status} size="sm" />
+                      <StatusBadge status={group.group_status} size="sm" />
                       <Link href={`/tournaments/${group.id}`} className="text-xs text-gold-400 hover:text-gold-300">
                         {t('common.viewAll')}
                       </Link>
@@ -152,7 +186,7 @@ export default function DashboardPage() {
                     </div>
                     <span className={`shrink-0 font-score text-sm font-medium ${entry.type === 'credit' ? 'text-green-400' : 'text-red-400'}`}>
                       {entry.type === 'credit' ? '+' : '-'}
-                      {formatGTQ(entry.amount_cents)}
+                      {fmt(entry.amount_cents)}
                     </span>
                   </div>
                 ))}
@@ -163,6 +197,12 @@ export default function DashboardPage() {
       </div>
 
       <PredictionPanel />
+
+      <GroupDialog
+        open={dialogOpen}
+        defaultTab={dialogTab}
+        onClose={() => setDialogOpen(false)}
+      />
     </div>
   )
 }

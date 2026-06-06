@@ -154,16 +154,19 @@ describe('PredictionPanel', () => {
 
     renderPanel()
 
+    // Default: group A selected — Canada (group A) visible, USA (group B) not
     expect(await screen.findByText('Canadá')).toBeInTheDocument()
-    expect(screen.getByText('Estados Unidos')).toBeInTheDocument()
-    expect(screen.getByText('Mostrando partidos de todos los grupos')).toBeInTheDocument()
+    expect(screen.queryByText('Estados Unidos')).toBeNull()
+    expect(screen.getByText('Mostrando Grupo A')).toBeInTheDocument()
 
+    // Switch to group B
     fireEvent.click(screen.getByRole('button', { name: /^B/ }))
 
     expect(screen.getByText('Mostrando Grupo B')).toBeInTheDocument()
     expect(screen.getByText('Estados Unidos')).toBeInTheDocument()
     expect(screen.queryByText('Canadá')).toBeNull()
 
+    // Switch back to group A
     fireEvent.click(screen.getByRole('button', { name: /^A/ }))
 
     expect(screen.getByText('Mostrando Grupo A')).toBeInTheDocument()
@@ -187,7 +190,15 @@ describe('PredictionPanel', () => {
 
     renderPanel()
 
-    expect(await screen.findByText('Estados Unidos')).toBeInTheDocument()
+    // Default: group A; Canada has a prediction
+    expect(await screen.findByText('Canadá')).toBeInTheDocument()
+
+    // Navigate to group B where the locked USA/Guatemala match lives
+    fireEvent.click(screen.getByRole('button', { name: /^B/ }))
+    expect(screen.getByText('Estados Unidos')).toBeInTheDocument()
+
+    // Pendientes filter: Canada (group A, has prediction) is not shown;
+    // USA (group B, no prediction) remains visible and locked
     fireEvent.click(screen.getByRole('button', { name: 'Pendientes' }))
     expect(screen.queryByText('Canadá')).toBeNull()
     expect(screen.getByText('Bloqueado')).toBeInTheDocument()
