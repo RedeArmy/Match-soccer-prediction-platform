@@ -29,9 +29,9 @@ const scheduledMatch = {
   home_score: null,
   away_score: null,
   status: 'scheduled',
-  starts_at: futureKickoff,
-  stadium: 'Toronto Stadium',
-  phase: 'Group stage',
+  kickoff_at: futureKickoff,
+  stadium: { name: 'Toronto Stadium' },
+  phase: 'group_stage',
   group_label: 'A',
 }
 
@@ -41,7 +41,7 @@ const lockedMatch = {
   home_team: 'USA',
   away_team: 'Guatemala',
   status: 'in_progress',
-  starts_at: pastKickoff,
+  kickoff_at: pastKickoff,
   stadium: null,
   phase: null,
   group_label: 'B',
@@ -100,7 +100,7 @@ describe('PredictionPanel', () => {
 
     renderPanel()
 
-    expect(await screen.findByText('Canada')).toBeInTheDocument()
+    expect(await screen.findByText('Canadá')).toBeInTheDocument()
     const inputs = screen.getAllByRole('spinbutton')
     fireEvent.change(inputs[0], { target: { value: '2' } })
     fireEvent.change(inputs[1], { target: { value: '1' } })
@@ -132,9 +132,9 @@ describe('PredictionPanel', () => {
 
     renderPanel()
 
-    expect(await screen.findByText('Canada')).toBeInTheDocument()
+    expect(await screen.findByText('Canadá')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Guardados' }))
-    expect(screen.queryByText('USA')).toBeNull()
+    expect(screen.queryByText('Estados Unidos')).toBeNull()
 
     const inputs = screen.getAllByRole('spinbutton')
     fireEvent.change(inputs[0], { target: { value: '3' } })
@@ -146,6 +146,29 @@ describe('PredictionPanel', () => {
         away_score: 1,
       })
     })
+  })
+
+  it('filters match predictions by selected group', async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch, lockedMatch] as never)
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([])
+
+    renderPanel()
+
+    // Default: group A selected — Canada (group A) visible, USA (group B) not
+    expect(await screen.findByText('Canadá')).toBeInTheDocument()
+    expect(screen.queryByText('Estados Unidos')).toBeNull()
+
+    // Switch to group B
+    fireEvent.click(screen.getByRole('button', { name: /^B/ }))
+
+    expect(screen.getByText('Estados Unidos')).toBeInTheDocument()
+    expect(screen.queryByText('Canadá')).toBeNull()
+
+    // Switch back to group A
+    fireEvent.click(screen.getByRole('button', { name: /^A/ }))
+
+    expect(screen.getByText('Canadá')).toBeInTheDocument()
+    expect(screen.queryByText('Estados Unidos')).toBeNull()
   })
 
   it('disables score editing for locked matches and filters pending matches', async () => {
@@ -164,9 +187,17 @@ describe('PredictionPanel', () => {
 
     renderPanel()
 
-    expect(await screen.findByText('USA')).toBeInTheDocument()
+    // Default: group A; Canada has a prediction
+    expect(await screen.findByText('Canadá')).toBeInTheDocument()
+
+    // Navigate to group B where the locked USA/Guatemala match lives
+    fireEvent.click(screen.getByRole('button', { name: /^B/ }))
+    expect(screen.getByText('Estados Unidos')).toBeInTheDocument()
+
+    // Pendientes filter: Canada (group A, has prediction) is not shown;
+    // USA (group B, no prediction) remains visible and locked
     fireEvent.click(screen.getByRole('button', { name: 'Pendientes' }))
-    expect(screen.queryByText('Canada')).toBeNull()
+    expect(screen.queryByText('Canadá')).toBeNull()
     expect(screen.getByText('Bloqueado')).toBeInTheDocument()
     expect(screen.getAllByRole('spinbutton')[0]).toBeDisabled()
     expect(screen.getByRole('button', { name: /Guardar prediccion/ })).toBeDisabled()

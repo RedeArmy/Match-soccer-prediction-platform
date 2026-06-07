@@ -274,7 +274,7 @@ func (s *Server) buildHandlers(
 		}),
 		match:              handler.NewMatchHandler(matchSvc, s.log),
 		prediction:         handler.NewPredictionHandler(predSvc, s.log),
-		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, groupAuthz, s.log),
+		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, groupAuthz, params, s.log),
 		leaderboard:        handler.NewLeaderboardHandler(ranker, groupAuthz, s.log),
 		userStats:          handler.NewUserStatsHandler(userStatsSvc, s.log),
 		tiebreaker:         handler.NewTiebreakerHandler(tiebreakerSvc, s.log),

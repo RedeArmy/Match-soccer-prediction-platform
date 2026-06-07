@@ -107,17 +107,24 @@ const (
 // (status = 'left'). RemovedBy is nil when the member left voluntarily; it
 // holds the admin's user ID when an administrator forced the removal.
 type GroupMembership struct {
-	ID         int
-	QuinielaID int
-	UserID     int
-	Role       MembershipRole
-	Status     MembershipStatus
-	Paid       bool
-	JoinedAt   *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	RemovedAt  *time.Time // nil unless status = 'left'
-	RemovedBy  *int       // nil = voluntary exit; non-nil = admin-forced removal
+	ID          int
+	QuinielaID  int
+	UserID      int
+	DisplayName string // populated by ListByQuiniela; empty otherwise
+	// Group-level fields populated by ListByUser enriched query.
+	GroupName   string
+	GroupStatus string
+	InviteCode  string
+	EntryFee    int
+	Currency    string
+	Role        MembershipRole
+	Status      MembershipStatus
+	Paid        bool
+	JoinedAt    *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	RemovedAt   *time.Time // nil unless status = 'left'
+	RemovedBy   *int       // nil = voluntary exit; non-nil = admin-forced removal
 }
 
 // ── Prediction & leaderboard ──────────────────────────────────────────────────

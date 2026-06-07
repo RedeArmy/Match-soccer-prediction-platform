@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0D1420"/>
+      <stop offset="100%" stop-color="#16243A"/>
+    </linearGradient>
+    <linearGradient id="border" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F0C040"/>
+      <stop offset="100%" stop-color="#B8860B"/>
+    </linearGradient>
+  </defs>
+  <!-- Marco dorado exterior -->
+  <rect width="32" height="32" rx="6" fill="url(#border)"/>
+  <!-- Fondo interior -->
+  <rect x="2" y="2" width="28" height="28" rx="4.5" fill="url(#bg)"/>
+  <!-- Texto K26 -->
+  <text
+    x="16"
+    y="21.5"
+    font-family="Arial Narrow, Arial Black, Arial, sans-serif"
+    font-size="13"
+    font-weight="900"
+    fill="#D4A017"
+    text-anchor="middle"
+    letter-spacing="-0.5"
+  >K26</text>
+</svg>

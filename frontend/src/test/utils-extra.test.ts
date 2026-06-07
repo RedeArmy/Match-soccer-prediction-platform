@@ -3,6 +3,7 @@ import {
   formatDate, formatDateTime, formatRelative, formatCountdown,
   truncate, initials, cn,
 } from '@/lib/utils'
+import { isPhaseVisible } from '@/lib/feature-flags'
 
 describe('cn (class name merger)', () => {
   it('merges class names', () => {
@@ -120,5 +121,27 @@ describe('initials', () => {
 
   it('uppercases letters', () => {
     expect(initials('ana beatriz')).toBe('AB')
+  })
+})
+
+describe('isPhaseVisible', () => {
+  it('returns true for null', () => {
+    expect(isPhaseVisible(null)).toBe(true)
+  })
+
+  it('returns true for undefined', () => {
+    expect(isPhaseVisible(undefined)).toBe(true)
+  })
+
+  it('returns true for group_stage', () => {
+    expect(isPhaseVisible('group_stage')).toBe(true)
+  })
+
+  it('returns false for a known knockout phase when flag is off', () => {
+    expect(isPhaseVisible('round_of_16')).toBe(false)
+  })
+
+  it('returns false for an unrecognised phase', () => {
+    expect(isPhaseVisible('unknown_phase')).toBe(false)
   })
 })

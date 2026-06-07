@@ -308,6 +308,7 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyGroupMinMembers:       {2, 1_000},
 	domain.ParamKeyGroupMaxSize:          {2, 1_000},
 	domain.ParamKeyGroupInviteCodeLength: {6, 64},
+	domain.ParamKeyGroupEntryFeeCents:    {0, 1_000_000}, // 0 = free; max Q10 000
 
 	// Conflict detection
 	domain.ParamKeyConflictStaleDays: {1, 365},
@@ -508,6 +509,13 @@ type paramStringValidator func(value string) error
 // Keys absent from the map accept any string. The empty string is always valid
 // (it means "fall back to the binary default").
 var paramStringConstraints = map[string]paramStringValidator{
+	// group.currency must be a supported ISO 4217 code (GTQ or USD only).
+	domain.ParamKeyGroupCurrency: func(value string) error {
+		if value == "" || value == "GTQ" || value == "USD" {
+			return nil
+		}
+		return apperrors.Validation(fmt.Sprintf("value %q is not a supported currency (accepted: GTQ, USD, or empty)", value))
+	},
 	// notify.default_locale must be one of the two supported BCP-47 tags.
 	domain.ParamKeyNotifyDefaultLocale: func(value string) error {
 		if value == "" || value == "en" || value == "es" {

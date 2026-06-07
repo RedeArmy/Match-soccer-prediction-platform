@@ -3,17 +3,16 @@
 import { useAuth } from '@clerk/nextjs'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { useExchangeRate } from '@/hooks/useExchangeRate'
+import { useCurrency } from '@/hooks/useCurrency'
 import { BalanceCard } from '@/components/balance/BalanceCard'
 import { LoadingState } from '@/components/shared/LoadingState'
-import { formatGTQ, formatUSD, formatDate, gtqToUSD } from '@/lib/utils'
-import { useState, useRef, useEffect } from 'react'
+import { formatDate } from '@/lib/utils'
+import { useRef, useEffect } from 'react'
 import type { LedgerEntry } from '@/lib/api-types'
 
 export default function BalancePage() {
   const { getToken } = useAuth()
-  const { data: rate } = useExchangeRate()
-  const [showUSD, setShowUSD] = useState(false)
+  const { fmt, isUSD } = useCurrency()
   const sentinelRef = useRef<HTMLDivElement>(null)
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
@@ -41,11 +40,6 @@ export default function BalancePage() {
 
   const allEntries = data?.pages.flat() ?? []
 
-  function display(cents: number) {
-    if (showUSD && rate) return formatUSD(Math.round(gtqToUSD(cents / 100, rate.sell_rate) * 100))
-    return formatGTQ(cents)
-  }
-
   const typeColors: Record<string, string> = {
     credit:  'text-green-400',
     debit:   'text-red-400',
@@ -55,15 +49,7 @@ export default function BalancePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-3xl text-white">BALANCE</h1>
-        <button
-          onClick={() => setShowUSD(v => !v)}
-          className="text-sm text-text-muted hover:text-gold-400 transition-colors"
-        >
-          Mostrar en {showUSD ? 'GTQ' : 'USD'}
-        </button>
-      </div>
+      <h1 className="font-display text-3xl text-white">BALANCE</h1>
 
       <BalanceCard />
 
@@ -89,9 +75,9 @@ export default function BalancePage() {
                 </div>
                 <div className="text-right shrink-0">
                   <p className={`font-score text-sm font-medium ${typeColors[entry.type] ?? 'text-text-primary'}`}>
-                    {['credit', 'release'].includes(entry.type) ? '+' : '-'}{display(entry.amount_cents)}
+                    {['credit', 'release'].includes(entry.type) ? '+' : '-'}{fmt(entry.amount_cents)}
                   </p>
-                  <p className="text-[10px] text-text-muted">{entry.currency}</p>
+                  <p className="text-[10px] text-text-muted">{isUSD ? 'USD' : 'GTQ'}</p>
                 </div>
               </div>
             ))}

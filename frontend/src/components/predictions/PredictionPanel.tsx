@@ -10,10 +10,12 @@ import {
   Save,
   SlidersHorizontal,
   Target,
+  Timer,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { MatchResponse, PredictionResponse } from "@/lib/api-types";
-import { cn, formatDateTime } from "@/lib/utils";
+import { isPhaseVisible } from "@/lib/feature-flags";
+import { cn } from "@/lib/utils";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -21,12 +23,19 @@ import { useI18n } from "@/lib/i18n";
 
 type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved";
+type ViewMode = "by-group" | "by-day";
+type GroupLabel = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L";
+
+const GROUPS: GroupLabel[] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
 
 export function PredictionPanel() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
-  const { t } = useI18n();
+  const { t, teamName, phaseName, formatKickoff, timeZone } = useI18n();
   const [filter, setFilter] = useState<Filter>("all");
+  const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
+  const [viewMode, setViewMode] = useState<ViewMode>("by-group");
+  const [todayStr, setTodayStr] = useState<string>("");
   const [drafts, setDrafts] = useState<DraftScores>({});
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -56,6 +65,16 @@ export function PredictionPanel() {
     }
     return map;
   }, [predictionsQuery.data]);
+
+  useEffect(() => {
+    setTodayStr(new Date().toLocaleDateString("sv", { timeZone }));
+  }, [timeZone]);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
 
   useEffect(() => {
     setDrafts((current) => {
@@ -104,23 +123,35 @@ export function PredictionPanel() {
   });
 
   const sortedMatches = useMemo(() => {
-    return [...(matchesQuery.data ?? [])].sort(
-      (a, b) =>
-        new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
-    );
+    const ts = (s: string | null) => (s ? new Date(s).getTime() : Infinity)
+    return [...(matchesQuery.data ?? [])]
+      .filter((m) => isPhaseVisible(m.phase))
+      .sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
   }, [matchesQuery.data]);
 
-  const visibleMatches = sortedMatches.filter((match) => {
+  const baseMatches = viewMode === "by-day"
+    ? sortedMatches.filter((match) => {
+        if (!match.kickoff_at) return false;
+        return new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone }) === todayStr;
+      })
+    : sortedMatches.filter(
+        (match) => normalizeGroup(match.group_label) === selectedGroup,
+      );
+
+  const visibleMatches = baseMatches.filter((match) => {
     const hasPrediction = predictionByMatch.has(match.id);
     if (filter === "pending") return !hasPrediction;
     if (filter === "saved") return hasPrediction;
     return true;
   });
 
-  const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
+const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
+  const isError = matchesQuery.isError || predictionsQuery.isError;
 
   return (
-    <section className="panel p-4 sm:p-5">
+    <section className="panel overflow-hidden">
+      <div className="wc26-stripe" />
+      <div className="p-4 sm:p-5">
       <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
         <div>
           <div className="mb-2 flex items-center gap-2">
@@ -134,7 +165,7 @@ export function PredictionPanel() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 rounded border border-white/10 bg-white/[0.035] p-1">
+        <div className="flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] p-1">
           <SlidersHorizontal className="ml-2 h-4 w-4 text-text-muted" />
           {(
             [
@@ -160,6 +191,42 @@ export function PredictionPanel() {
         </div>
       </div>
 
+      <div className="mb-4 inline-flex gap-1 rounded-xl border border-white/10 bg-white/[0.035] p-1">
+        {([
+          ["by-group", t("predictions.viewByGroup")],
+          ["by-day",   t("predictions.viewByDay")],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setViewMode(key)}
+            className={cn(
+              "rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
+              viewMode === key
+                ? "bg-gold-400 text-blue-950"
+                : "text-text-muted hover:text-text-primary",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {viewMode === "by-group" && (
+        <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
+          <div className="grid grid-cols-6 gap-2 lg:grid-cols-12">
+            {GROUPS.map((group) => (
+              <GroupButton
+                key={group}
+                label={group}
+                active={selectedGroup === group}
+                onClick={() => setSelectedGroup(group)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {feedback && (
         <div
           className={cn(
@@ -175,7 +242,15 @@ export function PredictionPanel() {
 
       {isLoading && <LoadingState rows={4} />}
 
-      {!isLoading && visibleMatches.length === 0 && (
+      {!isLoading && isError && (
+        <EmptyState
+          title={t("predictions.loadError")}
+          description={t("predictions.loadErrorDesc")}
+          icon={<Target className="h-10 w-10" />}
+        />
+      )}
+
+      {!isLoading && !isError && visibleMatches.length === 0 && (
         <EmptyState
           title={t("predictions.noMatches")}
           description={t("predictions.noMatchesDesc")}
@@ -183,7 +258,7 @@ export function PredictionPanel() {
         />
       )}
 
-      {!isLoading && visibleMatches.length > 0 && (
+      {!isLoading && !isError && visibleMatches.length > 0 && (
         <div className="grid gap-3">
           {visibleMatches.map((match) => {
             const prediction = predictionByMatch.get(match.id);
@@ -192,10 +267,13 @@ export function PredictionPanel() {
               away: prediction?.away_score ?? 0,
             };
             const locked =
-              new Date(match.starts_at).getTime() <= Date.now() ||
+              (match.kickoff_at !== null && new Date(match.kickoff_at).getTime() <= Date.now()) ||
               match.status !== "scheduled";
             const pending =
               mutation.isPending && mutation.variables?.match.id === match.id;
+            let buttonLabel = t("predictions.submit")
+            if (pending) buttonLabel = t("common.saving")
+            else if (prediction) buttonLabel = t("predictions.update")
 
             return (
               <article
@@ -231,31 +309,32 @@ export function PredictionPanel() {
                     </div>
 
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                      <TeamLabel label={match.home_team} align="right" />
+                      <TeamLabel label={teamName(match.home_team)} align="right" />
                       <span className="font-score text-xs text-text-muted">
                         vs
                       </span>
-                      <TeamLabel label={match.away_team} align="left" />
+                      <TeamLabel label={teamName(match.away_team)} align="left" />
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
                       <span className="inline-flex items-center gap-1.5">
                         <CalendarClock className="h-3.5 w-3.5" />
                         {t("predictions.kickoff")}:{" "}
-                        {formatDateTime(match.starts_at)}
+                        <span suppressHydrationWarning>{formatKickoff(match.kickoff_at)}</span>
                       </span>
                       {match.stadium && (
                         <span className="inline-flex items-center gap-1.5">
                           <MapPin className="h-3.5 w-3.5" />
-                          {match.stadium}
+                          {match.stadium.name}
                         </span>
                       )}
                       {(match.phase || match.group_label) && (
                         <span>
                           {t("predictions.phase")}:{" "}
-                          {match.phase ?? match.group_label}
+                          {phaseName(match.phase ?? match.group_label)}
                         </span>
                       )}
+                      <MatchCountdown kickoffAt={match.kickoff_at} />
                       {prediction?.points !== null &&
                         prediction?.points !== undefined && (
                           <span className="text-gold-300">
@@ -292,14 +371,17 @@ export function PredictionPanel() {
                       type="button"
                       disabled={locked || pending}
                       onClick={() => mutation.mutate({ match, draft })}
-                      className="btn-gold min-w-36 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                      className="btn-gold w-full px-3 py-2 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <Save className="h-4 w-4" />
-                      {(() => {
-                        if (pending) return t("common.saving");
-                        if (prediction) return t("predictions.update");
-                        return t("predictions.submit");
-                      })()}
+                      <Save className="h-4 w-4 shrink-0" />
+                      <span className="relative">
+                        <span aria-hidden className="invisible">
+                          {t("predictions.submit")}
+                        </span>
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          {buttonLabel}
+                        </span>
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -312,7 +394,72 @@ export function PredictionPanel() {
       <p className="mt-4 text-xs text-text-muted">
         {t("predictions.exactHint")}
       </p>
+      </div>
     </section>
+  );
+}
+
+function normalizeGroup(group: string | null | undefined): GroupLabel | null {
+  const value = group?.trim().toUpperCase().replace(/^GROUP\s+/, "").replace(/^GRUPO\s+/, "");
+  return GROUPS.includes(value as GroupLabel) ? (value as GroupLabel) : null;
+}
+
+function GroupButton({
+  label,
+  active,
+  onClick,
+}: Readonly<{
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex min-h-14 flex-col items-center justify-center rounded-xl border px-2 py-2 text-center transition-colors",
+        active
+          ? "border-gold-400 bg-gold-400 text-blue-950 shadow-lg shadow-gold-400/10"
+          : "border-white/10 bg-white/[0.035] text-text-secondary hover:border-gold-400/40 hover:text-white",
+      )}
+    >
+      <span className="text-sm font-bold uppercase">{label}</span>
+    </button>
+  );
+}
+
+function MatchCountdown({ kickoffAt }: Readonly<{ kickoffAt: string | null | undefined }>) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!kickoffAt) return null;
+  const diff = new Date(kickoffAt).getTime() - now;
+  if (diff <= 0) return null;
+
+  const days  = Math.floor(diff / 86_400_000);
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000);
+  const mins  = Math.floor((diff % 3_600_000) / 60_000);
+  const secs  = Math.floor((diff % 60_000) / 1_000);
+
+  let label: string
+  if (days > 0) {
+    label = `${days}d ${hours}h ${mins}m`
+  } else if (hours > 0) {
+    label = `${hours}h ${mins}m ${secs}s`
+  } else {
+    label = `${mins}m ${secs}s`
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums text-gold-300">
+      <Timer className="h-3 w-3 shrink-0" />
+      {label}
+    </span>
   );
 }
 
@@ -348,11 +495,21 @@ function ScoreInput({
       <input
         type="number"
         min={0}
-        max={30}
+        max={50}
         inputMode="numeric"
         disabled={disabled}
         value={value}
-        onChange={(event) => onChange(Math.max(0, Number(event.target.value)))}
+        onFocus={(event) => event.target.select()}
+        onKeyDown={(event) => {
+          if (!/[\d\b]/.test(event.key) && !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(event.key)) {
+            event.preventDefault();
+          }
+        }}
+        onChange={(event) => {
+          const raw = Number(event.target.value);
+          if (!Number.isFinite(raw)) return;
+          onChange(Math.min(50, Math.max(0, raw)));
+        }}
         className="input-base h-10 text-center font-score text-lg disabled:cursor-not-allowed disabled:opacity-55"
       />
     </label>

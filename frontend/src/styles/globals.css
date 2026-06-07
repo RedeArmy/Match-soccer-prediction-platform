@@ -85,6 +85,17 @@
     color: var(--text-muted);
   }
 
+  .input-base[type="number"]::-webkit-outer-spin-button,
+  .input-base[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .input-base[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
   .btn-gold {
     display: inline-flex;
     align-items: center;

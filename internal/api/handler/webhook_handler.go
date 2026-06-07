@@ -55,6 +55,7 @@ type clerkUserPayload struct {
 	ID             string              `json:"id"`
 	FirstName      string              `json:"first_name"`
 	LastName       string              `json:"last_name"`
+	Username       string              `json:"username"`
 	EmailAddresses []clerkEmailAddress `json:"email_addresses"`
 	PrimaryEmailID string              `json:"primary_email_address_id"`
 }
@@ -169,6 +170,7 @@ func (h *WebhookHandler) syncUser(r *http.Request, data json.RawMessage) error {
 		payload.ID,
 		payload.FirstName,
 		payload.LastName,
+		payload.Username,
 		payload.PrimaryEmailID,
 		emails,
 	)

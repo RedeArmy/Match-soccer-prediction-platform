@@ -434,7 +434,7 @@ func TestAllParamsHaveValidCategory(t *testing.T) {
 // the allParams slice. The count should match the number of ParamKey constants
 // in domain/constants.go (excluding validation limits like MaxEmailLength).
 func TestAllParamsCount(t *testing.T) {
-	const expectedCount = 138 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125, +2 ip velocity from 000129, +1 sse max conns from 000136, +1 scoring chunk size from 000138, +4 ip rate limit from 000142, +1 kyc doc retention from 000144, +1 usd_gtq_rate from 000147, +1 exchange_rate_margin from 000148, +4 fx margin from 000150, +1 intent_max_cents from 000151, +2 admin rate limit from 000153, +1 audit max_in_flight from 000154, +1 fx history retention from 000155, +1 outbox retention from 000158, +3 sse evict+lb publish from 000160, +3 fx timeouts from 000161, +1 payment intent retention from 000162)
+	const expectedCount = 140 // Update when adding new system parameters (+10 kyc gate from 000121, +1 kyc cache ttl from 000125, +2 ip velocity from 000129, +1 sse max conns from 000136, +1 scoring chunk size from 000138, +4 ip rate limit from 000142, +1 kyc doc retention from 000144, +1 usd_gtq_rate from 000147, +1 exchange_rate_margin from 000148, +4 fx margin from 000150, +1 intent_max_cents from 000151, +2 admin rate limit from 000153, +1 audit max_in_flight from 000154, +1 fx history retention from 000155, +1 outbox retention from 000158, +3 sse evict+lb publish from 000160, +3 fx timeouts from 000161, +1 payment intent retention from 000162, +2 group entry_fee+currency from 000171)
 	if len(allParams) != expectedCount {
 		t.Errorf("expected %d params in allParams, got %d - update expectedCount or fix allParams", expectedCount, len(allParams))
 	}

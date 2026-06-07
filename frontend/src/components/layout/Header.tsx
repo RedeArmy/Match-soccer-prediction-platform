@@ -22,7 +22,7 @@ export function Header() {
           <div className="flex h-16 items-center justify-between gap-4">
             <Link href="/" className="flex shrink-0 items-center gap-2">
               <span className="grid h-9 w-9 place-items-center rounded border border-gold-400/40 bg-gold-400/10 font-display text-xl leading-none text-gold-300">
-                Q26
+                K26
               </span>
               <span className="hidden sm:block">
                 <span className="block text-sm font-semibold text-text-primary">{t('common.brand')}</span>
@@ -31,11 +31,17 @@ export function Header() {
             </Link>
 
             <nav className="hidden items-center gap-1 rounded border border-white/10 bg-white/[0.03] p-1 md:flex">
-              <Link href="/tournaments" className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-white/[0.05] hover:text-text-primary">
-                <Trophy className="h-3.5 w-3.5" />
-                {t('common.tournaments')}
-              </Link>
+              <SignedOut>
+                <Link href="/tournaments" className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-white/[0.05] hover:text-text-primary">
+                  <Trophy className="h-3.5 w-3.5" />
+                  {t('common.tournaments')}
+                </Link>
+              </SignedOut>
               <SignedIn>
+                <Link href="/quinielas" className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-white/[0.05] hover:text-text-primary">
+                  <Trophy className="h-3.5 w-3.5" />
+                  {t('common.kinielas')}
+                </Link>
                 <Link href="/dashboard" className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-white/[0.05] hover:text-text-primary">
                   <LayoutDashboard className="h-3.5 w-3.5" />
                   {t('common.dashboard')}

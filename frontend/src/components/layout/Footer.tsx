@@ -12,7 +12,7 @@ export function Footer() {
         <div className="wc26-stripe mb-6" />
         <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
           <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded border border-gold-400/40 bg-gold-400/10 font-display text-lg text-gold-300">Q26</span>
+            <span className="grid h-8 w-8 place-items-center rounded border border-gold-400/40 bg-gold-400/10 font-display text-lg text-gold-300">K26</span>
             <span className="text-sm text-text-muted">{t('common.event')}</span>
           </div>
 

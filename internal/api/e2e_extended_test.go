@@ -261,6 +261,7 @@ func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
 func TestE2E_GroupManagement_JoinApproveLeave(t *testing.T) {
 	skipIfNoE2EDB(t)
 	cleanE2ETables(t)
+	seedFreeGroupParam(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
 	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
@@ -272,7 +273,7 @@ func TestE2E_GroupManagement_JoinApproveLeave(t *testing.T) {
 
 	// Step 1 — owner creates a free group and receives an invite code.
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/groups", ownerToken,
-		jsonBody(t, map[string]any{"name": "E2E Group", "entry_fee": 0, "currency": "GTQ"}))
+		jsonBody(t, map[string]any{"name": "E2E Group"}))
 	assertStatus(t, rec, http.StatusCreated, "create group")
 	var group struct {
 		ID         int    `json:"id"`
@@ -373,6 +374,7 @@ func TestE2E_GroupManagement_JoinApproveLeave(t *testing.T) {
 func TestE2E_LeaderboardRanking_ExactScoreBeatsOutcomeOnly(t *testing.T) {
 	skipIfNoE2EDB(t)
 	cleanE2ETables(t)
+	seedFreeGroupParam(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
 	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
@@ -387,7 +389,7 @@ func TestE2E_LeaderboardRanking_ExactScoreBeatsOutcomeOnly(t *testing.T) {
 
 	// Step 1 — owner creates free group; user B joins and is approved.
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/groups", ownerToken,
-		jsonBody(t, map[string]any{"name": "Leaderboard Group", "entry_fee": 0, "currency": "GTQ"}))
+		jsonBody(t, map[string]any{"name": "Leaderboard Group"}))
 	assertStatus(t, rec, http.StatusCreated, "create group")
 	var group struct {
 		ID         int    `json:"id"`

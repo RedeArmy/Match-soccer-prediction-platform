@@ -21,15 +21,21 @@ vi.mock('@/lib/sse', () => ({
   createSSEManager: vi.fn(),
 }))
 
+vi.mock('@/lib/i18n', () => ({
+  useI18n: vi.fn(),
+}))
+
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
 import { useAuth } from '@clerk/nextjs'
 import { api } from '@/lib/api'
 import { createSSEManager } from '@/lib/sse'
+import { useI18n } from '@/lib/i18n'
 import { useExchangeRate } from '@/hooks/useExchangeRate'
 import { useBalance }      from '@/hooks/useBalance'
 import { useKYCStatus }    from '@/hooks/useKYCStatus'
 import { useSSE }          from '@/hooks/useSSE'
+import { useCurrency }     from '@/hooks/useCurrency'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -162,5 +168,56 @@ describe('useSSE', () => {
     })
 
     expect(result.current.lastNotification).toEqual(payload)
+  })
+
+  it('invalidates kyc queries when event_type starts with kyc.', async () => {
+    const disconnect = vi.fn()
+    vi.mocked(createSSEManager).mockReturnValue({ disconnect })
+
+    const { result } = renderHook(() => useSSE(), { wrapper: makeWrapper() })
+    const { onNotification } = vi.mocked(createSSEManager).mock.calls[0][0]
+
+    const payload = {
+      id: 43,
+      event_type: 'kyc.approved',
+      title: 'KYC approved',
+      body: 'msg',
+      action_url: null,
+      read: false,
+      created_at: '2026-01-01T00:00:00Z',
+    }
+
+    act(() => {
+      onNotification?.(payload)
+    })
+
+    expect(result.current.lastNotification).toEqual(payload)
+  })
+})
+
+// ── useCurrency ───────────────────────────────────────────────────────────────
+
+describe('useCurrency', () => {
+  beforeEach(() => {
+    vi.mocked(api.getExchangeRate).mockReset()
+    vi.mocked(api.getExchangeRate).mockResolvedValue({
+      buy_rate: '7.72', sell_rate: '7.80', effective_at: '2026-01-01T00:00:00Z', stale: false,
+    })
+  })
+
+  it('formats in GTQ when locale is es', () => {
+    vi.mocked(useI18n).mockReturnValue({ locale: 'es' } as never)
+
+    const { result } = renderHook(() => useCurrency(), { wrapper: makeWrapper() })
+    expect(result.current.isUSD).toBe(false)
+    expect(result.current.fmt(10000)).toContain('Q')
+  })
+
+  it('formats in USD when locale is en', () => {
+    vi.mocked(useI18n).mockReturnValue({ locale: 'en' } as never)
+
+    const { result } = renderHook(() => useCurrency(), { wrapper: makeWrapper() })
+    expect(result.current.isUSD).toBe(true)
+    expect(result.current.fmt(780)).toContain('$')
   })
 })

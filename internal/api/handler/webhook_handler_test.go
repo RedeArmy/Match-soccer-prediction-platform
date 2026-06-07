@@ -70,7 +70,7 @@ type stubClerkUserSyncer struct {
 	softDeleteErr error
 }
 
-func (s *stubClerkUserSyncer) Upsert(_ context.Context, _, _, _, _ string, _ []service.ClerkEmail) error {
+func (s *stubClerkUserSyncer) Upsert(_ context.Context, _, _, _, _, _ string, _ []service.ClerkEmail) error {
 	return s.err
 }
 
