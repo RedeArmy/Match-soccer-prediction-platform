@@ -39,6 +39,8 @@ import (
 	"time"
 )
 
+const eventPaymentIntentSucceeded = "payment_intent.succeeded"
+
 func main() {
 	if err := run(os.Args, http.DefaultClient, os.Stdout, os.Stderr); err != nil {
 		os.Exit(1) // error already printed inside run
@@ -60,7 +62,7 @@ func run(args []string, client *http.Client, stdout, stderr io.Writer) error {
 		currency   = fs.String("currency", "GTQ", "Currency code")
 		reference  = fs.String("reference", "", "Payment reference (auto-generated if empty)")
 		checkoutID = fs.String("checkout-id", "", "Checkout ID (auto-generated if empty)")
-		eventType  = fs.String("event-type", "payment_intent.succeeded",
+		eventType  = fs.String("event-type", eventPaymentIntentSucceeded,
 			"Event type: payment.confirmed | payment_intent.succeeded | intent.succeeded")
 	)
 	if err := fs.Parse(args[1:]); err != nil {
@@ -144,10 +146,10 @@ func buildPayload(eventType string, userID, amount int, currency, ref, chID stri
 			},
 		}, nil
 
-	case "payment_intent.succeeded":
+	case eventPaymentIntentSucceeded:
 		return map[string]any{
 			"id":              fmt.Sprintf("pa_test_%d", time.Now().UnixNano()),
-			"event_type":      "payment_intent.succeeded",
+			"event_type":      eventPaymentIntentSucceeded,
 			"amount_in_cents": amount,
 			"currency":        currency,
 			"checkout": map[string]any{

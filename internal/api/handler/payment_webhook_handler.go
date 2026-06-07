@@ -167,6 +167,8 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
+const errMsgParseRecurrente = "could not parse Recurrente webhook payload"
+
 // extractRecurrenteCreditParams parses a Recurrente webhook body and extracts the
 // parameters needed to credit a user's balance. Supports three event formats:
 //
@@ -185,15 +187,15 @@ func extractRecurrenteCreditParams(body []byte) (userID, amountCents int, curren
 		Type      string `json:"type"`
 		Status    string `json:"status"`
 	}
-	if jsonErr := json.Unmarshal(body, &probe); jsonErr != nil {
-		return 0, 0, "", "", false, apperrors.Validation("could not parse Recurrente webhook payload")
+	if json.Unmarshal(body, &probe) != nil {
+		return 0, 0, "", "", false, apperrors.Validation(errMsgParseRecurrente)
 	}
 
 	switch probe.EventType {
 	case "payment.confirmed":
 		var p recurrenteWebhookPayload
-		if jsonErr := json.Unmarshal(body, &p); jsonErr != nil {
-			return 0, 0, "", "", false, apperrors.Validation("could not parse Recurrente webhook payload")
+		if json.Unmarshal(body, &p) != nil {
+			return 0, 0, "", "", false, apperrors.Validation(errMsgParseRecurrente)
 		}
 		d := p.Data
 		if d.UserID <= 0 || d.AmountCents <= 0 || d.Reference == "" {
@@ -203,8 +205,8 @@ func extractRecurrenteCreditParams(body []byte) (userID, amountCents int, curren
 
 	case "payment_intent.succeeded":
 		var p recurrenteIntentPayload
-		if jsonErr := json.Unmarshal(body, &p); jsonErr != nil {
-			return 0, 0, "", "", false, apperrors.Validation("could not parse Recurrente webhook payload")
+		if json.Unmarshal(body, &p) != nil {
+			return 0, 0, "", "", false, apperrors.Validation(errMsgParseRecurrente)
 		}
 		return extractFromIntent(p)
 
@@ -214,8 +216,8 @@ func extractRecurrenteCreditParams(body []byte) (userID, amountCents int, curren
 			return 0, 0, "", "", true, nil
 		}
 		var p recurrenteIntentPayload
-		if jsonErr := json.Unmarshal(body, &p); jsonErr != nil {
-			return 0, 0, "", "", false, apperrors.Validation("could not parse Recurrente webhook payload")
+		if json.Unmarshal(body, &p) != nil {
+			return 0, 0, "", "", false, apperrors.Validation(errMsgParseRecurrente)
 		}
 		return extractFromIntent(p)
 
