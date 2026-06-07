@@ -75,7 +75,7 @@ func (s *Server) registerGroupRoutes(r chi.Router, d apiV1Deps) {
 		r.Get("/{id}/leaderboard", d.h.leaderboard.GetLeaderboard)
 		// Any active member may approve or reject a pending join request.
 		r.Post("/{id}/members/{membershipID}/approve", d.h.group.ApproveJoin)
-			r.Delete("/{id}/members/{membershipID}", d.h.group.RejectJoin)
+		r.Delete("/{id}/members/{membershipID}", d.h.group.RejectJoin)
 		// Self-removal only — a user removes themselves from the group.
 		r.Delete("/{id}/members/me", d.h.group.Leave)
 		// Tiebreaker: active members submit and view their own prediction.
