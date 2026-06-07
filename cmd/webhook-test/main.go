@@ -24,6 +24,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -73,7 +74,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, *url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, *url, bytes.NewReader(body))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating request:", err)
 		os.Exit(1)
@@ -104,9 +105,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "request failed:", err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
-
 	respBody, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
 	fmt.Printf("Response: %d\n%s\n", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	if resp.StatusCode >= 400 {
 		os.Exit(1)
@@ -172,7 +172,11 @@ func buildPayload(eventType string, userID, amount int, currency, ref, chID stri
 // "whsec_<base64>" → base64-decoded bytes; any other string → raw bytes.
 func parseSecret(secret string) ([]byte, error) {
 	if strings.HasPrefix(secret, "whsec_") {
-		return base64.StdEncoding.DecodeString(secret[6:])
+		key, err := base64.StdEncoding.DecodeString(secret[6:])
+		if err != nil {
+			return nil, fmt.Errorf("decode whsec_ secret: %w", err)
+		}
+		return key, nil
 	}
 	return []byte(secret), nil
 }

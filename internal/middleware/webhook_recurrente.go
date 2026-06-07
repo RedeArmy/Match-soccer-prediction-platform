@@ -68,61 +68,67 @@ func RecurrenteWebhookAuth(secret string, log *zap.Logger) func(http.Handler) ht
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, err := io.ReadAll(io.LimitReader(r.Body, webhookBodyLimit))
-			if err != nil {
-				WriteError(w, r, log, apperrors.Internal(err))
-				return
-			}
-			// Restore body for downstream handler.
-			r.Body = io.NopCloser(bytes.NewReader(body))
-
-			if key == nil {
-				// Bypass mode (dev only): stamp sentinel so handler contract is satisfied.
-				r = r.WithContext(SetWebhookVerifiedBody(r.Context(), body))
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			msgID := r.Header.Get(svixIDHeader)
-			msgTimestamp := r.Header.Get(svixTimestampHeader)
-			msgSignature := r.Header.Get(svixSignatureHeader)
-
-			if msgID == "" || msgTimestamp == "" || msgSignature == "" {
-				log.Warn("recurrente webhook: missing Svix headers",
-					zap.String("request_id", GetRequestID(r.Context())),
-				)
-				WriteError(w, r, log, apperrors.Unauthorised("missing webhook signature headers"))
-				return
-			}
-
-			ts, tsErr := strconv.ParseInt(msgTimestamp, 10, 64)
-			if tsErr != nil {
-				WriteError(w, r, log, apperrors.Unauthorised("invalid webhook timestamp"))
-				return
-			}
-			age := time.Now().Unix() - ts
-			if age < -svixToleranceSeconds || age > svixToleranceSeconds {
-				log.Warn("recurrente webhook: timestamp outside tolerance window",
-					zap.Int64("age_seconds", age),
-					zap.String("request_id", GetRequestID(r.Context())),
-				)
-				WriteError(w, r, log, apperrors.Unauthorised("webhook timestamp outside tolerance window"))
-				return
-			}
-
-			if !svixSignatureValid(key, msgID, msgTimestamp, body, msgSignature) {
-				log.Warn("recurrente webhook: signature mismatch",
-					zap.String("svix-id", msgID),
-					zap.String("request_id", GetRequestID(r.Context())),
-				)
-				WriteError(w, r, log, apperrors.Unauthorised("invalid webhook signature"))
-				return
-			}
-
-			r = r.WithContext(SetWebhookVerifiedBody(r.Context(), body))
-			next.ServeHTTP(w, r)
+			serveRecurrenteWebhook(w, r, next, key, log)
 		})
 	}
+}
+
+// serveRecurrenteWebhook is the inner handler extracted from RecurrenteWebhookAuth
+// to keep the outer function's cognitive complexity within the project lint threshold.
+func serveRecurrenteWebhook(w http.ResponseWriter, r *http.Request, next http.Handler, key []byte, log *zap.Logger) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, webhookBodyLimit))
+	if err != nil {
+		WriteError(w, r, log, apperrors.Internal(err))
+		return
+	}
+	// Restore body for downstream handler.
+	r.Body = io.NopCloser(bytes.NewReader(body))
+
+	if key == nil {
+		// Bypass mode (dev only): stamp sentinel so handler contract is satisfied.
+		r = r.WithContext(SetWebhookVerifiedBody(r.Context(), body))
+		next.ServeHTTP(w, r)
+		return
+	}
+
+	msgID := r.Header.Get(svixIDHeader)
+	msgTimestamp := r.Header.Get(svixTimestampHeader)
+	msgSignature := r.Header.Get(svixSignatureHeader)
+
+	if msgID == "" || msgTimestamp == "" || msgSignature == "" {
+		log.Warn("recurrente webhook: missing Svix headers",
+			zap.String("request_id", GetRequestID(r.Context())),
+		)
+		WriteError(w, r, log, apperrors.Unauthorised("missing webhook signature headers"))
+		return
+	}
+
+	ts, tsErr := strconv.ParseInt(msgTimestamp, 10, 64)
+	if tsErr != nil {
+		WriteError(w, r, log, apperrors.Unauthorised("invalid webhook timestamp"))
+		return
+	}
+	age := time.Now().Unix() - ts
+	if age < -svixToleranceSeconds || age > svixToleranceSeconds {
+		log.Warn("recurrente webhook: timestamp outside tolerance window",
+			zap.Int64("age_seconds", age),
+			zap.String("request_id", GetRequestID(r.Context())),
+		)
+		WriteError(w, r, log, apperrors.Unauthorised("webhook timestamp outside tolerance window"))
+		return
+	}
+
+	if !svixSignatureValid(key, msgID, msgTimestamp, body, msgSignature) {
+		log.Warn("recurrente webhook: signature mismatch",
+			zap.String("svix-id", msgID),
+			zap.String("request_id", GetRequestID(r.Context())),
+		)
+		WriteError(w, r, log, apperrors.Unauthorised("invalid webhook signature"))
+		return
+	}
+
+	r = r.WithContext(SetWebhookVerifiedBody(r.Context(), body))
+	next.ServeHTTP(w, r)
 }
 
 // parseRecurrenteSigningSecret derives the HMAC key from a signing secret.
