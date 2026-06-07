@@ -240,6 +240,65 @@ func TestWebhookHandler_Recurrente_MissingVerifiedBody_Returns401(t *testing.T) 
 	}
 }
 
+// ── Notifier integration ──────────────────────────────────────────────────────
+
+// stubNotifier satisfies the unexported paymentObservabilityNotifier interface
+// so that tests can verify notification side-effects without importing the
+// concrete observability package.
+type stubNotifier struct {
+	paymentErrors  []string
+	balanceCredits int
+}
+
+func (s *stubNotifier) NotifyPaymentError(_ context.Context, _, errorCode, _, _ string) {
+	s.paymentErrors = append(s.paymentErrors, errorCode)
+}
+
+func (s *stubNotifier) NotifyBalanceCredited(_ context.Context, _ int, _ int, _ string) {
+	s.balanceCredits++
+}
+
+func webhookRouterWithNotifier(t *testing.T, svc *stubWebhookPaymentSvc, notif *stubNotifier) http.Handler {
+	t.Helper()
+	h := handler.NewPaymentWebhookHandler(svc, zaptest.NewLogger(t))
+	h.SetNotifier(notif)
+	mux := http.NewServeMux()
+	mux.Handle("POST /webhooks/recurrente", stampVerifiedBody(http.HandlerFunc(h.HandleRecurrente)))
+	return mux
+}
+
+func TestWebhookHandler_Recurrente_WithNotifier_NotifiesOnSuccess(t *testing.T) {
+	notif := &stubNotifier{}
+	router := webhookRouterWithNotifier(t, &stubWebhookPaymentSvc{}, notif)
+	payload := map[string]any{
+		"event_type": "payment.confirmed",
+		"data":       map[string]any{"reference": "REF_NOTIF_OK", "amount_cents": 3000, "currency": "GTQ", "user_id": 10},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d", rec.Code)
+	}
+	if notif.balanceCredits != 1 {
+		t.Errorf("expected NotifyBalanceCredited called once, got %d", notif.balanceCredits)
+	}
+}
+
+func TestWebhookHandler_Recurrente_WithNotifier_NotifiesOnServiceError(t *testing.T) {
+	notif := &stubNotifier{}
+	router := webhookRouterWithNotifier(t, &stubWebhookPaymentSvc{err: errors.New("db error")}, notif)
+	payload := map[string]any{
+		"event_type": "payment.confirmed",
+		"data":       map[string]any{"reference": "REF_NOTIF_ERR", "amount_cents": 3000, "currency": "GTQ", "user_id": 11},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+	if len(notif.paymentErrors) != 1 {
+		t.Errorf("expected NotifyPaymentError called once, got %d", len(notif.paymentErrors))
+	}
+}
+
 // ── PayPal ────────────────────────────────────────────────────────────────────
 
 const testIntentToken = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"

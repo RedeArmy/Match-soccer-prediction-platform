@@ -257,6 +257,67 @@ func TestRecurrenteWebhookAuth_EmptySecret_PassesThrough(t *testing.T) {
 	}
 }
 
+func TestRecurrenteWebhookAuth_InvalidWhsecBase64_DegradesToBypass(t *testing.T) {
+	// An unparseable whsec_ secret must degrade to bypass mode rather than panic
+	// or hard-fail at startup. Config validation catches this before production start.
+	log := zaptest.NewLogger(t)
+	called := false
+	mw := middleware.RecurrenteWebhookAuth("whsec_!!!notvalidbase64", log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if !called {
+		t.Error("downstream was not called — invalid whsec_ should degrade to bypass, not block traffic")
+	}
+}
+
+func TestRecurrenteWebhookAuth_NonNumericTimestamp_Returns401(t *testing.T) {
+	log := zaptest.NewLogger(t)
+	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("downstream must not be called for a non-numeric svix-timestamp")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
+	req.Header.Set("svix-id", "msg_001")
+	req.Header.Set("svix-timestamp", "not-a-number")
+	req.Header.Set("svix-signature", "v1,dummysig==")
+
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for non-numeric timestamp, got %d", rec.Code)
+	}
+}
+
+func TestRecurrenteWebhookAuth_FutureTimestamp_Returns401(t *testing.T) {
+	log := zaptest.NewLogger(t)
+	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("downstream must not be called for a far-future svix-timestamp")
+	}))
+
+	msgID := "msg_future"
+	timestamp := strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)
+	sig := svixSign(t, testRecurrenteSecret, msgID, timestamp, []byte(testRecurrenteBody))
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
+	req.Header.Set("svix-id", msgID)
+	req.Header.Set("svix-timestamp", timestamp)
+	req.Header.Set("svix-signature", "v1,"+sig)
+
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for timestamp 10 minutes in the future, got %d", rec.Code)
+	}
+}
+
 func TestRecurrenteWebhookAuth_ErrorResponseIsJSON(t *testing.T) {
 	log := zaptest.NewLogger(t)
 	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
