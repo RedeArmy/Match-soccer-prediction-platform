@@ -371,9 +371,12 @@ type ClerkConfig struct {
 // layer (middleware.RecurrenteWebhookAuth, middleware.PayPalWebhookAuth)
 // enforces the respective verification algorithms at request time.
 type PaymentConfig struct {
-	// RecurrenteWebhookSecret is the HMAC-SHA256 signing secret configured in
-	// the Recurrente webhook dashboard. Requests are verified against the
-	// X-Recurrente-Hmac-Sha256 header. Set via WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET.
+	// RecurrenteWebhookSecret is the Svix signing secret from the Recurrente
+	// webhook dashboard (Configuración → Desarrolladores y API → Webhooks).
+	// Format: "whsec_<base64>" (Svix standard). Raw secrets are also accepted
+	// for migration purposes. Requests are verified against the svix-signature
+	// header following the Svix HMAC-SHA256 algorithm.
+	// Set via WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET.
 	RecurrenteWebhookSecret string `mapstructure:"recurrenteWebhookSecret"`
 	// PayPalWebhookID is the webhook ID from the PayPal developer dashboard.
 	// It is embedded in the signed message during RSA certificate verification.

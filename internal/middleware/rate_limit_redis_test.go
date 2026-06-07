@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -15,6 +16,7 @@ import (
 	"go.uber.org/zap/zaptest"
 
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/pkg/clock"
 )
 
 func newRedisRateStore(t *testing.T, burst int) (*miniredis.Miniredis, *middleware.RedisRateStore) {
@@ -22,7 +24,14 @@ func newRedisRateStore(t *testing.T, burst int) (*miniredis.Miniredis, *middlewa
 	mr := miniredis.RunT(t)
 	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rc.Close() })
-	store := middleware.NewRedisRateStore(rc, 10.0, burst, zaptest.NewLogger(t))
+	// Pin the clock to a fixed second so tests that exhaust the burst window
+	// cannot straddle a real second boundary and produce a false-positive Allow.
+	// This is safe for all test scenarios: the frozen timestamp is unique per
+	// test binary run, each test gets its own miniredis instance, and keys are
+	// scoped per call-key string.
+	store := middleware.NewRedisRateStore(rc, 10.0, burst, zaptest.NewLogger(t),
+		middleware.WithRateClock(clock.Frozen{T: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}),
+	)
 	return mr, store
 }
 

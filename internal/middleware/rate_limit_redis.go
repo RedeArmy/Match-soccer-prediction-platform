@@ -3,11 +3,12 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
+
+	"github.com/rede/world-cup-quiniela/pkg/clock"
 )
 
 // RedisRateStore implements Allower using a Redis fixed-window counter.
@@ -22,7 +23,18 @@ type RedisRateStore struct {
 	rc            redis.UniversalClient
 	burst         int
 	log           *zap.Logger
+	clk           clock.Nower
 	failOpenTotal metric.Int64Counter // incremented on every Redis-unavailable fail-open
+}
+
+// RateStoreOption is a functional option for NewRedisRateStore.
+type RateStoreOption func(*RedisRateStore)
+
+// WithRateClock overrides the time source used to derive fixed-window keys.
+// The default is clock.Real{}. Inject clock.Frozen in tests to pin the window
+// and prevent second-boundary races.
+func WithRateClock(clk clock.Nower) RateStoreOption {
+	return func(s *RedisRateStore) { s.clk = clk }
 }
 
 // incrWindowScript atomically increments the per-key fixed-window counter and
@@ -43,8 +55,12 @@ return count
 // NewRedisRateStore constructs a RedisRateStore. ratePerSec is accepted for
 // API symmetry with NewLimiterStore but is unused — the burst cap controls the
 // per-second allowance in the fixed-window model.
-func NewRedisRateStore(rc redis.UniversalClient, _ float64, burst int, log *zap.Logger) *RedisRateStore {
-	return &RedisRateStore{rc: rc, burst: burst, log: log}
+func NewRedisRateStore(rc redis.UniversalClient, _ float64, burst int, log *zap.Logger, opts ...RateStoreOption) *RedisRateStore {
+	s := &RedisRateStore{rc: rc, burst: burst, log: log, clk: clock.Real{}}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // RegisterMetrics wires OTel instruments into the store. Call once at startup
@@ -68,7 +84,7 @@ func (s *RedisRateStore) RegisterMetrics(meter metric.Meter) error {
 // request is within the burst limit for the current second.
 // Fail-open: returns (true, 0) on any Redis error and increments failOpenTotal.
 func (s *RedisRateStore) Allow(ctx context.Context, key string) (bool, int) {
-	sec := time.Now().Unix()
+	sec := s.clk.Now().Unix()
 	rk := fmt.Sprintf("rl:%s:%d", key, sec)
 
 	count, err := incrWindowScript.Run(ctx, s.rc, []string{rk}, 2).Int64()
