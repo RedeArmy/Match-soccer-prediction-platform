@@ -81,13 +81,11 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         aria-label="Close"
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={handleClose}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleClose() }}
       />
 
       <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#0b1929] p-6 shadow-2xl">

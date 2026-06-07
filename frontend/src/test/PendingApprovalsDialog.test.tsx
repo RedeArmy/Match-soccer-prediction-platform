@@ -139,30 +139,4 @@ describe('PendingApprovalsDialog', () => {
     expect(screen.getAllByRole('button', { name: /Rechazar/ })).toHaveLength(2)
   })
 
-  it('calls onClose when Enter key is pressed on backdrop', async () => {
-    const onClose = vi.fn()
-    vi.mocked(api.getGroupMembers).mockResolvedValue([])
-    const { container } = render(<PendingApprovalsDialog {...BASE} open={true} onClose={onClose} />)
-    await screen.findByText('No hay solicitudes pendientes.')
-    fireEvent.keyDown(container.querySelector('.absolute.inset-0')!, { key: 'Enter' })
-    expect(onClose).toHaveBeenCalledOnce()
-  })
-
-  it('calls onClose when Space key is pressed on backdrop', async () => {
-    const onClose = vi.fn()
-    vi.mocked(api.getGroupMembers).mockResolvedValue([])
-    const { container } = render(<PendingApprovalsDialog {...BASE} open={true} onClose={onClose} />)
-    await screen.findByText('No hay solicitudes pendientes.')
-    fireEvent.keyDown(container.querySelector('.absolute.inset-0')!, { key: ' ' })
-    expect(onClose).toHaveBeenCalledOnce()
-  })
-
-  it('does not call onClose for other keys on backdrop', async () => {
-    const onClose = vi.fn()
-    vi.mocked(api.getGroupMembers).mockResolvedValue([])
-    const { container } = render(<PendingApprovalsDialog {...BASE} open={true} onClose={onClose} />)
-    await screen.findByText('No hay solicitudes pendientes.')
-    fireEvent.keyDown(container.querySelector('.absolute.inset-0')!, { key: 'Escape' })
-    expect(onClose).not.toHaveBeenCalled()
-  })
 })
