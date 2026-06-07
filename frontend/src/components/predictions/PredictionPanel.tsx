@@ -71,6 +71,12 @@ export function PredictionPanel() {
   }, [timeZone]);
 
   useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
+
+  useEffect(() => {
     setDrafts((current) => {
       const next = { ...current };
       for (const prediction of predictionsQuery.data ?? []) {
@@ -362,14 +368,21 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
                       type="button"
                       disabled={locked || pending}
                       onClick={() => mutation.mutate({ match, draft })}
-                      className="btn-gold min-w-36 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                      className="btn-gold w-full px-3 py-2 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <Save className="h-4 w-4" />
-                      {(() => {
-                        if (pending) return t("common.saving");
-                        if (prediction) return t("predictions.update");
-                        return t("predictions.submit");
-                      })()}
+                      <Save className="h-4 w-4 shrink-0" />
+                      <span className="relative">
+                        <span aria-hidden className="invisible">
+                          {t("predictions.submit")}
+                        </span>
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          {pending
+                            ? t("common.saving")
+                            : prediction
+                              ? t("predictions.update")
+                              : t("predictions.submit")}
+                        </span>
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -479,11 +492,21 @@ function ScoreInput({
       <input
         type="number"
         min={0}
-        max={30}
+        max={50}
         inputMode="numeric"
         disabled={disabled}
         value={value}
-        onChange={(event) => onChange(Math.max(0, Number(event.target.value)))}
+        onFocus={(event) => event.target.select()}
+        onKeyDown={(event) => {
+          if (!/[\d\b]/.test(event.key) && !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(event.key)) {
+            event.preventDefault();
+          }
+        }}
+        onChange={(event) => {
+          const raw = Number(event.target.value);
+          if (!Number.isFinite(raw)) return;
+          onChange(Math.min(50, Math.max(0, raw)));
+        }}
         className="input-base h-10 text-center font-score text-lg disabled:cursor-not-allowed disabled:opacity-55"
       />
     </label>

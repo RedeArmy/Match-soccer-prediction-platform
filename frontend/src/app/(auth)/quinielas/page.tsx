@@ -52,7 +52,7 @@ export default function QuinielasPage() {
           <div className="flex flex-col gap-4 p-5 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-xs uppercase text-gold-300">{t('common.event')}</p>
-              <h1 className="mt-2 font-display text-4xl text-white sm:text-5xl">{t('common.quinielas')}</h1>
+              <h1 className="mt-2 font-display text-4xl text-white sm:text-5xl">{t('common.kinielas')}</h1>
               <p className="mt-1 max-w-2xl text-text-secondary">{t('tournaments.subtitle')}</p>
             </div>
             <Link href="/dashboard" className="btn-gold w-full py-2 text-sm md:w-auto">
