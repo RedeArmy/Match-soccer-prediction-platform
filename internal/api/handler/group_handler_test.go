@@ -28,6 +28,7 @@ const (
 	groupMembersPath          = "/groups/1/members"
 	groupRenamePath           = "/groups/1"
 	groupApprovePath          = "/groups/1/members/99/approve"
+	groupRejectPath           = "/groups/1/members/99"
 	groupLeavePath            = "/groups/1/members/me"
 	groupsJoinWithBalancePath = "/groups/join-with-balance"
 
@@ -76,6 +77,7 @@ func buildGroupRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
 	r.Patch("/groups/{id}", h.RenameGroup)
 	r.Get("/groups/{id}/members", h.ListMembers)
 	r.Post("/groups/{id}/members/{membershipID}/approve", h.ApproveJoin)
+	r.Delete("/groups/{id}/members/{membershipID}", h.RejectJoin)
 	r.Delete("/groups/{id}/members/me", h.Leave)
 	return r
 }
@@ -868,6 +870,137 @@ func TestGroupLeave_Returns500_OnServiceError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+// ── RejectJoin ────────────────────────────────────────────────────────────────
+
+func TestGroupRejectJoin_Returns204(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodDelete, groupRejectPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Errorf(fmtExpect204, rec.Code)
+	}
+}
+
+func TestGroupRejectJoin_Returns401_WhenNoUser(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodDelete, groupRejectPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouterNoUser(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf(fmtExpect401, rec.Code)
+	}
+}
+
+func TestGroupRejectJoin_Returns422_InvalidGroupID(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodDelete, "/groups/abc/members/99", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestGroupRejectJoin_Returns422_InvalidMembershipID(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodDelete, "/groups/1/members/abc", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rec.Code)
+	}
+}
+
+func TestGroupRejectJoin_Returns403_WhenNotActiveMember(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.Forbidden("only active members of this group may reject join requests")},
+	)
+	req := httptest.NewRequest(http.MethodDelete, groupRejectPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", rec.Code)
+	}
+}
+
+func TestGroupRejectJoin_Returns404_WhenNotFound(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.NotFound("join request not found")},
+	)
+	req := httptest.NewRequest(http.MethodDelete, groupRejectPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf(fmtExpect404, rec.Code)
+	}
+}
+
+func TestGroupRejectJoin_Returns409_WhenNotPending(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.Conflict("this join request is no longer pending")},
+	)
+	req := httptest.NewRequest(http.MethodDelete, groupRejectPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf(groupHandler409Fmt, rec.Code)
+	}
+}
+
+func TestGroupRejectJoin_Returns500_OnServiceError(t *testing.T) {
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{err: apperrors.Internal(errors.New(errDBDown))},
+	)
+	req := httptest.NewRequest(http.MethodDelete, groupRejectPath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rec.Code)
+	}
+}
+
+// ── ListMyGroups filters left memberships ─────────────────────────────────────
+
+func TestGroupListMyGroups_FiltersOutLeftMemberships(t *testing.T) {
+	left := &domain.GroupMembership{
+		ID:         2,
+		QuinielaID: 2,
+		UserID:     10,
+		Status:     domain.MembershipLeft,
+	}
+	h := newGroupHandler(t,
+		&stubQuinielaSvc{},
+		&stubMemberSvc{memberships: []*domain.GroupMembership{fixedMembership(), left}},
+	)
+	req := httptest.NewRequest(http.MethodGet, groupsMePath, nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf(fmtExpect200, rec.Code)
+	}
+	var out []handler.MyGroupResponse
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatalf(fmtDecodeFail, err)
+	}
+	if len(out) != 1 {
+		t.Errorf("expected left memberships to be filtered out, got %d groups", len(out))
 	}
 }
 

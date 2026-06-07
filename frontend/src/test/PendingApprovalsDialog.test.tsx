@@ -125,8 +125,7 @@ describe('PendingApprovalsDialog', () => {
     vi.mocked(api.getGroupMembers).mockResolvedValue([])
     render(<PendingApprovalsDialog {...BASE} open={true} onClose={onClose} />)
     await screen.findByText('No hay solicitudes pendientes.')
-    // X button is the only button visible in empty state
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }))
     expect(onClose).toHaveBeenCalledOnce()
   })
 

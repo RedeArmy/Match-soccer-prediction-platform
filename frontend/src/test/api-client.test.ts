@@ -238,6 +238,22 @@ describe('api – group methods', () => {
     const [url] = mockFetch.mock.calls[0]
     expect(String(url)).toContain('/api/v1/groups/1/members')
   })
+
+  it('approveGroupMember sends POST to members/:id/approve', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 99, status: 'active' }))
+    await api.approveGroupMember('tok', 1, 99)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/groups/1/members/99/approve')
+    expect((init as RequestInit).method).toBe('POST')
+  })
+
+  it('rejectGroupMember sends DELETE to members/:id', async () => {
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await api.rejectGroupMember('tok', 1, 99)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/groups/1/members/99')
+    expect((init as RequestInit).method).toBe('DELETE')
+  })
 })
 
 describe('api – match and prediction methods', () => {

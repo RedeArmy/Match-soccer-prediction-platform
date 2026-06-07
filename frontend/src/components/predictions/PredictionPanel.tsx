@@ -271,6 +271,9 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
               match.status !== "scheduled";
             const pending =
               mutation.isPending && mutation.variables?.match.id === match.id;
+            let buttonLabel = t("predictions.submit")
+            if (pending) buttonLabel = t("common.saving")
+            else if (prediction) buttonLabel = t("predictions.update")
 
             return (
               <article
@@ -376,11 +379,7 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
                           {t("predictions.submit")}
                         </span>
                         <span className="absolute inset-0 flex items-center justify-center">
-                          {pending
-                            ? t("common.saving")
-                            : prediction
-                              ? t("predictions.update")
-                              : t("predictions.submit")}
+                          {buttonLabel}
                         </span>
                       </span>
                     </button>
@@ -447,10 +446,14 @@ function MatchCountdown({ kickoffAt }: Readonly<{ kickoffAt: string | null | und
   const mins  = Math.floor((diff % 3_600_000) / 60_000);
   const secs  = Math.floor((diff % 60_000) / 1_000);
 
-  const label =
-    days > 0  ? `${days}d ${hours}h ${mins}m` :
-    hours > 0 ? `${hours}h ${mins}m ${secs}s` :
-                `${mins}m ${secs}s`;
+  let label: string
+  if (days > 0) {
+    label = `${days}d ${hours}h ${mins}m`
+  } else if (hours > 0) {
+    label = `${hours}h ${mins}m ${secs}s`
+  } else {
+    label = `${mins}m ${secs}s`
+  }
 
   return (
     <span className="inline-flex items-center gap-1 tabular-nums text-gold-300">

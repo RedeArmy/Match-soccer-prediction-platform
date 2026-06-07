@@ -300,16 +300,7 @@ export default function TournamentDetailPage() {
 
 
           <div className="mt-6 border-t border-white/10 pt-4">
-            {!confirmLeave ? (
-              <button
-                type="button"
-                onClick={() => setConfirmLeave(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-400/20 px-3 py-2 text-xs text-red-400 transition-colors hover:border-red-400/40 hover:bg-red-400/10"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                {t('group.leave')}
-              </button>
-            ) : (
+            {confirmLeave ? (
               <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-4 space-y-3">
                 <div className="flex items-start gap-2">
                   <LogOut className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
@@ -341,6 +332,15 @@ export default function TournamentDetailPage() {
                   </button>
                 </div>
               </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmLeave(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-400/20 px-3 py-2 text-xs text-red-400 transition-colors hover:border-red-400/40 hover:bg-red-400/10"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                {t('group.leave')}
+              </button>
             )}
           </div>
         </section>
@@ -349,7 +349,14 @@ export default function TournamentDetailPage() {
       {/* Single-member approval popup */}
       {approvingMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setApprovingMember(null)} />
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Close"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setApprovingMember(null)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setApprovingMember(null) }}
+          />
           <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-[#0b1929] p-6 shadow-2xl">
             <div className="mb-5 relative text-center">
               <button

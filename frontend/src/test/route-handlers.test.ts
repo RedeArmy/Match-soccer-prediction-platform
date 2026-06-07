@@ -161,6 +161,60 @@ describe('[...path] proxy – hop-by-hop header stripping', () => {
   })
 })
 
+// ── webhooks/clerk/route ──────────────────────────────────────────────────────
+
+describe('clerk webhook relay – happy path', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('forwards request body to backend and returns upstream status', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    const { POST } = await import('@/app/webhooks/clerk/route')
+    const req = makeReq('http://localhost/webhooks/clerk', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'user.created' }),
+      headers: {
+        'content-type': 'application/json',
+        'svix-id': 'msg_abc',
+        'svix-timestamp': '1234567890',
+        'svix-signature': 'v1,abc123',
+      },
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(mockFetch).toHaveBeenCalledOnce()
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/webhooks/clerk')
+  })
+
+  it('strips hop-by-hop headers from the upstream response', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response('{}', {
+        status: 200,
+        headers: { 'transfer-encoding': 'chunked', 'x-request-id': 'abc' },
+      }),
+    )
+    const { POST } = await import('@/app/webhooks/clerk/route')
+    const req = makeReq('http://localhost/webhooks/clerk', { method: 'POST', body: '{}' })
+    const res = await POST(req)
+    expect(res.headers.get('transfer-encoding')).toBeNull()
+    expect(res.headers.get('x-request-id')).toBe('abc')
+  })
+})
+
+describe('clerk webhook relay – upstream fetch throws', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('returns 502 when backend is unreachable', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'))
+    const { POST } = await import('@/app/webhooks/clerk/route')
+    const req = makeReq('http://localhost/webhooks/clerk', { method: 'POST', body: '{}' })
+    const res = await POST(req)
+    expect(res.status).toBe(502)
+    const body = await res.json()
+    expect(body.error).toBe('Backend unavailable')
+  })
+})
+
 // ── notifications/stream/route ────────────────────────────────────────────────
 
 describe('SSE stream proxy – no token', () => {
