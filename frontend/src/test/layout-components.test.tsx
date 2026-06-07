@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render as rtlRender, screen, fireEvent } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import React from 'react'
-import { I18nProvider } from '@/lib/i18n'
+import { I18nProvider, useI18n } from '@/lib/i18n'
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -44,8 +44,10 @@ import { Footer }          from '@/components/layout/Footer'
 import { Header }          from '@/components/layout/Header'
 import { AdminSidebar }    from '@/components/layout/AdminSidebar'
 import { MobileNav }       from '@/components/layout/MobileNav'
+import { LanguageSwitcher }from '@/components/layout/LanguageSwitcher'
 import { BalanceCard }     from '@/components/balance/BalanceCard'
 import { ExchangeRateTicker } from '@/components/exchange/RateTicker'
+import { FeaturedPoolsSection } from '@/components/groups/FeaturedPoolsSection'
 
 function render(ui: React.ReactElement) {
   return rtlRender(<I18nProvider>{ui}</I18nProvider>)
@@ -227,5 +229,89 @@ describe('ExchangeRateTicker', () => {
     } as never)
     render(<ExchangeRateTicker />)
     expect(screen.getByText(/desactualizado/)).toBeInTheDocument()
+  })
+})
+
+// ── BalanceCard reserved/pending branches ─────────────────────────────────────
+
+describe('BalanceCard – non-zero reserved and pending', () => {
+  beforeEach(() => {
+    vi.mocked(useExchangeRate).mockReturnValue({ data: undefined, isLoading: false } as never)
+  })
+
+  it('shows reserved amount when reserved_cents > 0', () => {
+    vi.mocked(useBalance).mockReturnValue({
+      data: { available_cents: 50000, reserved_cents: 5000, pending_cents: 0 },
+      isLoading: false,
+    } as never)
+    render(<BalanceCard />)
+    expect(screen.getByText(/Reservado/)).toBeInTheDocument()
+  })
+
+  it('shows pending amount when pending_cents > 0', () => {
+    vi.mocked(useBalance).mockReturnValue({
+      data: { available_cents: 50000, reserved_cents: 0, pending_cents: 2500 },
+      isLoading: false,
+    } as never)
+    render(<BalanceCard />)
+    expect(screen.getByText(/Pendiente/)).toBeInTheDocument()
+  })
+})
+
+// ── LanguageSwitcher ──────────────────────────────────────────────────────────
+
+describe('LanguageSwitcher', () => {
+  it('renders es and en buttons', () => {
+    render(<LanguageSwitcher />)
+    expect(screen.getByRole('button', { name: 'es' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'en' })).toBeInTheDocument()
+  })
+
+  it('calling setLocale persists locale to localStorage', () => {
+    render(<LanguageSwitcher />)
+    fireEvent.click(screen.getByRole('button', { name: 'en' }))
+    expect(localStorage.getItem('quiniela-locale')).toBe('en')
+    localStorage.removeItem('quiniela-locale')
+  })
+})
+
+// ── I18nProvider locale restoration ──────────────────────────────────────────
+
+describe('I18nProvider', () => {
+  it('restores locale from localStorage on mount', async () => {
+    localStorage.setItem('quiniela-locale', 'en')
+
+    function TestLocale() {
+      const { locale } = useI18n()
+      return <span data-testid="locale">{locale}</span>
+    }
+
+    render(<TestLocale />)
+    await waitFor(() => {
+      expect(screen.getByTestId('locale').textContent).toBe('en')
+    })
+
+    localStorage.removeItem('quiniela-locale')
+  })
+})
+
+// ── FeaturedPoolsSection ──────────────────────────────────────────────────────
+
+describe('FeaturedPoolsSection', () => {
+  beforeEach(() => {
+    vi.mocked(useExchangeRate).mockReturnValue({ data: undefined, isLoading: false } as never)
+  })
+
+  it('renders all three featured groups', () => {
+    render(<FeaturedPoolsSection />)
+    expect(screen.getByText('World Cup 2026 Global Pool')).toBeInTheDocument()
+    expect(screen.getByText('Americas Knockout Challenge')).toBeInTheDocument()
+    expect(screen.getByText('Finals Elite Quiniela')).toBeInTheDocument()
+  })
+
+  it('shows Enter button for open group and Details for upcoming', () => {
+    render(<FeaturedPoolsSection />)
+    expect(screen.getByText('Entrar')).toBeInTheDocument()
+    expect(screen.getAllByText('Ver detalles').length).toBeGreaterThan(0)
   })
 })

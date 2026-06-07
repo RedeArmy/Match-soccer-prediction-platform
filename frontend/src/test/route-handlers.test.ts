@@ -201,6 +201,28 @@ describe('clerk webhook relay – happy path', () => {
   })
 })
 
+describe('clerk webhook relay – hop-by-hop header stripping in request', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('strips hop-by-hop headers from forwarded request', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    const { POST } = await import('@/app/webhooks/clerk/route')
+    const req = makeReq('http://localhost/webhooks/clerk', {
+      method: 'POST',
+      body: '{}',
+      headers: {
+        'connection': 'keep-alive',
+        'x-custom-header': 'preserved',
+      },
+    })
+    await POST(req)
+    const [, init] = mockFetch.mock.calls[0]
+    const headers = (init as RequestInit).headers as Record<string, string>
+    expect(headers['connection']).toBeUndefined()
+    expect(headers['x-custom-header']).toBe('preserved')
+  })
+})
+
 describe('clerk webhook relay – upstream fetch throws', () => {
   beforeEach(() => mockFetch.mockReset())
 
