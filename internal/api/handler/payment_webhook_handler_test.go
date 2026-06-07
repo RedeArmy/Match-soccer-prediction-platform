@@ -77,10 +77,10 @@ func TestWebhookHandler_Recurrente_IgnoresOtherEvents(t *testing.T) {
 func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_Returns204(t *testing.T) {
 	router := webhookRouter(t, &stubWebhookPaymentSvc{})
 	payload := map[string]any{
-		"id":             "pa_test_001",
-		"event_type":     "payment_intent.succeeded",
+		"id":              "pa_test_001",
+		"event_type":      "payment_intent.succeeded",
 		"amount_in_cents": 10000,
-		"currency":       "GTQ",
+		"currency":        "GTQ",
 		"checkout": map[string]any{
 			"id":     "ch_test_001",
 			"status": "paid",
@@ -99,12 +99,12 @@ func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_Returns204(t *testing.
 func TestWebhookHandler_Recurrente_IntentSucceeded_Returns204(t *testing.T) {
 	router := webhookRouter(t, &stubWebhookPaymentSvc{})
 	payload := map[string]any{
-		"id":             "pi_test_001",
-		"event_type":     "intent.succeeded",
-		"type":           "payment",
-		"status":         "succeeded",
+		"id":              "pi_test_001",
+		"event_type":      "intent.succeeded",
+		"type":            "payment",
+		"status":          "succeeded",
 		"amount_in_cents": 25000,
-		"currency":       "GTQ",
+		"currency":        "GTQ",
 		"checkout": map[string]any{
 			"id":     "ch_test_002",
 			"status": "paid",
@@ -136,10 +136,10 @@ func TestWebhookHandler_Recurrente_IntentSucceeded_NonPaymentType_Ignored(t *tes
 func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_MissingUserID_Returns422(t *testing.T) {
 	router := webhookRouter(t, &stubWebhookPaymentSvc{})
 	payload := map[string]any{
-		"id":             "pa_test_002",
-		"event_type":     "payment_intent.succeeded",
+		"id":              "pa_test_002",
+		"event_type":      "payment_intent.succeeded",
 		"amount_in_cents": 5000,
-		"currency":       "GTQ",
+		"currency":        "GTQ",
 		"checkout": map[string]any{
 			"id":       "ch_test_003",
 			"metadata": map[string]any{}, // missing wcq_user_id
@@ -148,6 +148,44 @@ func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_MissingUserID_Returns4
 	rec := postJSON(t, router, "/webhooks/recurrente", payload)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422 when wcq_user_id is absent, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_ZeroAmount_Returns422(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":              "pa_test_003",
+		"event_type":      "payment_intent.succeeded",
+		"amount_in_cents": 0,
+		"currency":        "GTQ",
+		"checkout": map[string]any{
+			"id":       "ch_test_004",
+			"metadata": map[string]any{"wcq_user_id": 7, "wcq_reference": "ref_003"},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 when amount_in_cents is zero, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_IntentSucceeded_EmptyCheckoutID_UsesIntentIDRef(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":              "pi_fallback_001",
+		"event_type":      "intent.succeeded",
+		"type":            "payment",
+		"status":          "succeeded",
+		"amount_in_cents": 8000,
+		"currency":        "GTQ",
+		"checkout": map[string]any{
+			"id":       "", // empty — ref must fall back to "intent:pi_fallback_001"
+			"metadata": map[string]any{"wcq_user_id": 9},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 with intent-ID ref fallback, got %d", rec.Code)
 	}
 }
 
