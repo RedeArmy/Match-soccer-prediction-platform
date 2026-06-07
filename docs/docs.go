@@ -6016,7 +6016,7 @@ const docTemplate = `{
         },
         "/webhooks/recurrente": {
             "post": {
-                "description": "Receives payment confirmation events from Recurrente. Credits the user's balance on confirmed events.",
+                "description": "Receives payment confirmation events from Recurrente via Svix. Credits the user's balance on confirmed events.",
                 "consumes": [
                     "application/json"
                 ],
