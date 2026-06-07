@@ -79,6 +79,7 @@ type paramSpec struct {
 //   - 000160_seed_sse_broadcaster_params              (+3)
 //   - 000161_seed_fx_source_timeout_params            (+3)
 //   - 000162_seed_payment_intent_retention_param      (+1)
+//   - 000171_seed_group_entry_fee_param               (+2)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -96,6 +97,11 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyGroupMinMembers, defaultValue: strconv.Itoa(domain.MinMembersForActive), paramType: "int", category: "group", isRuntime: true},
 	{key: domain.ParamKeyGroupMaxSize, defaultValue: strconv.Itoa(domain.MaxMembersPerGroup), paramType: "int", category: "group", isRuntime: true},
 	{key: domain.ParamKeyGroupInviteCodeLength, defaultValue: strconv.Itoa(domain.DefaultGroupInviteCodeLength), paramType: "int", category: "group", isRuntime: true},
+	// Entry fee and currency (migration 000171); entry_fee_cents is runtime — operators may
+	// adjust the fee between tournaments without restart. currency is not runtime — changing
+	// the ISO 4217 code mid-operation would corrupt mixed-currency prize pools; restart required.
+	{key: domain.ParamKeyGroupEntryFeeCents, defaultValue: strconv.Itoa(domain.DefaultGroupEntryFeeCents), paramType: "int", category: "group", isRuntime: true},
+	{key: domain.ParamKeyGroupCurrency, defaultValue: domain.DefaultGroupCurrency, paramType: "string", category: "group", isRuntime: false},
 
 	// Conflict — runtime: conflict detection is read per-request.
 	{key: domain.ParamKeyConflictStaleDays, defaultValue: strconv.Itoa(domain.DefaultConflictStaleDays), paramType: "int", category: "conflict", isRuntime: true},
