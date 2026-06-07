@@ -5184,8 +5184,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Receives payment confirmation events from Recurrente. Credits the
-        user's balance on confirmed events.
+      description: Receives payment confirmation events from Recurrente via Svix.
+        Credits the user's balance on confirmed events.
       produces:
       - application/json
       responses:
