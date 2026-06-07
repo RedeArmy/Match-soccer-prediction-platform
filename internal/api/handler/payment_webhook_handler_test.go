@@ -169,6 +169,26 @@ func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_ZeroAmount_Returns422(
 	}
 }
 
+func TestWebhookHandler_Recurrente_IntentSucceeded_EmptyRef_UsesCheckoutIDRef(t *testing.T) {
+	// Covers the ref = "checkout:" + p.Checkout.ID branch in extractFromIntent:
+	// wcq_reference is absent but checkout.id is non-empty.
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":              "pi_ref_001",
+		"event_type":      "payment_intent.succeeded",
+		"amount_in_cents": 6000,
+		"currency":        "GTQ",
+		"checkout": map[string]any{
+			"id":       "ch_ref_001",
+			"metadata": map[string]any{"wcq_user_id": 8}, // no wcq_reference
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 with checkout-ID ref fallback, got %d", rec.Code)
+	}
+}
+
 func TestWebhookHandler_Recurrente_IntentSucceeded_EmptyCheckoutID_UsesIntentIDRef(t *testing.T) {
 	router := webhookRouter(t, &stubWebhookPaymentSvc{})
 	payload := map[string]any{

@@ -318,6 +318,28 @@ func TestRecurrenteWebhookAuth_FutureTimestamp_Returns401(t *testing.T) {
 	}
 }
 
+func TestRecurrenteWebhookAuth_NonV1SignatureToken_Returns401(t *testing.T) {
+	// svixSignatureValid must skip tokens that do not carry the "v1," prefix
+	// (e.g. legacy "v0," tokens). When only such tokens are present the request
+	// must be rejected, exercising the continue branch in the token loop.
+	log := zaptest.NewLogger(t)
+	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("downstream must not be called when only non-v1 tokens are present")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
+	req.Header.Set("svix-id", "msg_nonv1")
+	req.Header.Set("svix-timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	req.Header.Set("svix-signature", "v0,someoldsignature==")
+
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 when only non-v1 tokens present, got %d", rec.Code)
+	}
+}
+
 func TestRecurrenteWebhookAuth_ErrorResponseIsJSON(t *testing.T) {
 	log := zaptest.NewLogger(t)
 	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))

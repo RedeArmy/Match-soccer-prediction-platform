@@ -40,18 +40,32 @@ import (
 )
 
 func main() {
+	if err := run(os.Args, http.DefaultClient, os.Stdout, os.Stderr); err != nil {
+		os.Exit(1) // error already printed inside run
+	}
+}
+
+// run is the testable entry point. It accepts the raw argument list, an HTTP
+// client (inject httptest server client in tests), and separate writers for
+// stdout and stderr so tests can capture or discard output.
+func run(args []string, client *http.Client, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
 	var (
-		url        = flag.String("url", "http://localhost:8080/webhooks/recurrente", "Webhook endpoint URL")
-		secret     = flag.String("secret", "", `Svix signing secret (whsec_<base64> or raw string; empty = no signing)`)
-		userID     = flag.Int("user-id", 0, "Internal user ID to credit")
-		amount     = flag.Int("amount", 5000, "Amount in cents")
-		currency   = flag.String("currency", "GTQ", "Currency code")
-		reference  = flag.String("reference", "", "Payment reference (auto-generated if empty)")
-		checkoutID = flag.String("checkout-id", "", "Checkout ID (auto-generated if empty)")
-		eventType  = flag.String("event-type", "payment_intent.succeeded",
+		rawURL     = fs.String("url", "http://localhost:8080/webhooks/recurrente", "Webhook endpoint URL")
+		secret     = fs.String("secret", "", `Svix signing secret (whsec_<base64> or raw string; empty = no signing)`)
+		userID     = fs.Int("user-id", 0, "Internal user ID to credit")
+		amount     = fs.Int("amount", 5000, "Amount in cents")
+		currency   = fs.String("currency", "GTQ", "Currency code")
+		reference  = fs.String("reference", "", "Payment reference (auto-generated if empty)")
+		checkoutID = fs.String("checkout-id", "", "Checkout ID (auto-generated if empty)")
+		eventType  = fs.String("event-type", "payment_intent.succeeded",
 			"Event type: payment.confirmed | payment_intent.succeeded | intent.succeeded")
 	)
-	flag.Parse()
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
 
 	ref := *reference
 	if ref == "" {
@@ -64,20 +78,20 @@ func main() {
 
 	payload, err := buildPayload(*eventType, *userID, *amount, *currency, ref, chID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "error:", err)
+		return err
 	}
 
 	body, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error marshalling payload:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "error marshalling payload:", err)
+		return err
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, *url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, *rawURL, bytes.NewReader(body))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating request:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "error creating request:", err)
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -86,31 +100,32 @@ func main() {
 		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 		key, keyErr := parseSecret(*secret)
 		if keyErr != nil {
-			fmt.Fprintln(os.Stderr, "error parsing secret:", keyErr)
-			os.Exit(1)
+			fmt.Fprintln(stderr, "error parsing secret:", keyErr)
+			return keyErr
 		}
 		sig := computeSig(key, msgID, timestamp, body)
 		req.Header.Set("svix-id", msgID)
 		req.Header.Set("svix-timestamp", timestamp)
 		req.Header.Set("svix-signature", "v1,"+sig)
-		fmt.Printf("Svix headers:\n  svix-id:        %s\n  svix-timestamp: %s\n  svix-signature: v1,%s\n\n", msgID, timestamp, sig)
+		fmt.Fprintf(stdout, "Svix headers:\n  svix-id:        %s\n  svix-timestamp: %s\n  svix-signature: v1,%s\n\n", msgID, timestamp, sig)
 	} else {
-		fmt.Println("Warning: no --secret provided; server must be in bypass mode (empty WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
+		fmt.Fprintln(stdout, "Warning: no --secret provided; server must be in bypass mode (empty WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
 	}
 
-	fmt.Printf("POST %s\n%s\n\n", *url, string(body))
+	fmt.Fprintf(stdout, "POST %s\n%s\n\n", *rawURL, string(body))
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "request failed:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "request failed:", err)
+		return err
 	}
 	respBody, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	fmt.Printf("Response: %d\n%s\n", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	fmt.Fprintf(stdout, "Response: %d\n%s\n", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	if resp.StatusCode >= 400 {
-		os.Exit(1)
+		return fmt.Errorf("server returned %d", resp.StatusCode)
 	}
+	return nil
 }
 
 func buildPayload(eventType string, userID, amount int, currency, ref, chID string) (map[string]any, error) {

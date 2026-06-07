@@ -4,9 +4,134 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// ── run ───────────────────────────────────────────────────────────────────────
+
+func TestRun_PaymentIntentSucceeded_ReturnsNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	err := run([]string{"webhook-test", "--url", srv.URL, "--user-id", "1", "--amount", "5000"}, srv.Client(), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_WithRawSecret_SendsSvixHeaders(t *testing.T) {
+	var gotID, gotSig string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotID = r.Header.Get("svix-id")
+		gotSig = r.Header.Get("svix-signature")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	err := run([]string{"webhook-test", "--url", srv.URL, "--user-id", "1", "--secret", "my-raw-secret"}, srv.Client(), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotID == "" {
+		t.Error("expected svix-id header to be set")
+	}
+	if !strings.HasPrefix(gotSig, "v1,") {
+		t.Errorf("expected svix-signature to start with v1,, got %q", gotSig)
+	}
+}
+
+func TestRun_NoSecret_PrintsWarning(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	var out strings.Builder
+	err := run([]string{"webhook-test", "--url", srv.URL, "--user-id", "1"}, srv.Client(), &out, io.Discard)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out.String(), "Warning") {
+		t.Errorf("expected warning about missing secret in output, got: %q", out.String())
+	}
+}
+
+func TestRun_ServerReturns400_ReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	err := run([]string{"webhook-test", "--url", srv.URL, "--user-id", "1"}, srv.Client(), io.Discard, io.Discard)
+	if err == nil {
+		t.Fatal("expected error for 400 response")
+	}
+}
+
+func TestRun_UnknownEventType_ReturnsError(t *testing.T) {
+	err := run([]string{"webhook-test", "--event-type", "bad.event", "--user-id", "1"}, http.DefaultClient, io.Discard, io.Discard)
+	if err == nil {
+		t.Fatal("expected error for unknown event type")
+	}
+}
+
+func TestRun_InvalidWhsecSecret_ReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	err := run([]string{"webhook-test", "--url", srv.URL, "--user-id", "1", "--secret", "whsec_!!!invalid"}, srv.Client(), io.Discard, io.Discard)
+	if err == nil {
+		t.Fatal("expected error for invalid whsec_ secret")
+	}
+}
+
+func TestRun_RequestFails_ReturnsError(t *testing.T) {
+	// Port 1 on loopback is always closed.
+	err := run([]string{"webhook-test", "--url", "http://127.0.0.1:1", "--user-id", "1"}, http.DefaultClient, io.Discard, io.Discard)
+	if err == nil {
+		t.Fatal("expected error when connection is refused")
+	}
+}
+
+func TestRun_PaymentConfirmed_ReturnsNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	err := run([]string{
+		"webhook-test", "--url", srv.URL,
+		"--event-type", "payment.confirmed",
+		"--user-id", "5", "--amount", "3000", "--reference", "ref-test",
+	}, srv.Client(), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_IntentSucceeded_ReturnsNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	err := run([]string{
+		"webhook-test", "--url", srv.URL,
+		"--event-type", "intent.succeeded",
+		"--user-id", "3", "--amount", "7500",
+	}, srv.Client(), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
 
 // ── buildPayload ──────────────────────────────────────────────────────────────
 
