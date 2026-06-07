@@ -74,6 +74,83 @@ func TestWebhookHandler_Recurrente_IgnoresOtherEvents(t *testing.T) {
 	}
 }
 
+func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_Returns204(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":             "pa_test_001",
+		"event_type":     "payment_intent.succeeded",
+		"amount_in_cents": 10000,
+		"currency":       "GTQ",
+		"checkout": map[string]any{
+			"id":     "ch_test_001",
+			"status": "paid",
+			"metadata": map[string]any{
+				"wcq_user_id":   42,
+				"wcq_reference": "deposit-test-001",
+			},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 for payment_intent.succeeded, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_IntentSucceeded_Returns204(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":             "pi_test_001",
+		"event_type":     "intent.succeeded",
+		"type":           "payment",
+		"status":         "succeeded",
+		"amount_in_cents": 25000,
+		"currency":       "GTQ",
+		"checkout": map[string]any{
+			"id":     "ch_test_002",
+			"status": "paid",
+			"metadata": map[string]any{
+				"wcq_user_id":   7,
+				"wcq_reference": "deposit-test-002",
+			},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 for intent.succeeded, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_IntentSucceeded_NonPaymentType_Ignored(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"event_type": "intent.succeeded",
+		"type":       "payout",
+		"status":     "succeeded",
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 for ignored intent type, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_MissingUserID_Returns422(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":             "pa_test_002",
+		"event_type":     "payment_intent.succeeded",
+		"amount_in_cents": 5000,
+		"currency":       "GTQ",
+		"checkout": map[string]any{
+			"id":       "ch_test_003",
+			"metadata": map[string]any{}, // missing wcq_user_id
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 when wcq_user_id is absent, got %d", rec.Code)
+	}
+}
+
 func TestWebhookHandler_Recurrente_MissingFields_Returns422(t *testing.T) {
 	router := webhookRouter(t, &stubWebhookPaymentSvc{})
 	payload := map[string]any{

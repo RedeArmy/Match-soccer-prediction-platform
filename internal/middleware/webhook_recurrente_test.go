@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/zap/zaptest"
 
@@ -21,21 +23,33 @@ const (
 	testRecurrenteBody   = `{"event_type":"payment.confirmed","data":{"reference":"REF001","amount_cents":5000}}`
 )
 
-// signRecurrente computes the HMAC-SHA256 signature expected by RecurrenteWebhookAuth.
-func signRecurrente(t *testing.T, body, secret string) string {
+// svixSign computes the Svix HMAC-SHA256 signature over the signed-content string
+// msgID + "." + timestamp + "." + body. The raw secret is used as the key directly
+// (mirrors the middleware's legacy-secret path). Returns a base64-encoded string.
+func svixSign(t *testing.T, secret, msgID, timestamp string, body []byte) string {
 	t.Helper()
 	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(body))
-	return hex.EncodeToString(mac.Sum(nil))
+	mac.Write([]byte(msgID))
+	mac.Write([]byte("."))
+	mac.Write([]byte(timestamp))
+	mac.Write([]byte("."))
+	mac.Write(body)
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// recurrenteRequest builds a signed POST request for /webhooks/recurrente.
-func recurrenteRequest(t *testing.T, body, secret string) *http.Request {
+// svixRequest builds a signed POST request for /webhooks/recurrente.
+// When secret is non-empty it sets all three Svix signing headers.
+func svixRequest(t *testing.T, body []byte, secret string) *http.Request {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if secret != "" {
-		req.Header.Set("X-Recurrente-Hmac-Sha256", signRecurrente(t, body, secret))
+		msgID := "msg_test_" + t.Name()
+		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+		sig := svixSign(t, secret, msgID, timestamp, body)
+		req.Header.Set("svix-id", msgID)
+		req.Header.Set("svix-timestamp", timestamp)
+		req.Header.Set("svix-signature", "v1,"+sig)
 	}
 	return req
 }
@@ -55,7 +69,7 @@ func TestRecurrenteWebhookAuth_ValidSignature_Passes(t *testing.T) {
 	downstream := &captureHandler{}
 	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(downstream)
 
-	req := recurrenteRequest(t, testRecurrenteBody, testRecurrenteSecret)
+	req := svixRequest(t, []byte(testRecurrenteBody), testRecurrenteSecret)
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
 
@@ -69,7 +83,7 @@ func TestRecurrenteWebhookAuth_DownstreamReceivesFullBody(t *testing.T) {
 	downstream := &captureHandler{}
 	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(downstream)
 
-	req := recurrenteRequest(t, testRecurrenteBody, testRecurrenteSecret)
+	req := svixRequest(t, []byte(testRecurrenteBody), testRecurrenteSecret)
 	mw.ServeHTTP(httptest.NewRecorder(), req)
 
 	if string(downstream.body) != testRecurrenteBody {
@@ -84,7 +98,9 @@ func TestRecurrenteWebhookAuth_WrongSignature_Returns401(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
-	req.Header.Set("X-Recurrente-Hmac-Sha256", "deadbeefdeadbeefdeadbeefdeadbeef")
+	req.Header.Set("svix-id", "msg_wrong")
+	req.Header.Set("svix-timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	req.Header.Set("svix-signature", "v1,deadbeefdeadbeefdeadbeefdeadbeefdeadbeef==")
 
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
@@ -100,10 +116,15 @@ func TestRecurrenteWebhookAuth_SignatureForDifferentBody_Returns401(t *testing.T
 		t.Error("downstream should not be called on tampered body")
 	}))
 
-	// Sign a different body but send the original.
-	tamperedSig := signRecurrente(t, `{"event_type":"payment.refunded"}`, testRecurrenteSecret)
+	// Sign a different body but send the actual body.
+	msgID := "msg_tampered"
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	tamperedSig := svixSign(t, testRecurrenteSecret, msgID, timestamp, []byte(`{"event_type":"payment.refunded"}`))
+
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
-	req.Header.Set("X-Recurrente-Hmac-Sha256", tamperedSig)
+	req.Header.Set("svix-id", msgID)
+	req.Header.Set("svix-timestamp", timestamp)
+	req.Header.Set("svix-signature", "v1,"+tamperedSig)
 
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
@@ -113,20 +134,105 @@ func TestRecurrenteWebhookAuth_SignatureForDifferentBody_Returns401(t *testing.T
 	}
 }
 
-func TestRecurrenteWebhookAuth_MissingHeader_Returns401(t *testing.T) {
+func TestRecurrenteWebhookAuth_MissingHeaders_Returns401(t *testing.T) {
 	log := zaptest.NewLogger(t)
 	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		t.Error("downstream should not be called when signature header is absent")
+		t.Error("downstream should not be called when Svix headers are absent")
 	}))
 
+	// No svix-id / svix-timestamp / svix-signature headers.
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
-	// Intentionally no X-Recurrente-Hmac-Sha256 header.
 
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for missing header, got %d", rec.Code)
+		t.Errorf("expected 401 for missing headers, got %d", rec.Code)
+	}
+}
+
+func TestRecurrenteWebhookAuth_ExpiredTimestamp_Returns401(t *testing.T) {
+	log := zaptest.NewLogger(t)
+	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("downstream should not be called for stale timestamp")
+	}))
+
+	// Timestamp 10 minutes in the past — outside the 5-minute tolerance window.
+	msgID := "msg_stale"
+	timestamp := strconv.FormatInt(time.Now().Add(-10*time.Minute).Unix(), 10)
+	sig := svixSign(t, testRecurrenteSecret, msgID, timestamp, []byte(testRecurrenteBody))
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
+	req.Header.Set("svix-id", msgID)
+	req.Header.Set("svix-timestamp", timestamp)
+	req.Header.Set("svix-signature", "v1,"+sig)
+
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for expired timestamp, got %d", rec.Code)
+	}
+}
+
+func TestRecurrenteWebhookAuth_WhsecSecret_Passes(t *testing.T) {
+	// Verify that whsec_<base64> format secrets are decoded and used correctly.
+	rawKey := []byte("thirty-two-byte-key-for-testing!")
+	b64Key := base64.StdEncoding.EncodeToString(rawKey)
+	secret := "whsec_" + b64Key
+
+	log := zaptest.NewLogger(t)
+	downstream := &captureHandler{}
+	mw := middleware.RecurrenteWebhookAuth(secret, log)(downstream)
+
+	body := []byte(testRecurrenteBody)
+	msgID := "msg_whsec_test"
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+
+	// Compute expected signature using the decoded key (not the raw secret string).
+	mac := hmac.New(sha256.New, rawKey)
+	mac.Write([]byte(msgID))
+	mac.Write([]byte("."))
+	mac.Write([]byte(timestamp))
+	mac.Write([]byte("."))
+	mac.Write(body)
+	sig := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", bytes.NewReader(body))
+	req.Header.Set("svix-id", msgID)
+	req.Header.Set("svix-timestamp", timestamp)
+	req.Header.Set("svix-signature", "v1,"+sig)
+
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 with whsec_ secret, got %d", rec.Code)
+	}
+}
+
+func TestRecurrenteWebhookAuth_MultipleSignatureTokens_AnyMatchPasses(t *testing.T) {
+	// Svix can send multiple v1,<sig> tokens during key rotation; any match must pass.
+	log := zaptest.NewLogger(t)
+	downstream := &captureHandler{}
+	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(downstream)
+
+	body := []byte(testRecurrenteBody)
+	msgID := "msg_rotation"
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	validSig := svixSign(t, testRecurrenteSecret, msgID, timestamp, body)
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", bytes.NewReader(body))
+	req.Header.Set("svix-id", msgID)
+	req.Header.Set("svix-timestamp", timestamp)
+	// First token is garbage; second is valid.
+	req.Header.Set("svix-signature", "v1,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa== v1,"+validSig)
+
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 when any token matches, got %d", rec.Code)
 	}
 }
 
@@ -138,7 +244,7 @@ func TestRecurrenteWebhookAuth_EmptySecret_PassesThrough(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	// No signature header — should still pass when secret is empty.
+	// No signing headers — should still pass when secret is empty (dev bypass).
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
@@ -156,7 +262,7 @@ func TestRecurrenteWebhookAuth_ErrorResponseIsJSON(t *testing.T) {
 	mw := middleware.RecurrenteWebhookAuth(testRecurrenteSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
 
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/recurrente", strings.NewReader(testRecurrenteBody))
-	// No signature header.
+	// No Svix headers → 401.
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
 

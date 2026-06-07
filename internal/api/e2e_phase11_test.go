@@ -7,11 +7,13 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"go.uber.org/zap/zaptest"
 
@@ -37,16 +39,28 @@ func newE2EServerWithRecurrente(t *testing.T, jwksURL, recurrenteSecret string) 
 	return srv
 }
 
-// recurrenteSign computes the HMAC-SHA256 hex digest over body using secret,
-// mirroring the algorithm in middleware.RecurrenteWebhookAuth.
-func recurrenteSign(secret string, body []byte) string {
+// recurrenteSvixHeaders computes the three Svix signing headers expected by
+// RecurrenteWebhookAuth. The secret is used as a raw HMAC key (no whsec_ decoding).
+// signed_content = msgID + "." + timestamp + "." + body; result is base64-encoded.
+func recurrenteSvixHeaders(secret string, body []byte) map[string]string {
+	msgID := "msg_e2e_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(msgID))
+	mac.Write([]byte("."))
+	mac.Write([]byte(timestamp))
+	mac.Write([]byte("."))
 	mac.Write(body)
-	return hex.EncodeToString(mac.Sum(nil))
+	sig := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return map[string]string{
+		"svix-id":        msgID,
+		"svix-timestamp": timestamp,
+		"svix-signature": "v1," + sig,
+	}
 }
 
 // doWebhookRequest fires a POST webhook request through h. headers is a map of
-// additional HTTP headers (e.g. the HMAC signature header). No Authorization
+// additional HTTP headers (e.g. the Svix signature headers). No Authorization
 // header is set — webhook endpoints sit outside the JWT auth middleware.
 func doWebhookRequest(t *testing.T, h http.Handler, path string, body []byte, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -128,9 +142,7 @@ func TestE2E_RecurrenteWebhook_CreditsBalance(t *testing.T) {
 		t.Fatalf("marshal payload: %v", err)
 	}
 
-	rec := doWebhookRequest(t, h, "/webhooks/recurrente", body, map[string]string{
-		"X-Recurrente-Hmac-Sha256": recurrenteSign(testSecret, body),
-	})
+	rec := doWebhookRequest(t, h, "/webhooks/recurrente", body, recurrenteSvixHeaders(testSecret, body))
 	assertStatus(t, rec, http.StatusNoContent, "recurrente webhook")
 
 	if got := queryBalance(t, userID); got != amountCents {
@@ -175,18 +187,13 @@ func TestE2E_RecurrenteWebhook_IdempotentOnDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
-	sig := recurrenteSign(testSecret, body)
-
 	// First delivery — must credit the balance.
-	rec := doWebhookRequest(t, h, "/webhooks/recurrente", body, map[string]string{
-		"X-Recurrente-Hmac-Sha256": sig,
-	})
+	rec := doWebhookRequest(t, h, "/webhooks/recurrente", body, recurrenteSvixHeaders(testSecret, body))
 	assertStatus(t, rec, http.StatusNoContent, "first delivery")
 
 	// Second delivery — same reference, must be a no-op.
-	rec = doWebhookRequest(t, h, "/webhooks/recurrente", body, map[string]string{
-		"X-Recurrente-Hmac-Sha256": sig,
-	})
+	// Fresh Svix headers (different msgID) but identical payload and reference.
+	rec = doWebhookRequest(t, h, "/webhooks/recurrente", body, recurrenteSvixHeaders(testSecret, body))
 	assertStatus(t, rec, http.StatusNoContent, "duplicate delivery")
 
 	// Balance must equal exactly one credit.
