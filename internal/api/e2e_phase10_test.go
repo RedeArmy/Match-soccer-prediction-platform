@@ -102,6 +102,7 @@ func TestE2E_Withdrawal_ZeroBalanceUser(t *testing.T) {
 func TestE2E_GroupFanOut_MemberJoined_OutboxEntryWritten(t *testing.T) {
 	skipIfNoE2EDB(t)
 	cleanE2ETables(t)
+	seedFreeGroupParam(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
 	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
@@ -113,7 +114,7 @@ func TestE2E_GroupFanOut_MemberJoined_OutboxEntryWritten(t *testing.T) {
 
 	// Step 1 — owner creates a free group.
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/groups", ownerToken,
-		jsonBody(t, map[string]any{"name": "FanOut Group", "entry_fee": 0, "currency": "GTQ"}))
+		jsonBody(t, map[string]any{"name": "FanOut Group"}))
 	assertStatus(t, rec, http.StatusCreated, "create group")
 
 	var group struct {
@@ -195,6 +196,7 @@ func TestE2E_GroupFanOut_MemberJoined_OutboxEntryWritten(t *testing.T) {
 func TestE2E_GroupFanOut_MemberLeft_OutboxEntryWritten(t *testing.T) {
 	skipIfNoE2EDB(t)
 	cleanE2ETables(t)
+	seedFreeGroupParam(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
 	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
@@ -206,7 +208,7 @@ func TestE2E_GroupFanOut_MemberLeft_OutboxEntryWritten(t *testing.T) {
 
 	// Create group, join, approve.
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/groups", ownerToken,
-		jsonBody(t, map[string]any{"name": "Leave Group", "entry_fee": 0, "currency": "GTQ"}))
+		jsonBody(t, map[string]any{"name": "Leave Group"}))
 	assertStatus(t, rec, http.StatusCreated, "create group")
 	var group struct {
 		ID         int    `json:"id"`
@@ -268,6 +270,7 @@ func TestE2E_GroupFanOut_MemberLeft_OutboxEntryWritten(t *testing.T) {
 func TestE2E_ScoringChain_PointsAndLeaderboardConsistent(t *testing.T) {
 	skipIfNoE2EDB(t)
 	cleanE2ETables(t)
+	seedFreeGroupParam(t)
 
 	jwksURL, signJWT := testJWKSServer(t)
 	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
@@ -282,7 +285,7 @@ func TestE2E_ScoringChain_PointsAndLeaderboardConsistent(t *testing.T) {
 
 	// Create group; player2 joins and is approved by player1 (the owner).
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/groups", p1Token,
-		jsonBody(t, map[string]any{"name": "Scoring Chain Group", "entry_fee": 0, "currency": "GTQ"}))
+		jsonBody(t, map[string]any{"name": "Scoring Chain Group"}))
 	assertStatus(t, rec, http.StatusCreated, "create group")
 	var group struct {
 		ID         int    `json:"id"`

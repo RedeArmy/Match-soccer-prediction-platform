@@ -94,4 +94,32 @@ describe('createSSEManager', () => {
 
     expect(onConnectionChange).not.toHaveBeenCalled()
   })
+
+  it('resets retries and emits connected when onopen fires', () => {
+    const onConnectionChange = vi.fn()
+    createSSEManager({ onConnectionChange })
+
+    es.onopen?.(new Event('open'))
+
+    expect(onConnectionChange).toHaveBeenCalledWith('connected')
+  })
+
+  it('handles heartbeat event without error', () => {
+    expect(() => {
+      createSSEManager({})
+      es.dispatchNamed('heartbeat', {})
+    }).not.toThrow()
+  })
+
+  it('emits failed after MAX_RETRIES consecutive errors', () => {
+    const onConnectionChange = vi.fn()
+    createSSEManager({ onConnectionChange })
+
+    for (let i = 0; i <= 10; i++) {
+      es.dispatchError()
+      vi.advanceTimersByTime(30_100)
+    }
+
+    expect(onConnectionChange).toHaveBeenCalledWith('failed')
+  })
 })

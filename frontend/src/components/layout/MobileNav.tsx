@@ -13,11 +13,12 @@ interface MobileNavProps {
 }
 
 const navItems = [
-  { href: '/', labelKey: 'nav.home', icon: Home, public: true },
-  { href: '/tournaments', labelKey: 'common.tournaments', icon: Trophy, public: true },
-  { href: '/dashboard', labelKey: 'common.dashboard', icon: LayoutDashboard, public: false },
-  { href: '/balance', labelKey: 'common.balance', icon: Wallet, public: false },
-  { href: '/profile', labelKey: 'nav.profile', icon: User, public: false },
+  { href: '/',            labelKey: 'nav.home',          icon: Home,            public: true,  signedOutOnly: false },
+  { href: '/tournaments', labelKey: 'common.tournaments', icon: Trophy,          public: true,  signedOutOnly: true  },
+  { href: '/quinielas',   labelKey: 'common.kinielas',   icon: Trophy,          public: false, signedOutOnly: false },
+  { href: '/dashboard',   labelKey: 'common.dashboard',  icon: LayoutDashboard, public: false, signedOutOnly: false },
+  { href: '/balance',     labelKey: 'common.balance',    icon: Wallet,          public: false, signedOutOnly: false },
+  { href: '/profile',     labelKey: 'nav.profile',       icon: User,            public: false, signedOutOnly: false },
 ]
 
 export function MobileNav({ open, onClose }: MobileNavProps) {
@@ -55,8 +56,8 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto p-4">
-          {navItems.map(({ href, labelKey, icon: Icon, public: isPublic }) => (
-            <NavLink key={href} href={href} label={t(labelKey)} icon={<Icon className="h-4 w-4" />} isPublic={isPublic} onClose={onClose} />
+          {navItems.map(({ href, labelKey, icon: Icon, public: isPublic, signedOutOnly }) => (
+            <NavLink key={href} href={href} label={t(labelKey)} icon={<Icon className="h-4 w-4" />} isPublic={isPublic} signedOutOnly={signedOutOnly} onClose={onClose} />
           ))}
         </nav>
 
@@ -84,11 +85,12 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
   )
 }
 
-function NavLink({ href, label, icon, isPublic, onClose }: Readonly<{
+function NavLink({ href, label, icon, isPublic, signedOutOnly, onClose }: Readonly<{
   href: string
   label: string
   icon: React.ReactNode
   isPublic: boolean
+  signedOutOnly: boolean
   onClose: () => void
 }>) {
   const content = (
@@ -102,6 +104,7 @@ function NavLink({ href, label, icon, isPublic, onClose }: Readonly<{
     </Link>
   )
 
-  if (isPublic) return content
-  return <SignedIn>{content}</SignedIn>
+  if (signedOutOnly) return <SignedOut>{content}</SignedOut>
+  if (!isPublic) return <SignedIn>{content}</SignedIn>
+  return content
 }

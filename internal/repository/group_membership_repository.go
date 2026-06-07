@@ -298,12 +298,15 @@ func (r *PostgresGroupMembershipRepository) MarkPaid(ctx context.Context, quinie
 func (r *PostgresGroupMembershipRepository) ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.GroupMembership, error) {
 	// JOIN with users excludes memberships belonging to soft-deleted users so
 	// that the group roster shown to administrators never contains ghost entries.
+	// u.name is selected to populate DisplayName without an extra round-trip.
 	rows, err := r.db.Query(ctx,
 		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.role, gm.paid,
-		        gm.joined_at, gm.created_at, gm.updated_at, gm.removed_at, gm.removed_by
+		        gm.joined_at, gm.created_at, gm.updated_at, gm.removed_at, gm.removed_by,
+		        COALESCE(NULLIF(u.username, ''), NULLIF(TRIM(u.name), ''), u.email) AS display_name
 		 FROM group_memberships gm
 		 JOIN users u ON u.id = gm.user_id AND u.deleted_at IS NULL
 		 WHERE gm.quiniela_id = $1
+		   AND gm.status      != 'left'
 		 ORDER BY gm.created_at ASC`,
 		quinielaID,
 	)
@@ -311,7 +314,16 @@ func (r *PostgresGroupMembershipRepository) ListByQuiniela(ctx context.Context, 
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
-	return collectMemberships(rows)
+	return collectRows(rows, func(r pgx.Rows) (*domain.GroupMembership, error) {
+		m := &domain.GroupMembership{}
+		var joinedAt *time.Time
+		if err := r.Scan(&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid,
+			&joinedAt, &m.CreatedAt, &m.UpdatedAt, &m.RemovedAt, &m.RemovedBy, &m.DisplayName); err != nil {
+			return nil, err
+		}
+		m.JoinedAt = joinedAt
+		return m, nil
+	})
 }
 
 func (r *PostgresGroupMembershipRepository) ListActiveMemberIDsByGroup(ctx context.Context, quinielaID int) ([]int, error) {
@@ -343,12 +355,16 @@ func (r *PostgresGroupMembershipRepository) ListActiveMemberIDsByGroup(ctx conte
 func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error) {
 	// JOIN with quinielas excludes memberships in soft-deleted groups so that
 	// GET /api/v1/groups/me never surfaces a group the owner has deleted.
+	// q.name and q.status are included so callers can enrich responses without
+	// extra round-trips.
 	rows, err := r.db.Query(ctx,
 		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.role, gm.paid,
-		        gm.joined_at, gm.created_at, gm.updated_at, gm.removed_at, gm.removed_by
+		        gm.joined_at, gm.created_at, gm.updated_at, gm.removed_at, gm.removed_by,
+		        q.name, q.status AS group_status, q.invite_code, q.entry_fee, q.currency
 		 FROM group_memberships gm
 		 JOIN quinielas q ON q.id = gm.quiniela_id AND q.deleted_at IS NULL
 		 WHERE gm.user_id = $1
+		   AND gm.status  != 'left'
 		 ORDER BY gm.created_at DESC`,
 		userID,
 	)
@@ -356,7 +372,19 @@ func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, user
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
-	return collectMemberships(rows)
+	return collectRows(rows, func(r pgx.Rows) (*domain.GroupMembership, error) {
+		m := &domain.GroupMembership{}
+		var joinedAt *time.Time
+		if err := r.Scan(
+			&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid,
+			&joinedAt, &m.CreatedAt, &m.UpdatedAt, &m.RemovedAt, &m.RemovedBy,
+			&m.GroupName, &m.GroupStatus, &m.InviteCode, &m.EntryFee, &m.Currency,
+		); err != nil {
+			return nil, err
+		}
+		m.JoinedAt = joinedAt
+		return m, nil
+	})
 }
 
 func collectMemberships(rows pgx.Rows) ([]*domain.GroupMembership, error) {

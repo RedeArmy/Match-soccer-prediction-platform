@@ -105,6 +105,7 @@ type stubMemberRepo struct {
 	approveErr       error
 	leaveErr         error
 	leaveTransferErr error
+	removeErr        error
 }
 
 func (r *stubMemberRepo) Create(_ context.Context, _ *domain.GroupMembership) error { return r.err }
@@ -172,7 +173,12 @@ func (r *stubMemberRepo) OldestActiveMember(_ context.Context, _, _ int) (*domai
 func (r *stubMemberRepo) SetRole(_ context.Context, _ int, _ domain.MembershipRole) error {
 	return r.err
 }
-func (r *stubMemberRepo) RemoveByAdmin(_ context.Context, _, _ int) error { return r.err }
+func (r *stubMemberRepo) RemoveByAdmin(_ context.Context, _, _ int) error {
+	if r.removeErr != nil {
+		return r.removeErr
+	}
+	return r.err
+}
 func (r *stubMemberRepo) ListGroupIDsWithoutOwner(_ context.Context) ([]int, error) {
 	return nil, r.err
 }

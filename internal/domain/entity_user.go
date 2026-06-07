@@ -17,6 +17,7 @@ import "time"
 type User struct {
 	ID              int
 	Name            string
+	Username        string // Clerk username; empty when the user has not set one
 	Email           string
 	Role            UserRole
 	ExternalSubject string // opaque identity-provider subject (JWT "sub"); empty for legacy rows

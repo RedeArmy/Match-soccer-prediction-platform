@@ -98,6 +98,32 @@ export interface LedgerEntry {
 // ── Match ─────────────────────────────────────────────────────────────────────
 export type MatchStatus = 'scheduled' | 'in_progress' | 'finished' | 'cancelled'
 
+export interface CountryInfo {
+  id:   number
+  name: string
+  code: string
+}
+
+export interface StateInfo {
+  id:      number
+  name:    string
+  code:    string
+  country: CountryInfo
+}
+
+export interface CityInfo {
+  id:    number
+  name:  string
+  state: StateInfo
+}
+
+export interface StadiumInfo {
+  id:       number
+  name:     string
+  city:     CityInfo
+  capacity: number
+}
+
 export interface MatchResponse {
   id:          number
   home_team:   string
@@ -105,8 +131,8 @@ export interface MatchResponse {
   home_score:  number | null
   away_score:  number | null
   status:      MatchStatus
-  starts_at:   string
-  stadium:     string | null
+  kickoff_at:  string | null
+  stadium:     StadiumInfo | null
   phase:       string | null
   group_label: string | null
 }
@@ -122,29 +148,60 @@ export interface PredictionResponse {
   created_at:  string
 }
 
+// ── Quiniela (group created via API) ─────────────────────────────────────────
+export interface QuinielaResponse {
+  id:                     number
+  name:                   string
+  owner_user_id:          number
+  invite_code:            string
+  invite_code_expires_at: string | null
+  status:                 string
+  entry_fee:              number
+  currency:               string
+  created_at:             string
+  updated_at:             string
+}
+
 // ── Group (Quiniela pool) ──────────────────────────────────────────────────────
 export type GroupStatus = 'open' | 'in_progress' | 'finished'
 
+// Returned by GET /api/v1/groups/me — enriched with membership fields.
 export interface GroupResponse {
-  id:           number
-  name:         string
-  status:       GroupStatus
-  entry_fee_cents: number
-  prize_pool_cents: number
-  member_count:    number
-  max_members:     number | null
-  invite_code:  string
-  created_at:   string
-  deadline_at:  string | null
+  id:                number
+  name:              string
+  group_status:      string
+  membership_status: string
+  role:              'owner' | 'member'
+  invite_code:       string
+  entry_fee:         number
+  currency:          string
+}
+
+// Returned by GET /api/v1/groups/:id — full group detail.
+export interface GroupDetailResponse {
+  id:                    number
+  name:                  string
+  owner_user_id:         number
+  invite_code:           string
+  invite_code_expires_at: string | null
+  status:                string
+  entry_fee:             number
+  currency:              string
+  created_at:            string
+  updated_at:            string
 }
 
 export interface MemberResponse {
-  membership_id: number
-  user_id:       number
-  display_name:  string
-  role:          'owner' | 'member'
-  status:        'active' | 'pending' | 'left'
-  joined_at:     string
+  id:           number
+  quiniela_id:  number
+  user_id:      number
+  display_name: string
+  role:         'owner' | 'member'
+  status:       'active' | 'pending' | 'left'
+  paid:         boolean
+  joined_at:    string | null
+  created_at:   string
+  updated_at:   string
 }
 
 export interface LeaderboardEntry {

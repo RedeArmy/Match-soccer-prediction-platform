@@ -4,13 +4,13 @@ import { Providers } from './providers'
 import '@/styles/globals.css'
 
 export const metadata: Metadata = {
-  title: 'Quiniela 26',
-  description: 'Predice resultados del Mundial 2026 y compite en quinielas internacionales',
+  title: 'Kiniela',
+  description: 'Predice resultados del Mundial 2026 y compite en kinielas internacionales',
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'),
   openGraph: {
     type: 'website',
     locale: 'es_GT',
-    title: 'Quiniela 26',
+    title: 'Kiniela',
   },
 }
 
