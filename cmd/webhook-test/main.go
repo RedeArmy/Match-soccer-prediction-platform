@@ -64,7 +64,7 @@ func run(args []string, client *http.Client, stdout, stderr io.Writer) error {
 			"Event type: payment.confirmed | payment_intent.succeeded | intent.succeeded")
 	)
 	if err := fs.Parse(args[1:]); err != nil {
-		return err
+		return fmt.Errorf("parse flags: %w", err)
 	}
 
 	ref := *reference
@@ -78,20 +78,20 @@ func run(args []string, client *http.Client, stdout, stderr io.Writer) error {
 
 	payload, err := buildPayload(*eventType, *userID, *amount, *currency, ref, chID)
 	if err != nil {
-		fmt.Fprintln(stderr, "error:", err)
-		return err
+		_, _ = fmt.Fprintln(stderr, "error:", err)
+		return fmt.Errorf("build payload: %w", err)
 	}
 
 	body, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		fmt.Fprintln(stderr, "error marshalling payload:", err)
-		return err
+		_, _ = fmt.Fprintln(stderr, "error marshalling payload:", err)
+		return fmt.Errorf("marshal payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, *rawURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, *rawURL, bytes.NewReader(body)) //nolint:gosec // G704: SSRF — intentional in a developer-only CLI; the URL is a flag the operator supplies
 	if err != nil {
-		fmt.Fprintln(stderr, "error creating request:", err)
-		return err
+		_, _ = fmt.Fprintln(stderr, "error creating request:", err)
+		return fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -100,24 +100,24 @@ func run(args []string, client *http.Client, stdout, stderr io.Writer) error {
 		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 		key, keyErr := parseSecret(*secret)
 		if keyErr != nil {
-			fmt.Fprintln(stderr, "error parsing secret:", keyErr)
-			return keyErr
+			_, _ = fmt.Fprintln(stderr, "error parsing secret:", keyErr)
+			return fmt.Errorf("parse secret: %w", keyErr)
 		}
 		sig := computeSig(key, msgID, timestamp, body)
 		req.Header.Set("svix-id", msgID)
 		req.Header.Set("svix-timestamp", timestamp)
 		req.Header.Set("svix-signature", "v1,"+sig)
-		fmt.Fprintf(stdout, "Svix headers:\n  svix-id:        %s\n  svix-timestamp: %s\n  svix-signature: v1,%s\n\n", msgID, timestamp, sig)
+		fmt.Fprintf(stdout, "Svix headers:\n  svix-id:        %s\n  svix-timestamp: %s\n  svix-signature: v1,%s\n\n", msgID, timestamp, sig) //nolint:errcheck
 	} else {
-		fmt.Fprintln(stdout, "Warning: no --secret provided; server must be in bypass mode (empty WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
+		_, _ = fmt.Fprintln(stdout, "Warning: no --secret provided; server must be in bypass mode (empty WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
 	}
 
-	fmt.Fprintf(stdout, "POST %s\n%s\n\n", *rawURL, string(body))
+	fmt.Fprintf(stdout, "POST %s\n%s\n\n", *rawURL, string(body)) //nolint:errcheck
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: same justification as NewRequestWithContext above
 	if err != nil {
-		fmt.Fprintln(stderr, "request failed:", err)
-		return err
+		_, _ = fmt.Fprintln(stderr, "request failed:", err)
+		return fmt.Errorf("send request: %w", err)
 	}
 	respBody, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
