@@ -9,7 +9,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/health",
   // Exchange rate public — proxied from /api/exchange-rate (backend) via BFF
   "/api/exchange-rate(.*)",
-  // Webhook endpoints never go through Next.js middleware
+  // Clerk webhook relay — authenticated by Svix HMAC, not by session
+  "/webhooks/(.*)",
 ]);
 
 const isAdminRoute = createRouteMatcher(["/admin(.*)"]);

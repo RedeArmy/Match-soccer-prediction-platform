@@ -116,6 +116,14 @@ class APIClient {
       .then((r) => r.data)
   }
 
+  approveGroupMember(token: string, groupId: number, membershipId: number): Promise<MemberResponse> {
+    return this.request(`/api/v1/groups/${groupId}/members/${membershipId}/approve`, { method: 'POST' }, token)
+  }
+
+  rejectGroupMember(token: string, groupId: number, membershipId: number): Promise<void> {
+    return this.request(`/api/v1/groups/${groupId}/members/${membershipId}`, { method: 'DELETE' }, token)
+  }
+
   createGroup(token: string, data: { name: string }): Promise<QuinielaResponse> {
     return this.request('/api/v1/groups', { method: 'POST', body: JSON.stringify(data) }, token)
   }

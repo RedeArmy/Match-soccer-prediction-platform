@@ -318,6 +318,45 @@ func (h *GroupHandler) ApproveJoin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, memberToResponse(membership))
 }
 
+// RejectJoin handles DELETE /api/v1/groups/{id}/members/{membershipID}.
+//
+// @Summary      Reject a join request
+// @Description  Sets a pending join request to left. Any active member of the group may reject.
+//
+// @Tags         groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id           path  int  true  "Group ID"
+// @Param        membershipID path  int  true  "Membership ID to reject"
+// @Success      204  "Rejected"
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Not an active member of this group"
+// @Failure      404  {object}  handler.ErrorResponse  "Join request not found"
+// @Failure      409  {object}  handler.ErrorResponse  "Request is no longer pending"
+// @Router       /api/v1/groups/{id}/members/{membershipID} [delete]
+func (h *GroupHandler) RejectJoin(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	quinielaID, err := pathID(r, "id")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	membershipID, err := pathID(r, "membershipID")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if err := h.memberSvc.RejectJoin(r.Context(), quinielaID, membershipID, caller.ID); err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Leave handles DELETE /api/v1/groups/{id}/members/me.
 //
 // @Summary      Leave a group
@@ -422,9 +461,12 @@ func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, err)
 		return
 	}
-	out := make([]MyGroupResponse, len(members))
-	for i, m := range members {
-		out[i] = MyGroupResponse{
+	out := make([]MyGroupResponse, 0, len(members))
+	for _, m := range members {
+		if m.Status == domain.MembershipLeft {
+			continue // left/rejected memberships are hidden from the dashboard
+		}
+		out = append(out, MyGroupResponse{
 			ID:               m.QuinielaID,
 			Name:             m.GroupName,
 			GroupStatus:      m.GroupStatus,
@@ -433,7 +475,7 @@ func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 			InviteCode:       m.InviteCode,
 			EntryFee:         m.EntryFee,
 			Currency:         m.Currency,
-		}
+		})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -3,10 +3,11 @@
 import { useState } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Check, Copy, Crown, LogOut, Medal, Trophy, Users } from 'lucide-react'
+import { ArrowLeft, Check, Copy, Crown, Loader2, LogOut, Medal, Trophy, UserCheck, UserX, Users, X } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
+import type { MemberResponse } from '@/lib/api-types'
 import { cn } from '@/lib/utils'
 import { useCurrency } from '@/hooks/useCurrency'
 import { LoadingState } from '@/components/shared/LoadingState'
@@ -24,6 +25,8 @@ export default function TournamentDetailPage() {
 
   const [copied, setCopied] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
+  const [leaveError, setLeaveError] = useState<string | null>(null)
+  const [approvingMember, setApprovingMember] = useState<MemberResponse | null>(null)
 
   const groupQuery = useQuery({
     queryKey: ['group', groupId],
@@ -58,8 +61,36 @@ export default function TournamentDetailPage() {
       return api.leaveGroup(token!, groupId)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['my-groups'] })
+      // Remove stale cache so the dashboard never shows the left group
+      queryClient.removeQueries({ queryKey: ['my-groups'] })
+      queryClient.removeQueries({ queryKey: ['group', groupId] })
       router.replace('/dashboard')
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { message?: string })?.message ?? 'Error al salir del grupo'
+      setLeaveError(msg)
+    },
+  })
+
+  const approveMutation = useMutation({
+    mutationFn: async (membershipId: number) => {
+      const token = await getToken()
+      return api.approveGroupMember(token!, groupId, membershipId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group-members', groupId] })
+      setApprovingMember(null)
+    },
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: async (membershipId: number) => {
+      const token = await getToken()
+      return api.rejectGroupMember(token!, groupId, membershipId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group-members', groupId] })
+      setApprovingMember(null)
     },
   })
 
@@ -72,6 +103,8 @@ export default function TournamentDetailPage() {
   const group = groupQuery.data
   const entries = leaderboardQuery.data?.data ?? []
   const members = membersQuery.data ?? []
+  const activeMembers = members.filter((m) => m.status === 'active')
+  const pendingMembers = members.filter((m) => m.status === 'pending')
   const isLoading = groupQuery.isLoading
 
   if (!Number.isNaN(groupId) && groupQuery.isError) {
@@ -132,9 +165,19 @@ export default function TournamentDetailPage() {
         {/* Members count */}
         <div className="card flex items-center gap-3 p-4">
           <Users className="h-8 w-8 shrink-0 text-blue-300" />
-          <div>
-            <p className="text-2xl font-bold text-white">{members.length}</p>
-            <p className="text-xs text-text-muted">{t('tournaments.members')}</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <p className="text-2xl font-bold text-white">{activeMembers.length}</p>
+              {pendingMembers.length > 0 && (
+                <span className="text-sm font-medium text-yellow-400">
+                  +{pendingMembers.length}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-text-muted">{t('group.membersActive')}</p>
+            {pendingMembers.length > 0 && (
+              <p className="text-[10px] text-yellow-400/70">{t('group.membersPending')}</p>
+            )}
           </div>
         </div>
 
@@ -210,23 +253,51 @@ export default function TournamentDetailPage() {
 
           {membersQuery.isLoading && <LoadingState rows={3} />}
 
-          {!membersQuery.isLoading && members.length === 0 && (
+          {!membersQuery.isLoading && activeMembers.length === 0 && pendingMembers.length === 0 && (
             <p className="py-4 text-center text-sm text-text-muted">{t('group.noMembers')}</p>
           )}
 
-          <div className="space-y-1">
-            {members.map((member) => (
-              <div key={member.id} className="flex items-center gap-2 rounded-lg px-2 py-2">
-                {member.role === 'owner' && (
-                  <Crown className="h-3.5 w-3.5 shrink-0 text-gold-400" />
-                )}
-                <span className={cn('flex-1 truncate text-sm', member.role === 'owner' ? 'text-gold-200' : 'text-text-primary')}>
-                  {member.display_name}
-                </span>
-                <StatusBadge status={member.status} size="sm" />
+          {/* Active members */}
+          {activeMembers.length > 0 && (
+            <div className="space-y-1">
+              {activeMembers.map((member) => (
+                <div key={member.id} className="flex items-center gap-2 rounded-lg px-2 py-2">
+                  {member.role === 'owner' && (
+                    <Crown className="h-3.5 w-3.5 shrink-0 text-gold-400" />
+                  )}
+                  <span className={cn('flex-1 truncate text-sm', member.role === 'owner' ? 'text-gold-200' : 'text-text-primary')}>
+                    {member.display_name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pending members */}
+          {pendingMembers.length > 0 && (
+            <div className="mt-3">
+              <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-wide text-yellow-400/70">
+                {t('group.membersPending')}
+              </p>
+              <div className="space-y-1">
+                {pendingMembers.map((member) => (
+                  <div key={member.id} className="flex items-center gap-2 rounded-lg px-2 py-2">
+                    <span className="flex-1 truncate text-sm text-text-secondary">
+                      {member.display_name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setApprovingMember(member)}
+                      className="rounded-full border border-yellow-400/30 bg-yellow-400/10 px-2 py-0.5 text-[9px] font-semibold uppercase text-yellow-300 transition-colors hover:border-yellow-400/60 hover:bg-yellow-400/20"
+                    >
+                      {t('groups.pendingBadge')}
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
 
           <div className="mt-6 border-t border-white/10 pt-4">
             {!confirmLeave ? (
@@ -239,19 +310,30 @@ export default function TournamentDetailPage() {
                 {t('group.leave')}
               </button>
             ) : (
-              <div className="space-y-2">
-                <p className="text-center text-xs text-text-muted">{t('group.leaveConfirm')}</p>
+              <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <LogOut className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+                  <div>
+                    <p className="text-sm font-medium text-red-300">{t('group.leaveConfirm')}</p>
+                    <p className="mt-0.5 text-[11px] text-text-muted">{t('group.leaveConfirmDetail')}</p>
+                  </div>
+                </div>
+                {leaveError && (
+                  <p className="rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-400 border border-red-400/20">
+                    {leaveError}
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setConfirmLeave(false)}
+                    onClick={() => { setConfirmLeave(false); setLeaveError(null) }}
                     className="flex-1 rounded-lg border border-white/10 px-3 py-2 text-xs text-text-muted hover:text-white"
                   >
                     {t('common.cancel')}
                   </button>
                   <button
                     type="button"
-                    onClick={() => leaveMutation.mutate()}
+                    onClick={() => { setLeaveError(null); leaveMutation.mutate() }}
                     disabled={leaveMutation.isPending}
                     className="flex-1 rounded-lg bg-red-500/80 px-3 py-2 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-50"
                   >
@@ -263,6 +345,53 @@ export default function TournamentDetailPage() {
           </div>
         </section>
       </div>
+
+      {/* Single-member approval popup */}
+      {approvingMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setApprovingMember(null)} />
+          <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-[#0b1929] p-6 shadow-2xl">
+            <div className="mb-5 relative text-center">
+              <button
+                type="button"
+                onClick={() => setApprovingMember(null)}
+                className="absolute right-0 top-0 rounded p-1 text-text-muted transition-colors hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gold-300">
+                {t('groups.pendingTitle')}
+              </p>
+              <h2 className="mt-0.5 text-lg font-semibold text-white">{approvingMember.display_name}</h2>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={approveMutation.isPending || rejectMutation.isPending}
+                onClick={() => approveMutation.mutate(approvingMember.id)}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-500/80 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-500 disabled:opacity-50"
+              >
+                {approveMutation.isPending
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <UserCheck className="h-4 w-4" />}
+                {t('groups.approve')}
+              </button>
+              <button
+                type="button"
+                disabled={approveMutation.isPending || rejectMutation.isPending}
+                onClick={() => rejectMutation.mutate(approvingMember.id)}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-400/30 px-4 py-2.5 text-sm font-medium text-red-400 transition-colors hover:border-red-400/60 hover:bg-red-400/10 disabled:opacity-50"
+              >
+                {rejectMutation.isPending
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <UserX className="h-4 w-4" />}
+                {t('groups.reject')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

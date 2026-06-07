@@ -14,22 +14,21 @@ export default function OnboardingPage() {
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState('')
 
-  // Verify backend user exists
+  // Verify backend user exists — retry on 401 because the Clerk user.created
+  // webhook may not yet have been delivered and processed.
   const { isLoading: checking } = useQuery({
     queryKey: ['onboarding-me'],
     queryFn: async () => {
       const token = await getToken()
-      try {
-        return await api.getMe(token!)
-      } catch (e: unknown) {
-        // If 404: user sync not yet fired — we trigger it via the BFF proxy
-        if (typeof e === 'object' && e !== null && 'status' in e && (e as { status: number }).status === 404) {
-          return null
-        }
-        throw e
-      }
+      return api.getMe(token!)
     },
-    retry: false,
+    retry: (failureCount, error: unknown) => {
+      const status = (error as { status?: number })?.status
+      // 401 = user.created webhook not yet processed; retry up to 5 times
+      if (status === 401) return failureCount < 5
+      return false
+    },
+    retryDelay: 2000,
   })
 
   const save = useMutation({

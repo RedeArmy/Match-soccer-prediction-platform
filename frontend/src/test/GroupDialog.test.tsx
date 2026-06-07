@@ -49,13 +49,13 @@ describe('GroupDialog', () => {
   it('renders create tab by default', () => {
     render(<GroupDialog open={true} onClose={vi.fn()} />)
     // h2 heading shows the tab title
-    expect(screen.getByRole('heading', { name: 'Crear quiniela' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Crear kiniela' })).toBeInTheDocument()
     expect(screen.getByPlaceholderText(/Ej\. Amigos/)).toBeInTheDocument()
   })
 
   it('renders join tab when defaultTab="join"', () => {
     render(<GroupDialog open={true} defaultTab="join" onClose={vi.fn()} />)
-    expect(screen.getByRole('heading', { name: 'Unirse a quiniela' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Unirse a kiniela' })).toBeInTheDocument()
     expect(screen.getByPlaceholderText('XXXXXXXXXX')).toBeInTheDocument()
   })
 
@@ -88,14 +88,14 @@ describe('GroupDialog', () => {
 
   it('create submit button disabled when name is empty', () => {
     render(<GroupDialog open={true} onClose={vi.fn()} />)
-    const submit = screen.getByRole('button', { name: /Crear quiniela/ })
+    const submit = screen.getByRole('button', { name: /Crear kiniela/ })
     expect(submit).toBeDisabled()
   })
 
   it('create submit button enabled when name has text', () => {
     render(<GroupDialog open={true} onClose={vi.fn()} />)
     fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Mi grupo' } })
-    expect(screen.getByRole('button', { name: /Crear quiniela/ })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /Crear kiniela/ })).not.toBeDisabled()
   })
 
   it('shows success state with invite code after create', async () => {
@@ -113,9 +113,9 @@ describe('GroupDialog', () => {
 
     render(<GroupDialog open={true} onClose={vi.fn()} />)
     fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Mi grupo' } })
-    fireEvent.click(screen.getByRole('button', { name: /Crear quiniela/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Crear kiniela/ }))
 
-    expect(await screen.findByText('¡Quiniela creada!')).toBeInTheDocument()
+    expect(await screen.findByText('¡Kiniela creada!')).toBeInTheDocument()
     expect(screen.getByText('ABC123XYZW')).toBeInTheDocument()
   })
 
@@ -124,9 +124,9 @@ describe('GroupDialog', () => {
 
     render(<GroupDialog open={true} onClose={vi.fn()} />)
     fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Mi grupo' } })
-    fireEvent.click(screen.getByRole('button', { name: /Crear quiniela/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Crear kiniela/ }))
 
-    expect(await screen.findByText('No se pudo crear la quiniela.')).toBeInTheDocument()
+    expect(await screen.findByText('No se pudo crear la kiniela.')).toBeInTheDocument()
   })
 
   it('calls onClose when Done button is clicked after create', async () => {
@@ -145,9 +145,9 @@ describe('GroupDialog', () => {
 
     render(<GroupDialog open={true} onClose={onClose} />)
     fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Mi grupo' } })
-    fireEvent.click(screen.getByRole('button', { name: /Crear quiniela/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Crear kiniela/ }))
 
-    await screen.findByText('¡Quiniela creada!')
+    await screen.findByText('¡Kiniela creada!')
     fireEvent.click(screen.getByRole('button', { name: 'Listo' }))
     expect(onClose).toHaveBeenCalledOnce()
   })

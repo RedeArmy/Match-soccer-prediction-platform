@@ -56,7 +56,7 @@ function render(ui: React.ReactElement) {
 describe('Footer', () => {
   it('renders "Q26" brand text', () => {
     render(<Footer />)
-    expect(screen.getByText('Q26')).toBeInTheDocument()
+    expect(screen.getByText('K26')).toBeInTheDocument()
   })
 
   it('renders "Fan Fest" link with href=/tournaments', () => {
@@ -76,7 +76,7 @@ describe('Header', () => {
   it('renders logo link', () => {
     render(<Header />)
     // The logo link wraps "Q26" text
-    const logo = screen.getAllByText('Q26')[0]
+    const logo = screen.getAllByText('K26')[0]
     expect(logo).toBeInTheDocument()
   })
 

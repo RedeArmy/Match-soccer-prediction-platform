@@ -306,6 +306,7 @@ func (r *PostgresGroupMembershipRepository) ListByQuiniela(ctx context.Context, 
 		 FROM group_memberships gm
 		 JOIN users u ON u.id = gm.user_id AND u.deleted_at IS NULL
 		 WHERE gm.quiniela_id = $1
+		   AND gm.status      != 'left'
 		 ORDER BY gm.created_at ASC`,
 		quinielaID,
 	)
@@ -363,6 +364,7 @@ func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, user
 		 FROM group_memberships gm
 		 JOIN quinielas q ON q.id = gm.quiniela_id AND q.deleted_at IS NULL
 		 WHERE gm.user_id = $1
+		   AND gm.status  != 'left'
 		 ORDER BY gm.created_at DESC`,
 		userID,
 	)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, Plus, Users, X } from 'lucide-react'
@@ -24,6 +24,16 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
 
   const [tab, setTab] = useState<Tab>(defaultTab)
   const [created, setCreated] = useState<QuinielaResponse | null>(null)
+
+  // Sync active tab and reset form state each time the dialog opens
+  useEffect(() => {
+    if (open) {
+      setTab(defaultTab)
+      setCreated(null)
+      setName('')
+      setInviteCode('')
+    }
+  }, [open, defaultTab])
   const [copied, setCopied] = useState(false)
 
   const [name, setName] = useState('')

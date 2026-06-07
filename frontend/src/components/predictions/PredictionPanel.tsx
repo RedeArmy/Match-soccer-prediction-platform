@@ -23,6 +23,7 @@ import { useI18n } from "@/lib/i18n";
 
 type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved";
+type ViewMode = "by-group" | "by-day";
 type GroupLabel = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L";
 
 const GROUPS: GroupLabel[] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
@@ -30,9 +31,11 @@ const GROUPS: GroupLabel[] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", 
 export function PredictionPanel() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
-  const { t, teamName, phaseName, formatKickoff } = useI18n();
+  const { t, teamName, phaseName, formatKickoff, timeZone } = useI18n();
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
+  const [viewMode, setViewMode] = useState<ViewMode>("by-group");
+  const [todayStr, setTodayStr] = useState<string>("");
   const [drafts, setDrafts] = useState<DraftScores>({});
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -62,6 +65,10 @@ export function PredictionPanel() {
     }
     return map;
   }, [predictionsQuery.data]);
+
+  useEffect(() => {
+    setTodayStr(new Date().toLocaleDateString("sv", { timeZone }));
+  }, [timeZone]);
 
   useEffect(() => {
     setDrafts((current) => {
@@ -116,11 +123,16 @@ export function PredictionPanel() {
       .sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
   }, [matchesQuery.data]);
 
-  const groupFilteredMatches = sortedMatches.filter(
-    (match) => normalizeGroup(match.group_label) === selectedGroup,
-  );
+  const baseMatches = viewMode === "by-day"
+    ? sortedMatches.filter((match) => {
+        if (!match.kickoff_at) return false;
+        return new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone }) === todayStr;
+      })
+    : sortedMatches.filter(
+        (match) => normalizeGroup(match.group_label) === selectedGroup,
+      );
 
-  const visibleMatches = groupFilteredMatches.filter((match) => {
+  const visibleMatches = baseMatches.filter((match) => {
     const hasPrediction = predictionByMatch.has(match.id);
     if (filter === "pending") return !hasPrediction;
     if (filter === "saved") return hasPrediction;
@@ -128,6 +140,7 @@ export function PredictionPanel() {
   });
 
 const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
+  const isError = matchesQuery.isError || predictionsQuery.isError;
 
   return (
     <section className="panel overflow-hidden">
@@ -172,32 +185,41 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
         </div>
       </div>
 
-      <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
-        <div className="mb-3 flex items-end justify-between gap-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gold-300">
-              {t("predictions.groupSelector")}
-            </p>
-            <p className="text-sm text-text-secondary">
-              {`${t("predictions.groupSelected")} ${selectedGroup}`}
-            </p>
-          </div>
-          <span className="text-xs text-text-muted">
-            {visibleMatches.length} {t("predictions.matches")}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-6 gap-2 lg:grid-cols-12">
-          {GROUPS.map((group) => (
-            <GroupButton
-              key={group}
-              label={group}
-              active={selectedGroup === group}
-              onClick={() => setSelectedGroup(group)}
-            />
-          ))}
-        </div>
+      <div className="mb-4 inline-flex gap-1 rounded-xl border border-white/10 bg-white/[0.035] p-1">
+        {([
+          ["by-group", t("predictions.viewByGroup")],
+          ["by-day",   t("predictions.viewByDay")],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setViewMode(key)}
+            className={cn(
+              "rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
+              viewMode === key
+                ? "bg-gold-400 text-blue-950"
+                : "text-text-muted hover:text-text-primary",
+            )}
+          >
+            {label}
+          </button>
+        ))}
       </div>
+
+      {viewMode === "by-group" && (
+        <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
+          <div className="grid grid-cols-6 gap-2 lg:grid-cols-12">
+            {GROUPS.map((group) => (
+              <GroupButton
+                key={group}
+                label={group}
+                active={selectedGroup === group}
+                onClick={() => setSelectedGroup(group)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {feedback && (
         <div
@@ -214,7 +236,15 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
 
       {isLoading && <LoadingState rows={4} />}
 
-      {!isLoading && visibleMatches.length === 0 && (
+      {!isLoading && isError && (
+        <EmptyState
+          title={t("predictions.loadError")}
+          description={t("predictions.loadErrorDesc")}
+          icon={<Target className="h-10 w-10" />}
+        />
+      )}
+
+      {!isLoading && !isError && visibleMatches.length === 0 && (
         <EmptyState
           title={t("predictions.noMatches")}
           description={t("predictions.noMatchesDesc")}
@@ -222,7 +252,7 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
         />
       )}
 
-      {!isLoading && visibleMatches.length > 0 && (
+      {!isLoading && !isError && visibleMatches.length > 0 && (
         <div className="grid gap-3">
           {visibleMatches.map((match) => {
             const prediction = predictionByMatch.get(match.id);

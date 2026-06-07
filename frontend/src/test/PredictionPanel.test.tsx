@@ -157,19 +157,16 @@ describe('PredictionPanel', () => {
     // Default: group A selected — Canada (group A) visible, USA (group B) not
     expect(await screen.findByText('Canadá')).toBeInTheDocument()
     expect(screen.queryByText('Estados Unidos')).toBeNull()
-    expect(screen.getByText('Mostrando Grupo A')).toBeInTheDocument()
 
     // Switch to group B
     fireEvent.click(screen.getByRole('button', { name: /^B/ }))
 
-    expect(screen.getByText('Mostrando Grupo B')).toBeInTheDocument()
     expect(screen.getByText('Estados Unidos')).toBeInTheDocument()
     expect(screen.queryByText('Canadá')).toBeNull()
 
     // Switch back to group A
     fireEvent.click(screen.getByRole('button', { name: /^A/ }))
 
-    expect(screen.getByText('Mostrando Grupo A')).toBeInTheDocument()
     expect(screen.getByText('Canadá')).toBeInTheDocument()
     expect(screen.queryByText('Estados Unidos')).toBeNull()
   })

@@ -277,7 +277,8 @@ func (s *stubMemberSvc) Join(_ context.Context, _ string, _ int) (*domain.GroupM
 func (s *stubMemberSvc) ApproveJoin(_ context.Context, _, _, _ int) (*domain.GroupMembership, error) {
 	return s.membership, s.err
 }
-func (s *stubMemberSvc) Leave(_ context.Context, _, _ int) error { return s.err }
+func (s *stubMemberSvc) RejectJoin(_ context.Context, _, _, _ int) error { return s.err }
+func (s *stubMemberSvc) Leave(_ context.Context, _, _ int) error          { return s.err }
 func (s *stubMemberSvc) MarkPaid(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
 	return s.membership, s.err
 }

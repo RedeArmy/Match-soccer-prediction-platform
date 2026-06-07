@@ -43,6 +43,10 @@ type GroupMembershipService interface {
 	// or when the quiniela has no entry fee.
 	JoinWithBalance(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error)
 	ApproveJoin(ctx context.Context, quinielaID, membershipID, approverUserID int) (*domain.GroupMembership, error)
+	// RejectJoin removes a pending join request. Any active member of the group
+	// may call this. The membership record is set to left so the requester no
+	// longer sees the group in their dashboard.
+	RejectJoin(ctx context.Context, quinielaID, membershipID, rejectorUserID int) error
 	Leave(ctx context.Context, quinielaID, callerUserID int) error
 	MarkPaid(ctx context.Context, quinielaID, userID int) (*domain.GroupMembership, error)
 	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.GroupMembership, error)
@@ -110,9 +114,8 @@ func NewGroupMembershipService(
 }
 
 // Join resolves invite_code to a Quiniela and creates a pending join request.
-// The user is NOT active until any existing active member calls ApproveJoin.
-// If the user was previously a member but left, they are re-queued as pending
-// for a new approval round.
+// The membership stays pending until any active member calls ApproveJoin.
+// Re-joining after leaving is supported.
 func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error) {
 	maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
 	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers)
@@ -203,6 +206,34 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 	return m, nil
 }
 
+// RejectJoin removes a pending join request on behalf of an active member.
+// The membership is set to left so it disappears from the requester's dashboard.
+func (s *groupMembershipService) RejectJoin(ctx context.Context, quinielaID, membershipID, rejectorUserID int) error {
+	if err := s.authz.RequireActiveMember(ctx, quinielaID, rejectorUserID); err != nil {
+		return err
+	}
+	pending, err := s.memberRepo.GetByID(ctx, membershipID)
+	if err != nil {
+		return err
+	}
+	if pending == nil || pending.QuinielaID != quinielaID {
+		return apperrors.NotFound("join request not found")
+	}
+	if pending.Status != domain.MembershipPending {
+		return apperrors.Conflict("this join request is no longer pending")
+	}
+	if err := s.memberRepo.RemoveByAdmin(ctx, membershipID, rejectorUserID); err != nil {
+		return err
+	}
+	resType := "membership"
+	s.audit.Log(ctx, &rejectorUserID, nil, domain.AuditActionJoinApproved, &resType, &membershipID, map[string]any{
+		"quiniela_id":  quinielaID,
+		"rejected_uid": pending.UserID,
+		"action":       "rejected",
+	})
+	return nil
+}
+
 // Leave sets the caller's own membership to left. Only the member themselves
 // may call this - no admin or owner can remove another user. If the leaving
 // user holds MembershipRoleCreateOwner, ownership is transferred to the oldest
@@ -265,7 +296,17 @@ func (s *groupMembershipService) ListByQuiniela(ctx context.Context, quinielaID 
 }
 
 func (s *groupMembershipService) ListByUser(ctx context.Context, userID int) ([]*domain.GroupMembership, error) {
-	return s.memberRepo.ListByUser(ctx, userID)
+	all, err := s.memberRepo.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := all[:0]
+	for _, m := range all {
+		if m.Status != domain.MembershipLeft {
+			out = append(out, m)
+		}
+	}
+	return out, nil
 }
 
 // writeMembershipEvent publishes an outbox fan-out event for group membership
