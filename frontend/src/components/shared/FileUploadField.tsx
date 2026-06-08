@@ -21,7 +21,8 @@ export function FileUploadField({
   onRemove,
   onChange,
 }: FileUploadFieldProps) {
-  const borderClass = hasFile
+  const hasSelectedFile = hasFile || Boolean(fileName);
+  const borderClass = hasSelectedFile
     ? isPending
       ? "border-amber-500 bg-amber-500/10 hover:border-amber-400"
       : "border-green-500 bg-green-500/10 hover:border-green-400"
@@ -51,7 +52,7 @@ export function FileUploadField({
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 p-4 text-center">
-          {hasFile ? (
+          {hasSelectedFile ? (
             isPending ? (
               <>
                 <Clock className="w-6 h-6 text-amber-400" />
@@ -73,7 +74,7 @@ export function FileUploadField({
         </div>
       )}
       <input type="file" accept={accept} onChange={onChange} className="sr-only" />
-      {hasFile && onRemove && (
+      {hasSelectedFile && onRemove && (
         <button
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
