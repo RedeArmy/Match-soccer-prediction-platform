@@ -144,7 +144,7 @@ func TestClerkUserSyncer_Upsert_NewUser_CallsCreate(t *testing.T) {
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_1", Address: "alice@example.com"}}
 
-	if err := svc.Upsert(context.Background(), "user_abc", "Alice", "Smith", "em_1", emails); err != nil {
+	if err := svc.Upsert(context.Background(), "user_abc", "Alice", "Smith", "", "em_1", emails); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if repo.created == nil {
@@ -167,7 +167,7 @@ func TestClerkUserSyncer_Upsert_ExistingUser_CallsUpdate(t *testing.T) {
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_2", Address: "new@example.com"}}
 
-	if err := svc.Upsert(context.Background(), "user_abc", "New", "Name", "em_2", emails); err != nil {
+	if err := svc.Upsert(context.Background(), "user_abc", "New", "Name", "", "em_2", emails); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if existing.Email != "new@example.com" {
@@ -183,7 +183,7 @@ func TestClerkUserSyncer_Upsert_EmptyName_FallsBackToSubject(t *testing.T) {
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_1", Address: "x@example.com"}}
 
-	if err := svc.Upsert(context.Background(), "user_fallback", "", "", "em_1", emails); err != nil {
+	if err := svc.Upsert(context.Background(), "user_fallback", "", "", "", "em_1", emails); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if repo.created == nil || repo.created.Name != "user_fallback" {
@@ -199,7 +199,7 @@ func TestClerkUserSyncer_Upsert_NoEmailAddresses_SkipsValidation(t *testing.T) {
 	repo := &clerkSyncRepo{}
 	svc := newClerkSyncer(repo)
 
-	if err := svc.Upsert(context.Background(), "user_noemail", "A", "B", "", nil); err != nil {
+	if err := svc.Upsert(context.Background(), "user_noemail", "A", "B", "", "", nil); err != nil {
 		t.Fatalf("unexpected error for empty email list: %v", err)
 	}
 }
@@ -211,7 +211,7 @@ func TestClerkUserSyncer_Upsert_InvalidEmail_ReturnsValidation(t *testing.T) {
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_1", Address: "notanemail"}}
 
-	err := svc.Upsert(context.Background(), "user_bad", "A", "B", "em_1", emails)
+	err := svc.Upsert(context.Background(), "user_bad", "A", "B", "", "em_1", emails)
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -222,7 +222,7 @@ func TestClerkUserSyncer_Upsert_GetBySubjectError_ReturnsInternal(t *testing.T) 
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_1", Address: "a@b.com"}}
 
-	err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_1", emails)
+	err := svc.Upsert(context.Background(), "user_x", "A", "B", "", "em_1", emails)
 	if !errors.Is(err, apperrors.ErrInternal) {
 		t.Errorf("expected internal error, got %v", err)
 	}
@@ -234,7 +234,7 @@ func TestClerkUserSyncer_Upsert_CreateError_Propagates(t *testing.T) {
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_1", Address: "a@b.com"}}
 
-	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_1", emails); err == nil {
+	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "", "em_1", emails); err == nil {
 		t.Fatal("expected error from Create, got nil")
 	}
 }
@@ -245,7 +245,7 @@ func TestClerkUserSyncer_Upsert_UpdateError_Propagates(t *testing.T) {
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_1", Address: "a@b.com"}}
 
-	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_1", emails); err == nil {
+	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "", "em_1", emails); err == nil {
 		t.Fatal("expected error from Update, got nil")
 	}
 }
@@ -255,7 +255,7 @@ func TestClerkUserSyncer_Upsert_GetByEmailError_ReturnsInternal(t *testing.T) {
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_1", Address: "a@b.com"}}
 
-	err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_1", emails)
+	err := svc.Upsert(context.Background(), "user_x", "A", "B", "", "em_1", emails)
 	if !errors.Is(err, apperrors.ErrInternal) {
 		t.Errorf("expected internal error from GetByEmail failure, got %v", err)
 	}
@@ -266,7 +266,7 @@ func TestClerkUserSyncer_Upsert_UpdateAfterCreate_Error_Propagates(t *testing.T)
 	svc := newClerkSyncer(repo)
 	emails := []ClerkEmail{{ID: "em_1", Address: "a@b.com"}}
 
-	if err := svc.Upsert(context.Background(), "user_new", "A", "B", "em_1", emails); err == nil {
+	if err := svc.Upsert(context.Background(), "user_new", "A", "B", "", "em_1", emails); err == nil {
 		t.Fatal("expected error from Update after Create, got nil")
 	}
 }
@@ -283,7 +283,7 @@ func TestClerkUserSyncer_PrimaryEmail_MatchingID_UsesCorrectAddress(t *testing.T
 		{ID: "em_primary", Address: "real@example.com"},
 	}
 
-	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_primary", emails); err != nil {
+	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "", "em_primary", emails); err != nil {
 		t.Fatalf("expected primary email to be resolved; got error: %v", err)
 	}
 }
@@ -298,7 +298,7 @@ func TestClerkUserSyncer_PrimaryEmail_NonMatchingID_FallsBackToFirst(t *testing.
 		{ID: "em_second", Address: "other@example.com"},
 	}
 
-	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_nonexistent", emails); err != nil {
+	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "", "em_nonexistent", emails); err != nil {
 		t.Fatalf("expected graceful fallback, got error: %v", err)
 	}
 }
@@ -308,7 +308,7 @@ func TestClerkUserSyncer_PrimaryEmail_EmptyList_EmptyEmail(t *testing.T) {
 	svc := newClerkSyncer(repo)
 
 	// Empty address list with a non-empty primaryEmailID - should not error.
-	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "em_ghost", nil); err != nil {
+	if err := svc.Upsert(context.Background(), "user_x", "A", "B", "", "em_ghost", nil); err != nil {
 		t.Fatalf("expected no error for empty address list: %v", err)
 	}
 }
@@ -382,7 +382,7 @@ func TestClerkUserSyncer_Upsert_NewUser_CreatesKYCProfileStub(t *testing.T) {
 	svc := NewClerkUserSyncService(repo, kycRepo, zap.NewNop())
 	emails := []ClerkEmail{{ID: "em_1", Address: "stub@example.com"}}
 
-	if err := svc.Upsert(context.Background(), "user_stub", "Stub", "User", "em_1", emails); err != nil {
+	if err := svc.Upsert(context.Background(), "user_stub", "Stub", "User", "", "em_1", emails); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !kycRepo.ensureStubCalled {
@@ -400,7 +400,7 @@ func TestClerkUserSyncer_Upsert_ExistingUser_DoesNotCreateKYCProfileStub(t *test
 	svc := NewClerkUserSyncService(repo, kycRepo, zap.NewNop())
 	emails := []ClerkEmail{{ID: "em_1", Address: "existing@example.com"}}
 
-	if err := svc.Upsert(context.Background(), "user_existing", "Existing", "User", "em_1", emails); err != nil {
+	if err := svc.Upsert(context.Background(), "user_existing", "Existing", "User", "", "em_1", emails); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if kycRepo.ensureStubCalled {
@@ -418,7 +418,7 @@ func TestClerkUserSyncer_Upsert_EnsureStubError_IsLogged(t *testing.T) {
 	emails := []ClerkEmail{{ID: "em_1", Address: "erruser@example.com"}}
 
 	// Must succeed even when EnsureStub fails — user creation committed.
-	if err := svc.Upsert(context.Background(), "user_err", "Err", "User", "em_1", emails); err != nil {
+	if err := svc.Upsert(context.Background(), "user_err", "Err", "User", "", "em_1", emails); err != nil {
 		t.Fatalf("EnsureStub failure should not surface as Upsert error; got: %v", err)
 	}
 }

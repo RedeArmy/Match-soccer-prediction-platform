@@ -4952,6 +4952,68 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/groups/{id}/members/{membershipID}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets a pending join request to left. Any active member of the group may reject.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "groups"
+                ],
+                "summary": "Reject a join request",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Membership ID to reject",
+                        "name": "membershipID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Rejected"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Not an active member of this group",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Join request not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Request is no longer pending",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/groups/{id}/members/{membershipID}/approve": {
             "post": {
                 "security": [
@@ -5954,7 +6016,7 @@ const docTemplate = `{
         },
         "/webhooks/recurrente": {
             "post": {
-                "description": "Receives payment confirmation events from Recurrente. Credits the user's balance on confirmed events.",
+                "description": "Receives payment confirmation events from Recurrente via Svix. Credits the user's balance on confirmed events.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6750,6 +6812,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "display_name": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -7487,12 +7552,6 @@ const docTemplate = `{
         "internal_api_handler.createGroupRequest": {
             "type": "object",
             "properties": {
-                "currency": {
-                    "type": "string"
-                },
-                "entry_fee": {
-                    "type": "integer"
-                },
                 "name": {
                     "type": "string"
                 }

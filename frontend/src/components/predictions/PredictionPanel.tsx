@@ -10,6 +10,7 @@ import {
   Save,
   SlidersHorizontal,
   Target,
+  Timer,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { MatchResponse, PredictionResponse } from "@/lib/api-types";
@@ -22,16 +23,19 @@ import { useI18n } from "@/lib/i18n";
 
 type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved";
-type GroupFilter = "all" | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
+type ViewMode = "by-group" | "by-day";
+type GroupLabel = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L";
 
-const GROUPS: Exclude<GroupFilter, "all">[] = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const GROUPS: GroupLabel[] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
 
 export function PredictionPanel() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
   const { t, teamName, phaseName, formatKickoff, timeZone } = useI18n();
   const [filter, setFilter] = useState<Filter>("all");
-  const [selectedGroup, setSelectedGroup] = useState<GroupFilter>("all");
+  const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
+  const [viewMode, setViewMode] = useState<ViewMode>("by-group");
+  const [todayStr, setTodayStr] = useState<string>("");
   const [drafts, setDrafts] = useState<DraftScores>({});
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -61,6 +65,16 @@ export function PredictionPanel() {
     }
     return map;
   }, [predictionsQuery.data]);
+
+  useEffect(() => {
+    setTodayStr(new Date().toLocaleDateString("sv", { timeZone }));
+  }, [timeZone]);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
 
   useEffect(() => {
     setDrafts((current) => {
@@ -115,29 +129,24 @@ export function PredictionPanel() {
       .sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
   }, [matchesQuery.data]);
 
-  const groupFilteredMatches = sortedMatches.filter((match) => {
-    if (selectedGroup === "all") return true;
-    return normalizeGroup(match.group_label) === selectedGroup;
-  });
+  const baseMatches = viewMode === "by-day"
+    ? sortedMatches.filter((match) => {
+        if (!match.kickoff_at) return false;
+        return new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone }) === todayStr;
+      })
+    : sortedMatches.filter(
+        (match) => normalizeGroup(match.group_label) === selectedGroup,
+      );
 
-  const visibleMatches = groupFilteredMatches.filter((match) => {
+  const visibleMatches = baseMatches.filter((match) => {
     const hasPrediction = predictionByMatch.has(match.id);
     if (filter === "pending") return !hasPrediction;
     if (filter === "saved") return hasPrediction;
     return true;
   });
 
-  const groupCounts = useMemo(() => {
-    const counts = new Map<GroupFilter, number>([["all", sortedMatches.length]]);
-    for (const group of GROUPS) counts.set(group, 0);
-    for (const match of sortedMatches) {
-      const group = normalizeGroup(match.group_label);
-      if (group) counts.set(group, (counts.get(group) ?? 0) + 1);
-    }
-    return counts;
-  }, [sortedMatches]);
-
-  const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
+const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
+  const isError = matchesQuery.isError || predictionsQuery.isError;
 
   return (
     <section className="panel overflow-hidden">
@@ -182,43 +191,41 @@ export function PredictionPanel() {
         </div>
       </div>
 
-      <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
-        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gold-300">
-              {t("predictions.groupSelector")}
-            </p>
-            <p className="text-sm text-text-secondary">
-              {selectedGroup === "all"
-                ? t("predictions.groupSelectorAll")
-                : `${t("predictions.groupSelected")} ${selectedGroup}`}
-            </p>
-          </div>
-          <span className="text-xs text-text-muted">
-            {visibleMatches.length} {t("predictions.matches")}
-          </span>
-        </div>
+      <div className="mb-4 inline-flex gap-1 rounded-xl border border-white/10 bg-white/[0.035] p-1">
+        {([
+          ["by-group", t("predictions.viewByGroup")],
+          ["by-day",   t("predictions.viewByDay")],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setViewMode(key)}
+            className={cn(
+              "rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
+              viewMode === key
+                ? "bg-gold-400 text-blue-950"
+                : "text-text-muted hover:text-text-primary",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-        <div className="grid gap-2 lg:grid-cols-[minmax(7rem,0.7fr)_minmax(0,2fr)]">
-          <GroupButton
-            label={t("predictions.groupAll")}
-            count={groupCounts.get("all") ?? 0}
-            active={selectedGroup === "all"}
-            onClick={() => setSelectedGroup("all")}
-          />
-          <div className="grid grid-cols-4 gap-2">
+      {viewMode === "by-group" && (
+        <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
+          <div className="grid grid-cols-6 gap-2 lg:grid-cols-12">
             {GROUPS.map((group) => (
               <GroupButton
                 key={group}
                 label={group}
-                count={groupCounts.get(group) ?? 0}
                 active={selectedGroup === group}
                 onClick={() => setSelectedGroup(group)}
               />
             ))}
           </div>
         </div>
-      </div>
+      )}
 
       {feedback && (
         <div
@@ -235,7 +242,15 @@ export function PredictionPanel() {
 
       {isLoading && <LoadingState rows={4} />}
 
-      {!isLoading && visibleMatches.length === 0 && (
+      {!isLoading && isError && (
+        <EmptyState
+          title={t("predictions.loadError")}
+          description={t("predictions.loadErrorDesc")}
+          icon={<Target className="h-10 w-10" />}
+        />
+      )}
+
+      {!isLoading && !isError && visibleMatches.length === 0 && (
         <EmptyState
           title={t("predictions.noMatches")}
           description={t("predictions.noMatchesDesc")}
@@ -243,7 +258,7 @@ export function PredictionPanel() {
         />
       )}
 
-      {!isLoading && visibleMatches.length > 0 && (
+      {!isLoading && !isError && visibleMatches.length > 0 && (
         <div className="grid gap-3">
           {visibleMatches.map((match) => {
             const prediction = predictionByMatch.get(match.id);
@@ -256,6 +271,9 @@ export function PredictionPanel() {
               match.status !== "scheduled";
             const pending =
               mutation.isPending && mutation.variables?.match.id === match.id;
+            let buttonLabel = t("predictions.submit")
+            if (pending) buttonLabel = t("common.saving")
+            else if (prediction) buttonLabel = t("predictions.update")
 
             return (
               <article
@@ -304,9 +322,6 @@ export function PredictionPanel() {
                         {t("predictions.kickoff")}:{" "}
                         <span suppressHydrationWarning>{formatKickoff(match.kickoff_at)}</span>
                       </span>
-                      <span className="inline-flex items-center gap-1.5" suppressHydrationWarning>
-                        {t("predictions.timezone")}: {timeZone}
-                      </span>
                       {match.stadium && (
                         <span className="inline-flex items-center gap-1.5">
                           <MapPin className="h-3.5 w-3.5" />
@@ -319,6 +334,7 @@ export function PredictionPanel() {
                           {phaseName(match.phase ?? match.group_label)}
                         </span>
                       )}
+                      <MatchCountdown kickoffAt={match.kickoff_at} />
                       {prediction?.points !== null &&
                         prediction?.points !== undefined && (
                           <span className="text-gold-300">
@@ -355,14 +371,17 @@ export function PredictionPanel() {
                       type="button"
                       disabled={locked || pending}
                       onClick={() => mutation.mutate({ match, draft })}
-                      className="btn-gold min-w-36 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                      className="btn-gold w-full px-3 py-2 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <Save className="h-4 w-4" />
-                      {(() => {
-                        if (pending) return t("common.saving");
-                        if (prediction) return t("predictions.update");
-                        return t("predictions.submit");
-                      })()}
+                      <Save className="h-4 w-4 shrink-0" />
+                      <span className="relative">
+                        <span aria-hidden className="invisible">
+                          {t("predictions.submit")}
+                        </span>
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          {buttonLabel}
+                        </span>
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -380,21 +399,17 @@ export function PredictionPanel() {
   );
 }
 
-function normalizeGroup(group: string | null | undefined): Exclude<GroupFilter, "all"> | null {
+function normalizeGroup(group: string | null | undefined): GroupLabel | null {
   const value = group?.trim().toUpperCase().replace(/^GROUP\s+/, "").replace(/^GRUPO\s+/, "");
-  return GROUPS.includes(value as Exclude<GroupFilter, "all">)
-    ? (value as Exclude<GroupFilter, "all">)
-    : null;
+  return GROUPS.includes(value as GroupLabel) ? (value as GroupLabel) : null;
 }
 
 function GroupButton({
   label,
-  count,
   active,
   onClick,
 }: Readonly<{
   label: string;
-  count: number;
   active: boolean;
   onClick: () => void;
 }>) {
@@ -410,10 +425,41 @@ function GroupButton({
       )}
     >
       <span className="text-sm font-bold uppercase">{label}</span>
-      <span className={cn("mt-0.5 text-[10px]", active ? "text-blue-900/80" : "text-text-muted")}>
-        {count}
-      </span>
     </button>
+  );
+}
+
+function MatchCountdown({ kickoffAt }: Readonly<{ kickoffAt: string | null | undefined }>) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!kickoffAt) return null;
+  const diff = new Date(kickoffAt).getTime() - now;
+  if (diff <= 0) return null;
+
+  const days  = Math.floor(diff / 86_400_000);
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000);
+  const mins  = Math.floor((diff % 3_600_000) / 60_000);
+  const secs  = Math.floor((diff % 60_000) / 1_000);
+
+  let label: string
+  if (days > 0) {
+    label = `${days}d ${hours}h ${mins}m`
+  } else if (hours > 0) {
+    label = `${hours}h ${mins}m ${secs}s`
+  } else {
+    label = `${mins}m ${secs}s`
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums text-gold-300">
+      <Timer className="h-3 w-3 shrink-0" />
+      {label}
+    </span>
   );
 }
 
@@ -449,11 +495,21 @@ function ScoreInput({
       <input
         type="number"
         min={0}
-        max={30}
+        max={50}
         inputMode="numeric"
         disabled={disabled}
         value={value}
-        onChange={(event) => onChange(Math.max(0, Number(event.target.value)))}
+        onFocus={(event) => event.target.select()}
+        onKeyDown={(event) => {
+          if (!/[\d\b]/.test(event.key) && !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(event.key)) {
+            event.preventDefault();
+          }
+        }}
+        onChange={(event) => {
+          const raw = Number(event.target.value);
+          if (!Number.isFinite(raw)) return;
+          onChange(Math.min(50, Math.max(0, raw)));
+        }}
         className="input-base h-10 text-center font-score text-lg disabled:cursor-not-allowed disabled:opacity-55"
       />
     </label>

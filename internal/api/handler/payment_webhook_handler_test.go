@@ -74,6 +74,141 @@ func TestWebhookHandler_Recurrente_IgnoresOtherEvents(t *testing.T) {
 	}
 }
 
+func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_Returns204(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":              "pa_test_001",
+		"event_type":      "payment_intent.succeeded",
+		"amount_in_cents": 10000,
+		"currency":        "GTQ",
+		"checkout": map[string]any{
+			"id":     "ch_test_001",
+			"status": "paid",
+			"metadata": map[string]any{
+				"wcq_user_id":   42,
+				"wcq_reference": "deposit-test-001",
+			},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 for payment_intent.succeeded, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_IntentSucceeded_Returns204(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":              "pi_test_001",
+		"event_type":      "intent.succeeded",
+		"type":            "payment",
+		"status":          "succeeded",
+		"amount_in_cents": 25000,
+		"currency":        "GTQ",
+		"checkout": map[string]any{
+			"id":     "ch_test_002",
+			"status": "paid",
+			"metadata": map[string]any{
+				"wcq_user_id":   7,
+				"wcq_reference": "deposit-test-002",
+			},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 for intent.succeeded, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_IntentSucceeded_NonPaymentType_Ignored(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"event_type": "intent.succeeded",
+		"type":       "payout",
+		"status":     "succeeded",
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 for ignored intent type, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_MissingUserID_Returns422(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":              "pa_test_002",
+		"event_type":      "payment_intent.succeeded",
+		"amount_in_cents": 5000,
+		"currency":        "GTQ",
+		"checkout": map[string]any{
+			"id":       "ch_test_003",
+			"metadata": map[string]any{}, // missing wcq_user_id
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 when wcq_user_id is absent, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_PaymentIntentSucceeded_ZeroAmount_Returns422(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":              "pa_test_003",
+		"event_type":      "payment_intent.succeeded",
+		"amount_in_cents": 0,
+		"currency":        "GTQ",
+		"checkout": map[string]any{
+			"id":       "ch_test_004",
+			"metadata": map[string]any{"wcq_user_id": 7, "wcq_reference": "ref_003"},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 when amount_in_cents is zero, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_IntentSucceeded_EmptyRef_UsesCheckoutIDRef(t *testing.T) {
+	// Covers the ref = "checkout:" + p.Checkout.ID branch in extractFromIntent:
+	// wcq_reference is absent but checkout.id is non-empty.
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":              "pi_ref_001",
+		"event_type":      "payment_intent.succeeded",
+		"amount_in_cents": 6000,
+		"currency":        "GTQ",
+		"checkout": map[string]any{
+			"id":       "ch_ref_001",
+			"metadata": map[string]any{"wcq_user_id": 8}, // no wcq_reference
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 with checkout-ID ref fallback, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_IntentSucceeded_EmptyCheckoutID_UsesIntentIDRef(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{})
+	payload := map[string]any{
+		"id":              "pi_fallback_001",
+		"event_type":      "intent.succeeded",
+		"type":            "payment",
+		"status":          "succeeded",
+		"amount_in_cents": 8000,
+		"currency":        "GTQ",
+		"checkout": map[string]any{
+			"id":       "", // empty — ref must fall back to "intent:pi_fallback_001"
+			"metadata": map[string]any{"wcq_user_id": 9},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 with intent-ID ref fallback, got %d", rec.Code)
+	}
+}
+
 func TestWebhookHandler_Recurrente_MissingFields_Returns422(t *testing.T) {
 	router := webhookRouter(t, &stubWebhookPaymentSvc{})
 	payload := map[string]any{
@@ -122,6 +257,65 @@ func TestWebhookHandler_Recurrente_MissingVerifiedBody_Returns401(t *testing.T) 
 	h.HandleRecurrente(rec, req) // no stampVerifiedBody middleware
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401 when context sentinel absent, got %d", rec.Code)
+	}
+}
+
+// ── Notifier integration ──────────────────────────────────────────────────────
+
+// stubNotifier satisfies the unexported paymentObservabilityNotifier interface
+// so that tests can verify notification side-effects without importing the
+// concrete observability package.
+type stubNotifier struct {
+	paymentErrors  []string
+	balanceCredits int
+}
+
+func (s *stubNotifier) NotifyPaymentError(_ context.Context, _, errorCode, _, _ string) {
+	s.paymentErrors = append(s.paymentErrors, errorCode)
+}
+
+func (s *stubNotifier) NotifyBalanceCredited(_ context.Context, _ int, _ int, _ string) {
+	s.balanceCredits++
+}
+
+func webhookRouterWithNotifier(t *testing.T, svc *stubWebhookPaymentSvc, notif *stubNotifier) http.Handler {
+	t.Helper()
+	h := handler.NewPaymentWebhookHandler(svc, zaptest.NewLogger(t))
+	h.SetNotifier(notif)
+	mux := http.NewServeMux()
+	mux.Handle("POST /webhooks/recurrente", stampVerifiedBody(http.HandlerFunc(h.HandleRecurrente)))
+	return mux
+}
+
+func TestWebhookHandler_Recurrente_WithNotifier_NotifiesOnSuccess(t *testing.T) {
+	notif := &stubNotifier{}
+	router := webhookRouterWithNotifier(t, &stubWebhookPaymentSvc{}, notif)
+	payload := map[string]any{
+		"event_type": "payment.confirmed",
+		"data":       map[string]any{"reference": "REF_NOTIF_OK", "amount_cents": 3000, "currency": "GTQ", "user_id": 10},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d", rec.Code)
+	}
+	if notif.balanceCredits != 1 {
+		t.Errorf("expected NotifyBalanceCredited called once, got %d", notif.balanceCredits)
+	}
+}
+
+func TestWebhookHandler_Recurrente_WithNotifier_NotifiesOnServiceError(t *testing.T) {
+	notif := &stubNotifier{}
+	router := webhookRouterWithNotifier(t, &stubWebhookPaymentSvc{err: errors.New("db error")}, notif)
+	payload := map[string]any{
+		"event_type": "payment.confirmed",
+		"data":       map[string]any{"reference": "REF_NOTIF_ERR", "amount_cents": 3000, "currency": "GTQ", "user_id": 11},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+	if len(notif.paymentErrors) != 1 {
+		t.Errorf("expected NotifyPaymentError called once, got %d", len(notif.paymentErrors))
 	}
 }
 

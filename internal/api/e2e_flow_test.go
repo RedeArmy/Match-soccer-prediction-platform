@@ -130,6 +130,21 @@ func seedE2EUser(t *testing.T, email, clerkSubject string, role domain.UserRole)
 	return id
 }
 
+// seedFreeGroupParam sets group.entry_fee_cents to 0 so groups created during
+// the test are free and memberships are marked paid automatically on join.
+// system_params is truncated by cleanE2ETables; call this after cleanE2ETables
+// in any test that creates groups and verifies leaderboard standings.
+func seedFreeGroupParam(t *testing.T) {
+	t.Helper()
+	_, err := e2eDB.Exec(context.Background(),
+		`INSERT INTO system_params (key, value, default_value, type, category, is_runtime)
+		 VALUES ('group.entry_fee_cents', '0', '0', 'int', 'group', TRUE)
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`)
+	if err != nil {
+		t.Fatalf("seed free group param: %v", err)
+	}
+}
+
 // doRequest is a thin helper that fires one HTTP request through the router
 // and returns the response recorder. Content-Type is set to JSON when body is non-nil.
 func doRequest(t *testing.T, h http.Handler, method, path, token string, body []byte) *httptest.ResponseRecorder {

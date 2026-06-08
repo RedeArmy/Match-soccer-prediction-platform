@@ -7,7 +7,9 @@ import type {
   UserResponse,
   BalanceResponse,
   LedgerEntry,
+  QuinielaResponse,
   GroupResponse,
+  GroupDetailResponse,
   MemberResponse,
   LeaderboardEntry,
   MatchResponse,
@@ -99,7 +101,7 @@ class APIClient {
     return this.request('/api/v1/groups/me', {}, token)
   }
 
-  getGroup(token: string, id: number): Promise<GroupResponse> {
+  getGroup(token: string, id: number): Promise<GroupDetailResponse> {
     return this.request(`/api/v1/groups/${id}`, {}, token)
   }
 
@@ -110,10 +112,19 @@ class APIClient {
   }
 
   getGroupMembers(token: string, id: number): Promise<MemberResponse[]> {
-    return this.request(`/api/v1/groups/${id}/members`, {}, token)
+    return this.request<{ data: MemberResponse[] }>(`/api/v1/groups/${id}/members`, {}, token)
+      .then((r) => r.data)
   }
 
-  createGroup(token: string, data: { name: string }): Promise<GroupResponse> {
+  approveGroupMember(token: string, groupId: number, membershipId: number): Promise<MemberResponse> {
+    return this.request(`/api/v1/groups/${groupId}/members/${membershipId}/approve`, { method: 'POST' }, token)
+  }
+
+  rejectGroupMember(token: string, groupId: number, membershipId: number): Promise<void> {
+    return this.request(`/api/v1/groups/${groupId}/members/${membershipId}`, { method: 'DELETE' }, token)
+  }
+
+  createGroup(token: string, data: { name: string }): Promise<QuinielaResponse> {
     return this.request('/api/v1/groups', { method: 'POST', body: JSON.stringify(data) }, token)
   }
 

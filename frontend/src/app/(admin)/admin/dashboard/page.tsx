@@ -3,12 +3,13 @@
 import { useAuth } from '@clerk/nextjs'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { formatGTQ } from '@/lib/utils'
 import { LoadingState } from '@/components/shared/LoadingState'
+import { useCurrency } from '@/hooks/useCurrency'
 import { Users, ShieldCheck, Wallet, TrendingUp, Activity, AlertCircle } from 'lucide-react'
 
 export default function AdminDashboardPage() {
   const { getToken } = useAuth()
+  const { fmt } = useCurrency()
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['admin-stats'],
@@ -20,12 +21,12 @@ export default function AdminDashboardPage() {
   })
 
   const kpis = stats ? [
-    { label: 'Usuarios totales',    value: stats.total_users.toLocaleString(),        icon: Users,       color: 'text-blue-400'  },
-    { label: 'Activos (7d)',        value: stats.active_users_7d.toLocaleString(),     icon: Activity,    color: 'text-green-400' },
-    { label: 'KYC pendientes',      value: stats.pending_kyc.toLocaleString(),         icon: ShieldCheck, color: 'text-gold-400'  },
-    { label: 'Retiros pendientes',  value: stats.pending_withdrawals.toLocaleString(), icon: Wallet,      color: 'text-maple-400' },
-    { label: 'Balance total',       value: formatGTQ(stats.total_balance_cents),       icon: TrendingUp,  color: 'text-gold-400'  },
-    { label: 'Transferencias',      value: stats.pending_bank_transfers.toLocaleString(), icon: AlertCircle, color: 'text-red-400' },
+    { label: 'Usuarios totales',    value: stats.total_users.toLocaleString(),           icon: Users,       color: 'text-blue-400'  },
+    { label: 'Activos (7d)',        value: stats.active_users_7d.toLocaleString(),        icon: Activity,    color: 'text-green-400' },
+    { label: 'KYC pendientes',      value: stats.pending_kyc.toLocaleString(),            icon: ShieldCheck, color: 'text-gold-400'  },
+    { label: 'Retiros pendientes',  value: stats.pending_withdrawals.toLocaleString(),    icon: Wallet,      color: 'text-maple-400' },
+    { label: 'Balance total',       value: fmt(stats.total_balance_cents),                icon: TrendingUp,  color: 'text-gold-400'  },
+    { label: 'Transferencias',      value: stats.pending_bank_transfers.toLocaleString(), icon: AlertCircle, color: 'text-red-400'   },
   ] : []
 
   return (

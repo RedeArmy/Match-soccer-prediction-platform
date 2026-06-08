@@ -70,27 +70,54 @@ func (h *PaymentWebhookHandler) RegisterMetrics(meter metric.Meter) error {
 	return nil
 }
 
-// recurrentePaymentData holds the payment object nested inside a Recurrente event.
+// recurrentePaymentData holds the payment object nested inside a legacy
+// payment.confirmed event (custom format, not part of the official Recurrente API).
 type recurrentePaymentData struct {
 	Reference   string `json:"reference"`
 	AmountCents int    `json:"amount_cents"`
 	Currency    string `json:"currency"`
-	// UserID is the metadata field we embed when creating the payment.
-	UserID int `json:"user_id"`
+	UserID      int    `json:"user_id"`
 }
 
 // recurrenteWebhookPayload is the minimal set of fields we extract from a
-// Recurrente payment-confirmed event.
+// legacy payment.confirmed event.
 type recurrenteWebhookPayload struct {
-	// EventType should be "payment.confirmed" for us to credit the balance.
 	EventType string                `json:"event_type"`
 	Data      recurrentePaymentData `json:"data"`
+}
+
+// recurrenteCheckoutMeta holds application-specific fields embedded in the
+// Recurrente checkout metadata at checkout-creation time.
+// Set "metadata": {"wcq_user_id": <int>, "wcq_reference": "<string>"} when
+// calling the Recurrente checkout creation API.
+type recurrenteCheckoutMeta struct {
+	WCQUserID    int    `json:"wcq_user_id"`
+	WCQReference string `json:"wcq_reference"`
+}
+
+// recurrenteCheckout is the checkout sub-object present in payment_intent.*
+// and intent.* events delivered by Recurrente via Svix.
+type recurrenteCheckout struct {
+	ID       string                 `json:"id"`
+	Metadata recurrenteCheckoutMeta `json:"metadata"`
+}
+
+// recurrenteIntentPayload covers both payment_intent.succeeded (legacy Recurrente
+// API format) and intent.succeeded (unified Recurrente API format).
+type recurrenteIntentPayload struct {
+	ID          string             `json:"id"`
+	EventType   string             `json:"event_type"`
+	Type        string             `json:"type"`   // "payment" for intent.succeeded
+	Status      string             `json:"status"` // "succeeded" etc.
+	AmountCents int                `json:"amount_in_cents"`
+	Currency    string             `json:"currency"`
+	Checkout    recurrenteCheckout `json:"checkout"`
 }
 
 // HandleRecurrente handles POST /webhooks/recurrente.
 //
 // @Summary      Recurrente payment webhook
-// @Description  Receives payment confirmation events from Recurrente. Credits the user's balance on confirmed events.
+// @Description  Receives payment confirmation events from Recurrente via Svix. Credits the user's balance on confirmed events.
 // @Tags         webhooks
 // @Accept       json
 // @Produce      json
@@ -106,34 +133,27 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 		return
 	}
 
-	var payload recurrenteWebhookPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		writeError(w, r, h.log, apperrors.Validation("could not parse Recurrente webhook payload"))
+	userID, amountCents, currency, reference, skip, err := extractRecurrenteCreditParams(body)
+	if err != nil {
+		writeError(w, r, h.log, err)
 		return
 	}
-
-	if payload.EventType != "payment.confirmed" {
-		h.log.Debug("recurrente webhook: ignoring event", zap.String("event_type", payload.EventType))
+	if skip {
+		h.log.Debug("recurrente webhook: ignoring unrecognised event")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	d := payload.Data
-	if d.UserID <= 0 || d.AmountCents <= 0 || d.Reference == "" {
-		writeError(w, r, h.log, apperrors.Validation("missing required fields in Recurrente webhook data"))
-		return
-	}
-
 	start := time.Now()
-	if err := h.svc.CreditFromRecurrente(r.Context(), d.UserID, d.AmountCents, d.Currency, d.Reference); err != nil {
+	if err := h.svc.CreditFromRecurrente(r.Context(), userID, amountCents, currency, reference); err != nil {
 		h.log.Error("recurrente webhook: failed to credit balance",
-			zap.String("reference", d.Reference),
-			zap.Int("user_id", d.UserID),
+			zap.String("reference", reference),
+			zap.Int("user_id", userID),
 			zap.Error(err),
 		)
 		if h.notifier != nil {
 			h.notifier.NotifyPaymentError(r.Context(), "recurrente", err.Error(),
-				strconv.Itoa(d.UserID), strconv.Itoa(d.AmountCents))
+				strconv.Itoa(userID), strconv.Itoa(amountCents))
 		}
 		h.recordPayment(r.Context(), "recurrente", "failed", time.Since(start))
 		writeError(w, r, h.log, err)
@@ -142,9 +162,89 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 
 	h.recordPayment(r.Context(), "recurrente", "success", time.Since(start))
 	if h.notifier != nil {
-		h.notifier.NotifyBalanceCredited(r.Context(), d.UserID, d.AmountCents, "recurrente")
+		h.notifier.NotifyBalanceCredited(r.Context(), userID, amountCents, "recurrente")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+const errMsgParseRecurrente = "could not parse Recurrente webhook payload"
+
+// extractRecurrenteCreditParams parses a Recurrente webhook body and extracts the
+// parameters needed to credit a user's balance. Supports three event formats:
+//
+//   - "payment.confirmed"       – legacy custom format; uses data.user_id + data.amount_cents.
+//   - "payment_intent.succeeded" – official Recurrente API; uses checkout.metadata.wcq_user_id
+//     and amount_in_cents. Requires the checkout to have been created with
+//     metadata: {"wcq_user_id": <int>, "wcq_reference": "<string>"}.
+//   - "intent.succeeded"        – unified Recurrente API (type="payment", status="succeeded");
+//     same metadata convention as payment_intent.succeeded.
+//
+// Returns skip=true for unknown event types (caller should respond 204 and return).
+func extractRecurrenteCreditParams(body []byte) (userID, amountCents int, currency, reference string, skip bool, err error) {
+	// Peek at event_type to route the format.
+	var probe struct {
+		EventType string `json:"event_type"`
+		Type      string `json:"type"`
+		Status    string `json:"status"`
+	}
+	if json.Unmarshal(body, &probe) != nil {
+		return 0, 0, "", "", false, apperrors.Validation(errMsgParseRecurrente)
+	}
+
+	switch probe.EventType {
+	case "payment.confirmed":
+		var p recurrenteWebhookPayload
+		if json.Unmarshal(body, &p) != nil {
+			return 0, 0, "", "", false, apperrors.Validation(errMsgParseRecurrente)
+		}
+		d := p.Data
+		if d.UserID <= 0 || d.AmountCents <= 0 || d.Reference == "" {
+			return 0, 0, "", "", false, apperrors.Validation("missing required fields in Recurrente webhook data")
+		}
+		return d.UserID, d.AmountCents, d.Currency, d.Reference, false, nil
+
+	case "payment_intent.succeeded":
+		var p recurrenteIntentPayload
+		if json.Unmarshal(body, &p) != nil {
+			return 0, 0, "", "", false, apperrors.Validation(errMsgParseRecurrente)
+		}
+		return extractFromIntent(p)
+
+	case "intent.succeeded":
+		// Only handle payment intents that reached succeeded status.
+		if probe.Type != "payment" || probe.Status != "succeeded" {
+			return 0, 0, "", "", true, nil
+		}
+		var p recurrenteIntentPayload
+		if json.Unmarshal(body, &p) != nil {
+			return 0, 0, "", "", false, apperrors.Validation(errMsgParseRecurrente)
+		}
+		return extractFromIntent(p)
+
+	default:
+		return 0, 0, "", "", true, nil
+	}
+}
+
+// extractFromIntent extracts credit parameters from a payment_intent.succeeded or
+// intent.succeeded payload. User identity is resolved via checkout metadata fields
+// (wcq_user_id / wcq_reference) that must be embedded at checkout-creation time.
+func extractFromIntent(p recurrenteIntentPayload) (userID, amountCents int, currency, reference string, skip bool, err error) {
+	if p.AmountCents <= 0 {
+		return 0, 0, "", "", false, apperrors.Validation("missing amount_in_cents in Recurrente intent event")
+	}
+	if p.Checkout.Metadata.WCQUserID <= 0 {
+		return 0, 0, "", "", false, apperrors.Validation("missing wcq_user_id in Recurrente checkout metadata")
+	}
+	ref := p.Checkout.Metadata.WCQReference
+	if ref == "" {
+		if p.Checkout.ID != "" {
+			ref = "checkout:" + p.Checkout.ID
+		} else {
+			ref = "intent:" + p.ID
+		}
+	}
+	return p.Checkout.Metadata.WCQUserID, p.AmountCents, p.Currency, ref, false, nil
 }
 
 // paypalCaptureAmount holds the monetary amount declared on a PayPal capture event.

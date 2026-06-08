@@ -515,6 +515,136 @@ func TestGroupMembershipService_ListByUser_ReturnsMemberships(t *testing.T) {
 	}
 }
 
+// ── RejectJoin ────────────────────────────────────────────────────────────────
+
+func TestGroupMembershipService_RejectJoin_Success(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+		},
+	)
+
+	if err := svc.RejectJoin(context.Background(), 1, 99, 10); err != nil {
+		t.Fatalf("expected nil error on successful reject, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_RejectJoin_RejectorNotMember_ReturnsForbidden(t *testing.T) {
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{membership: nil},
+	)
+
+	err := svc.RejectJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrForbidden) {
+		t.Errorf("expected forbidden for non-member rejector, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_RejectJoin_MembershipNotFound_ReturnsNotFound(t *testing.T) {
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     activeMembership(1, 10),
+			membershipByID: nil,
+		},
+	)
+
+	err := svc.RejectJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found when pending membership absent, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_RejectJoin_WrongQuiniela_ReturnsNotFound(t *testing.T) {
+	approver := activeMembership(1, 10)
+	wrongGroup := pendingMembership(99, 2, 42) // belongs to quinielaID=2
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: wrongGroup,
+		},
+	)
+
+	err := svc.RejectJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found for cross-quiniela reject, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_RejectJoin_NotPending_ReturnsConflict(t *testing.T) {
+	approver := activeMembership(1, 10)
+	alreadyActive := activeMembership(1, 42)
+	alreadyActive.ID = 99
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: alreadyActive,
+		},
+	)
+
+	err := svc.RejectJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict for non-pending membership, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_RejectJoin_RemoveByAdminError_Propagates(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			removeErr:      errors.New(membershipDBError),
+		},
+	)
+
+	if err := svc.RejectJoin(context.Background(), 1, 99, 10); err == nil {
+		t.Fatal("expected error when RemoveByAdmin fails, got nil")
+	}
+}
+
+// ── ListByUser ────────────────────────────────────────────────────────────────
+
+func TestGroupMembershipService_ListByUser_FiltersOutLeftMemberships(t *testing.T) {
+	memberships := []*domain.GroupMembership{
+		{ID: 1, QuinielaID: 1, UserID: 10, Status: domain.MembershipActive},
+		{ID: 2, QuinielaID: 2, UserID: 10, Status: domain.MembershipLeft},
+	}
+	svc := newMemberSvc(
+		&stubQuinielaRepo{},
+		&stubMemberRepo{memberships: memberships},
+	)
+
+	got, err := svc.ListByUser(context.Background(), 10)
+	if err != nil {
+		t.Fatalf(fmtExpectNil, err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected left memberships to be filtered out, got %d memberships", len(got))
+	}
+	if got[0].ID != 1 {
+		t.Errorf("expected only the active membership to remain, got ID %d", got[0].ID)
+	}
+}
+
+func TestGroupMembershipService_ListByUser_RepoError_Propagates(t *testing.T) {
+	svc := newMemberSvc(&stubQuinielaRepo{}, &stubMemberRepo{err: errors.New(membershipDBError)})
+
+	_, err := svc.ListByUser(context.Background(), 10)
+	if err == nil {
+		t.Error("expected error from ListByUser, got nil")
+	}
+}
+
 // ── MarkPaid ──────────────────────────────────────────────────────────────────
 
 // ── ApproveMembership / LeaveMembership error propagation ─────────────────────

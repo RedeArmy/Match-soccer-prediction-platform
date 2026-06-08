@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
@@ -276,7 +277,8 @@ func (s *stubMemberSvc) Join(_ context.Context, _ string, _ int) (*domain.GroupM
 func (s *stubMemberSvc) ApproveJoin(_ context.Context, _, _, _ int) (*domain.GroupMembership, error) {
 	return s.membership, s.err
 }
-func (s *stubMemberSvc) Leave(_ context.Context, _, _ int) error { return s.err }
+func (s *stubMemberSvc) RejectJoin(_ context.Context, _, _, _ int) error { return s.err }
+func (s *stubMemberSvc) Leave(_ context.Context, _, _ int) error         { return s.err }
 func (s *stubMemberSvc) MarkPaid(_ context.Context, _, _ int) (*domain.GroupMembership, error) {
 	return s.membership, s.err
 }
@@ -396,5 +398,47 @@ func (s *stubFileStore) Get(_ context.Context, _ string) (io.ReadCloser, string,
 		return io.NopCloser(bytes.NewReader(s.getContent)), s.getType, nil
 	}
 	return nil, "", storage.ErrNotFound
+}
+
+// stubSystemParamSvc implements service.SystemParamService for handler tests.
+// All reads fall back to the supplied default so GroupHandler can resolve
+// entry-fee and currency params without a real database.
+type stubSystemParamSvc struct{}
+
+func (s *stubSystemParamSvc) Get(_ context.Context, _ string) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubSystemParamSvc) GetAll(_ context.Context) ([]*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubSystemParamSvc) GetByCategory(_ context.Context, _ string) ([]*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubSystemParamSvc) Set(_ context.Context, _, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubSystemParamSvc) GetString(_ context.Context, _ string, defaultVal string) string {
+	return defaultVal
+}
+func (s *stubSystemParamSvc) GetInt(_ context.Context, _ string, defaultVal int) int {
+	return defaultVal
+}
+func (s *stubSystemParamSvc) GetDuration(_ context.Context, _ string, defaultVal time.Duration) time.Duration {
+	return defaultVal
+}
+func (s *stubSystemParamSvc) GetBool(_ context.Context, _ string, defaultVal bool) bool {
+	return defaultVal
+}
+func (s *stubSystemParamSvc) BulkSet(_ context.Context, _ map[string]string, _ int) error {
+	return nil
+}
+func (s *stubSystemParamSvc) BulkPreview(_ context.Context, _ map[string]string) ([]domain.ParamDiff, error) {
+	return nil, nil
+}
+func (s *stubSystemParamSvc) ResetToDefault(_ context.Context, _ string, _ int) (*domain.SystemParam, error) {
+	return nil, nil
+}
+func (s *stubSystemParamSvc) GetHistory(_ context.Context, _ string, _ repository.CursorPage) ([]*domain.SystemParamHistory, string, error) {
+	return nil, "", nil
 }
 func (s *stubFileStore) Delete(_ context.Context, _ string) error { return nil }

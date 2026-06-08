@@ -16,6 +16,7 @@ type GroupHandler struct {
 	quinielaSvc service.QuinielaService
 	memberSvc   service.GroupMembershipService
 	authz       service.GroupAuthz
+	params      service.SystemParamService
 	log         *zap.Logger
 }
 
@@ -25,9 +26,10 @@ func NewGroupHandler(
 	quinielaSvc service.QuinielaService,
 	memberSvc service.GroupMembershipService,
 	authz service.GroupAuthz,
+	params service.SystemParamService,
 	log *zap.Logger,
 ) *GroupHandler {
-	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, authz: authz, log: log}
+	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, authz: authz, params: params, log: log}
 }
 
 // renameGroupRequest is the JSON body accepted by PATCH /api/v1/groups/{id}.
@@ -36,10 +38,9 @@ type renameGroupRequest struct {
 }
 
 // createGroupRequest is the JSON body accepted by POST /api/v1/groups.
+// Entry fee and currency are resolved from system_params; callers supply only the name.
 type createGroupRequest struct {
-	Name     string `json:"name"`
-	EntryFee int    `json:"entry_fee"`
-	Currency string `json:"currency"`
+	Name string `json:"name"`
 }
 
 // joinGroupRequest is the JSON body accepted by POST /api/v1/groups/join.
@@ -78,11 +79,15 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx := r.Context()
+	entryFee := h.params.GetInt(ctx, domain.ParamKeyGroupEntryFeeCents, domain.DefaultGroupEntryFeeCents)
+	currency := h.params.GetString(ctx, domain.ParamKeyGroupCurrency, domain.DefaultGroupCurrency)
+
 	quiniela := &domain.Quiniela{
 		Name:     req.Name,
 		OwnerID:  caller.ID,
-		EntryFee: req.EntryFee,
-		Currency: req.Currency,
+		EntryFee: entryFee,
+		Currency: currency,
 	}
 	if err := h.quinielaSvc.Create(r.Context(), quiniela); err != nil {
 		writeError(w, r, h.log, err)
@@ -313,6 +318,45 @@ func (h *GroupHandler) ApproveJoin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, memberToResponse(membership))
 }
 
+// RejectJoin handles DELETE /api/v1/groups/{id}/members/{membershipID}.
+//
+// @Summary      Reject a join request
+// @Description  Sets a pending join request to left. Any active member of the group may reject.
+//
+// @Tags         groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id           path  int  true  "Group ID"
+// @Param        membershipID path  int  true  "Membership ID to reject"
+// @Success      204  "Rejected"
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Not an active member of this group"
+// @Failure      404  {object}  handler.ErrorResponse  "Join request not found"
+// @Failure      409  {object}  handler.ErrorResponse  "Request is no longer pending"
+// @Router       /api/v1/groups/{id}/members/{membershipID} [delete]
+func (h *GroupHandler) RejectJoin(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	quinielaID, err := pathID(r, "id")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	membershipID, err := pathID(r, "membershipID")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if err := h.memberSvc.RejectJoin(r.Context(), quinielaID, membershipID, caller.ID); err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Leave handles DELETE /api/v1/groups/{id}/members/me.
 //
 // @Summary      Leave a group
@@ -417,9 +461,21 @@ func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, err)
 		return
 	}
-	out := make([]MemberResponse, len(members))
-	for i, m := range members {
-		out[i] = memberToResponse(m)
+	out := make([]MyGroupResponse, 0, len(members))
+	for _, m := range members {
+		if m.Status == domain.MembershipLeft {
+			continue // left/rejected memberships are hidden from the dashboard
+		}
+		out = append(out, MyGroupResponse{
+			ID:               m.QuinielaID,
+			Name:             m.GroupName,
+			GroupStatus:      m.GroupStatus,
+			MembershipStatus: string(m.Status),
+			Role:             string(m.Role),
+			InviteCode:       m.InviteCode,
+			EntryFee:         m.EntryFee,
+			Currency:         m.Currency,
+		})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
