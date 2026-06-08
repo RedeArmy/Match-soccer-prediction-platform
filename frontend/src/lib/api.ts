@@ -20,6 +20,7 @@ import type {
   KYCEventResponse,
   BankTransferResponse,
   PaymentIntentResponse,
+  PayPalOrderResponse,
   WithdrawalResponse,
   InboxResponse,
   PreferenceResponse,
@@ -199,6 +200,13 @@ class APIClient {
       method: 'POST',
       body: JSON.stringify(data),
       headers: { 'Idempotency-Key': idempotencyKey } as HeadersInit,
+    }, token)
+  }
+
+  createPayPalOrder(token: string, data: { amount_cents: number; currency: 'USD' }): Promise<PayPalOrderResponse> {
+    return this.request('/api/v1/paypal/create-order', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }, token)
   }
 

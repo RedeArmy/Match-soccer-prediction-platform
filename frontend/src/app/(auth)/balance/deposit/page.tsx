@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useAuth } from "@clerk/nextjs";
@@ -19,6 +19,7 @@ import { SubmitButton } from "@/components/shared/SubmitButton";
 import { CreditCard, Building2 } from "lucide-react";
 
 type Method = "recurrente" | "paypal" | "bank";
+type PayPalActions = { order?: { capture: () => Promise<unknown> } };
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
 
@@ -33,6 +34,8 @@ export default function DepositPage() {
   const [fileError, setFileError] = useState("");
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [paypalOrderId, setPaypalOrderId] = useState("");
+  const [paypalOrderAmountCents, setPaypalOrderAmountCents] = useState<number | null>(null);
 
   const gtqEquiv =
     rate && amountUSD
@@ -113,6 +116,38 @@ export default function DepositPage() {
   ];
 
   const validUSD = amountUSD && Number.parseFloat(amountUSD) > 0;
+  const paypalAmountCents = validUSD ? Math.round(Number.parseFloat(amountUSD) * 100) : 0;
+  const paypalOrderReady = Boolean(
+    paypalOrderId && paypalOrderAmountCents === paypalAmountCents,
+  );
+
+  const preparePayPalOrderMutation = useMutation({
+    mutationFn: async () => {
+      if (!paypalAmountCents) throw new Error("Ingresa un monto válido en USD.");
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Sesión expirada. Inicia sesión nuevamente antes de pagar con PayPal.");
+      }
+
+      const order = await api.createPayPalOrder(token, {
+        amount_cents: paypalAmountCents,
+        currency: "USD",
+      });
+
+      if (!order.id) throw new Error("PayPal no devolvió un ID de orden válido.");
+      return { id: order.id, amountCents: paypalAmountCents };
+    },
+    onSuccess: ({ id, amountCents }) => {
+      setPaypalOrderId(id);
+      setPaypalOrderAmountCents(amountCents);
+      setError("");
+    },
+    onError: (e: Error) => {
+      setPaypalOrderId("");
+      setPaypalOrderAmountCents(null);
+      setError(e.message);
+    },
+  });
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -128,6 +163,8 @@ export default function DepositPage() {
               setMethod(tab.id);
               setError("");
               setSuccess("");
+              setPaypalOrderId("");
+              setPaypalOrderAmountCents(null);
             }}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm transition-colors ${
               method === tab.id
@@ -142,7 +179,7 @@ export default function DepositPage() {
       </div>
 
       <div className="card p-6 space-y-5">
-        {/* ── Recurrente ─────────────────────────────────────────────────── */}
+        {/* Recurrente */}
         {method === "recurrente" && (
           <>
             <p className="text-sm text-text-secondary">
@@ -178,7 +215,7 @@ export default function DepositPage() {
           </>
         )}
 
-        {/* ── PayPal ─────────────────────────────────────────────────────── */}
+        {/* PayPal */}
         {method === "paypal" && (
           <>
             <p className="text-sm text-text-secondary">
@@ -210,6 +247,8 @@ export default function DepositPage() {
                 onChange={(e) => {
                   setAmountUSD(e.target.value);
                   setError("");
+                  setPaypalOrderId("");
+                  setPaypalOrderAmountCents(null);
                 }}
                 placeholder="50.00"
                 className="input-base"
@@ -229,8 +268,19 @@ export default function DepositPage() {
               </p>
             )}
 
-            {PAYPAL_CLIENT_ID && validUSD && (
+            {PAYPAL_CLIENT_ID && validUSD && !paypalOrderReady && (
+              <SubmitButton
+                isPending={preparePayPalOrderMutation.isPending}
+                disabled={!validUSD}
+                onClick={() => preparePayPalOrderMutation.mutate()}
+              >
+                Preparar pago con PayPal
+              </SubmitButton>
+            )}
+
+            {PAYPAL_CLIENT_ID && paypalOrderReady && (
               <PayPalScriptProvider
+                key={paypalOrderId}
                 options={{
                   clientId: PAYPAL_CLIENT_ID,
                   currency: "USD",
@@ -246,46 +296,8 @@ export default function DepositPage() {
                     label: "paypal",
                     height: 44,
                   }}
-                  createOrder={async () => {
-                    console.log("[PayPal] createOrder: start, amountUSD=", amountUSD);
-                    const cents = Math.round(Number.parseFloat(amountUSD) * 100);
-                    let res: Response;
-                    try {
-                      res = await fetch("/api/v1/paypal/create-order", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ amount_cents: cents, currency: "USD" }),
-                      });
-                    } catch (fetchErr) {
-                      console.error("[PayPal] createOrder: fetch failed", fetchErr);
-                      setError("No se pudo contactar al servidor");
-                      throw fetchErr;
-                    }
-                    console.log("[PayPal] createOrder: response status", res.status);
-                    const rawBody = await res.text();
-                    console.log("[PayPal] createOrder: response body", rawBody);
-                    if (!res.ok) {
-                      let msg = "Error al crear la orden en PayPal";
-                      try {
-                        const parsed = JSON.parse(rawBody) as { error?: unknown };
-                        if (typeof parsed.error === "string") msg = parsed.error;
-                        else if (parsed.error && typeof (parsed.error as { message?: string }).message === "string") {
-                          msg = (parsed.error as { message: string }).message;
-                        }
-                      } catch { /* non-JSON body, keep default */ }
-                      setError(msg);
-                      throw new Error(msg);
-                    }
-                    const data = JSON.parse(rawBody) as { id: string };
-                    console.log("[PayPal] createOrder: order id=", data.id);
-                    if (!data.id) {
-                      const msg = "PayPal no devolvió un ID de orden válido";
-                      setError(msg);
-                      throw new Error(msg);
-                    }
-                    return data.id;
-                  }}
-                  onApprove={async (_data, actions) => {
+                  createOrder={async () => paypalOrderId}
+                  onApprove={async (_data: unknown, actions: PayPalActions) => {
                     await actions.order!.capture();
                     await Promise.all([
                       queryClient.invalidateQueries({ queryKey: ["balance"] }),
@@ -294,11 +306,18 @@ export default function DepositPage() {
                     ]);
                     setSuccess("Pago completado. Tu saldo será acreditado en breve.");
                     setAmountUSD("");
+                    setPaypalOrderId("");
+                    setPaypalOrderAmountCents(null);
                   }}
-                  onCancel={() => setError("Pago cancelado.")}
-                  onError={(err) => {
+                  onCancel={() => {
+                    setError("Pago cancelado.");
+                    setPaypalOrderId("");
+                    setPaypalOrderAmountCents(null);
+                  }}
+                  onError={(err: unknown) => {
                     console.error("[PayPal] onError:", err);
-                    setError("Error al procesar el pago con PayPal.");
+                    const message = err instanceof Error ? err.message : "Error al procesar el pago con PayPal.";
+                    setError(message);
                   }}
                 />
               </PayPalScriptProvider>
@@ -306,7 +325,7 @@ export default function DepositPage() {
           </>
         )}
 
-        {/* ── Bank transfer ───────────────────────────────────────────────── */}
+        {/* Bank transfer */}
         {method === "bank" && (
           <>
             <div className="bg-blue-900 rounded-xl p-4 space-y-2 text-sm">

@@ -307,6 +307,10 @@ export interface PaymentIntentResponse {
   redirect_url?: string          // only set for Recurrente checkouts
 }
 
+export interface PayPalOrderResponse {
+  id: string
+}
+
 export interface WithdrawalResponse {
   id:              number
   amount_cents:    number
