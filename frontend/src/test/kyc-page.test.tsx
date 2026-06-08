@@ -30,7 +30,6 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import KYCPage from "@/app/(auth)/kyc/page";
-import { I18nProvider } from "@/lib/i18n";
 
 function renderKYCPage() {
   const queryClient = new QueryClient({
@@ -41,11 +40,9 @@ function renderKYCPage() {
   });
 
   return render(
-    <I18nProvider>
-      <QueryClientProvider client={queryClient}>
-        <KYCPage />
-      </QueryClientProvider>
-    </I18nProvider>,
+    <QueryClientProvider client={queryClient}>
+      <KYCPage />
+    </QueryClientProvider>,
   );
 }
 
