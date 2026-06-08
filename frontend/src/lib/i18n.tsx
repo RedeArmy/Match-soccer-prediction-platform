@@ -204,6 +204,12 @@ const translations: TranslationNode = {
     reject:           { es: 'Rechazar',                         en: 'Reject'                         },
     pendingBadge:     { es: 'Pendiente',                        en: 'Pending'                        },
   },
+  ledger: {
+    credit:     { es: 'Crédito',          en: 'Credit'      },
+    withdrawal: { es: 'Retiro',           en: 'Withdrawal'  },
+    earning:    { es: 'Ganancia',         en: 'Earning'     },
+    entryFee:   { es: 'Pago',             en: 'Payment'     },
+  },
   dashboard: {
     hello:              { es: 'Hola',                          en: 'Hello'                        },
     player:             { es: 'Jugador',                       en: 'Player'                       },

@@ -178,6 +178,9 @@ func validateProductionConfig(cfg *Config) error {
 	if cfg.Clerk.WebhookSecret == "" {
 		return errors.New("clerk.webhookSecret must not be empty outside development (WCQ_CLERK_WEBHOOKSECRET)")
 	}
+	if cfg.Payment.RecurrenteAPIKey == "" {
+		return errors.New("payment.recurrenteAPIKey must not be empty outside development (WCQ_PAYMENT_RECURRENTEAPIKEY)")
+	}
 	if cfg.Payment.RecurrenteWebhookSecret == "" {
 		return errors.New("payment.recurrenteWebhookSecret must not be empty outside development (WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
 	}

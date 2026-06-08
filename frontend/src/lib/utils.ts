@@ -106,6 +106,18 @@ export function formatRate(rate: string): string {
   return Number.isNaN(n) ? rate : n.toFixed(4)
 }
 
+// ── Ledger kind → i18n key ────────────────────────────────────────────────────
+
+export function ledgerKindKey(kind: string): string {
+  if (kind === 'webhook_recurrente' || kind === 'webhook_paypal' || kind === 'bank_transfer') {
+    return 'ledger.credit'
+  }
+  if (kind.startsWith('withdrawal_')) return 'ledger.withdrawal'
+  if (kind === 'prize') return 'ledger.earning'
+  if (kind === 'entry_fee') return 'ledger.entryFee'
+  return kind
+}
+
 // ── General ───────────────────────────────────────────────────────────────────
 
 export function truncate(str: string, maxLen: number): string {

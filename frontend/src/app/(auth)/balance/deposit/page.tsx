@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { PayPalScriptProvider, PayPalButtons, FUNDING } from "@paypal/react-paypal-js";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
 import { api } from "@/lib/api";
 import {
@@ -19,9 +20,12 @@ import { CreditCard, Building2 } from "lucide-react";
 
 type Method = "recurrente" | "paypal" | "bank";
 
+const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
+
 export default function DepositPage() {
   const { getToken } = useAuth();
   const { data: rate } = useExchangeRate();
+  const queryClient = useQueryClient();
   const [method, setMethod] = useState<Method>("recurrente");
   const [amountGTQ, setAmountGTQ] = useState("");
   const [amountUSD, setAmountUSD] = useState("");
@@ -39,22 +43,14 @@ export default function DepositPage() {
         )
       : null;
 
-  // Recurrente / PayPal: create payment intent
-  const intentMutation = useMutation({
+  // Recurrente: creates a hosted checkout session and redirects
+  const recurrenteMutation = useMutation({
     mutationFn: async () => {
       const token = await getToken();
-      const isUSD = method === "paypal";
-      const rawAmount = isUSD
-        ? Number.parseFloat(amountUSD)
-        : Number.parseFloat(amountGTQ);
-      const cents = Math.round(rawAmount * 100);
+      const cents = Math.round(Number.parseFloat(amountGTQ) * 100);
       return api.createPaymentIntent(
         token!,
-        {
-          amount_cents: cents,
-          currency: isUSD ? "USD" : "GTQ",
-          provider: method,
-        },
+        { amount_cents: cents, currency: "GTQ", provider: "recurrente" },
         crypto.randomUUID(),
       );
     },
@@ -116,34 +112,37 @@ export default function DepositPage() {
     },
   ];
 
+  const validUSD = amountUSD && Number.parseFloat(amountUSD) > 0;
+
   return (
     <div className="max-w-lg mx-auto space-y-6">
       <h1 className="font-display text-3xl text-white">DEPOSITAR</h1>
 
       {/* Method tabs */}
       <div className="flex gap-1 p-1 bg-blue-900 rounded-xl">
-        {tabs.map((t) => (
+        {tabs.map((tab) => (
           <button
-            key={t.id}
+            key={tab.id}
+            type="button"
             onClick={() => {
-              setMethod(t.id);
+              setMethod(tab.id);
               setError("");
               setSuccess("");
             }}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm transition-colors ${
-              method === t.id
+              method === tab.id
                 ? "bg-blue-700 text-white font-medium"
                 : "text-text-muted hover:text-text-secondary"
             }`}
           >
-            {t.icon}
-            {t.label}
+            {tab.icon}
+            {tab.label}
           </button>
         ))}
       </div>
 
       <div className="card p-6 space-y-5">
-        {/* Recurrente */}
+        {/* ── Recurrente ─────────────────────────────────────────────────── */}
         {method === "recurrente" && (
           <>
             <p className="text-sm text-text-secondary">
@@ -170,20 +169,20 @@ export default function DepositPage() {
               />
             </div>
             <SubmitButton
-              isPending={intentMutation.isPending}
+              isPending={recurrenteMutation.isPending}
               disabled={!amountGTQ}
-              onClick={() => intentMutation.mutate()}
+              onClick={() => recurrenteMutation.mutate()}
             >
               Continuar con Recurrente
             </SubmitButton>
           </>
         )}
 
-        {/* PayPal */}
+        {/* ── PayPal ─────────────────────────────────────────────────────── */}
         {method === "paypal" && (
           <>
             <p className="text-sm text-text-secondary">
-              Deposita con PayPal. Se usa la tasa de compra del día.
+              Deposita con tu cuenta PayPal. Se usa la tasa de compra del día.
             </p>
             {rate && (
               <p className="text-xs text-text-muted">
@@ -193,6 +192,7 @@ export default function DepositPage() {
                 </span>
               </p>
             )}
+
             <div>
               <label
                 htmlFor="deposit-usd-amount"
@@ -207,25 +207,106 @@ export default function DepositPage() {
                 max="10000"
                 step="0.01"
                 value={amountUSD}
-                onChange={(e) => setAmountUSD(e.target.value)}
+                onChange={(e) => {
+                  setAmountUSD(e.target.value);
+                  setError("");
+                }}
                 placeholder="50.00"
                 className="input-base"
               />
               {gtqEquiv && (
-                <p className="text-xs text-text-muted mt-1">≈ {gtqEquiv} GTQ</p>
+                <p className="text-xs text-text-muted mt-1">
+                  ≈ {gtqEquiv} GTQ
+                </p>
               )}
             </div>
-            <SubmitButton
-              isPending={intentMutation.isPending}
-              disabled={!amountUSD}
-              onClick={() => intentMutation.mutate()}
-            >
-              Continuar con PayPal
-            </SubmitButton>
+
+            {!PAYPAL_CLIENT_ID && (
+              <p className="text-xs text-red-400 text-center py-2">
+                PayPal no está configurado. Agrega{" "}
+                <code className="font-mono">NEXT_PUBLIC_PAYPAL_CLIENT_ID</code>{" "}
+                al entorno.
+              </p>
+            )}
+
+            {PAYPAL_CLIENT_ID && validUSD && (
+              <PayPalScriptProvider
+                options={{
+                  clientId: PAYPAL_CLIENT_ID,
+                  currency: "USD",
+                  intent: "capture",
+                  disableFunding: "card,credit,venmo,paylater",
+                }}
+              >
+                <PayPalButtons
+                  fundingSource={FUNDING.PAYPAL}
+                  style={{
+                    color: "gold",
+                    shape: "rect",
+                    label: "paypal",
+                    height: 44,
+                  }}
+                  createOrder={async () => {
+                    console.log("[PayPal] createOrder: start, amountUSD=", amountUSD);
+                    const cents = Math.round(Number.parseFloat(amountUSD) * 100);
+                    let res: Response;
+                    try {
+                      res = await fetch("/api/v1/paypal/create-order", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ amount_cents: cents, currency: "USD" }),
+                      });
+                    } catch (fetchErr) {
+                      console.error("[PayPal] createOrder: fetch failed", fetchErr);
+                      setError("No se pudo contactar al servidor");
+                      throw fetchErr;
+                    }
+                    console.log("[PayPal] createOrder: response status", res.status);
+                    const rawBody = await res.text();
+                    console.log("[PayPal] createOrder: response body", rawBody);
+                    if (!res.ok) {
+                      let msg = "Error al crear la orden en PayPal";
+                      try {
+                        const parsed = JSON.parse(rawBody) as { error?: unknown };
+                        if (typeof parsed.error === "string") msg = parsed.error;
+                        else if (parsed.error && typeof (parsed.error as { message?: string }).message === "string") {
+                          msg = (parsed.error as { message: string }).message;
+                        }
+                      } catch { /* non-JSON body, keep default */ }
+                      setError(msg);
+                      throw new Error(msg);
+                    }
+                    const data = JSON.parse(rawBody) as { id: string };
+                    console.log("[PayPal] createOrder: order id=", data.id);
+                    if (!data.id) {
+                      const msg = "PayPal no devolvió un ID de orden válido";
+                      setError(msg);
+                      throw new Error(msg);
+                    }
+                    return data.id;
+                  }}
+                  onApprove={async (_data, actions) => {
+                    await actions.order!.capture();
+                    await Promise.all([
+                      queryClient.invalidateQueries({ queryKey: ["balance"] }),
+                      queryClient.invalidateQueries({ queryKey: ["ledger"] }),
+                      queryClient.invalidateQueries({ queryKey: ["ledger-preview"] }),
+                    ]);
+                    setSuccess("Pago completado. Tu saldo será acreditado en breve.");
+                    setAmountUSD("");
+                  }}
+                  onCancel={() => setError("Pago cancelado.")}
+                  onError={(err) => {
+                    console.error("[PayPal] onError:", err);
+                    setError("Error al procesar el pago con PayPal.");
+                  }}
+                />
+              </PayPalScriptProvider>
+            )}
           </>
         )}
 
-        {/* Bank transfer */}
+        {/* ── Bank transfer ───────────────────────────────────────────────── */}
         {method === "bank" && (
           <>
             <div className="bg-blue-900 rounded-xl p-4 space-y-2 text-sm">

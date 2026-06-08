@@ -15,7 +15,7 @@ import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { PredictionPanel } from '@/components/predictions/PredictionPanel'
-import { formatDate } from '@/lib/utils'
+import { formatDate, ledgerKindKey } from '@/lib/utils'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useI18n } from '@/lib/i18n'
 
@@ -179,12 +179,12 @@ export default function DashboardPage() {
                 {ledger?.map((entry) => (
                   <div key={entry.id} className="card flex items-center justify-between gap-2 p-3">
                     <div className="min-w-0">
-                      <p className="truncate text-xs text-text-primary">{entry.description || entry.type}</p>
+                      <p className="truncate text-xs text-text-primary">{t(ledgerKindKey(entry.kind))}</p>
                       <p className="text-[10px] text-text-muted">{formatDate(entry.created_at)}</p>
                     </div>
-                    <span className={`shrink-0 font-score text-sm font-medium ${entry.type === 'credit' ? 'text-green-400' : 'text-red-400'}`}>
-                      {entry.type === 'credit' ? '+' : '-'}
-                      {fmt(entry.amount_cents)}
+                    <span className={`shrink-0 font-score text-sm font-medium ${entry.delta_cents >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {entry.delta_cents >= 0 ? '+' : ''}
+                      {fmt(entry.delta_cents)}
                     </span>
                   </div>
                 ))}

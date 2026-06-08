@@ -86,13 +86,13 @@ export interface BalanceResponse {
 }
 
 export interface LedgerEntry {
-  id:          number
-  type:        'credit' | 'debit' | 'reserve' | 'release'
-  amount_cents: number
-  currency:    string
-  description: string
-  reference_id: string | null
-  created_at:  string
+  id:           number
+  delta_cents:  number   // positive = credit, negative = debit
+  kind:         string   // e.g. "webhook_recurrente", "entry_fee", "prize"
+  balance_after: number
+  ref_id:       number | null
+  ref_type:     string | null
+  created_at:   string
 }
 
 // ── Match ─────────────────────────────────────────────────────────────────────
@@ -300,13 +300,11 @@ export interface BankTransferResponse {
 }
 
 export interface PaymentIntentResponse {
-  id:            number
+  token:         string          // opaque single-use token (PayPal custom_id)
   amount_cents:  number
   currency:      string
-  provider:      string
-  redirect_url:  string
   expires_at:    string
-  created_at:    string
+  redirect_url?: string          // only set for Recurrente checkouts
 }
 
 export interface WithdrawalResponse {

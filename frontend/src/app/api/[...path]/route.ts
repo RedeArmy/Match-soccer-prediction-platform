@@ -38,9 +38,11 @@ async function proxy(req: NextRequest, ctx: Context, method: string): Promise<Ne
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  // Forward Content-Type only when the request has a body
+  // Forward Content-Type and idempotency key only when present
   const ct = req.headers.get('content-type')
   if (ct) headers['Content-Type'] = ct
+  const idemKey = req.headers.get('idempotency-key')
+  if (idemKey) headers['Idempotency-Key'] = idemKey
 
   const body = ['GET', 'HEAD'].includes(method)
     ? undefined

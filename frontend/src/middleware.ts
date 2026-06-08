@@ -42,12 +42,12 @@ function generateNonce(): string {
 function buildCSP(nonce: string): string {
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' https://clerk.com https://*.clerk.com`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://www.paypalobjects.com`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https:",
     "font-src 'self' https://fonts.gstatic.com",
-    "connect-src 'self' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev",
-    "frame-src https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev",
+    "connect-src 'self' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://clerk-telemetry.com https://*.paypal.com https://*.sandbox.paypal.com https://www.sandbox.paypal.com",
+    "frame-src https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://*.sandbox.paypal.com https://www.sandbox.paypal.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -56,20 +56,6 @@ function buildCSP(nonce: string): string {
 }
 
 export default clerkMiddleware(async (auth, req: NextRequest) => {
-  // Generate a fresh nonce for every request. The nonce is set on:
-  //   - the forwarded request headers ('x-nonce') so that Clerk's server
-  //     ClerkProvider and any layout server component can read it via headers()
-  //   - the response headers ('Content-Security-Policy') so the browser
-  //     enforces the policy for the rendered page
-  //
-  // When auth.protect() redirects an unauthenticated user to /sign-in, this
-  // function exits early and the NextResponse.next() block below never runs.
-  // The 302 redirect itself carries no HTML body so CSP is irrelevant there.
-  // When the browser follows the redirect and loads /sign-in (a public route),
-  // the middleware runs again and the CSP IS set on that response.
-  const nonce = generateNonce();
-  const csp = buildCSP(nonce);
-
   if (!isPublicRoute(req)) {
     await auth.protect();
   }
@@ -82,9 +68,21 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
     }
   }
 
-  // Forward nonce to server components via request header.
-  // Clerk's server ClerkProvider reads 'x-nonce' automatically and applies it
-  // to all Clerk-injected scripts, so no layout.tsx change is needed.
+  // CSP with per-request nonce is enforced only in production.
+  // In development (Turbopack), the edge runtime does not hot-reload middleware
+  // modules, so stale compiled code would serve the wrong CSP regardless of
+  // file changes. Turbopack also requires 'unsafe-eval' for HMR, which defeats
+  // the purpose of a strict script-src policy. Development therefore runs
+  // without CSP so third-party SDKs (PayPal, Clerk) can load unrestricted.
+  if (process.env.NODE_ENV !== "production") {
+    const devRes = NextResponse.next();
+    devRes.headers.set("X-Dev-Middleware", "v2-no-csp");
+    return devRes;
+  }
+
+  const nonce = generateNonce();
+  const csp = buildCSP(nonce);
+
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-nonce", nonce);
 

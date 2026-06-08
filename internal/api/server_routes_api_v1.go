@@ -141,6 +141,12 @@ func (s *Server) registerUserRoutes(r chi.Router, d apiV1Deps) {
 // up to uploadSizeLimit; all other endpoints use bodySizeLimit. Per-route
 // limits avoid the MaxBytesReader stacking problem.
 func (s *Server) registerPaymentRoutes(r chi.Router, d apiV1Deps) {
+	// POST /api/v1/paypal/create-order — server-side PayPal order creation.
+	// ResolveUser is required so the handler can mint the payment intent for the
+	// correct user. Credentials stay in the backend; the browser receives only the order ID.
+	r.With(middleware.RequestBodyLimit(d.bodySizeLimit), middleware.ResolveUser(d.repos.user, s.log)).
+		Post("/paypal/create-order", d.h.paypalOrder.Create)
+
 	r.Route("/payment-intents", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
 		r.Use(middleware.ResolveUser(d.repos.user, s.log))

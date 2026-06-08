@@ -36,6 +36,7 @@ func setDefaults(v *viper.Viper) {
 	// scrapers in separate containers or on Fly.io's private 6PN network can
 	// reach the endpoint.  Set to "127.0.0.1" when co-locating Prometheus.
 	v.SetDefault("server.metricsBindAddr", "")
+	v.SetDefault("server.appBaseURL", "")
 	v.SetDefault("server.readTimeout", 10*time.Second)
 	v.SetDefault("server.writeTimeout", 30*time.Second)
 	v.SetDefault("server.idleTimeout", 60*time.Second)
@@ -76,9 +77,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("clerk.jwksUrl", "")
 	v.SetDefault("clerk.webhookSecret", "")
 
-	// payment secrets default to empty; validation.go enforces non-empty values
-	// in non-development environments.
+	// payment secrets and API keys default to empty; validation.go enforces
+	// non-empty values in non-development environments.
+	v.SetDefault("payment.recurrenteAPIKey", "")
+	v.SetDefault("payment.recurrenteBaseURL", "") // empty = production default in pkg/recurrente
 	v.SetDefault("payment.recurrenteWebhookSecret", "")
+	v.SetDefault("payment.paypalClientID", "")
+	v.SetDefault("payment.paypalClientSecret", "")
+	v.SetDefault("payment.paypalBaseURL", "")
 	v.SetDefault("payment.paypalWebhookID", "")
 	v.SetDefault("payment.payoutEncryptionKey", "")
 

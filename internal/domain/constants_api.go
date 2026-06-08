@@ -2,8 +2,11 @@ package domain
 
 // Default values for API, authentication, and circuit-breaker system parameters.
 const (
-	// DefaultAuthValidationTimeoutSeconds is the JWKS warm-up timeout in seconds.
-	DefaultAuthValidationTimeoutSeconds = 5 // auth.validation_timeout_seconds
+	// DefaultAuthValidationTimeoutSeconds is the JWKS warm-up timeout per attempt in seconds.
+	// The warmup retries up to 3 times; total budget ≤ 3 × this value.
+	// Increased from 5 s: the Clerk JWKS endpoint can return stale Cache-Control
+	// headers that cause httprc to re-fetch synchronously, exceeding 5 s under load.
+	DefaultAuthValidationTimeoutSeconds = 10 // auth.validation_timeout_seconds
 
 	// API request limits.
 	DefaultAPIBodySizeLimitBytes = 65536 // api.body_size_limit_bytes (64 KB)

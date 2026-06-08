@@ -80,6 +80,7 @@ type paramSpec struct {
 //   - 000161_seed_fx_source_timeout_params            (+3)
 //   - 000162_seed_payment_intent_retention_param      (+1)
 //   - 000171_seed_group_entry_fee_param               (+2)
+//   - 000174_update_auth_validation_timeout_param      (default_value update: 5→10)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
