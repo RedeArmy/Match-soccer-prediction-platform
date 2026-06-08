@@ -300,11 +300,12 @@ export interface BankTransferResponse {
 }
 
 export interface PaymentIntentResponse {
-  id:            number
+  id?:           number
+  token:         string
   amount_cents:  number
   currency:      string
-  provider:      string
-  redirect_url:  string
+  provider?:     string
+  redirect_url?: string
   expires_at:    string
   created_at:    string
 }

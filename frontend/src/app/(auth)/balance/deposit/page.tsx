@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation } from "@tanstack/react-query";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
@@ -18,6 +18,45 @@ import { SubmitButton } from "@/components/shared/SubmitButton";
 import { CreditCard, Building2 } from "lucide-react";
 
 type Method = "recurrente" | "paypal" | "bank";
+
+type PayPalOrderActions = {
+  order: {
+    create: (order: {
+      intent: "CAPTURE";
+      purchase_units: Array<{
+        custom_id: string;
+        amount: {
+          currency_code: "USD";
+          value: string;
+        };
+      }>;
+    }) => Promise<string>;
+    capture: () => Promise<unknown>;
+  };
+};
+
+type PayPalButtonsInstance = {
+  render: (container: HTMLElement) => Promise<void>;
+  close?: () => void;
+};
+
+type PayPalNamespace = {
+  Buttons: (options: {
+    style?: Record<string, string>;
+    createOrder: (_data: unknown, actions: PayPalOrderActions) => Promise<string>;
+    onApprove: (_data: unknown, actions: PayPalOrderActions) => Promise<void>;
+    onError: (error: unknown) => void;
+  }) => PayPalButtonsInstance;
+};
+
+declare global {
+  interface Window {
+    paypal?: PayPalNamespace;
+  }
+}
+
+const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
+const paypalScriptId = "paypal-js-sdk";
 
 export default function DepositPage() {
   const { getToken } = useAuth();
@@ -59,7 +98,11 @@ export default function DepositPage() {
       );
     },
     onSuccess: (data) => {
-      if (data.redirect_url) globalThis.location.href = data.redirect_url;
+      if (data.redirect_url) {
+        globalThis.location.href = data.redirect_url;
+        return;
+      }
+      setError("El proveedor de pago no devolvió una URL de redirección.");
     },
     onError: (e: Error) => setError(e.message),
   });
@@ -215,13 +258,15 @@ export default function DepositPage() {
                 <p className="text-xs text-text-muted mt-1">≈ {gtqEquiv} GTQ</p>
               )}
             </div>
-            <SubmitButton
-              isPending={intentMutation.isPending}
-              disabled={!amountUSD}
-              onClick={() => intentMutation.mutate()}
-            >
-              Continuar con PayPal
-            </SubmitButton>
+            <PayPalCheckoutButton
+              amountUSD={amountUSD}
+              getToken={getToken}
+              onSuccess={() => {
+                setSuccess("Pago PayPal completado. El balance se actualizará cuando PayPal confirme la captura.");
+                setAmountUSD("");
+              }}
+              onError={(message) => setError(message)}
+            />
           </>
         )}
 
@@ -288,6 +333,143 @@ export default function DepositPage() {
 
         <FormFeedback error={error} success={success} center />
       </div>
+    </div>
+  );
+}
+
+function PayPalCheckoutButton({
+  amountUSD,
+  getToken,
+  onSuccess,
+  onError,
+}: Readonly<{
+  amountUSD: string;
+  getToken: () => Promise<string | null>;
+  onSuccess: () => void;
+  onError: (message: string) => void;
+}>) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const buttonsRef = useRef<PayPalButtonsInstance | null>(null);
+  const [sdkReady, setSdkReady] = useState(false);
+  const [sdkError, setSdkError] = useState("");
+
+  const amount = Number.parseFloat(amountUSD);
+  const amountReady = Number.isFinite(amount) && amount > 0;
+
+  useEffect(() => {
+    if (!paypalClientId) {
+      setSdkError("Configura NEXT_PUBLIC_PAYPAL_CLIENT_ID para habilitar PayPal.");
+      return;
+    }
+
+    if (globalThis.window?.paypal) {
+      setSdkReady(true);
+      return;
+    }
+
+    const existing = document.getElementById(paypalScriptId) as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", () => setSdkReady(true), { once: true });
+      existing.addEventListener("error", () => setSdkError("No se pudo cargar el SDK de PayPal."), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = paypalScriptId;
+    script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(paypalClientId)}&currency=USD&intent=capture&components=buttons`;
+    script.async = true;
+    script.onload = () => setSdkReady(true);
+    script.onerror = () => setSdkError("No se pudo cargar el SDK de PayPal.");
+    document.body.appendChild(script);
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !sdkReady || !globalThis.window?.paypal) return;
+
+    buttonsRef.current?.close?.();
+    container.innerHTML = "";
+
+    const buttons = globalThis.window.paypal.Buttons({
+      style: {
+        layout: "vertical",
+        color: "gold",
+        shape: "rect",
+        label: "paypal",
+      },
+      createOrder: async (_data, actions) => {
+        if (!amountReady) {
+          throw new Error("Ingresa un monto USD válido antes de continuar con PayPal.");
+        }
+
+        const token = await getToken();
+        if (!token) throw new Error("Sesión expirada. Inicia sesión nuevamente.");
+
+        const intent = await api.createPaymentIntent(
+          token,
+          {
+            amount_cents: Math.round(amount * 100),
+            currency: "USD",
+            provider: "paypal",
+          },
+          crypto.randomUUID(),
+        );
+
+        if (!intent.token) {
+          throw new Error("El backend no devolvió el token PayPal requerido.");
+        }
+
+        return actions.order.create({
+          intent: "CAPTURE",
+          purchase_units: [
+            {
+              custom_id: intent.token,
+              amount: {
+                currency_code: "USD",
+                value: amount.toFixed(2),
+              },
+            },
+          ],
+        });
+      },
+      onApprove: async (_data, actions) => {
+        await actions.order.capture();
+        onSuccess();
+      },
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : "No se pudo iniciar el checkout de PayPal.";
+        onError(message);
+      },
+    });
+
+    buttonsRef.current = buttons;
+    void buttons.render(container).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "No se pudo renderizar el botón de PayPal.";
+      setSdkError(message);
+    });
+
+    return () => {
+      buttons.close?.();
+      container.innerHTML = "";
+    };
+  }, [amount, amountReady, getToken, onError, onSuccess, sdkReady]);
+
+  if (sdkError) {
+    return (
+      <p className="rounded border border-red-400/25 bg-red-400/10 px-3 py-2 text-xs text-red-200">
+        {sdkError}
+      </p>
+    );
+  }
+
+  return (
+    <div className={!amountReady ? "pointer-events-none opacity-50" : undefined}>
+      {!amountReady && (
+        <p className="mb-2 text-xs text-text-muted">
+          Ingresa un monto USD válido para habilitar PayPal.
+        </p>
+      )}
+      <div ref={containerRef} />
     </div>
   );
 }
