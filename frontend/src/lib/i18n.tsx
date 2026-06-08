@@ -215,7 +215,7 @@ const translations: TranslationNode = {
     player:             { es: 'Jugador',                       en: 'Player'                       },
     subtitle:           { es: 'Centro de control personal',    en: 'Personal command center'      },
     kycTitle:           { es: 'Verifica tu identidad',         en: 'Verify your identity'         },
-    kycCopy:            { es: 'Completa tu KYC para poder hacer retiros.', en: 'Complete KYC to unlock withdrawals.' },
+    kycCopy:            { es: 'Completa tu verificación de identidad para poder hacer retiros.', en: 'Complete your identity verification to unlock withdrawals.' },
     kycAction:          { es: 'Verificar ahora',               en: 'Verify now'                   },
     myPools:            { es: 'Mis kinielas',                 en: 'My pools'                     },
     exploreTournaments: { es: 'Kinielas',                      en: 'Kinielas'                    },

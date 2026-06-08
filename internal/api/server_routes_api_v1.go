@@ -171,16 +171,22 @@ func (s *Server) registerPaymentRoutes(r chi.Router, d apiV1Deps) {
 }
 
 // registerKYCRoutes wires the /kyc subrouter.
+// Per-route body limits avoid the MaxBytesReader stacking problem:
+//   - GET endpoints have no body — no limit applied.
+//   - POST /submit accepts a small JSON body → bodySizeLimit (64 KB).
+//   - POST /documents receives a multipart upload → the handler enforces the
+//     KYC-specific 10 MB limit via http.MaxBytesReader; no middleware limit
+//     is stacked on top to avoid the 64 KB group limit shadowing the handler.
 func (s *Server) registerKYCRoutes(r chi.Router, d apiV1Deps) {
 	r.Route("/kyc", func(r chi.Router) {
-		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
 		r.Use(middleware.ResolveUser(d.repos.user, s.log))
 		r.Get("/status", d.h.kyc.GetStatus)
-		r.Post("/submit", d.h.kyc.Submit)
 		r.Get("/requirements", d.h.kyc.GetRequirements)
 		r.Get("/documents", d.h.kyc.ListDocuments)
-		r.Post("/documents", d.h.kyc.UploadDocument)
 		r.Get("/events", d.h.kyc.ListEvents)
+		r.With(middleware.RequestBodyLimit(d.bodySizeLimit)).Post("/submit", d.h.kyc.Submit)
+		r.Post("/documents", d.h.kyc.UploadDocument)
+		r.Delete("/documents/{docID}", d.h.kyc.DeleteDocument)
 	})
 }
 

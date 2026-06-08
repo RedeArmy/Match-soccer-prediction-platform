@@ -1054,8 +1054,12 @@ type PaymentIntentRepository interface {
 	// layer can inspect userID and amountCents before calling CaptureAndCredit.
 	GetByToken(ctx context.Context, token string) (*domain.PaymentIntent, error)
 	// CaptureAndCredit atomically transitions a pending, non-expired intent to
-	// captured, stores captureID, and credits the intent's amount_cents to the
-	// user's balance in a single database transaction.
+	// captured, stores captureID, and credits creditAmountCents to the user's
+	// balance in a single database transaction.
+	//
+	// creditAmountCents is the platform-native (GTQ) amount to add to the
+	// balance. For GTQ intents it equals intent.AmountCents; for USD intents
+	// the caller must convert to GTQ before calling this method.
 	//
 	// Returns ErrPaymentIntentAlreadyCaptured when the same captureID has
 	// already been applied to this intent — the caller should treat this as a
@@ -1063,7 +1067,7 @@ type PaymentIntentRepository interface {
 	// Returns apperrors.Conflict when the intent is captured by a different
 	// captureID (duplicate capture from a different PayPal transaction).
 	// Returns apperrors.NotFound when no pending, non-expired intent matches token.
-	CaptureAndCredit(ctx context.Context, token, captureID string) (*domain.PaymentIntent, error)
+	CaptureAndCredit(ctx context.Context, token, captureID string, creditAmountCents int) (*domain.PaymentIntent, error)
 }
 
 // NotificationTemplateRepository manages operator-editable notification content.

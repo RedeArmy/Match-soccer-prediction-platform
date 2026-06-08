@@ -348,7 +348,13 @@ func (s *Server) buildHandlers(
 	// defines its own narrow interface so the import graph stays acyclic.
 	s.wirePaymentNotifiers(&h)
 
-	h.adminExchangeRate, h.exchangeRate = s.buildFXModule(ctx, paramSvcWithAudit, auditSvc)
+	var fxSvc service.ExchangeRateService
+	h.adminExchangeRate, h.exchangeRate, fxSvc = s.buildFXModule(ctx, paramSvcWithAudit, auditSvc)
+	if wfx, ok := webhookPaymentSvc.(interface {
+		SetExchangeRateService(service.ExchangeRateService)
+	}); ok {
+		wfx.SetExchangeRateService(fxSvc)
+	}
 
 	return h
 }
@@ -387,7 +393,7 @@ func (s *Server) buildFXModule(
 	ctx context.Context,
 	params service.SystemParamService,
 	audit service.AuditLogger,
-) (*handler.AdminExchangeRateHandler, *handler.ExchangeRateHandler) {
+) (*handler.AdminExchangeRateHandler, *handler.ExchangeRateHandler, service.ExchangeRateService) {
 	fxRepo := repository.NewPostgresExchangeRateRepository(s.db)
 	fxFetcher := service.NewMultiSourceFetcher(s.log,
 		service.NewBanguatFetcher(),
@@ -405,7 +411,8 @@ func (s *Server) buildFXModule(
 		s.log.Warn("exchange_rate: cache warm failed (non-fatal, will warm on first request)", zap.Error(err))
 	}
 	return handler.NewAdminExchangeRateHandler(fxSvc, fxRepo, audit, s.log),
-		handler.NewExchangeRateHandler(fxSvc, s.log)
+		handler.NewExchangeRateHandler(fxSvc, s.log),
+		fxSvc
 }
 
 // wireLeaderboardTTLHook registers a mutation hook so that when an admin

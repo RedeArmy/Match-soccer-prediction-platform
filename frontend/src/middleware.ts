@@ -89,7 +89,7 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
   return response;
-});
+}, { clockSkewInMs: 10_000 });
 
 export const config = {
   matcher: [

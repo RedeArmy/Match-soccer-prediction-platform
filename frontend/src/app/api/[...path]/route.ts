@@ -59,6 +59,16 @@ async function proxy(req: NextRequest, ctx: Context, method: string): Promise<Ne
     )
   }
 
+  if (!upstream.ok) {
+    const preview = await upstream.clone().text().catch(() => '<unreadable>')
+    console.error('[BFF proxy] upstream error', {
+      method,
+      url,
+      status: upstream.status,
+      body: preview.slice(0, 500),
+    })
+  }
+
   const resHeaders = new Headers()
   upstream.headers.forEach((v, k) => {
     if (!HOP_HEADERS.has(k.toLowerCase())) {

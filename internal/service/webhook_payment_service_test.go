@@ -70,7 +70,7 @@ func (r *webhookIntentRepoStub) Create(_ context.Context, intent *domain.Payment
 func (r *webhookIntentRepoStub) GetByToken(_ context.Context, _ string) (*domain.PaymentIntent, error) {
 	return r.intent, nil
 }
-func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, _, _ string) (*domain.PaymentIntent, error) {
+func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, _, _ string, _ int) (*domain.PaymentIntent, error) {
 	return r.intent, r.captureErr
 }
 

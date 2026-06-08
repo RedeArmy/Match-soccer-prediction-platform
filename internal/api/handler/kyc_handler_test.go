@@ -94,6 +94,9 @@ func (s *stubKYCSvc) GetRiskDashboard(_ context.Context) (*domain.KYCRiskDashboa
 	return &domain.KYCRiskDashboardStats{TierDistribution: map[domain.KYCTier]int64{}}, s.err
 }
 func (s *stubKYCSvc) RecalculateRiskScore(_ context.Context, _ int) (int, error) { return 0, s.err }
+func (s *stubKYCSvc) DeleteDocument(_ context.Context, _ int, _ int64) (string, error) {
+	return "", s.err
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

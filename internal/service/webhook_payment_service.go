@@ -43,7 +43,8 @@ type WebhookPaymentService interface {
 type webhookPaymentService struct {
 	ledgerRepo repository.BalanceLedgerRepository
 	intentRepo repository.PaymentIntentRepository
-	kycGate    KYCGate // wired via SetKYCGate after construction; nil disables KYC checks
+	kycGate    KYCGate             // wired via SetKYCGate after construction; nil disables KYC checks
+	fxSvc      ExchangeRateService // wired via SetExchangeRateService; nil skips USD→GTQ conversion
 	audit      AuditLogger
 	log        *zap.Logger
 }
@@ -67,6 +68,12 @@ func NewWebhookPaymentService(
 // Called once at startup after the KYC module is initialised. When nil,
 // CheckDeposit and AML flagging are skipped (safe for tests without a DB).
 func (s *webhookPaymentService) SetKYCGate(gate KYCGate) { s.kycGate = gate }
+
+// SetExchangeRateService wires the exchange-rate service so that USD PayPal
+// deposits are converted to GTQ at the buy rate before crediting the balance.
+// Called once at startup after the FX module is initialised. When nil, the
+// raw intent.AmountCents is credited without conversion (safe for tests).
+func (s *webhookPaymentService) SetExchangeRateService(svc ExchangeRateService) { s.fxSvc = svc }
 
 func (s *webhookPaymentService) CreditFromRecurrente(ctx context.Context, userID, amountCents int, currency, reference string) error {
 	if s.kycGate != nil {
@@ -126,11 +133,33 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 		return apperrors.Validation("capture ID is required")
 	}
 
-	if err := s.checkKYCGateForToken(ctx, intentToken); err != nil {
+	// Fetch the pending intent once: used for both the KYC gate check and the
+	// USD→GTQ conversion decision so we avoid a second DB round-trip.
+	pending, err := s.fetchPendingAndCheckKYC(ctx, intentToken)
+	if err != nil {
 		return err
 	}
 
-	intent, err := s.intentRepo.CaptureAndCredit(ctx, intentToken, captureID)
+	// Determine the GTQ amount to credit. PayPal intents are always denominated
+	// in USD; convert at the current buy rate so the user's balance stays in GTQ.
+	creditAmountCents := 0
+	if pending != nil {
+		creditAmountCents = pending.AmountCents
+		if pending.Currency == "USD" && s.fxSvc != nil {
+			gtq, _, convErr := s.fxSvc.ConvertUSDToGTQ(ctx, int64(pending.AmountCents))
+			if convErr != nil {
+				s.log.Warn("paypal: USD→GTQ conversion failed, crediting raw amount",
+					append([]zap.Field{
+						zap.Error(convErr),
+						zap.String("intent_token", intentToken),
+					}, tracing.LogFields(ctx)...)...)
+			} else {
+				creditAmountCents = int(gtq)
+			}
+		}
+	}
+
+	intent, err := s.intentRepo.CaptureAndCredit(ctx, intentToken, captureID, creditAmountCents)
 	if errors.Is(err, repository.ErrPaymentIntentAlreadyCaptured) {
 		s.log.Debug("paypal webhook: idempotent re-delivery ignored",
 			zap.String("intent_token", intentToken),
@@ -159,34 +188,38 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 	resType := "payment_intent"
 	intentID := int(intent.ID)
 	s.audit.Log(ctx, nil, nil, domain.AuditActionWebhookPaymentCredit, &resType, &intentID, map[string]any{
-		"user_id":      intent.UserID,
-		"amount_cents": intent.AmountCents,
-		"currency":     intent.Currency,
-		"capture_id":   captureID,
-		"kind":         string(domain.LedgerKindWebhookPayPal),
+		"user_id":             intent.UserID,
+		"amount_cents":        intent.AmountCents,
+		"credit_amount_cents": creditAmountCents,
+		"currency":            intent.Currency,
+		"capture_id":          captureID,
+		"kind":                string(domain.LedgerKindWebhookPayPal),
 	})
-	s.recordAMLIfNeeded(ctx, intent.UserID, intent.AmountCents)
+	s.recordAMLIfNeeded(ctx, intent.UserID, creditAmountCents)
 	return nil
 }
 
-// checkKYCGateForToken fetches the pending intent identified by token and runs
-// CheckDeposit + CheckDepositVelocity when the intent exists and is still
-// pending. It is a no-op when s.kycGate is nil.
-func (s *webhookPaymentService) checkKYCGateForToken(ctx context.Context, token string) error {
-	if s.kycGate == nil {
-		return nil
-	}
+// fetchPendingAndCheckKYC fetches the intent for token and, when the intent
+// is still pending and kycGate is set, runs CheckDeposit + CheckDepositVelocity.
+// Returns the intent (nil when not found) and any gate error.
+func (s *webhookPaymentService) fetchPendingAndCheckKYC(ctx context.Context, token string) (*domain.PaymentIntent, error) {
 	pending, err := s.intentRepo.GetByToken(ctx, token)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if pending == nil || pending.Status != domain.PaymentIntentPending {
-		return nil
+		return pending, nil
+	}
+	if s.kycGate == nil {
+		return pending, nil
 	}
 	if err := s.kycGate.CheckDeposit(ctx, pending.UserID, pending.AmountCents); err != nil {
-		return err
+		return nil, err
 	}
-	return s.kycGate.CheckDepositVelocity(ctx, pending.UserID, pending.AmountCents)
+	if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, pending.AmountCents); err != nil {
+		return nil, err
+	}
+	return pending, nil
 }
 
 // recordAMLIfNeeded writes AuditActionAMLFlagged when either the single-

@@ -1,22 +1,44 @@
 'use client'
 
+import { useState, useRef, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@clerk/nextjs'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useCurrency } from '@/hooks/useCurrency'
+import { useExchangeRate } from '@/hooks/useExchangeRate'
 import { BalanceCard } from '@/components/balance/BalanceCard'
 import { LoadingState } from '@/components/shared/LoadingState'
-import { formatDate } from '@/lib/utils'
-import { useRef, useEffect } from 'react'
+import { formatDate, formatGTQ, usdToGTQ, ledgerKindKey } from '@/lib/utils'
 import type { LedgerEntry } from '@/lib/api-types'
 import { useI18n } from '@/lib/i18n'
-import { ledgerKindKey } from '@/lib/utils'
+import { CheckCircle, X } from 'lucide-react'
 
 export default function BalancePage() {
   const { getToken } = useAuth()
   const { fmt, isUSD } = useCurrency()
   const { t } = useI18n()
   const sentinelRef = useRef<HTMLDivElement>(null)
+
+  // PayPal success redirect params
+  const searchParams = useSearchParams()
+  const paypalSuccess = searchParams.get('paypal') === 'success'
+  const usdAmount = paypalSuccess ? Number(searchParams.get('usd') ?? '0') : 0
+  const [bannerVisible, setBannerVisible] = useState(paypalSuccess)
+  const [refetchEnabled, setRefetchEnabled] = useState(paypalSuccess)
+  const { data: rate } = useExchangeRate()
+
+  const gtqEstimate =
+    rate && usdAmount > 0
+      ? Math.round(usdToGTQ(usdAmount, rate.buy_rate) * 100)
+      : null
+
+  // Poll ledger for 15 s after PayPal redirect so the webhook-credited entry appears promptly
+  useEffect(() => {
+    if (!paypalSuccess) return
+    const timer = setTimeout(() => setRefetchEnabled(false), 15_000)
+    return () => clearTimeout(timer)
+  }, [paypalSuccess])
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['ledger'],
@@ -26,6 +48,7 @@ export default function BalancePage() {
       return api.getLedger(token!, pageParam, 50)
     },
     getNextPageParam: () => undefined,
+    refetchInterval: refetchEnabled ? 2_000 : false,
   })
 
   // Infinite scroll
@@ -46,6 +69,34 @@ export default function BalancePage() {
   return (
     <div className="space-y-6">
       <h1 className="font-display text-3xl text-white">BALANCE</h1>
+
+      {/* PayPal success banner */}
+      {bannerVisible && (
+        <div className="flex items-start gap-3 p-4 bg-green-900/50 border border-green-700/50 rounded-xl">
+          <CheckCircle className="w-5 h-5 text-green-400 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-green-300">
+              Pago PayPal de ${usdAmount.toFixed(2)} USD recibido
+            </p>
+            {gtqEstimate !== null && (
+              <p className="text-xs text-green-400/80 mt-0.5">
+                ≈ {formatGTQ(gtqEstimate)} GTQ al tipo de compra
+              </p>
+            )}
+            <p className="text-xs text-text-muted mt-0.5">
+              La acreditación aparecerá en el historial en breve.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBannerVisible(false)}
+            className="text-text-muted hover:text-text-secondary"
+            aria-label="Cerrar"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       <BalanceCard />
 

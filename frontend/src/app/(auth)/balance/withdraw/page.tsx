@@ -71,8 +71,7 @@ export default function WithdrawPage() {
               Verificación requerida
             </h2>
             <p className="text-text-secondary text-sm">
-              Debes completar tu verificación KYC (Tier 2) para poder retirar
-              fondos.
+              Debes completar tu verificación para poder retirar fondos.
             </p>
           </div>
           <Link href="/kyc" className="btn-gold px-6 py-2 inline-block">

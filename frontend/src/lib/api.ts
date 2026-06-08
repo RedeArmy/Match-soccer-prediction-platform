@@ -193,6 +193,10 @@ class APIClient {
     return this.requestFormData('/api/v1/kyc/documents', formData, token)
   }
 
+  deleteKYCDocument(token: string, docID: number): Promise<void> {
+    return this.request(`/api/v1/kyc/documents/${docID}`, { method: 'DELETE' }, token)
+  }
+
   // ── Payments ──────────────────────────────────────────────────────────────
 
   createPaymentIntent(token: string, data: { amount_cents: number; currency: string; provider: string }, idempotencyKey: string): Promise<PaymentIntentResponse> {
