@@ -59,18 +59,34 @@ func NewJWKSProvider(ctx context.Context, jwksURL string, warmupTimeout time.Dur
 		log.Error("auth: failed to register JWKS URL", zap.String("url", jwksURL), zap.Error(err))
 	}
 
-	warmCtx, cancel := context.WithTimeout(ctx, warmupTimeout)
-	defer cancel()
-	if _, err := jwkCache.Refresh(warmCtx, jwksURL); err != nil {
-		log.Warn("auth: JWKS prefetch failed; will retry on first request",
-			zap.String("url", jwksURL), zap.Error(err))
-	}
-
 	p := &JWKSProvider{
 		jwkCache: jwkCache,
 		jwksURL:  jwksURL,
 		log:      log,
 	}
+
+	// Warmup: attempt up to 3 times with the configured timeout each attempt.
+	// The Clerk JWKS endpoint can be slow or return stale Cache-Control headers
+	// that cause httprc to re-fetch synchronously; retrying keeps startup robust
+	// against transient latency spikes without blocking indefinitely.
+	const maxAttempts = 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		warmCtx, cancel := context.WithTimeout(ctx, warmupTimeout)
+		_, err := jwkCache.Refresh(warmCtx, jwksURL)
+		cancel()
+		if err == nil {
+			break
+		}
+		log.Warn("auth: JWKS prefetch attempt failed",
+			zap.Int("attempt", attempt),
+			zap.Int("max_attempts", maxAttempts),
+			zap.String("url", jwksURL),
+			zap.Error(err))
+		if attempt == maxAttempts {
+			log.Warn("auth: all JWKS prefetch attempts failed; background goroutine will retry — authenticated requests may fail transiently")
+		}
+	}
+
 	// Pre-populate the fallback from the warm-up fetch so it is available
 	// immediately if the live endpoint becomes unreachable on the first request.
 	if ks, err := jwkCache.Get(ctx, jwksURL); err == nil {
