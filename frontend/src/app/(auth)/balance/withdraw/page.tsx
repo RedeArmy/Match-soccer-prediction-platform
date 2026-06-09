@@ -53,7 +53,7 @@ export default function WithdrawPage() {
   const { getToken } = useAuth();
   const { t, accountTypeName } = useI18n();
   const { data: balance } = useBalance();
-  const { fmt, isUSD } = useCurrency();
+  const { isUSD } = useCurrency();
   const { data: rate } = useExchangeRate();
   const sellRate = rate?.sell_rate ?? "7.75";
   const { data: kyc, isLoading: kycLoading } = useKYCStatus();
@@ -184,7 +184,7 @@ export default function WithdrawPage() {
       {/* Available balance */}
       <div className="card p-4 flex items-center justify-between">
         <span className="text-sm text-text-secondary">{t("withdraw.available")}</span>
-        <span className="font-score text-xl text-white">{fmt(available)}</span>
+        <span className="font-score text-xl text-white">{formatGTQ(available)}</span>
       </div>
 
       <div className="card p-6 space-y-5">
