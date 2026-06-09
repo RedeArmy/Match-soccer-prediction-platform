@@ -44,9 +44,10 @@ function isWithdrawValid(
   return params.bankName !== "" && params.accountType !== "" && params.accountNumber.trim() !== "" && params.accountHolder.trim() !== "";
 }
 
-function formatWithdrawAmount(effectiveIsUSD: boolean, amountCents: number): string {
-  return effectiveIsUSD ? formatUSD(amountCents) : formatGTQ(amountCents);
+function formatAmount(currency: string, amountCents: number): string {
+  return currency === "USD" ? formatUSD(amountCents) : formatGTQ(amountCents);
 }
+
 
 export default function WithdrawPage() {
   const { getToken } = useAuth();
@@ -172,7 +173,7 @@ export default function WithdrawPage() {
     );
   }
 
-  const amountLabel = formatWithdrawAmount(effectiveIsUSD, amountCents);
+  const amountLabel = formatAmount(currency, amountCents);
   const submitLabel = valid ? `${t("withdraw.submit")} ${amountLabel}` : t("withdraw.submit");
 
   return (
@@ -235,7 +236,7 @@ export default function WithdrawPage() {
           />
           {belowMinimum && (
             <p className="text-red-400 text-xs mt-1">
-              {t("withdraw.amountBelowMin")} {effectiveIsUSD ? formatUSD(minCents) : formatGTQ(minCents)}
+              {t("withdraw.amountBelowMin")} {formatAmount(currency, minCents)}
             </p>
           )}
           {exceedsBalance && (
