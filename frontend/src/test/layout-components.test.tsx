@@ -71,31 +71,10 @@ describe('Footer', () => {
 // ── Header ────────────────────────────────────────────────────────────────────
 
 describe('Header', () => {
-  beforeEach(() => {
-    vi.mocked(useExchangeRate).mockReturnValue({ data: undefined, isLoading: false } as never)
-  })
-
   it('renders logo link', () => {
     render(<Header />)
-    // The logo link wraps "Q26" text
     const logo = screen.getAllByText('K26')[0]
     expect(logo).toBeInTheDocument()
-  })
-
-  it('shows exchange rate ticker when rate data is provided', () => {
-    vi.mocked(useExchangeRate).mockReturnValue({
-      data: { sell_rate: '7.85', buy_rate: '7.72', effective_at: '2026-01-01T00:00:00Z', stale: false },
-      isLoading: false,
-    } as never)
-    render(<Header />)
-    // The ticker shows the sell_rate formatted
-    expect(screen.getByText(/7\.8500/)).toBeInTheDocument()
-  })
-
-  it('does not show ticker when rate is undefined', () => {
-    vi.mocked(useExchangeRate).mockReturnValue({ data: undefined, isLoading: false } as never)
-    render(<Header />)
-    expect(screen.queryByText(/7\./)).toBeNull()
   })
 
   it('renders mobile menu button with aria-label="Abrir menu"', () => {

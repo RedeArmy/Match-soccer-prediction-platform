@@ -78,16 +78,18 @@ describe('[...path] proxy – GET without Clerk token', () => {
   })
 })
 
-describe('[...path] proxy – GET with Clerk token', () => {
+describe('[...path] proxy – GET with client Authorization header', () => {
   beforeEach(() => {
     mockFetch.mockReset()
-    vi.mocked(auth).mockResolvedValue({ getToken: vi.fn().mockResolvedValue('clerk_token_abc') } as never)
   })
 
-  it('forwards Authorization: Bearer header', async () => {
+  it('forwards Authorization header from the incoming request', async () => {
     mockFetch.mockResolvedValueOnce(new Response('[]', { status: 200 }))
     const { GET } = await import('@/app/api/[...path]/route')
-    await GET(makeReq(), makeCtx())
+    const req = makeReq('http://localhost/api/v1/matches', {
+      headers: { Authorization: 'Bearer clerk_token_abc' },
+    })
+    await GET(req, makeCtx())
     const [, init] = mockFetch.mock.calls[0]
     const headers = (init as RequestInit).headers as Record<string, string>
     expect(headers['Authorization']).toBe('Bearer clerk_token_abc')
