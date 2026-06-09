@@ -26,7 +26,6 @@ export default function DashboardPage() {
   const { getToken } = useAuth()
   const { user } = useUser()
   const { t } = useI18n()
-  const { fmt } = useCurrency()
   useSSE()
 
   const [dialogOpen, setDialogOpen] = useState(false)
