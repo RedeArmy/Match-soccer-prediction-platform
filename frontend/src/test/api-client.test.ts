@@ -532,6 +532,98 @@ describe('api – getBankAccountTypes', () => {
   })
 })
 
+describe('api – createPayPalOrder', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends POST to /api/v1/paypal/create-order', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ order_id: 'ord_abc123' }))
+    await api.createPayPalOrder('tok', { amount_cents: 500, currency: 'USD' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/paypal/create-order')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ amount_cents: 500, currency: 'USD' })
+  })
+})
+
+describe('api – getWithdrawalLimits', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends GET to /api/v1/withdrawals/limits', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ min_gtq_cents: 3000, min_usd_cents: 400 }))
+    await api.getWithdrawalLimits('tok_lim')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/withdrawals/limits')
+  })
+})
+
+describe('api – admin bank and account-type methods', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('adminListBanks without filter sends GET to /api/v1/admin/banks', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]))
+    await api.adminListBanks('tok')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/banks')
+    expect(String(url)).not.toContain('active=true')
+  })
+
+  it('adminListBanks with onlyActive=true appends ?active=true', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]))
+    await api.adminListBanks('tok', true)
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/banks?active=true')
+  })
+
+  it('adminCreateBank sends POST with name body', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 1, name: 'My Bank', active: true }))
+    await api.adminCreateBank('tok', 'My Bank')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/banks')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ name: 'My Bank' })
+  })
+
+  it('adminSetBankActive sends PATCH with active flag', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 5, name: 'Bank', active: false }))
+    await api.adminSetBankActive('tok', 5, false)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/banks/5/active')
+    expect((init as RequestInit).method).toBe('PATCH')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ active: false })
+  })
+
+  it('adminListBankAccountTypes without filter sends GET', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]))
+    await api.adminListBankAccountTypes('tok')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/bank-account-types')
+    expect(String(url)).not.toContain('active=true')
+  })
+
+  it('adminListBankAccountTypes with onlyActive=true appends ?active=true', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]))
+    await api.adminListBankAccountTypes('tok', true)
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/bank-account-types?active=true')
+  })
+
+  it('adminCreateBankAccountType sends POST with name body', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 2, name: 'Ahorros GTQ', active: true }))
+    await api.adminCreateBankAccountType('tok', 'Ahorros GTQ')
+    const [, init] = mockFetch.mock.calls[0]
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ name: 'Ahorros GTQ' })
+  })
+
+  it('adminSetBankAccountTypeActive sends PATCH', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 3, name: 'Ahorros GTQ', active: true }))
+    await api.adminSetBankAccountTypeActive('tok', 3, true)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/bank-account-types/3/active')
+    expect((init as RequestInit).method).toBe('PATCH')
+  })
+})
+
 // ── serverAPI ─────────────────────────────────────────────────────────────────
 
 describe('serverAPI()', () => {

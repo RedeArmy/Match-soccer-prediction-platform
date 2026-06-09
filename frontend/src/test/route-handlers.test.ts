@@ -134,6 +134,46 @@ describe('[...path] proxy – upstream fetch throws', () => {
   })
 })
 
+describe('[...path] proxy – forwards Idempotency-Key header', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    vi.mocked(auth).mockResolvedValue({ getToken: vi.fn().mockResolvedValue(null) } as never)
+  })
+
+  it('forwards Idempotency-Key from incoming request to upstream', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('{}', { status: 201 }))
+    const { POST } = await import('@/app/api/[...path]/route')
+    const req = makeReq('http://localhost/api/v1/withdrawals', {
+      method: 'POST',
+      body: '{}',
+      headers: { 'Idempotency-Key': 'idem_abc_123' },
+    })
+    await POST(req, makeCtx(['v1', 'withdrawals']))
+    const [, init] = mockFetch.mock.calls[0]
+    const headers = (init as RequestInit).headers as Record<string, string>
+    expect(headers['Idempotency-Key']).toBe('idem_abc_123')
+  })
+})
+
+describe('[...path] proxy – upstream non-OK response is proxied', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    vi.mocked(auth).mockResolvedValue({ getToken: vi.fn().mockResolvedValue(null) } as never)
+  })
+
+  it('returns the upstream status code when upstream responds with 4xx', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    const { GET } = await import('@/app/api/[...path]/route')
+    const res = await GET(makeReq(), makeCtx())
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('[...path] proxy – hop-by-hop header stripping', () => {
   beforeEach(() => {
     mockFetch.mockReset()

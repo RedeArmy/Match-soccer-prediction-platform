@@ -17,18 +17,19 @@ import Link from "next/link";
 
 type Method = "bank_gt" | "paypal";
 
-function buildPayoutDetails(
-  method: Method,
-  bankName: string,
-  accountType: string,
-  accountNumber: string,
-  accountHolder: string,
-  paypalEmail: string,
-): Record<string, string> {
+interface WithdrawParams {
+  paypalEmail: string;
+  bankName: string;
+  accountType: string;
+  accountNumber: string;
+  accountHolder: string;
+}
+
+function buildPayoutDetails(method: Method, params: WithdrawParams): Record<string, string> {
   if (method === "bank_gt") {
-    return { bank_name: bankName, account_type: accountType, account_number: accountNumber, account_holder: accountHolder };
+    return { bank_name: params.bankName, account_type: params.accountType, account_number: params.accountNumber, account_holder: params.accountHolder };
   }
-  return { paypal_email: paypalEmail };
+  return { paypal_email: params.paypalEmail };
 }
 
 function isWithdrawValid(
@@ -36,15 +37,15 @@ function isWithdrawValid(
   amountCents: number,
   minCents: number,
   availableDisplay: number,
-  paypalEmail: string,
-  bankName: string,
-  accountType: string,
-  accountNumber: string,
-  accountHolder: string,
+  params: WithdrawParams,
 ): boolean {
   if (amountCents < minCents || amountCents > availableDisplay) return false;
-  if (method === "paypal") return paypalEmail.trim() !== "";
-  return bankName !== "" && accountType !== "" && accountNumber.trim() !== "" && accountHolder.trim() !== "";
+  if (method === "paypal") return params.paypalEmail.trim() !== "";
+  return params.bankName !== "" && params.accountType !== "" && params.accountNumber.trim() !== "" && params.accountHolder.trim() !== "";
+}
+
+function formatWithdrawAmount(effectiveIsUSD: boolean, amountCents: number): string {
+  return effectiveIsUSD ? formatUSD(amountCents) : formatGTQ(amountCents);
 }
 
 export default function WithdrawPage() {
@@ -110,12 +111,13 @@ export default function WithdrawPage() {
   const amountCents = Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
   const belowMinimum = amountCents > 0 && amountCents < minCents;
   const exceedsBalance = amountCents > 0 && amountCents > availableDisplay;
-  const valid = isWithdrawValid(method, amountCents, minCents, availableDisplay, paypalEmail, bankName, accountType, accountNumber, accountHolder);
+  const withdrawParams: WithdrawParams = { paypalEmail, bankName, accountType, accountNumber, accountHolder };
+  const valid = isWithdrawValid(method, amountCents, minCents, availableDisplay, withdrawParams);
 
   const mutation = useMutation({
     mutationFn: async () => {
       const token = await getToken();
-      const payout_details = buildPayoutDetails(method, bankName, accountType, accountNumber, accountHolder, paypalEmail);
+      const payout_details = buildPayoutDetails(method, withdrawParams);
       return api.createWithdrawal(
         token!,
         { amount_cents: amountCents, currency, method, payout_details },
@@ -170,7 +172,7 @@ export default function WithdrawPage() {
     );
   }
 
-  const amountLabel = effectiveIsUSD ? formatUSD(amountCents) : formatGTQ(amountCents);
+  const amountLabel = formatWithdrawAmount(effectiveIsUSD, amountCents);
   const submitLabel = valid ? `${t("withdraw.submit")} ${amountLabel}` : t("withdraw.submit");
 
   return (
