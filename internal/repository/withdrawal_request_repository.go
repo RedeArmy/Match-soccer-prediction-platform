@@ -89,7 +89,7 @@ func (r *PostgresWithdrawalRequestRepository) scanOne(row pgx.Row) (*domain.With
 
 // scanWithdrawalMutationTx executes a mutation query inside tx, scans the
 // RETURNING row into a WithdrawalRequest, and decodes payout_details. It is
-// the shared scan path for RejectAndRelease and MarkProcessedAndCommit.
+// the shared scan path for ApproveAndDebit and other transactional mutations.
 //
 // Returns (nil, nil) when the query matches no rows (ErrNoRows), signalling
 // that the caller should fall through to notFoundOrConflict after the
@@ -118,8 +118,9 @@ func (r *PostgresWithdrawalRequestRepository) scanWithdrawalMutationTx(
 	return w, nil
 }
 
-// CreateAndReserve atomically inserts the request and reserves the balance.
-func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Context, req *domain.WithdrawalRequest) error {
+// Create inserts the withdrawal request after verifying sufficient available
+// balance. The balance is NOT touched here — deduction happens in ApproveAndDebit.
+func (r *PostgresWithdrawalRequestRepository) Create(ctx context.Context, req *domain.WithdrawalRequest) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 
@@ -128,7 +129,24 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 		return err
 	}
 
-	return withTx(ctx, r.db, "WithdrawalRequestRepository.CreateAndReserve", func(tx pgx.Tx) error {
+	return withTx(ctx, r.db, "WithdrawalRequestRepository.Create", func(tx pgx.Tx) error {
+		// Verify sufficient available balance before inserting.
+		var available int
+		balErr := tx.QueryRow(ctx, `
+			SELECT (balance_cents - reserved_cents)
+			  FROM users
+			 WHERE id = $1 AND deleted_at IS NULL
+		`, req.UserID).Scan(&available)
+		if balErr == pgx.ErrNoRows {
+			return apperrors.NotFound("user not found")
+		}
+		if balErr != nil {
+			return apperrors.Internal(balErr)
+		}
+		if available < req.GTQReservedCents {
+			return apperrors.Conflict("insufficient balance for withdrawal")
+		}
+
 		w, err := r.scanWithdrawalMutationTx(ctx, tx, `
 			INSERT INTO withdrawal_requests
 			      (user_id, amount_cents, currency, method, payout_details, gtq_reserved_cents)
@@ -145,35 +163,6 @@ func (r *PostgresWithdrawalRequestRepository) CreateAndReserve(ctx context.Conte
 		if w == nil {
 			return apperrors.Internal(fmt.Errorf("insert withdrawal_requests returned no rows"))
 		}
-
-		// Reserve GTQ centavos (not the user-facing currency amount).
-		// For GTQ withdrawals this equals AmountCents; for USD withdrawals it is
-		// the converted GTQ equivalent computed by withdrawalService.Create.
-		var balanceAfter int
-		reserveErr := tx.QueryRow(ctx, `
-			UPDATE users
-			   SET reserved_cents = reserved_cents + $2,
-			       updated_at     = NOW()
-			 WHERE id = $1
-			   AND deleted_at IS NULL
-			   AND (balance_cents - reserved_cents) >= $2
-			 RETURNING balance_cents
-		`, w.UserID, w.GTQReservedCents).Scan(&balanceAfter)
-		if reserveErr == pgx.ErrNoRows {
-			return insufficientOrNotFound(ctx, tx, w.UserID)
-		}
-		if reserveErr != nil {
-			return apperrors.Internal(reserveErr)
-		}
-
-		if err := insertLedgerTx(ctx, tx, ledgerRow{
-			UserID: w.UserID, DeltaCents: -w.GTQReservedCents,
-			Kind: domain.LedgerKindWithdrawalReserve, BalanceAfter: balanceAfter,
-			RefID: int64(w.ID), RefType: "withdrawal_request",
-		}); err != nil {
-			return err
-		}
-
 		*req = *w
 		return nil
 	})
@@ -219,38 +208,15 @@ func (r *PostgresWithdrawalRequestRepository) ListPending(ctx context.Context) (
 	})
 }
 
-// Approve transitions a pending request to approved (status change only).
-func (r *PostgresWithdrawalRequestRepository) Approve(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error) {
-	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
-	defer cancel()
-	result, err := r.scanOne(r.db.QueryRow(ctx, `
-		UPDATE withdrawal_requests
-		   SET status      = 'approved',
-		       reviewed_by = $2,
-		       notes       = $3,
-		       updated_at  = NOW()
-		 WHERE id = $1 AND status = 'pending'
-		 RETURNING `+withdrawalColumns,
-		id, reviewerID, notes,
-	))
-	if err != nil {
-		return nil, err
-	}
-	if result != nil {
-		return result, nil
-	}
-	return r.notFoundOrConflict(ctx, id, "approved")
-}
-
-// RejectAndRelease atomically rejects the request and releases the balance reservation.
-func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error) {
+// ApproveAndDebit atomically approves the request and deducts the balance.
+func (r *PostgresWithdrawalRequestRepository) ApproveAndDebit(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 	var result *domain.WithdrawalRequest
-	err := withTx(ctx, r.db, "WithdrawalRequestRepository.RejectAndRelease", func(tx pgx.Tx) error {
+	err := withTx(ctx, r.db, "WithdrawalRequestRepository.ApproveAndDebit", func(tx pgx.Tx) error {
 		w, err := r.scanWithdrawalMutationTx(ctx, tx, `
 			UPDATE withdrawal_requests
-			   SET status      = 'rejected',
+			   SET status      = 'approved',
 			       reviewed_by = $2,
 			       notes       = $3,
 			       updated_at  = NOW()
@@ -266,20 +232,25 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 		}
 
 		var balanceAfter int
-		releaseErr := tx.QueryRow(ctx, `
+		debitErr := tx.QueryRow(ctx, `
 			UPDATE users
-			   SET reserved_cents = reserved_cents - $2,
-			       updated_at     = NOW()
-			 WHERE id = $1 AND deleted_at IS NULL AND reserved_cents >= $2
+			   SET balance_cents = balance_cents - $2,
+			       updated_at    = NOW()
+			 WHERE id = $1
+			   AND deleted_at IS NULL
+			   AND (balance_cents - reserved_cents) >= $2
 			 RETURNING balance_cents
 		`, w.UserID, w.GTQReservedCents).Scan(&balanceAfter)
-		if releaseErr != nil && releaseErr != pgx.ErrNoRows {
-			return apperrors.Internal(releaseErr)
+		if debitErr == pgx.ErrNoRows {
+			return apperrors.Conflict("insufficient available balance to approve withdrawal")
+		}
+		if debitErr != nil {
+			return apperrors.Internal(debitErr)
 		}
 
 		if err := insertLedgerTx(ctx, tx, ledgerRow{
-			UserID: w.UserID, DeltaCents: w.GTQReservedCents,
-			Kind: domain.LedgerKindWithdrawalRelease, BalanceAfter: balanceAfter,
+			UserID: w.UserID, DeltaCents: -w.GTQReservedCents,
+			Kind: domain.LedgerKindWithdrawalDeduct, BalanceAfter: balanceAfter,
 			RefID: int64(w.ID), RefType: "withdrawal_request", CreatorID: reviewerID,
 		}); err != nil {
 			return err
@@ -292,67 +263,54 @@ func (r *PostgresWithdrawalRequestRepository) RejectAndRelease(ctx context.Conte
 		return nil, err
 	}
 	if result == nil {
-		return r.notFoundOrConflict(ctx, id, "rejected")
+		return r.notFoundOrConflict(ctx, id, "approved")
 	}
 	return result, nil
 }
 
-// MarkProcessedAndCommit atomically marks the request as processed and commits the reservation.
-func (r *PostgresWithdrawalRequestRepository) MarkProcessedAndCommit(ctx context.Context, id int) (*domain.WithdrawalRequest, error) {
+// Reject transitions a pending request to rejected (status change only, no balance ops).
+func (r *PostgresWithdrawalRequestRepository) Reject(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
-	var result *domain.WithdrawalRequest
-	err := withTx(ctx, r.db, "WithdrawalRequestRepository.MarkProcessedAndCommit", func(tx pgx.Tx) error {
-		w, err := r.scanWithdrawalMutationTx(ctx, tx, `
-			UPDATE withdrawal_requests
-			   SET status       = 'processed',
-			       processed_at = NOW(),
-			       updated_at   = NOW()
-			 WHERE id = $1 AND status = 'approved'
-			 RETURNING `+withdrawalColumns,
-			id,
-		)
-		if err != nil {
-			return err
-		}
-		if w == nil {
-			return nil // handled outside tx
-		}
-
-		var balanceAfter int
-		commitErr := tx.QueryRow(ctx, `
-			UPDATE users
-			   SET balance_cents  = balance_cents  - $2,
-			       reserved_cents = reserved_cents - $2,
-			       updated_at     = NOW()
-			 WHERE id = $1 AND deleted_at IS NULL AND reserved_cents >= $2
-			 RETURNING balance_cents
-		`, w.UserID, w.GTQReservedCents).Scan(&balanceAfter)
-		if commitErr == pgx.ErrNoRows {
-			return apperrors.Conflict("insufficient reserved balance to commit withdrawal")
-		}
-		if commitErr != nil {
-			return apperrors.Internal(commitErr)
-		}
-
-		if err := insertLedgerTx(ctx, tx, ledgerRow{
-			UserID: w.UserID, DeltaCents: -w.GTQReservedCents,
-			Kind: domain.LedgerKindWithdrawalDeduct, BalanceAfter: balanceAfter,
-			RefID: int64(w.ID), RefType: "withdrawal_request",
-		}); err != nil {
-			return err
-		}
-
-		result = w
-		return nil
-	})
+	result, err := r.scanOne(r.db.QueryRow(ctx, `
+		UPDATE withdrawal_requests
+		   SET status      = 'rejected',
+		       reviewed_by = $2,
+		       notes       = $3,
+		       updated_at  = NOW()
+		 WHERE id = $1 AND status = 'pending'
+		 RETURNING `+withdrawalColumns,
+		id, reviewerID, notes,
+	))
 	if err != nil {
 		return nil, err
 	}
-	if result == nil {
-		return r.notFoundOrConflict(ctx, id, "processed")
+	if result != nil {
+		return result, nil
 	}
-	return result, nil
+	return r.notFoundOrConflict(ctx, id, "rejected")
+}
+
+// MarkProcessed transitions an approved request to processed (status change only).
+func (r *PostgresWithdrawalRequestRepository) MarkProcessed(ctx context.Context, id int) (*domain.WithdrawalRequest, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+	result, err := r.scanOne(r.db.QueryRow(ctx, `
+		UPDATE withdrawal_requests
+		   SET status       = 'processed',
+		       processed_at = NOW(),
+		       updated_at   = NOW()
+		 WHERE id = $1 AND status = 'approved'
+		 RETURNING `+withdrawalColumns,
+		id,
+	))
+	if err != nil {
+		return nil, err
+	}
+	if result != nil {
+		return result, nil
+	}
+	return r.notFoundOrConflict(ctx, id, "processed")
 }
 
 func (r *PostgresWithdrawalRequestRepository) notFoundOrConflict(ctx context.Context, id int, targetStatus string) (*domain.WithdrawalRequest, error) {

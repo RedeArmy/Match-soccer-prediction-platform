@@ -867,33 +867,34 @@ type BankTransferProofRepository interface {
 	Reject(ctx context.Context, id, reviewerID int, notes string) (*domain.BankTransferProof, error)
 }
 
-// WithdrawalRequestRepository manages withdrawal lifecycle.  Operations that
-// change the user's balance reservation are atomic: they update both the
-// withdrawal_requests status and the users.reserved_cents column in one tx,
-// then insert a balance_ledger row, eliminating partial-state windows.
+// WithdrawalRequestRepository manages withdrawal lifecycle.
+// Balance is only deducted at the Approve step (not on Create), so the user's
+// available balance remains unchanged while the request is pending review.
 type WithdrawalRequestRepository interface {
-	// CreateAndReserve atomically inserts a new withdrawal request AND moves
-	// amountCents from available balance to reserved_cents AND inserts a
-	// ledger row.  Returns Conflict when available balance is insufficient.
-	CreateAndReserve(ctx context.Context, req *domain.WithdrawalRequest) error
+	// Create inserts a new withdrawal request. It verifies that the user has
+	// sufficient available balance but does NOT touch the balance — the deduction
+	// happens atomically inside ApproveAndDebit when an admin approves.
+	// Returns Conflict when a pending request already exists for the user.
+	Create(ctx context.Context, req *domain.WithdrawalRequest) error
 	// GetByID returns the request or nil, nil when not found.
 	GetByID(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
 	// ListByUser returns all requests for a user ordered by created_at DESC.
 	ListByUser(ctx context.Context, userID int) ([]*domain.WithdrawalRequest, error)
 	// ListPending returns all pending requests ordered by created_at ASC.
 	ListPending(ctx context.Context) ([]*domain.WithdrawalRequest, error)
-	// Approve transitions a pending request to approved (status change only —
-	// no balance mutation at this step).  Returns NotFound when not pending.
-	Approve(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error)
-	// RejectAndRelease atomically transitions a pending request to rejected AND
-	// releases reserved_cents back to available AND inserts a ledger row.
+	// ApproveAndDebit atomically transitions a pending request to approved AND
+	// deducts the GTQ amount from the user's balance_cents AND inserts a ledger
+	// row (withdrawal_deduct). Returns Conflict when the available balance is
+	// insufficient at approval time. Returns NotFound when not pending.
+	ApproveAndDebit(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error)
+	// Reject transitions a pending request to rejected (status change only —
+	// no balance mutation because no balance was reserved on Create).
 	// Returns NotFound when the request does not exist or is not pending.
-	RejectAndRelease(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error)
-	// MarkProcessedAndCommit atomically transitions an approved request to
-	// processed AND commits the reserved amount (decrements both balance_cents
-	// and reserved_cents) AND inserts a ledger row.  Returns NotFound when the
-	// request does not exist or is not in approved status.
-	MarkProcessedAndCommit(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
+	Reject(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error)
+	// MarkProcessed transitions an approved request to processed (status change
+	// only — balance was already deducted at ApproveAndDebit).
+	// Returns NotFound when the request does not exist or is not in approved status.
+	MarkProcessed(ctx context.Context, id int) (*domain.WithdrawalRequest, error)
 }
 
 // KYCStatusEvent bundles the fields required by UpdateStatusWithEvent into a
@@ -1054,8 +1055,12 @@ type PaymentIntentRepository interface {
 	// layer can inspect userID and amountCents before calling CaptureAndCredit.
 	GetByToken(ctx context.Context, token string) (*domain.PaymentIntent, error)
 	// CaptureAndCredit atomically transitions a pending, non-expired intent to
-	// captured, stores captureID, and credits the intent's amount_cents to the
-	// user's balance in a single database transaction.
+	// captured, stores captureID, and credits creditAmountCents to the user's
+	// balance in a single database transaction.
+	//
+	// creditAmountCents is the platform-native (GTQ) amount to add to the
+	// balance. For GTQ intents it equals intent.AmountCents; for USD intents
+	// the caller must convert to GTQ before calling this method.
 	//
 	// Returns ErrPaymentIntentAlreadyCaptured when the same captureID has
 	// already been applied to this intent — the caller should treat this as a
@@ -1063,7 +1068,7 @@ type PaymentIntentRepository interface {
 	// Returns apperrors.Conflict when the intent is captured by a different
 	// captureID (duplicate capture from a different PayPal transaction).
 	// Returns apperrors.NotFound when no pending, non-expired intent matches token.
-	CaptureAndCredit(ctx context.Context, token, captureID string) (*domain.PaymentIntent, error)
+	CaptureAndCredit(ctx context.Context, token, captureID string, creditAmountCents int) (*domain.PaymentIntent, error)
 }
 
 // NotificationTemplateRepository manages operator-editable notification content.

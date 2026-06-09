@@ -398,6 +398,7 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyPaymentMaxUploadBytes:      {102_400, 52_428_800},                                        // 100 KB – 50 MB
 	domain.ParamKeyWithdrawalMinCents:         {100, 1_000_000},                                             // 1 GTQ – 10 000 GTQ
 	domain.ParamKeyWithdrawalMaxCents:         {1_000, 100_000_000},                                         // 10 GTQ – 1 000 000 GTQ
+	domain.ParamKeyWithdrawalMinUSDCents:      {1, 100_000},                                                 // $0.01 – $1 000.00
 	domain.ParamKeyBankTransferMinAmountCents: {100, 1_000_000},                                             // 1 GTQ – 10 000 GTQ
 	domain.ParamKeyBankTransferMaxAmountCents: {1_000, 100_000_000},                                         // 10 GTQ – 1 000 000 GTQ
 	domain.ParamKeyPaymentIntentTTLMinutes:    {5, 1_440},                                                   // 5 min – 24 h

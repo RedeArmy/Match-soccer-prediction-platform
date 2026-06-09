@@ -19,6 +19,7 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/payoutenc"
 	"github.com/rede/world-cup-quiniela/pkg/promclient"
 	"github.com/rede/world-cup-quiniela/pkg/randcode"
+	"github.com/rede/world-cup-quiniela/pkg/recurrente"
 	"github.com/rede/world-cup-quiniela/pkg/tempoclient"
 )
 
@@ -63,6 +64,7 @@ type appHandlers struct {
 	withdrawal         *handler.WithdrawalHandler
 	paymentIntent      *handler.PaymentIntentHandler
 	paymentWebhook     *handler.PaymentWebhookHandler
+	paypalOrder        *handler.PayPalOrderHandler
 	notification       *handler.NotificationHandler
 	adminUser          *handler.AdminUserHandler
 	adminGroup         *handler.AdminGroupHandler
@@ -87,6 +89,8 @@ type appHandlers struct {
 	user               *handler.UserHandler
 	adminExchangeRate  *handler.AdminExchangeRateHandler
 	exchangeRate       *handler.ExchangeRateHandler
+	bank               *handler.BankHandler
+	adminBank          *handler.AdminBankHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -282,8 +286,11 @@ func (s *Server) buildHandlers(
 		balance:            handler.NewBalanceHandler(balanceSvc, s.log),
 		bankTransfer:       handler.NewBankTransferHandler(bankTransferSvc, fileStore, maxUploadBytes, minTransferCents, maxTransferCents, s.log),
 		withdrawal:         handler.NewWithdrawalHandler(withdrawalSvc, s.log),
-		paymentIntent:      handler.NewPaymentIntentHandler(paymentIntentSvc, s.log),
+		bank:               handler.NewBankHandler(repository.NewPostgresBankRepository(s.db), repository.NewPostgresBankAccountTypeRepository(s.db), s.log),
+		adminBank:          handler.NewAdminBankHandler(repository.NewPostgresBankRepository(s.db), repository.NewPostgresBankAccountTypeRepository(s.db), s.log),
+		paymentIntent:      buildPaymentIntentHandler(paymentIntentSvc, s.cfg.Payment.RecurrenteAPIKey, s.cfg.Payment.RecurrenteBaseURL, s.cfg.Server.AppBaseURL, s.log),
 		paymentWebhook:     handler.NewPaymentWebhookHandler(webhookPaymentSvc, s.log),
+		paypalOrder:        handler.NewPayPalOrderHandler(s.cfg.Payment.PayPalClientID, s.cfg.Payment.PayPalClientSecret, s.cfg.Payment.PayPalBaseURL, s.cfg.IsDevelopment(), paymentIntentSvc, s.log),
 		adminUser:          handler.NewAdminUserHandler(adminUserSvc, s.log),
 		adminGroup:         handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),
 		adminPayment:       handler.NewAdminPaymentHandler(paymentSvc, s.log),
@@ -345,7 +352,13 @@ func (s *Server) buildHandlers(
 	// defines its own narrow interface so the import graph stays acyclic.
 	s.wirePaymentNotifiers(&h)
 
-	h.adminExchangeRate, h.exchangeRate = s.buildFXModule(ctx, paramSvcWithAudit, auditSvc)
+	var fxSvc service.ExchangeRateService
+	h.adminExchangeRate, h.exchangeRate, fxSvc = s.buildFXModule(ctx, paramSvcWithAudit, auditSvc)
+	if wfx, ok := webhookPaymentSvc.(interface {
+		SetExchangeRateService(service.ExchangeRateService)
+	}); ok {
+		wfx.SetExchangeRateService(fxSvc)
+	}
 
 	return h
 }
@@ -384,7 +397,7 @@ func (s *Server) buildFXModule(
 	ctx context.Context,
 	params service.SystemParamService,
 	audit service.AuditLogger,
-) (*handler.AdminExchangeRateHandler, *handler.ExchangeRateHandler) {
+) (*handler.AdminExchangeRateHandler, *handler.ExchangeRateHandler, service.ExchangeRateService) {
 	fxRepo := repository.NewPostgresExchangeRateRepository(s.db)
 	fxFetcher := service.NewMultiSourceFetcher(s.log,
 		service.NewBanguatFetcher(),
@@ -402,7 +415,8 @@ func (s *Server) buildFXModule(
 		s.log.Warn("exchange_rate: cache warm failed (non-fatal, will warm on first request)", zap.Error(err))
 	}
 	return handler.NewAdminExchangeRateHandler(fxSvc, fxRepo, audit, s.log),
-		handler.NewExchangeRateHandler(fxSvc, s.log)
+		handler.NewExchangeRateHandler(fxSvc, s.log),
+		fxSvc
 }
 
 // wireLeaderboardTTLHook registers a mutation hook so that when an admin
@@ -525,6 +539,28 @@ func (s *Server) buildResilientCache(ctx context.Context, params service.SystemP
 // When hexKey is empty (local development) a no-op passthrough is returned so
 // the application starts without a key. In production validateProductionConfig
 // rejects an empty key before this function is reached.
+// buildPaymentIntentHandler constructs a PaymentIntentHandler and, when an
+// API key is provided, wires in the Recurrente checkout creator so that
+// POST /api/v1/payment-intents with provider=recurrente creates a hosted
+// checkout session and returns a redirect URL.
+func buildPaymentIntentHandler(
+	svc service.PaymentIntentCreator,
+	recurrenteAPIKey, recurrenteBaseURL, appBaseURL string,
+	log *zap.Logger,
+) *handler.PaymentIntentHandler {
+	h := handler.NewPaymentIntentHandler(svc, log)
+	if recurrenteAPIKey != "" {
+		if appBaseURL == "" {
+			log.Warn("Recurrente is configured but WCQ_SERVER_APPBASEURL is not set — redirect URLs will be invalid; set it to your ngrok or production URL")
+		}
+		client := recurrente.New(recurrenteAPIKey, recurrenteBaseURL)
+		h.WithRecurrente(handler.NewRecurrenteCheckoutAdapter(client), appBaseURL)
+	} else {
+		log.Warn("Recurrente checkout disabled: WCQ_PAYMENT_RECURRENTEAPIKEY is not set")
+	}
+	return h
+}
+
 func buildPayoutEncrypter(hexKey string, log *zap.Logger) payoutenc.Encrypter {
 	if hexKey == "" {
 		log.Warn("payout_details encryption disabled: WCQ_PAYMENT_PAYOUTENCRYPTIONKEY is not set — acceptable only in development")

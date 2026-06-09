@@ -1285,3 +1285,108 @@ func TestKYCService_AppendEvent_DropIncrementsCounter(t *testing.T) {
 	// The noop counter cannot be read back, but the test confirms no panic occurs
 	// and the error is not propagated to the caller.
 }
+
+// ── DeleteDocument ────────────────────────────────────────────────────────────
+
+func TestKYCService_DeleteDocument_ProfileRepoError(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{err: errors.New("db fail")}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	_, err := svc.DeleteDocument(context.Background(), 1, 10)
+	if err == nil {
+		t.Fatal("expected error from profile repo, got nil")
+	}
+}
+
+func TestKYCService_DeleteDocument_NoProfile(t *testing.T) {
+	svc := newKYCSvc(&kycProfileRepoStub{profile: nil}, &kycDocRepoStub{}, &kycEventRepoStub{})
+	_, err := svc.DeleteDocument(context.Background(), 1, 10)
+	if err == nil {
+		t.Fatal("expected Forbidden error when no profile, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrForbidden) {
+		t.Errorf("expected Forbidden error, got %v", err)
+	}
+}
+
+func TestKYCService_DeleteDocument_DocRepoError(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 1}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: profile}, &kycDocRepoStub{err: errors.New("db fail")}, &kycEventRepoStub{})
+	_, err := svc.DeleteDocument(context.Background(), 1, 10)
+	if err == nil {
+		t.Fatal("expected error from doc repo, got nil")
+	}
+}
+
+func TestKYCService_DeleteDocument_DocNotFound(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 1}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: profile}, &kycDocRepoStub{doc: nil}, &kycEventRepoStub{})
+	_, err := svc.DeleteDocument(context.Background(), 1, 10)
+	if err == nil {
+		t.Fatal("expected NotFound error, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected NotFound error, got %v", err)
+	}
+}
+
+func TestKYCService_DeleteDocument_DocBelongsToDifferentProfile(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 1}
+	doc := &domain.KYCDocument{ID: 10, ProfileID: 99, StorageKey: "kyc/9/doc.jpg"}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: profile}, &kycDocRepoStub{doc: doc}, &kycEventRepoStub{})
+	_, err := svc.DeleteDocument(context.Background(), 1, 10)
+	if err == nil {
+		t.Fatal("expected Forbidden error, got nil")
+	}
+	if !errors.Is(err, apperrors.ErrForbidden) {
+		t.Errorf("expected Forbidden error, got %v", err)
+	}
+}
+
+func TestKYCService_DeleteDocument_DeleteByIDError(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 1}
+	doc := &domain.KYCDocument{ID: 10, ProfileID: 1, StorageKey: "kyc/1/doc.jpg"}
+	// kycDocRepoStub.err is returned by both GetByID and DeleteByID.
+	// Use GetByID returning doc (no error) but DeleteByID with error
+	// by constructing a split stub.
+	docRepo := &splitDocRepoStub{getDoc: doc, deleteErr: errors.New("delete failed")}
+	svc := NewKYCService(&kycProfileRepoStub{profile: profile}, docRepo, &kycEventRepoStub{}, &noopSystemParamService{}, &noopAuditLogger{}, zap.NewNop())
+	_, err := svc.DeleteDocument(context.Background(), 1, 10)
+	if err == nil {
+		t.Fatal("expected error from DeleteByID, got nil")
+	}
+}
+
+func TestKYCService_DeleteDocument_Success(t *testing.T) {
+	profile := &domain.KYCProfile{ID: 1, UserID: 1}
+	doc := &domain.KYCDocument{ID: 10, ProfileID: 1, StorageKey: "kyc/1/photo.jpg"}
+	svc := newKYCSvc(&kycProfileRepoStub{profile: profile}, &kycDocRepoStub{doc: doc}, &kycEventRepoStub{})
+	key, err := svc.DeleteDocument(context.Background(), 1, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key != "kyc/1/photo.jpg" {
+		t.Errorf("storageKey: got %q, want kyc/1/photo.jpg", key)
+	}
+}
+
+// splitDocRepoStub separates GetByID success from DeleteByID error,
+// which the unified kycDocRepoStub cannot express.
+type splitDocRepoStub struct {
+	getDoc    *domain.KYCDocument
+	deleteErr error
+}
+
+func (r *splitDocRepoStub) Create(_ context.Context, d *domain.KYCDocument) error {
+	d.ID = 10
+	return nil
+}
+func (r *splitDocRepoStub) GetByID(_ context.Context, _ int64) (*domain.KYCDocument, error) {
+	return r.getDoc, nil
+}
+func (r *splitDocRepoStub) ListByProfile(_ context.Context, _ int, _ domain.KYCProfileType) ([]*domain.KYCDocument, error) {
+	return nil, nil
+}
+func (r *splitDocRepoStub) MarkVerified(_ context.Context, _ int64, _ int) error { return nil }
+func (r *splitDocRepoStub) ListExpiredDocuments(_ context.Context, _ time.Time, _ int) ([]*domain.KYCDocument, error) {
+	return nil, nil
+}
+func (r *splitDocRepoStub) DeleteByID(_ context.Context, _ int64) error { return r.deleteErr }

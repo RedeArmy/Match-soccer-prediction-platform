@@ -21,13 +21,13 @@ func seedWithdrawalRequest(t *testing.T, userID, amountCents int) *domain.Withdr
 		Method:           domain.WithdrawalMethodBankGT,
 		PayoutDetails:    map[string]string{"account": "1234567890"},
 	}
-	if err := repo.CreateAndReserve(context.Background(), req); err != nil {
+	if err := repo.Create(context.Background(), req); err != nil {
 		t.Fatalf("seedWithdrawalRequest: %v", err)
 	}
 	return req
 }
 
-func TestWithdrawalRequestRepository_CreateAndReserve_PopulatesID(t *testing.T) {
+func TestWithdrawalRequestRepository_Create_PopulatesID(t *testing.T) {
 	cleanTables(t)
 	u := seedUserWithBalance(t, 10000)
 	req := seedWithdrawalRequest(t, u.ID, 5000)
@@ -40,7 +40,7 @@ func TestWithdrawalRequestRepository_CreateAndReserve_PopulatesID(t *testing.T) 
 	}
 }
 
-func TestWithdrawalRequestRepository_CreateAndReserve_ReservesBalance(t *testing.T) {
+func TestWithdrawalRequestRepository_Create_DoesNotModifyBalance(t *testing.T) {
 	cleanTables(t)
 	u := seedUserWithBalance(t, 10000)
 	seedWithdrawalRequest(t, u.ID, 3000)
@@ -51,14 +51,14 @@ func TestWithdrawalRequestRepository_CreateAndReserve_ReservesBalance(t *testing
 		t.Fatalf("GetBalance: %v", err)
 	}
 	if bal != 10000 {
-		t.Errorf("balance_cents unchanged: got %d, want 10000", bal)
+		t.Errorf("balance_cents must be unchanged: got %d, want 10000", bal)
 	}
-	if reserved != 3000 {
-		t.Errorf("reserved_cents: got %d, want 3000", reserved)
+	if reserved != 0 {
+		t.Errorf("reserved_cents must be unchanged: got %d, want 0", reserved)
 	}
 }
 
-func TestWithdrawalRequestRepository_CreateAndReserve_InsufficientBalance(t *testing.T) {
+func TestWithdrawalRequestRepository_Create_InsufficientBalance(t *testing.T) {
 	cleanTables(t)
 	u := seedUserWithBalance(t, 1000)
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
@@ -67,7 +67,7 @@ func TestWithdrawalRequestRepository_CreateAndReserve_InsufficientBalance(t *tes
 		UserID: u.ID, AmountCents: 5000, GTQReservedCents: 5000, Currency: "GTQ",
 		Method: domain.WithdrawalMethodBankGT,
 	}
-	err := repo.CreateAndReserve(context.Background(), req)
+	err := repo.Create(context.Background(), req)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict for insufficient balance, got %v", err)
 	}
@@ -111,8 +111,8 @@ func TestWithdrawalRequestRepository_ListByUser_ReturnsAll(t *testing.T) {
 
 	// First request: reject it so u's pending slot is freed before creating req2.
 	req1 := seedWithdrawalRequest(t, u.ID, 1000)
-	if _, err := repo.RejectAndRelease(context.Background(), int(req1.ID), admin.ID, "test"); err != nil {
-		t.Fatalf("RejectAndRelease: %v", err)
+	if _, err := repo.Reject(context.Background(), int(req1.ID), admin.ID, "test"); err != nil {
+		t.Fatalf("Reject: %v", err)
 	}
 	seedWithdrawalRequest(t, u.ID, 2000)
 	seedWithdrawalRequest(t, u2.ID, 3000)
@@ -138,8 +138,8 @@ func TestWithdrawalRequestRepository_ListPending_ReturnsOnlyPending(t *testing.T
 	// exclude the approved row and return only the pending one.
 	seedWithdrawalRequest(t, u1.ID, 1000)
 	req2 := seedWithdrawalRequest(t, u2.ID, 2000)
-	if _, err := repo.Approve(context.Background(), int(req2.ID), admin.ID, "ok"); err != nil {
-		t.Fatalf("Approve: %v", err)
+	if _, err := repo.ApproveAndDebit(context.Background(), int(req2.ID), admin.ID, "ok"); err != nil {
+		t.Fatalf("ApproveAndDebit: %v", err)
 	}
 
 	pending, err := repo.ListPending(context.Background())
@@ -151,7 +151,7 @@ func TestWithdrawalRequestRepository_ListPending_ReturnsOnlyPending(t *testing.T
 	}
 }
 
-func TestWithdrawalRequestRepository_CreateAndReserve_DuplicatePendingConflict(t *testing.T) {
+func TestWithdrawalRequestRepository_Create_DuplicatePendingConflict(t *testing.T) {
 	cleanTables(t)
 	u := seedUserWithBalance(t, 20000)
 	seedWithdrawalRequest(t, u.ID, 5000)
@@ -161,47 +161,56 @@ func TestWithdrawalRequestRepository_CreateAndReserve_DuplicatePendingConflict(t
 		UserID: u.ID, AmountCents: 3000, GTQReservedCents: 3000, Currency: "GTQ",
 		Method: domain.WithdrawalMethodBankGT,
 	}
-	err := repo.CreateAndReserve(context.Background(), req2)
+	err := repo.Create(context.Background(), req2)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict for duplicate pending withdrawal, got %v", err)
 	}
 }
 
-func TestWithdrawalRequestRepository_Approve_UpdatesStatus(t *testing.T) {
+func TestWithdrawalRequestRepository_ApproveAndDebit_DeductsBalance(t *testing.T) {
 	cleanTables(t)
 	u := seedUserWithBalance(t, 10000)
 	admin := seedUser(t)
 	req := seedWithdrawalRequest(t, u.ID, 2000)
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 
-	approved, err := repo.Approve(context.Background(), int(req.ID), admin.ID, "all good")
+	approved, err := repo.ApproveAndDebit(context.Background(), int(req.ID), admin.ID, "all good")
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if approved.Status != domain.WithdrawalApproved {
 		t.Errorf("status: got %q, want approved", approved.Status)
 	}
+
+	userRepo := repository.NewPostgresUserRepository(testDB)
+	bal, _, err := userRepo.GetBalance(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if bal != 8000 {
+		t.Errorf("balance_cents after approve: got %d, want 8000", bal)
+	}
 }
 
-func TestWithdrawalRequestRepository_Approve_NotFound(t *testing.T) {
+func TestWithdrawalRequestRepository_ApproveAndDebit_NotFound(t *testing.T) {
 	cleanTables(t)
 	admin := seedUser(t)
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 
-	_, err := repo.Approve(context.Background(), 999999, admin.ID, "")
+	_, err := repo.ApproveAndDebit(context.Background(), 999999, admin.ID, "")
 	if !isNotFound(err) {
 		t.Errorf("expected not-found, got %v", err)
 	}
 }
 
-func TestWithdrawalRequestRepository_RejectAndRelease_ReleasesReservation(t *testing.T) {
+func TestWithdrawalRequestRepository_Reject_UpdatesStatus(t *testing.T) {
 	cleanTables(t)
 	u := seedUserWithBalance(t, 10000)
 	admin := seedUser(t)
 	req := seedWithdrawalRequest(t, u.ID, 4000)
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 
-	rejected, err := repo.RejectAndRelease(context.Background(), int(req.ID), admin.ID, "invalid account")
+	rejected, err := repo.Reject(context.Background(), int(req.ID), admin.ID, "invalid account")
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -209,39 +218,43 @@ func TestWithdrawalRequestRepository_RejectAndRelease_ReleasesReservation(t *tes
 		t.Errorf("status: got %q, want rejected", rejected.Status)
 	}
 
+	// Balance must be unchanged — Create never touched it.
 	userRepo := repository.NewPostgresUserRepository(testDB)
-	_, reserved, err := userRepo.GetBalance(context.Background(), u.ID)
+	bal, reserved, err := userRepo.GetBalance(context.Background(), u.ID)
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
+	}
+	if bal != 10000 {
+		t.Errorf("balance_cents after reject: got %d, want 10000", bal)
 	}
 	if reserved != 0 {
 		t.Errorf("reserved_cents after reject: got %d, want 0", reserved)
 	}
 }
 
-func TestWithdrawalRequestRepository_RejectAndRelease_NotFound(t *testing.T) {
+func TestWithdrawalRequestRepository_Reject_NotFound(t *testing.T) {
 	cleanTables(t)
 	admin := seedUser(t)
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 
-	_, err := repo.RejectAndRelease(context.Background(), 999999, admin.ID, "notes")
+	_, err := repo.Reject(context.Background(), 999999, admin.ID, "notes")
 	if !isNotFound(err) {
 		t.Errorf("expected not-found, got %v", err)
 	}
 }
 
-func TestWithdrawalRequestRepository_MarkProcessedAndCommit_DeductsBalance(t *testing.T) {
+func TestWithdrawalRequestRepository_MarkProcessed_UpdatesStatus(t *testing.T) {
 	cleanTables(t)
 	u := seedUserWithBalance(t, 10000)
 	admin := seedUser(t)
 	req := seedWithdrawalRequest(t, u.ID, 4000)
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 
-	if _, err := repo.Approve(context.Background(), int(req.ID), admin.ID, "ok"); err != nil {
-		t.Fatalf("Approve: %v", err)
+	if _, err := repo.ApproveAndDebit(context.Background(), int(req.ID), admin.ID, "ok"); err != nil {
+		t.Fatalf("ApproveAndDebit: %v", err)
 	}
 
-	processed, err := repo.MarkProcessedAndCommit(context.Background(), int(req.ID))
+	processed, err := repo.MarkProcessed(context.Background(), int(req.ID))
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -249,6 +262,7 @@ func TestWithdrawalRequestRepository_MarkProcessedAndCommit_DeductsBalance(t *te
 		t.Errorf("status: got %q, want processed", processed.Status)
 	}
 
+	// Balance was already deducted at approve; MarkProcessed must not change it again.
 	userRepo := repository.NewPostgresUserRepository(testDB)
 	bal, reserved, err := userRepo.GetBalance(context.Background(), u.ID)
 	if err != nil {
@@ -262,13 +276,13 @@ func TestWithdrawalRequestRepository_MarkProcessedAndCommit_DeductsBalance(t *te
 	}
 }
 
-func TestWithdrawalRequestRepository_MarkProcessedAndCommit_NotApproved_ReturnsConflict(t *testing.T) {
+func TestWithdrawalRequestRepository_MarkProcessed_NotApproved_ReturnsConflict(t *testing.T) {
 	cleanTables(t)
 	u := seedUserWithBalance(t, 10000)
 	req := seedWithdrawalRequest(t, u.ID, 2000)
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 
-	_, err := repo.MarkProcessedAndCommit(context.Background(), int(req.ID))
+	_, err := repo.MarkProcessed(context.Background(), int(req.ID))
 	if err == nil {
 		t.Fatal("expected conflict error for pending withdrawal, got nil")
 	}
@@ -277,11 +291,11 @@ func TestWithdrawalRequestRepository_MarkProcessedAndCommit_NotApproved_ReturnsC
 	}
 }
 
-func TestWithdrawalRequestRepository_MarkProcessedAndCommit_NotFound(t *testing.T) {
+func TestWithdrawalRequestRepository_MarkProcessed_NotFound(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
 
-	_, err := repo.MarkProcessedAndCommit(context.Background(), 999999)
+	_, err := repo.MarkProcessed(context.Background(), 999999)
 	if !isNotFound(err) {
 		t.Errorf("expected not-found, got %v", err)
 	}

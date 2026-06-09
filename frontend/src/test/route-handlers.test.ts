@@ -78,16 +78,18 @@ describe('[...path] proxy – GET without Clerk token', () => {
   })
 })
 
-describe('[...path] proxy – GET with Clerk token', () => {
+describe('[...path] proxy – GET with client Authorization header', () => {
   beforeEach(() => {
     mockFetch.mockReset()
-    vi.mocked(auth).mockResolvedValue({ getToken: vi.fn().mockResolvedValue('clerk_token_abc') } as never)
   })
 
-  it('forwards Authorization: Bearer header', async () => {
+  it('forwards Authorization header from the incoming request', async () => {
     mockFetch.mockResolvedValueOnce(new Response('[]', { status: 200 }))
     const { GET } = await import('@/app/api/[...path]/route')
-    await GET(makeReq(), makeCtx())
+    const req = makeReq('http://localhost/api/v1/matches', {
+      headers: { Authorization: 'Bearer clerk_token_abc' },
+    })
+    await GET(req, makeCtx())
     const [, init] = mockFetch.mock.calls[0]
     const headers = (init as RequestInit).headers as Record<string, string>
     expect(headers['Authorization']).toBe('Bearer clerk_token_abc')
@@ -129,6 +131,46 @@ describe('[...path] proxy – upstream fetch throws', () => {
     expect(res.status).toBe(502)
     const body = await res.json()
     expect(body.error.code).toBe('ERR_UPSTREAM')
+  })
+})
+
+describe('[...path] proxy – forwards Idempotency-Key header', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    vi.mocked(auth).mockResolvedValue({ getToken: vi.fn().mockResolvedValue(null) } as never)
+  })
+
+  it('forwards Idempotency-Key from incoming request to upstream', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('{}', { status: 201 }))
+    const { POST } = await import('@/app/api/[...path]/route')
+    const req = makeReq('http://localhost/api/v1/withdrawals', {
+      method: 'POST',
+      body: '{}',
+      headers: { 'Idempotency-Key': 'idem_abc_123' },
+    })
+    await POST(req, makeCtx(['v1', 'withdrawals']))
+    const [, init] = mockFetch.mock.calls[0]
+    const headers = (init as RequestInit).headers as Record<string, string>
+    expect(headers['Idempotency-Key']).toBe('idem_abc_123')
+  })
+})
+
+describe('[...path] proxy – upstream non-OK response is proxied', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    vi.mocked(auth).mockResolvedValue({ getToken: vi.fn().mockResolvedValue(null) } as never)
+  })
+
+  it('returns the upstream status code when upstream responds with 4xx', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    const { GET } = await import('@/app/api/[...path]/route')
+    const res = await GET(makeReq(), makeCtx())
+    expect(res.status).toBe(404)
   })
 })
 
@@ -238,6 +280,65 @@ describe('clerk webhook relay – upstream fetch throws', () => {
 })
 
 // ── notifications/stream/route ────────────────────────────────────────────────
+
+// ── webhooks/paypal/route ─────────────────────────────────────────────────────
+
+describe('paypal webhook relay – happy path', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('forwards request body to backend and returns upstream status', async () => {
+    process.env.BACKEND_INTERNAL_URL = 'http://backend:8080'
+    mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    const { POST } = await import('@/app/webhooks/paypal/route')
+    const req = makeReq('http://localhost/webhooks/paypal', {
+      method: 'POST',
+      body: JSON.stringify({ event_type: 'PAYMENT.CAPTURE.COMPLETED' }),
+      headers: {
+        'content-type': 'application/json',
+        'paypal-transmission-id': 'txn_abc',
+      },
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(mockFetch).toHaveBeenCalledOnce()
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/webhooks/paypal')
+  })
+})
+
+describe('paypal webhook relay – strips hop-by-hop headers', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('strips connection header from proxied response', async () => {
+    process.env.BACKEND_INTERNAL_URL = 'http://backend:8080'
+    mockFetch.mockResolvedValueOnce(
+      new Response('{}', {
+        status: 200,
+        headers: { 'connection': 'keep-alive', 'x-request-id': 'req_1' },
+      }),
+    )
+    const { POST } = await import('@/app/webhooks/paypal/route')
+    const req = makeReq('http://localhost/webhooks/paypal', { method: 'POST', body: '{}' })
+    const res = await POST(req)
+    expect(res.headers.get('connection')).toBeNull()
+    expect(res.headers.get('x-request-id')).toBe('req_1')
+  })
+})
+
+describe('paypal webhook relay – upstream fetch throws', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('returns 502 when backend is unreachable', async () => {
+    process.env.BACKEND_INTERNAL_URL = 'http://backend:8080'
+    mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'))
+    const { POST } = await import('@/app/webhooks/paypal/route')
+    const req = makeReq('http://localhost/webhooks/paypal', { method: 'POST', body: '{}' })
+    const res = await POST(req)
+    expect(res.status).toBe(502)
+    const body = await res.json()
+    expect(body.error).toBe('Backend unavailable')
+  })
+})
 
 describe('SSE stream proxy – no token', () => {
   beforeEach(() => {

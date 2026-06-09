@@ -371,6 +371,15 @@ type ClerkConfig struct {
 // layer (middleware.RecurrenteWebhookAuth, middleware.PayPalWebhookAuth)
 // enforces the respective verification algorithms at request time.
 type PaymentConfig struct {
+	// RecurrenteAPIKey is the merchant API key for the Recurrente REST API,
+	// obtained from Configuración → Desarrolladores y API → API Keys.
+	// Used to create hosted checkout sessions (POST /api/checkouts).
+	// Set via WCQ_PAYMENT_RECURRENTEAPIKEY.
+	RecurrenteAPIKey string `mapstructure:"recurrenteAPIKey"`
+	// RecurrenteBaseURL overrides the default Recurrente API base URL
+	// (https://api.recurrente.com). Set via WCQ_PAYMENT_RECURRENTEBASEURL.
+	// Leave empty in production; useful for pointing at a sandbox or mock.
+	RecurrenteBaseURL string `mapstructure:"recurrenteBaseURL"`
 	// RecurrenteWebhookSecret is the Svix signing secret from the Recurrente
 	// webhook dashboard (Configuración → Desarrolladores y API → Webhooks).
 	// Format: "whsec_<base64>" (Svix standard). Raw secrets are also accepted
@@ -378,6 +387,19 @@ type PaymentConfig struct {
 	// header following the Svix HMAC-SHA256 algorithm.
 	// Set via WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET.
 	RecurrenteWebhookSecret string `mapstructure:"recurrenteWebhookSecret"`
+	// PayPalClientID is the client ID from the PayPal developer dashboard.
+	// Used for server-side order creation (POST /v2/checkout/orders).
+	// Set via WCQ_PAYMENT_PAYPALCLIENTID.
+	PayPalClientID string `mapstructure:"paypalClientID"`
+	// PayPalClientSecret is the client secret from the PayPal developer dashboard.
+	// Never exposed to the browser. Used to obtain OAuth tokens for the REST API.
+	// Set via WCQ_PAYMENT_PAYPALCLIENTSECRET.
+	PayPalClientSecret string `mapstructure:"paypalClientSecret"`
+	// PayPalBaseURL overrides the default PayPal API base URL.
+	// Leave empty to use sandbox (https://api-m.sandbox.paypal.com) in development
+	// and production (https://api-m.paypal.com) when Env != "development".
+	// Set via WCQ_PAYMENT_PAYPALBASEURL.
+	PayPalBaseURL string `mapstructure:"paypalBaseURL"`
 	// PayPalWebhookID is the webhook ID from the PayPal developer dashboard.
 	// It is embedded in the signed message during RSA certificate verification.
 	// Set via WCQ_PAYMENT_PAYPALWEBHOOKID.

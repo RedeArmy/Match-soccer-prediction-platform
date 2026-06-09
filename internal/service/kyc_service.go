@@ -73,6 +73,10 @@ type KYCService interface {
 	UploadDocument(ctx context.Context, userID int, req UploadDocRequest) (*domain.KYCDocument, error)
 	// ListDocuments returns all documents uploaded for the user's profile.
 	ListDocuments(ctx context.Context, userID int) ([]*domain.KYCDocument, error)
+	// DeleteDocument removes a document the user owns from the database and returns
+	// its storage key so the caller can delete the physical file from the FileStore.
+	// Returns apperrors.Forbidden when docID belongs to a different user's profile.
+	DeleteDocument(ctx context.Context, userID int, docID int64) (storageKey string, err error)
 	// GetRequirements returns the documents still needed for the next tier.
 	GetRequirements(ctx context.Context, userID int) (*KYCRequirements, error)
 	// ListEvents returns the full audit trail for a KYC profile.
@@ -332,6 +336,37 @@ func (s *kycService) ListDocuments(ctx context.Context, userID int) ([]*domain.K
 		return nil, nil
 	}
 	return s.docRepo.ListByProfile(ctx, profile.ID, domain.KYCProfileTypeUser)
+}
+
+func (s *kycService) DeleteDocument(ctx context.Context, userID int, docID int64) (string, error) {
+	profile, err := s.profileRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if profile == nil {
+		return "", apperrors.Forbidden("no KYC profile found for this user")
+	}
+	doc, err := s.docRepo.GetByID(ctx, docID)
+	if err != nil {
+		return "", err
+	}
+	if doc == nil {
+		return "", apperrors.NotFound("kyc document not found")
+	}
+	if doc.ProfileID != profile.ID {
+		return "", apperrors.Forbidden("document does not belong to this user")
+	}
+	storageKey := doc.StorageKey
+	if err := s.docRepo.DeleteByID(ctx, docID); err != nil {
+		return "", err
+	}
+	resType := "kyc_document"
+	docIDInt := int(docID)
+	s.audit.Log(ctx, &userID, nil,
+		domain.AuditActionKYCDocUploaded, &resType, &docIDInt, map[string]any{
+			"action": "deleted",
+		})
+	return storageKey, nil
 }
 
 func (s *kycService) GetRequirements(ctx context.Context, userID int) (*KYCRequirements, error) {

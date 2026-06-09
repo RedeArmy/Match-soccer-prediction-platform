@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useAuth, useUser } from '@clerk/nextjs'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Plus, ShieldAlert, Trophy, Users } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Bell, ChevronLeft, ChevronRight, Plus, ShieldAlert, ShieldCheck, Trophy, Users } from 'lucide-react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import { useSSE } from '@/hooks/useSSE'
-import { useKYCStatus } from '@/hooks/useKYCStatus'
+import { useKYCEffectiveStatus } from '@/hooks/useKYCEffectiveStatus'
 import { BalanceCard } from '@/components/balance/BalanceCard'
 import { GroupDialog } from '@/components/groups/GroupDialog'
 import { PendingApprovalsDialog } from '@/components/groups/PendingApprovalsDialog'
@@ -15,9 +15,10 @@ import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { PredictionPanel } from '@/components/predictions/PredictionPanel'
-import { formatDate } from '@/lib/utils'
+import { formatDate, ledgerKindKey, isVisibleLedgerKind } from '@/lib/utils'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useI18n } from '@/lib/i18n'
+import type { LedgerEntry } from '@/lib/api-types'
 
 type DialogTab = 'create' | 'join'
 
@@ -25,7 +26,6 @@ export default function DashboardPage() {
   const { getToken } = useAuth()
   const { user } = useUser()
   const { t } = useI18n()
-  const { fmt } = useCurrency()
   useSSE()
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -33,7 +33,7 @@ export default function DashboardPage() {
   const [pendingGroupId, setPendingGroupId] = useState<number | null>(null)
   const [pendingGroupName, setPendingGroupName] = useState('')
 
-  const { data: kyc } = useKYCStatus()
+  const { kyc, effectiveStatus: kycEffectiveStatus } = useKYCEffectiveStatus()
   const { data: groups, isLoading: loadingGroups } = useQuery({
     queryKey: ['my-groups'],
     queryFn: async () => {
@@ -46,7 +46,7 @@ export default function DashboardPage() {
     queryKey: ['ledger-preview'],
     queryFn: async () => {
       const token = await getToken()
-      return api.getLedger(token!, undefined, 5)
+      return api.getLedger(token!, undefined, 10)
     },
   })
 
@@ -55,8 +55,14 @@ export default function DashboardPage() {
     setDialogOpen(true)
   }
 
+  const txScrollRef = useRef<HTMLDivElement>(null)
+  function scrollTx(dir: 'left' | 'right') {
+    txScrollRef.current?.scrollBy({ left: dir === 'left' ? -196 : 196, behavior: 'smooth' })
+  }
+
   const kycApproved = kyc?.status === 'approved'
   const displayName = (user?.firstName ?? t('dashboard.player')).toUpperCase()
+  const visibleLedger = (ledger ?? []).filter(e => isVisibleLedgerKind(e.kind))
 
   return (
     <div className="space-y-8">
@@ -80,23 +86,38 @@ export default function DashboardPage() {
         <div className="space-y-4 lg:col-span-2">
           <BalanceCard />
 
-          {!kycApproved && (
+          {kycApproved ? (
+            <div className="card p-4 border border-green-500/20 bg-green-500/5">
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="h-5 w-5 shrink-0 text-green-400" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-green-300">{t('dashboard.kycVerifiedTitle')}</p>
+                    <StatusBadge status="approved" size="sm" />
+                  </div>
+                  <p className="mt-0.5 text-xs text-text-secondary">
+                    {t('dashboard.kycVerifiedCopy')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
             <div className="card p-4">
               <div className="flex items-start gap-3">
                 <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-gold-400" />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-text-primary">{t('dashboard.kycTitle')}</p>
-                  <p className="mt-0.5 text-xs text-text-secondary">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-text-primary">{t('dashboard.kycTitle')}</p>
+                    {kyc?.status && <StatusBadge status={kycEffectiveStatus} size="sm" />}
+                  </div>
+                  <p className="mt-0.5 text-xs text-text-secondary text-center">
                     {t('dashboard.kycCopy')}
-                    {kyc?.status && (
-                      <span className="ml-1">
-                        <StatusBadge status={kyc.status} size="sm" />
-                      </span>
-                    )}
                   </p>
-                  <Link href="/kyc" className="btn-gold mt-3 px-3 py-1.5 text-xs">
-                    {t('dashboard.kycAction')}
-                  </Link>
+                  <div className="mt-3 flex justify-center">
+                    <Link href="/kyc" className="btn-gold px-3 py-1.5 text-xs">
+                      {t('dashboard.kycAction')}
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
@@ -160,39 +181,60 @@ export default function DashboardPage() {
             )}
           </section>
 
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
-                {t('dashboard.recentTransactions')}
-              </h2>
-              <Link href="/balance" className="text-xs text-gold-400 hover:text-gold-300">
-                {t('common.viewAll')}
-              </Link>
-            </div>
-
-            {loadingLedger && <LoadingState rows={3} />}
-            {!loadingLedger && (ledger?.length ?? 0) === 0 && (
-              <p className="py-4 text-center text-sm text-text-muted">{t('dashboard.noTransactions')}</p>
-            )}
-            {!loadingLedger && (ledger?.length ?? 0) > 0 && (
-              <div className="space-y-1.5">
-                {ledger?.map((entry) => (
-                  <div key={entry.id} className="card flex items-center justify-between gap-2 p-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-xs text-text-primary">{entry.description || entry.type}</p>
-                      <p className="text-[10px] text-text-muted">{formatDate(entry.created_at)}</p>
-                    </div>
-                    <span className={`shrink-0 font-score text-sm font-medium ${entry.type === 'credit' ? 'text-green-400' : 'text-red-400'}`}>
-                      {entry.type === 'credit' ? '+' : '-'}
-                      {fmt(entry.amount_cents)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
         </div>
       </div>
+
+      {/* ── Últimas transacciones — carrusel full-width ── */}
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
+            {t('dashboard.recentTransactions')}
+          </h2>
+          {visibleLedger.length > 0 && (
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => scrollTx('left')}
+                className="rounded-lg p-1 text-text-muted transition-colors hover:bg-blue-800 hover:text-text-primary"
+                aria-label="Anterior"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollTx('right')}
+                className="rounded-lg p-1 text-text-muted transition-colors hover:bg-blue-800 hover:text-text-primary"
+                aria-label="Siguiente"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {loadingLedger && <LoadingState rows={1} />}
+        {!loadingLedger && visibleLedger.length === 0 && (
+          <p className="py-4 text-center text-sm text-text-muted">{t('dashboard.noTransactions')}</p>
+        )}
+        {!loadingLedger && visibleLedger.length > 0 && (
+          <div
+            ref={txScrollRef}
+            className="no-scrollbar flex gap-4 overflow-x-auto scroll-smooth pb-1 [scroll-snap-type:x_mandatory]"
+          >
+            {visibleLedger.map((entry) => (
+              <TxCard key={entry.id} entry={entry} t={t} />
+            ))}
+          </div>
+        )}
+
+        {!loadingLedger && visibleLedger.length > 0 && (
+          <div className="mt-3 flex justify-end">
+            <Link href="/balance" className="text-xs text-gold-400 hover:text-gold-300">
+              {t('common.viewAll')}
+            </Link>
+          </div>
+        )}
+      </section>
 
       <PredictionPanel />
 
@@ -208,6 +250,67 @@ export default function DashboardPage() {
         open={pendingGroupId !== null}
         onClose={() => setPendingGroupId(null)}
       />
+    </div>
+  )
+}
+
+// ── TxCard ────────────────────────────────────────────────────────────────────
+
+function getTxIcon(isPrize: boolean, isRefund: boolean, isCredit: boolean) {
+  if (isPrize) return <Trophy className="h-4 w-4 text-gold-400" />
+  if (isRefund) return <ArrowUpRight className="h-4 w-4 text-amber-400" />
+  return isCredit ? <ArrowUpRight className="h-4 w-4 text-green-400" /> : <ArrowDownLeft className="h-4 w-4 text-red-400" />
+}
+
+function getTxBg(isPrize: boolean, isRefund: boolean, isCredit: boolean): string {
+  if (isPrize) return 'bg-gold-400/20'
+  if (isRefund) return 'bg-amber-400/20'
+  return isCredit ? 'bg-green-400/20' : 'bg-red-400/20'
+}
+
+function getTxColor(isPrize: boolean, isRefund: boolean, isCredit: boolean): string {
+  if (isPrize) return 'text-gold-400'
+  if (isRefund) return 'text-amber-400'
+  return isCredit ? 'text-green-400' : 'text-red-400'
+}
+
+interface TxCardProps {
+  entry: LedgerEntry
+  t: ReturnType<typeof useI18n>['t']
+}
+
+function TxCard({ entry, t }: Readonly<TxCardProps>) {
+  const { fmt, isUSD } = useCurrency()
+  const isCredit = entry.delta_cents >= 0
+  const isPrize = entry.kind === 'prize'
+  const isRefund = entry.kind === 'withdrawal_release'
+
+  const iconEl = getTxIcon(isPrize, isRefund, isCredit)
+  const iconBg = getTxBg(isPrize, isRefund, isCredit)
+  const amountColor = getTxColor(isPrize, isRefund, isCredit)
+
+  const displayAmount = isUSD
+    ? fmt(entry.delta_cents)
+    : fmt(entry.delta_cents).replace(/^Q\s*/, 'GTQ ')
+
+  return (
+    <div className="card flex w-44 shrink-0 flex-col gap-3 p-4 [scroll-snap-align:center]">
+      <div className="flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-xs font-medium text-text-primary">
+            {t(ledgerKindKey(entry.kind))}
+          </p>
+          <div className={`shrink-0 flex h-9 w-9 items-center justify-center rounded-full ${iconBg}`}>
+            {iconEl}
+          </div>
+        </div>
+        <p className="mt-1 text-[10px] text-text-muted">{formatDate(entry.created_at)}</p>
+      </div>
+      <div>
+        <p className={`text-center font-score text-base font-bold ${amountColor}`}>
+          {isCredit ? '+' : ''}{displayAmount}
+        </p>
+      </div>
     </div>
   )
 }

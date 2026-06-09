@@ -141,6 +141,12 @@ func (s *Server) registerUserRoutes(r chi.Router, d apiV1Deps) {
 // up to uploadSizeLimit; all other endpoints use bodySizeLimit. Per-route
 // limits avoid the MaxBytesReader stacking problem.
 func (s *Server) registerPaymentRoutes(r chi.Router, d apiV1Deps) {
+	// POST /api/v1/paypal/create-order — server-side PayPal order creation.
+	// ResolveUser is required so the handler can mint the payment intent for the
+	// correct user. Credentials stay in the backend; the browser receives only the order ID.
+	r.With(middleware.RequestBodyLimit(d.bodySizeLimit), middleware.ResolveUser(d.repos.user, s.log)).
+		Post("/paypal/create-order", d.h.paypalOrder.Create)
+
 	r.Route("/payment-intents", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
 		r.Use(middleware.ResolveUser(d.repos.user, s.log))
@@ -161,20 +167,33 @@ func (s *Server) registerPaymentRoutes(r chi.Router, d apiV1Deps) {
 		r.Use(middleware.ResolveUser(d.repos.user, s.log))
 		r.With(d.idem).Post("/", d.h.withdrawal.Create)
 		r.Get("/", d.h.withdrawal.ListMine)
+		r.Get("/limits", d.h.withdrawal.Limits)
 	})
+
+	// GET /api/v1/banks — active Guatemalan banks for the withdrawal dropdown.
+	r.With(middleware.ResolveUser(d.repos.user, s.log)).Get(routeBanks, d.h.bank.List)
+
+	// GET /api/v1/bank-account-types — active account types for the withdrawal dropdown.
+	r.With(middleware.ResolveUser(d.repos.user, s.log)).Get(routeBankAccountTypes, d.h.bank.ListAccountTypes)
 }
 
 // registerKYCRoutes wires the /kyc subrouter.
+// Per-route body limits avoid the MaxBytesReader stacking problem:
+//   - GET endpoints have no body — no limit applied.
+//   - POST /submit accepts a small JSON body → bodySizeLimit (64 KB).
+//   - POST /documents receives a multipart upload → the handler enforces the
+//     KYC-specific 10 MB limit via http.MaxBytesReader; no middleware limit
+//     is stacked on top to avoid the 64 KB group limit shadowing the handler.
 func (s *Server) registerKYCRoutes(r chi.Router, d apiV1Deps) {
 	r.Route("/kyc", func(r chi.Router) {
-		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
 		r.Use(middleware.ResolveUser(d.repos.user, s.log))
 		r.Get("/status", d.h.kyc.GetStatus)
-		r.Post("/submit", d.h.kyc.Submit)
 		r.Get("/requirements", d.h.kyc.GetRequirements)
 		r.Get("/documents", d.h.kyc.ListDocuments)
-		r.Post("/documents", d.h.kyc.UploadDocument)
 		r.Get("/events", d.h.kyc.ListEvents)
+		r.With(middleware.RequestBodyLimit(d.bodySizeLimit)).Post("/submit", d.h.kyc.Submit)
+		r.Post("/documents", d.h.kyc.UploadDocument)
+		r.Delete("/documents/{docID}", d.h.kyc.DeleteDocument)
 	})
 }
 
@@ -248,6 +267,14 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 		r.Post("/withdrawals/{id}/approve", d.h.withdrawal.AdminApprove)
 		r.Post("/withdrawals/{id}/reject", d.h.withdrawal.AdminReject)
 		r.Post("/withdrawals/{id}/process", d.h.withdrawal.AdminProcess)
+
+		// Banks & account types
+		r.Get(routeBanks, d.h.adminBank.ListBanks)
+		r.Post(routeBanks, d.h.adminBank.CreateBank)
+		r.Patch("/banks/{id}/active", d.h.adminBank.SetBankActive)
+		r.Get(routeBankAccountTypes, d.h.adminBank.ListAccountTypes)
+		r.Post(routeBankAccountTypes, d.h.adminBank.CreateAccountType)
+		r.Patch("/bank-account-types/{id}/active", d.h.adminBank.SetAccountTypeActive)
 
 		// KYC review
 		r.Get("/kyc/risk-dashboard", d.h.adminKYC.RiskDashboard)

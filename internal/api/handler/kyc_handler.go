@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -285,4 +286,32 @@ func (h *KYCHandler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, kycDocumentToResponse(doc))
+}
+
+// DeleteDocument handles DELETE /api/v1/kyc/documents/{docID}.
+// Removes the document from the database and deletes the physical file from storage.
+func (h *KYCHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	docIDStr := chi.URLParam(r, "docID")
+	docID, err := strconv.ParseInt(docIDStr, 10, 64)
+	if err != nil || docID <= 0 {
+		writeError(w, r, h.log, apperrors.Validation("docID must be a positive integer"))
+		return
+	}
+	storageKey, err := h.svc.DeleteDocument(r.Context(), caller.ID, docID)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if storageKey != "" {
+		if delErr := h.fileStore.Delete(r.Context(), storageKey); delErr != nil {
+			h.log.Warn("kyc: failed to delete file from store after DB delete",
+				zap.Error(delErr), zap.String("key", storageKey))
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

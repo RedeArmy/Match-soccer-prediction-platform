@@ -589,6 +589,8 @@ func TestValidatePayoutDetails_BankGT_ValidDetails_ReturnsNil(t *testing.T) {
 	details := map[string]string{
 		"account_number": "1234567890",
 		"bank_name":      "Banco Industrial",
+		"account_type":   "Ahorros GTQ",
+		"account_holder": "Juan García López",
 	}
 	if err := domain.ValidatePayoutDetails(domain.WithdrawalMethodBankGT, details); err != nil {
 		t.Errorf(fmtUnexpectedErr, err)

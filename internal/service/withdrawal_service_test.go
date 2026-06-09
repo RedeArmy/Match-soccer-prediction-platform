@@ -19,7 +19,7 @@ type withdrawalReqRepoStub struct {
 	err  error
 }
 
-func (r *withdrawalReqRepoStub) CreateAndReserve(_ context.Context, req *domain.WithdrawalRequest) error {
+func (r *withdrawalReqRepoStub) Create(_ context.Context, req *domain.WithdrawalRequest) error {
 	if r.err != nil {
 		return r.err
 	}
@@ -28,7 +28,7 @@ func (r *withdrawalReqRepoStub) CreateAndReserve(_ context.Context, req *domain.
 	return nil
 }
 func (r *withdrawalReqRepoStub) GetByID(_ context.Context, _ int) (*domain.WithdrawalRequest, error) {
-	return r.req, r.err // repository interface — name unchanged
+	return r.req, r.err
 }
 func (r *withdrawalReqRepoStub) ListByUser(_ context.Context, _ int) ([]*domain.WithdrawalRequest, error) {
 	return r.reqs, r.err
@@ -36,13 +36,13 @@ func (r *withdrawalReqRepoStub) ListByUser(_ context.Context, _ int) ([]*domain.
 func (r *withdrawalReqRepoStub) ListPending(_ context.Context) ([]*domain.WithdrawalRequest, error) {
 	return r.reqs, r.err
 }
-func (r *withdrawalReqRepoStub) Approve(_ context.Context, _ int, _ int, _ string) (*domain.WithdrawalRequest, error) {
+func (r *withdrawalReqRepoStub) ApproveAndDebit(_ context.Context, _ int, _ int, _ string) (*domain.WithdrawalRequest, error) {
 	return r.req, r.err
 }
-func (r *withdrawalReqRepoStub) RejectAndRelease(_ context.Context, _ int, _ int, _ string) (*domain.WithdrawalRequest, error) {
+func (r *withdrawalReqRepoStub) Reject(_ context.Context, _ int, _ int, _ string) (*domain.WithdrawalRequest, error) {
 	return r.req, r.err
 }
-func (r *withdrawalReqRepoStub) MarkProcessedAndCommit(_ context.Context, _ int) (*domain.WithdrawalRequest, error) {
+func (r *withdrawalReqRepoStub) MarkProcessed(_ context.Context, _ int) (*domain.WithdrawalRequest, error) {
 	return r.req, r.err
 }
 
@@ -436,7 +436,7 @@ func TestWithdrawalService_Create_DefaultHighValueThreshold_WhenParamAbsent(t *t
 // ── toGTQCents (USD/GTQ exchange rate) ───────────────────────────────────────
 
 // toGTQCents is exercised via Create: the service sets req.GTQReservedCents
-// before calling CreateAndReserve, and the stub preserves the value on return.
+// before calling Create, and the stub preserves the value on return.
 
 func TestWithdrawalService_Create_GTQ_GTQReservedEqualsAmount(t *testing.T) {
 	svc := newWithdrawalSvc(&withdrawalReqRepoStub{}, nil)
@@ -518,5 +518,46 @@ func TestWithdrawalService_Create_OutboxWriteError_StillReturnsRequest(t *testin
 	}
 	if w.writes != 1 {
 		t.Errorf("expected 1 outbox write attempt, got %d", w.writes)
+	}
+}
+
+// ── GetLimits ─────────────────────────────────────────────────────────────────
+
+func TestWithdrawalService_GetLimits_ReturnsDefaults(t *testing.T) {
+	svc := newWithdrawalSvc(nil, nil)
+	minGTQ, maxGTQ, minUSD, err := svc.GetLimits(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if minGTQ != domain.DefaultWithdrawalMinCents {
+		t.Errorf("minGTQ: want %d, got %d", domain.DefaultWithdrawalMinCents, minGTQ)
+	}
+	if maxGTQ != domain.DefaultWithdrawalMaxCents {
+		t.Errorf("maxGTQ: want %d, got %d", domain.DefaultWithdrawalMaxCents, maxGTQ)
+	}
+	if minUSD != domain.DefaultWithdrawalMinUSDCents {
+		t.Errorf("minUSD: want %d, got %d", domain.DefaultWithdrawalMinUSDCents, minUSD)
+	}
+}
+
+func TestWithdrawalService_GetLimits_RespectsCustomParams(t *testing.T) {
+	pr := &withdrawalParamRepo{params: map[string]string{
+		domain.ParamKeyWithdrawalMinCents:    "2000",
+		domain.ParamKeyWithdrawalMaxCents:    "999999",
+		domain.ParamKeyWithdrawalMinUSDCents: "500",
+	}}
+	svc := newWithdrawalSvc(nil, pr)
+	minGTQ, maxGTQ, minUSD, err := svc.GetLimits(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if minGTQ != 2000 {
+		t.Errorf("minGTQ: want 2000, got %d", minGTQ)
+	}
+	if maxGTQ != 999999 {
+		t.Errorf("maxGTQ: want 999999, got %d", maxGTQ)
+	}
+	if minUSD != 500 {
+		t.Errorf("minUSD: want 500, got %d", minUSD)
 	}
 }

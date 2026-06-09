@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   formatGTQ, formatUSD, formatCountdown, formatRate,
   sniffMIME, isAllowedUploadType, usdToGTQ, gtqToUSD, centsToGTQ,
+  isVisibleLedgerKind, ledgerKindKey, truncate, initials,
 } from '@/lib/utils'
 
 describe('formatGTQ', () => {
@@ -129,5 +130,89 @@ describe('isAllowedUploadType', () => {
     expect(isAllowedUploadType('application/zip')).toBe(false)
     expect(isAllowedUploadType('text/plain')).toBe(false)
     expect(isAllowedUploadType('image/gif')).toBe(false)
+  })
+})
+
+// ── isVisibleLedgerKind ───────────────────────────────────────────────────────
+
+describe('isVisibleLedgerKind', () => {
+  it('returns false for withdrawal_reserve', () => {
+    expect(isVisibleLedgerKind('withdrawal_reserve')).toBe(false)
+  })
+
+  it('returns true for all other kinds', () => {
+    expect(isVisibleLedgerKind('webhook_recurrente')).toBe(true)
+    expect(isVisibleLedgerKind('webhook_paypal')).toBe(true)
+    expect(isVisibleLedgerKind('prize')).toBe(true)
+    expect(isVisibleLedgerKind('entry_fee')).toBe(true)
+    expect(isVisibleLedgerKind('withdrawal_debit')).toBe(true)
+  })
+})
+
+// ── ledgerKindKey ─────────────────────────────────────────────────────────────
+
+describe('ledgerKindKey', () => {
+  it('maps webhook_recurrente to ledger.credit', () => {
+    expect(ledgerKindKey('webhook_recurrente')).toBe('ledger.credit')
+  })
+
+  it('maps webhook_paypal to ledger.credit', () => {
+    expect(ledgerKindKey('webhook_paypal')).toBe('ledger.credit')
+  })
+
+  it('maps bank_transfer to ledger.credit', () => {
+    expect(ledgerKindKey('bank_transfer')).toBe('ledger.credit')
+  })
+
+  it('maps withdrawal_release to ledger.refund', () => {
+    expect(ledgerKindKey('withdrawal_release')).toBe('ledger.refund')
+  })
+
+  it('maps withdrawal_debit to ledger.withdrawal', () => {
+    expect(ledgerKindKey('withdrawal_debit')).toBe('ledger.withdrawal')
+  })
+
+  it('maps prize to ledger.earning', () => {
+    expect(ledgerKindKey('prize')).toBe('ledger.earning')
+  })
+
+  it('maps entry_fee to ledger.entryFee', () => {
+    expect(ledgerKindKey('entry_fee')).toBe('ledger.entryFee')
+  })
+
+  it('returns raw kind for unknown values', () => {
+    expect(ledgerKindKey('custom_kind')).toBe('custom_kind')
+  })
+})
+
+// ── truncate ──────────────────────────────────────────────────────────────────
+
+describe('truncate', () => {
+  it('returns string unchanged when shorter than maxLen', () => {
+    expect(truncate('hello', 10)).toBe('hello')
+  })
+
+  it('truncates and appends ellipsis when longer than maxLen', () => {
+    expect(truncate('hello world', 5)).toBe('hello…')
+  })
+
+  it('returns string unchanged when equal to maxLen', () => {
+    expect(truncate('hello', 5)).toBe('hello')
+  })
+})
+
+// ── initials ──────────────────────────────────────────────────────────────────
+
+describe('initials', () => {
+  it('returns two uppercase initials for a two-word name', () => {
+    expect(initials('Juan Pérez')).toBe('JP')
+  })
+
+  it('returns single initial for a one-word name', () => {
+    expect(initials('Ana')).toBe('A')
+  })
+
+  it('ignores words beyond the first two', () => {
+    expect(initials('María Luisa García')).toBe('ML')
   })
 })

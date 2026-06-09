@@ -25,7 +25,7 @@ export function BalanceCard() {
         <span className="text-sm font-semibold text-text-secondary">{t('balanceCard.title')}</span>
       </div>
 
-      <div>
+      <div className="text-center">
         <p className="mb-0.5 text-xs text-text-muted">{t('balanceCard.available')}</p>
         <p className="font-score text-3xl font-semibold leading-none text-white">
           {fmt(available)}
@@ -47,12 +47,12 @@ export function BalanceCard() {
         )}
       </div>
 
-      <div className="flex gap-2 pt-1">
-        <Link href="/balance/deposit" className="btn-gold flex-1 py-2 text-sm">
+      <div className="flex flex-col gap-2 pt-1">
+        <Link href="/balance/deposit" className="btn-gold py-2 text-sm">
           <ArrowDownCircle className="h-4 w-4" />
           {t('balanceCard.deposit')}
         </Link>
-        <Link href="/balance/withdraw" className="btn-ghost flex-1 py-2 text-sm">
+        <Link href="/balance/withdraw" className="btn-ghost py-2 text-sm">
           <ArrowUpCircle className="h-4 w-4" />
           {t('balanceCard.withdraw')}
         </Link>

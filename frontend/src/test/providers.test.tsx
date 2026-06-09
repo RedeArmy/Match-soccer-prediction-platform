@@ -43,3 +43,28 @@ describe('I18nProvider localisation helpers', () => {
     expect(screen.getByText(/2026/)).toBeInTheDocument()
   })
 })
+
+function AccountTypeProbe() {
+  const { accountTypeName } = useI18n()
+  return (
+    <div>
+      <span data-testid="known">{accountTypeName('ahorros gtq')}</span>
+      <span data-testid="null">{accountTypeName(null)}</span>
+      <span data-testid="unknown">{accountTypeName('custom type')}</span>
+    </div>
+  )
+}
+
+describe('I18nProvider accountTypeName helper', () => {
+  it('translates known account types, returns dash for null, and falls back for unknown', () => {
+    render(
+      <I18nProvider>
+        <AccountTypeProbe />
+      </I18nProvider>,
+    )
+
+    expect(screen.getByTestId('known').textContent).toBe('Ahorros GTQ')
+    expect(screen.getByTestId('null').textContent).toBe('—')
+    expect(screen.getByTestId('unknown').textContent).toBe('custom type')
+  })
+})

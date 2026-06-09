@@ -5349,7 +5349,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Generates an opaque single-use payment intent token to be passed as",
+                "description": "For PayPal: mints an opaque single-use token to pass as PayPal custom_id.\nFor Recurrente: creates a hosted checkout session and returns a redirect URL.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5362,7 +5362,7 @@ const docTemplate = `{
                 "summary": "Create payment intent",
                 "parameters": [
                     {
-                        "description": "Amount and currency",
+                        "description": "Amount, currency and provider",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -7014,6 +7014,9 @@ const docTemplate = `{
                 "expires_at": {
                     "type": "string"
                 },
+                "redirect_url": {
+                    "type": "string"
+                },
                 "token": {
                     "type": "string"
                 }
@@ -7584,6 +7587,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "currency": {
+                    "type": "string"
+                },
+                "provider": {
+                    "description": "\"recurrente\" | \"paypal\"; empty treated as \"paypal\"",
                     "type": "string"
                 }
             }

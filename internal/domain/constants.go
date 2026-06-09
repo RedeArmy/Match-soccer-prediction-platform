@@ -416,6 +416,7 @@ func AllParamKeys() []string {
 		ParamKeyPaymentMaxUploadBytes,
 		ParamKeyWithdrawalMinCents,
 		ParamKeyWithdrawalMaxCents,
+		ParamKeyWithdrawalMinUSDCents,
 		ParamKeyBankTransferMinAmountCents,
 		ParamKeyBankTransferMaxAmountCents,
 		ParamKeyPaymentIntentTTLMinutes,
