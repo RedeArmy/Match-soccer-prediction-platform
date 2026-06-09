@@ -31,8 +31,10 @@ import (
 )
 
 const (
-	routePredictions = "/predictions"
-	routeUsers       = "/users"
+	routePredictions      = "/predictions"
+	routeUsers            = "/users"
+	routeBanks            = "/banks"
+	routeBankAccountTypes = "/bank-account-types"
 )
 
 // Routes returns the fully configured http.Handler for the application.

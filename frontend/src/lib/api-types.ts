@@ -86,13 +86,13 @@ export interface BalanceResponse {
 }
 
 export interface LedgerEntry {
-  id:          number
-  type:        'credit' | 'debit' | 'reserve' | 'release'
-  amount_cents: number
-  currency:    string
-  description: string
-  reference_id: string | null
-  created_at:  string
+  id:           number
+  delta_cents:  number   // positive = credit, negative = debit
+  kind:         string   // e.g. "webhook_recurrente", "entry_fee", "prize"
+  balance_after: number
+  ref_id:       number | null
+  ref_type:     string | null
+  created_at:   string
 }
 
 // ── Match ─────────────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ export interface SlotResponse {
 }
 
 // ── KYC ───────────────────────────────────────────────────────────────────────
-export type KYCStatus = 'unverified' | 'submitted' | 'under_review' | 'approved' | 'rejected'
+export type KYCStatus = 'unverified' | 'pending' | 'under_review' | 'approved' | 'rejected' | 'expired' | 'escalated'
 export type KYCDocumentType = 'gov_id' | 'selfie' | 'proof_of_address' | 'proof_of_funds'
 export type KYCDocumentStatus = 'pending' | 'approved' | 'rejected'
 
@@ -285,6 +285,22 @@ export interface KYCEventResponse {
 }
 
 // ── Payments ──────────────────────────────────────────────────────────────────
+export interface BankResponse {
+  id:   number
+  name: string
+}
+
+export interface BankAccountTypeResponse {
+  id:   number
+  name: string
+}
+
+export interface AdminBankResponse {
+  id:     number
+  name:   string
+  active: boolean
+}
+
 export type BankTransferStatus = 'pending' | 'approved' | 'rejected'
 export type WithdrawalStatus   = 'pending' | 'approved' | 'rejected' | 'processed'
 
@@ -300,13 +316,15 @@ export interface BankTransferResponse {
 }
 
 export interface PaymentIntentResponse {
-  id:            number
+  token:         string          // opaque single-use token (PayPal custom_id)
   amount_cents:  number
   currency:      string
-  provider:      string
-  redirect_url:  string
   expires_at:    string
-  created_at:    string
+  redirect_url?: string          // only set for Recurrente checkouts
+}
+
+export interface PayPalOrderResponse {
+  id: string
 }
 
 export interface WithdrawalResponse {
@@ -318,6 +336,12 @@ export interface WithdrawalResponse {
   payout_reference: string | null
   notes:           string | null
   created_at:      string
+}
+
+export interface WithdrawalLimits {
+  min_gtq_cents: number
+  max_gtq_cents: number
+  min_usd_cents: number
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────

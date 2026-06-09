@@ -104,6 +104,47 @@ func TestPaymentIntentHandler_Create_ResponseContainsToken(t *testing.T) {
 	}
 }
 
+func TestPaymentIntentHandler_Create_RecurrenteProvider_ReturnsRedirectURL(t *testing.T) {
+	svc := &stubPaymentIntentSvc{}
+	h := handler.NewPaymentIntentHandler(svc, zaptest.NewLogger(t))
+	h.WithRecurrente(&stubCheckoutCreator{url: "https://app.recurrente.com/c/ch_test"}, "https://example.com")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/payment-intents", h.Create)
+
+	rec := postIntentAuthenticated(t, mux, `{"amount_cents":10000,"currency":"GTQ","provider":"recurrente"}`, callerUser)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "https://app.recurrente.com/c/ch_test") {
+		t.Errorf("expected redirect_url in response, got: %s", rec.Body.String())
+	}
+}
+
+func TestPaymentIntentHandler_Create_RecurrenteNotConfigured_Returns422(t *testing.T) {
+	// Handler without WithRecurrente called → recurrente field is nil.
+	svc := &stubPaymentIntentSvc{}
+	router := intentRouter(t, svc)
+	rec := postIntentAuthenticated(t, router, `{"amount_cents":10000,"currency":"GTQ","provider":"recurrente"}`, callerUser)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 when Recurrente not configured, got %d", rec.Code)
+	}
+}
+
+func TestPaymentIntentHandler_Create_RecurrenteCheckoutError_Returns500(t *testing.T) {
+	svc := &stubPaymentIntentSvc{}
+	h := handler.NewPaymentIntentHandler(svc, zaptest.NewLogger(t))
+	h.WithRecurrente(&stubCheckoutCreator{err: errors.New("recurrente api down")}, "https://example.com")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/payment-intents", h.Create)
+
+	rec := postIntentAuthenticated(t, mux, `{"amount_cents":10000,"currency":"GTQ","provider":"recurrente"}`, callerUser)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on checkout error, got %d", rec.Code)
+	}
+}
+
 // ── stubPaymentIntentSvc ──────────────────────────────────────────────────────
 
 type stubPaymentIntentSvc struct {
@@ -113,4 +154,15 @@ type stubPaymentIntentSvc struct {
 
 func (s *stubPaymentIntentSvc) Create(_ context.Context, _, _ int, _ string) (*domain.PaymentIntent, error) {
 	return s.intent, s.err
+}
+
+// ── stubCheckoutCreator ───────────────────────────────────────────────────────
+
+type stubCheckoutCreator struct {
+	url string
+	err error
+}
+
+func (s *stubCheckoutCreator) CreateCheckout(_ context.Context, _, _ int, _, _, _, _ string) (string, error) {
+	return s.url, s.err
 }

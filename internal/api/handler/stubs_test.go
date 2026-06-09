@@ -364,6 +364,12 @@ func (s *stubWithdrawalSvc) RejectRequest(_ context.Context, _, _ int, _ string)
 func (s *stubWithdrawalSvc) ProcessWithdrawal(_ context.Context, _, _ int) (*domain.WithdrawalRequest, error) {
 	return s.req, s.err
 }
+func (s *stubWithdrawalSvc) GetLimits(_ context.Context) (int, int, int, error) {
+	if s.err != nil {
+		return 0, 0, 0, s.err
+	}
+	return 3000, 500000, 400, nil
+}
 
 // ── stubWebhookPaymentSvc ─────────────────────────────────────────────────────
 

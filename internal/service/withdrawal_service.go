@@ -15,12 +15,12 @@ import (
 
 // WithdrawalService manages the full payout request lifecycle.
 //
-// Create reserves the requested amount from the user's available balance.
-// Approve advances the status without a balance change.
-// RejectRequest releases the reserved balance back to available.
-// ProcessWithdrawal commits the reserved amount as permanently paid out.
+// Create inserts the request after verifying sufficient balance (no balance change).
+// ApproveRequest deducts the balance and advances the status to approved.
+// RejectRequest rejects the request (no balance change, balance was never touched).
+// ProcessWithdrawal marks an approved request as processed (no balance change).
 type WithdrawalService interface {
-	// Create creates a withdrawal request and reserves the balance.
+	// Create creates a withdrawal request, verifying balance is sufficient.
 	// Returns Conflict when available balance is insufficient.
 	Create(ctx context.Context, userID, amountCents int, currency string, method domain.WithdrawalMethod, payoutDetails map[string]string) (*domain.WithdrawalRequest, error)
 	// AdminGetByID returns the request or nil when not found.
@@ -41,6 +41,8 @@ type WithdrawalService interface {
 	// ProcessWithdrawal transitions an approved request to processed and
 	// commits the reserved amount as paid out.
 	ProcessWithdrawal(ctx context.Context, requestID, adminID int) (*domain.WithdrawalRequest, error)
+	// GetLimits returns the current withdrawal limits read from system params.
+	GetLimits(ctx context.Context) (minGTQCents, maxGTQCents, minUSDCents int, err error)
 }
 
 type withdrawalService struct {
@@ -82,18 +84,24 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 		return nil, err
 	}
 
-	minCents, maxCents, err := s.withdrawalLimits(ctx)
+	if currency == "" {
+		currency = "GTQ"
+	}
+	minCents, maxCents, minUSDCents, err := s.withdrawalLimits(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if amountCents < minCents {
-		return nil, apperrors.Validation("withdrawal amount below minimum")
-	}
-	if amountCents > maxCents {
-		return nil, apperrors.Validation("withdrawal amount above maximum")
-	}
-	if currency == "" {
-		currency = "GTQ"
+	if currency == "USD" {
+		if amountCents < minUSDCents {
+			return nil, apperrors.Validation("withdrawal amount below minimum")
+		}
+	} else {
+		if amountCents < minCents {
+			return nil, apperrors.Validation("withdrawal amount below minimum")
+		}
+		if amountCents > maxCents {
+			return nil, apperrors.Validation("withdrawal amount above maximum")
+		}
 	}
 
 	req := &domain.WithdrawalRequest{
@@ -104,7 +112,7 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 		Method:           method,
 		PayoutDetails:    payoutDetails,
 	}
-	if err := s.withdrawalRepo.CreateAndReserve(ctx, req); err != nil {
+	if err := s.withdrawalRepo.Create(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -161,7 +169,7 @@ func (s *withdrawalService) ListPending(ctx context.Context) ([]*domain.Withdraw
 }
 
 func (s *withdrawalService) ApproveRequest(ctx context.Context, requestID, adminID int, notes string) (*domain.WithdrawalRequest, error) {
-	req, err := s.withdrawalRepo.Approve(ctx, requestID, adminID, notes)
+	req, err := s.withdrawalRepo.ApproveAndDebit(ctx, requestID, adminID, notes)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +194,7 @@ func (s *withdrawalService) ApproveRequest(ctx context.Context, requestID, admin
 }
 
 func (s *withdrawalService) RejectRequest(ctx context.Context, requestID, adminID int, notes string) (*domain.WithdrawalRequest, error) {
-	req, err := s.withdrawalRepo.RejectAndRelease(ctx, requestID, adminID, notes)
+	req, err := s.withdrawalRepo.Reject(ctx, requestID, adminID, notes)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +219,7 @@ func (s *withdrawalService) RejectRequest(ctx context.Context, requestID, adminI
 }
 
 func (s *withdrawalService) ProcessWithdrawal(ctx context.Context, requestID, adminID int) (*domain.WithdrawalRequest, error) {
-	req, err := s.withdrawalRepo.MarkProcessedAndCommit(ctx, requestID)
+	req, err := s.withdrawalRepo.MarkProcessed(ctx, requestID)
 	if err != nil {
 		return nil, err
 	}
@@ -286,9 +294,10 @@ func (s *withdrawalService) toGTQCents(ctx context.Context, amountCents int, cur
 	return amountCents * rate / 100
 }
 
-func (s *withdrawalService) withdrawalLimits(ctx context.Context) (minCents, maxCents int, err error) {
+func (s *withdrawalService) withdrawalLimits(ctx context.Context) (minCents, maxCents, minUSDCents int, err error) {
 	minCents = domain.DefaultWithdrawalMinCents
 	maxCents = domain.DefaultWithdrawalMaxCents
+	minUSDCents = domain.DefaultWithdrawalMinUSDCents
 
 	if p, err := s.paramRepo.Get(ctx, domain.ParamKeyWithdrawalMinCents); err == nil && p != nil {
 		if v, err := strconv.Atoi(p.Value); err == nil {
@@ -300,7 +309,16 @@ func (s *withdrawalService) withdrawalLimits(ctx context.Context) (minCents, max
 			maxCents = v
 		}
 	}
-	return minCents, maxCents, nil
+	if p, err := s.paramRepo.Get(ctx, domain.ParamKeyWithdrawalMinUSDCents); err == nil && p != nil {
+		if v, err := strconv.Atoi(p.Value); err == nil {
+			minUSDCents = v
+		}
+	}
+	return minCents, maxCents, minUSDCents, nil
+}
+
+func (s *withdrawalService) GetLimits(ctx context.Context) (minGTQCents, maxGTQCents, minUSDCents int, err error) {
+	return s.withdrawalLimits(ctx)
 }
 
 var _ WithdrawalService = (*withdrawalService)(nil)

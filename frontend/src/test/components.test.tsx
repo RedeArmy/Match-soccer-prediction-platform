@@ -7,6 +7,11 @@ import { FormFeedback } from "@/components/shared/FormFeedback";
 import { FormField } from "@/components/shared/FormField";
 import { FileUploadField } from "@/components/shared/FileUploadField";
 import { SubmitButton } from "@/components/shared/SubmitButton";
+import { I18nProvider } from "@/lib/i18n";
+
+function renderWithI18n(ui: React.ReactElement) {
+  return render(<I18nProvider>{ui}</I18nProvider>);
+}
 
 // ── EmptyState ────────────────────────────────────────────────────────────────
 
@@ -76,42 +81,42 @@ describe("LoadingSpinner", () => {
 
 describe("StatusBadge", () => {
   it("renders known status in Spanish", () => {
-    render(<StatusBadge status="active" />);
+    renderWithI18n(<StatusBadge status="active" />);
     expect(screen.getByText("Activo")).toBeInTheDocument();
   });
 
   it("renders pending label", () => {
-    render(<StatusBadge status="pending" />);
+    renderWithI18n(<StatusBadge status="pending" />);
     expect(screen.getByText("Pendiente")).toBeInTheDocument();
   });
 
   it("renders approved label", () => {
-    render(<StatusBadge status="approved" />);
+    renderWithI18n(<StatusBadge status="approved" />);
     expect(screen.getByText("Aprobado")).toBeInTheDocument();
   });
 
   it("renders rejected label", () => {
-    render(<StatusBadge status="rejected" />);
+    renderWithI18n(<StatusBadge status="rejected" />);
     expect(screen.getByText("Rechazado")).toBeInTheDocument();
   });
 
   it("falls back to raw status for unknown values", () => {
-    render(<StatusBadge status="foobar" />);
+    renderWithI18n(<StatusBadge status="foobar" />);
     expect(screen.getByText("foobar")).toBeInTheDocument();
   });
 
   it("applies sm size class", () => {
-    const { container } = render(<StatusBadge status="active" size="sm" />);
+    const { container } = renderWithI18n(<StatusBadge status="active" size="sm" />);
     expect(container.firstElementChild?.className).toContain("text-[10px]");
   });
 
   it("applies md size class by default", () => {
-    const { container } = render(<StatusBadge status="active" />);
+    const { container } = renderWithI18n(<StatusBadge status="active" />);
     expect(container.firstElementChild?.className).toContain("text-xs");
   });
 
   it("applies custom className", () => {
-    const { container } = render(
+    const { container } = renderWithI18n(
       <StatusBadge status="active" className="extra" />,
     );
     expect(container.firstElementChild?.className).toContain("extra");

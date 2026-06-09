@@ -103,6 +103,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyPaymentMaxUploadBytes":      ParamKeyPaymentMaxUploadBytes,
 		"ParamKeyWithdrawalMinCents":         ParamKeyWithdrawalMinCents,
 		"ParamKeyWithdrawalMaxCents":         ParamKeyWithdrawalMaxCents,
+		"ParamKeyWithdrawalMinUSDCents":      ParamKeyWithdrawalMinUSDCents,
 		"ParamKeyBankTransferMinAmountCents": ParamKeyBankTransferMinAmountCents,
 		"ParamKeyBankTransferMaxAmountCents": ParamKeyBankTransferMaxAmountCents,
 		"ParamKeyPaymentIntentTTLMinutes":    ParamKeyPaymentIntentTTLMinutes,
@@ -262,6 +263,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultPaymentMaxUploadBytes":      DefaultPaymentMaxUploadBytes,
 		"DefaultWithdrawalMinCents":         DefaultWithdrawalMinCents,
 		"DefaultWithdrawalMaxCents":         DefaultWithdrawalMaxCents,
+		"DefaultWithdrawalMinUSDCents":      DefaultWithdrawalMinUSDCents,
 		"DefaultBankTransferMinAmountCents": DefaultBankTransferMinAmountCents,
 		"DefaultBankTransferMaxAmountCents": DefaultBankTransferMaxAmountCents,
 		"DefaultPaymentIntentTTLMinutes":    DefaultPaymentIntentTTLMinutes,
@@ -365,7 +367,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 140 // update when adding a new ParamKey* constant
+		const expectedCount = 141 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -373,7 +375,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 126 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention)
+		const expectedCount = 127 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention; +1 withdrawal_min_usd_cents)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -501,6 +503,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyPaymentMaxUploadBytes", ParamKeyPaymentMaxUploadBytes, "payment"},
 		{"ParamKeyWithdrawalMinCents", ParamKeyWithdrawalMinCents, "payment"},
 		{"ParamKeyWithdrawalMaxCents", ParamKeyWithdrawalMaxCents, "payment"},
+		{"ParamKeyWithdrawalMinUSDCents", ParamKeyWithdrawalMinUSDCents, "payment"},
 		{"ParamKeyBankTransferMinAmountCents", ParamKeyBankTransferMinAmountCents, "payment"},
 		{"ParamKeyBankTransferMaxAmountCents", ParamKeyBankTransferMaxAmountCents, "payment"},
 		{"ParamKeyPaymentIntentTTLMinutes", ParamKeyPaymentIntentTTLMinutes, "payment"},
@@ -679,6 +682,7 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultPaymentMaxUploadBytes":      DefaultPaymentMaxUploadBytes,
 		"DefaultWithdrawalMinCents":         DefaultWithdrawalMinCents,
 		"DefaultWithdrawalMaxCents":         DefaultWithdrawalMaxCents,
+		"DefaultWithdrawalMinUSDCents":      DefaultWithdrawalMinUSDCents,
 		"DefaultBankTransferMinAmountCents": DefaultBankTransferMinAmountCents,
 		"DefaultBankTransferMaxAmountCents": DefaultBankTransferMaxAmountCents,
 		"DefaultPaymentIntentTTLMinutes":    DefaultPaymentIntentTTLMinutes,

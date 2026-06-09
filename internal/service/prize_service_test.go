@@ -114,6 +114,9 @@ func (s *prizeKYCSvcStub) ListFrozenBalances(_ context.Context) ([]*domain.Froze
 	return nil, nil
 }
 func (s *prizeKYCSvcStub) ReleaseFrozenBalance(_ context.Context, _, _ int) error { return nil }
+func (s *prizeKYCSvcStub) DeleteDocument(_ context.Context, _ int, _ int64) (string, error) {
+	return "", nil
+}
 func (s *prizeKYCSvcStub) ListDueForReview(_ context.Context) ([]*domain.KYCProfile, error) {
 	return nil, nil
 }

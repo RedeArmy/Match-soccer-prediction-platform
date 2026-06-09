@@ -12,6 +12,14 @@ const localeTags: Record<Locale, string> = {
   en: "en-GB",
 };
 
+const accountTypeTranslations: Record<string, LeafEntry> = {
+  "ahorros gtq":      { es: "Ahorros GTQ",        en: "Savings GTQ"    },
+  "ahorros usd":      { es: "Ahorros USD",        en: "Savings USD"    },
+  "monetaria gtq":    { es: "Monetaria GTQ",      en: "Checking GTQ"   },
+  "monetaria usd":    { es: "Monetaria USD",      en: "Checking USD"   },
+  "tarjeta de credito": { es: "Tarjeta de Crédito", en: "Credit Card"  },
+};
+
 const teamTranslations: Record<string, LeafEntry> = {
   // Group A
   "mexico":                 { es: "México",                 en: "Mexico"                 },
@@ -153,7 +161,7 @@ const translations: TranslationNode = {
     cancelled:    { es: 'Cancelado',      en: 'Cancelled'    },
     unverified:   { es: 'Sin verificar',  en: 'Unverified'   },
     submitted:    { es: 'Enviado',        en: 'Submitted'    },
-    under_review: { es: 'En revision',    en: 'Under review' },
+    under_review: { es: 'En revisión',    en: 'Under review' },
   },
   nav: {
     home:    { es: 'Inicio',   en: 'Home'    },
@@ -204,13 +212,22 @@ const translations: TranslationNode = {
     reject:           { es: 'Rechazar',                         en: 'Reject'                         },
     pendingBadge:     { es: 'Pendiente',                        en: 'Pending'                        },
   },
+  ledger: {
+    credit:     { es: 'Crédito',          en: 'Credit'      },
+    withdrawal: { es: 'Retiro',           en: 'Withdrawal'  },
+    refund:     { es: 'Reembolso',        en: 'Refund'      },
+    earning:    { es: 'Ganancia',         en: 'Earning'     },
+    entryFee:   { es: 'Pago',             en: 'Payment'     },
+  },
   dashboard: {
     hello:              { es: 'Hola',                          en: 'Hello'                        },
     player:             { es: 'Jugador',                       en: 'Player'                       },
     subtitle:           { es: 'Centro de control personal',    en: 'Personal command center'      },
     kycTitle:           { es: 'Verifica tu identidad',         en: 'Verify your identity'         },
-    kycCopy:            { es: 'Completa tu KYC para poder hacer retiros.', en: 'Complete KYC to unlock withdrawals.' },
+    kycCopy:            { es: 'Completa tu verificación de identidad para poder hacer retiros.', en: 'Complete your identity verification to unlock withdrawals.' },
     kycAction:          { es: 'Verificar ahora',               en: 'Verify now'                   },
+    kycVerifiedTitle:   { es: 'Identidad verificada',          en: 'Identity verified'            },
+    kycVerifiedCopy:    { es: 'Tu cuenta está verificada y tienes acceso completo a retiros.', en: 'Your account is verified and you have full access to withdrawals.' },
     myPools:            { es: 'Mis kinielas',                 en: 'My pools'                     },
     exploreTournaments: { es: 'Kinielas',                      en: 'Kinielas'                    },
     noPools:            { es: 'Aun no tienes kinielas',       en: 'No pools yet'                 },
@@ -228,6 +245,40 @@ const translations: TranslationNode = {
     pending:  { es: 'Pendiente',  en: 'Pending'  },
     deposit:  { es: 'Depositar',  en: 'Deposit'  },
     withdraw: { es: 'Retirar',    en: 'Withdraw' },
+  },
+  withdraw: {
+    title:             { es: 'RETIRAR',                                                          en: 'WITHDRAW'                                                              },
+    available:         { es: 'Disponible para retirar',                                          en: 'Available to withdraw'                                                 },
+    method:            { es: 'Método de retiro',                                                 en: 'Withdrawal method'                                                     },
+    methodBankGT:      { es: 'Depósito Bancario',                                                en: 'Bank Deposit'                                                          },
+    methodPayPal:      { es: 'PayPal',                                                           en: 'PayPal'                                                                },
+    amount:            { es: 'Monto a retirar (GTQ)',                                            en: 'Amount to withdraw (GTQ)'                                              },
+    amountUSD:         { es: 'Monto a retirar (USD)',                                            en: 'Amount to withdraw (USD)'                                              },
+    amountExceeds:     { es: 'Excede el balance disponible',                                     en: 'Exceeds available balance'                                             },
+    amountBelowMin:    { es: 'El monto mínimo de retiro es',                                     en: 'Minimum withdrawal amount is'                                          },
+    bankSelect:        { es: 'Institución Financiera',                                           en: 'Financial Institution'                                                 },
+    bankSelectPh:      { es: 'Selecciona una institución',                                       en: 'Select an institution'                                                 },
+    bankSelectLoading: { es: 'Cargando instituciones…',                                          en: 'Loading institutions…'                                                 },
+    accountType:       { es: 'Tipo de cuenta',                                                   en: 'Account type'                                                          },
+    accountTypePh:     { es: 'Selecciona un tipo de cuenta',                                     en: 'Select an account type'                                                },
+    accountTypeLoading:{ es: 'Cargando tipos…',                                                  en: 'Loading types…'                                                        },
+    accountNumber:     { es: 'Número de cuenta',                                                 en: 'Account number'                                                        },
+    accountNumberPh:   { es: '000-000000-0',                                                     en: '000-000000-0'                                                          },
+    accountHolder:     { es: 'Titular de la cuenta',                                             en: 'Account holder'                                                        },
+    accountHolderPh:   { es: 'Nombre completo',                                                  en: 'Full name'                                                             },
+    paypalEmail:       { es: 'Correo PayPal',                                                    en: 'PayPal email'                                                          },
+    paypalEmailPh:     { es: 'tu@email.com',                                                     en: 'you@email.com'                                                         },
+    submit:            { es: 'Retirar',                                                          en: 'Withdraw'                                                              },
+    successMsg:        { es: 'Solicitud de retiro enviada. Será procesada en 1–3 días hábiles.',                          en: 'Withdrawal request submitted. It will be processed in 1–3 business days.'        },
+    successTitle:      { es: 'Solicitud enviada',                                                                           en: 'Request submitted'                                                               },
+    errorTitle:        { es: 'No se pudo procesar',                                                                        en: 'Could not process'                                                               },
+    errorGeneric:      { es: 'No pudimos procesar tu solicitud. Intenta de nuevo o contacta a soporte si el problema persiste.', en: 'We could not process your request. Please try again or contact support if the problem persists.' },
+    errorClose:        { es: 'Cerrar',                                                                                     en: 'Close'                                                                           },
+    errorRetry:        { es: 'Intentar de nuevo',                                                                          en: 'Try again'                                                                       },
+    kycRequired:        { es: 'Verificación requerida',                                                                                                                                                                                                                                            en: 'Verification required'                                                                                                                                                                                                                                                              },
+    kycRequiredDesc:    { es: 'Para retirar fondos debes completar la verificación de identidad. Los residentes en Guatemala deben enviar su DPI vigente; los extranjeros deben enviar un documento de identidad oficial vigente (pasaporte, cédula de residencia u equivalente).', en: 'To withdraw funds you must complete your identity verification. Guatemala residents must submit a valid DPI; foreigners must submit a valid official identity document (passport, residence card, or equivalent).' },
+    kycRequiredAction:  { es: 'Sube tus documentos en la sección Verificación de Identidad y espera la aprobación del equipo de cumplimiento.',                                                                                                                                    en: 'Upload your documents in the Identity Verification section and await approval from the compliance team.'                                                                                                     },
+    kycAction:          { es: 'Ir a Verificación de Identidad',                                                                                                                                                                                                                    en: 'Go to Identity Verification'                                                                                                                                                                                },
   },
   tournaments: {
     title:      { es: 'Fan Fest',                                              en: 'Fan Fest'                                 },
@@ -282,6 +333,54 @@ const translations: TranslationNode = {
     live:     { es: 'Tipo de cambio en tiempo real', en: 'Live exchange rate'      },
     outdated: { es: 'tipo de cambio desactualizado', en: 'exchange rate is stale'  },
   },
+  // prettier-ignore
+  kyc: {
+    title:             { es: 'VERIFICACIÓN DE IDENTIDAD',    en: 'IDENTITY VERIFICATION'                    },
+    // stepper labels
+    stepUnverified:    { es: 'Sin verificar',                en: 'Unverified'                               },
+    stepPending:       { es: 'Enviado',                      en: 'Submitted'                                },
+    stepUnderReview:   { es: 'En revisión',                  en: 'Under review'                             },
+    stepApproved:      { es: 'Aprobado',                     en: 'Approved'                                 },
+    rejectionReason:   { es: 'Motivo de rechazo:',           en: 'Rejection reason:'                        },
+    // under-review banner
+    reviewBannerTitle: { es: 'Documentos en revisión',       en: 'Documents under review'                   },
+    reviewBannerBody:  { es: 'Hemos recibido tus documentos y están siendo revisados por nuestro equipo. Te notificaremos cuando se complete la verificación.', en: 'We have received your documents and they are being reviewed by our team. We will notify you once verification is complete.' },
+    // profile form
+    profileTitle:      { es: 'Información personal',         en: 'Personal information'                     },
+    submitProfile:     { es: 'Enviar información',           en: 'Submit information'                       },
+    fieldFullName:     { es: 'Nombre completo',              en: 'Full name'                                },
+    fieldDob:          { es: 'Fecha de nacimiento',          en: 'Date of birth'                            },
+    fieldNationality:  { es: 'Nacionalidad',                 en: 'Nationality'                              },
+    fieldDocNumber:    { es: 'Número de documento',          en: 'Document number'                          },
+    fieldAddress:      { es: 'Dirección',                    en: 'Address'                                  },
+    fieldCity:         { es: 'Ciudad',                       en: 'City'                                     },
+    fieldPostalCode:   { es: 'Código postal',                en: 'Postal code'                              },
+    phFullName:        { es: 'Nombre Apellido',              en: 'First Last'                               },
+    phNationality:     { es: 'Guatemala',                    en: 'United Kingdom'                           },
+    phDocNumber:       { es: '0000 00000 0000',              en: '0000 00000 0000'                          },
+    phAddress:         { es: 'Calle, No.',                   en: 'Street, No.'                              },
+    phCity:            { es: 'Ciudad de Guatemala',          en: 'City'                                     },
+    phPostalCode:      { es: '01001',                        en: 'A00 0AA'                                  },
+    // document upload
+    docsTitle:         { es: 'Documentos',                   en: 'Documents'                                },
+    docsHintA:         { es: 'Selecciona los archivos — se precargan localmente sin enviarse. Cuando ambos estén listos, presiona', en: 'Select your files — they are staged locally without being sent. Once both are ready, press' },
+    docsHintB:         { es: 'para guardarlos. JPEG, PNG, WebP o PDF — máx. 10 MB por archivo.', en: 'to save them. JPEG, PNG, WebP or PDF — max. 10 MB per file.' },
+    uploadBtn:         { es: 'Cargar archivos',              en: 'Upload files'                             },
+    docGovId:          { es: 'DPI / Pasaporte (frente)',     en: 'ID / Passport (front)'                    },
+    docSelfie:         { es: 'Selfie con DPI',               en: 'Selfie with ID'                           },
+    docGovIdShort:     { es: 'DPI / Pasaporte',              en: 'ID / Passport'                            },
+    docSelfieShort:    { es: 'Selfie con DPI',               en: 'Selfie with ID'                           },
+    pendingLabel:      { es: 'Pendiente de subir',           en: 'Pending upload'                           },
+    // validating / uploading state
+    uploadingTitle:    { es: 'Enviando documentos...',       en: 'Uploading documents...'                   },
+    uploadingBody:     { es: 'Por favor espera mientras se suben tus archivos.', en: 'Please wait while your files are being uploaded.' },
+    validatingTitle:   { es: 'Validación en progreso',       en: 'Validation in progress'                   },
+    validatingBody:    { es: 'Hemos recibido tus documentos. Te notificaremos cuando se complete la verificación.', en: 'We have received your documents. We will notify you once verification is complete.' },
+    // errors
+    errMaxSize:        { es: 'Máx. 10 MB por documento',    en: 'Max. 10 MB per document'                  },
+    errFileType:       { es: 'Tipo no permitido. Usa JPEG, PNG, WebP o PDF.', en: 'File type not allowed. Use JPEG, PNG, WebP, or PDF.' },
+    errUpload:         { es: 'Error al enviar documentos.',  en: 'Error uploading documents.'               },
+  },
 }
 
 interface I18nContextValue {
@@ -292,6 +391,7 @@ interface I18nContextValue {
   formatKickoff: (iso: string | null | undefined) => string;
   phaseName: (phase: string | null | undefined) => string;
   teamName: (name: string | null | undefined) => string;
+  accountTypeName: (name: string | null | undefined) => string;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -340,6 +440,7 @@ export function I18nProvider({
       formatKickoff: (iso) => formatLocalizedDateTime(iso, locale, timeZone),
       phaseName: (phase) => translateDictionaryValue(phase, phaseTranslations, locale),
       teamName: (name) => translateDictionaryValue(name, teamTranslations, locale),
+      accountTypeName: (name) => translateDictionaryValue(name, accountTypeTranslations, locale),
     }),
     [locale, timeZone],
   );
