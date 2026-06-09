@@ -1,5 +1,12 @@
 import { CheckCircle, Upload, X, Clock } from "lucide-react";
 
+function getBorderClass(hasSelectedFile: boolean, isPending: boolean): string {
+  if (!hasSelectedFile) return "border-blue-600 hover:border-gold-400";
+  return isPending
+    ? "border-amber-500 bg-amber-500/10 hover:border-amber-400"
+    : "border-green-500 bg-green-500/10 hover:border-green-400";
+}
+
 interface FileUploadFieldProps {
   readonly label: string;
   readonly accept?: string;
@@ -24,11 +31,7 @@ export function FileUploadField({
   onChange,
 }: FileUploadFieldProps) {
   const hasSelectedFile = hasFile || Boolean(fileName);
-  const borderClass = hasSelectedFile
-    ? isPending
-      ? "border-amber-500 bg-amber-500/10 hover:border-amber-400"
-      : "border-green-500 bg-green-500/10 hover:border-green-400"
-    : "border-blue-600 hover:border-gold-400";
+  const borderClass = getBorderClass(hasSelectedFile, isPending);
 
   return (
     <label className={`relative flex flex-col border-2 border-dashed rounded-xl cursor-pointer transition-colors overflow-hidden ${borderClass}`}>
@@ -54,23 +57,23 @@ export function FileUploadField({
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 p-4 text-center">
-          {hasSelectedFile ? (
-            isPending ? (
-              <>
-                <Clock className="w-6 h-6 text-amber-400" />
-                <p className="text-sm text-amber-300">{fileName}</p>
-                <p className="text-[10px] text-amber-500">{pendingLabel}</p>
-              </>
-            ) : (
-              <>
-                <CheckCircle className="w-6 h-6 text-green-400" />
-                <p className="text-sm text-green-300">{fileName}</p>
-              </>
-            )
-          ) : (
+          {!hasSelectedFile && (
             <>
               <Upload className="w-6 h-6 text-blue-400" />
               <p className="text-sm text-text-secondary">{label}</p>
+            </>
+          )}
+          {hasSelectedFile && isPending && (
+            <>
+              <Clock className="w-6 h-6 text-amber-400" />
+              <p className="text-sm text-amber-300">{fileName}</p>
+              <p className="text-[10px] text-amber-500">{pendingLabel}</p>
+            </>
+          )}
+          {hasSelectedFile && !isPending && (
+            <>
+              <CheckCircle className="w-6 h-6 text-green-400" />
+              <p className="text-sm text-green-300">{fileName}</p>
             </>
           )}
         </div>

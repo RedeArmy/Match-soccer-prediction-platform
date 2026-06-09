@@ -257,6 +257,24 @@ export default function DashboardPage() {
 
 // ── TxCard ────────────────────────────────────────────────────────────────────
 
+function getTxIcon(isPrize: boolean, isRefund: boolean, isCredit: boolean) {
+  if (isPrize) return <Trophy className="h-4 w-4 text-gold-400" />
+  if (isRefund) return <ArrowUpRight className="h-4 w-4 text-amber-400" />
+  return isCredit ? <ArrowUpRight className="h-4 w-4 text-green-400" /> : <ArrowDownLeft className="h-4 w-4 text-red-400" />
+}
+
+function getTxBg(isPrize: boolean, isRefund: boolean, isCredit: boolean): string {
+  if (isPrize) return 'bg-gold-400/20'
+  if (isRefund) return 'bg-amber-400/20'
+  return isCredit ? 'bg-green-400/20' : 'bg-red-400/20'
+}
+
+function getTxColor(isPrize: boolean, isRefund: boolean, isCredit: boolean): string {
+  if (isPrize) return 'text-gold-400'
+  if (isRefund) return 'text-amber-400'
+  return isCredit ? 'text-green-400' : 'text-red-400'
+}
+
 interface TxCardProps {
   entry: LedgerEntry
   t: ReturnType<typeof useI18n>['t']
@@ -268,21 +286,9 @@ function TxCard({ entry, t }: Readonly<TxCardProps>) {
   const isPrize = entry.kind === 'prize'
   const isRefund = entry.kind === 'withdrawal_release'
 
-  const iconEl = isPrize
-    ? <Trophy className="h-4 w-4 text-gold-400" />
-    : isRefund
-      ? <ArrowUpRight className="h-4 w-4 text-amber-400" />
-      : isCredit
-        ? <ArrowUpRight className="h-4 w-4 text-green-400" />
-        : <ArrowDownLeft className="h-4 w-4 text-red-400" />
-
-  const iconBg = isPrize
-    ? 'bg-gold-400/20'
-    : isRefund ? 'bg-amber-400/20' : isCredit ? 'bg-green-400/20' : 'bg-red-400/20'
-
-  const amountColor = isPrize
-    ? 'text-gold-400'
-    : isRefund ? 'text-amber-400' : isCredit ? 'text-green-400' : 'text-red-400'
+  const iconEl = getTxIcon(isPrize, isRefund, isCredit)
+  const iconBg = getTxBg(isPrize, isRefund, isCredit)
+  const amountColor = getTxColor(isPrize, isRefund, isCredit)
 
   const displayAmount = isUSD
     ? fmt(entry.delta_cents)

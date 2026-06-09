@@ -241,6 +241,65 @@ describe('clerk webhook relay – upstream fetch throws', () => {
 
 // ── notifications/stream/route ────────────────────────────────────────────────
 
+// ── webhooks/paypal/route ─────────────────────────────────────────────────────
+
+describe('paypal webhook relay – happy path', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('forwards request body to backend and returns upstream status', async () => {
+    process.env.BACKEND_INTERNAL_URL = 'http://backend:8080'
+    mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    const { POST } = await import('@/app/webhooks/paypal/route')
+    const req = makeReq('http://localhost/webhooks/paypal', {
+      method: 'POST',
+      body: JSON.stringify({ event_type: 'PAYMENT.CAPTURE.COMPLETED' }),
+      headers: {
+        'content-type': 'application/json',
+        'paypal-transmission-id': 'txn_abc',
+      },
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(mockFetch).toHaveBeenCalledOnce()
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/webhooks/paypal')
+  })
+})
+
+describe('paypal webhook relay – strips hop-by-hop headers', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('strips connection header from proxied response', async () => {
+    process.env.BACKEND_INTERNAL_URL = 'http://backend:8080'
+    mockFetch.mockResolvedValueOnce(
+      new Response('{}', {
+        status: 200,
+        headers: { 'connection': 'keep-alive', 'x-request-id': 'req_1' },
+      }),
+    )
+    const { POST } = await import('@/app/webhooks/paypal/route')
+    const req = makeReq('http://localhost/webhooks/paypal', { method: 'POST', body: '{}' })
+    const res = await POST(req)
+    expect(res.headers.get('connection')).toBeNull()
+    expect(res.headers.get('x-request-id')).toBe('req_1')
+  })
+})
+
+describe('paypal webhook relay – upstream fetch throws', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('returns 502 when backend is unreachable', async () => {
+    process.env.BACKEND_INTERNAL_URL = 'http://backend:8080'
+    mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'))
+    const { POST } = await import('@/app/webhooks/paypal/route')
+    const req = makeReq('http://localhost/webhooks/paypal', { method: 'POST', body: '{}' })
+    const res = await POST(req)
+    expect(res.status).toBe(502)
+    const body = await res.json()
+    expect(body.error).toBe('Backend unavailable')
+  })
+})
+
 describe('SSE stream proxy – no token', () => {
   beforeEach(() => {
     mockFetch.mockReset()

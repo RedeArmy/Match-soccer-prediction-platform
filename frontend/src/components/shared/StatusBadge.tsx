@@ -30,7 +30,7 @@ export function StatusBadge({ status, className, size = 'md' }: StatusBadgeProps
   const i18nKey = `status.${status}`
   const translated = t(i18nKey)
   // t() returns the key itself when no entry exists; fall back to the raw status string.
-  const label = translated !== i18nKey ? translated : status
+  const label = translated === i18nKey ? status : translated
 
   return (
     <span

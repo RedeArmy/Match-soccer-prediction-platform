@@ -217,19 +217,15 @@ export default function KYCPage() {
           {statusSteps.map((step, i) => {
             const done   = i <= currentStep;
             const active = i === currentStep;
+            const doneActiveClass = active ? "bg-green-500 border-green-400 text-white" : "bg-green-600 border-green-500 text-white";
+            const stepClass = done ? doneActiveClass : "border-blue-600 text-text-muted";
             return (
               <div
                 key={step}
                 className="flex flex-col items-center gap-1 flex-1 relative z-10"
               >
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
-                    done
-                      ? active
-                        ? "bg-green-500 border-green-400 text-white"
-                        : "bg-green-600 border-green-500 text-white"
-                      : "border-blue-600 text-text-muted"
-                  }`}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 ${stepClass}`}
                 >
                   {done ? <CheckCircle2 className="w-4 h-4" /> : i + 1}
                 </div>

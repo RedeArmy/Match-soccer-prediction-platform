@@ -10,8 +10,9 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/recurrente"
 )
 
-func TestCreateCheckout_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func checkoutSuccessHandler(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
@@ -21,7 +22,6 @@ func TestCreateCheckout_Success(t *testing.T) {
 		if r.Header.Get("X-SECRET-KEY") != "test-key" {
 			t.Errorf("unexpected X-SECRET-KEY header: %s", r.Header.Get("X-SECRET-KEY"))
 		}
-
 		var req recurrente.CheckoutRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -32,7 +32,6 @@ func TestCreateCheckout_Success(t *testing.T) {
 		if req.Metadata["wcq_user_id"] == nil {
 			t.Error("metadata missing wcq_user_id")
 		}
-
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id":           "ch_test123",
@@ -40,7 +39,11 @@ func TestCreateCheckout_Success(t *testing.T) {
 			"live_mode":    false,
 			"status":       "created",
 		})
-	}))
+	}
+}
+
+func TestCreateCheckout_Success(t *testing.T) {
+	srv := httptest.NewServer(checkoutSuccessHandler(t))
 	defer srv.Close()
 
 	client := recurrente.New("test-key", srv.URL)

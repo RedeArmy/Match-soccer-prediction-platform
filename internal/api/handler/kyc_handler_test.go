@@ -37,6 +37,7 @@ type stubKYCSvc struct {
 	listEventsErr error // overrides err for ListEvents only
 	listDocsErr   error // overrides err for ListDocuments only
 	uploadDocErr  error // overrides err for UploadDocument only
+	deleteDocKey  string
 }
 
 func (s *stubKYCSvc) GetProfile(_ context.Context, _ int) (*domain.KYCProfile, error) {
@@ -95,7 +96,7 @@ func (s *stubKYCSvc) GetRiskDashboard(_ context.Context) (*domain.KYCRiskDashboa
 }
 func (s *stubKYCSvc) RecalculateRiskScore(_ context.Context, _ int) (int, error) { return 0, s.err }
 func (s *stubKYCSvc) DeleteDocument(_ context.Context, _ int, _ int64) (string, error) {
-	return "", s.err
+	return s.deleteDocKey, s.err
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -685,5 +686,85 @@ func TestKYCHandler_UploadDocument_DuplicateHash_CleansUpStoredFile(t *testing.T
 
 	if len(store.deletedKeys) != 1 {
 		t.Errorf("expected FileStore.Delete to be called once on conflict, called %d times", len(store.deletedKeys))
+	}
+}
+
+// ── DeleteDocument ────────────────────────────────────────────────────────────
+
+func kycDeleteRouter(t *testing.T, svc *stubKYCSvc, fs *drainingFileStore) http.Handler {
+	t.Helper()
+	if fs == nil {
+		fs = &drainingFileStore{}
+	}
+	h := handler.NewKYCHandler(svc, fs, 10*1024*1024, zaptest.NewLogger(t))
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := middleware.ContextWithUser(req.Context(), &domain.User{ID: 7})
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Delete("/kyc/documents/{docID}", h.DeleteDocument)
+	return r
+}
+
+func TestKYCHandler_DeleteDocument_NoAuth(t *testing.T) {
+	h := handler.NewKYCHandler(&stubKYCSvc{}, &drainingFileStore{}, 10*1024*1024, zaptest.NewLogger(t))
+	req := httptest.NewRequest(http.MethodDelete, "/kyc/documents/1", nil)
+	w := httptest.NewRecorder()
+	h.DeleteDocument(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", w.Code)
+	}
+}
+
+func TestKYCHandler_DeleteDocument_InvalidDocID(t *testing.T) {
+	router := kycDeleteRouter(t, &stubKYCSvc{}, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/kyc/documents/abc", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status: got %d, want 422", w.Code)
+	}
+}
+
+func TestKYCHandler_DeleteDocument_ServiceError(t *testing.T) {
+	router := kycDeleteRouter(t, &stubKYCSvc{err: apperrors.NotFound("not found")}, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/kyc/documents/5", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code == http.StatusNoContent {
+		t.Fatal("expected non-204 on service error")
+	}
+}
+
+func TestKYCHandler_DeleteDocument_Success_NoStorageKey(t *testing.T) {
+	svc := &stubKYCSvc{deleteDocKey: ""}
+	router := kycDeleteRouter(t, svc, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/kyc/documents/10", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status: got %d, want 204", w.Code)
+	}
+}
+
+func TestKYCHandler_DeleteDocument_Success_WithStorageKey_FileStoreDeleteCalled(t *testing.T) {
+	svc := &stubKYCSvc{deleteDocKey: "kyc/7/doc.jpg"}
+	store := &drainingFileStore{}
+	router := kycDeleteRouter(t, svc, store)
+	req := httptest.NewRequest(http.MethodDelete, "/kyc/documents/10", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status: got %d, want 204", w.Code)
+	}
+	if len(store.deletedKeys) != 1 || store.deletedKeys[0] != "kyc/7/doc.jpg" {
+		t.Errorf("fileStore.Delete: got %v, want [kyc/7/doc.jpg]", store.deletedKeys)
 	}
 }

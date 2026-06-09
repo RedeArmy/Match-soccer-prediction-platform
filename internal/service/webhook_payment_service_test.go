@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -305,6 +306,85 @@ func newWebhookPaymentSvcWithGateAndAudit(ledger *webhookLedgerRepoStub, intent 
 		svc.(*webhookPaymentService).SetKYCGate(gate)
 	}
 	return svc
+}
+
+// ── SetExchangeRateService / USD→GTQ conversion ───────────────────────────────
+
+// fxSvcStub is a minimal ExchangeRateService stub for webhook payment tests.
+type fxSvcStub struct {
+	gtqCents int64
+	convErr  error
+}
+
+func (f *fxSvcStub) RefreshRate(_ context.Context) (*domain.ExchangeRates, error) { return nil, nil }
+func (f *fxSvcStub) GetCurrentRates(_ context.Context) (*domain.ExchangeRates, error) {
+	return nil, nil
+}
+func (f *fxSvcStub) OverrideRate(_ context.Context, _ decimal.Decimal, _ string, _ int) (*domain.ExchangeRates, error) {
+	return nil, nil
+}
+func (f *fxSvcStub) ConvertUSDToGTQ(_ context.Context, _ int64) (int64, decimal.Decimal, error) {
+	return f.gtqCents, decimal.Zero, f.convErr
+}
+func (f *fxSvcStub) ConvertGTQToUSD(_ context.Context, _ int64) (int64, decimal.Decimal, error) {
+	return 0, decimal.Zero, nil
+}
+func (f *fxSvcStub) WarmCache(_ context.Context) error { return nil }
+
+func newWebhookPaymentSvcWithFX(ledger *webhookLedgerRepoStub, intent *webhookIntentRepoStub, fx ExchangeRateService) WebhookPaymentService {
+	if intent == nil {
+		intent = &webhookIntentRepoStub{}
+	}
+	svc := NewWebhookPaymentService(ledger, intent, &noopAuditLogger{}, zap.NewNop())
+	if fx != nil {
+		svc.(*webhookPaymentService).SetExchangeRateService(fx)
+	}
+	return svc
+}
+
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_FxSvcNil_CreditsRawAmount(t *testing.T) {
+	// When fxSvc is nil and the currency is USD, the raw intent amount is used.
+	intent := &domain.PaymentIntent{
+		ID: 1, UserID: 7, AmountCents: 2000,
+		Currency: "USD", Status: domain.PaymentIntentPending,
+	}
+	intentRepo := &webhookIntentRepoStub{intent: intent}
+	svc := newWebhookPaymentSvcWithFX(&webhookLedgerRepoStub{}, intentRepo, nil)
+
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-FX-NIL", 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_FxSvcSuccess_CreditsConvertedAmount(t *testing.T) {
+	// When fxSvc converts successfully, the GTQ amount is credited.
+	intent := &domain.PaymentIntent{
+		ID: 2, UserID: 7, AmountCents: 1000,
+		Currency: "USD", Status: domain.PaymentIntentPending,
+	}
+	intentRepo := &webhookIntentRepoStub{intent: intent}
+	fx := &fxSvcStub{gtqCents: 7800}
+	svc := newWebhookPaymentSvcWithFX(&webhookLedgerRepoStub{}, intentRepo, fx)
+
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-FX-OK", 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_FxSvcError_FallsBackToRawAmount(t *testing.T) {
+	// When fxSvc returns an error, the service logs a warning and falls back to
+	// the raw intent amount rather than blocking the credit.
+	intent := &domain.PaymentIntent{
+		ID: 3, UserID: 7, AmountCents: 500,
+		Currency: "USD", Status: domain.PaymentIntentPending,
+	}
+	intentRepo := &webhookIntentRepoStub{intent: intent}
+	fx := &fxSvcStub{convErr: errors.New("rate unavailable")}
+	svc := newWebhookPaymentSvcWithFX(&webhookLedgerRepoStub{}, intentRepo, fx)
+
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-FX-ERR", 0); err != nil {
+		t.Fatalf("conversion failure must not block the credit, got: %v", err)
+	}
 }
 
 func TestWebhookPaymentService_CreditFromRecurrente_CumulativeAML_AuditFlagged(t *testing.T) {

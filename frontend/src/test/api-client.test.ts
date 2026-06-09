@@ -494,6 +494,44 @@ describe('api – admin methods', () => {
   })
 })
 
+describe('api – deleteKYCDocument', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends DELETE to /api/v1/kyc/documents/:id', async () => {
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await api.deleteKYCDocument('tok_del', 42)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/kyc/documents/42')
+    expect((init as RequestInit).method).toBe('DELETE')
+    const headers = (init as RequestInit).headers as Record<string, string>
+    expect(headers['Authorization']).toBe('Bearer tok_del')
+  })
+})
+
+describe('api – getBanks', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends GET to /api/v1/banks', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([{ id: 1, name: 'BAC' }]))
+    const result = await api.getBanks('tok_banks')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/banks')
+    expect(Array.isArray(result)).toBe(true)
+  })
+})
+
+describe('api – getBankAccountTypes', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends GET to /api/v1/bank-account-types', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([{ id: 1, name: 'Monetaria' }]))
+    const result = await api.getBankAccountTypes('tok_types')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/bank-account-types')
+    expect(Array.isArray(result)).toBe(true)
+  })
+})
+
 // ── serverAPI ─────────────────────────────────────────────────────────────────
 
 describe('serverAPI()', () => {

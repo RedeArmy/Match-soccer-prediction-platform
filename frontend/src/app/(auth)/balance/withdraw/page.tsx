@@ -17,6 +17,36 @@ import Link from "next/link";
 
 type Method = "bank_gt" | "paypal";
 
+function buildPayoutDetails(
+  method: Method,
+  bankName: string,
+  accountType: string,
+  accountNumber: string,
+  accountHolder: string,
+  paypalEmail: string,
+): Record<string, string> {
+  if (method === "bank_gt") {
+    return { bank_name: bankName, account_type: accountType, account_number: accountNumber, account_holder: accountHolder };
+  }
+  return { paypal_email: paypalEmail };
+}
+
+function isWithdrawValid(
+  method: Method,
+  amountCents: number,
+  minCents: number,
+  availableDisplay: number,
+  paypalEmail: string,
+  bankName: string,
+  accountType: string,
+  accountNumber: string,
+  accountHolder: string,
+): boolean {
+  if (amountCents < minCents || amountCents > availableDisplay) return false;
+  if (method === "paypal") return paypalEmail.trim() !== "";
+  return bankName !== "" && accountType !== "" && accountNumber.trim() !== "" && accountHolder.trim() !== "";
+}
+
 export default function WithdrawPage() {
   const { getToken } = useAuth();
   const { t, accountTypeName } = useI18n();
@@ -80,25 +110,12 @@ export default function WithdrawPage() {
   const amountCents = Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
   const belowMinimum = amountCents > 0 && amountCents < minCents;
   const exceedsBalance = amountCents > 0 && amountCents > availableDisplay;
-  const valid =
-    amountCents >= minCents &&
-    amountCents <= availableDisplay &&
-    (method === "paypal"
-      ? paypalEmail.trim() !== ""
-      : bankName !== "" && accountType !== "" && accountNumber.trim() !== "" && accountHolder.trim() !== "");
+  const valid = isWithdrawValid(method, amountCents, minCents, availableDisplay, paypalEmail, bankName, accountType, accountNumber, accountHolder);
 
   const mutation = useMutation({
     mutationFn: async () => {
       const token = await getToken();
-      const payout_details: Record<string, string> =
-        method === "bank_gt"
-          ? {
-              bank_name: bankName,
-              account_type: accountType,
-              account_number: accountNumber,
-              account_holder: accountHolder,
-            }
-          : { paypal_email: paypalEmail };
+      const payout_details = buildPayoutDetails(method, bankName, accountType, accountNumber, accountHolder, paypalEmail);
       return api.createWithdrawal(
         token!,
         { amount_cents: amountCents, currency, method, payout_details },
@@ -152,6 +169,9 @@ export default function WithdrawPage() {
       </div>
     );
   }
+
+  const amountLabel = effectiveIsUSD ? formatUSD(amountCents) : formatGTQ(amountCents);
+  const submitLabel = valid ? `${t("withdraw.submit")} ${amountLabel}` : t("withdraw.submit");
 
   return (
     <>
@@ -304,9 +324,7 @@ export default function WithdrawPage() {
             mutation.mutate();
           }}
         >
-          {valid
-            ? `${t("withdraw.submit")} ${effectiveIsUSD ? formatUSD(amountCents) : formatGTQ(amountCents)}`
-            : t("withdraw.submit")}
+          {submitLabel}
         </SubmitButton>
       </div>
     </div>
