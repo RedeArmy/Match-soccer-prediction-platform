@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useKYCStatus } from "@/hooks/useKYCStatus";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useKYCEffectiveStatus } from "@/hooks/useKYCEffectiveStatus";
+import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
 import { sniffMIME, isAllowedUploadType } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -14,30 +15,7 @@ import { FileUploadField } from "@/components/shared/FileUploadField";
 import { SubmitButton } from "@/components/shared/SubmitButton";
 import { ShieldCheck, CheckCircle2, Clock, UploadCloud } from "lucide-react";
 
-const docTypes = [
-  { id: "gov_id", label: "DPI / Pasaporte (frente)" },
-  { id: "selfie", label: "Selfie con DPI" },
-];
-
 const statusSteps = ["unverified", "pending", "under_review", "approved"];
-
-const statusLabels: Record<string, string> = {
-  unverified:   "Sin verificar",
-  pending:      "Enviado",
-  under_review: "En revisión",
-  approved:     "Aprobado",
-};
-
-// prettier-ignore
-const profileFields: { name: string; label: string; type: string; placeholder: string }[] = [
-  { name: "full_name",       label: "Nombre completo",      type: "text", placeholder: "Nombre Apellido"     },
-  { name: "date_of_birth",   label: "Fecha de nacimiento",  type: "date", placeholder: ""                    },
-  { name: "nationality",     label: "Nacionalidad",         type: "text", placeholder: "Guatemala"           },
-  { name: "document_number", label: "Número de documento",  type: "text", placeholder: "0000 00000 0000"     },
-  { name: "address_line",    label: "Dirección",            type: "text", placeholder: "Calle, No."          },
-  { name: "city",            label: "Ciudad",               type: "text", placeholder: "Ciudad de Guatemala"  },
-  { name: "postal_code",     label: "Código postal",        type: "text", placeholder: "01001"               },
-];
 
 type UploadedEntry = { kind: "uploaded"; name: string; id: number };
 type PendingEntry  = { kind: "pending";  name: string; file: File; previewUrl?: string };
@@ -45,9 +23,33 @@ type DocEntry = UploadedEntry | PendingEntry;
 
 export default function KYCPage() {
   const { getToken } = useAuth();
+  const { t } = useI18n();
   const qc = useQueryClient();
-  const { data: kyc, isLoading } = useKYCStatus();
+  const { kyc, docs: existingDocs, isLoading, hasPendingReview, effectiveStatus } = useKYCEffectiveStatus();
   const [error, setError] = useState("");
+
+  const docTypes = [
+    { id: "gov_id", label: t("kyc.docGovId") },
+    { id: "selfie", label: t("kyc.docSelfie") },
+  ];
+
+  const statusLabels: Record<string, string> = {
+    unverified:   t("kyc.stepUnverified"),
+    pending:      t("kyc.stepPending"),
+    under_review: t("kyc.stepUnderReview"),
+    approved:     t("kyc.stepApproved"),
+  };
+
+  // prettier-ignore
+  const profileFields = [
+    { name: "full_name",       label: t("kyc.fieldFullName"),    type: "text", placeholder: t("kyc.phFullName")    },
+    { name: "date_of_birth",   label: t("kyc.fieldDob"),         type: "date", placeholder: ""                     },
+    { name: "nationality",     label: t("kyc.fieldNationality"), type: "text", placeholder: t("kyc.phNationality") },
+    { name: "document_number", label: t("kyc.fieldDocNumber"),   type: "text", placeholder: t("kyc.phDocNumber")   },
+    { name: "address_line",    label: t("kyc.fieldAddress"),     type: "text", placeholder: t("kyc.phAddress")     },
+    { name: "city",            label: t("kyc.fieldCity"),        type: "text", placeholder: t("kyc.phCity")        },
+    { name: "postal_code",     label: t("kyc.fieldPostalCode"),  type: "text", placeholder: t("kyc.phPostalCode")  },
+  ];
 
   // docType → entry (local pending file OR already-uploaded doc)
   const [docEntries, setDocEntries] = useState<Record<string, DocEntry>>({});
@@ -56,16 +58,6 @@ export default function KYCPage() {
   // True once documents have been successfully submitted
   const [submitted, setSubmitted] = useState(false);
 
-  // Load already-submitted documents from backend
-  const { data: existingDocs } = useQuery({
-    queryKey: ["kyc-documents"],
-    queryFn: async () => {
-      const token = await getToken();
-      return api.getKYCDocuments(token!);
-    },
-    enabled: Boolean(kyc?.status && kyc.status !== "unverified"),
-  });
-
   // Pre-populate uploaded entries from backend
   useEffect(() => {
     if (!existingDocs?.length) return;
@@ -73,11 +65,17 @@ export default function KYCPage() {
       const next = { ...prev };
       for (const doc of existingDocs) {
         if (!next[doc.document_type]) {
-          next[doc.document_type] = { kind: "uploaded", name: doc.document_type === "gov_id" ? "DPI / Pasaporte" : "Selfie con DPI", id: doc.id };
+          next[doc.document_type] = {
+            kind: "uploaded",
+            name: doc.document_type === "gov_id" ? t("kyc.docGovIdShort") : t("kyc.docSelfieShort"),
+            id: doc.id,
+          };
         }
       }
       return next;
     });
+  // t is stable per locale; existingDocs is the real dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingDocs]);
 
   // Profile form state
@@ -151,7 +149,7 @@ export default function KYCPage() {
       qc.invalidateQueries({ queryKey: ["kyc-documents"] });
       setSubmitted(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al enviar documentos.");
+      setError(e instanceof Error ? e.message : t("kyc.errUpload"));
     } finally {
       setIsSubmitting(false);
     }
@@ -165,12 +163,12 @@ export default function KYCPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      setError("Máx. 10 MB por documento");
+      setError(t("kyc.errMaxSize"));
       return;
     }
     const mime = await sniffMIME(file);
     if (!isAllowedUploadType(mime)) {
-      setError("Tipo no permitido. Usa JPEG, PNG, WebP o PDF.");
+      setError(t("kyc.errFileType"));
       return;
     }
     const previewUrl = mime.startsWith("image/") ? URL.createObjectURL(file) : undefined;
@@ -190,7 +188,6 @@ export default function KYCPage() {
         delete next[docType];
         return next;
       });
-      // Increment reset key so the file input remounts and the same file can be re-selected
       setResetKeys((prev) => ({ ...prev, [docType]: (prev[docType] ?? 0) + 1 }));
     } else {
       deleteDoc.mutate(entry.id);
@@ -199,17 +196,19 @@ export default function KYCPage() {
 
   if (isLoading) return <LoadingState rows={5} />;
 
-  const currentStep = statusSteps.indexOf(kyc?.status ?? "unverified");
+  // hasPendingReview: docs already uploaded but admin hasn't transitioned status yet.
+  // showValidating: covers both the in-session upload flow and page reloads.
+  const showValidating = submitted || isSubmitting || hasPendingReview;
+  const currentStep   = statusSteps.indexOf(effectiveStatus);
   const allDocsFilled = docTypes.every(({ id }) => Boolean(docEntries[id]));
   const hasPending    = docTypes.some(({ id }) => docEntries[id]?.kind === "pending");
   const isUnderReview = kyc?.status === "under_review";
-  const showValidating = submitted || isSubmitting;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <ShieldCheck className="w-6 h-6 text-gold-400" />
-        <h1 className="font-display text-3xl text-white">VERIFICACIÓN DE IDENTIDAD</h1>
+        <h1 className="font-display text-3xl text-white">{t("kyc.title")}</h1>
       </div>
 
       {/* Status stepper */}
@@ -234,9 +233,7 @@ export default function KYCPage() {
                 >
                   {done ? <CheckCircle2 className="w-4 h-4" /> : i + 1}
                 </div>
-                <span
-                  className={`text-[10px] text-center ${done ? "text-green-400" : "text-text-muted"}`}
-                >
+                <span className={`text-[10px] text-center ${done ? "text-green-400" : "text-text-muted"}`}>
                   {statusLabels[step]}
                 </span>
                 {i < statusSteps.length - 1 && (
@@ -252,12 +249,12 @@ export default function KYCPage() {
         </div>
         {kyc?.status && (
           <div className="text-center mt-3">
-            <StatusBadge status={kyc.status} />
+            <StatusBadge status={effectiveStatus} />
           </div>
         )}
         {kyc?.rejection_reason && (
           <p className="text-red-400 text-sm text-center mt-2 bg-red-400/10 rounded p-2">
-            Motivo de rechazo: {kyc.rejection_reason}
+            {t("kyc.rejectionReason")} {kyc.rejection_reason}
           </p>
         )}
       </div>
@@ -267,11 +264,8 @@ export default function KYCPage() {
         <div className="card border border-blue-500/30 bg-blue-500/10 p-5 flex items-start gap-3">
           <Clock className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
           <div>
-            <p className="text-sm font-medium text-blue-300">Documentos en revisión</p>
-            <p className="mt-1 text-xs text-text-secondary">
-              Hemos recibido tus documentos y están siendo revisados por nuestro equipo.
-              Te notificaremos cuando se complete la verificación.
-            </p>
+            <p className="text-sm font-medium text-blue-300">{t("kyc.reviewBannerTitle")}</p>
+            <p className="mt-1 text-xs text-text-secondary">{t("kyc.reviewBannerBody")}</p>
           </div>
         </div>
       )}
@@ -279,7 +273,7 @@ export default function KYCPage() {
       {/* Profile form (only when unverified or rejected) */}
       {(!kyc?.status || kyc.status === "unverified" || kyc.status === "rejected") && (
         <div className="card p-6 space-y-4">
-          <h2 className="font-semibold text-text-primary">Información personal</h2>
+          <h2 className="font-semibold text-text-primary">{t("kyc.profileTitle")}</h2>
 
           <div className="grid sm:grid-cols-2 gap-4">
             {profileFields.map(({ name, label, type, placeholder }) => (
@@ -299,13 +293,13 @@ export default function KYCPage() {
             isPending={submitProfile.isPending}
             onClick={() => { setError(""); submitProfile.mutate(); }}
           >
-            Enviar información
+            {t("kyc.submitProfile")}
           </SubmitButton>
         </div>
       )}
 
-      {/* Document upload (shown after profile submitted, not yet under review) */}
-      {kyc?.status && kyc.status !== "unverified" && !isUnderReview && (
+      {/* Document upload (shown after profile submitted, not yet under review or approved) */}
+      {kyc?.status && kyc.status !== "unverified" && kyc.status !== "approved" && !isUnderReview && (
         <div className="card p-6 space-y-4">
           {showValidating ? (
             /* Validating / uploading state — replaces the upload boxes */
@@ -317,12 +311,10 @@ export default function KYCPage() {
               )}
               <div className="text-center">
                 <p className="text-sm font-semibold text-blue-300">
-                  {isSubmitting ? "Enviando documentos..." : "Validación en progreso"}
+                  {isSubmitting ? t("kyc.uploadingTitle") : t("kyc.validatingTitle")}
                 </p>
                 <p className="mt-1 text-xs text-text-muted">
-                  {isSubmitting
-                    ? "Por favor espera mientras se suben tus archivos."
-                    : "Hemos recibido tus documentos. Te notificaremos cuando se complete la verificación."}
+                  {isSubmitting ? t("kyc.uploadingBody") : t("kyc.validatingBody")}
                 </p>
               </div>
             </div>
@@ -330,12 +322,11 @@ export default function KYCPage() {
             /* Upload boxes */
             <>
               <div>
-                <h2 className="font-semibold text-text-primary">Documentos</h2>
+                <h2 className="font-semibold text-text-primary">{t("kyc.docsTitle")}</h2>
                 <p className="mt-1 text-xs text-text-muted">
-                  Selecciona los archivos — se precargan localmente sin enviarse.
-                  Cuando ambos estén listos, presiona{" "}
-                  <strong className="text-amber-400">Cargar archivos</strong> para guardarlos.
-                  JPEG, PNG, WebP o PDF — máx. 10 MB por archivo.
+                  {t("kyc.docsHintA")}{" "}
+                  <strong className="text-amber-400">{t("kyc.uploadBtn")}</strong>{" "}
+                  {t("kyc.docsHintB")}
                 </p>
               </div>
 
@@ -351,6 +342,7 @@ export default function KYCPage() {
                       fileName={entry?.name}
                       hasFile={Boolean(entry)}
                       isPending={isPending}
+                      pendingLabel={t("kyc.pendingLabel")}
                       previewUrl={previewUrl}
                       onChange={(e) => handleFileSelect(e, id)}
                       onRemove={() => handleRemove(id)}
@@ -366,7 +358,7 @@ export default function KYCPage() {
                   className="btn-gold w-full py-3 text-sm font-semibold flex items-center justify-center gap-2"
                 >
                   <UploadCloud className="w-4 h-4" />
-                  Cargar archivos
+                  {t("kyc.uploadBtn")}
                 </button>
               )}
             </>

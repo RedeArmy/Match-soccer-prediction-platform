@@ -6,6 +6,7 @@ interface FileUploadFieldProps {
   readonly fileName?: string;
   readonly hasFile?: boolean;
   readonly isPending?: boolean;
+  readonly pendingLabel?: string;
   readonly previewUrl?: string;
   readonly onRemove?: () => void;
   readonly onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -17,6 +18,7 @@ export function FileUploadField({
   fileName,
   hasFile = false,
   isPending = false,
+  pendingLabel = "{pendingLabel}",
   previewUrl,
   onRemove,
   onChange,
@@ -45,7 +47,7 @@ export function FileUploadField({
             <div className="min-w-0">
               <p className={`text-xs truncate ${isPending ? "text-amber-300" : "text-green-300"}`}>{fileName}</p>
               {isPending && (
-                <p className="text-[10px] text-amber-500">Pendiente de subir</p>
+                <p className="text-[10px] text-amber-500">{pendingLabel}</p>
               )}
             </div>
           </div>
@@ -57,7 +59,7 @@ export function FileUploadField({
               <>
                 <Clock className="w-6 h-6 text-amber-400" />
                 <p className="text-sm text-amber-300">{fileName}</p>
-                <p className="text-[10px] text-amber-500">Pendiente de subir</p>
+                <p className="text-[10px] text-amber-500">{pendingLabel}</p>
               </>
             ) : (
               <>

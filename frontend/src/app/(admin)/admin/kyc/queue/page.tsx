@@ -88,7 +88,7 @@ export default function AdminKYCQueuePage() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <StatusBadge status={p.status} size="sm" />
-                {(p.status === 'submitted' || p.status === 'under_review') && (
+                {(p.status === 'pending' || p.status === 'under_review') && (
                   <>
                     <button
                       onClick={() => approve.mutate(p.id)}

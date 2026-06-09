@@ -17,9 +17,9 @@ import (
 //
 // Verifies that POST /api/v1/withdrawals returns 409 when the requested amount
 // exceeds the user's available balance.  The insufficient-balance path is
-// enforced by the repository's CreateAndReserve: the UPDATE … WHERE
-// balance_cents >= amount_cents affects zero rows, and the service translates
-// that into apperrors.Conflict, which the handler maps to HTTP 409.
+// enforced by the repository's Create: the balance check before INSERT
+// detects insufficient available balance and returns apperrors.Conflict,
+// which the handler maps to HTTP 409.
 func TestE2E_Withdrawal_InsufficientBalance(t *testing.T) {
 	skipIfNoE2EDB(t)
 	cleanE2ETables(t)

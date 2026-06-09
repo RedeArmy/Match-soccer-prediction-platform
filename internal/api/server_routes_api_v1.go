@@ -167,7 +167,14 @@ func (s *Server) registerPaymentRoutes(r chi.Router, d apiV1Deps) {
 		r.Use(middleware.ResolveUser(d.repos.user, s.log))
 		r.With(d.idem).Post("/", d.h.withdrawal.Create)
 		r.Get("/", d.h.withdrawal.ListMine)
+		r.Get("/limits", d.h.withdrawal.Limits)
 	})
+
+	// GET /api/v1/banks — active Guatemalan banks for the withdrawal dropdown.
+	r.With(middleware.ResolveUser(d.repos.user, s.log)).Get("/banks", d.h.bank.List)
+
+	// GET /api/v1/bank-account-types — active account types for the withdrawal dropdown.
+	r.With(middleware.ResolveUser(d.repos.user, s.log)).Get("/bank-account-types", d.h.bank.ListAccountTypes)
 }
 
 // registerKYCRoutes wires the /kyc subrouter.
@@ -260,6 +267,14 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 		r.Post("/withdrawals/{id}/approve", d.h.withdrawal.AdminApprove)
 		r.Post("/withdrawals/{id}/reject", d.h.withdrawal.AdminReject)
 		r.Post("/withdrawals/{id}/process", d.h.withdrawal.AdminProcess)
+
+		// Banks & account types
+		r.Get("/banks", d.h.adminBank.ListBanks)
+		r.Post("/banks", d.h.adminBank.CreateBank)
+		r.Patch("/banks/{id}/active", d.h.adminBank.SetBankActive)
+		r.Get("/bank-account-types", d.h.adminBank.ListAccountTypes)
+		r.Post("/bank-account-types", d.h.adminBank.CreateAccountType)
+		r.Patch("/bank-account-types/{id}/active", d.h.adminBank.SetAccountTypeActive)
 
 		// KYC review
 		r.Get("/kyc/risk-dashboard", d.h.adminKYC.RiskDashboard)

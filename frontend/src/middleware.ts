@@ -9,6 +9,11 @@ const isPublicRoute = createRouteMatcher([
   "/api/health",
   // Exchange rate public — proxied from /api/exchange-rate (backend) via BFF
   "/api/exchange-rate(.*)",
+  // BFF catch-all proxy — auth is enforced by the Go backend, not here.
+  // Clerk's dev-mode protect-rewrite would return 404 for API calls made
+  // before the dev-browser cookie syncs; letting the BFF handle auth avoids
+  // that race and keeps authentication logic in one place (the backend).
+  "/api/v1/(.*)",
   // Clerk webhook relay — authenticated by Svix HMAC, not by session
   "/webhooks/(.*)",
 ]);

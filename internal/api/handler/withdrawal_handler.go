@@ -110,6 +110,27 @@ func (h *WithdrawalHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, withdrawalToResponse(result))
 }
 
+// withdrawalLimitsResponse is the response body for GET /api/v1/withdrawals/limits.
+type withdrawalLimitsResponse struct {
+	MinGTQCents int `json:"min_gtq_cents"`
+	MaxGTQCents int `json:"max_gtq_cents"`
+	MinUSDCents int `json:"min_usd_cents"`
+}
+
+// Limits handles GET /api/v1/withdrawals/limits.
+func (h *WithdrawalHandler) Limits(w http.ResponseWriter, r *http.Request) {
+	minGTQ, maxGTQ, minUSD, err := h.svc.GetLimits(r.Context())
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, withdrawalLimitsResponse{
+		MinGTQCents: minGTQ,
+		MaxGTQCents: maxGTQ,
+		MinUSDCents: minUSD,
+	})
+}
+
 // ListMine handles GET /api/v1/withdrawals.
 //
 // @Summary      List my withdrawals

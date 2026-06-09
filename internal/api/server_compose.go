@@ -89,6 +89,8 @@ type appHandlers struct {
 	user               *handler.UserHandler
 	adminExchangeRate  *handler.AdminExchangeRateHandler
 	exchangeRate       *handler.ExchangeRateHandler
+	bank               *handler.BankHandler
+	adminBank          *handler.AdminBankHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -284,6 +286,8 @@ func (s *Server) buildHandlers(
 		balance:            handler.NewBalanceHandler(balanceSvc, s.log),
 		bankTransfer:       handler.NewBankTransferHandler(bankTransferSvc, fileStore, maxUploadBytes, minTransferCents, maxTransferCents, s.log),
 		withdrawal:         handler.NewWithdrawalHandler(withdrawalSvc, s.log),
+		bank:               handler.NewBankHandler(repository.NewPostgresBankRepository(s.db), repository.NewPostgresBankAccountTypeRepository(s.db), s.log),
+		adminBank:          handler.NewAdminBankHandler(repository.NewPostgresBankRepository(s.db), repository.NewPostgresBankAccountTypeRepository(s.db), s.log),
 		paymentIntent:      buildPaymentIntentHandler(paymentIntentSvc, s.cfg.Payment.RecurrenteAPIKey, s.cfg.Payment.RecurrenteBaseURL, s.cfg.Server.AppBaseURL, s.log),
 		paymentWebhook:     handler.NewPaymentWebhookHandler(webhookPaymentSvc, s.log),
 		paypalOrder:        handler.NewPayPalOrderHandler(s.cfg.Payment.PayPalClientID, s.cfg.Payment.PayPalClientSecret, s.cfg.Payment.PayPalBaseURL, s.cfg.IsDevelopment(), paymentIntentSvc, s.log),

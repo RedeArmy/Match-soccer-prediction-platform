@@ -229,6 +229,8 @@ var payoutRequiredKeys = map[WithdrawalMethod]map[string]int{
 	WithdrawalMethodBankGT: {
 		"account_number": 30, // Guatemalan account numbers are ≤ 13 digits; 30 gives headroom
 		"bank_name":      100,
+		"account_type":   50,
+		"account_holder": 150, // full legal name
 	},
 	WithdrawalMethodPayPal: {
 		"paypal_email": MaxEmailLength, // reuse RFC 5321 maximum (320)

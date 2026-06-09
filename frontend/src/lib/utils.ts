@@ -108,10 +108,17 @@ export function formatRate(rate: string): string {
 
 // ── Ledger kind → i18n key ────────────────────────────────────────────────────
 
+// Internal reservation entries should not appear in user-facing history.
+// withdrawal_reserve only changes reserved_cents, not actual balance.
+export function isVisibleLedgerKind(kind: string): boolean {
+  return kind !== 'withdrawal_reserve'
+}
+
 export function ledgerKindKey(kind: string): string {
   if (kind === 'webhook_recurrente' || kind === 'webhook_paypal' || kind === 'bank_transfer') {
     return 'ledger.credit'
   }
+  if (kind === 'withdrawal_release') return 'ledger.refund'
   if (kind.startsWith('withdrawal_')) return 'ledger.withdrawal'
   if (kind === 'prize') return 'ledger.earning'
   if (kind === 'entry_fee') return 'ledger.entryFee'

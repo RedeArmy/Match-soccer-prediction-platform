@@ -49,10 +49,10 @@ type CheckoutItem struct {
 
 // CheckoutRequest is the payload sent to POST /api/checkouts.
 type CheckoutRequest struct {
-	Items      []CheckoutItem    `json:"items"`
-	SuccessURL string            `json:"success_url"`
-	CancelURL  string            `json:"cancel_url"`
-	Metadata   map[string]any    `json:"metadata,omitempty"`
+	Items      []CheckoutItem `json:"items"`
+	SuccessURL string         `json:"success_url"`
+	CancelURL  string         `json:"cancel_url"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
 }
 
 // CheckoutResponse is the relevant subset of the Recurrente checkout object.
@@ -84,7 +84,7 @@ func (c *Client) CreateCheckout(ctx context.Context, req CheckoutRequest) (*Chec
 	if err != nil {
 		return nil, fmt.Errorf("recurrente: send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if err != nil {

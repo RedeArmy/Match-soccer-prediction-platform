@@ -9,7 +9,7 @@ import { useCurrency } from '@/hooks/useCurrency'
 import { useExchangeRate } from '@/hooks/useExchangeRate'
 import { BalanceCard } from '@/components/balance/BalanceCard'
 import { LoadingState } from '@/components/shared/LoadingState'
-import { formatDate, formatGTQ, usdToGTQ, ledgerKindKey } from '@/lib/utils'
+import { formatDate, formatGTQ, usdToGTQ, ledgerKindKey, isVisibleLedgerKind } from '@/lib/utils'
 import type { LedgerEntry } from '@/lib/api-types'
 import { useI18n } from '@/lib/i18n'
 import { CheckCircle, X } from 'lucide-react'
@@ -64,7 +64,7 @@ export default function BalancePage() {
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  const allEntries = data?.pages.flat() ?? []
+  const allEntries = (data?.pages.flat() ?? []).filter(e => isVisibleLedgerKind(e.kind))
 
   return (
     <div className="space-y-6">
@@ -121,7 +121,7 @@ export default function BalancePage() {
                   <p className="text-xs text-text-muted">{formatDate(entry.created_at)}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className={`font-score text-sm font-medium ${entry.delta_cents >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <p className={`font-score text-sm font-medium ${entry.kind === 'withdrawal_release' ? 'text-amber-400' : entry.delta_cents >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {entry.delta_cents >= 0 ? '+' : ''}{fmt(entry.delta_cents)}
                   </p>
                   <p className="text-[10px] text-text-muted">{isUSD ? 'USD' : 'GTQ'}</p>

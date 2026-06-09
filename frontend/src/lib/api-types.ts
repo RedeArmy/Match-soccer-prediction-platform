@@ -236,7 +236,7 @@ export interface SlotResponse {
 }
 
 // ── KYC ───────────────────────────────────────────────────────────────────────
-export type KYCStatus = 'unverified' | 'submitted' | 'under_review' | 'approved' | 'rejected'
+export type KYCStatus = 'unverified' | 'pending' | 'under_review' | 'approved' | 'rejected' | 'expired' | 'escalated'
 export type KYCDocumentType = 'gov_id' | 'selfie' | 'proof_of_address' | 'proof_of_funds'
 export type KYCDocumentStatus = 'pending' | 'approved' | 'rejected'
 
@@ -285,6 +285,22 @@ export interface KYCEventResponse {
 }
 
 // ── Payments ──────────────────────────────────────────────────────────────────
+export interface BankResponse {
+  id:   number
+  name: string
+}
+
+export interface BankAccountTypeResponse {
+  id:   number
+  name: string
+}
+
+export interface AdminBankResponse {
+  id:     number
+  name:   string
+  active: boolean
+}
+
 export type BankTransferStatus = 'pending' | 'approved' | 'rejected'
 export type WithdrawalStatus   = 'pending' | 'approved' | 'rejected' | 'processed'
 
@@ -320,6 +336,12 @@ export interface WithdrawalResponse {
   payout_reference: string | null
   notes:           string | null
   created_at:      string
+}
+
+export interface WithdrawalLimits {
+  min_gtq_cents: number
+  max_gtq_cents: number
+  min_usd_cents: number
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────

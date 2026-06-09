@@ -10,6 +10,8 @@ const (
 	DefaultWithdrawalMinCents = 5_000 // payment.withdrawal_min_cents
 	// DefaultWithdrawalMaxCents is the maximum withdrawal amount in minor units (5 000 GTQ).
 	DefaultWithdrawalMaxCents = 500_000 // payment.withdrawal_max_cents
+	// DefaultWithdrawalMinUSDCents is the minimum withdrawal amount in USD minor units ($4.00).
+	DefaultWithdrawalMinUSDCents = 400 // payment.withdrawal_min_usd_cents
 
 	// Bank transfer amount bounds. The declared amount on a bank transfer proof is
 	// validated against these before the proof is accepted for admin review.
@@ -89,10 +91,12 @@ const (
 	// ParamKeyPaymentMaxUploadBytes is the maximum size in bytes for bank transfer
 	// proof uploads.
 	ParamKeyPaymentMaxUploadBytes = "payment.max_upload_bytes"
-	// ParamKeyWithdrawalMinCents is the minimum withdrawal amount in minor units.
+	// ParamKeyWithdrawalMinCents is the minimum withdrawal amount in GTQ minor units.
 	ParamKeyWithdrawalMinCents = "payment.withdrawal_min_cents"
-	// ParamKeyWithdrawalMaxCents is the maximum withdrawal amount in minor units.
+	// ParamKeyWithdrawalMaxCents is the maximum withdrawal amount in GTQ minor units.
 	ParamKeyWithdrawalMaxCents = "payment.withdrawal_max_cents"
+	// ParamKeyWithdrawalMinUSDCents is the minimum withdrawal amount in USD minor units.
+	ParamKeyWithdrawalMinUSDCents = "payment.withdrawal_min_usd_cents"
 	// ParamKeyBankTransferMinAmountCents is the minimum declared amount in minor
 	// units for a bank transfer proof submission.
 	// Defaults to DefaultBankTransferMinAmountCents (1 000 = 10 GTQ).

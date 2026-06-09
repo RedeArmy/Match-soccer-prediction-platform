@@ -1,7 +1,7 @@
 // BFF transparent proxy — all browser API requests route through here.
 // The Go backend URL is never sent to the browser.
-// Clerk JWT is injected server-side before forwarding.
-import { auth } from '@clerk/nextjs/server'
+// The Clerk JWT is forwarded from the client (obtained via useAuth().getToken());
+// the Go backend validates it via JWKS on every request.
 import { NextRequest, NextResponse } from 'next/server'
 
 const BACKEND = process.env.BACKEND_INTERNAL_URL!
@@ -23,8 +23,6 @@ type Context = { params: Promise<{ path: string[] }> }
 
 async function proxy(req: NextRequest, ctx: Context, method: string): Promise<NextResponse> {
   const { path } = await ctx.params
-  const { getToken } = await auth()
-  const token = await getToken()
 
   // [...]path captures everything AFTER /api/ in the frontend URL.
   // Prepend /api/ so the upstream path matches the backend routing table.
@@ -32,11 +30,21 @@ async function proxy(req: NextRequest, ctx: Context, method: string): Promise<Ne
   const upstreamPath = path.join('/')
   const url = `${BACKEND}/api/${upstreamPath}${req.nextUrl.search}`
 
+  // Forward the Authorization header the client already attached.
+  // Each api.ts call obtains a fresh token via useAuth().getToken() (Clerk
+  // client SDK auto-refreshes), so the client header is always up-to-date.
+  // Using server-side auth().getToken() here is fragile in dev mode: Clerk's
+  // dev-browser cookie may be absent (e.g. after a backend restart), causing
+  // the server to return a stale or null token even though the client session
+  // is valid.  The Go backend validates the JWT via JWKS regardless, so
+  // forwarding the client header is safe.
+  const clientAuth = req.headers.get('authorization')
+
   const headers: Record<string, string> = {
     'X-Request-ID':    req.headers.get('x-request-id') ?? crypto.randomUUID(),
     'X-Forwarded-For': req.headers.get('x-forwarded-for') ?? '',
   }
-  if (token) headers['Authorization'] = `Bearer ${token}`
+  if (clientAuth) headers['Authorization'] = clientAuth
 
   // Forward Content-Type and idempotency key only when present
   const ct = req.headers.get('content-type')

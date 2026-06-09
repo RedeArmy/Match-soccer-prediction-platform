@@ -1,37 +1,21 @@
+'use client'
+
+import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
-type BadgeVariant = 'active' | 'upcoming' | 'ended' | 'pending' | 'approved' | 'rejected' | 'connected' | 'reconnecting' | 'failed'
+type BadgeVariant = 'active' | 'upcoming' | 'ended' | 'pending' | 'approved' | 'rejected' | 'connected' | 'reconnecting' | 'failed' | 'under_review'
 
 const variants: Record<BadgeVariant, string> = {
-  active: 'badge-active',
-  upcoming: 'badge-upcoming',
-  ended: 'badge-ended',
-  pending: 'badge-pending',
-  approved: 'badge-approved',
-  rejected: 'badge-rejected',
-  connected: 'badge-approved',
+  active:       'badge-active',
+  upcoming:     'badge-upcoming',
+  ended:        'badge-ended',
+  pending:      'badge-pending',
+  approved:     'badge-approved',
+  rejected:     'badge-rejected',
+  connected:    'badge-approved',
   reconnecting: 'badge-upcoming',
-  failed: 'badge-rejected',
-}
-
-const labels: Record<string, string> = {
-  active: 'Activo',
-  upcoming: 'Proximo',
-  ended: 'Finalizado',
-  pending: 'Pendiente',
-  approved: 'Aprobado',
-  rejected: 'Rechazado',
-  connected: 'Conectado',
-  reconnecting: 'Reconectando',
-  failed: 'Error',
-  in_progress: 'En curso',
-  open: 'Abierto',
-  finished: 'Finalizado',
-  scheduled: 'Programado',
-  cancelled: 'Cancelado',
-  unverified: 'Sin verificar',
-  submitted: 'Enviado',
-  under_review: 'En revision',
+  failed:       'badge-rejected',
+  under_review: 'badge-review',
 }
 
 interface StatusBadgeProps {
@@ -41,8 +25,12 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, className, size = 'md' }: StatusBadgeProps) {
+  const { t } = useI18n()
   const variant = variants[status as BadgeVariant] ?? 'badge-ended'
-  const label = labels[status] ?? status
+  const i18nKey = `status.${status}`
+  const translated = t(i18nKey)
+  // t() returns the key itself when no entry exists; fall back to the raw status string.
+  const label = translated !== i18nKey ? translated : status
 
   return (
     <span

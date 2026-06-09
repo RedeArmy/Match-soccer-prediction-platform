@@ -2,16 +2,13 @@
 
 import Link from 'next/link'
 import { UserButton, SignedIn, SignedOut } from '@clerk/nextjs'
-import { useExchangeRate } from '@/hooks/useExchangeRate'
-import { formatRate } from '@/lib/utils'
-import { LayoutDashboard, Menu, TrendingUp, Trophy, Wallet } from 'lucide-react'
+import { LayoutDashboard, Menu, Trophy, Wallet } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { MobileNav } from './MobileNav'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import { useI18n } from '@/lib/i18n'
 
 export function Header() {
-  const { data: rate } = useExchangeRate()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { t } = useI18n()
 
@@ -54,16 +51,6 @@ export function Header() {
             </nav>
 
             <div className="flex items-center gap-3">
-              {rate && (
-                <div className="hidden items-center gap-1 rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-text-muted lg:flex">
-                  <TrendingUp className="h-3 w-3 text-gold-400" />
-                  <span className="font-score">
-                    Q{formatRate(rate.sell_rate)}/<span className="text-text-secondary">USD</span>
-                  </span>
-                  {rate.stale && <span className="ml-1 text-red-400">●</span>}
-                </div>
-              )}
-
               <AuthSection t={t} />
 
               <button

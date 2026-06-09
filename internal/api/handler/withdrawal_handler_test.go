@@ -29,6 +29,7 @@ func withdrawalRouter(t *testing.T, svc *stubWithdrawalSvc) http.Handler {
 	})
 	r.Post("/withdrawals", h.Create)
 	r.Get("/withdrawals", h.ListMine)
+	r.Get("/withdrawals/limits", h.Limits)
 	r.Get("/withdrawals/pending", h.AdminListPending)
 	r.Post("/withdrawals/{id}/approve", h.AdminApprove)
 	r.Post("/withdrawals/{id}/reject", h.AdminReject)
@@ -60,7 +61,7 @@ func TestWithdrawalHandler_Create_OK(t *testing.T) {
 	svc := &stubWithdrawalSvc{req: fixedWithdrawal()}
 	router := withdrawalRouter(t, svc)
 	rec := httptest.NewRecorder()
-	body := bytes.NewReader([]byte(`{"amount_cents":5000,"currency":"GTQ","method":"bank_gt","payout_details":{"account_number":"12345678901","bank_name":"BAC Guatemala"}}`))
+	body := bytes.NewReader([]byte(`{"amount_cents":5000,"currency":"GTQ","method":"bank_gt","payout_details":{"bank_name":"BAC Guatemala","account_type":"Monetaria","account_number":"12345678901","account_holder":"Juan Perez"}}`))
 	req := httptest.NewRequest(http.MethodPost, "/withdrawals", body)
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
@@ -95,7 +96,7 @@ func TestWithdrawalHandler_Create_DefaultCurrency(t *testing.T) {
 	svc := &stubWithdrawalSvc{req: fixedWithdrawal()}
 	router := withdrawalRouter(t, svc)
 	rec := httptest.NewRecorder()
-	body := bytes.NewReader([]byte(`{"amount_cents":1000,"method":"bank_gt","payout_details":{"account_number":"12345678901","bank_name":"BAC Guatemala"}}`))
+	body := bytes.NewReader([]byte(`{"amount_cents":1000,"method":"bank_gt","payout_details":{"bank_name":"BAC Guatemala","account_type":"Monetaria","account_number":"12345678901","account_holder":"Juan Perez"}}`))
 	req := httptest.NewRequest(http.MethodPost, "/withdrawals", body)
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
@@ -563,6 +564,46 @@ func TestWithdrawalHandler_AdminProcess_ServiceError(t *testing.T) {
 	router := withdrawalRouter(t, svc)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/withdrawals/1/process", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code < 400 {
+		t.Errorf("expected error status, got %d", rec.Code)
+	}
+}
+
+// ── Limits ────────────────────────────────────────────────────────────────────
+
+func TestWithdrawalHandler_Limits_OK(t *testing.T) {
+	router := withdrawalRouter(t, &stubWithdrawalSvc{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/withdrawals/limits", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		MinGTQCents int `json:"min_gtq_cents"`
+		MaxGTQCents int `json:"max_gtq_cents"`
+		MinUSDCents int `json:"min_usd_cents"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.MinGTQCents != 3000 {
+		t.Errorf("expected min_gtq_cents=3000, got %d", body.MinGTQCents)
+	}
+	if body.MaxGTQCents != 500000 {
+		t.Errorf("expected max_gtq_cents=500000, got %d", body.MaxGTQCents)
+	}
+	if body.MinUSDCents != 400 {
+		t.Errorf("expected min_usd_cents=400, got %d", body.MinUSDCents)
+	}
+}
+
+func TestWithdrawalHandler_Limits_ServiceError(t *testing.T) {
+	svc := &stubWithdrawalSvc{err: errors.New("db down")}
+	router := withdrawalRouter(t, svc)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/withdrawals/limits", nil)
 	router.ServeHTTP(rec, req)
 	if rec.Code < 400 {
 		t.Errorf("expected error status, got %d", rec.Code)

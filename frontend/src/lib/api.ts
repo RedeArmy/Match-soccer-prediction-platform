@@ -18,10 +18,14 @@ import type {
   KYCDocumentResponse,
   KYCRequirementsResponse,
   KYCEventResponse,
+  BankResponse,
+  BankAccountTypeResponse,
+  AdminBankResponse,
   BankTransferResponse,
   PaymentIntentResponse,
   PayPalOrderResponse,
   WithdrawalResponse,
+  WithdrawalLimits,
   InboxResponse,
   PreferenceResponse,
   CursorPaged,
@@ -224,7 +228,11 @@ class APIClient {
 
   // ── Withdrawals ───────────────────────────────────────────────────────────
 
-  createWithdrawal(token: string, data: { amount_cents: number; method: string; [key: string]: unknown }, idempotencyKey: string): Promise<WithdrawalResponse> {
+  getWithdrawalLimits(token: string): Promise<WithdrawalLimits> {
+    return this.request('/api/v1/withdrawals/limits', {}, token)
+  }
+
+  createWithdrawal(token: string, data: { amount_cents: number; currency: string; method: string; payout_details: Record<string, string> }, idempotencyKey: string): Promise<WithdrawalResponse> {
     return this.request('/api/v1/withdrawals', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -234,6 +242,44 @@ class APIClient {
 
   getMyWithdrawals(token: string): Promise<WithdrawalResponse[]> {
     return this.request('/api/v1/withdrawals', {}, token)
+  }
+
+  getBanks(token: string): Promise<BankResponse[]> {
+    return this.request('/api/v1/banks', {}, token)
+  }
+
+  getBankAccountTypes(token: string): Promise<BankAccountTypeResponse[]> {
+    return this.request('/api/v1/bank-account-types', {}, token)
+  }
+
+  // ── Admin: banks ──────────────────────────────────────────────────────────
+
+  adminListBanks(token: string, onlyActive?: boolean): Promise<AdminBankResponse[]> {
+    const qs = onlyActive ? '?active=true' : ''
+    return this.request(`/api/v1/admin/banks${qs}`, {}, token)
+  }
+
+  adminCreateBank(token: string, name: string): Promise<AdminBankResponse> {
+    return this.request('/api/v1/admin/banks', { method: 'POST', body: JSON.stringify({ name }) }, token)
+  }
+
+  adminSetBankActive(token: string, id: number, active: boolean): Promise<AdminBankResponse> {
+    return this.request(`/api/v1/admin/banks/${id}/active`, { method: 'PATCH', body: JSON.stringify({ active }) }, token)
+  }
+
+  // ── Admin: account types ──────────────────────────────────────────────────
+
+  adminListBankAccountTypes(token: string, onlyActive?: boolean): Promise<AdminBankResponse[]> {
+    const qs = onlyActive ? '?active=true' : ''
+    return this.request(`/api/v1/admin/bank-account-types${qs}`, {}, token)
+  }
+
+  adminCreateBankAccountType(token: string, name: string): Promise<AdminBankResponse> {
+    return this.request('/api/v1/admin/bank-account-types', { method: 'POST', body: JSON.stringify({ name }) }, token)
+  }
+
+  adminSetBankAccountTypeActive(token: string, id: number, active: boolean): Promise<AdminBankResponse> {
+    return this.request(`/api/v1/admin/bank-account-types/${id}/active`, { method: 'PATCH', body: JSON.stringify({ active }) }, token)
   }
 
   // ── Notifications ─────────────────────────────────────────────────────────

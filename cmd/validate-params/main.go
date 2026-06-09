@@ -81,6 +81,7 @@ type paramSpec struct {
 //   - 000162_seed_payment_intent_retention_param      (+1)
 //   - 000171_seed_group_entry_fee_param               (+2)
 //   - 000174_update_auth_validation_timeout_param      (default_value update: 5→10)
+//   - 000179_seed_withdrawal_min_usd_cents_param       (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -204,6 +205,7 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyPaymentMaxUploadBytes, defaultValue: strconv.Itoa(domain.DefaultPaymentMaxUploadBytes), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyWithdrawalMinCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMinCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyWithdrawalMaxCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMaxCents), paramType: "int", category: "payment", isRuntime: true},
+	{key: domain.ParamKeyWithdrawalMinUSDCents, defaultValue: strconv.Itoa(domain.DefaultWithdrawalMinUSDCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyBankTransferMinAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMinAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyBankTransferMaxAmountCents, defaultValue: strconv.Itoa(domain.DefaultBankTransferMaxAmountCents), paramType: "int", category: "payment", isRuntime: true},
 	{key: domain.ParamKeyPaymentIntentTTLMinutes, defaultValue: strconv.Itoa(domain.DefaultPaymentIntentTTLMinutes), paramType: "int", category: "payment", isRuntime: true},

@@ -121,7 +121,15 @@ func (p *JWKSProvider) ValidateToken(ctx context.Context, rawToken string) (stri
 		p.fallbackMu.Unlock()
 	}
 
-	token, err := jwt.Parse([]byte(rawToken), jwt.WithKeySet(keySet), jwt.WithValidate(true))
+	// WithAcceptableSkew tolerates up to 10 s of clock drift between the host
+	// and Clerk's token-signing servers, matching the clockSkewInMs: 10_000
+	// configured in the Next.js Clerk middleware.
+	token, err := jwt.Parse(
+		[]byte(rawToken),
+		jwt.WithKeySet(keySet),
+		jwt.WithValidate(true),
+		jwt.WithAcceptableSkew(10*time.Second),
+	)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}

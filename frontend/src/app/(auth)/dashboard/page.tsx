@@ -3,11 +3,11 @@
 import { useState, useRef } from 'react'
 import { useAuth, useUser } from '@clerk/nextjs'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDownLeft, ArrowUpRight, Bell, ChevronLeft, ChevronRight, Plus, ShieldAlert, Trophy, Users } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Bell, ChevronLeft, ChevronRight, Plus, ShieldAlert, ShieldCheck, Trophy, Users } from 'lucide-react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import { useSSE } from '@/hooks/useSSE'
-import { useKYCStatus } from '@/hooks/useKYCStatus'
+import { useKYCEffectiveStatus } from '@/hooks/useKYCEffectiveStatus'
 import { BalanceCard } from '@/components/balance/BalanceCard'
 import { GroupDialog } from '@/components/groups/GroupDialog'
 import { PendingApprovalsDialog } from '@/components/groups/PendingApprovalsDialog'
@@ -15,7 +15,7 @@ import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { PredictionPanel } from '@/components/predictions/PredictionPanel'
-import { formatDate, ledgerKindKey } from '@/lib/utils'
+import { formatDate, ledgerKindKey, isVisibleLedgerKind } from '@/lib/utils'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useI18n } from '@/lib/i18n'
 import type { LedgerEntry } from '@/lib/api-types'
@@ -34,7 +34,7 @@ export default function DashboardPage() {
   const [pendingGroupId, setPendingGroupId] = useState<number | null>(null)
   const [pendingGroupName, setPendingGroupName] = useState('')
 
-  const { data: kyc } = useKYCStatus()
+  const { kyc, effectiveStatus: kycEffectiveStatus } = useKYCEffectiveStatus()
   const { data: groups, isLoading: loadingGroups } = useQuery({
     queryKey: ['my-groups'],
     queryFn: async () => {
@@ -63,6 +63,7 @@ export default function DashboardPage() {
 
   const kycApproved = kyc?.status === 'approved'
   const displayName = (user?.firstName ?? t('dashboard.player')).toUpperCase()
+  const visibleLedger = (ledger ?? []).filter(e => isVisibleLedgerKind(e.kind))
 
   return (
     <div className="space-y-8">
@@ -86,14 +87,29 @@ export default function DashboardPage() {
         <div className="space-y-4 lg:col-span-2">
           <BalanceCard />
 
-          {!kycApproved && (
+          {kycApproved ? (
+            <div className="card p-4 border border-green-500/20 bg-green-500/5">
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="h-5 w-5 shrink-0 text-green-400" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-green-300">{t('dashboard.kycVerifiedTitle')}</p>
+                    <StatusBadge status="approved" size="sm" />
+                  </div>
+                  <p className="mt-0.5 text-xs text-text-secondary">
+                    {t('dashboard.kycVerifiedCopy')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
             <div className="card p-4">
               <div className="flex items-start gap-3">
                 <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-gold-400" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium text-text-primary">{t('dashboard.kycTitle')}</p>
-                    {kyc?.status && <StatusBadge status={kyc.status} size="sm" />}
+                    {kyc?.status && <StatusBadge status={kycEffectiveStatus} size="sm" />}
                   </div>
                   <p className="mt-0.5 text-xs text-text-secondary text-center">
                     {t('dashboard.kycCopy')}
@@ -175,7 +191,7 @@ export default function DashboardPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
             {t('dashboard.recentTransactions')}
           </h2>
-          {(ledger?.length ?? 0) > 0 && (
+          {visibleLedger.length > 0 && (
             <div className="ml-auto flex items-center gap-1">
               <button
                 type="button"
@@ -198,21 +214,21 @@ export default function DashboardPage() {
         </div>
 
         {loadingLedger && <LoadingState rows={1} />}
-        {!loadingLedger && (ledger?.length ?? 0) === 0 && (
+        {!loadingLedger && visibleLedger.length === 0 && (
           <p className="py-4 text-center text-sm text-text-muted">{t('dashboard.noTransactions')}</p>
         )}
-        {!loadingLedger && (ledger?.length ?? 0) > 0 && (
+        {!loadingLedger && visibleLedger.length > 0 && (
           <div
             ref={txScrollRef}
             className="no-scrollbar flex gap-4 overflow-x-auto scroll-smooth pb-1 [scroll-snap-type:x_mandatory]"
           >
-            {ledger?.map((entry) => (
+            {visibleLedger.map((entry) => (
               <TxCard key={entry.id} entry={entry} t={t} />
             ))}
           </div>
         )}
 
-        {!loadingLedger && (ledger?.length ?? 0) > 0 && (
+        {!loadingLedger && visibleLedger.length > 0 && (
           <div className="mt-3 flex justify-end">
             <Link href="/balance" className="text-xs text-gold-400 hover:text-gold-300">
               {t('common.viewAll')}
@@ -250,20 +266,23 @@ function TxCard({ entry, t }: Readonly<TxCardProps>) {
   const { fmt, isUSD } = useCurrency()
   const isCredit = entry.delta_cents >= 0
   const isPrize = entry.kind === 'prize'
+  const isRefund = entry.kind === 'withdrawal_release'
 
   const iconEl = isPrize
     ? <Trophy className="h-4 w-4 text-gold-400" />
-    : isCredit
-      ? <ArrowUpRight className="h-4 w-4 text-green-400" />
-      : <ArrowDownLeft className="h-4 w-4 text-red-400" />
+    : isRefund
+      ? <ArrowUpRight className="h-4 w-4 text-amber-400" />
+      : isCredit
+        ? <ArrowUpRight className="h-4 w-4 text-green-400" />
+        : <ArrowDownLeft className="h-4 w-4 text-red-400" />
 
   const iconBg = isPrize
     ? 'bg-gold-400/20'
-    : isCredit ? 'bg-green-400/20' : 'bg-red-400/20'
+    : isRefund ? 'bg-amber-400/20' : isCredit ? 'bg-green-400/20' : 'bg-red-400/20'
 
   const amountColor = isPrize
     ? 'text-gold-400'
-    : isCredit ? 'text-green-400' : 'text-red-400'
+    : isRefund ? 'text-amber-400' : isCredit ? 'text-green-400' : 'text-red-400'
 
   const displayAmount = isUSD
     ? fmt(entry.delta_cents)

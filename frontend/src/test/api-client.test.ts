@@ -348,7 +348,7 @@ describe('api – payment and withdrawal methods', () => {
 
   it('createWithdrawal sends POST with idempotency key', async () => {
     mockFetch.mockResolvedValueOnce(makeResponse({ id: 1 }))
-    await api.createWithdrawal('tok', { amount_cents: 500, method: 'bank' }, 'idem_wdl')
+    await api.createWithdrawal('tok', { amount_cents: 500, currency: 'GTQ', method: 'bank_gt', payout_details: { bank_name: 'Test', account_number: '123', account_type: 'Ahorros GTQ', account_holder: 'Test User' } }, 'idem_wdl')
     const [, init] = mockFetch.mock.calls[0]
     expect((init as RequestInit).method).toBe('POST')
     const headers = (init as RequestInit).headers as Record<string, string>
