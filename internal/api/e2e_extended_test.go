@@ -162,16 +162,18 @@ func TestE2E_WithdrawalLifecycle_ApproveAndProcess(t *testing.T) {
 	}
 }
 
-// ── TestE2E_WithdrawalLifecycle_RejectReleasesBalance ─────────────────────────
+// ── TestE2E_WithdrawalLifecycle_RejectDoesNotAffectBalance ────────────────────
 //
-// Verifies that rejecting a withdrawal releases the reserved balance so the
-// user's available balance is fully restored:
+// Verifies the "deduct on approve" contract: creating a withdrawal request does
+// not touch the user's balance; rejecting it leaves the balance equally
+// unchanged. The balance is only ever reduced when the admin approves (see
+// TestE2E_WithdrawalLifecycle_ApproveDeductsBalance).
 //
-//  1. User submits withdrawal (20 000 cents reserved).
-//  2. GET /users/me/balance confirms available = total - reserved.
+//  1. User submits withdrawal — balance is NOT touched.
+//  2. GET /users/me/balance confirms available == total (no reservation).
 //  3. Admin rejects with notes.
-//  4. GET /users/me/balance confirms available == total (reservation released).
-func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
+//  4. GET /users/me/balance confirms available == total (still unchanged).
+func TestE2E_WithdrawalLifecycle_RejectDoesNotAffectBalance(t *testing.T) {
 	skipIfNoE2EDB(t)
 	cleanE2ETables(t)
 
@@ -188,7 +190,7 @@ func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
 	adminToken := signJWT("e2e-admin")
 	userToken := signJWT("e2e-user")
 
-	// Step 1 — submit withdrawal; amount is reserved.
+	// Step 1 — submit withdrawal; balance is NOT reserved at this point.
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/withdrawals", userToken,
 		jsonBody(t, map[string]any{
 			"amount_cents":   withdrawalAmount,
@@ -204,7 +206,7 @@ func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
 		t.Fatalf("decode create-withdrawal: %v", err)
 	}
 
-	// Step 2 — reservation reduces available balance.
+	// Step 2 — balance must be unchanged (no reservation on create).
 	rec = doRequest(t, h, http.MethodGet, "/api/v1/users/me/balance", userToken, nil)
 	assertStatus(t, rec, http.StatusOK, "get balance before reject")
 	var beforeReject struct {
@@ -213,9 +215,8 @@ func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&beforeReject); err != nil {
 		t.Fatalf("decode balance before reject: %v", err)
 	}
-	wantBefore := totalBalance - withdrawalAmount
-	if beforeReject.AvailableCents != wantBefore {
-		t.Errorf("available before reject: want %d, got %d", wantBefore, beforeReject.AvailableCents)
+	if beforeReject.AvailableCents != totalBalance {
+		t.Errorf("available before reject: want %d (unchanged), got %d", totalBalance, beforeReject.AvailableCents)
 	}
 
 	// Step 3 — admin rejects; notes are required.
@@ -233,7 +234,7 @@ func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
 		t.Errorf("reject: want status %q, got %q", "rejected", rejected.Status)
 	}
 
-	// Step 4 — reservation is released; full balance restored.
+	// Step 4 — balance still unchanged after rejection.
 	rec = doRequest(t, h, http.MethodGet, "/api/v1/users/me/balance", userToken, nil)
 	assertStatus(t, rec, http.StatusOK, "get balance after reject")
 	var afterReject struct {
@@ -243,8 +244,83 @@ func TestE2E_WithdrawalLifecycle_RejectReleasesBalance(t *testing.T) {
 		t.Fatalf("decode balance after reject: %v", err)
 	}
 	if afterReject.AvailableCents != totalBalance {
-		t.Errorf("available after reject: want %d (fully restored), got %d",
-			totalBalance, afterReject.AvailableCents)
+		t.Errorf("available after reject: want %d (unchanged), got %d", totalBalance, afterReject.AvailableCents)
+	}
+}
+
+// ── TestE2E_WithdrawalLifecycle_ApproveDeductsBalance ─────────────────────────
+//
+// Verifies the "deduct on approve" contract: the balance is reduced only when
+// the admin approves the withdrawal, not when the user creates it.
+//
+//  1. User submits withdrawal — available == total (no change).
+//  2. Admin approves — available == total - withdrawn.
+//  3. Admin processes — available unchanged (already deducted at approve).
+func TestE2E_WithdrawalLifecycle_ApproveDeductsBalance(t *testing.T) {
+	skipIfNoE2EDB(t)
+	cleanE2ETables(t)
+
+	jwksURL, signJWT := testJWKSServer(t)
+	h := newE2EServerUnlimited(t, jwksURL).Routes(context.Background())
+
+	_ = seedE2EUser(t, "admin@e2e.test", "e2e-admin", domain.RoleAdmin)
+	userID := seedE2EUser(t, "user@e2e.test", "e2e-user", domain.RoleUser)
+	const totalBalance = 50_000
+	const withdrawalAmount = 20_000
+	seedE2EBalance(t, userID, totalBalance)
+	setE2EKYCTier(t, userID, domain.KYCTierTwo)
+
+	adminToken := signJWT("e2e-admin")
+	userToken := signJWT("e2e-user")
+
+	checkBalance := func(label string) int {
+		r := doRequest(t, h, http.MethodGet, "/api/v1/users/me/balance", userToken, nil)
+		assertStatus(t, r, http.StatusOK, label)
+		var b struct {
+			AvailableCents int `json:"available_cents"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			t.Fatalf("%s: decode balance: %v", label, err)
+		}
+		return b.AvailableCents
+	}
+
+	// Step 1 — create withdrawal; balance must not change.
+	rec := doRequest(t, h, http.MethodPost, "/api/v1/withdrawals", userToken,
+		jsonBody(t, map[string]any{
+			"amount_cents":   withdrawalAmount,
+			"currency":       "GTQ",
+			"method":         "paypal",
+			"payout_details": map[string]string{"paypal_email": "user@paypal.test"},
+		}))
+	assertStatus(t, rec, http.StatusCreated, "create withdrawal")
+	var created struct {
+		ID int `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create-withdrawal: %v", err)
+	}
+	if got := checkBalance("after create"); got != totalBalance {
+		t.Errorf("after create: want %d (unchanged), got %d", totalBalance, got)
+	}
+
+	// Step 2 — admin approves; balance is deducted now.
+	rec = doRequest(t, h, http.MethodPost,
+		fmt.Sprintf("/api/v1/admin/withdrawals/%d/approve", created.ID),
+		adminToken, jsonBody(t, map[string]any{"notes": "verified"}))
+	assertStatus(t, rec, http.StatusOK, "admin approve")
+	wantAfterApprove := totalBalance - withdrawalAmount
+	if got := checkBalance("after approve"); got != wantAfterApprove {
+		t.Errorf("after approve: want %d (deducted), got %d", wantAfterApprove, got)
+	}
+
+	// Step 3 — admin processes; balance must not change again.
+	rec = doRequest(t, h, http.MethodPost,
+		fmt.Sprintf("/api/v1/admin/withdrawals/%d/process", created.ID),
+		adminToken, nil)
+	assertStatus(t, rec, http.StatusOK, "admin process")
+	if got := checkBalance("after process"); got != wantAfterApprove {
+		t.Errorf("after process: want %d (unchanged), got %d", wantAfterApprove, got)
 	}
 }
 
