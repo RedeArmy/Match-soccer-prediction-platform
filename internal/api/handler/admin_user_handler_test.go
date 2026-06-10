@@ -27,6 +27,7 @@ func newAdminUserRouter(svc *stubAdminUserSvc) http.Handler {
 	r.Post("/users/{id}/ban", h.BanUser)
 	r.Delete("/users/{id}/ban", h.UnbanUser)
 	r.Post(adminUserPathBulkBan, h.BulkBan)
+	r.Patch("/users/{id}/role", h.SetRole)
 	return r
 }
 
@@ -288,6 +289,77 @@ func TestAdminBulkBan_ServiceError_Returns500(t *testing.T) {
 	svc := &stubAdminUserSvc{err: errors.New("db failure")}
 	req := withCaller(
 		newAdminRequestJSON(http.MethodPost, adminUserPathBulkBan, `{"user_ids":[1],"reason":"bots"}`),
+		adminCaller,
+	)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, w.Code)
+	}
+}
+
+// ── SetRole ───────────────────────────────────────────────────────────────────
+
+func TestAdminSetRole_Success_Returns200(t *testing.T) {
+	svc := &stubAdminUserSvc{user: &domain.User{ID: 5, Role: domain.RoleAdmin}}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPatch, "/users/5/role", `{"role":"admin"}`),
+		adminCaller,
+	)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestAdminSetRole_InvalidID_Returns422(t *testing.T) {
+	svc := &stubAdminUserSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPatch, "/users/abc/role", `{"role":"admin"}`),
+		adminCaller,
+	)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminSetRole_NoCallerInContext_Returns401(t *testing.T) {
+	svc := &stubAdminUserSvc{}
+	req := newAdminRequestJSON(http.MethodPatch, "/users/5/role", `{"role":"admin"}`)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestAdminSetRole_EmptyRole_Returns422(t *testing.T) {
+	svc := &stubAdminUserSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPatch, "/users/5/role", `{"role":""}`),
+		adminCaller,
+	)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminSetRole_BadJSON_Returns422(t *testing.T) {
+	svc := &stubAdminUserSvc{}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPatch, "/users/5/role", `not-json`),
+		adminCaller,
+	)
+	w := doReq(newAdminUserRouter(svc), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestAdminSetRole_ServiceError_Returns500(t *testing.T) {
+	svc := &stubAdminUserSvc{err: errors.New("db failure")}
+	req := withCaller(
+		newAdminRequestJSON(http.MethodPatch, "/users/5/role", `{"role":"user"}`),
 		adminCaller,
 	)
 	w := doReq(newAdminUserRouter(svc), req)

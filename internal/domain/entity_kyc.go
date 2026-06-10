@@ -113,6 +113,7 @@ const (
 type KYCProfile struct {
 	ID                int
 	UserID            int
+	UserEmail         string // denormalised from users; populated by admin list queries
 	Status            KYCStatus
 	Tier              KYCTier
 	FullName          string

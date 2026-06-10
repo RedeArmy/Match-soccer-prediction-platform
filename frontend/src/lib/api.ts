@@ -34,6 +34,9 @@ import type {
   ScoringRuleResponse,
   CircuitBreakerResponse,
   TournamentModeRequest,
+  CursorPaged,
+  AdminUserResponse,
+  AdminUserProfileResponse,
 } from './api-types'
 
 // ── Base fetch ────────────────────────────────────────────────────────────────
@@ -312,14 +315,40 @@ class APIClient {
     return this.request('/api/v1/admin/stats', {}, token)
   }
 
+  adminListUsers(token: string, params?: { search?: string; banned?: boolean; role?: string; cursor?: string }): Promise<CursorPaged<AdminUserResponse>> {
+    const q = new URLSearchParams()
+    if (params?.search) q.set('search', params.search)
+    if (params?.banned !== undefined) q.set('banned', String(params.banned))
+    if (params?.role) q.set('role', params.role)
+    if (params?.cursor) q.set('cursor', params.cursor)
+    q.set('limit', '50')
+    return this.request(`/api/v1/admin/users?${q}`, {}, token)
+  }
+
+  adminGetUserProfile(token: string, id: number): Promise<AdminUserProfileResponse> {
+    return this.request(`/api/v1/admin/users/${id}`, {}, token)
+  }
+
+  adminBanUser(token: string, id: number, reason: string): Promise<AdminUserResponse> {
+    return this.request(`/api/v1/admin/users/${id}/ban`, { method: 'POST', body: JSON.stringify({ reason }) }, token)
+  }
+
+  adminUnbanUser(token: string, id: number): Promise<AdminUserResponse> {
+    return this.request(`/api/v1/admin/users/${id}/ban`, { method: 'DELETE' }, token)
+  }
+
+  adminSetUserRole(token: string, id: number, role: string): Promise<AdminUserResponse> {
+    return this.request(`/api/v1/admin/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }, token)
+  }
+
   adminGetKYCQueue(token: string, status?: string): Promise<KYCProfileResponse[]> {
     const q = new URLSearchParams()
     if (status) q.set('status', status)
     return this.request(`/api/v1/admin/kyc/queue?${q}`, {}, token)
   }
 
-  adminApproveKYC(token: string, profileID: number): Promise<KYCProfileResponse> {
-    return this.request(`/api/v1/admin/kyc/profiles/${profileID}/approve`, { method: 'POST' }, token)
+  adminApproveKYC(token: string, profileID: number, tier = 2): Promise<KYCProfileResponse> {
+    return this.request(`/api/v1/admin/kyc/profiles/${profileID}/approve`, { method: 'POST', body: JSON.stringify({ tier }) }, token)
   }
 
   adminRejectKYC(token: string, profileID: number, reason: string): Promise<KYCProfileResponse> {

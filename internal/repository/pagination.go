@@ -83,8 +83,9 @@ type PredictionAdminFilters struct {
 
 // KYCProfileFilters narrows a kyc_profiles query for admin listing.
 type KYCProfileFilters struct {
-	Status *domain.KYCStatus // nil = all active review states
-	Tier   *domain.KYCTier
+	Status      *domain.KYCStatus // nil = all active review states (pending/under_review/escalated)
+	Tier        *domain.KYCTier
+	AllStatuses bool // when true, skip the default status restriction and return all profiles
 }
 
 // CursorPage carries parameters for keyset-based (cursor) listing.

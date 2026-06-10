@@ -336,3 +336,45 @@ func TestAdminUserService_GetProfile_UserNotFound_ReturnsError(t *testing.T) {
 		t.Fatal("expected error when user not found, got nil")
 	}
 }
+
+// ── SetRole ───────────────────────────────────────────────────────────────────
+
+func TestAdminUserService_SetRole_HappyPath_ReturnsUser(t *testing.T) {
+	target := &domain.User{ID: 5, Role: domain.RoleUser}
+	svc := newAdminUserSvc(&stubUserRepo{user: target}, &stubMemberRepo{})
+
+	got, err := svc.SetRole(context.Background(), 5, 99, domain.RoleAdmin)
+	if err != nil {
+		t.Fatalf(adminUserUnexpectedErr, err)
+	}
+	if got.ID != 5 {
+		t.Errorf("expected user ID 5, got %d", got.ID)
+	}
+}
+
+func TestAdminUserService_SetRole_SelfDemotion_ReturnsValidationError(t *testing.T) {
+	svc := newAdminUserSvc(&stubUserRepo{}, &stubMemberRepo{})
+
+	_, err := svc.SetRole(context.Background(), 99, 99, domain.RoleUser)
+	if err == nil {
+		t.Fatal("expected error when changing own role, got nil")
+	}
+}
+
+func TestAdminUserService_SetRole_InvalidRole_ReturnsValidationError(t *testing.T) {
+	svc := newAdminUserSvc(&stubUserRepo{}, &stubMemberRepo{})
+
+	_, err := svc.SetRole(context.Background(), 5, 99, domain.UserRole("superadmin"))
+	if err == nil {
+		t.Fatal("expected validation error for unknown role, got nil")
+	}
+}
+
+func TestAdminUserService_SetRole_RepoError_Propagates(t *testing.T) {
+	svc := newAdminUserSvc(&stubUserRepo{err: errors.New(adminUserDBError)}, &stubMemberRepo{})
+
+	_, err := svc.SetRole(context.Background(), 5, 99, domain.RoleAdmin)
+	if err == nil {
+		t.Fatal("expected repo error to propagate, got nil")
+	}
+}

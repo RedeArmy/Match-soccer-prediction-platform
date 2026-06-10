@@ -226,6 +226,42 @@ func (h *AdminUserHandler) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, adminUserToResponse(user))
 }
 
+type setRoleRequest struct {
+	Role string `json:"role"`
+}
+
+// SetRole handles PATCH /admin/users/{id}/role.
+func (h *AdminUserHandler) SetRole(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil || id <= 0 {
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidUserID))
+		return
+	}
+
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	req, err := decodeJSON[setRoleRequest](r)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if req.Role == "" {
+		writeError(w, r, h.log, apperrors.Validation("role is required"))
+		return
+	}
+
+	user, err := h.svc.SetRole(r.Context(), id, caller.ID, domain.UserRole(req.Role))
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, adminUserToResponse(user))
+}
+
 type bulkBanRequest struct {
 	UserIDs []int  `json:"user_ids"`
 	Reason  string `json:"reason"`

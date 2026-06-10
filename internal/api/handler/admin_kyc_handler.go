@@ -40,6 +40,8 @@ func (h *AdminKYCHandler) ListQueue(w http.ResponseWriter, r *http.Request) {
 	if s := q.Get("status"); s != "" {
 		st := domain.KYCStatus(s)
 		f.Status = &st
+	} else {
+		f.AllStatuses = true
 	}
 	profiles, err := h.svc.ListQueue(r.Context(), f, repository.Pagination{Limit: limit, Offset: offset})
 	if err != nil {

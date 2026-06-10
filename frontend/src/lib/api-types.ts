@@ -258,6 +258,8 @@ export type KYCDocumentStatus = 'pending' | 'approved' | 'rejected'
 
 export interface KYCProfileResponse {
   id:              number
+  user_id:         number
+  user_email:      string
   status:          KYCStatus
   tier:            number
   full_name:       string | null
@@ -396,9 +398,38 @@ export interface SSENotificationPayload {
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
-export interface AdminUserResponse extends UserResponse {
-  groups_count: number
-  balance_cents: number
+export interface AdminUserResponse {
+  id:         number
+  name:       string
+  email:      string
+  role:       string
+  locale:     string
+  banned_at:  string | null
+  banned_by:  number | null
+  ban_reason: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminPaymentResponse {
+  id:           number
+  quiniela_id:  number
+  user_id:      number
+  amount:       number
+  currency:     string
+  status:       string
+  reference:    string | null
+  reviewed_by:  number | null
+  notes:        string
+  confirmed_at: string | null
+  created_at:   string
+  updated_at:   string
+}
+
+export interface AdminUserProfileResponse {
+  user:        AdminUserResponse
+  memberships: MemberResponse[]
+  payments:    AdminPaymentResponse[]
 }
 
 export interface DashboardStatsResponse {

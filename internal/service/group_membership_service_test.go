@@ -1101,14 +1101,40 @@ func TestGroupMembershipService_Leave_WithOutboxWriter_WritesEvent(t *testing.T)
 	}
 }
 
+// errOnNthGetQuinielaRepo wraps stubQuinielaRepo and returns an error on the
+// Nth call to GetByID. ApproveJoin's own lookup (call 1) succeeds while the
+// secondary lookup inside writeMembershipEvent (call 2) fails, exercising the
+// best-effort fallback path.
+type errOnNthGetQuinielaRepo struct {
+	*stubQuinielaRepo
+	n     int
+	calls int
+}
+
+func (r *errOnNthGetQuinielaRepo) GetByID(ctx context.Context, id int) (*domain.Quiniela, error) {
+	r.calls++
+	if r.calls == r.n {
+		return nil, errors.New("quiniela lookup failed")
+	}
+	return r.stubQuinielaRepo.GetByID(ctx, id)
+}
+
 func TestGroupMembershipService_WriteMembershipEvent_QuinielaError_BestEffort(t *testing.T) {
 	approver := activeMembership(1, 10)
 	pending := pendingMembership(99, 1, 42)
 	q := quinielaWithCode(1, "CODE")
 	outboxW := &stubOutboxWriter{}
 
+	// The second GetByID call (inside writeMembershipEvent) returns an error;
+	// the service must swallow it, fall back to a minimal Quiniela, and still
+	// write the outbox event.
+	qRepo := &errOnNthGetQuinielaRepo{
+		stubQuinielaRepo: &stubQuinielaRepo{quiniela: q},
+		n:                2,
+	}
+
 	svc := NewGroupMembershipService(
-		&stubQuinielaRepo{quiniela: q},
+		qRepo,
 		&stubMemberRepo{
 			membership:     approver,
 			membershipByID: pending,
@@ -1121,12 +1147,11 @@ func TestGroupMembershipService_WriteMembershipEvent_QuinielaError_BestEffort(t 
 		WithGroupMembershipOutboxWriter(outboxW),
 	)
 
-	// Approval must succeed and the outbox event must be written.
 	if _, err := svc.ApproveJoin(context.Background(), 1, 99, 10); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if outboxW.writes != 1 {
-		t.Errorf("expected 1 outbox write, got %d", outboxW.writes)
+		t.Errorf("expected 1 outbox write despite quiniela lookup error, got %d", outboxW.writes)
 	}
 }
 

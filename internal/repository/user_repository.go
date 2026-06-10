@@ -158,6 +158,21 @@ func (r *PostgresUserRepository) UpdateLocale(ctx context.Context, userID int, l
 	return nil
 }
 
+func (r *PostgresUserRepository) SetRole(ctx context.Context, userID int, role domain.UserRole) (*domain.User, error) {
+	row := r.db.QueryRow(ctx,
+		`UPDATE users SET role=$1, updated_at=NOW() WHERE id=$2`+activeOnly+` RETURNING `+userColumns,
+		role, userID,
+	)
+	result, err := scanUser(row)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, apperrors.NotFound(msgUserNotFound)
+	}
+	return result, nil
+}
+
 func (r *PostgresUserRepository) Delete(ctx context.Context, id int) error {
 	tag, err := r.db.Exec(ctx,
 		`UPDATE users SET deleted_at=NOW() WHERE id=$1`+activeOnly, id,

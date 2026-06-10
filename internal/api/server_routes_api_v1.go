@@ -245,6 +245,7 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 		r.Get("/users/{id}", d.h.adminUser.GetUserProfile)
 		r.Post("/users/{id}/ban", d.h.adminUser.BanUser)
 		r.Delete("/users/{id}/ban", d.h.adminUser.UnbanUser)
+		r.Patch("/users/{id}/role", d.h.adminUser.SetRole)
 		r.Post("/users/bulk-ban", d.h.adminUser.BulkBan)
 
 		// Groups

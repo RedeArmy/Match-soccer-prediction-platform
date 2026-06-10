@@ -55,6 +55,9 @@ func (r *balanceSvcUserRepo) GetBalance(_ context.Context, _ int) (int, int, err
 	return r.balance, r.reserved, r.err
 }
 func (r *balanceSvcUserRepo) UpdateLocale(_ context.Context, _ int, _ string) error { return r.err }
+func (r *balanceSvcUserRepo) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
+	return nil, r.err
+}
 
 type balanceLedgerRepoStub struct {
 	entries []*domain.BalanceLedger
