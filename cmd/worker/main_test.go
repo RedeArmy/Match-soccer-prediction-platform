@@ -1045,6 +1045,9 @@ func (r *stubUserRepoForWorker) GetBalance(_ context.Context, _ int) (int, int, 
 	return 0, 0, r.err
 }
 func (r *stubUserRepoForWorker) UpdateLocale(_ context.Context, _ int, _ string) error { return r.err }
+func (r *stubUserRepoForWorker) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
+	return nil, r.err
+}
 
 var _ repository.UserRepository = (*stubUserRepoForWorker)(nil)
 
