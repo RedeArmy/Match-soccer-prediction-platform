@@ -532,43 +532,21 @@ const kycProfileSelectByUserID = kycProfileSelectAll + ` WHERE user_id = $1`
 const kycProfileSelectByID = kycProfileSelectAll + ` WHERE id = $1`
 
 func scanKYCProfile(s rowScanner) (*domain.KYCProfile, error) {
-	p := &domain.KYCProfile{}
-	var status string
-	var tier int
-	var docType *string
-	err := s.Scan(
-		&p.ID, &p.UserID, &status, &tier,
-		&p.FullName, &p.DateOfBirth, &p.Nationality,
-		&docType, &p.DocumentNumber,
-		&p.AddressLine, &p.City, &p.Country, &p.PostalCode,
-		&p.SubmittedAt, &p.ReviewedAt, &p.ReviewedBy, &p.RejectionReason,
-		&p.RiskScore, &p.PEPFlag, &p.SanctionsFlag,
-		&p.BalanceFrozen, &p.FrozenAmountCents, &p.FrozenReason,
-		&p.NextReviewAt, &p.SubmissionIP, &p.CreatedAt, &p.UpdatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, pgx.ErrNoRows
-		}
-		return nil, err
-	}
-	p.Status = domain.KYCStatus(status)
-	p.Tier = domain.KYCTier(tier)
-	if docType != nil {
-		dt := domain.KYCDocumentType(*docType)
-		p.DocumentType = &dt
-	}
-	return p, nil
+	return scanKYCProfileCore(s, false)
 }
 
 // scanKYCProfileWithEmail scans the same columns as scanKYCProfile plus a
 // trailing u.email column appended by ListPending (which JOINs users).
 func scanKYCProfileWithEmail(s rowScanner) (*domain.KYCProfile, error) {
+	return scanKYCProfileCore(s, true)
+}
+
+func scanKYCProfileCore(s rowScanner, includeEmail bool) (*domain.KYCProfile, error) {
 	p := &domain.KYCProfile{}
 	var status string
 	var tier int
 	var docType *string
-	err := s.Scan(
+	dests := []any{
 		&p.ID, &p.UserID, &status, &tier,
 		&p.FullName, &p.DateOfBirth, &p.Nationality,
 		&docType, &p.DocumentNumber,
@@ -577,9 +555,11 @@ func scanKYCProfileWithEmail(s rowScanner) (*domain.KYCProfile, error) {
 		&p.RiskScore, &p.PEPFlag, &p.SanctionsFlag,
 		&p.BalanceFrozen, &p.FrozenAmountCents, &p.FrozenReason,
 		&p.NextReviewAt, &p.SubmissionIP, &p.CreatedAt, &p.UpdatedAt,
-		&p.UserEmail,
-	)
-	if err != nil {
+	}
+	if includeEmail {
+		dests = append(dests, &p.UserEmail)
+	}
+	if err := s.Scan(dests...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, pgx.ErrNoRows
 		}
