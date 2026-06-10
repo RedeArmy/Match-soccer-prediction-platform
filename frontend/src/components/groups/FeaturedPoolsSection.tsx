@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Star, Trophy, Users } from 'lucide-react'
