@@ -499,6 +499,14 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyKYCIPVelocityWindowMinutes:      {5, 1_440},             // 5 min – 24 h
 	domain.ParamKeyKYCIPVelocityMaxSubmissions:     {0, 100},               // 0 (disabled) – 100 per window
 	domain.ParamKeyKYCDocRetentionYears:            {1, 20},                // 1 year minimum – 20 years maximum
+	domain.ParamKeyTournamentGeneralEntryFeeCents:  {0, 100_000_000},       // free – Q1 000 000
+	domain.ParamKeyTournamentRoundEntryFeeCents:    {0, 100_000_000},       // free – Q1 000 000
+	domain.ParamKeyGroupFreeMaxMembers:             {1, 1_000},             // 1 – 1 000 members
+	// Match sync intervals (migration 000186)
+	domain.ParamKeyMatchSyncFastPollIntervalSec: {5, 300},    // 5 s – 5 min
+	domain.ParamKeyMatchSyncSlowPollIntervalSec: {60, 3_600}, // 1 min – 1 h
+	domain.ParamKeyMatchSyncLeagueID:            {1, 99_999},
+	domain.ParamKeyMatchSyncSeason:              {2020, 2100},
 }
 
 // paramStringValidator validates a string system-param value for a specific key.
@@ -577,6 +585,20 @@ var paramStringConstraints = map[string]paramStringValidator{
 			return nil
 		}
 		return apperrors.Validation(fmt.Sprintf("value %q must start with 'https://' or 'mailto:'", value))
+	},
+	// match.sync.enabled is a bool flag; accepted values are the standard Go bool literals.
+	domain.ParamKeyMatchSyncEnabled: func(value string) error {
+		if value == "" || value == "true" || value == "false" || value == "1" || value == "0" {
+			return nil
+		}
+		return apperrors.Validation(fmt.Sprintf("value %q is not a valid bool (accepted: true, false, 1, 0, or empty)", value))
+	},
+	// match.sync.provider must be a recognized external data provider identifier.
+	domain.ParamKeyMatchSyncProvider: func(value string) error {
+		if value == "" || value == "api-football" {
+			return nil
+		}
+		return apperrors.Validation(fmt.Sprintf("value %q is not a recognized provider (accepted: api-football, or empty)", value))
 	},
 	// notify.admin_emails must be empty or a comma-separated list of RFC 5322 addresses.
 	domain.ParamKeyNotifyAdminEmails: func(value string) error {

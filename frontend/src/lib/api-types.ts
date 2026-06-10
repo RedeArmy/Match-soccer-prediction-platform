@@ -167,14 +167,18 @@ export type GroupStatus = 'open' | 'in_progress' | 'finished'
 
 // Returned by GET /api/v1/groups/me — enriched with membership fields.
 export interface GroupResponse {
-  id:                number
-  name:              string
-  group_status:      string
-  membership_status: string
-  role:              'owner' | 'member'
-  invite_code:       string
-  entry_fee:         number
-  currency:          string
+  id:                  number
+  name:                string
+  group_status:        string
+  membership_status:   string
+  role:                'owner' | 'member'
+  invite_code:         string
+  entry_fee:           number
+  currency:            string
+  is_premium:          boolean
+  mode_general:        boolean
+  mode_round:          boolean
+  active_member_count: number
 }
 
 // Returned by GET /api/v1/groups/:id — full group detail.
@@ -187,6 +191,9 @@ export interface GroupDetailResponse {
   status:                string
   entry_fee:             number
   currency:              string
+  is_premium:            boolean
+  mode_general:          boolean
+  mode_round:            boolean
   created_at:            string
   updated_at:            string
 }
@@ -207,10 +214,19 @@ export interface MemberResponse {
 export interface LeaderboardEntry {
   rank:          number
   user_id:       number
+  user_name:     string
   display_name:  string
+  total_points:  number
   points:        number
   prize_cents:   number
+  prize_winner:  boolean
   is_current:    boolean
+  round_points?: Record<string, number>
+}
+
+export interface TournamentModeRequest {
+  mode_general: boolean
+  mode_round:   boolean
 }
 
 // ── Tournament ─────────────────────────────────────────────────────────────────
@@ -386,14 +402,23 @@ export interface AdminUserResponse extends UserResponse {
 }
 
 export interface DashboardStatsResponse {
-  total_users:       number
-  active_users_7d:   number
-  total_groups:      number
-  active_groups:     number
-  pending_kyc:       number
-  pending_withdrawals: number
-  pending_bank_transfers: number
-  total_balance_cents: number
+  groups: {
+    total:    number
+    active:   number
+    inactive: number
+    deleted:  number
+  }
+  users: {
+    total:  number
+    active: number
+    banned: number
+  }
+  payments: {
+    pending:         number
+    confirmed:       number
+    rejected:        number
+    total_collected: number
+  }
 }
 
 export interface SSEStatsResponse {

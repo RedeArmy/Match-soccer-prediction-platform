@@ -77,6 +77,8 @@ type stubTotalPointsPredRepo struct {
 	globalErr         error
 	adminList         []*domain.Prediction
 	adminListErr      error
+	roundPoints       map[int]map[string]int
+	roundPointsErr    error
 }
 
 func (r *stubTotalPointsPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
@@ -100,6 +102,9 @@ func (r *stubTotalPointsPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([
 
 func (r *stubTotalPointsPredRepo) ListAdmin(_ context.Context, _ repository.PredictionAdminFilters, _ repository.Pagination) ([]*domain.Prediction, error) {
 	return r.adminList, r.adminListErr
+}
+func (r *stubTotalPointsPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
+	return r.roundPoints, r.roundPointsErr
 }
 
 // stubTiebreakerRepo implements repository.TiebreakerRepository for ranking tests.
@@ -877,6 +882,58 @@ func TestGetLeaderboard_TiebreakerRepoError_Propagated(t *testing.T) {
 	_, err := svc.GetLeaderboard(context.Background(), 1)
 	if err == nil {
 		t.Fatal("expected error from tiebreaker repo, got nil")
+	}
+}
+
+// ── GetLeaderboardWithRoundBreakdown ──────────────────────────────────────────
+
+func TestGetLeaderboardWithRoundBreakdown_EmptyLeaderboard_ReturnsEmpty(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: rankingTestQuiniela, Status: domain.QuinielaStatusActive}
+	predRepo := &stubTotalPointsPredRepo{pointsByUser: map[int]int{}}
+	svc := newRankingSvc(q, predRepo, nil)
+
+	result, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if result.Entries != nil {
+		t.Errorf("expected nil entries for empty leaderboard, got %v", result.Entries)
+	}
+}
+
+func TestGetLeaderboardWithRoundBreakdown_SetsRoundPoints(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: rankingTestQuiniela, Status: domain.QuinielaStatusActive}
+	userA := &domain.User{ID: 1, Name: rankingAlice}
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 10},
+		roundPoints:  map[int]map[string]int{1: {"round_1": 5, "round_2": 5}},
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA})
+
+	result, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(result.Entries))
+	}
+	if result.Entries[0].RoundPoints["round_1"] != 5 {
+		t.Errorf("expected round_1=5, got %d", result.Entries[0].RoundPoints["round_1"])
+	}
+}
+
+func TestGetLeaderboardWithRoundBreakdown_PointsByUserAndRoundError_Propagates(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: rankingTestQuiniela, Status: domain.QuinielaStatusActive}
+	userA := &domain.User{ID: 1, Name: rankingAlice}
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser:   map[int]int{1: 10},
+		roundPointsErr: errors.New("db error"),
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA})
+
+	_, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error from PointsByUserAndRound, got nil")
 	}
 }
 

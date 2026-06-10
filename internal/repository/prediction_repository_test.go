@@ -1735,3 +1735,136 @@ func TestPredictionRepository_ScoreMatchBatch_ScorerError_RollsBackTransaction(t
 		t.Errorf("expected nil points after rolled-back batch, got %v", *got.Points)
 	}
 }
+
+// ── PointsByUserAndRound ──────────────────────────────────────────────────────
+
+func TestPredictionRepository_PointsByUserAndRound_ReturnsPoints(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, "active", true)
+
+	// Create a match with round_number set.
+	m := seedMatch(t)
+	if _, err := testDB.Exec(ctx, `UPDATE matches SET round_number=1 WHERE id=$1`, m.ID); err != nil {
+		t.Fatalf("set round_number: %v", err)
+	}
+
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := repo.Create(ctx, p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 3
+	p.Points = &pts
+	if err := repo.Update(ctx, p); err != nil {
+		t.Fatalf("update points: %v", err)
+	}
+
+	result, err := repo.PointsByUserAndRound(ctx, q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if result[u.ID]["1"] != 3 {
+		t.Errorf("expected 3 points for user %d round 1, got %d", u.ID, result[u.ID]["1"])
+	}
+}
+
+func TestPredictionRepository_PointsByUserAndRound_ExcludesUnpaidMembers(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	// paid=false — should not appear in results.
+	seedMembership(t, q.ID, u.ID, "active", false)
+
+	m := seedMatch(t)
+	if _, err := testDB.Exec(ctx, `UPDATE matches SET round_number=2 WHERE id=$1`, m.ID); err != nil {
+		t.Fatalf("set round_number: %v", err)
+	}
+
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	if err := repo.Create(ctx, p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 5
+	p.Points = &pts
+	if err := repo.Update(ctx, p); err != nil {
+		t.Fatalf("update points: %v", err)
+	}
+
+	result, err := repo.PointsByUserAndRound(ctx, q.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty result for unpaid member, got %v", result)
+	}
+}
+
+// ── GetScoringCfgSnapshot ─────────────────────────────────────────────────────
+
+func TestPredictionRepository_GetScoringCfgSnapshot_NoLog_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	snap, err := repo.GetScoringCfgSnapshot(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if snap != nil {
+		t.Errorf("expected nil snapshot when no log exists, got %+v", snap)
+	}
+}
+
+func TestPredictionRepository_GetScoringCfgSnapshot_ReturnsEarliestEntry(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	u := seedUser(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := repo.Create(ctx, p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	entries := []domain.PredictionScoreLog{
+		{
+			PredictionID:      p.ID,
+			MatchID:           m.ID,
+			UserID:            u.ID,
+			NewPoints:         5,
+			MatchHomeScore:    1,
+			MatchAwayScore:    0,
+			MatchPhase:        domain.PhaseGroupStage,
+			PredHomeScore:     1,
+			PredAwayScore:     0,
+			CfgExactScore:     5,
+			CfgCorrectOutcome: 2,
+			CfgGoalDiff:       1,
+			CfgExtraTimeBonus: 0,
+			CfgPenaltiesBonus: 0,
+		},
+	}
+	if err := repo.InsertScoringBatch(ctx, entries); err != nil {
+		t.Fatalf("InsertScoringBatch: %v", err)
+	}
+
+	snap, err := repo.GetScoringCfgSnapshot(ctx, m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if snap == nil {
+		t.Fatal("expected snapshot, got nil")
+	}
+	if snap.ExactScore != 5 {
+		t.Errorf("ExactScore: got %d, want 5", snap.ExactScore)
+	}
+	if snap.CorrectOutcome != 2 {
+		t.Errorf("CorrectOutcome: got %d, want 2", snap.CorrectOutcome)
+	}
+}

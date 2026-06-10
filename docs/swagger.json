@@ -1585,6 +1585,178 @@
                 }
             }
         },
+        "/api/v1/admin/match-sync/poll": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin only. Immediately runs PollAndApply outside the scheduler",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-match-sync"
+                ],
+                "summary": "Trigger a manual match-sync poll cycle",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.pollResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/match-sync/reconcile": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin only. Compares every linked, non-finished match against the provider",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-match-sync"
+                ],
+                "summary": "Reconcile local match state against external provider",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "API-Football league ID (default: 1)",
+                        "name": "league_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Season year (default: 2026)",
+                        "name": "season",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.syncDiffItem"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/matches/{id}/external-link": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin only. Associates the internal match with a provider fixture ID so",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-match-sync"
+                ],
+                "summary": "Link match to external provider fixture",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Internal match ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Provider and external fixture ID",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.linkExternalRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.linkExternalResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin only. Reverts the match to manual-only management.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-match-sync"
+                ],
+                "summary": "Remove external provider link from a match",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Internal match ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/notification-dlq": {
             "get": {
                 "security": [
@@ -5088,6 +5260,88 @@
                 }
             }
         },
+        "/api/v1/groups/{id}/tournament-mode": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Configures the hybrid payment mode for a group. Only the group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "groups"
+                ],
+                "summary": "Set tournament payment mode",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Mode flags",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.setTournamentModeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.GroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Validation error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Not the group owner",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Not enough members to enable premium",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/matches": {
             "get": {
                 "security": [
@@ -6636,6 +6890,17 @@
                 "invite_code_expires_at": {
                     "type": "string"
                 },
+                "is_premium": {
+                    "description": "IsPremium is false for free groups (points-only) and true when at least one\npaid mode is active. Frontend renders this as \"Gratis\" (gray) or \"Premium\" (gold).",
+                    "type": "boolean"
+                },
+                "mode_general": {
+                    "description": "ModeGeneral and ModeRound reflect which paid sub-modes are active.",
+                    "type": "boolean"
+                },
+                "mode_round": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -6659,6 +6924,13 @@
                 },
                 "rank": {
                     "type": "integer"
+                },
+                "round_points": {
+                    "description": "RoundPoints maps round_number string (\"1\"–\"9\") to points earned in that round.\nPopulated only when the caller requests a breakdown (GET …/leaderboard?breakdown=true).\nOmitted from the response when nil.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
                 },
                 "total_points": {
                     "type": "integer"
@@ -7648,6 +7920,31 @@
                 }
             }
         },
+        "internal_api_handler.linkExternalRequest": {
+            "type": "object",
+            "properties": {
+                "external_id": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.linkExternalResponse": {
+            "type": "object",
+            "properties": {
+                "external_id": {
+                    "type": "integer"
+                },
+                "match_id": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.metricsSummaryResponse": {
             "type": "object",
             "properties": {
@@ -7756,6 +8053,14 @@
                 }
             }
         },
+        "internal_api_handler.pollResponse": {
+            "type": "object",
+            "properties": {
+                "live_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.previewTemplateRequest": {
             "type": "object",
             "properties": {
@@ -7850,6 +8155,17 @@
                 }
             }
         },
+        "internal_api_handler.setTournamentModeRequest": {
+            "type": "object",
+            "properties": {
+                "mode_general": {
+                    "type": "boolean"
+                },
+                "mode_round": {
+                    "type": "boolean"
+                }
+            }
+        },
         "internal_api_handler.sseStatsResponse": {
             "type": "object",
             "properties": {
@@ -7878,6 +8194,32 @@
                 },
                 "predicted_win_method": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.syncDiffItem": {
+            "type": "object",
+            "properties": {
+                "external_away": {
+                    "type": "integer"
+                },
+                "external_home": {
+                    "type": "integer"
+                },
+                "external_status": {
+                    "type": "string"
+                },
+                "internal_away": {
+                    "type": "integer"
+                },
+                "internal_home": {
+                    "type": "integer"
+                },
+                "internal_status": {
+                    "type": "string"
+                },
+                "match_id": {
+                    "type": "integer"
                 }
             }
         },

@@ -29,15 +29,22 @@ type QuinielaService interface {
 	// (MembershipRoleCreateOwner) of the group may call this; any other caller receives
 	// Forbidden. Returns the updated Quiniela on success.
 	RenameGroup(ctx context.Context, quinielaID, callerUserID int, name string) (*domain.Quiniela, error)
+	// SetTournamentMode configures the hybrid payment mode for a group. Only the
+	// group owner (MembershipRoleCreateOwner) may call this. The group must have
+	// at least MinMembersForActive active members before premium modes can be
+	// enabled (is_premium=true). Disabling premium (is_premium=false) is always
+	// allowed. Returns the updated Quiniela on success.
+	SetTournamentMode(ctx context.Context, quinielaID, callerUserID int, modeGeneral, modeRound bool) (*domain.Quiniela, error)
 }
 
 // quinielaService is the concrete implementation of QuinielaService.
 type quinielaService struct {
-	repo    repository.QuinielaRepository
-	authz   GroupAuthz
-	params  SystemParamService
-	audit   AuditLogger
-	codeGen randcode.Generator
+	repo       repository.QuinielaRepository
+	memberRepo repository.GroupMembershipRepository
+	authz      GroupAuthz
+	params     SystemParamService
+	audit      AuditLogger
+	codeGen    randcode.Generator
 }
 
 // NewQuinielaService constructs a quinielaService with the given dependencies.
@@ -46,6 +53,14 @@ type quinielaService struct {
 // audit records rename operations in the audit trail.
 func NewQuinielaService(repo repository.QuinielaRepository, authz GroupAuthz, params SystemParamService, audit AuditLogger, codeGen randcode.Generator) QuinielaService {
 	return &quinielaService{repo: repo, authz: authz, params: params, audit: audit, codeGen: codeGen}
+}
+
+// WithMemberRepo wires a GroupMembershipRepository into the service so that
+// SetTournamentMode can charge existing members when a free group goes premium.
+func WithMemberRepo(svc QuinielaService, memberRepo repository.GroupMembershipRepository) QuinielaService {
+	qs := svc.(*quinielaService)
+	qs.memberRepo = memberRepo
+	return qs
 }
 
 func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela) error {
@@ -102,7 +117,7 @@ func (s *quinielaService) RenameGroup(ctx context.Context, quinielaID, callerUse
 		return nil, err
 	}
 	if q == nil {
-		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
 	}
 
 	q.Name = name
@@ -121,7 +136,7 @@ func (s *quinielaService) GetByID(ctx context.Context, id int) (*domain.Quiniela
 		return nil, err
 	}
 	if q == nil {
-		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", id))
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, id))
 	}
 	return q, nil
 }
@@ -140,5 +155,78 @@ func (s *quinielaService) GetByInviteCode(ctx context.Context, code string) (*do
 func (s *quinielaService) GetByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error) {
 	return s.repo.ListByOwner(ctx, ownerID)
 }
+
+// SetTournamentMode switches a group between free and premium payment modes.
+//
+// Constraints:
+//   - Caller must hold MembershipRoleCreateOwner.
+//   - Enabling premium (modeGeneral=true or modeRound=true) requires that the
+//     group already has ≥ MinMembersForActive active members; this prevents
+//     activating paid modes in a ghost group with no real participants.
+//   - Disabling both modes always succeeds regardless of member count.
+//
+// When modeGeneral is true, entry_fee is set from
+// tournament.general_entry_fee_cents (or DefaultTournamentGeneralEntryFeeCents).
+// When only modeRound is active, entry_fee remains 0 (round fees are tracked
+// per-round in quiniela_round_entries).
+func (s *quinielaService) SetTournamentMode(
+	ctx context.Context, quinielaID, callerUserID int, modeGeneral, modeRound bool,
+) (*domain.Quiniela, error) {
+	if err := s.authz.RequireOwner(ctx, quinielaID, callerUserID); err != nil {
+		return nil, err
+	}
+
+	isPremium := modeGeneral || modeRound
+
+	if isPremium {
+		if err := s.validatePremiumEligibility(ctx, quinielaID); err != nil {
+			return nil, err
+		}
+	}
+
+	entryFee := 0
+	if modeGeneral {
+		entryFee = s.params.GetInt(ctx, domain.ParamKeyTournamentGeneralEntryFeeCents, domain.DefaultTournamentGeneralEntryFeeCents)
+	}
+
+	if err := s.chargeExistingMembersIfNeeded(ctx, quinielaID, isPremium, entryFee); err != nil {
+		return nil, err
+	}
+
+	return s.repo.UpdateTournamentMode(ctx, quinielaID, isPremium, modeGeneral, modeRound, entryFee)
+}
+
+func (s *quinielaService) validatePremiumEligibility(ctx context.Context, quinielaID int) error {
+	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
+	q, err := s.repo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return err
+	}
+	if q == nil {
+		return apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
+	}
+	if q.Status != domain.QuinielaStatusActive {
+		return apperrors.Validation(fmt.Sprintf("premium mode requires at least %d active members", minMembers))
+	}
+	return nil
+}
+
+func (s *quinielaService) chargeExistingMembersIfNeeded(ctx context.Context, quinielaID int, isPremium bool, entryFee int) error {
+	if !isPremium || entryFee == 0 || s.memberRepo == nil {
+		return nil
+	}
+	existing, err := s.repo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return err
+	}
+	if existing != nil && !existing.IsPremium {
+		if _, err := s.memberRepo.BulkDebitAndMarkPaid(ctx, quinielaID, entryFee); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const errQuinielaNotFound = "quiniela %d not found"
 
 var _ QuinielaService = (*quinielaService)(nil)

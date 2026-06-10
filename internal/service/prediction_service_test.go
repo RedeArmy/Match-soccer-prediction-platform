@@ -118,6 +118,9 @@ func (r *stubPredRepo) ScoreMatchBatch(_ context.Context, _ int, scorer func([]*
 	}
 	return r.err
 }
+func (r *stubPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
+	return nil, nil
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

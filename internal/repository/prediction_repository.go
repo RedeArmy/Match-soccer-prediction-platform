@@ -279,6 +279,50 @@ func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context
 	return collectUserPointTotals(rows)
 }
 
+// PointsByUserAndRound returns a two-level map userID → roundKey → points.
+// roundKey is the round_number cast to text. Only active, paid members are
+// included; predictions with NULL points or matches without a round_number
+// are excluded.
+func (r *PostgresPredictionRepository) PointsByUserAndRound(ctx context.Context, quinielaID int) (map[int]map[string]int, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT gm.user_id,
+		        m.round_number::text AS round_key,
+		        COALESCE(SUM(p.points), 0) AS pts
+		   FROM group_memberships gm
+		   JOIN predictions  p ON p.user_id = gm.user_id
+		   JOIN matches      m ON m.id = p.match_id
+		                      AND m.round_number IS NOT NULL
+		  WHERE gm.quiniela_id = $1
+		    AND gm.status      = 'active'
+		    AND gm.paid        = TRUE
+		    AND p.points       IS NOT NULL
+		  GROUP BY gm.user_id, m.round_number`,
+		quinielaID,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	result := make(map[int]map[string]int)
+	for rows.Next() {
+		var userID int
+		var roundKey string
+		var pts int
+		if err := rows.Scan(&userID, &roundKey, &pts); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		if result[userID] == nil {
+			result[userID] = make(map[string]int)
+		}
+		result[userID][roundKey] = pts
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return result, nil
+}
+
 func collectUserPointTotals(rows pgx.Rows) (map[int]int, error) {
 	pairs, err := collectRows(rows, func(r pgx.Rows) ([2]int, error) {
 		var pair [2]int

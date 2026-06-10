@@ -84,6 +84,9 @@ func (r *stubQuinielaRepo) DistributePrizesAtomically(_ context.Context, _, _ in
 	}
 	return nil
 }
+func (r *stubQuinielaRepo) UpdateTournamentMode(_ context.Context, _ int, _, _, _ bool, _ int) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
+}
 
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.
 // membershipByID is returned by GetByID (used in ApproveJoin to load the pending
@@ -109,7 +112,7 @@ type stubMemberRepo struct {
 }
 
 func (r *stubMemberRepo) Create(_ context.Context, _ *domain.GroupMembership) error { return r.err }
-func (r *stubMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
+func (r *stubMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _, _, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
 	if r.joinErr != nil {
 		return nil, nil, r.joinErr
 	}
@@ -212,6 +215,9 @@ func (r *stubMemberRepo) LeaveMembershipAndTransferOwnership(_ context.Context, 
 }
 func (r *stubMemberRepo) DebitBalanceAndMarkPaid(_ context.Context, _, _, _ int) (*domain.GroupMembership, error) {
 	return r.membership, r.err
+}
+func (r *stubMemberRepo) BulkDebitAndMarkPaid(_ context.Context, _, _ int) ([]int, error) {
+	return nil, r.err
 }
 
 // stubGroupAuthz implements GroupAuthz with configurable per-method errors.
@@ -463,3 +469,118 @@ func TestQuinielaService_RenameGroup_AuthzError_ReturnsError(t *testing.T) {
 		t.Error("expected an error from authz, got nil")
 	}
 }
+
+// ── SetTournamentMode ─────────────────────────────────────────────────────────
+
+func TestQuinielaService_SetTournamentMode_AuthzError_Propagates(t *testing.T) {
+	svc := newQuinielaSvc(
+		&stubQuinielaRepo{},
+		&stubGroupAuthz{requireOwnerErr: apperrors.Forbidden("not owner")},
+	)
+
+	_, err := svc.SetTournamentMode(context.Background(), 1, 99, false, false)
+	if err == nil {
+		t.Fatal("expected error from authz, got nil")
+	}
+}
+
+func TestQuinielaService_SetTournamentMode_FreeMode_CallsUpdateWithFalse(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Status: domain.QuinielaStatusInactive, IsPremium: false}
+	repo := &stubQuinielaRepo{quiniela: q}
+	svc := newQuinielaSvc(repo, &stubGroupAuthz{})
+
+	got, err := svc.SetTournamentMode(context.Background(), 1, 10, false, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected quiniela, got nil")
+	}
+}
+
+func TestQuinielaService_SetTournamentMode_PremiumModeInactiveGroup_ReturnsValidation(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Status: domain.QuinielaStatusInactive}
+	svc := newQuinielaSvc(&stubQuinielaRepo{quiniela: q}, &stubGroupAuthz{})
+
+	_, err := svc.SetTournamentMode(context.Background(), 1, 10, true, false)
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected ErrValidation for inactive group, got %v", err)
+	}
+}
+
+func TestQuinielaService_SetTournamentMode_PremiumModeActiveGroup_Succeeds(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Status: domain.QuinielaStatusActive, IsPremium: true}
+	svc := newQuinielaSvc(&stubQuinielaRepo{quiniela: q}, &stubGroupAuthz{})
+
+	got, err := svc.SetTournamentMode(context.Background(), 1, 10, true, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected quiniela, got nil")
+	}
+}
+
+func TestQuinielaService_SetTournamentMode_PremiumModeGetByIDNil_ReturnsNotFound(t *testing.T) {
+	svc := newQuinielaSvc(&stubQuinielaRepo{quiniela: nil}, &stubGroupAuthz{})
+
+	_, err := svc.SetTournamentMode(context.Background(), 1, 10, true, false)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func newQuinielaSvcWithMemberRepo(qr *stubQuinielaRepo, mr *stubMemberRepo, authz GroupAuthz) QuinielaService {
+	return WithMemberRepo(
+		NewQuinielaService(qr, authz, &noopSystemParamService{}, &noopAuditLogger{}, randcode.Fixed{Code: "AAAAAAAAAA"}),
+		mr,
+	)
+}
+
+func TestQuinielaService_SetTournamentMode_FreeToPremium_BulkChargesMembers(t *testing.T) {
+	// A free, active group being upgraded to premium with a non-zero entry fee
+	// should call BulkDebitAndMarkPaid on existing members.
+	q := &domain.Quiniela{ID: 1, Status: domain.QuinielaStatusActive, IsPremium: false}
+	repo := &stubQuinielaRepo{quiniela: q}
+	mr := &stubMemberRepo{}
+	svc := newQuinielaSvcWithMemberRepo(repo, mr, &stubGroupAuthz{})
+
+	// noopSystemParamService returns 0 for all int params, so entryFee = 0.
+	// BulkDebitAndMarkPaid is only called when entryFee > 0. Verify no error.
+	got, err := svc.SetTournamentMode(context.Background(), 1, 10, true, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected quiniela, got nil")
+	}
+}
+
+func TestQuinielaService_SetTournamentMode_BulkDebitError_Propagates(t *testing.T) {
+	// When entryFee > 0 and BulkDebitAndMarkPaid fails, SetTournamentMode
+	// should propagate the error and not update the mode.
+	q := &domain.Quiniela{ID: 1, Status: domain.QuinielaStatusActive, IsPremium: false}
+	repo := &stubQuinielaRepo{quiniela: q}
+	mr := &stubMemberRepo{err: apperrors.Conflict("insufficient balance")}
+
+	// Use a custom params service that returns a non-zero entry fee so BulkDebit
+	// is actually invoked.
+	params := &fixedIntParamService{value: 100}
+	svc := WithMemberRepo(
+		NewQuinielaService(repo, &stubGroupAuthz{}, params, &noopAuditLogger{}, randcode.Fixed{Code: "AAAAAAAAAA"}),
+		mr,
+	)
+
+	_, err := svc.SetTournamentMode(context.Background(), 1, 10, true, false)
+	if err == nil {
+		t.Fatal("expected error from BulkDebitAndMarkPaid, got nil")
+	}
+}
+
+// fixedIntParamService returns a constant int for all GetInt calls.
+type fixedIntParamService struct {
+	noopSystemParamService
+	value int
+}
+
+func (f *fixedIntParamService) GetInt(_ context.Context, _ string, _ int) int { return f.value }

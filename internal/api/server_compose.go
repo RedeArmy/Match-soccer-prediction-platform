@@ -16,6 +16,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/breaker"
 	"github.com/rede/world-cup-quiniela/pkg/clock"
+	"github.com/rede/world-cup-quiniela/pkg/footballprovider"
 	"github.com/rede/world-cup-quiniela/pkg/payoutenc"
 	"github.com/rede/world-cup-quiniela/pkg/promclient"
 	"github.com/rede/world-cup-quiniela/pkg/randcode"
@@ -91,6 +92,7 @@ type appHandlers struct {
 	exchangeRate       *handler.ExchangeRateHandler
 	bank               *handler.BankHandler
 	adminBank          *handler.AdminBankHandler
+	adminMatchSync     *handler.AdminMatchSyncHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -158,11 +160,24 @@ func (s *Server) buildHandlers(
 		matchSvc = service.NewCachedMatchService(matchSvc, cacheStore, matchTTL, s.log)
 	}
 
+	var fpClient footballprovider.Client
+	if s.cfg.FootballProvider.APIKey != "" {
+		fpClient = footballprovider.NewAPIFootballClient(
+			s.cfg.FootballProvider.APIKey,
+			s.cfg.FootballProvider.BaseURL,
+			nil,
+		)
+	}
+	matchSyncSvc := service.NewMatchSyncService(repos.match, matchSvc, fpClient, s.log)
+
 	outboxWriter := outbox.NewWriter(s.db)
 
 	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.Real{}, s.log)
 	groupAuthz := service.NewGroupAuthzService(repos.member)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{})
+	quinielaSvc := service.WithMemberRepo(
+		service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{}),
+		repos.member,
+	)
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, s.log,
 		service.WithGroupMembershipOutboxWriter(outboxWriter))
@@ -277,6 +292,7 @@ func (s *Server) buildHandlers(
 			Log:               s.log,
 		}),
 		match:              handler.NewMatchHandler(matchSvc, s.log),
+		adminMatchSync:     handler.NewAdminMatchSyncHandler(matchSyncSvc, s.log),
 		prediction:         handler.NewPredictionHandler(predSvc, s.log),
 		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, groupAuthz, params, s.log),
 		leaderboard:        handler.NewLeaderboardHandler(ranker, groupAuthz, s.log),

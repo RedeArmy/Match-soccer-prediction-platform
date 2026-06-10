@@ -194,10 +194,18 @@
     color: var(--blue-300);
     border: 1px solid rgba(59, 130, 246, 0.3);
   }
+
+  .badge-premium {
+    background: rgba(212, 160, 23, 0.2);
+    color: var(--gold-400);
+    border: 1px solid rgba(212, 160, 23, 0.45);
+  }
 }
 
 @layer utilities {
   .text-balance { text-wrap: balance; }
+  .scrollbar-hide { scrollbar-width: none; }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
   .font-display { font-family: var(--font-bebas), Impact, sans-serif; letter-spacing: 0; }
   .font-score { font-family: var(--font-jetbrains), ui-monospace, monospace; }
   .no-scrollbar::-webkit-scrollbar { display: none; }

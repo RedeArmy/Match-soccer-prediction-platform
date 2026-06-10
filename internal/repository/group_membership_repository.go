@@ -11,7 +11,10 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
-const errMsgMaxMembersReached = "this group has reached its maximum number of members"
+const (
+	errMsgMaxMembersReached     = "this group has reached its maximum number of members"
+	errMsgFreeMaxMembersReached = "this free group has reached its member limit; upgrade to premium to add more members"
+)
 
 // querier is satisfied by both pgxpool.Pool and pgx.Tx, allowing
 // enforceMaxMembers to be called with either a pool connection or a live
@@ -48,7 +51,7 @@ func scanMembership(row pgx.Row) (*domain.GroupMembership, error) {
 
 // RequestJoinByInviteCode serialises invite-code resolution, existing-membership
 // inspection, capacity enforcement, and membership mutation in one transaction.
-func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID, maxMembers int) (*domain.Quiniela, *domain.GroupMembership, error) {
+func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID, maxMembers, freeMaxMembers int) (*domain.Quiniela, *domain.GroupMembership, error) {
 	var q *domain.Quiniela
 	var m *domain.GroupMembership
 	err := withTx(ctx, r.db, "GroupMembershipRepository.RequestJoinByInviteCode", func(tx pgx.Tx) error {
@@ -64,7 +67,7 @@ func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.
 		if err := validateMembershipStatus(existing); err != nil {
 			return err
 		}
-		if err := enforceMaxMembers(ctx, tx, q.ID, maxMembers); err != nil {
+		if err := enforceJoinCapacity(ctx, tx, q, freeMaxMembers, maxMembers); err != nil {
 			return err
 		}
 		autoPaid := q.EntryFee == 0
@@ -123,6 +126,15 @@ func validateMembershipStatus(existing *domain.GroupMembership) error {
 	}
 }
 
+func enforceJoinCapacity(ctx context.Context, tx pgx.Tx, q *domain.Quiniela, freeMaxMembers, maxMembers int) error {
+	if !q.IsPremium && freeMaxMembers > 0 {
+		if err := enforceFreeMax(ctx, tx, q.ID, freeMaxMembers); err != nil {
+			return err
+		}
+	}
+	return enforceMaxMembers(ctx, tx, q.ID, maxMembers)
+}
+
 func enforceMaxMembers(ctx context.Context, q querier, quinielaID, maxMembers int) error {
 	var count int
 	err := q.QueryRow(ctx,
@@ -137,6 +149,24 @@ func enforceMaxMembers(ctx context.Context, q querier, quinielaID, maxMembers in
 	}
 	if count >= maxMembers {
 		return apperrors.Conflict(errMsgMaxMembersReached)
+	}
+	return nil
+}
+
+func enforceFreeMax(ctx context.Context, q querier, quinielaID, freeMax int) error {
+	var count int
+	err := q.QueryRow(ctx,
+		`SELECT COUNT(*)
+		   FROM group_memberships
+		  WHERE quiniela_id = $1
+		    AND status      = 'active'`,
+		quinielaID,
+	).Scan(&count)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if count >= freeMax {
+		return apperrors.Conflict(errMsgFreeMaxMembersReached)
 	}
 	return nil
 }
@@ -360,7 +390,10 @@ func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, user
 	rows, err := r.db.Query(ctx,
 		`SELECT gm.id, gm.quiniela_id, gm.user_id, gm.status, gm.role, gm.paid,
 		        gm.joined_at, gm.created_at, gm.updated_at, gm.removed_at, gm.removed_by,
-		        q.name, q.status AS group_status, q.invite_code, q.entry_fee, q.currency
+		        q.name, q.status AS group_status, q.invite_code, q.entry_fee, q.currency,
+		        q.is_premium, q.mode_general, q.mode_round,
+		        (SELECT COUNT(*) FROM group_memberships a
+		           WHERE a.quiniela_id = gm.quiniela_id AND a.status = 'active')::int AS active_member_count
 		 FROM group_memberships gm
 		 JOIN quinielas q ON q.id = gm.quiniela_id AND q.deleted_at IS NULL
 		 WHERE gm.user_id = $1
@@ -379,6 +412,7 @@ func (r *PostgresGroupMembershipRepository) ListByUser(ctx context.Context, user
 			&m.ID, &m.QuinielaID, &m.UserID, &m.Status, &m.Role, &m.Paid,
 			&joinedAt, &m.CreatedAt, &m.UpdatedAt, &m.RemovedAt, &m.RemovedBy,
 			&m.GroupName, &m.GroupStatus, &m.InviteCode, &m.EntryFee, &m.Currency,
+			&m.IsPremium, &m.ModeGeneral, &m.ModeRound, &m.ActiveMemberCount,
 		); err != nil {
 			return nil, err
 		}
@@ -781,6 +815,106 @@ func (r *PostgresGroupMembershipRepository) DebitBalanceAndMarkPaid(ctx context.
 		return nil, err
 	}
 	return membership, nil
+}
+
+// BulkDebitAndMarkPaid atomically charges all active unpaid members of quinielaID
+// the given amountCents and marks each membership paid. All debits happen in one
+// transaction; if any member has insufficient available balance the whole
+// transaction is rolled back and a Conflict error is returned.
+func (r *PostgresGroupMembershipRepository) BulkDebitAndMarkPaid(ctx context.Context, quinielaID, amountCents int) ([]int, error) {
+	var charged []int
+	err := withTx(ctx, r.db, "GroupMembershipRepository.BulkDebitAndMarkPaid", func(tx pgx.Tx) error {
+		userIDs, err := fetchUnpaidMemberIDs(ctx, tx, quinielaID)
+		if err != nil {
+			return err
+		}
+		for _, userID := range userIDs {
+			if err := debitMemberAndMarkPaid(ctx, tx, quinielaID, userID, amountCents); err != nil {
+				return err
+			}
+		}
+		charged = userIDs
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return charged, nil
+}
+
+// fetchUnpaidMemberIDs returns the user IDs of all active unpaid members of
+// quinielaID, locking the rows for update so concurrent calls serialise.
+func fetchUnpaidMemberIDs(ctx context.Context, tx pgx.Tx, quinielaID int) ([]int, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT gm.user_id
+		  FROM group_memberships gm
+		 WHERE gm.quiniela_id = $1
+		   AND gm.status      = 'active'
+		   AND gm.paid        = false
+		   AND gm.removed_at  IS NULL
+		 ORDER BY gm.joined_at
+		   FOR UPDATE OF gm`, quinielaID)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return ids, nil
+}
+
+// debitMemberAndMarkPaid deducts amountCents from userID's balance, inserts a
+// ledger entry, and flips the membership paid flag — all within the caller's
+// transaction. Returns a Conflict error when the balance is insufficient.
+func debitMemberAndMarkPaid(ctx context.Context, tx pgx.Tx, quinielaID, userID, amountCents int) error {
+	var balanceAfter int
+	err := tx.QueryRow(ctx, `
+		UPDATE users
+		   SET balance_cents = balance_cents - $2,
+		       updated_at    = NOW()
+		 WHERE id            = $1
+		   AND deleted_at    IS NULL
+		   AND (balance_cents - reserved_cents) >= $2
+		 RETURNING balance_cents`, userID, amountCents).Scan(&balanceAfter)
+	if err == pgx.ErrNoRows {
+		return insufficientOrNotFound(ctx, tx, userID)
+	}
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+
+	if err := insertLedgerTx(ctx, tx, ledgerRow{
+		UserID:       userID,
+		DeltaCents:   -amountCents,
+		Kind:         domain.LedgerKindEntryFee,
+		BalanceAfter: balanceAfter,
+		RefID:        int64(quinielaID),
+		RefType:      "group_membership",
+	}); err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE group_memberships
+		   SET paid       = true,
+		       updated_at = NOW()
+		 WHERE quiniela_id = $1
+		   AND user_id     = $2
+		   AND status      = 'active'`, quinielaID, userID)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
 }
 
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)

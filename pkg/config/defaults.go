@@ -139,4 +139,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("n8n.webhookSecret", "")
 	v.SetDefault("n8n.baseURL", "")
 	v.SetDefault("n8n.apiKey", "")
+
+	// footballProvider: API key defaults to empty (sync disabled until key is supplied).
+	// baseURL defaults to empty (production endpoint used when empty).
+	v.SetDefault("footballProvider.apiKey", "")
+	v.SetDefault("footballProvider.baseURL", "")
 }

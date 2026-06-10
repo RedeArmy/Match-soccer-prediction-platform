@@ -28,12 +28,12 @@ import type {
   WithdrawalLimits,
   InboxResponse,
   PreferenceResponse,
-  CursorPaged,
   DashboardStatsResponse,
   SSEStatsResponse,
   SystemParamResponse,
   ScoringRuleResponse,
   CircuitBreakerResponse,
+  TournamentModeRequest,
 } from './api-types'
 
 // ── Base fetch ────────────────────────────────────────────────────────────────
@@ -110,10 +110,16 @@ class APIClient {
     return this.request(`/api/v1/groups/${id}`, {}, token)
   }
 
-  getGroupLeaderboard(token: string, id: number, cursor?: string, limit = 50): Promise<CursorPaged<LeaderboardEntry>> {
-    const q = new URLSearchParams({ limit: String(limit) })
-    if (cursor) q.set('cursor', cursor)
-    return this.request(`/api/v1/groups/${id}/leaderboard?${q}`, {}, token)
+  getGroupLeaderboard(token: string, id: number, breakdown = false): Promise<{ entries: LeaderboardEntry[]; active_paid_members: number; winner_count: number; eligible_for_prizes: boolean }> {
+    const q = new URLSearchParams()
+    if (breakdown) q.set('breakdown', 'true')
+    const qs = q.toString()
+    const suffix = qs ? `?${qs}` : ''
+    return this.request(`/api/v1/groups/${id}/leaderboard${suffix}`, {}, token)
+  }
+
+  setTournamentMode(token: string, id: number, data: TournamentModeRequest): Promise<GroupDetailResponse> {
+    return this.request(`/api/v1/groups/${id}/tournament-mode`, { method: 'PATCH', body: JSON.stringify(data) }, token)
   }
 
   getGroupMembers(token: string, id: number): Promise<MemberResponse[]> {
@@ -306,9 +312,8 @@ class APIClient {
     return this.request('/api/v1/admin/stats', {}, token)
   }
 
-  adminGetKYCQueue(token: string, cursor?: string, status?: string): Promise<CursorPaged<import('./api-types').KYCProfileResponse>> {
+  adminGetKYCQueue(token: string, status?: string): Promise<KYCProfileResponse[]> {
     const q = new URLSearchParams()
-    if (cursor) q.set('cursor', cursor)
     if (status) q.set('status', status)
     return this.request(`/api/v1/admin/kyc/queue?${q}`, {}, token)
   }
@@ -325,7 +330,7 @@ class APIClient {
     return this.request('/api/v1/admin/exchange-rate/current', {}, token)
   }
 
-  adminGetExchangeRateHistory(token: string, cursor?: string): Promise<CursorPaged<RateHistoryEntry>> {
+  adminGetExchangeRateHistory(token: string, cursor?: string): Promise<RateHistoryEntry[]> {
     const q = cursor ? `?cursor=${cursor}` : ''
     return this.request(`/api/v1/admin/exchange-rate/history${q}`, {}, token)
   }

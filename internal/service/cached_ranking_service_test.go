@@ -57,6 +57,9 @@ func (r *stubRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.Matc
 	}
 	return &LeaderboardResult{Entries: r.entries}, nil
 }
+func (r *stubRanker) GetLeaderboardWithRoundBreakdown(ctx context.Context, id int) (*LeaderboardResult, error) {
+	return r.GetLeaderboard(ctx, id)
+}
 
 // spyPrefixFlusher implements both cache.Store and cache.PrefixFlusher for
 // testing FlushByPrefix calls.
@@ -635,5 +638,34 @@ func TestCachedRankingService_UpdateTTL_ZeroDuration_DisablesEffectiveTTL(t *tes
 	}
 	if spy.lastSetTTL != 0 {
 		t.Errorf("expected zero TTL after UpdateTTL(0), got %v", spy.lastSetTTL)
+	}
+}
+
+// ── GetLeaderboardWithRoundBreakdown ──────────────────────────────────────────
+
+func TestCachedRankingService_GetLeaderboardWithRoundBreakdown_DelegatesToInner(t *testing.T) {
+	entries := []*domain.LeaderboardEntry{{Rank: 1}}
+	inner := &stubRanker{entries: entries}
+	svc := NewCachedRankingService(inner, &spyPrefixFlusher{}, 60*time.Second, zap.NewNop())
+
+	result, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(cachedUnexpectedErrorFmt, err)
+	}
+	if len(result.Entries) != 1 {
+		t.Errorf("expected 1 entry from inner, got %d", len(result.Entries))
+	}
+	if inner.called != 1 {
+		t.Errorf(fmtInnerCalledOnce, inner.called)
+	}
+}
+
+func TestCachedRankingService_GetLeaderboardWithRoundBreakdown_PropagatesError(t *testing.T) {
+	inner := &stubRanker{err: errors.New("inner error")}
+	svc := NewCachedRankingService(inner, &spyPrefixFlusher{}, 60*time.Second, zap.NewNop())
+
+	_, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error from inner, got nil")
 	}
 }

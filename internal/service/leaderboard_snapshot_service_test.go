@@ -47,6 +47,9 @@ func (r *stubRankerSnap) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.
 	}
 	return &LeaderboardResult{Entries: r.entries}, nil
 }
+func (r *stubRankerSnap) GetLeaderboardWithRoundBreakdown(ctx context.Context, id int) (*LeaderboardResult, error) {
+	return r.GetLeaderboard(ctx, id)
+}
 
 // ── Snapshot ──────────────────────────────────────────────────────────────────
 

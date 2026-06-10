@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useAuth } from '@clerk/nextjs'
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -18,14 +18,12 @@ export default function AdminKYCQueuePage() {
   const [rejectTarget, setRejectTarget] = useState<number | null>(null)
   const [rejectReason, setRejectReason] = useState('')
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['admin-kyc-queue', filterStatus],
-    initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam }) => {
+    queryFn: async () => {
       const token = await getToken()
-      return api.adminGetKYCQueue(token!, pageParam, filterStatus || undefined)
+      return api.adminGetKYCQueue(token!, filterStatus || undefined)
     },
-    getNextPageParam: page => page.has_more ? page.next_cursor : undefined,
   })
 
   const approve = useMutation({
@@ -48,7 +46,7 @@ export default function AdminKYCQueuePage() {
     },
   })
 
-  const profiles = data?.pages.flatMap(p => p.data) ?? []
+  const profiles = data ?? []
 
   return (
     <div className="space-y-5">
@@ -111,16 +109,6 @@ export default function AdminKYCQueuePage() {
             </div>
           ))}
         </div>
-      )}
-
-      {hasNextPage && (
-        <button
-          onClick={() => fetchNextPage()}
-          disabled={isFetchingNextPage}
-          className="btn-ghost w-full text-sm py-2 flex items-center justify-center gap-2"
-        >
-          {isFetchingNextPage ? <LoadingSpinner size={16} /> : 'Cargar más'}
-        </button>
       )}
 
       {/* Reject dialog */}

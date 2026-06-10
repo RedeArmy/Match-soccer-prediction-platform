@@ -64,7 +64,7 @@ func (r *PostgresQuinielaRepository) RegisterMetrics(meter metric.Meter) error {
 	return nil
 }
 
-const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, status, created_at, updated_at, deleted_at"
+const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, status, is_premium, mode_general, mode_round, created_at, updated_at, deleted_at"
 
 const msgQuinielaNotFound = "quiniela not found"
 
@@ -73,6 +73,7 @@ func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	err := row.Scan(
 		&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
 		&q.EntryFee, &q.Currency, &q.Status,
+		&q.IsPremium, &q.ModeGeneral, &q.ModeRound,
 		&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -256,6 +257,7 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 		if err := rows.Scan(
 			&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
 			&q.EntryFee, &q.Currency, &q.Status,
+			&q.IsPremium, &q.ModeGeneral, &q.ModeRound,
 			&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 		); err != nil {
 			return nil, apperrors.Internal(err)
@@ -278,6 +280,36 @@ func (r *PostgresQuinielaRepository) UpdateGroupSettings(ctx context.Context, qu
 		  WHERE id = $2`+activeOnly+`
 		  RETURNING `+quinielaColumns,
 		entryFee, quinielaID,
+	)
+	result, err := scanQuiniela(row)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, apperrors.NotFound(msgQuinielaNotFound)
+	}
+	return result, nil
+}
+
+// UpdateTournamentMode atomically sets is_premium, mode_general, mode_round, and
+// entry_fee (general fee when mode_general=true, 0 when free). Returns the updated
+// quiniela or NotFound when the group does not exist or is soft-deleted.
+func (r *PostgresQuinielaRepository) UpdateTournamentMode(
+	ctx context.Context,
+	quinielaID int,
+	isPremium, modeGeneral, modeRound bool,
+	entryFee int,
+) (*domain.Quiniela, error) {
+	row := r.db.QueryRow(ctx,
+		`UPDATE quinielas
+		    SET is_premium   = $1,
+		        mode_general = $2,
+		        mode_round   = $3,
+		        entry_fee    = $4,
+		        updated_at   = NOW()
+		  WHERE id = $5`+activeOnly+`
+		  RETURNING `+quinielaColumns,
+		isPremium, modeGeneral, modeRound, entryFee, quinielaID,
 	)
 	result, err := scanQuiniela(row)
 	if err != nil {

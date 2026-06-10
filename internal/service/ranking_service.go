@@ -40,17 +40,24 @@ type LeaderboardResult struct {
 //
 // GetLeaderboard returns the overall standings sorted descending by TotalPoints.
 // GetPhaseLeaderboard returns standings restricted to a single tournament phase.
-// Only active, paid members are included in both variants. Unscored predictions
+// GetLeaderboardWithRoundBreakdown returns overall standings with each entry
+// annotated with per-round points (RoundPoints map).
+// Only active, paid members are included in all variants. Unscored predictions
 // (nil points) are excluded from the aggregation. PrizeWinner is set to true on
 // entries that rank within the prize positions determined by domain.WinnerCount.
 //
-// Both methods return a LeaderboardResult that includes group-level prize
+// All methods return a LeaderboardResult that includes group-level prize
 // metadata (ActivePaidMembers, WinnerCount, EligibleForPrizes) alongside the
 // ranked entries, so the handler layer never needs a second DB round-trip to
 // determine whether prizes apply.
 type Ranker interface {
 	GetLeaderboard(ctx context.Context, quinielaID int) (*LeaderboardResult, error)
 	GetPhaseLeaderboard(ctx context.Context, quinielaID int, phase domain.MatchPhase) (*LeaderboardResult, error)
+	// GetLeaderboardWithRoundBreakdown returns overall standings where each
+	// LeaderboardEntry.RoundPoints is populated with per-round points keyed by
+	// round_number string ("1"–"9"). This is used by the hybrid tournament UI
+	// to display the per-jornada breakdown table.
+	GetLeaderboardWithRoundBreakdown(ctx context.Context, quinielaID int) (*LeaderboardResult, error)
 }
 
 // rankingService is the concrete implementation of Ranker.
@@ -162,6 +169,32 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 	}
 
 	return s.buildLeaderboard(ctx, quinielaID, pointsByUser)
+}
+
+// GetLeaderboardWithRoundBreakdown returns overall standings annotated with
+// per-round points. It calls GetLeaderboard and then enriches each entry's
+// RoundPoints map via a second aggregation query.
+func (s *rankingService) GetLeaderboardWithRoundBreakdown(ctx context.Context, quinielaID int) (*LeaderboardResult, error) {
+	result, err := s.GetLeaderboard(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+	if len(result.Entries) == 0 {
+		return result, nil
+	}
+
+	roundPts, err := s.predRepo.PointsByUserAndRound(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range result.Entries {
+		if pts, ok := roundPts[e.User.ID]; ok {
+			e.RoundPoints = pts
+		} else {
+			e.RoundPoints = map[string]int{}
+		}
+	}
+	return result, nil
 }
 
 // buildLeaderboard is the shared core of GetLeaderboard and GetPhaseLeaderboard.

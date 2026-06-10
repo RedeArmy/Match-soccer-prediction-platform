@@ -223,6 +223,14 @@ func (s *CachedRankingService) GetPhaseLeaderboard(ctx context.Context, quiniela
 	return result, nil
 }
 
+// GetLeaderboardWithRoundBreakdown delegates to the inner Ranker without caching.
+// Round breakdown results contain per-round detail that changes frequently and
+// is only used by the tournament detail UI; caching adds marginal value versus
+// the complexity of keying and invalidating a separate cache entry.
+func (s *CachedRankingService) GetLeaderboardWithRoundBreakdown(ctx context.Context, quinielaID int) (*LeaderboardResult, error) {
+	return s.inner.GetLeaderboardWithRoundBreakdown(ctx, quinielaID)
+}
+
 // InvalidateLeaderboard evicts all cached leaderboard entries for the given
 // quiniela in a single Delete call. The set of keys is:
 //
