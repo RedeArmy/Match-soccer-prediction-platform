@@ -148,6 +148,7 @@ function ModeToggle({ id, checked, onChange, label, description, disabled }: Mod
   return (
     <label
       htmlFor={id}
+      aria-label={label}
       className={cn(
         'flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors',
         checked

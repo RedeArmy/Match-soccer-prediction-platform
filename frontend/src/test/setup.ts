@@ -2,7 +2,7 @@ import '@testing-library/jest-dom'
 
 // jsdom does not implement ResizeObserver; provide a no-op stub so components
 // that use it (e.g. scroll carousels) do not crash during unit tests.
-if (typeof globalThis.ResizeObserver === 'undefined') {
+if (globalThis.ResizeObserver === undefined) {
   globalThis.ResizeObserver = class ResizeObserver {
     observe()   { /* noop */ }
     unobserve() { /* noop */ }

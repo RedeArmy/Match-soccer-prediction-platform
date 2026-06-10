@@ -17,7 +17,7 @@ const LS_KEY = 'wc26_featured_group_ids'
 
 function useFeatured() {
   const [ids, setIds] = useState<Set<number>>(() => {
-    if (typeof window === 'undefined') return new Set()
+    if (globalThis.window === undefined) return new Set()
     try {
       const raw = localStorage.getItem(LS_KEY)
       return raw ? new Set<number>(JSON.parse(raw)) : new Set()
@@ -274,8 +274,8 @@ function Carousel({ children }: Readonly<{ children: React.ReactNode }>) {
         style={{ scrollSnapType: 'x mandatory' }}
       >
         {Array.isArray(children)
-          ? (children as React.ReactNode[]).map((child, i) => (
-              <div key={i} className="w-72 shrink-0" style={{ scrollSnapAlign: 'start' }}>
+          ? React.Children.map(children as React.ReactNode[], (child) => (
+              <div className="w-72 shrink-0" style={{ scrollSnapAlign: 'start' }}>
                 {child}
               </div>
             ))

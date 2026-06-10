@@ -186,49 +186,13 @@ func (s *matchSyncService) processOne(ctx context.Context, m *domain.Match) (boo
 
 	switch {
 	case fix.Status == footballprovider.StatusNotStarted && m.Status == domain.MatchStatusScheduled:
-		// Still waiting for kickoff — nothing to do.
 		return false, false, nil
-
 	case fix.Status.IsLive() && m.Status == domain.MatchStatusScheduled:
-		// Kickoff detected: transition to live.
-		if _, err := s.matchSvc.StartMatch(ctx, m.ID); err != nil {
-			// If the match was already started concurrently (e.g. manual admin
-			// action), the error is Validation("only started from scheduled").
-			// Treat this as a non-fatal idempotency case.
-			if errors.Is(err, apperrors.ErrValidation) {
-				s.log.Info("match sync: StartMatch already done (idempotent)",
-					zap.Int("match_id", m.ID))
-				return true, false, nil
-			}
-			return isLive, false, fmt.Errorf("StartMatch: %w", err)
-		}
-		s.log.Info("match sync: started match", zap.Int("match_id", m.ID))
-		return true, true, nil
-
+		return s.applyKickoff(ctx, m.ID, isLive)
 	case fix.Status.IsLive() && m.Status == domain.MatchStatusLive:
-		// Already live — no state change required.
 		return true, false, nil
-
 	case fix.Status.IsFinished() && m.Status != domain.MatchStatusFinished:
-		// Match ended: record the result.
-		winMethod := winMethodFromStatus(fix.Status)
-		if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod); err != nil {
-			if errors.Is(err, apperrors.ErrValidation) {
-				// Match may have been finished manually already.
-				s.log.Info("match sync: UpdateResult already done (idempotent)",
-					zap.Int("match_id", m.ID))
-				return false, false, nil
-			}
-			return false, false, fmt.Errorf("UpdateResult: %w", err)
-		}
-		s.log.Info("match sync: result recorded",
-			zap.Int("match_id", m.ID),
-			zap.Int("home", fix.HomeScore),
-			zap.Int("away", fix.AwayScore),
-			zap.String("status", string(fix.Status)),
-		)
-		return false, true, nil
-
+		return s.applyResult(ctx, m.ID, fix)
 	case fix.Status.IsCancelled():
 		s.log.Warn("match sync: fixture cancelled/postponed — manual action required",
 			zap.Int("match_id", m.ID),
@@ -236,11 +200,39 @@ func (s *matchSyncService) processOne(ctx context.Context, m *domain.Match) (boo
 			zap.String("provider_status", string(fix.Status)),
 		)
 		return false, false, nil
-
 	default:
-		// No applicable transition (e.g. already finished, unknown status).
 		return false, false, nil
 	}
+}
+
+func (s *matchSyncService) applyKickoff(ctx context.Context, matchID int, isLive bool) (bool, bool, error) {
+	if _, err := s.matchSvc.StartMatch(ctx, matchID); err != nil {
+		if errors.Is(err, apperrors.ErrValidation) {
+			s.log.Info("match sync: StartMatch already done (idempotent)", zap.Int("match_id", matchID))
+			return true, false, nil
+		}
+		return isLive, false, fmt.Errorf("StartMatch: %w", err)
+	}
+	s.log.Info("match sync: started match", zap.Int("match_id", matchID))
+	return true, true, nil
+}
+
+func (s *matchSyncService) applyResult(ctx context.Context, matchID int, fix *footballprovider.Fixture) (bool, bool, error) {
+	winMethod := winMethodFromStatus(fix.Status)
+	if _, err := s.matchSvc.UpdateResult(ctx, matchID, fix.HomeScore, fix.AwayScore, winMethod); err != nil {
+		if errors.Is(err, apperrors.ErrValidation) {
+			s.log.Info("match sync: UpdateResult already done (idempotent)", zap.Int("match_id", matchID))
+			return false, false, nil
+		}
+		return false, false, fmt.Errorf("UpdateResult: %w", err)
+	}
+	s.log.Info("match sync: result recorded",
+		zap.Int("match_id", matchID),
+		zap.Int("home", fix.HomeScore),
+		zap.Int("away", fix.AwayScore),
+		zap.String("status", string(fix.Status)),
+	)
+	return false, true, nil
 }
 
 // ReconcileDate lists all sync candidates and compares their local state

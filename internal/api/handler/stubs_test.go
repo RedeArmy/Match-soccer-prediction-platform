@@ -185,11 +185,8 @@ func (s *stubRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.Matc
 	}
 	return &service.LeaderboardResult{Entries: s.entries}, nil
 }
-func (s *stubRanker) GetLeaderboardWithRoundBreakdown(_ context.Context, _ int) (*service.LeaderboardResult, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	return &service.LeaderboardResult{Entries: s.entries}, nil
+func (s *stubRanker) GetLeaderboardWithRoundBreakdown(ctx context.Context, id int) (*service.LeaderboardResult, error) {
+	return s.GetLeaderboard(ctx, id)
 }
 
 // stubGroupAuthz implements service.GroupAuthz with configurable returns.

@@ -57,12 +57,8 @@ func (r *stubRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.Matc
 	}
 	return &LeaderboardResult{Entries: r.entries}, nil
 }
-func (r *stubRanker) GetLeaderboardWithRoundBreakdown(_ context.Context, _ int) (*LeaderboardResult, error) {
-	r.called++
-	if r.err != nil {
-		return nil, r.err
-	}
-	return &LeaderboardResult{Entries: r.entries}, nil
+func (r *stubRanker) GetLeaderboardWithRoundBreakdown(ctx context.Context, id int) (*LeaderboardResult, error) {
+	return r.GetLeaderboard(ctx, id)
 }
 
 // spyPrefixFlusher implements both cache.Store and cache.PrefixFlusher for

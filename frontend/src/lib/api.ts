@@ -114,7 +114,8 @@ class APIClient {
     const q = new URLSearchParams()
     if (breakdown) q.set('breakdown', 'true')
     const qs = q.toString()
-    return this.request(`/api/v1/groups/${id}/leaderboard${qs ? `?${qs}` : ''}`, {}, token)
+    const suffix = qs ? `?${qs}` : ''
+    return this.request(`/api/v1/groups/${id}/leaderboard${suffix}`, {}, token)
   }
 
   setTournamentMode(token: string, id: number, data: TournamentModeRequest): Promise<GroupDetailResponse> {

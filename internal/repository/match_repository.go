@@ -22,6 +22,8 @@ func NewPostgresMatchRepository(db *pgxpool.Pool) *PostgresMatchRepository {
 	return &PostgresMatchRepository{db: db}
 }
 
+const errMatchNotFound = "match not found"
+
 // matchColumns is used in RETURNING clauses for INSERT/UPDATE (no table alias).
 const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, group_label, win_method, stadium_id, kickoff_at, created_at, updated_at, external_provider, external_match_id, last_synced_at"
 
@@ -137,7 +139,7 @@ func (r *PostgresMatchRepository) LinkExternal(ctx context.Context, matchID int,
 		return apperrors.Internal(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("match not found")
+		return apperrors.NotFound(errMatchNotFound)
 	}
 	return nil
 }
@@ -153,7 +155,7 @@ func (r *PostgresMatchRepository) UnlinkExternal(ctx context.Context, matchID in
 		return apperrors.Internal(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return apperrors.NotFound("match not found")
+		return apperrors.NotFound(errMatchNotFound)
 	}
 	return nil
 }
@@ -209,7 +211,7 @@ func (r *PostgresMatchRepository) Update(ctx context.Context, m *domain.Match) e
 		return err
 	}
 	if result == nil {
-		return apperrors.NotFound("match not found")
+		return apperrors.NotFound(errMatchNotFound)
 	}
 	*m = *result
 	return nil

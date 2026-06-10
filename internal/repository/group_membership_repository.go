@@ -67,12 +67,7 @@ func (r *PostgresGroupMembershipRepository) RequestJoinByInviteCode(ctx context.
 		if err := validateMembershipStatus(existing); err != nil {
 			return err
 		}
-		if !q.IsPremium && freeMaxMembers > 0 {
-			if err := enforceFreeMax(ctx, tx, q.ID, freeMaxMembers); err != nil {
-				return err
-			}
-		}
-		if err := enforceMaxMembers(ctx, tx, q.ID, maxMembers); err != nil {
+		if err := enforceJoinCapacity(ctx, tx, q, freeMaxMembers, maxMembers); err != nil {
 			return err
 		}
 		autoPaid := q.EntryFee == 0
@@ -129,6 +124,15 @@ func validateMembershipStatus(existing *domain.GroupMembership) error {
 	default: // MembershipLeft: user previously left and is allowed to rejoin
 		return nil
 	}
+}
+
+func enforceJoinCapacity(ctx context.Context, tx pgx.Tx, q *domain.Quiniela, freeMaxMembers, maxMembers int) error {
+	if !q.IsPremium && freeMaxMembers > 0 {
+		if err := enforceFreeMax(ctx, tx, q.ID, freeMaxMembers); err != nil {
+			return err
+		}
+	}
+	return enforceMaxMembers(ctx, tx, q.ID, maxMembers)
 }
 
 func enforceMaxMembers(ctx context.Context, q querier, quinielaID, maxMembers int) error {

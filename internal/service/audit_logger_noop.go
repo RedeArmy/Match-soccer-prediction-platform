@@ -20,6 +20,7 @@ func (NoopAuditLogger) Log(
 	_ *int,
 	_ map[string]any,
 ) {
+	// intentionally empty — this logger discards all audit entries
 }
 
 var _ AuditLogger = NoopAuditLogger{}

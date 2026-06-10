@@ -117,7 +117,7 @@ func (s *quinielaService) RenameGroup(ctx context.Context, quinielaID, callerUse
 		return nil, err
 	}
 	if q == nil {
-		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
 	}
 
 	q.Name = name
@@ -136,7 +136,7 @@ func (s *quinielaService) GetByID(ctx context.Context, id int) (*domain.Quiniela
 		return nil, err
 	}
 	if q == nil {
-		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", id))
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, id))
 	}
 	return q, nil
 }
@@ -179,45 +179,54 @@ func (s *quinielaService) SetTournamentMode(
 	isPremium := modeGeneral || modeRound
 
 	if isPremium {
-		// Count active members to enforce the minimum before enabling paid modes.
-		minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
-		q, err := s.repo.GetByID(ctx, quinielaID)
-		if err != nil {
+		if err := s.validatePremiumEligibility(ctx, quinielaID); err != nil {
 			return nil, err
-		}
-		if q == nil {
-			return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
-		}
-		// The group status transitions to active when it reaches minMembers.
-		// Checking status == active is an indirect proxy for the member count.
-		if q.Status != domain.QuinielaStatusActive {
-			return nil, apperrors.Validation(
-				fmt.Sprintf("premium mode requires at least %d active members", minMembers),
-			)
 		}
 	}
 
-	// Resolve the general-mode entry fee from the system param.
 	entryFee := 0
 	if modeGeneral {
 		entryFee = s.params.GetInt(ctx, domain.ParamKeyTournamentGeneralEntryFeeCents, domain.DefaultTournamentGeneralEntryFeeCents)
 	}
 
-	// When upgrading from free to premium with a non-zero entry fee, charge all
-	// existing active members atomically before persisting the mode change.
-	if isPremium && entryFee > 0 && s.memberRepo != nil {
-		existing, err := s.repo.GetByID(ctx, quinielaID)
-		if err != nil {
-			return nil, err
-		}
-		if existing != nil && !existing.IsPremium {
-			if _, err := s.memberRepo.BulkDebitAndMarkPaid(ctx, quinielaID, entryFee); err != nil {
-				return nil, err
-			}
-		}
+	if err := s.chargeExistingMembersIfNeeded(ctx, quinielaID, isPremium, entryFee); err != nil {
+		return nil, err
 	}
 
 	return s.repo.UpdateTournamentMode(ctx, quinielaID, isPremium, modeGeneral, modeRound, entryFee)
 }
+
+func (s *quinielaService) validatePremiumEligibility(ctx context.Context, quinielaID int) error {
+	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
+	q, err := s.repo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return err
+	}
+	if q == nil {
+		return apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
+	}
+	if q.Status != domain.QuinielaStatusActive {
+		return apperrors.Validation(fmt.Sprintf("premium mode requires at least %d active members", minMembers))
+	}
+	return nil
+}
+
+func (s *quinielaService) chargeExistingMembersIfNeeded(ctx context.Context, quinielaID int, isPremium bool, entryFee int) error {
+	if !isPremium || entryFee == 0 || s.memberRepo == nil {
+		return nil
+	}
+	existing, err := s.repo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return err
+	}
+	if existing != nil && !existing.IsPremium {
+		if _, err := s.memberRepo.BulkDebitAndMarkPaid(ctx, quinielaID, entryFee); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const errQuinielaNotFound = "quiniela %d not found"
 
 var _ QuinielaService = (*quinielaService)(nil)
