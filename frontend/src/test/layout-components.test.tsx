@@ -304,4 +304,40 @@ describe('FeaturedPoolsSection', () => {
     render(<FeaturedPoolsSection />)
     expect(screen.getAllByText('Ver detalle').length).toBeGreaterThanOrEqual(3)
   })
+
+  it('shows entry fee for premium groups', () => {
+    render(<FeaturedPoolsSection />)
+    // Finals Elite Quiniela has entry_fee: 10000 → Q100.00
+    expect(screen.getByText(/100/)).toBeInTheDocument()
+  })
+
+  it('shows loading skeleton while query is pending', () => {
+    vi.mocked(useQuery).mockReturnValue({ data: undefined, isLoading: true } as never)
+    const { container } = render(<FeaturedPoolsSection />)
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument()
+  })
+
+  it('shows empty-pools message when query returns no groups', () => {
+    vi.mocked(useQuery).mockReturnValue({ data: [], isLoading: false } as never)
+    render(<FeaturedPoolsSection />)
+    expect(screen.getByText(/no hay|empt|torneo/i)).toBeInTheDocument()
+  })
+
+  it('renders featured carousel when a group id is starred in localStorage', () => {
+    localStorage.setItem('wc26_featured_group_ids', JSON.stringify([1]))
+    vi.mocked(useQuery).mockReturnValue({ data: mockGroups, isLoading: false } as never)
+    render(<FeaturedPoolsSection />)
+    expect(screen.getByText('Destacadas')).toBeInTheDocument()
+    localStorage.removeItem('wc26_featured_group_ids')
+  })
+
+  it('star button toggles featured state', () => {
+    vi.mocked(useQuery).mockReturnValue({ data: mockGroups, isLoading: false } as never)
+    render(<FeaturedPoolsSection />)
+    // Click the first star button to feature group id=1
+    const starBtns = screen.getAllByTitle(/destacad/i)
+    fireEvent.click(starBtns[0])
+    expect(screen.getByText('Destacadas')).toBeInTheDocument()
+    localStorage.removeItem('wc26_featured_group_ids')
+  })
 })
