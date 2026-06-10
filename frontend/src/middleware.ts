@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import type { ClerkMiddlewareAuth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
 const isPublicRoute = createRouteMatcher([
@@ -62,6 +63,42 @@ function buildCSP(nonce: string): string {
 // the role-check fetch does not fire on every sub-route.
 const isDashboardEntry = createRouteMatcher(['/dashboard']);
 
+// resolveDashboardRedirect fetches /users/me and returns:
+//   - a 307 redirect to /admin/dashboard for admin users
+//   - a NextResponse.next with x-user-role header for regular users
+//   - null when the token is absent or the backend is unreachable
+async function resolveDashboardRedirect(
+  auth: ClerkMiddlewareAuth,
+  req: NextRequest,
+): Promise<NextResponse | null> {
+  const { getToken } = await auth();
+  const token = await getToken();
+  if (!token) return null;
+
+  const backendUrl = process.env.BACKEND_INTERNAL_URL;
+  if (!backendUrl) return null;
+
+  try {
+    const meRes = await fetch(`${backendUrl}/api/v1/users/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!meRes.ok) return null;
+
+    const me = await meRes.json() as { role?: string };
+    if (me.role === 'admin') {
+      return NextResponse.redirect(new URL('/admin/dashboard', req.url));
+    }
+    // Pass role to DashboardPage via a request header so it can skip
+    // its own /users/me fetch.
+    const reqHeaders = new Headers(req.headers);
+    reqHeaders.set('x-user-role', me.role ?? 'user');
+    return NextResponse.next({ request: { headers: reqHeaders } });
+  } catch {
+    // Backend unreachable — return null; DashboardPage handles the fallback.
+    return null;
+  }
+}
+
 export default clerkMiddleware(async (auth, req: NextRequest) => {
   if (!isPublicRoute(req)) {
     await auth.protect();
@@ -71,31 +108,8 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
   // loads /dashboard for admin users. The backend /users/me call is cheap
   // (same-network, no DB query beyond a primary-key lookup).
   if (isDashboardEntry(req)) {
-    const { getToken } = await auth();
-    const token = await getToken();
-    if (token) {
-      const backendUrl = process.env.BACKEND_INTERNAL_URL;
-      if (backendUrl) {
-        try {
-          const meRes = await fetch(`${backendUrl}/api/v1/users/me`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (meRes.ok) {
-            const me = await meRes.json() as { role?: string };
-            if (me.role === 'admin') {
-              return NextResponse.redirect(new URL('/admin/dashboard', req.url));
-            }
-            // Pass role to DashboardPage via a request header so it can skip
-            // its own /users/me fetch.
-            const reqHeaders = new Headers(req.headers);
-            reqHeaders.set('x-user-role', me.role ?? 'user');
-            return NextResponse.next({ request: { headers: reqHeaders } });
-          }
-        } catch {
-          // Backend unreachable — fall through; DashboardPage handles it.
-        }
-      }
-    }
+    const redirect = await resolveDashboardRedirect(auth, req);
+    if (redirect) return redirect;
   }
 
   // CSP with per-request nonce is enforced only in production.
