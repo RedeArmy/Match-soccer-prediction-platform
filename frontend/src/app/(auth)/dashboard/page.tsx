@@ -361,7 +361,7 @@ function GroupCard({ group, onOpenPending, t }: Readonly<GroupCardProps>) {
           </button>
         )}
 
-        <StatusBadge status={group.group_status} size="sm" />
+        <StatusBadge status={group.is_premium ? 'premium' : 'free'} size="sm" />
 
         {/* Pending badge — member's own request not yet approved */}
         {isPending ? (

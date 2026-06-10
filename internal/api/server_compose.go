@@ -162,7 +162,10 @@ func (s *Server) buildHandlers(
 
 	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.Real{}, s.log)
 	groupAuthz := service.NewGroupAuthzService(repos.member)
-	quinielaSvc := service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{})
+	quinielaSvc := service.WithMemberRepo(
+		service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{}),
+		repos.member,
+	)
 	paymentSvc := service.NewPaymentService(paymentRepo, auditSvc, s.log)
 	memberSvc := service.NewGroupMembershipService(quinielaRepo, repos.member, params, auditSvc, paymentSvc, s.log,
 		service.WithGroupMembershipOutboxWriter(outboxWriter))

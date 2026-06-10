@@ -12,25 +12,35 @@ type GroupResponse struct {
 	// Status is system-managed: "active" when the group has ≥ 5 active members,
 	// "inactive" otherwise. Only active groups are eligible for payment processing
 	// and prize distribution.
-	Status    string `json:"status"`
-	EntryFee  int    `json:"entry_fee"`
-	Currency  string `json:"currency"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	Status      string `json:"status"`
+	EntryFee    int    `json:"entry_fee"`
+	Currency    string `json:"currency"`
+	// IsPremium is false for free groups (points-only) and true when at least one
+	// paid mode is active. Frontend renders this as "Gratis" (gray) or "Premium" (gold).
+	IsPremium   bool   `json:"is_premium"`
+	// ModeGeneral and ModeRound reflect which paid sub-modes are active.
+	ModeGeneral bool   `json:"mode_general"`
+	ModeRound   bool   `json:"mode_round"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 // MyGroupResponse is the enriched view returned by GET /api/v1/groups/me.
 // It combines the group metadata with the caller's membership status so the
 // dashboard can render both the group name and the membership state.
 type MyGroupResponse struct {
-	ID               int    `json:"id"`
-	Name             string `json:"name"`
-	GroupStatus      string `json:"group_status"`
-	MembershipStatus string `json:"membership_status"`
-	Role             string `json:"role"`
-	InviteCode       string `json:"invite_code"`
-	EntryFee         int    `json:"entry_fee"`
-	Currency         string `json:"currency"`
+	ID                int    `json:"id"`
+	Name              string `json:"name"`
+	GroupStatus       string `json:"group_status"`
+	MembershipStatus  string `json:"membership_status"`
+	Role              string `json:"role"`
+	InviteCode        string `json:"invite_code"`
+	EntryFee          int    `json:"entry_fee"`
+	Currency          string `json:"currency"`
+	IsPremium         bool   `json:"is_premium"`
+	ModeGeneral       bool   `json:"mode_general"`
+	ModeRound         bool   `json:"mode_round"`
+	ActiveMemberCount int    `json:"active_member_count"`
 }
 
 // MemberResponse is the JSON representation of a GroupMembership.
@@ -49,15 +59,18 @@ type MemberResponse struct {
 
 func groupToResponse(q *domain.Quiniela) GroupResponse {
 	resp := GroupResponse{
-		ID:         q.ID,
-		Name:       q.Name,
-		OwnerID:    q.OwnerID,
-		InviteCode: q.InviteCode,
-		Status:     string(q.Status),
-		EntryFee:   q.EntryFee,
-		Currency:   q.Currency,
-		CreatedAt:  q.CreatedAt.Format(timeFormat),
-		UpdatedAt:  q.UpdatedAt.Format(timeFormat),
+		ID:          q.ID,
+		Name:        q.Name,
+		OwnerID:     q.OwnerID,
+		InviteCode:  q.InviteCode,
+		Status:      string(q.Status),
+		EntryFee:    q.EntryFee,
+		Currency:    q.Currency,
+		IsPremium:   q.IsPremium,
+		ModeGeneral: q.ModeGeneral,
+		ModeRound:   q.ModeRound,
+		CreatedAt:   q.CreatedAt.Format(timeFormat),
+		UpdatedAt:   q.UpdatedAt.Format(timeFormat),
 	}
 	if q.InviteCodeExpiresAt != nil {
 		s := q.InviteCodeExpiresAt.Format(timeFormat)

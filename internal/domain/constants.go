@@ -112,6 +112,11 @@ const (
 	DefaultGroupInviteCodeLength = 10    // group.invite_code_length
 	DefaultGroupEntryFeeCents    = 3000  // group.entry_fee_cents  (Q30.00)
 	DefaultGroupCurrency         = "GTQ" // group.currency
+	DefaultGroupFreeMaxMembers   = 5     // group.free_max_members
+
+	// Tournament hybrid-mode entry fees (migration 000180)
+	DefaultTournamentGeneralEntryFeeCents = 3000 // tournament.general_entry_fee_cents (Q30.00)
+	DefaultTournamentRoundEntryFeeCents   = 1500 // tournament.round_entry_fee_cents   (Q15.00)
 
 	// Pagination
 	DefaultPaginationDefaultLimit = 50  // pagination.default_limit
@@ -199,6 +204,10 @@ const (
 	// ParamKeyGroupCurrency is the ISO 4217 currency code for group entry fees.
 	// Defaults to DefaultGroupCurrency ("GTQ").
 	ParamKeyGroupCurrency = "group.currency"
+	// ParamKeyGroupFreeMaxMembers is the maximum number of active members allowed
+	// in a free (non-premium) group. Joins via invite code and approvals are
+	// blocked once this limit is reached. Defaults to DefaultGroupFreeMaxMembers (5).
+	ParamKeyGroupFreeMaxMembers = "group.free_max_members"
 	// ParamKeyConflictStaleDays is the age in days after which a pending payment
 	// or membership is flagged as a conflict. Defaults to DefaultConflictStaleDays (7).
 	ParamKeyConflictStaleDays = "conflict.stale_days"
@@ -214,6 +223,16 @@ const (
 	// ParamKeyTournamentWinPoints is the standing points awarded for a group-stage
 	// win. Defaults to StandingsWinPoints (3). Read dynamically by TournamentService.
 	ParamKeyTournamentWinPoints = "tournament.win_points"
+	// ParamKeyTournamentGeneralEntryFeeCents is the entry fee in GTQ minor units
+	// charged once per member when a group operates in general premium mode.
+	// Defaults to DefaultTournamentGeneralEntryFeeCents (3000 = Q30.00).
+	// is_runtime=TRUE: operators may adjust between rounds without restart.
+	ParamKeyTournamentGeneralEntryFeeCents = "tournament.general_entry_fee_cents"
+	// ParamKeyTournamentRoundEntryFeeCents is the entry fee in GTQ minor units
+	// charged per jornada/round when a group operates in per-round premium mode.
+	// Defaults to DefaultTournamentRoundEntryFeeCents (1500 = Q15.00).
+	// is_runtime=TRUE: operators may adjust between rounds without restart.
+	ParamKeyTournamentRoundEntryFeeCents = "tournament.round_entry_fee_cents"
 	// ParamKeyAdminBulkMaxItems is the maximum number of IDs accepted in a single
 	// bulk admin operation (BulkDeleteGroups, BulkRemoveMembers). Requests that
 	// exceed this limit are rejected with 422 to prevent oversized ANY($1) queries.
@@ -335,6 +354,7 @@ func AllParamKeys() []string {
 		// Group
 		ParamKeyGroupMinMembers,
 		ParamKeyGroupMaxSize,
+		ParamKeyGroupFreeMaxMembers,
 		ParamKeyGroupInviteCodeLength,
 		ParamKeyGroupEntryFeeCents,
 		ParamKeyGroupCurrency,
@@ -346,6 +366,8 @@ func AllParamKeys() []string {
 		ParamKeyPaginationMaxLimit,
 		// Tournament
 		ParamKeyTournamentWinPoints,
+		ParamKeyTournamentGeneralEntryFeeCents,
+		ParamKeyTournamentRoundEntryFeeCents,
 		// Admin
 		ParamKeyAdminBulkMaxItems,
 		// Cache

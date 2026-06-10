@@ -162,6 +162,9 @@ func (s *stubQuinielaSvc) GetByOwner(_ context.Context, _ int) ([]*domain.Quinie
 func (s *stubQuinielaSvc) RenameGroup(_ context.Context, _, _ int, _ string) (*domain.Quiniela, error) {
 	return s.quiniela, s.err
 }
+func (s *stubQuinielaSvc) SetTournamentMode(_ context.Context, _, _ int, _, _ bool) (*domain.Quiniela, error) {
+	return s.quiniela, s.err
+}
 
 // stubRanker implements service.Ranker with configurable returns.
 type stubRanker struct {
@@ -177,6 +180,12 @@ func (s *stubRanker) GetLeaderboard(_ context.Context, _ int) (*service.Leaderbo
 }
 
 func (s *stubRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) (*service.LeaderboardResult, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &service.LeaderboardResult{Entries: s.entries}, nil
+}
+func (s *stubRanker) GetLeaderboardWithRoundBreakdown(_ context.Context, _ int) (*service.LeaderboardResult, error) {
 	if s.err != nil {
 		return nil, s.err
 	}

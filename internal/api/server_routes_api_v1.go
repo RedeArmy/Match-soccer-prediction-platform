@@ -71,6 +71,8 @@ func (s *Server) registerGroupRoutes(r chi.Router, d apiV1Deps) {
 		r.Get("/{id}", d.h.group.GetByID)
 		// Only the group CreateOwner may rename; ownership enforced in the service layer.
 		r.Patch("/{id}", d.h.group.RenameGroup)
+		// Only the group CreateOwner may change the tournament payment mode.
+		r.Patch("/{id}/tournament-mode", d.h.group.SetTournamentMode)
 		r.Get("/{id}/members", d.h.group.ListMembers)
 		r.Get("/{id}/leaderboard", d.h.leaderboard.GetLeaderboard)
 		// Any active member may approve or reject a pending join request.

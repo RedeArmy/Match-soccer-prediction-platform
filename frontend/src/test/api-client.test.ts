@@ -225,11 +225,11 @@ describe('api – group methods', () => {
     expect((init as RequestInit).method).toBe('DELETE')
   })
 
-  it('getGroupLeaderboard includes cursor param when provided', async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse({ data: [], next_cursor: '', has_more: false }))
-    await api.getGroupLeaderboard('tok', 1, 'cursor_abc')
+  it('getGroupLeaderboard includes breakdown param when requested', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ entries: [], active_paid_members: 0, winner_count: 0, eligible_for_prizes: false }))
+    await api.getGroupLeaderboard('tok', 1, true)
     const [url] = mockFetch.mock.calls[0]
-    expect(String(url)).toContain('cursor=cursor_abc')
+    expect(String(url)).toContain('breakdown=true')
   })
 
   it('getGroupMembers sends GET', async () => {

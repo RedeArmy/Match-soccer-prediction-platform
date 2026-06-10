@@ -118,7 +118,8 @@ func NewGroupMembershipService(
 // Re-joining after leaving is supported.
 func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error) {
 	maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
-	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers)
+	freeMax := s.params.GetInt(ctx, domain.ParamKeyGroupFreeMaxMembers, domain.DefaultGroupFreeMaxMembers)
+	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers, freeMax)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +149,8 @@ func (s *groupMembershipService) createPendingPayment(ctx context.Context, quini
 // atomically. The membership remains pending until an existing member approves.
 func (s *groupMembershipService) JoinWithBalance(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error) {
 	maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
-	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers)
+	freeMax := s.params.GetInt(ctx, domain.ParamKeyGroupFreeMaxMembers, domain.DefaultGroupFreeMaxMembers)
+	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers, freeMax)
 	if err != nil {
 		return nil, err
 	}
@@ -188,6 +190,32 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 	}
 	if pending.Status != domain.MembershipPending {
 		return nil, apperrors.Conflict("this join request is no longer pending")
+	}
+
+	// Load the group to determine free/premium rules.
+	q, err := s.quinielaRepo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+	if q == nil {
+		return nil, apperrors.NotFound("group not found")
+	}
+
+	if !q.IsPremium {
+		// Block approvals in free groups that have reached the member limit.
+		freeMax := s.params.GetInt(ctx, domain.ParamKeyGroupFreeMaxMembers, domain.DefaultGroupFreeMaxMembers)
+		count, err := s.memberRepo.CountActive(ctx, quinielaID)
+		if err != nil {
+			return nil, err
+		}
+		if count >= freeMax {
+			return nil, apperrors.Conflict("this free group has reached its member limit; upgrade to premium to add more members")
+		}
+	} else if !pending.Paid && q.EntryFee > 0 {
+		// Premium group: charge the entry fee before promoting to active.
+		if _, err := s.memberRepo.DebitBalanceAndMarkPaid(ctx, quinielaID, pending.UserID, q.EntryFee); err != nil {
+			return nil, err
+		}
 	}
 
 	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)

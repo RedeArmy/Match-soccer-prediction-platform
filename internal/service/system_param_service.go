@@ -499,6 +499,9 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyKYCIPVelocityWindowMinutes:      {5, 1_440},             // 5 min – 24 h
 	domain.ParamKeyKYCIPVelocityMaxSubmissions:     {0, 100},               // 0 (disabled) – 100 per window
 	domain.ParamKeyKYCDocRetentionYears:            {1, 20},                // 1 year minimum – 20 years maximum
+	domain.ParamKeyTournamentGeneralEntryFeeCents:  {0, 100_000_000},       // free – Q1 000 000
+	domain.ParamKeyTournamentRoundEntryFeeCents:    {0, 100_000_000},       // free – Q1 000 000
+	domain.ParamKeyGroupFreeMaxMembers:             {1, 1_000},             // 1 – 1 000 members
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

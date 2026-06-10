@@ -308,7 +308,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_NewMembershipCreatesP
 	q := seedQuiniela(t, owner.ID)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
+	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup, 0)
 	if err != nil {
 		t.Fatalf("RequestJoinByInviteCode: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_LeftMembershipBecomes
 	existing := seedMembership(t, q.ID, joiner.ID, domain.MembershipLeft, false)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
+	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup, 0)
 	if err != nil {
 		t.Fatalf("RequestJoinByInviteCode: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_InvalidCodeReturnsNot
 	joiner := seedUser(t)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	_, _, err := repo.RequestJoinByInviteCode(context.Background(), "INVALID123", joiner.ID, domain.MaxMembersPerGroup)
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), "INVALID123", joiner.ID, domain.MaxMembersPerGroup, 0)
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
@@ -371,7 +371,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_ActiveMemberReturnsCo
 	seedMembership(t, q.ID, joiner.ID, domain.MembershipActive, true)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup, 0)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict, got %v", err)
 	}
@@ -385,7 +385,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_PendingMemberReturnsC
 	seedMembership(t, q.ID, joiner.ID, domain.MembershipPending, false)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup, 0)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict, got %v", err)
 	}
@@ -401,7 +401,7 @@ func TestGroupMembershipRepository_RequestJoinByInviteCode_MaxMembersReachedRetu
 	joiner := seedUser(t)
 	repo := repository.NewPostgresGroupMembershipRepository(testDB)
 
-	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup)
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup, 0)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict for MaxMembersPerGroup reached, got %v", err)
 	}
@@ -1232,5 +1232,131 @@ func TestGroupMembershipRepository_DebitBalanceAndMarkPaid_InsufficientBalance_R
 	_, err := mrepo.DebitBalanceAndMarkPaid(context.Background(), q.ID, member.ID, 5_000)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict on insufficient balance; got %v", err)
+	}
+}
+
+// ── enforceFreeMax / RequestJoinByInviteCode with freeMaxMembers ──────────────
+
+func TestGroupMembershipRepository_RequestJoinByInviteCode_FreeMaxReachedReturnsConflict(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	// Seed 2 active members so the group is at freeMax=2.
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	other := seedUser(t)
+	seedMembership(t, q.ID, other.ID, domain.MembershipActive, true)
+
+	joiner := seedUser(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	_, _, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup, 2)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict when freeMax reached, got %v", err)
+	}
+}
+
+func TestGroupMembershipRepository_RequestJoinByInviteCode_FreeMaxNotReachedSucceeds(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	// 1 active member; freeMax = 5 → still room.
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+
+	joiner := seedUser(t)
+	repo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	gotQ, gotM, err := repo.RequestJoinByInviteCode(context.Background(), q.InviteCode, joiner.ID, domain.MaxMembersPerGroup, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotQ == nil || gotQ.ID != q.ID {
+		t.Fatalf("expected quiniela %d, got %+v", q.ID, gotQ)
+	}
+	if gotM == nil || gotM.Status != domain.MembershipPending {
+		t.Errorf("expected pending membership, got %+v", gotM)
+	}
+}
+
+// ── BulkDebitAndMarkPaid ──────────────────────────────────────────────────────
+
+func TestGroupMembershipRepository_BulkDebitAndMarkPaid_ChargesAllUnpaidActiveMembers(t *testing.T) {
+	cleanTables(t)
+
+	owner := seedUser(t)
+	m1 := seedUserWithBalance(t, 5_000)
+	m2 := seedUserWithBalance(t, 5_000)
+	q := seedQuiniela(t, owner.ID)
+
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)  // already paid
+	seedMembership(t, q.ID, m1.ID, domain.MembershipActive, false)    // unpaid
+	seedMembership(t, q.ID, m2.ID, domain.MembershipActive, false)    // unpaid
+
+	mrepo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	charged, err := mrepo.BulkDebitAndMarkPaid(context.Background(), q.ID, 1_000)
+	if err != nil {
+		t.Fatalf("BulkDebitAndMarkPaid: %v", err)
+	}
+	if len(charged) != 2 {
+		t.Errorf("expected 2 charged user IDs, got %d: %v", len(charged), charged)
+	}
+	// Verify balances were reduced.
+	userRepo := repository.NewPostgresUserRepository(testDB)
+	for _, uid := range charged {
+		bal, _, err := userRepo.GetBalance(context.Background(), uid)
+		if err != nil {
+			t.Fatalf("GetBalance(%d): %v", uid, err)
+		}
+		if bal != 4_000 {
+			t.Errorf("user %d: expected balance 4000 after debit, got %d", uid, bal)
+		}
+	}
+}
+
+func TestGroupMembershipRepository_BulkDebitAndMarkPaid_InsufficientBalance_RollsBackAll(t *testing.T) {
+	cleanTables(t)
+
+	owner := seedUser(t)
+	rich := seedUserWithBalance(t, 5_000)
+	poor := seedUserWithBalance(t, 100) // not enough for 1_000 fee
+	q := seedQuiniela(t, owner.ID)
+
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, rich.ID, domain.MembershipActive, false)
+	seedMembership(t, q.ID, poor.ID, domain.MembershipActive, false)
+
+	mrepo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	_, err := mrepo.BulkDebitAndMarkPaid(context.Background(), q.ID, 1_000)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict when one member has insufficient balance, got %v", err)
+	}
+
+	// Verify the rich member's balance was NOT changed (rollback).
+	userRepo := repository.NewPostgresUserRepository(testDB)
+	bal, _, err := userRepo.GetBalance(context.Background(), rich.ID)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if bal != 5_000 {
+		t.Errorf("expected rich member balance to remain 5000 after rollback, got %d", bal)
+	}
+}
+
+func TestGroupMembershipRepository_BulkDebitAndMarkPaid_NoUnpaidMembers_ReturnsEmpty(t *testing.T) {
+	cleanTables(t)
+
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true) // already paid
+
+	mrepo := repository.NewPostgresGroupMembershipRepository(testDB)
+
+	charged, err := mrepo.BulkDebitAndMarkPaid(context.Background(), q.ID, 1_000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(charged) != 0 {
+		t.Errorf("expected empty result for no unpaid members, got %v", charged)
 	}
 }

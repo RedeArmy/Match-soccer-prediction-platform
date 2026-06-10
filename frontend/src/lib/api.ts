@@ -34,6 +34,7 @@ import type {
   SystemParamResponse,
   ScoringRuleResponse,
   CircuitBreakerResponse,
+  TournamentModeRequest,
 } from './api-types'
 
 // ── Base fetch ────────────────────────────────────────────────────────────────
@@ -110,10 +111,15 @@ class APIClient {
     return this.request(`/api/v1/groups/${id}`, {}, token)
   }
 
-  getGroupLeaderboard(token: string, id: number, cursor?: string, limit = 50): Promise<CursorPaged<LeaderboardEntry>> {
-    const q = new URLSearchParams({ limit: String(limit) })
-    if (cursor) q.set('cursor', cursor)
-    return this.request(`/api/v1/groups/${id}/leaderboard?${q}`, {}, token)
+  getGroupLeaderboard(token: string, id: number, breakdown = false): Promise<{ entries: LeaderboardEntry[]; active_paid_members: number; winner_count: number; eligible_for_prizes: boolean }> {
+    const q = new URLSearchParams()
+    if (breakdown) q.set('breakdown', 'true')
+    const qs = q.toString()
+    return this.request(`/api/v1/groups/${id}/leaderboard${qs ? `?${qs}` : ''}`, {}, token)
+  }
+
+  setTournamentMode(token: string, id: number, data: TournamentModeRequest): Promise<GroupDetailResponse> {
+    return this.request(`/api/v1/groups/${id}/tournament-mode`, { method: 'PATCH', body: JSON.stringify(data) }, token)
   }
 
   getGroupMembers(token: string, id: number): Promise<MemberResponse[]> {

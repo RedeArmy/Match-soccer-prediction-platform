@@ -82,6 +82,7 @@ type paramSpec struct {
 //   - 000171_seed_group_entry_fee_param               (+2)
 //   - 000174_update_auth_validation_timeout_param      (default_value update: 5→10)
 //   - 000179_seed_withdrawal_min_usd_cents_param       (+1)
+//   - 000180_seed_tournament_mode_params               (+2)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -104,6 +105,8 @@ var allParams = []paramSpec{
 	// the ISO 4217 code mid-operation would corrupt mixed-currency prize pools; restart required.
 	{key: domain.ParamKeyGroupEntryFeeCents, defaultValue: strconv.Itoa(domain.DefaultGroupEntryFeeCents), paramType: "int", category: "group", isRuntime: true},
 	{key: domain.ParamKeyGroupCurrency, defaultValue: domain.DefaultGroupCurrency, paramType: "string", category: "group", isRuntime: false},
+	// free_max_members (migration 000184); runtime: adjustable without restart.
+	{key: domain.ParamKeyGroupFreeMaxMembers, defaultValue: strconv.Itoa(domain.DefaultGroupFreeMaxMembers), paramType: "int", category: "group", isRuntime: true},
 
 	// Conflict — runtime: conflict detection is read per-request.
 	{key: domain.ParamKeyConflictStaleDays, defaultValue: strconv.Itoa(domain.DefaultConflictStaleDays), paramType: "int", category: "conflict", isRuntime: true},
@@ -115,6 +118,9 @@ var allParams = []paramSpec{
 
 	// Tournament — runtime.
 	{key: domain.ParamKeyTournamentWinPoints, defaultValue: strconv.Itoa(domain.StandingsWinPoints), paramType: "int", category: "tournament", isRuntime: true},
+	// Tournament hybrid-mode entry fees (migration 000180); runtime: adjustable between rounds.
+	{key: domain.ParamKeyTournamentGeneralEntryFeeCents, defaultValue: strconv.Itoa(domain.DefaultTournamentGeneralEntryFeeCents), paramType: "int", category: "tournament", isRuntime: true},
+	{key: domain.ParamKeyTournamentRoundEntryFeeCents, defaultValue: strconv.Itoa(domain.DefaultTournamentRoundEntryFeeCents), paramType: "int", category: "tournament", isRuntime: true},
 
 	// Admin — runtime: tunable during high-load periods without restart.
 	{key: domain.ParamKeyAdminBulkMaxItems, defaultValue: strconv.Itoa(domain.DefaultAdminBulkMaxItems), paramType: "int", category: "admin", isRuntime: true},

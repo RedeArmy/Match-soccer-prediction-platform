@@ -46,6 +46,9 @@ func (r *noopRanker) GetLeaderboard(_ context.Context, _ int) (*LeaderboardResul
 func (r *noopRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) (*LeaderboardResult, error) {
 	return &LeaderboardResult{}, r.err
 }
+func (r *noopRanker) GetLeaderboardWithRoundBreakdown(_ context.Context, _ int) (*LeaderboardResult, error) {
+	return &LeaderboardResult{}, r.err
+}
 
 func newAdminGroupSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) AdminGroupService {
 	return NewAdminGroupService(qr, mr, &noopSnapshotter{}, &noopRanker{}, &noopAuditLogger{}, zap.NewNop())
@@ -303,6 +306,9 @@ func (r *captureDistributeRepo) DistributePrizesAtomically(_ context.Context, _,
 		r.onDistribute(credits, freezes)
 	}
 	return nil
+}
+func (r *captureDistributeRepo) UpdateTournamentMode(_ context.Context, _ int, _, _, _ bool, _ int) (*domain.Quiniela, error) {
+	return nil, r.err
 }
 
 type stubPrizeCrediter struct {
