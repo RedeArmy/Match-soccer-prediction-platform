@@ -3,7 +3,7 @@
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
-type BadgeVariant = 'active' | 'upcoming' | 'ended' | 'pending' | 'approved' | 'rejected' | 'connected' | 'reconnecting' | 'failed' | 'under_review'
+type BadgeVariant = 'active' | 'upcoming' | 'ended' | 'pending' | 'approved' | 'rejected' | 'connected' | 'reconnecting' | 'failed' | 'under_review' | 'free' | 'premium'
 
 const variants: Record<BadgeVariant, string> = {
   active:       'badge-active',
@@ -16,6 +16,8 @@ const variants: Record<BadgeVariant, string> = {
   reconnecting: 'badge-upcoming',
   failed:       'badge-rejected',
   under_review: 'badge-review',
+  free:         'badge-ended',
+  premium:      'badge-premium',
 }
 
 interface StatusBadgeProps {

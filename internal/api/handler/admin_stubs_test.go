@@ -79,6 +79,9 @@ func (s *stubAdminUserSvc) ListFiltered(_ context.Context, _ repository.UserFilt
 func (s *stubAdminUserSvc) GetProfile(_ context.Context, _ int) (*service.AdminUserProfile, error) {
 	return s.profile, s.err
 }
+func (s *stubAdminUserSvc) SetRole(_ context.Context, _, _ int, _ domain.UserRole) (*domain.User, error) {
+	return s.user, s.err
+}
 
 // ── AdminGroupService stub ────────────────────────────────────────────────────
 

@@ -77,6 +77,9 @@ func (r *stubUserRepo) GetBalance(_ context.Context, _ int) (int, int, error) {
 	return 0, 0, r.err
 }
 func (r *stubUserRepo) UpdateLocale(_ context.Context, _ int, _ string) error { return r.err }
+func (r *stubUserRepo) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
+	return nil, r.err
+}
 
 const (
 	fmtStatus        = "expected status %d, got %d"

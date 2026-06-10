@@ -32,6 +32,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyGroupInviteCodeLength": ParamKeyGroupInviteCodeLength,
 		"ParamKeyGroupEntryFeeCents":    ParamKeyGroupEntryFeeCents,
 		"ParamKeyGroupCurrency":         ParamKeyGroupCurrency,
+		"ParamKeyGroupFreeMaxMembers":   ParamKeyGroupFreeMaxMembers,
 		// Conflict
 		"ParamKeyConflictStaleDays": ParamKeyConflictStaleDays,
 		"ParamKeyConflictMaxScan":   ParamKeyConflictMaxScan,
@@ -39,7 +40,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyPaginationDefaultLimit": ParamKeyPaginationDefaultLimit,
 		"ParamKeyPaginationMaxLimit":     ParamKeyPaginationMaxLimit,
 		// Tournament
-		"ParamKeyTournamentWinPoints": ParamKeyTournamentWinPoints,
+		"ParamKeyTournamentWinPoints":            ParamKeyTournamentWinPoints,
+		"ParamKeyTournamentGeneralEntryFeeCents": ParamKeyTournamentGeneralEntryFeeCents,
+		"ParamKeyTournamentRoundEntryFeeCents":   ParamKeyTournamentRoundEntryFeeCents,
 		// Admin
 		"ParamKeyAdminBulkMaxItems": ParamKeyAdminBulkMaxItems,
 		// Cache
@@ -190,6 +193,13 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyKYCIPVelocityMaxSubmissions":     ParamKeyKYCIPVelocityMaxSubmissions,
 		// KYC document retention (migration 000144)
 		"ParamKeyKYCDocRetentionYears": ParamKeyKYCDocRetentionYears,
+		// Match sync (migration 000186)
+		"ParamKeyMatchSyncEnabled":             ParamKeyMatchSyncEnabled,
+		"ParamKeyMatchSyncFastPollIntervalSec": ParamKeyMatchSyncFastPollIntervalSec,
+		"ParamKeyMatchSyncSlowPollIntervalSec": ParamKeyMatchSyncSlowPollIntervalSec,
+		"ParamKeyMatchSyncProvider":            ParamKeyMatchSyncProvider,
+		"ParamKeyMatchSyncLeagueID":            ParamKeyMatchSyncLeagueID,
+		"ParamKeyMatchSyncSeason":              ParamKeyMatchSyncSeason,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -203,6 +213,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	defaults := map[string]interface{}{
 		// Group
 		"DefaultGroupInviteCodeLength": DefaultGroupInviteCodeLength,
+		"DefaultGroupFreeMaxMembers":   DefaultGroupFreeMaxMembers,
 		// Pagination
 		"DefaultPaginationDefaultLimit": DefaultPaginationDefaultLimit,
 		"DefaultPaginationMaxLimit":     DefaultPaginationMaxLimit,
@@ -218,6 +229,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultScoringExtraTimeBonus":  DefaultScoringExtraTimeBonus,
 		"DefaultScoringPenaltiesBonus":  DefaultScoringPenaltiesBonus,
 		"DefaultScoringUpdateChunkSize": DefaultScoringUpdateChunkSize,
+		// Tournament
+		"DefaultTournamentGeneralEntryFeeCents": DefaultTournamentGeneralEntryFeeCents,
+		"DefaultTournamentRoundEntryFeeCents":   DefaultTournamentRoundEntryFeeCents,
 		// Conflict
 		"DefaultConflictStaleDays": DefaultConflictStaleDays,
 		"DefaultConflictMaxScan":   DefaultConflictMaxScan,
@@ -364,10 +378,17 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
 		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
 		"DefaultNotifySchedulerTimezone": DefaultNotifySchedulerTimezone,
+		// Match sync (migration 000186)
+		"DefaultMatchSyncEnabled":             DefaultMatchSyncEnabled,
+		"DefaultMatchSyncFastPollIntervalSec": DefaultMatchSyncFastPollIntervalSec,
+		"DefaultMatchSyncSlowPollIntervalSec": DefaultMatchSyncSlowPollIntervalSec,
+		"DefaultMatchSyncProvider":            DefaultMatchSyncProvider,
+		"DefaultMatchSyncLeagueID":            DefaultMatchSyncLeagueID,
+		"DefaultMatchSyncSeason":              DefaultMatchSyncSeason,
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 141 // update when adding a new ParamKey* constant
+		const expectedCount = 150 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -375,7 +396,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 127 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention; +1 withdrawal_min_usd_cents)
+		const expectedCount = 136 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention; +1 withdrawal_min_usd_cents; +2 tournament entry fees; +1 group.free_max_members; +6 match sync)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -432,6 +453,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyGroupInviteCodeLength", ParamKeyGroupInviteCodeLength, "group"},
 		{"ParamKeyGroupEntryFeeCents", ParamKeyGroupEntryFeeCents, "group"},
 		{"ParamKeyGroupCurrency", ParamKeyGroupCurrency, "group"},
+		{"ParamKeyGroupFreeMaxMembers", ParamKeyGroupFreeMaxMembers, "group"},
 		// Conflict
 		{"ParamKeyConflictStaleDays", ParamKeyConflictStaleDays, "conflict"},
 		{"ParamKeyConflictMaxScan", ParamKeyConflictMaxScan, "conflict"},
@@ -440,6 +462,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyPaginationMaxLimit", ParamKeyPaginationMaxLimit, "pagination"},
 		// Tournament
 		{"ParamKeyTournamentWinPoints", ParamKeyTournamentWinPoints, "tournament"},
+		{"ParamKeyTournamentGeneralEntryFeeCents", ParamKeyTournamentGeneralEntryFeeCents, "tournament"},
+		{"ParamKeyTournamentRoundEntryFeeCents", ParamKeyTournamentRoundEntryFeeCents, "tournament"},
 		// Admin
 		{"ParamKeyAdminBulkMaxItems", ParamKeyAdminBulkMaxItems, "admin"},
 		// Cache
@@ -591,6 +615,13 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyKYCIPVelocityMaxSubmissions", ParamKeyKYCIPVelocityMaxSubmissions, "kyc"},
 		// KYC document retention (migration 000144)
 		{"ParamKeyKYCDocRetentionYears", ParamKeyKYCDocRetentionYears, "kyc"},
+		// Match sync (migration 000186)
+		{"ParamKeyMatchSyncEnabled", ParamKeyMatchSyncEnabled, "match"},
+		{"ParamKeyMatchSyncFastPollIntervalSec", ParamKeyMatchSyncFastPollIntervalSec, "match"},
+		{"ParamKeyMatchSyncSlowPollIntervalSec", ParamKeyMatchSyncSlowPollIntervalSec, "match"},
+		{"ParamKeyMatchSyncProvider", ParamKeyMatchSyncProvider, "match"},
+		{"ParamKeyMatchSyncLeagueID", ParamKeyMatchSyncLeagueID, "match"},
+		{"ParamKeyMatchSyncSeason", ParamKeyMatchSyncSeason, "match"},
 	}
 
 	for _, tc := range paramKeys {
@@ -624,6 +655,10 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		// Group
 		"DefaultGroupInviteCodeLength": DefaultGroupInviteCodeLength,
 		"DefaultGroupEntryFeeCents":    DefaultGroupEntryFeeCents,
+		"DefaultGroupFreeMaxMembers":   DefaultGroupFreeMaxMembers,
+		// Tournament
+		"DefaultTournamentGeneralEntryFeeCents": DefaultTournamentGeneralEntryFeeCents,
+		"DefaultTournamentRoundEntryFeeCents":   DefaultTournamentRoundEntryFeeCents,
 		// Prediction
 		"DefaultPredictionDeadlineMin": DefaultPredictionDeadlineMin,
 		// Pagination
@@ -772,6 +807,11 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultFXBanguatTimeoutSec":         DefaultFXBanguatTimeoutSec,
 		"DefaultFXExchangeRateAPITimeoutSec": DefaultFXExchangeRateAPITimeoutSec,
 		"DefaultFXOpenExchangeTimeoutSec":    DefaultFXOpenExchangeTimeoutSec,
+		// Match sync intervals and identifiers (migration 000186)
+		"DefaultMatchSyncFastPollIntervalSec": DefaultMatchSyncFastPollIntervalSec,
+		"DefaultMatchSyncSlowPollIntervalSec": DefaultMatchSyncSlowPollIntervalSec,
+		"DefaultMatchSyncLeagueID":            DefaultMatchSyncLeagueID,
+		"DefaultMatchSyncSeason":              DefaultMatchSyncSeason,
 	}
 
 	for name, value := range defaults {
@@ -811,6 +851,7 @@ func TestStringDefaultConstantsAreNonEmpty(t *testing.T) {
 		"DefaultNotifyPushIconURL":       DefaultNotifyPushIconURL,
 		"DefaultNotifyPushBadgeURL":      DefaultNotifyPushBadgeURL,
 		"DefaultNotifySchedulerTimezone": DefaultNotifySchedulerTimezone,
+		"DefaultMatchSyncProvider":       DefaultMatchSyncProvider,
 	}
 	for name, value := range stringDefaults {
 		t.Run(name, func(t *testing.T) {
@@ -941,9 +982,9 @@ func collectSeededParams(t *testing.T, dir string) map[string]bool {
 		t.Fatalf("cannot read migrations directory %s: %v", dir, err)
 	}
 
-	keyInFileRe := regexp.MustCompile(`'([a-z]+\.[a-z][a-z0-9_]*)'`)
+	keyInFileRe := regexp.MustCompile(`'([a-z]+(?:\.[a-z][a-z0-9_]*)+)'`)
 	deleteRe := regexp.MustCompile(
-		`(?i)DELETE\s+FROM\s+system_params\s+WHERE\s+key\s*=\s*'([a-z]+\.[a-z][a-z0-9_]*)'`,
+		`(?i)DELETE\s+FROM\s+system_params\s+WHERE\s+key\s*=\s*'([a-z]+(?:\.[a-z][a-z0-9_]*)+)'`,
 	)
 
 	seeded := make(map[string]bool)
@@ -991,6 +1032,29 @@ func assertParamKeySync(t *testing.T, paramKeys map[string]string) {
 	for name, v := range paramKeys {
 		if !canonical[v] {
 			t.Errorf("paramKeys[%q] = %q is not returned by AllParamKeys() — remove it from this test or add it to AllParamKeys()", name, v)
+		}
+	}
+}
+
+// TestIsKnockoutPhase verifies the function for all defined phases.
+func TestIsKnockoutPhase_GroupStage_ReturnsFalse(t *testing.T) {
+	if IsKnockoutPhase(PhaseGroupStage) {
+		t.Error("expected IsKnockoutPhase=false for PhaseGroupStage")
+	}
+}
+
+func TestIsKnockoutPhase_KnockoutPhases_ReturnTrue(t *testing.T) {
+	knockoutPhases := []MatchPhase{
+		PhaseRoundOf32,
+		PhaseRoundOf16,
+		PhaseQuarterFinal,
+		PhaseSemiFinal,
+		PhaseThirdPlace,
+		PhaseFinal,
+	}
+	for _, phase := range knockoutPhases {
+		if !IsKnockoutPhase(phase) {
+			t.Errorf("expected IsKnockoutPhase=true for phase %q", phase)
 		}
 	}
 }

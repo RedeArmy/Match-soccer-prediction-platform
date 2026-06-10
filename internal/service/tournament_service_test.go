@@ -43,6 +43,14 @@ func (r *stubMatchRepoTournament) ListByPhase(_ context.Context, _ domain.MatchP
 func (r *stubMatchRepoTournament) ListByStatus(_ context.Context, _ domain.MatchStatus) ([]*domain.Match, error) {
 	return r.matches, r.err
 }
+func (r *stubMatchRepoTournament) LinkExternal(_ context.Context, _ int, _ string, _ int64) error {
+	return r.err
+}
+func (r *stubMatchRepoTournament) UnlinkExternal(_ context.Context, _ int) error { return r.err }
+func (r *stubMatchRepoTournament) ListSyncCandidates(_ context.Context) ([]*domain.Match, error) {
+	return r.matches, r.err
+}
+func (r *stubMatchRepoTournament) UpdateSyncState(_ context.Context, _ int) error { return r.err }
 
 type stubTournamentRepo struct {
 	slot  *domain.TournamentSlot

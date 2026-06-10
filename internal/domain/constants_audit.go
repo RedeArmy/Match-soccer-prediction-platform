@@ -16,6 +16,7 @@ const (
 	AuditActionOwnershipTransferred = "admin_group.ownership_transferred"
 	AuditActionUserBanned           = "admin_user.banned"
 	AuditActionUserUnbanned         = "admin_user.unbanned"
+	AuditActionAdminSetRole         = "admin_user.role_changed"
 	AuditActionPaymentCreated       = "payment.created"
 	AuditActionPaymentValidated     = "payment.validated"
 	AuditActionPaymentRejected      = "payment.rejected"

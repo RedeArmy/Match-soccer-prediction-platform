@@ -11,6 +11,7 @@ import (
 type KYCProfileResponse struct {
 	ID              int     `json:"id"`
 	UserID          int     `json:"user_id"`
+	UserEmail       string  `json:"user_email,omitempty"`
 	Status          string  `json:"status"`
 	Tier            int     `json:"tier"`
 	FullName        string  `json:"full_name"`
@@ -90,6 +91,7 @@ func kycProfileToResponse(p *domain.KYCProfile) KYCProfileResponse {
 	r := KYCProfileResponse{
 		ID:              p.ID,
 		UserID:          p.UserID,
+		UserEmail:       p.UserEmail,
 		Status:          string(p.Status),
 		Tier:            int(p.Tier),
 		FullName:        p.FullName,

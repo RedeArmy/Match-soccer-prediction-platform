@@ -118,7 +118,8 @@ func NewGroupMembershipService(
 // Re-joining after leaving is supported.
 func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error) {
 	maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
-	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers)
+	freeMax := s.params.GetInt(ctx, domain.ParamKeyGroupFreeMaxMembers, domain.DefaultGroupFreeMaxMembers)
+	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers, freeMax)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +149,8 @@ func (s *groupMembershipService) createPendingPayment(ctx context.Context, quini
 // atomically. The membership remains pending until an existing member approves.
 func (s *groupMembershipService) JoinWithBalance(ctx context.Context, inviteCode string, userID int) (*domain.GroupMembership, error) {
 	maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
-	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers)
+	freeMax := s.params.GetInt(ctx, domain.ParamKeyGroupFreeMaxMembers, domain.DefaultGroupFreeMaxMembers)
+	quiniela, m, err := s.memberRepo.RequestJoinByInviteCode(ctx, inviteCode, userID, maxMembers, freeMax)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +192,19 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 		return nil, apperrors.Conflict("this join request is no longer pending")
 	}
 
+	// Load the group to determine free/premium rules.
+	q, err := s.quinielaRepo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+	if q == nil {
+		return nil, apperrors.NotFound("group not found")
+	}
+
+	if err := s.enforceApprovalFeeRules(ctx, q, pending); err != nil {
+		return nil, err
+	}
+
 	minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
 	maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
 	m, err := s.memberRepo.ApproveMembership(ctx, membershipID, quinielaID, s.clock.Now(), minMembers, maxMembers)
@@ -204,6 +219,25 @@ func (s *groupMembershipService) ApproveJoin(ctx context.Context, quinielaID, me
 	})
 	s.writeMembershipEvent(ctx, notification.EventGroupMemberJoined, quinielaID, m.UserID, m.ID)
 	return m, nil
+}
+
+func (s *groupMembershipService) enforceApprovalFeeRules(ctx context.Context, q *domain.Quiniela, pending *domain.GroupMembership) error {
+	if !q.IsPremium {
+		freeMax := s.params.GetInt(ctx, domain.ParamKeyGroupFreeMaxMembers, domain.DefaultGroupFreeMaxMembers)
+		count, err := s.memberRepo.CountActive(ctx, q.ID)
+		if err != nil {
+			return err
+		}
+		if count >= freeMax {
+			return apperrors.Conflict("this free group has reached its member limit; upgrade to premium to add more members")
+		}
+		return nil
+	}
+	if !pending.Paid && q.EntryFee > 0 {
+		_, err := s.memberRepo.DebitBalanceAndMarkPaid(ctx, q.ID, pending.UserID, q.EntryFee)
+		return err
+	}
+	return nil
 }
 
 // RejectJoin removes a pending join request on behalf of an active member.

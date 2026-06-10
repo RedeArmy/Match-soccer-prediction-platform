@@ -80,13 +80,14 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	entryFee := h.params.GetInt(ctx, domain.ParamKeyGroupEntryFeeCents, domain.DefaultGroupEntryFeeCents)
 	currency := h.params.GetString(ctx, domain.ParamKeyGroupCurrency, domain.DefaultGroupCurrency)
 
+	// Groups are always created as free (entry_fee=0, is_premium=false).
+	// The owner may later upgrade to premium via PATCH /{id}/tournament-mode.
 	quiniela := &domain.Quiniela{
 		Name:     req.Name,
 		OwnerID:  caller.ID,
-		EntryFee: entryFee,
+		EntryFee: 0,
 		Currency: currency,
 	}
 	if err := h.quinielaSvc.Create(r.Context(), quiniela); err != nil {
@@ -467,15 +468,76 @@ func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 			continue // left/rejected memberships are hidden from the dashboard
 		}
 		out = append(out, MyGroupResponse{
-			ID:               m.QuinielaID,
-			Name:             m.GroupName,
-			GroupStatus:      m.GroupStatus,
-			MembershipStatus: string(m.Status),
-			Role:             string(m.Role),
-			InviteCode:       m.InviteCode,
-			EntryFee:         m.EntryFee,
-			Currency:         m.Currency,
+			ID:                m.QuinielaID,
+			Name:              m.GroupName,
+			GroupStatus:       m.GroupStatus,
+			MembershipStatus:  string(m.Status),
+			Role:              string(m.Role),
+			InviteCode:        m.InviteCode,
+			EntryFee:          m.EntryFee,
+			Currency:          m.Currency,
+			IsPremium:         m.IsPremium,
+			ModeGeneral:       m.ModeGeneral,
+			ModeRound:         m.ModeRound,
+			ActiveMemberCount: m.ActiveMemberCount,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// setTournamentModeRequest is the JSON body for PATCH /api/v1/groups/{id}/tournament-mode.
+type setTournamentModeRequest struct {
+	ModeGeneral bool `json:"mode_general"`
+	ModeRound   bool `json:"mode_round"`
+}
+
+// SetTournamentMode handles PATCH /api/v1/groups/{id}/tournament-mode.
+//
+// @Summary      Set tournament payment mode
+// @Description  Configures the hybrid payment mode for a group. Only the group
+//
+//	owner may call this endpoint. Enabling any paid mode (mode_general or
+//	mode_round) requires the group to have ≥ 5 active members. Disabling
+//	both modes reverts the group to free (is_premium=false, no prizes).
+//
+// @Tags         groups
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int                            true  "Group ID"
+// @Param        body body      handler.setTournamentModeRequest  true  "Mode flags"
+// @Success      200  {object}  handler.GroupResponse
+// @Failure      400  {object}  handler.ErrorResponse  "Validation error"
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Not the group owner"
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      409  {object}  handler.ErrorResponse  "Not enough members to enable premium"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/groups/{id}/tournament-mode [patch]
+func (h *GroupHandler) SetTournamentMode(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	req, err := decodeJSON[setTournamentModeRequest](r)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	q, err := h.quinielaSvc.SetTournamentMode(r.Context(), id, caller.ID, req.ModeGeneral, req.ModeRound)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, groupToResponse(q))
 }

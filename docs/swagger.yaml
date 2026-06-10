@@ -387,6 +387,16 @@ definitions:
         type: string
       invite_code_expires_at:
         type: string
+      is_premium:
+        description: |-
+          IsPremium is false for free groups (points-only) and true when at least one
+          paid mode is active. Frontend renders this as "Gratis" (gray) or "Premium" (gold).
+        type: boolean
+      mode_general:
+        description: ModeGeneral and ModeRound reflect which paid sub-modes are active.
+        type: boolean
+      mode_round:
+        type: boolean
       name:
         type: string
       owner_user_id:
@@ -406,6 +416,14 @@ definitions:
         type: boolean
       rank:
         type: integer
+      round_points:
+        additionalProperties:
+          type: integer
+        description: |-
+          RoundPoints maps round_number string ("1"–"9") to points earned in that round.
+          Populated only when the caller requests a breakdown (GET …/leaderboard?breakdown=true).
+          Omitted from the response when nil.
+        type: object
       total_points:
         type: integer
       user_id:
@@ -1056,6 +1074,22 @@ definitions:
       invite_code:
         type: string
     type: object
+  internal_api_handler.linkExternalRequest:
+    properties:
+      external_id:
+        type: integer
+      provider:
+        type: string
+    type: object
+  internal_api_handler.linkExternalResponse:
+    properties:
+      external_id:
+        type: integer
+      match_id:
+        type: integer
+      provider:
+        type: string
+    type: object
   internal_api_handler.metricsSummaryResponse:
     properties:
       configured:
@@ -1132,6 +1166,11 @@ definitions:
           Must be in the range (0, 20] — reasonable GTQ/USD bounds.
         type: string
     type: object
+  internal_api_handler.pollResponse:
+    properties:
+      live_count:
+        type: integer
+    type: object
   internal_api_handler.previewTemplateRequest:
     properties:
       action_url_tmpl:
@@ -1192,6 +1231,13 @@ definitions:
       value:
         type: string
     type: object
+  internal_api_handler.setTournamentModeRequest:
+    properties:
+      mode_general:
+        type: boolean
+      mode_round:
+        type: boolean
+    type: object
   internal_api_handler.sseStatsResponse:
     properties:
       broadcasts:
@@ -1211,6 +1257,23 @@ definitions:
         type: integer
       predicted_win_method:
         type: string
+    type: object
+  internal_api_handler.syncDiffItem:
+    properties:
+      external_away:
+        type: integer
+      external_home:
+        type: integer
+      external_status:
+        type: string
+      internal_away:
+        type: integer
+      internal_home:
+        type: integer
+      internal_status:
+        type: string
+      match_id:
+        type: integer
     type: object
   internal_api_handler.tracingErrorEntry:
     properties:
@@ -2333,6 +2396,116 @@ paths:
       summary: Global leaderboard
       tags:
       - admin-leaderboard
+  /api/v1/admin/match-sync/poll:
+    post:
+      description: Admin only. Immediately runs PollAndApply outside the scheduler
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.pollResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Trigger a manual match-sync poll cycle
+      tags:
+      - admin-match-sync
+  /api/v1/admin/match-sync/reconcile:
+    get:
+      description: Admin only. Compares every linked, non-finished match against the
+        provider
+      parameters:
+      - description: 'API-Football league ID (default: 1)'
+        in: query
+        name: league_id
+        type: integer
+      - description: 'Season year (default: 2026)'
+        in: query
+        name: season
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.syncDiffItem'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reconcile local match state against external provider
+      tags:
+      - admin-match-sync
+  /api/v1/admin/matches/{id}/external-link:
+    delete:
+      description: Admin only. Reverts the match to manual-only management.
+      parameters:
+      - description: Internal match ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove external provider link from a match
+      tags:
+      - admin-match-sync
+    post:
+      consumes:
+      - application/json
+      description: Admin only. Associates the internal match with a provider fixture
+        ID so
+      parameters:
+      - description: Internal match ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Provider and external fixture ID
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.linkExternalRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.linkExternalResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Link match to external provider fixture
+      tags:
+      - admin-match-sync
   /api/v1/admin/notification-dlq:
     get:
       description: Returns the count of unresolved notification delivery failures
@@ -4477,6 +4650,59 @@ paths:
       security:
       - BearerAuth: []
       summary: Leave a group
+      tags:
+      - groups
+  /api/v1/groups/{id}/tournament-mode:
+    patch:
+      consumes:
+      - application/json
+      description: Configures the hybrid payment mode for a group. Only the group
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Mode flags
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.setTournamentModeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.GroupResponse'
+        "400":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Not the group owner
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "409":
+          description: Not enough members to enable premium
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set tournament payment mode
       tags:
       - groups
   /api/v1/groups/join:

@@ -67,12 +67,16 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 		writeError(w, r, h.log, err)
 		return
 	}
+	breakdown := r.URL.Query().Get("breakdown") == "true"
 
 	var result *service.LeaderboardResult
-	if phase == "" {
-		result, err = h.ranker.GetLeaderboard(r.Context(), id)
-	} else {
+	switch {
+	case breakdown:
+		result, err = h.ranker.GetLeaderboardWithRoundBreakdown(r.Context(), id)
+	case phase != "":
 		result, err = h.ranker.GetPhaseLeaderboard(r.Context(), id, phase)
+	default:
+		result, err = h.ranker.GetLeaderboard(r.Context(), id)
 	}
 	if err != nil {
 		writeError(w, r, h.log, err)
@@ -93,6 +97,7 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 			UserName:    e.User.Name,
 			TotalPoints: e.TotalPoints,
 			PrizeWinner: e.PrizeWinner,
+			RoundPoints: e.RoundPoints,
 		})
 	}
 

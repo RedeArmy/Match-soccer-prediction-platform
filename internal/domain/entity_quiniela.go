@@ -54,9 +54,21 @@ type Quiniela struct {
 	Status              QuinielaStatus // system-managed: active iff ≥ MinMembersPerGroup active members
 	EntryFee            int
 	Currency            string
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	DeletedAt           *time.Time // nil for active groups; set when the record is soft-deleted
+	// IsPremium is false for free groups (points-only, no prize distribution).
+	// It is true when at least one paid mode (ModeGeneral or ModeRound) is active.
+	// Set by the group owner via PATCH /groups/{id}/tournament-mode once the group
+	// reaches MinMembersPerGroup active members.
+	IsPremium bool
+	// ModeGeneral enables a single entry-fee prize pool for the overall competition.
+	// Prize distribution follows the existing WinnerCount tier table.
+	ModeGeneral bool
+	// ModeRound enables per-jornada prize pools. Only members with a
+	// quiniela_round_entries row for the active round are included in that
+	// round's distribution (always 1st and 2nd place only).
+	ModeRound bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt *time.Time // nil for active groups; set when the record is soft-deleted
 }
 
 // ── Group membership ──────────────────────────────────────────────────────────
@@ -112,19 +124,41 @@ type GroupMembership struct {
 	UserID      int
 	DisplayName string // populated by ListByQuiniela; empty otherwise
 	// Group-level fields populated by ListByUser enriched query.
-	GroupName   string
-	GroupStatus string
-	InviteCode  string
-	EntryFee    int
-	Currency    string
-	Role        MembershipRole
-	Status      MembershipStatus
-	Paid        bool
-	JoinedAt    *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	RemovedAt   *time.Time // nil unless status = 'left'
-	RemovedBy   *int       // nil = voluntary exit; non-nil = admin-forced removal
+	GroupName         string
+	GroupStatus       string
+	InviteCode        string
+	EntryFee          int
+	Currency          string
+	IsPremium         bool
+	ModeGeneral       bool
+	ModeRound         bool
+	ActiveMemberCount int
+	Role              MembershipRole
+	Status            MembershipStatus
+	Paid              bool
+	JoinedAt          *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	RemovedAt         *time.Time // nil unless status = 'left'
+	RemovedBy         *int       // nil = voluntary exit; non-nil = admin-forced removal
+}
+
+// ── Round entry ───────────────────────────────────────────────────────────────
+
+// QuinielaRoundEntry records a member's payment for a specific round/jornada
+// in a per-round-mode group. A row here is required for the member to be
+// counted toward that round's prize distribution.
+//
+// RoundKey matches the round_number cast to text on the matches table:
+// "1"=group-stage day 1, "2"=day 2, "3"=day 3,
+// "4"=R32, "5"=R16, "6"=QF, "7"=SF, "8"=3rd-place, "9"=final.
+type QuinielaRoundEntry struct {
+	ID         int
+	QuinielaID int
+	UserID     int
+	RoundKey   string
+	PaidAt     time.Time
+	CreatedAt  time.Time
 }
 
 // ── Prediction & leaderboard ──────────────────────────────────────────────────
@@ -202,11 +236,16 @@ type ScoringCfgSnapshot struct {
 //
 // PrizeWinner is computed by the ranking service using WinnerCount(n) where n
 // is the number of active paid members. It is never stored in the database.
+//
+// RoundPoints holds the points earned per round (keyed by round_number string,
+// e.g. "1", "2", "3"). It is populated only when the caller requests a
+// round breakdown; it is nil otherwise.
 type LeaderboardEntry struct {
 	User        *User
 	TotalPoints int
 	Rank        int
-	PrizeWinner bool // true when this entry is in prize position; computed, never persisted
+	PrizeWinner bool           // true when this entry is in prize position; computed, never persisted
+	RoundPoints map[string]int // round_key → points; nil when breakdown not requested
 }
 
 // GlobalLeaderboardEntry is a read-only projection used by the admin global

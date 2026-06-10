@@ -87,6 +87,9 @@ type UserRepository interface {
 	// UpdateLocale sets the user's locale preference ("en" or "es").
 	// Returns NotFound for unknown or soft-deleted users.
 	UpdateLocale(ctx context.Context, userID int, locale string) error
+	// SetRole updates the role field for a single user.
+	// Returns NotFound for unknown or soft-deleted users.
+	SetRole(ctx context.Context, userID int, role domain.UserRole) (*domain.User, error)
 }
 
 // MatchRepository defines the persistence operations for the Match entity.
@@ -103,6 +106,24 @@ type MatchRepository interface {
 	List(ctx context.Context) ([]*domain.Match, error)
 	ListByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error)
 	ListByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
+
+	// LinkExternal associates a match with a provider fixture ID. Calling this
+	// on a match that already has an external link overwrites the previous
+	// values, allowing a correction without a separate "unlink" operation.
+	LinkExternal(ctx context.Context, matchID int, provider string, externalID int64) error
+
+	// UnlinkExternal removes the external provider association from a match,
+	// reverting it to manual-only management.
+	UnlinkExternal(ctx context.Context, matchID int) error
+
+	// ListSyncCandidates returns all matches that have an external ID and are
+	// not yet finished. Used by the match-sync worker to build its polling set.
+	ListSyncCandidates(ctx context.Context) ([]*domain.Match, error)
+
+	// UpdateSyncState persists the current external status observation by
+	// recording last_synced_at on the row. Called after every successful poll
+	// regardless of whether the local status changed.
+	UpdateSyncState(ctx context.Context, matchID int) error
 }
 
 // PredictionRepository defines the persistence operations for the Prediction
@@ -170,6 +191,12 @@ type PredictionRepository interface {
 	// "group stage" standings table). Only active, paid members are included;
 	// predictions with NULL points are excluded from the sum.
 	TotalPointsByQuinielaAndPhase(ctx context.Context, quinielaID int, phase domain.MatchPhase) (map[int]int, error)
+	// PointsByUserAndRound returns a two-level map
+	//   userID → roundKey → points
+	// where roundKey is the match round_number cast to text ("1"–"9"). It drives
+	// the per-round leaderboard breakdown. Only active, paid members are included;
+	// predictions with NULL points and matches without a round_number are excluded.
+	PointsByUserAndRound(ctx context.Context, quinielaID int) (map[int]map[string]int, error)
 	// ListQuinielaIDsByMatch returns the distinct IDs of every quiniela that has
 	// at least one active, paid member who submitted a prediction for matchID.
 	// Called by the scoring worker after ScoreMatch to determine which quinielas
@@ -255,6 +282,11 @@ type QuinielaRepository interface {
 	ListByOwner(ctx context.Context, ownerID int) ([]*domain.Quiniela, error)
 	// UpdateGroupSettings changes the entry_fee for a group. Returns the updated quiniela.
 	UpdateGroupSettings(ctx context.Context, quinielaID int, entryFee int) (*domain.Quiniela, error)
+	// UpdateTournamentMode atomically sets the hybrid-mode flags and entry_fee
+	// on a quiniela. entryFee must be the general-mode fee when modeGeneral=true,
+	// or 0 when the group is free. Returns NotFound when the group is absent or
+	// soft-deleted.
+	UpdateTournamentMode(ctx context.Context, quinielaID int, isPremium, modeGeneral, modeRound bool, entryFee int) (*domain.Quiniela, error)
 	// DeleteByAdmin soft-deletes a quiniela on behalf of an administrator.
 	// The audit trail is the caller's responsibility via AuditLogRepository.
 	DeleteByAdmin(ctx context.Context, quinielaID, adminID int) error
@@ -318,7 +350,9 @@ type GroupMembershipRepository interface {
 	// when the user is already active, already pending, or the group is full.
 	// maxMembers is the authoritative cap read from system_params by the caller;
 	// it is applied inside the transaction after the quiniela FOR UPDATE lock.
-	RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID, maxMembers int) (*domain.Quiniela, *domain.GroupMembership, error)
+	// freeMaxMembers is the cap applied exclusively to free (non-premium) groups;
+	// pass 0 to disable (no free-group limit enforced).
+	RequestJoinByInviteCode(ctx context.Context, inviteCode string, userID, maxMembers, freeMaxMembers int) (*domain.Quiniela, *domain.GroupMembership, error)
 	// GetByID returns a membership by its primary key. Returns nil, nil when no
 	// matching row exists. Used by ApproveJoin to load the pending request.
 	GetByID(ctx context.Context, membershipID int) (*domain.GroupMembership, error)
@@ -373,6 +407,13 @@ type GroupMembershipRepository interface {
 	// paid, and inserts a balance_ledger row in a single transaction.
 	// Returns Conflict when the available balance is insufficient.
 	DebitBalanceAndMarkPaid(ctx context.Context, quinielaID, userID, amountCents int) (*domain.GroupMembership, error)
+	// BulkDebitAndMarkPaid atomically charges all active unpaid members of
+	// quinielaID the given amountCents and marks them paid. It is called when a
+	// free group transitions to premium so that all existing members are charged
+	// the general entry fee in a single transaction. Returns Conflict if any
+	// member has insufficient available balance; in that case no charges are made.
+	// Returns the IDs of the users who were charged.
+	BulkDebitAndMarkPaid(ctx context.Context, quinielaID, amountCents int) ([]int, error)
 	// TransferOwnershipRoles atomically demotes every current owner of quinielaID
 	// to MembershipRoleMember and promotes newOwnerMembershipID to
 	// MembershipRoleCreateOwner within a single database transaction. If either
@@ -464,6 +505,22 @@ type TiebreakerConfigRepository interface {
 	// SetResultByID records the confirmed numeric outcome for any config by ID.
 	// Returns NotFound when configID does not exist.
 	SetResultByID(ctx context.Context, configID, result int) error
+}
+
+// QuinielaRoundEntryRepository tracks per-round membership payments for
+// per-round-mode (mode_round) premium groups.
+type QuinielaRoundEntryRepository interface {
+	// Upsert inserts a round-entry row for (quinielaID, userID, roundKey).
+	// If the row already exists the call is a no-op (idempotent).
+	// Returns the persisted entry on success.
+	Upsert(ctx context.Context, quinielaID, userID int, roundKey string) (*domain.QuinielaRoundEntry, error)
+	// ListByRound returns all entries for a given group and round, ordered by
+	// paid_at ascending.
+	ListByRound(ctx context.Context, quinielaID int, roundKey string) ([]*domain.QuinielaRoundEntry, error)
+	// HasEntry reports whether (quinielaID, userID, roundKey) exists.
+	HasEntry(ctx context.Context, quinielaID, userID int, roundKey string) (bool, error)
+	// ListByQuiniela returns all entries for a group, ordered by round_key, user_id.
+	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.QuinielaRoundEntry, error)
 }
 
 // TournamentRepository manages bracket position slots created and confirmed by

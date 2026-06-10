@@ -88,6 +88,14 @@ type Match struct {
 	KickoffAt  time.Time
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+
+	// External sync fields — populated when the match has been linked to a
+	// provider fixture (e.g. API-Football). Both are nil for matches that are
+	// managed manually. ExternalMatchID uses int64 to match API-Football's
+	// fixture ID type without overflow risk.
+	ExternalProvider *string
+	ExternalMatchID  *int64
+	LastSyncedAt     *time.Time
 }
 
 // ── Scoring rule ──────────────────────────────────────────────────────────────

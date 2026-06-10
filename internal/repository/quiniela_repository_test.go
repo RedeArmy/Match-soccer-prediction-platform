@@ -6,12 +6,33 @@ import (
 	"testing"
 	"time"
 
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	"go.uber.org/zap"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── QuinielaRepository ────────────────────────────────────────────────────────
+
+func TestQuinielaRepository_WithQuinielaLogger_DoesNotPanic(t *testing.T) {
+	skipIfNoDB(t)
+	logger := zap.NewNop()
+	repo := repository.NewPostgresQuinielaRepository(testDB, repository.WithQuinielaLogger(logger))
+	if repo == nil {
+		t.Fatal("expected non-nil repository")
+	}
+}
+
+func TestQuinielaRepository_RegisterMetrics_ReturnsNil(t *testing.T) {
+	skipIfNoDB(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+	meter := metricnoop.NewMeterProvider().Meter("test")
+	if err := repo.RegisterMetrics(meter); err != nil {
+		t.Errorf("expected no error from RegisterMetrics, got %v", err)
+	}
+}
 
 func TestQuinielaRepository_Create_HydratesID(t *testing.T) {
 	cleanTables(t)
@@ -639,5 +660,41 @@ func TestQuinielaRepository_DistributePrizesAtomically_EntryFeeMismatch_ReturnsC
 	err := repo.DistributePrizesAtomically(context.Background(), q.ID, wrongEntryFee, nil, nil)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict on entry_fee mismatch, got %v", err)
+	}
+}
+
+// ── UpdateTournamentMode ──────────────────────────────────────────────────────
+
+func TestQuinielaRepository_UpdateTournamentMode_UpdatesFields(t *testing.T) {
+	cleanTables(t)
+	owner := seedUser(t)
+	q := seedQuiniela(t, owner.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	got, err := repo.UpdateTournamentMode(context.Background(), q.ID, true, false, true, 1500)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected updated quiniela, got nil")
+	}
+	if !got.IsPremium {
+		t.Error("expected is_premium=true")
+	}
+	if got.ModeRound != true {
+		t.Error("expected mode_round=true")
+	}
+	if got.EntryFee != 1500 {
+		t.Errorf("entry_fee: got %d, want 1500", got.EntryFee)
+	}
+}
+
+func TestQuinielaRepository_UpdateTournamentMode_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	_, err := repo.UpdateTournamentMode(context.Background(), 99999, false, false, false, 0)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
 	}
 }

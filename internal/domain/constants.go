@@ -112,6 +112,19 @@ const (
 	DefaultGroupInviteCodeLength = 10    // group.invite_code_length
 	DefaultGroupEntryFeeCents    = 3000  // group.entry_fee_cents  (Q30.00)
 	DefaultGroupCurrency         = "GTQ" // group.currency
+	DefaultGroupFreeMaxMembers   = 5     // group.free_max_members
+
+	// Tournament hybrid-mode entry fees (migration 000180)
+	DefaultTournamentGeneralEntryFeeCents = 3000 // tournament.general_entry_fee_cents (Q30.00)
+	DefaultTournamentRoundEntryFeeCents   = 1500 // tournament.round_entry_fee_cents   (Q15.00)
+
+	// Match sync — automated result ingestion (migration 000186)
+	DefaultMatchSyncEnabled             = false          // match.sync.enabled
+	DefaultMatchSyncFastPollIntervalSec = 30             // match.sync.fast_poll_interval_sec
+	DefaultMatchSyncSlowPollIntervalSec = 300            // match.sync.slow_poll_interval_sec
+	DefaultMatchSyncProvider            = "api-football" // match.sync.provider
+	DefaultMatchSyncLeagueID            = 1              // match.sync.league_id
+	DefaultMatchSyncSeason              = 2026           // match.sync.season
 
 	// Pagination
 	DefaultPaginationDefaultLimit = 50  // pagination.default_limit
@@ -199,6 +212,10 @@ const (
 	// ParamKeyGroupCurrency is the ISO 4217 currency code for group entry fees.
 	// Defaults to DefaultGroupCurrency ("GTQ").
 	ParamKeyGroupCurrency = "group.currency"
+	// ParamKeyGroupFreeMaxMembers is the maximum number of active members allowed
+	// in a free (non-premium) group. Joins via invite code and approvals are
+	// blocked once this limit is reached. Defaults to DefaultGroupFreeMaxMembers (5).
+	ParamKeyGroupFreeMaxMembers = "group.free_max_members"
 	// ParamKeyConflictStaleDays is the age in days after which a pending payment
 	// or membership is flagged as a conflict. Defaults to DefaultConflictStaleDays (7).
 	ParamKeyConflictStaleDays = "conflict.stale_days"
@@ -214,6 +231,38 @@ const (
 	// ParamKeyTournamentWinPoints is the standing points awarded for a group-stage
 	// win. Defaults to StandingsWinPoints (3). Read dynamically by TournamentService.
 	ParamKeyTournamentWinPoints = "tournament.win_points"
+	// ParamKeyTournamentGeneralEntryFeeCents is the entry fee in GTQ minor units
+	// charged once per member when a group operates in general premium mode.
+	// Defaults to DefaultTournamentGeneralEntryFeeCents (3000 = Q30.00).
+	// is_runtime=TRUE: operators may adjust between rounds without restart.
+	ParamKeyTournamentGeneralEntryFeeCents = "tournament.general_entry_fee_cents"
+	// ParamKeyTournamentRoundEntryFeeCents is the entry fee in GTQ minor units
+	// charged per jornada/round when a group operates in per-round premium mode.
+	// Defaults to DefaultTournamentRoundEntryFeeCents (1500 = Q15.00).
+	// is_runtime=TRUE: operators may adjust between rounds without restart.
+	ParamKeyTournamentRoundEntryFeeCents = "tournament.round_entry_fee_cents"
+
+	// ── Match sync (automated result ingestion via external provider) ─────────
+
+	// ParamKeyMatchSyncEnabled controls whether the match-sync worker polls the
+	// external provider. Disabled by default; operators enable it once API keys
+	// are configured. is_runtime=TRUE: can be toggled without restart.
+	ParamKeyMatchSyncEnabled = "match.sync.enabled"
+	// ParamKeyMatchSyncFastPollIntervalSec is the polling interval in seconds
+	// while at least one match is live. Defaults to 30 s.
+	ParamKeyMatchSyncFastPollIntervalSec = "match.sync.fast_poll_interval_sec"
+	// ParamKeyMatchSyncSlowPollIntervalSec is the polling interval in seconds
+	// when no matches are currently live. Defaults to 300 s (5 min).
+	ParamKeyMatchSyncSlowPollIntervalSec = "match.sync.slow_poll_interval_sec"
+	// ParamKeyMatchSyncProvider is the identifier of the external data source.
+	// Currently only "api-football" is supported.
+	ParamKeyMatchSyncProvider = "match.sync.provider"
+	// ParamKeyMatchSyncLeagueID is the API-Football league ID for the World Cup.
+	// The FIFA World Cup is league 1 in API-Football.
+	ParamKeyMatchSyncLeagueID = "match.sync.league_id"
+	// ParamKeyMatchSyncSeason is the four-digit tournament year (e.g. 2026).
+	ParamKeyMatchSyncSeason = "match.sync.season"
+
 	// ParamKeyAdminBulkMaxItems is the maximum number of IDs accepted in a single
 	// bulk admin operation (BulkDeleteGroups, BulkRemoveMembers). Requests that
 	// exceed this limit are rejected with 422 to prevent oversized ANY($1) queries.
@@ -335,6 +384,7 @@ func AllParamKeys() []string {
 		// Group
 		ParamKeyGroupMinMembers,
 		ParamKeyGroupMaxSize,
+		ParamKeyGroupFreeMaxMembers,
 		ParamKeyGroupInviteCodeLength,
 		ParamKeyGroupEntryFeeCents,
 		ParamKeyGroupCurrency,
@@ -346,6 +396,15 @@ func AllParamKeys() []string {
 		ParamKeyPaginationMaxLimit,
 		// Tournament
 		ParamKeyTournamentWinPoints,
+		ParamKeyTournamentGeneralEntryFeeCents,
+		ParamKeyTournamentRoundEntryFeeCents,
+		// Match sync
+		ParamKeyMatchSyncEnabled,
+		ParamKeyMatchSyncFastPollIntervalSec,
+		ParamKeyMatchSyncSlowPollIntervalSec,
+		ParamKeyMatchSyncProvider,
+		ParamKeyMatchSyncLeagueID,
+		ParamKeyMatchSyncSeason,
 		// Admin
 		ParamKeyAdminBulkMaxItems,
 		// Cache

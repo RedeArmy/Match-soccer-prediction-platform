@@ -163,14 +163,13 @@ describe('api – createPaymentIntent', () => {
   })
 })
 
-describe('api – adminGetKYCQueue with cursor + status', () => {
+describe('api – adminGetKYCQueue with status filter', () => {
   beforeEach(() => mockFetch.mockReset())
 
-  it('includes cursor and status in query string', async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse({ data: [], next_cursor: '', has_more: false }))
-    await api.adminGetKYCQueue('tok', 'cur_xyz', 'pending')
+  it('includes status in query string', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]))
+    await api.adminGetKYCQueue('tok', 'pending')
     const [url] = mockFetch.mock.calls[0]
-    expect(String(url)).toContain('cursor=cur_xyz')
     expect(String(url)).toContain('status=pending')
   })
 })
@@ -225,11 +224,11 @@ describe('api – group methods', () => {
     expect((init as RequestInit).method).toBe('DELETE')
   })
 
-  it('getGroupLeaderboard includes cursor param when provided', async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse({ data: [], next_cursor: '', has_more: false }))
-    await api.getGroupLeaderboard('tok', 1, 'cursor_abc')
+  it('getGroupLeaderboard includes breakdown param when requested', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ entries: [], active_paid_members: 0, winner_count: 0, eligible_for_prizes: false }))
+    await api.getGroupLeaderboard('tok', 1, true)
     const [url] = mockFetch.mock.calls[0]
-    expect(String(url)).toContain('cursor=cursor_abc')
+    expect(String(url)).toContain('breakdown=true')
   })
 
   it('getGroupMembers sends GET', async () => {
@@ -407,12 +406,75 @@ describe('api – admin methods', () => {
     expect(String(url)).toContain('/api/v1/admin/stats')
   })
 
-  it('adminApproveKYC sends POST', async () => {
+  it('adminApproveKYC sends POST with default tier 2', async () => {
     mockFetch.mockResolvedValueOnce(makeResponse({ id: 1, status: 'approved' }))
     await api.adminApproveKYC('tok', 42)
     const [url, init] = mockFetch.mock.calls[0]
     expect(String(url)).toContain('/profiles/42/approve')
     expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ tier: 2 })
+  })
+
+  it('adminApproveKYC sends POST with explicit tier', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 1, status: 'approved' }))
+    await api.adminApproveKYC('tok', 42, 3)
+    const [, init] = mockFetch.mock.calls[0]
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ tier: 3 })
+  })
+
+  it('adminListUsers without params sends GET with only limit', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ data: [], next_cursor: '', has_more: false }))
+    await api.adminListUsers('tok')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/users')
+    expect(String(url)).toContain('limit=50')
+    expect(String(url)).not.toContain('search=')
+    expect(String(url)).not.toContain('banned=')
+    expect(String(url)).not.toContain('role=')
+    expect(String(url)).not.toContain('cursor=')
+  })
+
+  it('adminListUsers with all params appends each to query string', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ data: [], next_cursor: '', has_more: false }))
+    await api.adminListUsers('tok', { search: 'alice', banned: true, role: 'admin', cursor: 'cur_abc' })
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('search=alice')
+    expect(String(url)).toContain('banned=true')
+    expect(String(url)).toContain('role=admin')
+    expect(String(url)).toContain('cursor=cur_abc')
+  })
+
+  it('adminGetUserProfile sends GET to /api/v1/admin/users/:id', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ user: { id: 7 }, memberships: [], payments: [] }))
+    await api.adminGetUserProfile('tok', 7)
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/users/7')
+  })
+
+  it('adminBanUser sends POST with reason body', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 7, banned_at: '2026-01-01' }))
+    await api.adminBanUser('tok', 7, 'policy violation')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/users/7/ban')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ reason: 'policy violation' })
+  })
+
+  it('adminUnbanUser sends DELETE to /api/v1/admin/users/:id/ban', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 7, banned_at: null }))
+    await api.adminUnbanUser('tok', 7)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/users/7/ban')
+    expect((init as RequestInit).method).toBe('DELETE')
+  })
+
+  it('adminSetUserRole sends PATCH with role body', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 7, role: 'admin' }))
+    await api.adminSetUserRole('tok', 7, 'admin')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/users/7/role')
+    expect((init as RequestInit).method).toBe('PATCH')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ role: 'admin' })
   })
 
   it('adminRejectKYC sends POST with reason', async () => {

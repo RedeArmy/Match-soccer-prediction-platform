@@ -284,8 +284,11 @@ type failOnUpdateMemberRepo struct {
 	updateErr error
 }
 
-func (r *failOnUpdateMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
+func (r *failOnUpdateMemberRepo) RequestJoinByInviteCode(_ context.Context, _ string, _, _, _ int) (*domain.Quiniela, *domain.GroupMembership, error) {
 	return nil, nil, r.updateErr
+}
+func (r *failOnUpdateMemberRepo) BulkDebitAndMarkPaid(_ context.Context, _, _ int) ([]int, error) {
+	return nil, r.updateErr
 }
 
 func TestGroupMembershipService_Join_PaidGroup_Rejoin_CreatesPendingPayment(t *testing.T) {
@@ -339,8 +342,9 @@ func TestGroupMembershipService_Join_RejoinUpdateError_ReturnsError(t *testing.T
 func TestGroupMembershipService_ApproveJoin_Success_ReturnsActive(t *testing.T) {
 	approver := activeMembership(1, 10)
 	pending := pendingMembership(99, 1, 42)
+	q := quinielaWithCode(1, "CODE")
 	svc := newMemberSvc(
-		&stubQuinielaRepo{},
+		&stubQuinielaRepo{quiniela: q},
 		&stubMemberRepo{
 			membership:     approver,
 			membershipByID: pending,
@@ -436,6 +440,111 @@ func TestGroupMembershipService_ApproveJoin_NotPending_ReturnsConflict(t *testin
 	_, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected conflict for non-pending membership, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_FreeGroupAtLimit_ReturnsConflict(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	q := quinielaWithCode(1, "CODE")
+	// freeMax defaults to 5; activeCount=5 means we're at the limit
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			activeCount:    5,
+		},
+	)
+
+	_, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected conflict when free group is at member limit, got %v", err)
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_FreeGroupBelowLimit_Succeeds(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	q := quinielaWithCode(1, "CODE")
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			activeCount:    4, // below default freeMax of 5
+		},
+	)
+
+	got, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if err != nil {
+		t.Fatalf("expected success for free group below limit, got %v", err)
+	}
+	if got.Status != domain.MembershipActive {
+		t.Errorf("expected active status, got %s", got.Status)
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_PremiumGroupUnpaidMember_ChargesEntryFee(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	pending.Paid = false
+	q := quinielaWithCode(1, "CODE")
+	q.IsPremium = true
+	q.EntryFee = 500
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+		},
+	)
+
+	got, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if err != nil {
+		t.Fatalf("expected success for premium group approval with entry fee, got %v", err)
+	}
+	if got.Status != domain.MembershipActive {
+		t.Errorf("expected active status, got %s", got.Status)
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_PremiumGroupDebitError_PropagatesError(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	pending.Paid = false
+	q := quinielaWithCode(1, "CODE")
+	q.IsPremium = true
+	q.EntryFee = 500
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+			err:            apperrors.Conflict("insufficient balance"),
+		},
+	)
+
+	_, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if err == nil {
+		t.Fatal("expected error when debit fails, got nil")
+	}
+}
+
+func TestGroupMembershipService_ApproveJoin_GroupNotFound_ReturnsNotFound(t *testing.T) {
+	approver := activeMembership(1, 10)
+	pending := pendingMembership(99, 1, 42)
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: nil}, // GetByID returns nil
+		&stubMemberRepo{
+			membership:     approver,
+			membershipByID: pending,
+		},
+	)
+
+	_, err := svc.ApproveJoin(context.Background(), 1, 99, 10)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found when quiniela missing, got %v", err)
 	}
 }
 
@@ -656,8 +765,9 @@ func TestGroupMembershipService_ListByUser_RepoError_Propagates(t *testing.T) {
 func TestGroupMembershipService_ApproveJoin_ApproveMembershipError_PropagatesError(t *testing.T) {
 	approver := activeMembership(1, 10)
 	pending := pendingMembership(99, 1, 42)
+	q := quinielaWithCode(1, "CODE")
 	svc := newMemberSvc(
-		&stubQuinielaRepo{},
+		&stubQuinielaRepo{quiniela: q},
 		&stubMemberRepo{
 			membership:     approver,
 			membershipByID: pending,
@@ -991,14 +1101,40 @@ func TestGroupMembershipService_Leave_WithOutboxWriter_WritesEvent(t *testing.T)
 	}
 }
 
+// errOnNthGetQuinielaRepo wraps stubQuinielaRepo and returns an error on the
+// Nth call to GetByID. ApproveJoin's own lookup (call 1) succeeds while the
+// secondary lookup inside writeMembershipEvent (call 2) fails, exercising the
+// best-effort fallback path.
+type errOnNthGetQuinielaRepo struct {
+	*stubQuinielaRepo
+	n     int
+	calls int
+}
+
+func (r *errOnNthGetQuinielaRepo) GetByID(ctx context.Context, id int) (*domain.Quiniela, error) {
+	r.calls++
+	if r.calls == r.n {
+		return nil, errors.New("quiniela lookup failed")
+	}
+	return r.stubQuinielaRepo.GetByID(ctx, id)
+}
+
 func TestGroupMembershipService_WriteMembershipEvent_QuinielaError_BestEffort(t *testing.T) {
 	approver := activeMembership(1, 10)
 	pending := pendingMembership(99, 1, 42)
+	q := quinielaWithCode(1, "CODE")
 	outboxW := &stubOutboxWriter{}
 
-	// quinielaRepo returns an error — writeMembershipEvent falls back to stub quiniela.
+	// The second GetByID call (inside writeMembershipEvent) returns an error;
+	// the service must swallow it, fall back to a minimal Quiniela, and still
+	// write the outbox event.
+	qRepo := &errOnNthGetQuinielaRepo{
+		stubQuinielaRepo: &stubQuinielaRepo{quiniela: q},
+		n:                2,
+	}
+
 	svc := NewGroupMembershipService(
-		&stubQuinielaRepo{err: errors.New("quiniela db error")},
+		qRepo,
 		&stubMemberRepo{
 			membership:     approver,
 			membershipByID: pending,
@@ -1011,13 +1147,11 @@ func TestGroupMembershipService_WriteMembershipEvent_QuinielaError_BestEffort(t 
 		WithGroupMembershipOutboxWriter(outboxW),
 	)
 
-	// Should NOT return an error even if quiniela lookup fails (best-effort).
 	if _, err := svc.ApproveJoin(context.Background(), 1, 99, 10); err != nil {
-		t.Fatalf("expected success despite quiniela lookup error, got: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	// Outbox write should still be attempted with fallback quiniela.
 	if outboxW.writes != 1 {
-		t.Errorf("expected 1 outbox write, got %d", outboxW.writes)
+		t.Errorf("expected 1 outbox write despite quiniela lookup error, got %d", outboxW.writes)
 	}
 }
 

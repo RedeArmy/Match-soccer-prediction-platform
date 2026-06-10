@@ -63,6 +63,9 @@ func (r *clerkSyncRepo) GetStatusCounts(_ context.Context) (repository.UserStatu
 }
 func (r *clerkSyncRepo) GetBalance(_ context.Context, _ int) (int, int, error) { return 0, 0, nil }
 func (r *clerkSyncRepo) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
+func (r *clerkSyncRepo) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
+	return nil, nil
+}
 
 // kycProfileStubForSync is a minimal KYCProfileRepository stub that only
 // implements the methods exercised by ClerkUserSyncService (EnsureStub).

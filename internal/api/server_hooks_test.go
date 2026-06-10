@@ -102,6 +102,9 @@ func (hookRanker) GetLeaderboard(_ context.Context, _ int) (*service.Leaderboard
 func (hookRanker) GetPhaseLeaderboard(_ context.Context, _ int, _ domain.MatchPhase) (*service.LeaderboardResult, error) {
 	return &service.LeaderboardResult{}, nil
 }
+func (hookRanker) GetLeaderboardWithRoundBreakdown(_ context.Context, _ int) (*service.LeaderboardResult, error) {
+	return &service.LeaderboardResult{}, nil
+}
 
 // ── leaderboardTTLHook ────────────────────────────────────────────────────────
 

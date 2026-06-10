@@ -2,10 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { UserButton } from '@clerk/nextjs'
+import { UserButton, SignOutButton } from '@clerk/nextjs'
 import {
   LayoutDashboard, Users, ShieldCheck, Trophy,
-  Wallet, TrendingUp, Activity, Settings,
+  Wallet, TrendingUp, Activity, Settings, LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -58,7 +58,16 @@ export function AdminSidebar() {
       {/* User */}
       <div className="p-4 border-t border-blue-800/60 flex items-center gap-3">
         <UserButton appearance={{ elements: { avatarBox: 'w-8 h-8' } }} />
-        <span className="text-xs text-text-muted">Admin</span>
+        <span className="flex-1 text-xs text-text-muted">Admin</span>
+        <SignOutButton>
+          <button
+            type="button"
+            title="Cerrar sesión"
+            className="rounded p-1.5 text-text-muted transition-colors hover:bg-blue-900 hover:text-red-400"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </SignOutButton>
       </div>
     </aside>
   )

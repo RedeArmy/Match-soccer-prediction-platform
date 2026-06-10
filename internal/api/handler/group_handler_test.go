@@ -1023,3 +1023,69 @@ func TestGroupJoin_ReturnsPendingStatus(t *testing.T) {
 		t.Errorf("expected status %q in response, got %q", domain.MembershipPending, resp.Status)
 	}
 }
+
+// ── SetTournamentMode ─────────────────────────────────────────────────────────
+
+const tournamentModePath = "/groups/1/tournament-mode"
+
+func buildTournamentModeRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
+	r := chi.NewRouter()
+	if user != nil {
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				ctx := middleware.ContextWithUser(req.Context(), user)
+				next.ServeHTTP(w, req.WithContext(ctx))
+			})
+		})
+	}
+	r.Patch("/groups/{id}/tournament-mode", h.SetTournamentMode)
+	return r
+}
+
+func TestGroupSetTournamentMode_Returns200(t *testing.T) {
+	q := fixedQuiniela()
+	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: q}, &stubMemberSvc{})
+	body := `{"mode_general":true,"mode_round":false}`
+	req := httptest.NewRequest(http.MethodPatch, tournamentModePath, bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	buildTournamentModeRouter(h, &domain.User{ID: 10}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestGroupSetTournamentMode_Returns4xxOnInvalidJSON(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPatch, tournamentModePath, bytes.NewBufferString("not-json"))
+	rec := httptest.NewRecorder()
+	buildTournamentModeRouter(h, &domain.User{ID: 10}).ServeHTTP(rec, req)
+
+	if rec.Code < 400 || rec.Code >= 500 {
+		t.Errorf("expected 4xx for invalid JSON, got %d", rec.Code)
+	}
+}
+
+func TestGroupSetTournamentMode_Returns401WhenNoUser(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	body := `{"mode_general":false,"mode_round":false}`
+	req := httptest.NewRequest(http.MethodPatch, tournamentModePath, bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	buildTournamentModeRouter(h, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestGroupSetTournamentMode_Returns422OnServiceError(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{err: errors.New(errDBDown)}, &stubMemberSvc{})
+	body := `{"mode_general":false,"mode_round":false}`
+	req := httptest.NewRequest(http.MethodPatch, tournamentModePath, bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	buildTournamentModeRouter(h, &domain.User{ID: 10}).ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected non-200 on service error, got 200")
+	}
+}
