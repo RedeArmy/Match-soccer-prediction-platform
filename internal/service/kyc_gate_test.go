@@ -89,6 +89,9 @@ func (r *kycUserRepoStub) GetStatusCounts(_ context.Context) (repository.UserSta
 }
 func (r *kycUserRepoStub) GetBalance(_ context.Context, _ int) (int, int, error) { return 0, 0, nil }
 func (r *kycUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
+func (r *kycUserRepoStub) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
+	return nil, nil
+}
 
 // paramReturning returns a SystemParamService whose Get returns the given value.
 type paramReturning struct {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // BulkBanError records a single ban failure within a BulkBan call.
@@ -54,6 +55,9 @@ type AdminUserService interface {
 	// GetProfile returns the full admin view of a user: base profile, active
 	// group memberships, and payment records.
 	GetProfile(ctx context.Context, userID int) (*AdminUserProfile, error)
+	// SetRole changes the platform role (user/admin) for the given user.
+	// An admin cannot demote themselves.
+	SetRole(ctx context.Context, targetUserID, adminID int, role domain.UserRole) (*domain.User, error)
 }
 
 // adminUserService is the concrete implementation of AdminUserService.
@@ -205,6 +209,22 @@ func (s *adminUserService) GetProfile(ctx context.Context, userID int) (*AdminUs
 		Memberships: memberships,
 		Payments:    payments,
 	}, nil
+}
+
+func (s *adminUserService) SetRole(ctx context.Context, targetUserID, adminID int, role domain.UserRole) (*domain.User, error) {
+	if targetUserID == adminID {
+		return nil, apperrors.Validation("cannot change your own role")
+	}
+	if role != domain.RoleUser && role != domain.RoleAdmin {
+		return nil, apperrors.Validation("role must be 'user' or 'admin'")
+	}
+	user, err := s.userRepo.SetRole(ctx, targetUserID, role)
+	if err != nil {
+		return nil, err
+	}
+	resType := "user"
+	s.audit.Log(ctx, &adminID, nil, domain.AuditActionAdminSetRole, &resType, &targetUserID, map[string]any{"role": string(role)})
+	return user, nil
 }
 
 var _ AdminUserService = (*adminUserService)(nil)

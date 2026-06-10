@@ -510,3 +510,38 @@ func TestUserRepository_UpdateLocale_NotFound_ReturnsNotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound for unknown user; got %v", err)
 	}
 }
+
+// ── SetRole ───────────────────────────────────────────────────────────────────
+
+func TestUserRepository_SetRole_ChangesStoredRole(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t) // created with RoleUser
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	got, err := repo.SetRole(context.Background(), u.ID, domain.RoleAdmin)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.Role != domain.RoleAdmin {
+		t.Errorf("Role after SetRole: got %q; want %q", got.Role, domain.RoleAdmin)
+	}
+
+	// Verify the change is persisted.
+	persisted, err := repo.GetByID(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GetByID after SetRole: %v", err)
+	}
+	if persisted.Role != domain.RoleAdmin {
+		t.Errorf("persisted Role: got %q; want %q", persisted.Role, domain.RoleAdmin)
+	}
+}
+
+func TestUserRepository_SetRole_NotFound_ReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	_, err := repo.SetRole(context.Background(), 99999, domain.RoleAdmin)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for unknown user; got %v", err)
+	}
+}

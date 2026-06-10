@@ -87,6 +87,9 @@ type UserRepository interface {
 	// UpdateLocale sets the user's locale preference ("en" or "es").
 	// Returns NotFound for unknown or soft-deleted users.
 	UpdateLocale(ctx context.Context, userID int, locale string) error
+	// SetRole updates the role field for a single user.
+	// Returns NotFound for unknown or soft-deleted users.
+	SetRole(ctx context.Context, userID int, role domain.UserRole) (*domain.User, error)
 }
 
 // MatchRepository defines the persistence operations for the Match entity.
