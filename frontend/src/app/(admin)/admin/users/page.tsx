@@ -8,8 +8,7 @@ import { api } from '@/lib/api'
 import type { AdminUserResponse, AdminUserProfileResponse } from '@/lib/api-types'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { LoadingState, LoadingSpinner } from '@/components/shared/LoadingState'
-import { formatDate, formatDateTime } from '@/lib/utils'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
 type BanFilter = 'all' | 'active' | 'banned'
 
@@ -24,10 +23,10 @@ const roles = ['', 'user', 'admin']
 // ── Ban modal ─────────────────────────────────────────────────────────────────
 
 interface BanModalProps {
-  user: AdminUserResponse
-  onConfirm: (reason: string) => void
-  onCancel: () => void
-  isPending: boolean
+  readonly user: AdminUserResponse
+  readonly onConfirm: (reason: string) => void
+  readonly onCancel: () => void
+  readonly isPending: boolean
 }
 
 function BanModal({ user, onConfirm, onCancel, isPending }: BanModalProps) {
@@ -73,8 +72,8 @@ function BanModal({ user, onConfirm, onCancel, isPending }: BanModalProps) {
 // ── Profile detail panel ──────────────────────────────────────────────────────
 
 interface ProfilePanelProps {
-  userId: number
-  currentRole: string
+  readonly userId: number
+  readonly currentRole: string
 }
 
 function ProfilePanel({ userId, currentRole }: ProfilePanelProps) {
@@ -204,10 +203,10 @@ function ProfilePanel({ userId, currentRole }: ProfilePanelProps) {
 // ── User row ──────────────────────────────────────────────────────────────────
 
 interface UserRowProps {
-  user: AdminUserResponse
-  onBan: (user: AdminUserResponse) => void
-  onUnban: (id: number) => void
-  isMutating: boolean
+  readonly user: AdminUserResponse
+  readonly onBan: (user: AdminUserResponse) => void
+  readonly onUnban: (id: number) => void
+  readonly isMutating: boolean
 }
 
 function UserRow({ user, onBan, onUnban, isMutating }: UserRowProps) {

@@ -58,9 +58,44 @@ function buildCSP(nonce: string): string {
   ].join("; ");
 }
 
+// isDashboardEntry returns true only for the exact /dashboard path so that
+// the role-check fetch does not fire on every sub-route.
+const isDashboardEntry = createRouteMatcher(['/dashboard']);
+
 export default clerkMiddleware(async (auth, req: NextRequest) => {
   if (!isPublicRoute(req)) {
     await auth.protect();
+  }
+
+  // Fast admin redirect — runs before any page renders so the browser never
+  // loads /dashboard for admin users. The backend /users/me call is cheap
+  // (same-network, no DB query beyond a primary-key lookup).
+  if (isDashboardEntry(req)) {
+    const { getToken } = await auth();
+    const token = await getToken();
+    if (token) {
+      const backendUrl = process.env.BACKEND_INTERNAL_URL;
+      if (backendUrl) {
+        try {
+          const meRes = await fetch(`${backendUrl}/api/v1/users/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (meRes.ok) {
+            const me = await meRes.json() as { role?: string };
+            if (me.role === 'admin') {
+              return NextResponse.redirect(new URL('/admin/dashboard', req.url));
+            }
+            // Pass role to DashboardPage via a request header so it can skip
+            // its own /users/me fetch.
+            const reqHeaders = new Headers(req.headers);
+            reqHeaders.set('x-user-role', me.role ?? 'user');
+            return NextResponse.next({ request: { headers: reqHeaders } });
+          }
+        } catch {
+          // Backend unreachable — fall through; DashboardPage handles it.
+        }
+      }
+    }
   }
 
   // CSP with per-request nonce is enforced only in production.
