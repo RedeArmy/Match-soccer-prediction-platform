@@ -57,13 +57,13 @@ type MatchSyncer interface {
 // SyncDiff describes a discrepancy between the internal match state and
 // the external provider's observation. Returned by ReconcileDate.
 type SyncDiff struct {
-	MatchID         int
-	InternalStatus  domain.MatchStatus
-	ExternalStatus  footballprovider.FixtureStatus
-	InternalHome    *int
-	InternalAway    *int
-	ExternalHome    int
-	ExternalAway    int
+	MatchID        int
+	InternalStatus domain.MatchStatus
+	ExternalStatus footballprovider.FixtureStatus
+	InternalHome   *int
+	InternalAway   *int
+	ExternalHome   int
+	ExternalAway   int
 }
 
 // matchSyncService is the concrete implementation of MatchSyncer.

@@ -820,71 +820,15 @@ func (r *PostgresGroupMembershipRepository) DebitBalanceAndMarkPaid(ctx context.
 func (r *PostgresGroupMembershipRepository) BulkDebitAndMarkPaid(ctx context.Context, quinielaID, amountCents int) ([]int, error) {
 	var charged []int
 	err := withTx(ctx, r.db, "GroupMembershipRepository.BulkDebitAndMarkPaid", func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `
-			SELECT gm.user_id
-			  FROM group_memberships gm
-			 WHERE gm.quiniela_id = $1
-			   AND gm.status      = 'active'
-			   AND gm.paid        = false
-			   AND gm.removed_at  IS NULL
-			 ORDER BY gm.joined_at
-			   FOR UPDATE OF gm`, quinielaID)
+		userIDs, err := fetchUnpaidMemberIDs(ctx, tx, quinielaID)
 		if err != nil {
-			return apperrors.Internal(err)
+			return err
 		}
-		var userIDs []int
-		for rows.Next() {
-			var id int
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return apperrors.Internal(err)
-			}
-			userIDs = append(userIDs, id)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return apperrors.Internal(err)
-		}
-
 		for _, userID := range userIDs {
-			var balanceAfter int
-			err := tx.QueryRow(ctx, `
-				UPDATE users
-				   SET balance_cents = balance_cents - $2,
-				       updated_at    = NOW()
-				 WHERE id            = $1
-				   AND deleted_at    IS NULL
-				   AND (balance_cents - reserved_cents) >= $2
-				 RETURNING balance_cents`, userID, amountCents).Scan(&balanceAfter)
-			if err == pgx.ErrNoRows {
-				return insufficientOrNotFound(ctx, tx, userID)
-			}
-			if err != nil {
-				return apperrors.Internal(err)
-			}
-
-			if err := insertLedgerTx(ctx, tx, ledgerRow{
-				UserID:       userID,
-				DeltaCents:   -amountCents,
-				Kind:         domain.LedgerKindEntryFee,
-				BalanceAfter: balanceAfter,
-				RefID:        int64(quinielaID),
-				RefType:      "group_membership",
-			}); err != nil {
+			if err := debitMemberAndMarkPaid(ctx, tx, quinielaID, userID, amountCents); err != nil {
 				return err
 			}
-
-			if _, err := tx.Exec(ctx, `
-				UPDATE group_memberships
-				   SET paid       = true,
-				       updated_at = NOW()
-				 WHERE quiniela_id = $1
-				   AND user_id     = $2
-				   AND status      = 'active'`, quinielaID, userID); err != nil {
-				return apperrors.Internal(err)
-			}
 		}
-
 		charged = userIDs
 		return nil
 	})
@@ -892,6 +836,81 @@ func (r *PostgresGroupMembershipRepository) BulkDebitAndMarkPaid(ctx context.Con
 		return nil, err
 	}
 	return charged, nil
+}
+
+// fetchUnpaidMemberIDs returns the user IDs of all active unpaid members of
+// quinielaID, locking the rows for update so concurrent calls serialise.
+func fetchUnpaidMemberIDs(ctx context.Context, tx pgx.Tx, quinielaID int) ([]int, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT gm.user_id
+		  FROM group_memberships gm
+		 WHERE gm.quiniela_id = $1
+		   AND gm.status      = 'active'
+		   AND gm.paid        = false
+		   AND gm.removed_at  IS NULL
+		 ORDER BY gm.joined_at
+		   FOR UPDATE OF gm`, quinielaID)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return ids, nil
+}
+
+// debitMemberAndMarkPaid deducts amountCents from userID's balance, inserts a
+// ledger entry, and flips the membership paid flag — all within the caller's
+// transaction. Returns a Conflict error when the balance is insufficient.
+func debitMemberAndMarkPaid(ctx context.Context, tx pgx.Tx, quinielaID, userID, amountCents int) error {
+	var balanceAfter int
+	err := tx.QueryRow(ctx, `
+		UPDATE users
+		   SET balance_cents = balance_cents - $2,
+		       updated_at    = NOW()
+		 WHERE id            = $1
+		   AND deleted_at    IS NULL
+		   AND (balance_cents - reserved_cents) >= $2
+		 RETURNING balance_cents`, userID, amountCents).Scan(&balanceAfter)
+	if err == pgx.ErrNoRows {
+		return insufficientOrNotFound(ctx, tx, userID)
+	}
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+
+	if err := insertLedgerTx(ctx, tx, ledgerRow{
+		UserID:       userID,
+		DeltaCents:   -amountCents,
+		Kind:         domain.LedgerKindEntryFee,
+		BalanceAfter: balanceAfter,
+		RefID:        int64(quinielaID),
+		RefType:      "group_membership",
+	}); err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE group_memberships
+		   SET paid       = true,
+		       updated_at = NOW()
+		 WHERE quiniela_id = $1
+		   AND user_id     = $2
+		   AND status      = 'active'`, quinielaID, userID)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
 }
 
 var _ GroupMembershipRepository = (*PostgresGroupMembershipRepository)(nil)

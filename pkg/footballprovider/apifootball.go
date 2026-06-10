@@ -78,6 +78,9 @@ type apiGoals struct {
 
 // ── Public methods ────────────────────────────────────────────────────────────
 
+// GetFixture fetches the current state of a single fixture by its
+// provider-assigned ID. Returns an error when the HTTP request fails or
+// the fixture ID is not found in the API-Football response.
 func (c *APIFootballClient) GetFixture(ctx context.Context, externalID int64) (*Fixture, error) {
 	items, err := c.fetch(ctx, "/fixtures", map[string]string{
 		"id": strconv.FormatInt(externalID, 10),
@@ -91,6 +94,9 @@ func (c *APIFootballClient) GetFixture(ctx context.Context, externalID int64) (*
 	return itemToFixture(items[0]), nil
 }
 
+// GetLiveFixtures returns all fixtures currently in play for the given league
+// and season. Used by the scheduler to determine whether to apply the fast or
+// slow polling interval on the next tick.
 func (c *APIFootballClient) GetLiveFixtures(ctx context.Context, leagueID, season int) ([]*Fixture, error) {
 	items, err := c.fetch(ctx, "/fixtures", map[string]string{
 		"live":   "all",

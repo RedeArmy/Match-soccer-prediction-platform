@@ -41,8 +41,8 @@ func newClient(t *testing.T, srv *httptest.Server) *footballprovider.APIFootball
 // encoding bugs in the hand-crafted string helper above.
 func buildFixtureJSON(id int64, status string, home, away *int) string {
 	type fixtureResp struct {
-		Results  int `json:"results"`
-		Errors   []any `json:"errors"`
+		Results  int              `json:"results"`
+		Errors   []any            `json:"errors"`
 		Response []map[string]any `json:"response"`
 	}
 	goals := map[string]any{"home": home, "away": away}

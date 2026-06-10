@@ -15,20 +15,23 @@ import (
 // can log and skip them gracefully.
 type FixtureStatus string
 
+// FixtureStatus constants mirror the short status codes returned by API-Football.
+// Only the values relevant to the sync worker are enumerated; unrecognised
+// codes are normalised to StatusUnknown so the worker can log and skip them.
 const (
-	StatusNotStarted FixtureStatus = "NS"        // Not Started
-	StatusFirstHalf  FixtureStatus = "1H"        // First Half
-	StatusHalfTime   FixtureStatus = "HT"        // Half Time
-	StatusSecondHalf FixtureStatus = "2H"        // Second Half
-	StatusExtraTime  FixtureStatus = "ET"        // Extra Time
-	StatusPenLive    FixtureStatus = "PEN_LIVE"  // Penalties in progress
-	StatusFullTime   FixtureStatus = "FT"        // Full Time
-	StatusAfterET    FixtureStatus = "AET"       // After Extra Time
-	StatusAfterPEN   FixtureStatus = "PEN"       // After Penalties
-	StatusPostponed  FixtureStatus = "PST"       // Postponed
-	StatusCancelled  FixtureStatus = "CANC"      // Cancelled
-	StatusAbandoned  FixtureStatus = "ABD"       // Abandoned
-	StatusUnknown    FixtureStatus = "UNKNOWN"   // unrecognised / not yet supported
+	StatusNotStarted FixtureStatus = "NS"       // Not Started
+	StatusFirstHalf  FixtureStatus = "1H"       // First Half
+	StatusHalfTime   FixtureStatus = "HT"       // Half Time
+	StatusSecondHalf FixtureStatus = "2H"       // Second Half
+	StatusExtraTime  FixtureStatus = "ET"       // Extra Time
+	StatusPenLive    FixtureStatus = "PEN_LIVE" // Penalties in progress
+	StatusFullTime   FixtureStatus = "FT"       // Full Time
+	StatusAfterET    FixtureStatus = "AET"      // After Extra Time
+	StatusAfterPEN   FixtureStatus = "PEN"      // After Penalties
+	StatusPostponed  FixtureStatus = "PST"      // Postponed
+	StatusCancelled  FixtureStatus = "CANC"     // Cancelled
+	StatusAbandoned  FixtureStatus = "ABD"      // Abandoned
+	StatusUnknown    FixtureStatus = "UNKNOWN"  // unrecognised / not yet supported
 )
 
 // IsLive reports whether the fixture is currently in play (including extra

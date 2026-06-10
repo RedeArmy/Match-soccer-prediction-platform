@@ -14,7 +14,7 @@ import (
 // matchSyncState carries the mutable bookkeeping shared across scheduler ticks.
 // Using atomic operations avoids a mutex on a hot path that runs every 30 s.
 type matchSyncState struct {
-	lastLiveCount  atomic.Int32  // live count observed on the most recent poll
+	lastLiveCount   atomic.Int32 // live count observed on the most recent poll
 	lastPollUnixSec atomic.Int64 // Unix time of the most recent successful provider call
 }
 

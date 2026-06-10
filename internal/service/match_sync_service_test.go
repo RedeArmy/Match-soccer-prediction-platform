@@ -54,9 +54,9 @@ func (r *stubSyncMatchRepo) UpdateSyncState(_ context.Context, _ int) error {
 }
 
 type stubSyncMatchSvc struct {
-	started  int
-	finished int
-	startErr error
+	started   int
+	finished  int
+	startErr  error
 	finishErr error
 }
 

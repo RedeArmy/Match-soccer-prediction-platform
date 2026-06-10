@@ -55,7 +55,9 @@ type syncDiffItem struct {
 //
 // @Summary      Link match to external provider fixture
 // @Description  Admin only. Associates the internal match with a provider fixture ID so
-//               the sync worker can poll and automatically apply results.
+//
+//	the sync worker can poll and automatically apply results.
+//
 // @Tags         admin-match-sync
 // @Accept       json
 // @Produce      json
@@ -116,7 +118,9 @@ func (h *AdminMatchSyncHandler) UnlinkExternal(w http.ResponseWriter, r *http.Re
 //
 // @Summary      Trigger a manual match-sync poll cycle
 // @Description  Admin only. Immediately runs PollAndApply outside the scheduler
-//               interval, useful for ad-hoc result ingestion or smoke tests.
+//
+//	interval, useful for ad-hoc result ingestion or smoke tests.
+//
 // @Tags         admin-match-sync
 // @Produce      json
 // @Security     BearerAuth
@@ -136,7 +140,9 @@ func (h *AdminMatchSyncHandler) TriggerPoll(w http.ResponseWriter, r *http.Reque
 //
 // @Summary      Reconcile local match state against external provider
 // @Description  Admin only. Compares every linked, non-finished match against the provider
-//               and returns a list of discrepancies. No writes are performed.
+//
+//	and returns a list of discrepancies. No writes are performed.
+//
 // @Tags         admin-match-sync
 // @Produce      json
 // @Security     BearerAuth
