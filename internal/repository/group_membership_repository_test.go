@@ -1287,9 +1287,9 @@ func TestGroupMembershipRepository_BulkDebitAndMarkPaid_ChargesAllUnpaidActiveMe
 	m2 := seedUserWithBalance(t, 5_000)
 	q := seedQuiniela(t, owner.ID)
 
-	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true)  // already paid
-	seedMembership(t, q.ID, m1.ID, domain.MembershipActive, false)    // unpaid
-	seedMembership(t, q.ID, m2.ID, domain.MembershipActive, false)    // unpaid
+	seedMembership(t, q.ID, owner.ID, domain.MembershipActive, true) // already paid
+	seedMembership(t, q.ID, m1.ID, domain.MembershipActive, false)   // unpaid
+	seedMembership(t, q.ID, m2.ID, domain.MembershipActive, false)   // unpaid
 
 	mrepo := repository.NewPostgresGroupMembershipRepository(testDB)
 

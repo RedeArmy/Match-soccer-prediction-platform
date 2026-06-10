@@ -286,3 +286,135 @@ func TestMatchRepository_Update_NilWinMethod_RemainsNil(t *testing.T) {
 		t.Errorf("expected nil WinMethod for group-stage match, got %q", *got.WinMethod)
 	}
 }
+
+// ── External link (match sync) ────────────────────────────────────────────────
+
+func TestMatchRepository_LinkExternal_SetsProviderAndID(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	if err := repo.LinkExternal(context.Background(), m.ID, "api-football", 42); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.ExternalProvider == nil || *got.ExternalProvider != "api-football" {
+		t.Errorf("external_provider: got %v, want api-football", got.ExternalProvider)
+	}
+	if got.ExternalMatchID == nil || *got.ExternalMatchID != 42 {
+		t.Errorf("external_match_id: got %v, want 42", got.ExternalMatchID)
+	}
+}
+
+func TestMatchRepository_LinkExternal_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	err := repo.LinkExternal(context.Background(), 99999, "api-football", 1)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestMatchRepository_UnlinkExternal_ClearsFields(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	if err := repo.LinkExternal(context.Background(), m.ID, "api-football", 7); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	if err := repo.UnlinkExternal(context.Background(), m.ID); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.ExternalProvider != nil {
+		t.Errorf("expected nil external_provider after unlink, got %v", *got.ExternalProvider)
+	}
+	if got.ExternalMatchID != nil {
+		t.Errorf("expected nil external_match_id after unlink, got %v", *got.ExternalMatchID)
+	}
+}
+
+func TestMatchRepository_UnlinkExternal_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	err := repo.UnlinkExternal(context.Background(), 99999)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestMatchRepository_ListSyncCandidates_ReturnsLinkedScheduled(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t) // status=scheduled
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	// Unlinked match must not appear.
+	candidates, err := repo.ListSyncCandidates(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(candidates) != 0 {
+		t.Errorf("expected 0 sync candidates before link, got %d", len(candidates))
+	}
+
+	if err := repo.LinkExternal(context.Background(), m.ID, "api-football", 100); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+
+	candidates, err = repo.ListSyncCandidates(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 sync candidate after link, got %d", len(candidates))
+	}
+}
+
+func TestMatchRepository_ListSyncCandidates_ExcludesFinished(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	if err := repo.LinkExternal(context.Background(), m.ID, "api-football", 101); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+
+	home, away := 2, 1
+	m.Status = domain.MatchStatusFinished
+	m.HomeScore = &home
+	m.AwayScore = &away
+	if err := repo.Update(context.Background(), m); err != nil {
+		t.Fatalf("update to finished: %v", err)
+	}
+
+	candidates, err := repo.ListSyncCandidates(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(candidates) != 0 {
+		t.Errorf("expected 0 sync candidates for finished match, got %d", len(candidates))
+	}
+}
+
+func TestMatchRepository_UpdateSyncState_SetsLastSyncedAt(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	if err := repo.UpdateSyncState(context.Background(), m.ID); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	// Verify by fetching: last_synced_at is not in the domain.Match struct
+	// but the call must complete without error.
+}

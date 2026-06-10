@@ -103,6 +103,24 @@ type MatchRepository interface {
 	List(ctx context.Context) ([]*domain.Match, error)
 	ListByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error)
 	ListByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
+
+	// LinkExternal associates a match with a provider fixture ID. Calling this
+	// on a match that already has an external link overwrites the previous
+	// values, allowing a correction without a separate "unlink" operation.
+	LinkExternal(ctx context.Context, matchID int, provider string, externalID int64) error
+
+	// UnlinkExternal removes the external provider association from a match,
+	// reverting it to manual-only management.
+	UnlinkExternal(ctx context.Context, matchID int) error
+
+	// ListSyncCandidates returns all matches that have an external ID and are
+	// not yet finished. Used by the match-sync worker to build its polling set.
+	ListSyncCandidates(ctx context.Context) ([]*domain.Match, error)
+
+	// UpdateSyncState persists the current external status observation by
+	// recording last_synced_at on the row. Called after every successful poll
+	// regardless of whether the local status changed.
+	UpdateSyncState(ctx context.Context, matchID int) error
 }
 
 // PredictionRepository defines the persistence operations for the Prediction

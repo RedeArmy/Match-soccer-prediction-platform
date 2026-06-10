@@ -926,8 +926,8 @@ func TestGetLeaderboardWithRoundBreakdown_PointsByUserAndRoundError_Propagates(t
 	q := &domain.Quiniela{ID: 1, Name: rankingTestQuiniela, Status: domain.QuinielaStatusActive}
 	userA := &domain.User{ID: 1, Name: rankingAlice}
 	predRepo := &stubTotalPointsPredRepo{
-		pointsByUser:     map[int]int{1: 10},
-		roundPointsErr:   errors.New("db error"),
+		pointsByUser:   map[int]int{1: 10},
+		roundPointsErr: errors.New("db error"),
 	}
 	svc := newRankingSvc(q, predRepo, []*domain.User{userA})
 

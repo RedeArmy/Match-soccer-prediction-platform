@@ -16,24 +16,45 @@ import "time"
 // accessing a global - makes every component's requirements visible and
 // verifiable without running the full application.
 type Config struct {
-	Environment   string              `mapstructure:"environment"`
-	Server        ServerConfig        `mapstructure:"server"`
-	Database      DatabaseConfig      `mapstructure:"database"`
-	Redis         RedisConfig         `mapstructure:"redis"`
-	EventBus      EventBusConfig      `mapstructure:"eventBus"`
-	Logger        LoggerConfig        `mapstructure:"logger"`
-	CORS          CORSConfig          `mapstructure:"cors"`
-	Clerk         ClerkConfig         `mapstructure:"clerk"`
-	Payment       PaymentConfig       `mapstructure:"payment"`
-	Worker        WorkerConfig        `mapstructure:"worker"`
-	Storage       StorageConfig       `mapstructure:"storage"`
-	Tracing       TracingConfig       `mapstructure:"tracing"`
-	Metrics       MetricsConfig       `mapstructure:"metrics"`
-	Email         EmailConfig         `mapstructure:"email"`
-	N8n           N8nConfig           `mapstructure:"n8n"`
-	WebPush       WebPushConfig       `mapstructure:"webPush"`
-	Observability ObservabilityConfig `mapstructure:"observability"`
-	ExchangeRate  ExchangeRateConfig  `mapstructure:"exchangeRate"`
+	Environment      string                 `mapstructure:"environment"`
+	Server           ServerConfig           `mapstructure:"server"`
+	Database         DatabaseConfig         `mapstructure:"database"`
+	Redis            RedisConfig            `mapstructure:"redis"`
+	EventBus         EventBusConfig         `mapstructure:"eventBus"`
+	Logger           LoggerConfig           `mapstructure:"logger"`
+	CORS             CORSConfig             `mapstructure:"cors"`
+	Clerk            ClerkConfig            `mapstructure:"clerk"`
+	Payment          PaymentConfig          `mapstructure:"payment"`
+	Worker           WorkerConfig           `mapstructure:"worker"`
+	Storage          StorageConfig          `mapstructure:"storage"`
+	Tracing          TracingConfig          `mapstructure:"tracing"`
+	Metrics          MetricsConfig          `mapstructure:"metrics"`
+	Email            EmailConfig            `mapstructure:"email"`
+	N8n              N8nConfig              `mapstructure:"n8n"`
+	WebPush          WebPushConfig          `mapstructure:"webPush"`
+	Observability    ObservabilityConfig    `mapstructure:"observability"`
+	ExchangeRate     ExchangeRateConfig     `mapstructure:"exchangeRate"`
+	FootballProvider FootballProviderConfig `mapstructure:"footballProvider"`
+}
+
+// FootballProviderConfig holds credentials and base URL for the external
+// football data API. Only API-Football v3 is currently supported.
+//
+// APIKey is injected via WCQ_FOOTBALLPROVIDER_APIKEY. When empty the match-sync
+// worker starts but logs a warning and disables sync regardless of the
+// match.sync.enabled system parameter.
+//
+// BaseURL is optional and defaults to the production API-Football endpoint.
+// Override for local testing against a stub server.
+// Set via WCQ_FOOTBALLPROVIDER_BASEURL.
+type FootballProviderConfig struct {
+	// APIKey is the x-apisports-key credential from the API-Football dashboard.
+	// Keep out of source control; inject via environment variable or secrets manager.
+	// Set via WCQ_FOOTBALLPROVIDER_APIKEY.
+	APIKey string `mapstructure:"apiKey"`
+	// BaseURL overrides the default API-Football v3 base URL.
+	// Leave empty for production. Set via WCQ_FOOTBALLPROVIDER_BASEURL.
+	BaseURL string `mapstructure:"baseURL"`
 }
 
 // ExchangeRateConfig holds optional API keys for the fallback exchange rate

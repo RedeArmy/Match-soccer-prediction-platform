@@ -12,12 +12,12 @@ type GroupResponse struct {
 	// Status is system-managed: "active" when the group has ≥ 5 active members,
 	// "inactive" otherwise. Only active groups are eligible for payment processing
 	// and prize distribution.
-	Status      string `json:"status"`
-	EntryFee    int    `json:"entry_fee"`
-	Currency    string `json:"currency"`
+	Status   string `json:"status"`
+	EntryFee int    `json:"entry_fee"`
+	Currency string `json:"currency"`
 	// IsPremium is false for free groups (points-only) and true when at least one
 	// paid mode is active. Frontend renders this as "Gratis" (gray) or "Premium" (gold).
-	IsPremium   bool   `json:"is_premium"`
+	IsPremium bool `json:"is_premium"`
 	// ModeGeneral and ModeRound reflect which paid sub-modes are active.
 	ModeGeneral bool   `json:"mode_general"`
 	ModeRound   bool   `json:"mode_round"`

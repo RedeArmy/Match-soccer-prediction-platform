@@ -64,6 +64,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/config"
 	"github.com/rede/world-cup-quiniela/pkg/dsem"
+	"github.com/rede/world-cup-quiniela/pkg/footballprovider"
 	"github.com/rede/world-cup-quiniela/pkg/health"
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
@@ -257,6 +258,20 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	scorer := service.NewScoringService(matchRepo, predRepo, ruleRepo, params, log,
 		service.WithScoringMeter(meter),
 	)
+
+	// Match sync — build the provider client only when the API key is present.
+	// When absent, matchSyncSvc.PollAndApply returns an error and the scheduler
+	// job logs a warning and continues; sync is effectively disabled.
+	var fpClient footballprovider.Client
+	if cfg.FootballProvider.APIKey != "" {
+		fpClient = footballprovider.NewAPIFootballClient(
+			cfg.FootballProvider.APIKey,
+			cfg.FootballProvider.BaseURL,
+			nil,
+		)
+	}
+	matchSvc := service.NewMatchService(matchRepo, bus, scorer, service.NoopAuditLogger{}, log)
+	matchSyncSvc := service.NewMatchSyncService(matchRepo, matchSvc, fpClient, log)
 
 	quinielaRepo := repository.NewPostgresQuinielaRepository(db, repository.WithQuinielaLogger(log))
 	memberRepo := repository.NewPostgresGroupMembershipRepository(db)
@@ -475,6 +490,25 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 			_, err := fxImpl.RefreshRate(ctx)
 			return err
 		})
+
+	// Automated match result sync — polls API-Football for live scores and
+	// transitions match state automatically.
+	//
+	// Two intervals are used:
+	//   fast = match.sync.fast_poll_interval_sec (default 30 s) — while live matches exist
+	//   slow = match.sync.slow_poll_interval_sec (default 300 s) — no live matches
+	//
+	// The scheduler only supports a fixed interval per job. We register the job
+	// at the fast interval and guard the body with a runtime-readable enabled flag
+	// so operators can disable sync without restarting the worker.
+	// The fast/slow distinction is handled inside the closure: on a "slow tick"
+	// the job body reads the last-observed live count from a package-level int32
+	// (atomic) and skips the provider call when it is zero and fewer than
+	// slowPollIntervalSec seconds have elapsed since the last successful call.
+	matchSyncFastSec := params.GetInt(ctx, domain.ParamKeyMatchSyncFastPollIntervalSec, domain.DefaultMatchSyncFastPollIntervalSec)
+	notifScheduler.RegisterInterval("match.sync",
+		time.Duration(matchSyncFastSec)*time.Second,
+		makeMatchSyncJob(params, matchSyncSvc, log))
 
 	// snapshotLockTTL covers the worst-case snapshot retry window with generous
 	// headroom. The lock is also released explicitly by Unlock in the happy path;

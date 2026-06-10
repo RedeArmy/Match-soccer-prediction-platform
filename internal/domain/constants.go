@@ -118,6 +118,14 @@ const (
 	DefaultTournamentGeneralEntryFeeCents = 3000 // tournament.general_entry_fee_cents (Q30.00)
 	DefaultTournamentRoundEntryFeeCents   = 1500 // tournament.round_entry_fee_cents   (Q15.00)
 
+	// Match sync — automated result ingestion (migration 000186)
+	DefaultMatchSyncEnabled             = false          // match.sync.enabled
+	DefaultMatchSyncFastPollIntervalSec = 30             // match.sync.fast_poll_interval_sec
+	DefaultMatchSyncSlowPollIntervalSec = 300            // match.sync.slow_poll_interval_sec
+	DefaultMatchSyncProvider            = "api-football" // match.sync.provider
+	DefaultMatchSyncLeagueID            = 1              // match.sync.league_id
+	DefaultMatchSyncSeason              = 2026           // match.sync.season
+
 	// Pagination
 	DefaultPaginationDefaultLimit = 50  // pagination.default_limit
 	DefaultPaginationMaxLimit     = 200 // pagination.max_limit
@@ -233,6 +241,28 @@ const (
 	// Defaults to DefaultTournamentRoundEntryFeeCents (1500 = Q15.00).
 	// is_runtime=TRUE: operators may adjust between rounds without restart.
 	ParamKeyTournamentRoundEntryFeeCents = "tournament.round_entry_fee_cents"
+
+	// ── Match sync (automated result ingestion via external provider) ─────────
+
+	// ParamKeyMatchSyncEnabled controls whether the match-sync worker polls the
+	// external provider. Disabled by default; operators enable it once API keys
+	// are configured. is_runtime=TRUE: can be toggled without restart.
+	ParamKeyMatchSyncEnabled = "match.sync.enabled"
+	// ParamKeyMatchSyncFastPollIntervalSec is the polling interval in seconds
+	// while at least one match is live. Defaults to 30 s.
+	ParamKeyMatchSyncFastPollIntervalSec = "match.sync.fast_poll_interval_sec"
+	// ParamKeyMatchSyncSlowPollIntervalSec is the polling interval in seconds
+	// when no matches are currently live. Defaults to 300 s (5 min).
+	ParamKeyMatchSyncSlowPollIntervalSec = "match.sync.slow_poll_interval_sec"
+	// ParamKeyMatchSyncProvider is the identifier of the external data source.
+	// Currently only "api-football" is supported.
+	ParamKeyMatchSyncProvider = "match.sync.provider"
+	// ParamKeyMatchSyncLeagueID is the API-Football league ID for the World Cup.
+	// The FIFA World Cup is league 1 in API-Football.
+	ParamKeyMatchSyncLeagueID = "match.sync.league_id"
+	// ParamKeyMatchSyncSeason is the four-digit tournament year (e.g. 2026).
+	ParamKeyMatchSyncSeason = "match.sync.season"
+
 	// ParamKeyAdminBulkMaxItems is the maximum number of IDs accepted in a single
 	// bulk admin operation (BulkDeleteGroups, BulkRemoveMembers). Requests that
 	// exceed this limit are rejected with 422 to prevent oversized ANY($1) queries.
@@ -368,6 +398,13 @@ func AllParamKeys() []string {
 		ParamKeyTournamentWinPoints,
 		ParamKeyTournamentGeneralEntryFeeCents,
 		ParamKeyTournamentRoundEntryFeeCents,
+		// Match sync
+		ParamKeyMatchSyncEnabled,
+		ParamKeyMatchSyncFastPollIntervalSec,
+		ParamKeyMatchSyncSlowPollIntervalSec,
+		ParamKeyMatchSyncProvider,
+		ParamKeyMatchSyncLeagueID,
+		ParamKeyMatchSyncSeason,
 		// Admin
 		ParamKeyAdminBulkMaxItems,
 		// Cache

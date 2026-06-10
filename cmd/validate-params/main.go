@@ -327,6 +327,14 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyKYCIPVelocityMaxSubmissions, defaultValue: strconv.Itoa(domain.DefaultKYCIPVelocityMaxSubmissions), paramType: "int", category: "kyc", isRuntime: true},
 	// KYC document retention (migration 000144); not runtime — worker restart required to pick up changes.
 	{key: domain.ParamKeyKYCDocRetentionYears, defaultValue: strconv.Itoa(domain.DefaultKYCDocRetentionYears), paramType: "int", category: "kyc", isRuntime: false},
+
+	// Match sync — automated result ingestion (migration 000186); all runtime.
+	{key: domain.ParamKeyMatchSyncEnabled, defaultValue: "false", paramType: "bool", category: "match", isRuntime: true},
+	{key: domain.ParamKeyMatchSyncFastPollIntervalSec, defaultValue: strconv.Itoa(domain.DefaultMatchSyncFastPollIntervalSec), paramType: "int", category: "match", isRuntime: true},
+	{key: domain.ParamKeyMatchSyncSlowPollIntervalSec, defaultValue: strconv.Itoa(domain.DefaultMatchSyncSlowPollIntervalSec), paramType: "int", category: "match", isRuntime: true},
+	{key: domain.ParamKeyMatchSyncProvider, defaultValue: domain.DefaultMatchSyncProvider, paramType: "string", category: "match", isRuntime: true},
+	{key: domain.ParamKeyMatchSyncLeagueID, defaultValue: strconv.Itoa(domain.DefaultMatchSyncLeagueID), paramType: "int", category: "match", isRuntime: true},
+	{key: domain.ParamKeyMatchSyncSeason, defaultValue: strconv.Itoa(domain.DefaultMatchSyncSeason), paramType: "int", category: "match", isRuntime: true},
 }
 
 type dbParam struct {

@@ -2,11 +2,11 @@ package handler
 
 // LeaderboardEntryResponse is the JSON representation of a single leaderboard entry.
 type LeaderboardEntryResponse struct {
-	Rank        int            `json:"rank"`
-	UserID      int            `json:"user_id"`
-	UserName    string         `json:"user_name"`
-	TotalPoints int            `json:"total_points"`
-	PrizeWinner bool           `json:"prize_winner"`
+	Rank        int    `json:"rank"`
+	UserID      int    `json:"user_id"`
+	UserName    string `json:"user_name"`
+	TotalPoints int    `json:"total_points"`
+	PrizeWinner bool   `json:"prize_winner"`
 	// RoundPoints maps round_number string ("1"–"9") to points earned in that round.
 	// Populated only when the caller requests a breakdown (GET …/leaderboard?breakdown=true).
 	// Omitted from the response when nil.

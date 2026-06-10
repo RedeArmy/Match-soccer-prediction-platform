@@ -58,17 +58,17 @@ type Quiniela struct {
 	// It is true when at least one paid mode (ModeGeneral or ModeRound) is active.
 	// Set by the group owner via PATCH /groups/{id}/tournament-mode once the group
 	// reaches MinMembersPerGroup active members.
-	IsPremium   bool
+	IsPremium bool
 	// ModeGeneral enables a single entry-fee prize pool for the overall competition.
 	// Prize distribution follows the existing WinnerCount tier table.
 	ModeGeneral bool
 	// ModeRound enables per-jornada prize pools. Only members with a
 	// quiniela_round_entries row for the active round are included in that
 	// round's distribution (always 1st and 2nd place only).
-	ModeRound   bool
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	DeletedAt           *time.Time // nil for active groups; set when the record is soft-deleted
+	ModeRound bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt *time.Time // nil for active groups; set when the record is soft-deleted
 }
 
 // ── Group membership ──────────────────────────────────────────────────────────
@@ -133,14 +133,14 @@ type GroupMembership struct {
 	ModeGeneral       bool
 	ModeRound         bool
 	ActiveMemberCount int
-	Role        MembershipRole
-	Status      MembershipStatus
-	Paid        bool
-	JoinedAt    *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	RemovedAt   *time.Time // nil unless status = 'left'
-	RemovedBy   *int       // nil = voluntary exit; non-nil = admin-forced removal
+	Role              MembershipRole
+	Status            MembershipStatus
+	Paid              bool
+	JoinedAt          *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	RemovedAt         *time.Time // nil unless status = 'left'
+	RemovedBy         *int       // nil = voluntary exit; non-nil = admin-forced removal
 }
 
 // ── Round entry ───────────────────────────────────────────────────────────────
@@ -244,8 +244,8 @@ type LeaderboardEntry struct {
 	User        *User
 	TotalPoints int
 	Rank        int
-	PrizeWinner bool            // true when this entry is in prize position; computed, never persisted
-	RoundPoints map[string]int  // round_key → points; nil when breakdown not requested
+	PrizeWinner bool           // true when this entry is in prize position; computed, never persisted
+	RoundPoints map[string]int // round_key → points; nil when breakdown not requested
 }
 
 // GlobalLeaderboardEntry is a read-only projection used by the admin global

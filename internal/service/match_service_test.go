@@ -54,6 +54,14 @@ func (r *stubMatchRepo) ListByPhase(_ context.Context, _ domain.MatchPhase) ([]*
 func (r *stubMatchRepo) ListByStatus(_ context.Context, _ domain.MatchStatus) ([]*domain.Match, error) {
 	return r.matches, r.err
 }
+func (r *stubMatchRepo) LinkExternal(_ context.Context, _ int, _ string, _ int64) error {
+	return r.err
+}
+func (r *stubMatchRepo) UnlinkExternal(_ context.Context, _ int) error { return r.err }
+func (r *stubMatchRepo) ListSyncCandidates(_ context.Context) ([]*domain.Match, error) {
+	return r.matches, r.err
+}
+func (r *stubMatchRepo) UpdateSyncState(_ context.Context, _ int) error { return r.err }
 
 // stubPublisher records published envelopes without delivering them.
 type stubPublisher struct {

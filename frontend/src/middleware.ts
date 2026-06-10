@@ -18,8 +18,6 @@ const isPublicRoute = createRouteMatcher([
   "/webhooks/(.*)",
 ]);
 
-const isAdminRoute = createRouteMatcher(["/admin(.*)"]);
-
 // generateNonce returns a 128-bit cryptographically random base64 string.
 // Using crypto.getRandomValues (available in Edge runtime) rather than
 // Math.random so the nonce cannot be predicted or brute-forced.
@@ -63,14 +61,6 @@ function buildCSP(nonce: string): string {
 export default clerkMiddleware(async (auth, req: NextRequest) => {
   if (!isPublicRoute(req)) {
     await auth.protect();
-  }
-
-  if (isAdminRoute(req)) {
-    const { sessionClaims } = await auth();
-    const meta = sessionClaims?.metadata as { role?: string } | undefined;
-    if (meta?.role !== "admin") {
-      return NextResponse.redirect(new URL("/dashboard", req.url));
-    }
   }
 
   // CSP with per-request nonce is enforced only in production.

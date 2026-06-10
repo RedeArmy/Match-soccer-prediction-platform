@@ -36,6 +36,9 @@ func (s *Server) registerMatchRoutes(r chi.Router, d apiV1Deps) {
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/", d.h.match.CreateMatch)
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Patch("/{id}", d.h.match.UpdateResult)
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/{id}/start", d.h.match.StartMatch)
+		// External provider linking — admin only.
+		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/{id}/external-link", d.h.adminMatchSync.LinkExternal)
+		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Delete("/{id}/external-link", d.h.adminMatchSync.UnlinkExternal)
 	})
 }
 
@@ -360,6 +363,10 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 		r.Get("/exchange-rate/history", d.h.adminExchangeRate.GetHistory)
 		r.Post("/exchange-rate/override", d.h.adminExchangeRate.Override)
 		r.Post("/exchange-rate/refresh", d.h.adminExchangeRate.Refresh)
+
+		// Match-sync — automated result ingestion from external provider.
+		r.Post("/match-sync/poll", d.h.adminMatchSync.TriggerPoll)
+		r.Get("/match-sync/reconcile", d.h.adminMatchSync.Reconcile)
 
 		// Notification content templates (DB-backed, operator-editable)
 		const tmplByKey = "/notification-templates/{event_type}/{locale}"
