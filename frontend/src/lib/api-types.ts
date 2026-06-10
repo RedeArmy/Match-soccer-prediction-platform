@@ -402,14 +402,23 @@ export interface AdminUserResponse extends UserResponse {
 }
 
 export interface DashboardStatsResponse {
-  total_users:       number
-  active_users_7d:   number
-  total_groups:      number
-  active_groups:     number
-  pending_kyc:       number
-  pending_withdrawals: number
-  pending_bank_transfers: number
-  total_balance_cents: number
+  groups: {
+    total:    number
+    active:   number
+    inactive: number
+    deleted:  number
+  }
+  users: {
+    total:  number
+    active: number
+    banned: number
+  }
+  payments: {
+    pending:         number
+    confirmed:       number
+    rejected:        number
+    total_collected: number
+  }
 }
 
 export interface SSEStatsResponse {

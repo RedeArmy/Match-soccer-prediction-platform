@@ -36,10 +36,15 @@ vi.mock('@/hooks/useBalance', () => ({
   useBalance: vi.fn(),
 }))
 
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: vi.fn(),
+}))
+
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
 import { useExchangeRate } from '@/hooks/useExchangeRate'
 import { useBalance }      from '@/hooks/useBalance'
+import { useQuery }        from '@tanstack/react-query'
 import { Footer }          from '@/components/layout/Footer'
 import { Header }          from '@/components/layout/Header'
 import { AdminSidebar }    from '@/components/layout/AdminSidebar'
@@ -277,20 +282,26 @@ describe('I18nProvider', () => {
 // ── FeaturedPoolsSection ──────────────────────────────────────────────────────
 
 describe('FeaturedPoolsSection', () => {
+  const mockGroups = [
+    { id: 1, name: 'World Cup 2026 Global Pool',    membership_status: 'active', is_premium: false, mode_general: true, mode_round: false, role: 'member', active_member_count: 12, entry_fee: 0,     currency: 'GTQ', group_status: 'open', invite_code: 'aaa' },
+    { id: 2, name: 'Americas Knockout Challenge',   membership_status: 'active', is_premium: false, mode_general: true, mode_round: false, role: 'member', active_member_count: 8,  entry_fee: 0,     currency: 'GTQ', group_status: 'open', invite_code: 'bbb' },
+    { id: 3, name: 'Finals Elite Quiniela',         membership_status: 'active', is_premium: true,  mode_general: true, mode_round: false, role: 'member', active_member_count: 5,  entry_fee: 10000, currency: 'GTQ', group_status: 'open', invite_code: 'ccc' },
+  ]
+
   beforeEach(() => {
     vi.mocked(useExchangeRate).mockReturnValue({ data: undefined, isLoading: false } as never)
+    vi.mocked(useQuery).mockReturnValue({ data: mockGroups, isLoading: false } as never)
   })
 
-  it('renders all three featured groups', () => {
+  it('renders all three pool names from query data', () => {
     render(<FeaturedPoolsSection />)
     expect(screen.getByText('World Cup 2026 Global Pool')).toBeInTheDocument()
     expect(screen.getByText('Americas Knockout Challenge')).toBeInTheDocument()
     expect(screen.getByText('Finals Elite Quiniela')).toBeInTheDocument()
   })
 
-  it('shows Enter button for open group and Details for upcoming', () => {
+  it('renders a view-detail link for each active group', () => {
     render(<FeaturedPoolsSection />)
-    expect(screen.getByText('Entrar')).toBeInTheDocument()
-    expect(screen.getAllByText('Ver detalles').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Ver detalle').length).toBeGreaterThanOrEqual(3)
   })
 })

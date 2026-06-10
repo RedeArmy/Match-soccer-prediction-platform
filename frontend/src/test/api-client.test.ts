@@ -163,14 +163,13 @@ describe('api – createPaymentIntent', () => {
   })
 })
 
-describe('api – adminGetKYCQueue with cursor + status', () => {
+describe('api – adminGetKYCQueue with status filter', () => {
   beforeEach(() => mockFetch.mockReset())
 
-  it('includes cursor and status in query string', async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse({ data: [], next_cursor: '', has_more: false }))
-    await api.adminGetKYCQueue('tok', 'cur_xyz', 'pending')
+  it('includes status in query string', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]))
+    await api.adminGetKYCQueue('tok', 'pending')
     const [url] = mockFetch.mock.calls[0]
-    expect(String(url)).toContain('cursor=cur_xyz')
     expect(String(url)).toContain('status=pending')
   })
 })

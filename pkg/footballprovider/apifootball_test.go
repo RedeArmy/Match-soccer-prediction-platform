@@ -208,3 +208,120 @@ func TestGetFixture_ContextCancellation_ReturnsError(t *testing.T) {
 		t.Fatal("expected context-cancelled error, got nil")
 	}
 }
+
+func TestNewAPIFootballClient_DefaultsApplied(t *testing.T) {
+	c := footballprovider.NewAPIFootballClient("key", "", nil)
+	if c == nil {
+		t.Fatal("expected non-nil client")
+	}
+}
+
+func TestGetFixture_UnexpectedStatus_ReturnsError(t *testing.T) {
+	srv := buildServer(t, http.StatusInternalServerError, `{}`)
+	defer srv.Close()
+
+	_, err := newClient(t, srv).GetFixture(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error for 500 response, got nil")
+	}
+}
+
+func TestGetFixture_MalformedJSON_ReturnsError(t *testing.T) {
+	srv := buildServer(t, http.StatusOK, `not-json`)
+	defer srv.Close()
+
+	_, err := newClient(t, srv).GetFixture(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected decode error, got nil")
+	}
+}
+
+func TestGetLiveFixtures_APIError_ReturnsError(t *testing.T) {
+	body := `{"results":0,"errors":{"requests":"rate limit"},"response":[]}`
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	_, err := newClient(t, srv).GetLiveFixtures(context.Background(), 1, 2026)
+	if err == nil {
+		t.Fatal("expected API error, got nil")
+	}
+}
+
+func TestFixtureStatus_IsFinished(t *testing.T) {
+	finished := []footballprovider.FixtureStatus{
+		footballprovider.StatusFullTime,
+		footballprovider.StatusAfterET,
+		footballprovider.StatusAfterPEN,
+	}
+	for _, s := range finished {
+		if !s.IsFinished() {
+			t.Errorf("expected %q to be finished", s)
+		}
+	}
+	notFinished := []footballprovider.FixtureStatus{
+		footballprovider.StatusNotStarted,
+		footballprovider.StatusFirstHalf,
+		footballprovider.StatusHalfTime,
+		footballprovider.StatusPostponed,
+		footballprovider.StatusCancelled,
+	}
+	for _, s := range notFinished {
+		if s.IsFinished() {
+			t.Errorf("expected %q to NOT be finished", s)
+		}
+	}
+}
+
+func TestFixtureStatus_IsCancelled(t *testing.T) {
+	cancelled := []footballprovider.FixtureStatus{
+		footballprovider.StatusPostponed,
+		footballprovider.StatusCancelled,
+		footballprovider.StatusAbandoned,
+	}
+	for _, s := range cancelled {
+		if !s.IsCancelled() {
+			t.Errorf("expected %q to be cancelled", s)
+		}
+	}
+	notCancelled := []footballprovider.FixtureStatus{
+		footballprovider.StatusNotStarted,
+		footballprovider.StatusFullTime,
+		footballprovider.StatusFirstHalf,
+	}
+	for _, s := range notCancelled {
+		if s.IsCancelled() {
+			t.Errorf("expected %q to NOT be cancelled", s)
+		}
+	}
+}
+
+func TestGetFixture_AllKnownStatuses_ParseCorrectly(t *testing.T) {
+	known := []string{"NS", "1H", "HT", "2H", "ET", "PEN_LIVE", "FT", "AET", "PEN", "PST", "CANC", "ABD"}
+	for _, code := range known {
+		body := buildFixtureJSON(1, code, intPtr(0), intPtr(0))
+		srv := buildServer(t, http.StatusOK, body)
+		fix, err := newClient(t, srv).GetFixture(context.Background(), 1)
+		srv.Close()
+		if err != nil {
+			t.Errorf("status %q: unexpected error: %v", code, err)
+			continue
+		}
+		if string(fix.Status) != code {
+			t.Errorf("status %q: got %q", code, fix.Status)
+		}
+	}
+}
+
+func TestGetFixture_UnknownStatus_NormalisedToUnknown(t *testing.T) {
+	body := buildFixtureJSON(1, "WEIRD", intPtr(0), intPtr(0))
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	fix, err := newClient(t, srv).GetFixture(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fix.Status != footballprovider.StatusUnknown {
+		t.Errorf("expected StatusUnknown, got %q", fix.Status)
+	}
+}

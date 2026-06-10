@@ -63,7 +63,7 @@ export default function AdminExchangeRatePage() {
     },
   })
 
-  const chartData = history?.data.map(e => ({
+  const chartData = history?.map(e => ({
     date:      new Date(e.effective_at).toLocaleDateString('es-GT'),
     reference: Number.parseFloat(e.reference_rate),
     compra:    Number.parseFloat(e.buy_rate),

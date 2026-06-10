@@ -28,7 +28,6 @@ import type {
   WithdrawalLimits,
   InboxResponse,
   PreferenceResponse,
-  CursorPaged,
   DashboardStatsResponse,
   SSEStatsResponse,
   SystemParamResponse,
@@ -312,9 +311,8 @@ class APIClient {
     return this.request('/api/v1/admin/stats', {}, token)
   }
 
-  adminGetKYCQueue(token: string, cursor?: string, status?: string): Promise<CursorPaged<import('./api-types').KYCProfileResponse>> {
+  adminGetKYCQueue(token: string, status?: string): Promise<KYCProfileResponse[]> {
     const q = new URLSearchParams()
-    if (cursor) q.set('cursor', cursor)
     if (status) q.set('status', status)
     return this.request(`/api/v1/admin/kyc/queue?${q}`, {}, token)
   }
@@ -331,7 +329,7 @@ class APIClient {
     return this.request('/api/v1/admin/exchange-rate/current', {}, token)
   }
 
-  adminGetExchangeRateHistory(token: string, cursor?: string): Promise<CursorPaged<RateHistoryEntry>> {
+  adminGetExchangeRateHistory(token: string, cursor?: string): Promise<RateHistoryEntry[]> {
     const q = cursor ? `?cursor=${cursor}` : ''
     return this.request(`/api/v1/admin/exchange-rate/history${q}`, {}, token)
   }
