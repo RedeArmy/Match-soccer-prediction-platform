@@ -90,9 +90,9 @@ function EventsList({ events }: Readonly<{ events: FixtureEvent[] }>) {
 
   return (
     <div className="space-y-1">
-      {events.map((ev, i) => (
+      {events.map((ev) => (
         <div
-          key={i}
+          key={`${ev.elapsed}-${ev.type}-${ev.player}`}
           className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-white/[0.03]"
         >
           <span className="w-8 shrink-0 text-center font-bold tabular-nums text-text-muted">
@@ -228,17 +228,19 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
           )}
 
           {/* Status/time chip */}
-          <span className={cn(
-            'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
-            live   ? 'bg-green-500/20 text-green-300' :
-            done   ? 'bg-white/10 text-text-muted'    :
-                     'bg-blue-500/10 text-blue-300',
-          )}>
-            {live || done
-              ? statusLabel()
-              : <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{timeStr}</span>
-            }
-          </span>
+          {(() => {
+            const chipClass = live ? 'bg-green-500/20 text-green-300'
+              : done             ? 'bg-white/10 text-text-muted'
+              :                    'bg-blue-500/10 text-blue-300'
+            return (
+              <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums', chipClass)}>
+                {live || done
+                  ? statusLabel()
+                  : <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{timeStr}</span>
+                }
+              </span>
+            )
+          })()}
 
           {/* Teams + score */}
           <div className="flex flex-1 items-center justify-between gap-2 min-w-0">

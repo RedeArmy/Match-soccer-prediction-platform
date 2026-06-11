@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import React from 'react'
 import { I18nProvider } from '@/lib/i18n'
+import type { FixtureEvent } from '@/app/api/live/fixture/[id]/route'
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -299,5 +300,286 @@ describe('LiveMatchFeed – expand/collapse fixture', () => {
     await waitFor(() => expect(button).toHaveAttribute('aria-expanded', 'true'))
     fireEvent.click(button)
     await waitFor(() => expect(button).toHaveAttribute('aria-expanded', 'false'))
+  })
+})
+
+// ── MatchCard status variants ─────────────────────────────────────────────────
+
+describe('LiveMatchFeed – MatchCard FT (done) status', () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockReturnValue({
+      isLoading: false, isError: false,
+      data: { fixtures: [makeFixture({ id: 40, status: 'FT', homeScore: 2, awayScore: 1 })] },
+    } as never)
+  })
+
+  it('shows FT label in the status chip', () => {
+    renderFeed()
+    expect(screen.getByText('FT')).toBeInTheDocument()
+  })
+
+  it('shows score for done fixtures', () => {
+    renderFeed()
+    expect(screen.getByText('2 – 1')).toBeInTheDocument()
+  })
+})
+
+describe('LiveMatchFeed – MatchCard HT (halftime) status', () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockReturnValue({
+      isLoading: false, isError: false,
+      data: { fixtures: [makeFixture({ id: 41, status: 'HT', homeScore: 1, awayScore: 0 })] },
+    } as never)
+  })
+
+  it('shows halftime label (ET in Spanish locale) in status chip', () => {
+    renderFeed()
+    expect(screen.getByText('ET')).toBeInTheDocument()
+  })
+})
+
+describe('LiveMatchFeed – MatchCard live without elapsed', () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockReturnValue({
+      isLoading: false, isError: false,
+      data: { fixtures: [makeFixture({ id: 42, status: '2H', elapsed: null, homeScore: 0, awayScore: 0 })] },
+    } as never)
+  })
+
+  it('shows in-play label when elapsed is null', () => {
+    renderFeed()
+    expect(screen.getByText('En juego')).toBeInTheDocument()
+  })
+})
+
+describe('LiveMatchFeed – MatchCard no round', () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockReturnValue({
+      isLoading: false, isError: false,
+      data: { fixtures: [makeFixture({ id: 43, round: '' })] },
+    } as never)
+  })
+
+  it('renders the fixture card without a round paragraph', () => {
+    renderFeed()
+    expect(screen.getByText('Brazil')).toBeInTheDocument()
+  })
+})
+
+// ── FixtureDetailPanel states ─────────────────────────────────────────────────
+
+describe('LiveMatchFeed – FixtureDetailPanel loading', () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
+      if (queryKey[0] === 'live-today')
+        return { isLoading: false, isError: false, data: { fixtures: [makeFixture({ id: 50, status: '1H', elapsed: 15 })] } } as never
+      return { isLoading: true, isError: false, data: undefined } as never
+    })
+  })
+
+  it('shows LoadingState while detail query is loading', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => expect(screen.getAllByTestId('loading-state').length).toBeGreaterThan(0))
+  })
+})
+
+describe('LiveMatchFeed – FixtureDetailPanel error', () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
+      if (queryKey[0] === 'live-today')
+        return { isLoading: false, isError: false, data: { fixtures: [makeFixture({ id: 51, status: '1H', elapsed: 20 })] } } as never
+      return { isLoading: false, isError: true, data: undefined } as never
+    })
+  })
+
+  it('shows error message when detail query fails', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() =>
+      expect(screen.getByText('No se pudo cargar la información del partido.')).toBeInTheDocument(),
+    )
+  })
+})
+
+describe('LiveMatchFeed – FixtureDetailPanel missing fixture', () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
+      if (queryKey[0] === 'live-today')
+        return { isLoading: false, isError: false, data: { fixtures: [makeFixture({ id: 52, status: '1H', elapsed: 20 })] } } as never
+      return { isLoading: false, isError: false, data: {} } as never
+    })
+  })
+
+  it('shows error message when fixture is absent from response', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() =>
+      expect(screen.getByText('No se pudo cargar la información del partido.')).toBeInTheDocument(),
+    )
+  })
+})
+
+describe('LiveMatchFeed – FixtureDetailPanel with halftime score', () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
+      if (queryKey[0] === 'live-today')
+        return { isLoading: false, isError: false, data: { fixtures: [makeFixture({ id: 53, status: 'FT', homeScore: 3, awayScore: 1 })] } } as never
+      return {
+        isLoading: false, isError: false,
+        data: {
+          fixture: {
+            id: 53, homeTeam: 'Brazil', awayTeam: 'Germany', homeLogo: '', awayLogo: '',
+            homeScore: 3, awayScore: 1, halftimeHome: 1, halftimeAway: 0,
+            status: 'FT', elapsed: null, kickoffAt: '2026-06-10T20:00:00Z',
+            round: 'Group Stage', venue: null, lineups: [], events: [],
+          },
+        },
+      } as never
+    })
+  })
+
+  it('renders the halftime score section', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => expect(screen.getByText(/Medio tiempo/)).toBeInTheDocument())
+  })
+
+  it('shows no-data message when both events and lineups are empty', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() =>
+      expect(screen.getByText('Información del partido aún no disponible.')).toBeInTheDocument(),
+    )
+  })
+})
+
+// ── EventIcon branches via FixtureDetailPanel ─────────────────────────────────
+
+function makeDetailFixture(events: FixtureEvent[], id: number) {
+  return {
+    id, homeTeam: 'Brazil', awayTeam: 'Germany', homeLogo: '', awayLogo: '',
+    homeScore: 1, awayScore: 0, halftimeHome: null, halftimeAway: null,
+    status: '1H', elapsed: 30, kickoffAt: '2026-06-10T20:00:00Z',
+    round: 'Group Stage', venue: null, lineups: [], events,
+  }
+}
+
+function mockQueryWithDetail(fixtureId: number, events: FixtureEvent[]) {
+  vi.mocked(useQuery).mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
+    if (queryKey[0] === 'live-today')
+      return { isLoading: false, isError: false, data: { fixtures: [makeFixture({ id: fixtureId, status: '1H', elapsed: 30 })] } } as never
+    return { isLoading: false, isError: false, data: { fixture: makeDetailFixture(events, fixtureId) } } as never
+  })
+}
+
+describe('LiveMatchFeed – EventIcon Goal (⚽)', () => {
+  beforeEach(() => mockQueryWithDetail(60, [
+    { elapsed: 22, type: 'Goal', detail: 'Normal Goal', player: 'Neymar', assist: 'Vini Jr', team: 'Brazil' },
+  ]))
+
+  it('renders ⚽ for Goal events and shows non-subst assist in parentheses', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => expect(screen.getByText('⚽')).toBeInTheDocument())
+    expect(screen.getByText('Neymar')).toBeInTheDocument()
+    expect(screen.getByText('(Vini Jr)')).toBeInTheDocument()
+  })
+})
+
+describe('LiveMatchFeed – EventIcon yellow Card (🟨)', () => {
+  beforeEach(() => mockQueryWithDetail(61, [
+    { elapsed: 40, type: 'Card', detail: 'Yellow Card', player: 'Müller', assist: null, team: 'Germany' },
+  ]))
+
+  it('renders 🟨 for yellow card events', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => expect(screen.getByText('🟨')).toBeInTheDocument())
+  })
+})
+
+describe('LiveMatchFeed – EventIcon red Card (🟥)', () => {
+  beforeEach(() => mockQueryWithDetail(62, [
+    { elapsed: 45, type: 'Card', detail: 'Red Card', player: 'Klose', assist: null, team: 'Germany' },
+  ]))
+
+  it('renders 🟥 for red card events', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => expect(screen.getByText('🟥')).toBeInTheDocument())
+  })
+})
+
+describe('LiveMatchFeed – EventIcon substitution (🔄)', () => {
+  beforeEach(() => mockQueryWithDetail(63, [
+    { elapsed: 55, type: 'subst', detail: 'Substitution', player: 'Ronaldo', assist: 'Firmino', team: 'Brazil' },
+  ]))
+
+  it('renders 🔄 for substitution events and shows player-in with ↑', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => expect(screen.getByText('🔄')).toBeInTheDocument())
+    expect(screen.getByText(/↑ Firmino/)).toBeInTheDocument()
+  })
+})
+
+describe('LiveMatchFeed – EventIcon default (📋)', () => {
+  beforeEach(() => mockQueryWithDetail(64, [
+    { elapsed: 25, type: 'Var', detail: 'Goal cancelled', player: 'Neymar', assist: null, team: 'Brazil' },
+  ]))
+
+  it('renders 📋 default icon for VAR and unknown event types', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => expect(screen.getByText('📋')).toBeInTheDocument())
+  })
+})
+
+// ── LineupPanel via FixtureDetailPanel ────────────────────────────────────────
+
+describe('LiveMatchFeed – LineupPanel with formation and substitutes', () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
+      if (queryKey[0] === 'live-today')
+        return { isLoading: false, isError: false, data: { fixtures: [makeFixture({ id: 70, status: '1H', elapsed: 20 })] } } as never
+      return {
+        isLoading: false, isError: false,
+        data: {
+          fixture: {
+            id: 70, homeTeam: 'Brazil', awayTeam: 'Germany', homeLogo: '', awayLogo: '',
+            homeScore: 1, awayScore: 0, halftimeHome: null, halftimeAway: null,
+            status: '1H', elapsed: 20, kickoffAt: '2026-06-10T20:00:00Z',
+            round: 'Group Stage', venue: null, events: [],
+            lineups: [
+              {
+                teamName: 'Brazil', formation: '4-3-3',
+                startXI: [
+                  { name: 'Alisson', number: 1, pos: 'G' },
+                  { name: 'Neymar',  number: 10, pos: 'F' },
+                ],
+                substitutes: [{ name: 'Gabriel Jesus', number: 9, pos: 'F' }],
+              },
+            ],
+          },
+        },
+      } as never
+    })
+  })
+
+  it('renders lineups section with team name and formation', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => expect(screen.getByText('Alineaciones')).toBeInTheDocument())
+    expect(screen.getByText('4-3-3')).toBeInTheDocument()
+    expect(screen.getByText('Alisson')).toBeInTheDocument()
+    expect(screen.getByText('Neymar')).toBeInTheDocument()
+  })
+
+  it('renders substitutes summary with count', async () => {
+    renderFeed()
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => expect(screen.getByText('Alineaciones')).toBeInTheDocument())
+    expect(screen.getByText(/Suplentes \(1\)/)).toBeInTheDocument()
   })
 })
