@@ -686,6 +686,42 @@ describe('api – admin bank and account-type methods', () => {
   })
 })
 
+// ── Admin: match methods ──────────────────────────────────────────────────────
+
+describe('api – adminStartMatch', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends POST to /api/v1/matches/:id/start', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 5, status: 'in_progress' }))
+    await api.adminStartMatch('tok', 5)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/matches/5/start')
+    expect((init as RequestInit).method).toBe('POST')
+  })
+})
+
+describe('api – adminUpdateMatchResult', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends PATCH to /api/v1/matches/:id with score data', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 3, home_score: 2, away_score: 1 }))
+    await api.adminUpdateMatchResult('tok', 3, { home_score: 2, away_score: 1 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/matches/3')
+    expect((init as RequestInit).method).toBe('PATCH')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ home_score: 2, away_score: 1 })
+  })
+
+  it('includes win_method when provided', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 3, home_score: 1, away_score: 0, win_method: 'penalties' }))
+    await api.adminUpdateMatchResult('tok', 3, { home_score: 1, away_score: 0, win_method: 'penalties' })
+    const [, init] = mockFetch.mock.calls[0]
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      home_score: 1, away_score: 0, win_method: 'penalties',
+    })
+  })
+})
+
 // ── Admin: bank-transfer methods ──────────────────────────────────────────────
 
 describe('api – admin bank-transfer methods', () => {
