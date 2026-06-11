@@ -4143,6 +4143,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/withdrawals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all withdrawal requests optionally filtered by status. Requires admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-payments"
+                ],
+                "summary": "List all withdrawals",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status: pending, approved, rejected, processed",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.WithdrawalResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/withdrawals/pending": {
             "get": {
                 "security": [

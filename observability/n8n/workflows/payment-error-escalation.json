@@ -82,5 +82,6 @@
   ],
   "meta": {
     "n8n_version": "1.49.0"
-  }
+  },
+  "active": true
 }

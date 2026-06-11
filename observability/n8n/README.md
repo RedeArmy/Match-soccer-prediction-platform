@@ -1,41 +1,55 @@
 # n8n Automation Workflows
 
 Operational alerting and notification workflows for the World Cup Quiniela platform.
-These JSON files are the canonical source for all n8n workflows — the files in this
-directory, not the n8n UI, are the source of truth.
+The JSON files in this directory are the canonical source of truth for all n8n workflows.
 
 ## Required n8n version
 
 **1.49.0** — pinned in `docker-compose.observability.yml` as `n8nio/n8n:1.49.0`.
 
-Each workflow JSON carries `"meta": {"n8n_version": "1.49.0"}` to document which
-version the workflow was designed and tested against. Upgrading n8n may change node
-`typeVersion` requirements or execution semantics; verify all workflows after any
-version bump.
+Each workflow JSON carries `"meta": {"n8n_version": "1.49.0"}` to document the version
+the workflow was designed and tested against. Verify all workflows after any version bump.
 
-## Importing workflows
+## Automatic deployment
 
-1. Start the observability stack:
-   ```
-   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d n8n
-   ```
-2. Open the n8n UI at `http://localhost:5678` and log in.
-3. For each `.json` file in `workflows/`:
-   - Click **New Workflow → Import from file** and select the file.
-   - Activate the workflow with the toggle in the top-right.
-4. Set the required environment variables in n8n (Settings → Variables or `.env`):
-   - `ADMIN_EMAIL` — destination address for admin-facing alerts.
-   - `COMPLIANCE_EMAIL` — destination address for KYC/compliance alerts.
+Workflows are **automatically imported and activated** when the n8n container starts.
+The `docker-compose.observability.yml` n8n service overrides the default CMD to:
 
-Do **not** export workflows from the n8n UI and commit the result without also updating
-the version tag in `meta.n8n_version` if the n8n version changed.
+1. Run `n8n import:workflow --input=<file> --active` for each JSON in this directory
+2. Start n8n normally (`exec n8n start`)
 
-## Webhook path registry
+On restart, n8n re-imports every workflow (updating them from the JSON source of truth).
+No manual UI import is required. All 15 workflows will be active and their webhooks
+registered within ~30 seconds of n8n starting.
 
-The application calls n8n via `WCQ_N8N_WEBHOOKURL/{path}` (configured via env var).
-These paths are hardcoded in the workflow `webhookId` fields and in
-`internal/observability/notifier.go`. Changing a `webhookId` in a workflow requires
-a matching update in the notifier constants.
+## Required environment variables
+
+Set these in `/opt/wcq/.env` on the server (see `server/.env.example`):
+
+| Variable | Description |
+|----------|-------------|
+| `N8N_SMTP_HOST` | SMTP server hostname |
+| `N8N_SMTP_PORT` | SMTP port (default: 587) |
+| `N8N_SMTP_USER` | SMTP username |
+| `N8N_SMTP_PASS` | SMTP password |
+| `N8N_SMTP_SENDER` | From address for all notification emails |
+| `N8N_ADMIN_EMAIL` | Destination for admin/ops alerts (`$env.ADMIN_EMAIL`) |
+| `N8N_COMPLIANCE_EMAIL` | Destination for KYC/compliance alerts (`$env.COMPLIANCE_EMAIL`) |
+| `N8N_WEBHOOK_SECRET` | HMAC-SHA256 key matching `WCQ_N8N_WEBHOOKSECRET` on the backend |
+| `N8N_ENCRYPTION_KEY` | n8n credential encryption key — `openssl rand -hex 32` |
+| `N8N_BASIC_AUTH_USER` | n8n UI username (default: admin) |
+| `N8N_BASIC_AUTH_PASS` | n8n UI password |
+
+How workflows access these at runtime:
+- `$env.ADMIN_EMAIL` in n8n expressions → reads from container env var `ADMIN_EMAIL`
+- `process.env.APP_BASE_URL` in Code nodes → reads from container env var `APP_BASE_URL`
+  (`APP_BASE_URL` is set to `FRONTEND_PUBLIC_URL` in the compose service)
+
+## Workflow registry
+
+The application calls n8n via `WCQ_N8N_WEBHOOKURL/{path}`. These paths are hardcoded
+in workflow `webhookId` fields and in `internal/observability/notifier.go`.
+Changing a `webhookId` requires a matching update in the notifier constants.
 
 | File | Workflow name | `webhookId` (URL path suffix) | Trigger |
 |---|---|---|---|
@@ -55,11 +69,32 @@ a matching update in the notifier constants.
 | `prometheus-alert-relay.json` | Prometheus Alert Relay | `prometheus-alert-relay` | Generic Alertmanager webhook receiver |
 | `sanctions-flag-alert.json` | KYC Sanctions Flag | `sanctions-flag` | Sanctions screening hit |
 
+## CI validation
+
+The test job in `.github/workflows/deploy.yml` runs
+`python3 scripts/validate-n8n-workflows.py observability/n8n/workflows`
+on every PR and push. The validator checks:
+- Valid JSON structure and required fields (`name`, `nodes`, `connections`)
+- Unique node IDs within each workflow
+- Trigger node presence (webhook or schedule)
+- Webhook path uniqueness across all workflows
+- Connection graph integrity
+
+## Modifying workflows
+
+1. Make changes in the n8n UI on a staging/dev environment.
+2. Export the workflow: **Workflow menu (⋮) → Download**.
+3. Replace the relevant JSON file in this directory.
+4. Set `"active": true` in the JSON (required for auto-activation on deploy).
+5. If the n8n version changed, update `"meta": {"n8n_version": "<new-version>"}`.
+6. Run the validator locally: `python3 scripts/validate-n8n-workflows.py`
+7. Commit. The next deploy will update the workflow on the server automatically.
+
 ## Version upgrade procedure
 
-1. Pull the new n8n image in `docker-compose.observability.yml`.
-2. Start the new container and import each workflow JSON.
-3. Test each workflow with a synthetic payload via the n8n **Execute Workflow** button.
-4. If any node requires a `typeVersion` bump (n8n will warn on import), update the JSON.
-5. Update `"meta": {"n8n_version": "<new-version>"}` in each modified workflow JSON.
-6. Commit the updated JSON files with the version bump.
+1. Update the image tag in `docker-compose.observability.yml`.
+2. Start the new container. Auto-import will run with the new version.
+3. Test each workflow via the n8n **Execute Workflow** button with a synthetic payload.
+4. If any node requires a `typeVersion` bump (n8n will warn), update the JSON.
+5. Update `"meta": {"n8n_version": "<new-version>"}` in each modified JSON.
+6. Commit the updated JSON files.

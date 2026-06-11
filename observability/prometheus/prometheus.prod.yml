@@ -1,0 +1,34 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: hetzner-cx53
+    env: production
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # API metrics server — WCQ_METRICSBINDADDR=:9091
+  # Reachable by service name because prometheus joins wcq-net.
+  - job_name: quiniela-api
+    static_configs:
+      - targets: ["api:9091"]
+    metrics_path: /metrics
+    scheme: http
+
+  # Worker health server — WCQ_WORKER_HEALTHPORT=8081
+  - job_name: quiniela-worker
+    static_configs:
+      - targets: ["worker:8081"]
+    metrics_path: /metrics
+    scheme: http

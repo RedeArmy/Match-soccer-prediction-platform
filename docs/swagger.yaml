@@ -4035,6 +4035,45 @@ paths:
       summary: Bulk-ban users
       tags:
       - admin-users
+  /api/v1/admin/withdrawals:
+    get:
+      description: Returns all withdrawal requests optionally filtered by status.
+        Requires admin role.
+      parameters:
+      - description: 'Filter by status: pending, approved, rejected, processed'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.WithdrawalResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid status value
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all withdrawals
+      tags:
+      - admin-payments
   /api/v1/admin/withdrawals/{id}/approve:
     post:
       consumes:

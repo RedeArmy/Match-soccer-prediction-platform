@@ -189,6 +189,47 @@ func (h *WithdrawalHandler) AdminListPending(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, data)
 }
 
+// AdminListAll handles GET /admin/withdrawals?status=...
+//
+// @Summary      List all withdrawals
+// @Description  Returns all withdrawal requests optionally filtered by status. Requires admin role.
+//
+//	Payout details are masked in the list; full details appear only in action responses.
+//	The result set is capped at 500 rows.
+//
+// @Tags         admin-payments
+// @Produce      json
+// @Security     BearerAuth
+// @Param        status  query  string  false  "Filter by status: pending, approved, rejected, processed"
+// @Success      200  {array}   handler.WithdrawalResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse
+// @Failure      422  {object}  handler.ErrorResponse  "Invalid status value"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/withdrawals [get]
+func (h *WithdrawalHandler) AdminListAll(w http.ResponseWriter, r *http.Request) {
+	statusFilter := r.URL.Query().Get("status")
+	if statusFilter != "" {
+		switch domain.WithdrawalStatus(statusFilter) {
+		case domain.WithdrawalPending, domain.WithdrawalApproved,
+			domain.WithdrawalRejected, domain.WithdrawalProcessed:
+		default:
+			writeError(w, r, h.log, apperrors.Validation("status must be pending, approved, rejected, or processed"))
+			return
+		}
+	}
+	requests, err := h.svc.ListAll(r.Context(), statusFilter)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	data := make([]WithdrawalResponse, len(requests))
+	for i, req := range requests {
+		data[i] = withdrawalToResponseMasked(req)
+	}
+	writeJSON(w, http.StatusOK, data)
+}
+
 type reviewWithdrawalRequest struct {
 	Notes string `json:"notes"`
 }
