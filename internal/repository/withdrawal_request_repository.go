@@ -208,6 +208,31 @@ func (r *PostgresWithdrawalRequestRepository) ListPending(ctx context.Context) (
 	})
 }
 
+// ListAll returns all requests optionally filtered by status, ordered by
+// created_at DESC. An empty status returns all records up to the 500-row cap.
+func (r *PostgresWithdrawalRequestRepository) ListAll(ctx context.Context, status string) ([]*domain.WithdrawalRequest, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
+	defer cancel()
+	var rows pgx.Rows
+	var err error
+	if status == "" {
+		rows, err = r.db.Query(ctx,
+			`SELECT `+withdrawalColumns+` FROM withdrawal_requests ORDER BY created_at DESC LIMIT 500`,
+		)
+	} else {
+		rows, err = r.db.Query(ctx,
+			`SELECT `+withdrawalColumns+` FROM withdrawal_requests WHERE status = $1 ORDER BY created_at DESC LIMIT 500`,
+			status,
+		)
+	}
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return collectRows(rows, func(row pgx.Rows) (*domain.WithdrawalRequest, error) {
+		return r.scanFields(row)
+	})
+}
+
 // ApproveAndDebit atomically approves the request and deducts the balance.
 func (r *PostgresWithdrawalRequestRepository) ApproveAndDebit(ctx context.Context, id, reviewerID int, notes string) (*domain.WithdrawalRequest, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)

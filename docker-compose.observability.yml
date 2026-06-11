@@ -1,23 +1,28 @@
-# docker-compose.observability.yml — Full observability stack for local development.
+# docker-compose.observability.yml — Observability stack (dev + production).
 #
 # Starts Prometheus, Grafana, Tempo, Alertmanager, n8n, and Jaeger alongside
-# the core infrastructure defined in docker-compose.yml.
+# the core application defined in docker-compose.yml (dev) or
+# docker-compose.prod.yml (production).
 #
-# Usage:
+# All services join the wcq-net network (external) so that Prometheus can
+# scrape api:9091 / worker:8081 and Tempo can receive OTLP from the API.
+#
+# Usage (development):
 #   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 #
-# Required environment variables (set in .env or shell):
-#   WCQ_OBSERVABILITY_PROMETHEUSURL=http://prometheus:9090
-#   WCQ_OBSERVABILITY_TEMPOURL=http://tempo:3200
-#   WCQ_N8N_BASEURL=http://n8n:5678
-#   WCQ_N8N_APIKEY=<n8n API key from n8n UI Settings → API Keys>
-#   WCQ_N8N_WEBHOOKURL=http://n8n:5678/webhook
+# Usage (production — after docker compose -f docker-compose.prod.yml up -d):
+#   docker compose -f docker-compose.observability.yml up -d
 #
-# Optional overrides:
-#   GRAFANA_ADMIN_PASSWORD — Grafana admin password (default: admin)
-#   N8N_ENCRYPTION_KEY     — n8n encryption key for stored credentials
-#   N8N_BASIC_AUTH_USER    — n8n UI basic-auth username (default: admin)
-#   N8N_BASIC_AUTH_PASS    — n8n UI basic-auth password (default: changeme)
+# Required env vars in /opt/wcq/.env (production) or .env (dev):
+#   GRAFANA_ADMIN_PASSWORD   — Grafana admin password   (default: admin)
+#   GRAFANA_ROOT_URL         — public Grafana URL        (default: http://localhost:3001)
+#   N8N_ENCRYPTION_KEY       — n8n credential encryption key
+#   N8N_BASIC_AUTH_USER      — n8n UI username           (default: admin)
+#   N8N_BASIC_AUTH_PASS      — n8n UI password           (default: changeme)
+#   N8N_WEBHOOK_URL          — public n8n webhook URL    (default: http://localhost:5678/)
+#   N8N_PROTOCOL             — http or https             (default: http)
+#   PROMETHEUS_CONFIG        — prometheus config filename (default: prometheus.yml)
+#                              Set to prometheus.prod.yml in production.
 
 services:
   prometheus:
@@ -31,11 +36,11 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
-      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/${PROMETHEUS_CONFIG:-prometheus.yml}:/etc/prometheus/prometheus.yml:ro
       - ./observability/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     networks:
-      - quiniela_net
+      - wcq-net
     depends_on:
       - alertmanager
 
@@ -43,18 +48,21 @@ services:
     image: grafana/grafana:11.1.0
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_USER:     admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      GF_SERVER_ROOT_URL: http://localhost:3000
-      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+      # In production GRAFANA_ROOT_URL should be the public HTTPS URL, e.g.
+      # https://grafana.example.com — used for redirect URIs and panel links.
+      GF_SERVER_ROOT_URL:         ${GRAFANA_ROOT_URL:-http://localhost:3001}
+      GF_FEATURE_TOGGLES_ENABLE:  traceqlEditor
     ports:
-      - "127.0.0.1:3000:3000"
+      # Port 3001 on the host — avoids collision with the frontend on 3000.
+      - "127.0.0.1:3001:3000"
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/dashboards:/etc/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     networks:
-      - quiniela_net
+      - wcq-net
     depends_on:
       - prometheus
       - tempo
@@ -64,14 +72,16 @@ services:
     restart: unless-stopped
     command: ["-config.file=/etc/tempo.yml"]
     ports:
-      - "127.0.0.1:3200:3200"   # Tempo HTTP API
-      - "127.0.0.1:4318:4318"   # OTLP HTTP receiver
-      - "127.0.0.1:4317:4317"   # OTLP gRPC receiver
+      - "127.0.0.1:3200:3200"  # Tempo HTTP API
+      - "127.0.0.1:4318:4318"  # OTLP HTTP receiver (api/worker → tempo)
+      - "127.0.0.1:4317:4317"  # OTLP gRPC receiver
     volumes:
       - ./observability/tempo/tempo.yml:/etc/tempo.yml:ro
       - tempo_data:/var/tempo
+    # Tempo must be on wcq-net so it is reachable as "tempo:4318" from the
+    # api and worker containers (WCQ_OBSERVABILITY_TEMPOURL=http://tempo:4318).
     networks:
-      - quiniela_net
+      - wcq-net
 
   alertmanager:
     image: prom/alertmanager:v0.27.0
@@ -85,29 +95,77 @@ services:
       - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
     networks:
-      - quiniela_net
+      - wcq-net
 
   n8n:
     image: n8nio/n8n:1.49.0
     restart: unless-stopped
+    # Override the default CMD to auto-import all workflow JSON files before
+    # starting n8n. The `--active` flag marks imported workflows as active so
+    # n8n registers their webhooks and schedulers on startup.
+    #
+    # Idempotent: n8n 1.49 updates existing workflows by name on re-import.
+    # To skip updates on subsequent restarts, append `--skipExisting`.
+    command:
+      - sh
+      - -c
+      - |
+        echo '==> importing n8n workflows...'
+        for f in /opt/n8n-workflows/*.json; do
+          printf '  %s\n' "$$f"
+          n8n import:workflow --input="$$f" --active 2>&1 | tail -n1 || true
+        done
+        echo '==> starting n8n...'
+        exec n8n start
     environment:
-      DB_TYPE: sqlite
-      N8N_BASIC_AUTH_ACTIVE: "true"
-      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
+      # ── Core ──────────────────────────────────────────────────────────────
+      DB_TYPE:                 sqlite
+      N8N_BASIC_AUTH_ACTIVE:   "true"
+      N8N_BASIC_AUTH_USER:     ${N8N_BASIC_AUTH_USER:-admin}
       N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASS:-changeme}
-      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-dev-encryption-key-change-in-prod}
-      N8N_HOST: n8n
-      N8N_PORT: 5678
-      N8N_PROTOCOL: http
-      WEBHOOK_URL: http://n8n:5678/
-      EXECUTIONS_PROCESS: main
-      N8N_LOG_LEVEL: info
+      N8N_ENCRYPTION_KEY:      ${N8N_ENCRYPTION_KEY:-dev-encryption-key-change-in-prod}
+      N8N_HOST:                n8n
+      N8N_PORT:                "5678"
+      N8N_PROTOCOL:            ${N8N_PROTOCOL:-http}
+      # WEBHOOK_URL is the public-facing base URL n8n uses when generating
+      # webhook URLs in the UI. In production set to the public HTTPS domain.
+      WEBHOOK_URL:             ${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      EXECUTIONS_PROCESS:      main
+      N8N_LOG_LEVEL:           info
+      # ── SMTP (used by emailSend nodes in all notification workflows) ──────
+      # n8n self-hosted exposes process.env.* to Code nodes and $env.* to
+      # workflow expressions, so these env vars are usable in all 15 workflows.
+      N8N_EMAIL_MODE:          smtp
+      N8N_SMTP_HOST:           ${N8N_SMTP_HOST}
+      N8N_SMTP_PORT:           ${N8N_SMTP_PORT:-587}
+      N8N_SMTP_USER:           ${N8N_SMTP_USER}
+      N8N_SMTP_PASS:           ${N8N_SMTP_PASS}
+      N8N_SMTP_SENDER:         ${N8N_SMTP_SENDER}
+      N8N_SMTP_SSL:            "false"
+      # ── Workflow runtime variables ────────────────────────────────────────
+      # Read in workflows as:  $env.ADMIN_EMAIL  /  process.env.ADMIN_EMAIL
+      ADMIN_EMAIL:             ${N8N_ADMIN_EMAIL}
+      COMPLIANCE_EMAIL:        ${N8N_COMPLIANCE_EMAIL}
+      # process.env.APP_BASE_URL used in user-facing email links (e.g. kyc-approved)
+      APP_BASE_URL:            ${FRONTEND_PUBLIC_URL}
+      # ── Webhook HMAC signing ─────────────────────────────────────────────
+      # Must match WCQ_N8N_WEBHOOKSECRET on the backend side.
+      N8N_WEBHOOK_SECRET:      ${N8N_WEBHOOK_SECRET}
     ports:
       - "127.0.0.1:5678:5678"
     volumes:
       - n8n_data:/home/node/.n8n
+      # Workflow JSON files mounted read-only; the startup import script reads them.
+      - ./observability/n8n/workflows:/opt/n8n-workflows:ro
+    # n8n must be on wcq-net so the API can call http://n8n:5678 (WCQ_N8N_BASEURL).
     networks:
-      - quiniela_net
+      - wcq-net
+    healthcheck:
+      test:         ["CMD", "wget", "-qO-", "http://localhost:5678/healthz"]
+      interval:     15s
+      timeout:      5s
+      start_period: 30s
+      retries:      3
 
   jaeger:
     image: jaegertracing/all-in-one:1.58
@@ -118,7 +176,7 @@ services:
       - "127.0.0.1:16686:16686"  # Jaeger UI
       - "127.0.0.1:14268:14268"  # Jaeger HTTP collector
     networks:
-      - quiniela_net
+      - wcq-net
 
 volumes:
   prometheus_data:
@@ -133,6 +191,9 @@ volumes:
     driver: local
 
 networks:
-  quiniela_net:
+  wcq-net:
+    # wcq-net is created by docker-compose.yml (dev) or docker-compose.prod.yml
+    # (production) with `name: wcq-net`. All observability services join it so
+    # they can communicate with api and worker containers by service name.
     external: true
-    name: world-cup-quiniela_quiniela_net
+    name: wcq-net

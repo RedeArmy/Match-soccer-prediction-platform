@@ -71,4 +71,8 @@ volumes:
 # same machine.
 networks:
   quiniela_net:
+    # name: wcq-net sets a fixed, project-independent name so that
+    # docker-compose.observability.yml can join this network with
+    # `external: true` regardless of the Compose project name.
+    name: wcq-net
     driver: bridge

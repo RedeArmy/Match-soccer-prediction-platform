@@ -1,5 +1,5 @@
 {
-  "name": "KYC Rejected \u2014 User Notify",
+  "name": "KYC Rejected — User Notify",
   "nodes": [
     {
       "parameters": {
@@ -72,7 +72,7 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },

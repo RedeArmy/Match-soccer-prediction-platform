@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { UserButton, SignOutButton } from '@clerk/nextjs'
@@ -22,6 +23,8 @@ const navItems = [
 
 export function AdminSidebar() {
   const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   return (
     <aside className="flex flex-col w-64 min-h-screen border-r border-blue-800/60 bg-blue-950">
@@ -57,7 +60,7 @@ export function AdminSidebar() {
 
       {/* User */}
       <div className="p-4 border-t border-blue-800/60 flex items-center gap-3">
-        <UserButton appearance={{ elements: { avatarBox: 'w-8 h-8' } }} />
+        {mounted && <UserButton appearance={{ elements: { avatarBox: 'w-8 h-8' } }} />}
         <span className="flex-1 text-xs text-text-muted">Admin</span>
         <SignOutButton>
           <button
