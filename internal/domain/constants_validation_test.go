@@ -200,6 +200,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyMatchSyncProvider":            ParamKeyMatchSyncProvider,
 		"ParamKeyMatchSyncLeagueID":            ParamKeyMatchSyncLeagueID,
 		"ParamKeyMatchSyncSeason":              ParamKeyMatchSyncSeason,
+		// System clock override — dev/test only (migration 000187)
+		"ParamKeySystemDate": ParamKeySystemDate,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -388,7 +390,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 150 // update when adding a new ParamKey* constant
+		const expectedCount = 151 // update when adding a new ParamKey* constant
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -622,6 +624,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyMatchSyncProvider", ParamKeyMatchSyncProvider, "match"},
 		{"ParamKeyMatchSyncLeagueID", ParamKeyMatchSyncLeagueID, "match"},
 		{"ParamKeyMatchSyncSeason", ParamKeyMatchSyncSeason, "match"},
+		// System clock override — dev/test only (migration 000187)
+		{"ParamKeySystemDate", ParamKeySystemDate, "system"},
 	}
 
 	for _, tc := range paramKeys {

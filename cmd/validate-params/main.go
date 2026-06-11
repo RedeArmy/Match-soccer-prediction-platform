@@ -83,6 +83,9 @@ type paramSpec struct {
 //   - 000174_update_auth_validation_timeout_param      (default_value update: 5→10)
 //   - 000179_seed_withdrawal_min_usd_cents_param       (+1)
 //   - 000180_seed_tournament_mode_params               (+2)
+//   - 000184_seed_free_max_members_param               (+1)
+//   - 000186_seed_match_sync_params                    (+6)
+//   - 000187_seed_system_date_param                    (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -335,6 +338,10 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyMatchSyncProvider, defaultValue: domain.DefaultMatchSyncProvider, paramType: "string", category: "match", isRuntime: true},
 	{key: domain.ParamKeyMatchSyncLeagueID, defaultValue: strconv.Itoa(domain.DefaultMatchSyncLeagueID), paramType: "int", category: "match", isRuntime: true},
 	{key: domain.ParamKeyMatchSyncSeason, defaultValue: strconv.Itoa(domain.DefaultMatchSyncSeason), paramType: "int", category: "match", isRuntime: true},
+
+	// System clock override — dev/test only (migration 000187).
+	// Empty default = real wall-clock time. Ignored in production.
+	{key: domain.ParamKeySystemDate, defaultValue: "", paramType: "string", category: "system", isRuntime: true},
 }
 
 type dbParam struct {

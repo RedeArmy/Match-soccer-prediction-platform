@@ -94,6 +94,7 @@ type appHandlers struct {
 	bank               *handler.BankHandler
 	adminBank          *handler.AdminBankHandler
 	adminMatchSync     *handler.AdminMatchSyncHandler
+	systemClock        *handler.SystemClockHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -173,7 +174,7 @@ func (s *Server) buildHandlers(
 
 	outboxWriter := outbox.NewWriter(s.db)
 
-	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.Real{}, s.log)
+	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log)
 	groupAuthz := service.NewGroupAuthzService(repos.member)
 	quinielaSvc := service.WithMemberRepo(
 		service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{}),
@@ -324,6 +325,7 @@ func (s *Server) buildHandlers(
 		adminNotifDLQ:      handler.NewAdminNotificationDLQHandler(repository.NewPostgresNotificationDLQRepository(s.db), s.log),
 		adminSSEStats:      handler.NewAdminSSEStatsHandler(s.notifHub, s.log),
 		user:               handler.NewUserHandler(repos.user, s.log),
+		systemClock:        handler.NewSystemClockHandler(clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log),
 	}
 
 	// ── Phase 9 observability handlers ───────────────────────────────────────

@@ -201,6 +201,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// code. Prize-winner flags and payment state are stripped by the handler.
 	r.Get("/api/public/groups/leaderboard", h.publicGroup.GetPublicLeaderboard)
 
+	// Public system clock — returns the current application time (real or dev-overridden).
+	// No auth required; the frontend uses this to determine "today" for the HOY tab
+	// and match-locking logic.  L1 IP limiter is applied via the root router.
+	r.Get("/api/v1/system/clock", h.systemClock.GetClock)
+
 	// Webhook endpoints — authenticated via provider-specific signatures, not Clerk JWT.
 	// Grouped under /webhooks so the L2 IP rate limiter can be applied once to the
 	// entire group. This protects CPU-expensive RSA verification (PayPal) from
