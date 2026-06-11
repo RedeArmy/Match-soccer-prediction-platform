@@ -10,6 +10,12 @@ vi.mock('@clerk/nextjs', () => ({
   useAuth: vi.fn().mockReturnValue({ getToken: vi.fn().mockResolvedValue('tok') }),
 }))
 
+// Stub the system-clock endpoint so PredictionPanel's systemClockQuery resolves.
+vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+  ok: true,
+  json: () => Promise.resolve({ now: new Date().toISOString() }),
+} as unknown as Response))
+
 vi.mock('@/lib/api', () => ({
   api: {
     getMatches: vi.fn(),
@@ -90,8 +96,9 @@ describe('PredictionPanel', () => {
 
     renderPanel()
 
-    expect(await screen.findByText('No hay partidos programados')).toBeInTheDocument()
-    expect(screen.getByText(/Cuando el calendario/)).toBeInTheDocument()
+    // by-group view (default) with no matches shows the group-level empty state
+    expect(await screen.findByText('Sin partidos en este grupo')).toBeInTheDocument()
+    expect(screen.getByText(/Este grupo no tiene partidos/)).toBeInTheDocument()
   })
 
   it('submits a new prediction for a scheduled match', async () => {
@@ -195,10 +202,10 @@ describe('PredictionPanel', () => {
     expect(screen.getByText('Estados Unidos')).toBeInTheDocument()
 
     // Pendientes filter: Canada (group A, has prediction) is not shown;
-    // USA (group B, no prediction) remains visible and locked
+    // USA (group B, in_progress) remains visible with EN VIVO badge and locked inputs
     fireEvent.click(screen.getByRole('button', { name: 'Pendientes' }))
     expect(screen.queryByText('Canadá')).toBeNull()
-    expect(screen.getByText('Bloqueado')).toBeInTheDocument()
+    expect(screen.getByText('EN VIVO')).toBeInTheDocument()
     expect(screen.getAllByRole('spinbutton')[0]).toBeDisabled()
     expect(screen.getByRole('button', { name: /Guardar prediccion/ })).toBeDisabled()
   })
