@@ -346,7 +346,7 @@ const translations: TranslationNode = {
     withdraw: { es: 'Retirar',    en: 'Withdraw' },
   },
   deposit: {
-    bankImageAlt: { es: 'Datos para transferencia bancaria: Eder Yafeth Garcia Quiroa, cuenta monetaria en Banco Industrial, BAC y Banrural.', en: 'Bank transfer details: Eder Yafeth Garcia Quiroa, checking account at Banco Industrial, BAC, and Banrural.' },
+    bankImageAlt: { es: 'Datos para transferencia bancaria: Eder Yafeth Garcia Quiroa, cuenta monetaria en Banco Industrial y BAC.', en: 'Bank transfer details: Eder Yafeth Garcia Quiroa, checking account at Banco Industrial and BAC.' },
     bankNoteGT:  { es: 'Aplica únicamente para transferencias realizadas dentro de Guatemala.', en: 'Applies only to bank transfers made within Guatemala.' },
     bankHelp:    { es: 'Deposita al banco y adjunta el comprobante. La revisión toma 24-48 horas.', en: 'Make the bank transfer and attach the receipt. Review takes 24-48 hours.' },
   },

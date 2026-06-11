@@ -45,9 +45,7 @@
   <path d="M734 179L764 209L817 149" stroke="#F7D667" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
 
   <g>
-    <rect x="116" y="117" width="118" height="48" rx="12" fill="#D7AE18"/>
-    <text x="175" y="149" text-anchor="middle" fill="#071426" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900">K26</text>
-    <text x="252" y="148" fill="#F8FAFC" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Kiniela</text>
+    <text x="116" y="149" fill="#F8FAFC" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900">Kiniela</text>
   </g>
 
   <text x="116" y="214" fill="#FACC15" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800" letter-spacing="2.4">TRANSFERENCIA / BANK TRANSFER</text>
@@ -65,13 +63,10 @@
     <text x="144" y="474" fill="#F7D667" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900">Cuenta Monetaria / Checking Account</text>
 
     <text x="144" y="515" fill="#8DA6C1" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="0.8">BANCO INDUSTRIAL</text>
-    <text x="308" y="516" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900">1980221848</text>
+    <text x="318" y="516" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900">1980221848</text>
 
-    <text x="484" y="515" fill="#8DA6C1" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="0.8">BAC</text>
-    <text x="535" y="516" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900">975776584</text>
-
-    <text x="672" y="515" fill="#8DA6C1" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="0.8">BANRURAL</text>
-    <text x="760" y="516" text-anchor="middle" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900">3256048254</text>
+    <text x="560" y="515" fill="#8DA6C1" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="0.8">BAC</text>
+    <text x="615" y="516" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900">975776584</text>
   </g>
 
   <text x="116" y="565" fill="#7187A1" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="600">Verify the amount before sending. Kiniela will review your receipt.</text>
