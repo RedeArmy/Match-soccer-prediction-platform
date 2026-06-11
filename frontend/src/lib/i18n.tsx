@@ -127,6 +127,7 @@ const translations: TranslationNode = {
     stale:       { es: 'desactualizado',       en: 'stale'                },
     updated:     { es: 'Actualizado',          en: 'Updated'              },
     responsible: { es: 'Juega responsablemente. Solo para mayores de 18 anos.', en: 'Play responsibly. Adults 18+ only.' },
+    createdBy:   { es: 'Creado por',                                             en: 'Created by'                        },
     back:        { es: 'Volver',                  en: 'Back'                 },
     cancel:      { es: 'Cancelar',               en: 'Cancel'               },
     you:         { es: 'tú',                      en: 'you'                  },
