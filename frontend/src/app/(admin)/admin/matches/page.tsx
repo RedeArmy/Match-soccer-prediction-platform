@@ -3,15 +3,16 @@
 import { useState, useMemo } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  RefreshCw, Play, Edit3, CheckCircle, X, AlertTriangle,
-  ChevronLeft, ChevronRight,
-} from 'lucide-react'
+import { Play, Edit3, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { MatchResponse, MatchStatus } from '@/lib/api-types'
 import { cn, formatDateTime, formatRelative } from '@/lib/utils'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import {
+  AdminPageHeader, AdminModalOverlay,
+  ModalHeader, ModalCancelButton, ModalErrorLine,
+} from '@/components/admin/shared'
 
 type TabKey = 'all' | 'today' | MatchStatus
 
@@ -42,8 +43,6 @@ const WIN_METHOD_OPTIONS = [
   { value: 'penalties',  label: 'Penales' },
 ]
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function phaseLabel(phase: string | null): string {
   if (!phase) return '—'
   return PHASE_LABEL[phase] ?? phase
@@ -57,22 +56,17 @@ function scoreLabel(match: MatchResponse): string {
 // ── Start confirm modal ───────────────────────────────────────────────────────
 
 interface StartModalProps {
-  match: MatchResponse
-  isBusy: boolean
-  error: string
-  onConfirm: () => void
-  onClose: () => void
+  readonly match: MatchResponse
+  readonly isBusy: boolean
+  readonly error: string
+  readonly onConfirm: () => void
+  readonly onClose: () => void
 }
 
 function StartModal({ match, isBusy, error, onConfirm, onClose }: StartModalProps) {
   return (
     <>
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="text-lg font-semibold text-white">Iniciar Partido</h2>
-        <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors mt-0.5">
-          <X className="h-5 w-5" />
-        </button>
-      </div>
+      <ModalHeader title="Iniciar Partido" onClose={onClose} />
 
       <div className="bg-white/5 rounded-lg px-4 py-3 space-y-1.5">
         <p className="text-white font-semibold text-center text-lg">
@@ -91,20 +85,10 @@ function StartModal({ match, isBusy, error, onConfirm, onClose }: StartModalProp
         </p>
       </div>
 
-      {error && (
-        <p className="text-red-400 text-sm flex items-center gap-1.5">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </p>
-      )}
+      <ModalErrorLine error={error} />
 
       <div className="flex justify-end gap-3">
-        <button
-          onClick={onClose}
-          disabled={isBusy}
-          className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-colors disabled:opacity-50"
-        >
-          Cancelar
-        </button>
+        <ModalCancelButton onClose={onClose} disabled={isBusy} />
         <button
           onClick={onConfirm}
           disabled={isBusy}
@@ -127,40 +111,35 @@ interface ResultForm {
 }
 
 interface ResultModalProps {
-  match: MatchResponse
-  form: ResultForm
-  onFormChange: (f: ResultForm) => void
-  isBusy: boolean
-  error: string
-  onSubmit: () => void
-  onClose: () => void
+  readonly match: MatchResponse
+  readonly form: ResultForm
+  readonly onFormChange: (f: ResultForm) => void
+  readonly isBusy: boolean
+  readonly error: string
+  readonly onSubmit: () => void
+  readonly onClose: () => void
 }
 
 function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClose }: ResultModalProps) {
   const isKnockout = match.phase && match.phase !== 'group_stage'
-  const homeInt = parseInt(form.homeScore, 10)
-  const awayInt = parseInt(form.awayScore, 10)
-  const scoresValid = !isNaN(homeInt) && !isNaN(awayInt) && homeInt >= 0 && awayInt >= 0
+  const homeInt = Number.parseInt(form.homeScore, 10)
+  const awayInt = Number.parseInt(form.awayScore, 10)
+  const scoresValid = !Number.isNaN(homeInt) && !Number.isNaN(awayInt) && homeInt >= 0 && awayInt >= 0
 
   return (
     <>
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="text-lg font-semibold text-white">Actualizar Resultado</h2>
-        <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors mt-0.5">
-          <X className="h-5 w-5" />
-        </button>
-      </div>
+      <ModalHeader title="Actualizar Resultado" onClose={onClose} />
 
       <p className="text-white/60 text-sm text-center">
         {match.home_team} <span className="text-white/30 mx-1">vs</span> {match.away_team}
         <span className="ml-2 text-white/30 text-xs">({phaseLabel(match.phase)})</span>
       </p>
 
-      {/* Scores */}
       <div className="grid grid-cols-3 items-center gap-4">
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-white/50 text-center">{match.home_team}</label>
+          <label htmlFor="result-home" className="block text-xs font-medium text-white/50 text-center">{match.home_team}</label>
           <input
+            id="result-home"
             type="number"
             min={0}
             max={99}
@@ -171,8 +150,9 @@ function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClo
         </div>
         <div className="text-center text-white/30 text-2xl font-bold">:</div>
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-white/50 text-center">{match.away_team}</label>
+          <label htmlFor="result-away" className="block text-xs font-medium text-white/50 text-center">{match.away_team}</label>
           <input
+            id="result-away"
             type="number"
             min={0}
             max={99}
@@ -183,11 +163,11 @@ function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClo
         </div>
       </div>
 
-      {/* Win method (knockout only) */}
       {isKnockout && (
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-white/70">Método de victoria</label>
+          <label htmlFor="win-method" className="block text-sm font-medium text-white/70">Método de victoria</label>
           <select
+            id="win-method"
             value={form.winMethod}
             onChange={e => onFormChange({ ...form, winMethod: e.target.value })}
             className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500/50"
@@ -206,20 +186,10 @@ function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClo
         </p>
       </div>
 
-      {error && (
-        <p className="text-red-400 text-sm flex items-center gap-1.5">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </p>
-      )}
+      <ModalErrorLine error={error} />
 
       <div className="flex justify-end gap-3">
-        <button
-          onClick={onClose}
-          disabled={isBusy}
-          className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-colors disabled:opacity-50"
-        >
-          Cancelar
-        </button>
+        <ModalCancelButton onClose={onClose} disabled={isBusy} />
         <button
           onClick={onSubmit}
           disabled={isBusy || !scoresValid}
@@ -258,7 +228,6 @@ export default function AdminMatchesPage() {
     },
   })
 
-  // Use the backend system clock so the system.date param is respected in dev.
   const { data: clockData } = useQuery({
     queryKey: ['system', 'clock'],
     queryFn: async () => {
@@ -271,7 +240,7 @@ export default function AdminMatchesPage() {
   })
   const todayStr = useMemo(() => {
     const base = clockData ? new Date(clockData) : new Date()
-    return base.toLocaleDateString('sv')   // YYYY-MM-DD in local timezone
+    return base.toLocaleDateString('sv')
   }, [clockData])
 
   const filtered = useMemo(() => {
@@ -282,14 +251,11 @@ export default function AdminMatchesPage() {
 
   const counts = useMemo(() => {
     const result: Record<string, number> = { all: matches.length }
-    for (const m of matches) {
-      result[m.status] = (result[m.status] ?? 0) + 1
-    }
+    for (const m of matches) result[m.status] = (result[m.status] ?? 0) + 1
     result.today = matches.filter(m => m.kickoff_at?.slice(0, 10) === todayStr).length
     return result
   }, [matches, todayStr])
 
-  // Pagination applies only to the "all" tab.
   const paginated = useMemo(() => {
     if (tab !== 'all') return filtered
     const start = (page - 1) * PAGE_SIZE
@@ -298,10 +264,7 @@ export default function AdminMatchesPage() {
 
   const totalPages = tab === 'all' ? Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)) : 1
 
-  function changeTab(next: TabKey) {
-    setTab(next)
-    setPage(1)
-  }
+  function changeTab(next: TabKey) { setTab(next); setPage(1) }
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin', 'matches'] })
 
@@ -314,8 +277,8 @@ export default function AdminMatchesPage() {
     setModal({ kind: 'result', match })
     setModalError('')
     setResultForm({
-      homeScore: match.home_score !== null ? String(match.home_score) : '',
-      awayScore: match.away_score !== null ? String(match.away_score) : '',
+      homeScore: match.home_score === null ? '' : String(match.home_score),
+      awayScore: match.away_score === null ? '' : String(match.away_score),
       winMethod: match.win_method ?? '',
     })
   }
@@ -349,41 +312,36 @@ export default function AdminMatchesPage() {
 
   const isBusy = startMutation.isPending || updateMutation.isPending
 
+  let emptyMsg = `No hay partidos con estado "${tab}".`
+  if (tab === 'all')   emptyMsg = 'No hay partidos registrados.'
+  if (tab === 'today') emptyMsg = 'No hay partidos programados para hoy.'
+
   function submitResult() {
-    if (modal?.kind !== 'result') return
-    const home = parseInt(resultForm.homeScore, 10)
-    const away = parseInt(resultForm.awayScore, 10)
-    if (isNaN(home) || isNaN(away) || home < 0 || away < 0) {
-      setModalError('Marcador inválido')
-      return
+    if (modal?.kind === 'result') {
+      const home = Number.parseInt(resultForm.homeScore, 10)
+      const away = Number.parseInt(resultForm.awayScore, 10)
+      if (Number.isNaN(home) || Number.isNaN(away) || home < 0 || away < 0) {
+        setModalError('Marcador inválido')
+        return
+      }
+      const data: { home_score: number; away_score: number; win_method?: string } = {
+        home_score: home,
+        away_score: away,
+      }
+      if (resultForm.winMethod) data.win_method = resultForm.winMethod
+      updateMutation.mutate({ id: modal.match.id, data })
     }
-    const data: { home_score: number; away_score: number; win_method?: string } = {
-      home_score: home,
-      away_score: away,
-    }
-    if (resultForm.winMethod) data.win_method = resultForm.winMethod
-    updateMutation.mutate({ id: modal.match.id, data })
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Gestión de Partidos</h1>
-          <p className="text-sm text-white/50 mt-1">{matches.length} partidos en total</p>
-        </div>
-        <button
-          onClick={() => refetch()}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
-          Actualizar
-        </button>
-      </div>
+      <AdminPageHeader
+        title="Gestión de Partidos"
+        subtitle={`${matches.length} partidos en total`}
+        onRefresh={refetch}
+        isLoading={isLoading}
+      />
 
-      {/* Info banner */}
       <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs">
         Los cambios de estado se aplican manualmente desde aquí como respaldo al sincronizador automático. El worker de partidos (cada 30 s) puede sobreescribir estos estados si está activo.
       </div>
@@ -426,169 +384,160 @@ export default function AdminMatchesPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-white/40">
           <p className="text-lg font-medium">Sin partidos</p>
-          <p className="text-sm mt-1">
-            {tab === 'all'   ? 'No hay partidos registrados.'
-            : tab === 'today' ? 'No hay partidos programados para hoy.'
-            : `No hay partidos con estado "${tab}".`}
-          </p>
+          <p className="text-sm mt-1">{emptyMsg}</p>
         </div>
       ) : (
         <div className="space-y-3">
-        <div className="overflow-x-auto rounded-xl border border-white/10">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/10 bg-white/5 text-white/50 text-left">
-                <th className="px-4 py-3 font-medium">#</th>
-                <th className="px-4 py-3 font-medium">Partido</th>
-                <th className="px-4 py-3 font-medium">Fase</th>
-                <th className="px-4 py-3 font-medium">Kickoff</th>
-                <th className="px-4 py-3 font-medium">Marcador</th>
-                <th className="px-4 py-3 font-medium">Estado</th>
-                <th className="px-4 py-3 font-medium text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginated.map(match => (
-                <tr
-                  key={match.id}
-                  className={cn(
-                    'border-b border-white/5 hover:bg-white/[0.03] transition-colors',
-                    match.status === 'in_progress' && 'bg-green-500/[0.03]',
-                  )}
-                >
-                  <td className="px-4 py-3 text-white/40 font-mono text-xs">#{match.id}</td>
-
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-white">{match.home_team}</span>
-                      <span className="text-white/30">vs</span>
-                      <span className="font-medium text-white">{match.away_team}</span>
-                    </div>
-                    {match.stadium && (
-                      <p className="text-white/30 text-xs mt-0.5">{match.stadium.name}</p>
-                    )}
-                  </td>
-
-                  <td className="px-4 py-3 text-white/60 text-xs">
-                    <div>{phaseLabel(match.phase)}</div>
-                    {match.group_label && (
-                      <div className="text-white/30 mt-0.5">Grupo {match.group_label}</div>
-                    )}
-                  </td>
-
-                  <td
-                    className="px-4 py-3 text-white/60 text-xs"
-                    title={match.kickoff_at ? formatDateTime(match.kickoff_at) : undefined}
-                  >
-                    {match.kickoff_at ? formatRelative(match.kickoff_at) : '—'}
-                  </td>
-
-                  <td className="px-4 py-3 font-bold text-white tabular-nums">
-                    {scoreLabel(match)}
-                    {match.win_method && match.win_method !== 'normal' && (
-                      <span className="ml-1 text-white/30 font-normal text-xs">
-                        ({match.win_method === 'extra_time' ? 'ET' : 'PEN'})
-                      </span>
-                    )}
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <StatusBadge status={match.status} />
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-2">
-                      {match.status === 'scheduled' && (
-                        <button
-                          onClick={() => openStart(match)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-green-500/15 hover:bg-green-500/25 text-green-400 text-xs font-medium transition-colors"
-                        >
-                          <Play className="h-3.5 w-3.5" />
-                          Iniciar
-                        </button>
-                      )}
-                      {(match.status === 'in_progress' || match.status === 'scheduled') && (
-                        <button
-                          onClick={() => openResult(match)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                          Resultado
-                        </button>
-                      )}
-                      {match.status === 'finished' && (
-                        <button
-                          onClick={() => openResult(match)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-white/50 text-xs font-medium transition-colors"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                          Corregir
-                        </button>
-                      )}
-                    </div>
-                  </td>
+          <div className="overflow-x-auto rounded-xl border border-white/10">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10 bg-white/5 text-white/50 text-left">
+                  <th className="px-4 py-3 font-medium">#</th>
+                  <th className="px-4 py-3 font-medium">Partido</th>
+                  <th className="px-4 py-3 font-medium">Fase</th>
+                  <th className="px-4 py-3 font-medium">Kickoff</th>
+                  <th className="px-4 py-3 font-medium">Marcador</th>
+                  <th className="px-4 py-3 font-medium">Estado</th>
+                  <th className="px-4 py-3 font-medium text-right">Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paginated.map(match => (
+                  <tr
+                    key={match.id}
+                    className={cn(
+                      'border-b border-white/5 hover:bg-white/[0.03] transition-colors',
+                      match.status === 'in_progress' && 'bg-green-500/[0.03]',
+                    )}
+                  >
+                    <td className="px-4 py-3 text-white/40 font-mono text-xs">#{match.id}</td>
 
-        {/* Pagination — only rendered for the "Todos" tab */}
-        {tab === 'all' && totalPages > 1 && (
-          <div className="flex items-center justify-between px-1">
-            <p className="text-xs text-white/40">
-              {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length} partidos
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="px-3 py-1 text-xs text-white/60 tabular-nums">
-                {page} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-white">{match.home_team}</span>
+                        <span className="text-white/30">vs</span>
+                        <span className="font-medium text-white">{match.away_team}</span>
+                      </div>
+                      {match.stadium && (
+                        <p className="text-white/30 text-xs mt-0.5">{match.stadium.name}</p>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3 text-white/60 text-xs">
+                      <div>{phaseLabel(match.phase)}</div>
+                      {match.group_label && (
+                        <div className="text-white/30 mt-0.5">Grupo {match.group_label}</div>
+                      )}
+                    </td>
+
+                    <td
+                      className="px-4 py-3 text-white/60 text-xs"
+                      title={match.kickoff_at ? formatDateTime(match.kickoff_at) : undefined}
+                    >
+                      {match.kickoff_at ? formatRelative(match.kickoff_at) : '—'}
+                    </td>
+
+                    <td className="px-4 py-3 font-bold text-white tabular-nums">
+                      {scoreLabel(match)}
+                      {match.win_method && match.win_method !== 'normal' && (
+                        <span className="ml-1 text-white/30 font-normal text-xs">
+                          ({match.win_method === 'extra_time' ? 'ET' : 'PEN'})
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <StatusBadge status={match.status} />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        {match.status === 'scheduled' && (
+                          <button
+                            onClick={() => openStart(match)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-green-500/15 hover:bg-green-500/25 text-green-400 text-xs font-medium transition-colors"
+                          >
+                            <Play className="h-3.5 w-3.5" />
+                            Iniciar
+                          </button>
+                        )}
+                        {(match.status === 'in_progress' || match.status === 'scheduled') && (
+                          <button
+                            onClick={() => openResult(match)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                            Resultado
+                          </button>
+                        )}
+                        {match.status === 'finished' && (
+                          <button
+                            onClick={() => openResult(match)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-white/50 text-xs font-medium transition-colors"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                            Corregir
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
+
+          {tab === 'all' && totalPages > 1 && (
+            <div className="flex items-center justify-between px-1">
+              <p className="text-xs text-white/40">
+                {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length} partidos
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="px-3 py-1 text-xs text-white/60 tabular-nums">
+                  {page} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Modals */}
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeModal} />
-          <div className="relative z-10 w-full max-w-md bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl p-6 space-y-5">
-            {modal.kind === 'start' ? (
-              <StartModal
-                match={modal.match}
-                isBusy={isBusy}
-                error={modalError}
-                onConfirm={() => startMutation.mutate(modal.match.id)}
-                onClose={closeModal}
-              />
-            ) : (
-              <ResultModal
-                match={modal.match}
-                form={resultForm}
-                onFormChange={setResultForm}
-                isBusy={isBusy}
-                error={modalError}
-                onSubmit={submitResult}
-                onClose={closeModal}
-              />
-            )}
-          </div>
-        </div>
+        <AdminModalOverlay onClose={closeModal}>
+          {modal.kind === 'start' ? (
+            <StartModal
+              match={modal.match}
+              isBusy={isBusy}
+              error={modalError}
+              onConfirm={() => startMutation.mutate(modal.match.id)}
+              onClose={closeModal}
+            />
+          ) : (
+            <ResultModal
+              match={modal.match}
+              form={resultForm}
+              onFormChange={setResultForm}
+              isBusy={isBusy}
+              error={modalError}
+              onSubmit={submitResult}
+              onClose={closeModal}
+            />
+          )}
+        </AdminModalOverlay>
       )}
     </div>
   )

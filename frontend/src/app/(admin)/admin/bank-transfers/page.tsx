@@ -3,15 +3,16 @@
 import { useState, useMemo } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  RefreshCw, CheckCircle, XCircle, ExternalLink,
-  X, AlertTriangle, ChevronLeft, ChevronRight,
-} from 'lucide-react'
+import { CheckCircle, XCircle, ExternalLink, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { BankTransferResponse, BankTransferStatus } from '@/lib/api-types'
 import { cn, formatGTQ, formatDateTime, formatRelative } from '@/lib/utils'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import {
+  AdminPageHeader, AdminModalOverlay, AdminPagination,
+  ModalHeader, ModalCancelButton, ModalErrorLine, InfoRow,
+} from '@/components/admin/shared'
 
 const PAGE_SIZE = 15
 
@@ -24,8 +25,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'rejected', label: 'Rechazados' },
 ]
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function centsToQ(cents: number): string {
   return formatGTQ(cents)
 }
@@ -34,69 +33,39 @@ function proofDownloadUrl(id: number): string {
   return `/api/v1/admin/bank-transfers/${id}/download`
 }
 
-function getPageNumbers(current: number, total: number): (number | '...')[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  const pages = new Set<number>([1, total, current])
-  if (current > 1) pages.add(current - 1)
-  if (current < total) pages.add(current + 1)
-  const sorted = Array.from(pages).sort((a, b) => a - b)
-  const result: (number | '...')[] = []
-  for (let i = 0; i < sorted.length; i++) {
-    if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push('...')
-    result.push(sorted[i])
-  }
-  return result
-}
-
-// ── InfoRow ───────────────────────────────────────────────────────────────────
-
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex justify-between items-start gap-4 py-1.5 border-b border-white/5 last:border-0">
-      <span className="text-white/50 text-sm shrink-0">{label}</span>
-      <span className="text-white text-sm font-medium text-right">{value}</span>
-    </div>
-  )
-}
-
 // ── Approve modal ─────────────────────────────────────────────────────────────
 
 interface ApproveModalProps {
-  item: BankTransferResponse
-  overrideRaw: string
-  notes: string
-  onOverrideChange: (v: string) => void
-  onNotesChange: (v: string) => void
-  isBusy: boolean
-  error: string
-  onSubmit: () => void
-  onClose: () => void
+  readonly item: BankTransferResponse
+  readonly overrideRaw: string
+  readonly notes: string
+  readonly onOverrideChange: (v: string) => void
+  readonly onNotesChange: (v: string) => void
+  readonly isBusy: boolean
+  readonly error: string
+  readonly onSubmit: () => void
+  readonly onClose: () => void
 }
 
 function ApproveModal({
   item, overrideRaw, notes, onOverrideChange, onNotesChange,
   isBusy, error, onSubmit, onClose,
 }: ApproveModalProps) {
-  const overrideQ = parseFloat(overrideRaw)
+  const overrideQ = Number.parseFloat(overrideRaw)
   const hasOverride = overrideRaw.trim() !== ''
   const overrideCents = hasOverride ? Math.round(overrideQ * 100) : null
-  const overrideValid = !hasOverride || (!isNaN(overrideQ) && overrideQ > 0)
+  const overrideValid = !hasOverride || (!Number.isNaN(overrideQ) && overrideQ > 0)
   const amountDiffers = overrideCents !== null && overrideCents !== item.amount_cents
 
   return (
     <>
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="text-lg font-semibold text-white">Aprobar Transferencia #{item.id}</h2>
-        <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors mt-0.5">
-          <X className="h-5 w-5" />
-        </button>
-      </div>
+      <ModalHeader title={`Aprobar Transferencia #${item.id}`} onClose={onClose} />
 
       <div className="bg-white/5 rounded-lg px-4 py-1">
-        <InfoRow label="Usuario"    value={<span className="font-mono text-xs">#{item.user_id}</span>} />
-        <InfoRow label="Monto declarado" value={<span className="font-semibold">{centsToQ(item.amount_cents)}</span>} />
-        <InfoRow label="Moneda"     value={item.currency} />
-        <InfoRow label="Enviado"    value={
+        <InfoRow label="Usuario"          value={<span className="font-mono text-xs">#{item.user_id}</span>} />
+        <InfoRow label="Monto declarado"  value={<span className="font-semibold">{centsToQ(item.amount_cents)}</span>} />
+        <InfoRow label="Moneda"           value={item.currency} />
+        <InfoRow label="Enviado"          value={
           <span title={formatDateTime(item.created_at)}>{formatRelative(item.created_at)}</span>
         } />
         <InfoRow label="Comprobante" value={
@@ -111,15 +80,15 @@ function ApproveModal({
         } />
       </div>
 
-      {/* Override amount */}
       <div className="space-y-1.5">
-        <label className="block text-sm font-medium text-white/70">
-          Monto a acreditar (Q)
+        <label htmlFor="approve-override" className="block text-sm font-medium text-white/70">
+          Monto a acreditar (Q){' '}
           <span className="ml-1.5 text-white/30 font-normal text-xs">— dejar vacío para usar el monto declarado</span>
         </label>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm">Q</span>
           <input
+            id="approve-override"
             type="number"
             min={0.01}
             step={0.01}
@@ -132,20 +101,20 @@ function ApproveModal({
         {hasOverride && !overrideValid && (
           <p className="text-red-400 text-xs">El monto debe ser positivo.</p>
         )}
-        {amountDiffers && overrideValid && (
+        {amountDiffers && overrideValid && overrideCents !== null && (
           <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" />
             <p className="text-amber-300 text-xs">
-              El monto a acreditar ({centsToQ(overrideCents!)}) difiere del monto declarado por el usuario ({centsToQ(item.amount_cents)}).
+              El monto a acreditar ({centsToQ(overrideCents)}) difiere del monto declarado por el usuario ({centsToQ(item.amount_cents)}).
             </p>
           </div>
         )}
       </div>
 
-      {/* Notes */}
       <div className="space-y-1.5">
-        <label className="block text-sm font-medium text-white/70">Notas (opcional)</label>
+        <label htmlFor="approve-notes" className="block text-sm font-medium text-white/70">Notas (opcional)</label>
         <textarea
+          id="approve-notes"
           rows={2}
           value={notes}
           onChange={e => onNotesChange(e.target.value)}
@@ -161,20 +130,10 @@ function ApproveModal({
         </p>
       </div>
 
-      {error && (
-        <p className="text-red-400 text-sm flex items-center gap-1.5">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </p>
-      )}
+      <ModalErrorLine error={error} />
 
       <div className="flex justify-end gap-3">
-        <button
-          onClick={onClose}
-          disabled={isBusy}
-          className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-colors disabled:opacity-50"
-        >
-          Cancelar
-        </button>
+        <ModalCancelButton onClose={onClose} disabled={isBusy} />
         <button
           onClick={onSubmit}
           disabled={isBusy || !overrideValid}
@@ -191,29 +150,24 @@ function ApproveModal({
 // ── Reject modal ──────────────────────────────────────────────────────────────
 
 interface RejectModalProps {
-  item: BankTransferResponse
-  notes: string
-  onNotesChange: (v: string) => void
-  isBusy: boolean
-  error: string
-  onSubmit: () => void
-  onClose: () => void
+  readonly item: BankTransferResponse
+  readonly notes: string
+  readonly onNotesChange: (v: string) => void
+  readonly isBusy: boolean
+  readonly error: string
+  readonly onSubmit: () => void
+  readonly onClose: () => void
 }
 
 function RejectModal({ item, notes, onNotesChange, isBusy, error, onSubmit, onClose }: RejectModalProps) {
   return (
     <>
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="text-lg font-semibold text-white">Rechazar Transferencia #{item.id}</h2>
-        <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors mt-0.5">
-          <X className="h-5 w-5" />
-        </button>
-      </div>
+      <ModalHeader title={`Rechazar Transferencia #${item.id}`} onClose={onClose} />
 
       <div className="bg-white/5 rounded-lg px-4 py-1">
-        <InfoRow label="Usuario"   value={<span className="font-mono text-xs">#{item.user_id}</span>} />
-        <InfoRow label="Monto"     value={centsToQ(item.amount_cents)} />
-        <InfoRow label="Enviado"   value={
+        <InfoRow label="Usuario"     value={<span className="font-mono text-xs">#{item.user_id}</span>} />
+        <InfoRow label="Monto"       value={centsToQ(item.amount_cents)} />
+        <InfoRow label="Enviado"     value={
           <span title={formatDateTime(item.created_at)}>{formatRelative(item.created_at)}</span>
         } />
         <InfoRow label="Comprobante" value={
@@ -229,10 +183,11 @@ function RejectModal({ item, notes, onNotesChange, isBusy, error, onSubmit, onCl
       </div>
 
       <div className="space-y-1.5">
-        <label className="block text-sm font-medium text-white/70">
+        <label htmlFor="reject-notes" className="block text-sm font-medium text-white/70">
           Motivo de rechazo <span className="text-red-400">*</span>
         </label>
         <textarea
+          id="reject-notes"
           rows={3}
           value={notes}
           onChange={e => onNotesChange(e.target.value)}
@@ -248,20 +203,10 @@ function RejectModal({ item, notes, onNotesChange, isBusy, error, onSubmit, onCl
         </p>
       </div>
 
-      {error && (
-        <p className="text-red-400 text-sm flex items-center gap-1.5">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </p>
-      )}
+      <ModalErrorLine error={error} />
 
       <div className="flex justify-end gap-3">
-        <button
-          onClick={onClose}
-          disabled={isBusy}
-          className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-colors disabled:opacity-50"
-        >
-          Cancelar
-        </button>
+        <ModalCancelButton onClose={onClose} disabled={isBusy} />
         <button
           onClick={onSubmit}
           disabled={isBusy || !notes.trim()}
@@ -277,6 +222,12 @@ function RejectModal({ item, notes, onNotesChange, isBusy, error, onSubmit, onCl
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+const ACCENT_BY_STATUS: Record<string, string> = {
+  pending:  'amber',
+  approved: 'emerald',
+  rejected: 'red',
+}
+
 type ModalState =
   | { kind: 'approve'; item: BankTransferResponse }
   | { kind: 'reject';  item: BankTransferResponse }
@@ -286,11 +237,11 @@ export default function AdminBankTransfersPage() {
   const { getToken } = useAuth()
   const qc = useQueryClient()
 
-  const [tab, setTab]           = useState<TabKey>('pending')
-  const [page, setPage]         = useState(1)
-  const [modal, setModal]       = useState<ModalState>(null)
+  const [tab, setTab]               = useState<TabKey>('pending')
+  const [page, setPage]             = useState(1)
+  const [modal, setModal]           = useState<ModalState>(null)
   const [modalError, setModalError] = useState('')
-  const [notes, setNotes]       = useState('')
+  const [notes, setNotes]           = useState('')
   const [overrideRaw, setOverrideRaw] = useState('')
 
   const { data: transfers = [], isLoading, error, refetch } = useQuery({
@@ -307,22 +258,17 @@ export default function AdminBankTransfersPage() {
 
   const counts = useMemo(() => {
     const result: Record<string, number> = { all: transfers.length }
-    for (const t of transfers) {
-      result[t.status] = (result[t.status] ?? 0) + 1
-    }
+    for (const t of transfers) result[t.status] = (result[t.status] ?? 0) + 1
     return result
   }, [transfers])
 
-  const pageCount = Math.ceil(filtered.length / PAGE_SIZE)
-  const safePage  = Math.min(Math.max(page, 1), Math.max(pageCount, 1))
-  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  const pageCount  = Math.ceil(filtered.length / PAGE_SIZE)
+  const safePage   = Math.min(Math.max(page, 1), Math.max(pageCount, 1))
+  const paginated  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
   const rangeStart = filtered.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1
   const rangeEnd   = Math.min(safePage * PAGE_SIZE, filtered.length)
 
-  function changeTab(key: TabKey) {
-    setTab(key)
-    setPage(1)
-  }
+  function changeTab(key: TabKey) { setTab(key); setPage(1) }
 
   function openApprove(item: BankTransferResponse) {
     setModal({ kind: 'approve', item })
@@ -370,13 +316,17 @@ export default function AdminBankTransfersPage() {
 
   const isBusy = approveMutation.isPending || rejectMutation.isPending
 
+  const emptyMsg = tab === 'pending'
+    ? 'No hay comprobantes pendientes de revisión.'
+    : `No hay transferencias con estado "${tab}".`
+
   function submitApprove() {
     if (modal?.kind !== 'approve') return
     const data: { notes?: string; approved_amount_cents?: number } = {}
     if (notes.trim()) data.notes = notes.trim()
     if (overrideRaw.trim()) {
-      const q = parseFloat(overrideRaw)
-      if (!isNaN(q) && q > 0) {
+      const q = Number.parseFloat(overrideRaw)
+      if (!Number.isNaN(q) && q > 0) {
         data.approved_amount_cents = Math.round(q * 100)
       } else {
         setModalError('El monto a acreditar debe ser positivo')
@@ -394,31 +344,19 @@ export default function AdminBankTransfersPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Transferencias Bancarias</h1>
-          <p className="text-sm text-white/50 mt-1">{transfers.length} comprobantes en total</p>
-        </div>
-        <button
-          onClick={() => refetch()}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
-          Actualizar
-        </button>
-      </div>
+      <AdminPageHeader
+        title="Transferencias Bancarias"
+        subtitle={`${transfers.length} comprobantes en total`}
+        onRefresh={refetch}
+        isLoading={isLoading}
+      />
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-2">
         {TABS.map(t => {
           const count = counts[t.key === 'all' ? 'all' : t.key] ?? 0
           const isActive = tab === t.key
-          const accent = t.key === 'pending'   ? 'amber'
-                       : t.key === 'approved'  ? 'emerald'
-                       : t.key === 'rejected'  ? 'red'
-                       : 'blue'
+          const accent = ACCENT_BY_STATUS[t.key] ?? 'blue'
           return (
             <button
               key={t.key}
@@ -452,9 +390,7 @@ export default function AdminBankTransfersPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-white/40">
           <p className="text-lg font-medium">Sin transferencias</p>
-          <p className="text-sm mt-1">
-            {tab === 'pending' ? 'No hay comprobantes pendientes de revisión.' : `No hay transferencias con estado "${tab}".`}
-          </p>
+          <p className="text-sm mt-1">{emptyMsg}</p>
         </div>
       ) : (
         <>
@@ -569,82 +505,44 @@ export default function AdminBankTransfersPage() {
             </table>
           </div>
 
-          {/* Pagination */}
-          {pageCount > 1 && (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-white/40">
-                {rangeStart}–{rangeEnd} de {filtered.length} transferencias
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={safePage === 1}
-                  className="p-1.5 rounded-md hover:bg-white/10 text-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                {getPageNumbers(safePage, pageCount).map((n, i) =>
-                  n === '...' ? (
-                    <span key={`e${i}`} className="px-2 text-white/30">…</span>
-                  ) : (
-                    <button
-                      key={n}
-                      onClick={() => setPage(n as number)}
-                      aria-current={n === safePage ? 'page' : undefined}
-                      className={cn(
-                        'w-8 h-8 rounded-md text-sm font-medium transition-colors',
-                        n === safePage
-                          ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40'
-                          : 'hover:bg-white/10 text-white/60',
-                      )}
-                    >
-                      {n}
-                    </button>
-                  ),
-                )}
-                <button
-                  onClick={() => setPage(p => Math.min(pageCount, p + 1))}
-                  disabled={safePage === pageCount}
-                  className="p-1.5 rounded-md hover:bg-white/10 text-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
+          <AdminPagination
+            page={safePage}
+            pageCount={pageCount}
+            rangeStart={rangeStart}
+            rangeEnd={rangeEnd}
+            total={filtered.length}
+            itemLabel="transferencias"
+            onPageChange={setPage}
+          />
         </>
       )}
 
-      {/* Modal overlay */}
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeModal} />
-          <div className="relative z-10 w-full max-w-md bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
-            {modal.kind === 'approve' ? (
-              <ApproveModal
-                item={modal.item}
-                overrideRaw={overrideRaw}
-                notes={notes}
-                onOverrideChange={setOverrideRaw}
-                onNotesChange={setNotes}
-                isBusy={isBusy}
-                error={modalError}
-                onSubmit={submitApprove}
-                onClose={closeModal}
-              />
-            ) : (
-              <RejectModal
-                item={modal.item}
-                notes={notes}
-                onNotesChange={setNotes}
-                isBusy={isBusy}
-                error={modalError}
-                onSubmit={submitReject}
-                onClose={closeModal}
-              />
-            )}
-          </div>
-        </div>
+        <AdminModalOverlay onClose={closeModal} scrollable>
+          {modal.kind === 'approve' ? (
+            <ApproveModal
+              item={modal.item}
+              overrideRaw={overrideRaw}
+              notes={notes}
+              onOverrideChange={setOverrideRaw}
+              onNotesChange={setNotes}
+              isBusy={isBusy}
+              error={modalError}
+              onSubmit={submitApprove}
+              onClose={closeModal}
+            />
+          ) : (
+            <RejectModal
+              item={modal.item}
+              notes={notes}
+              onNotesChange={setNotes}
+              isBusy={isBusy}
+              error={modalError}
+              onSubmit={submitReject}
+              onClose={closeModal}
+            />
+          )}
+        </AdminModalOverlay>
       )}
     </div>
   )

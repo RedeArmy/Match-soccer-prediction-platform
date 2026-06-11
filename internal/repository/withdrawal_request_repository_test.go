@@ -300,3 +300,46 @@ func TestWithdrawalRequestRepository_MarkProcessed_NotFound(t *testing.T) {
 		t.Errorf("expected not-found, got %v", err)
 	}
 }
+
+func TestWithdrawalRequestRepository_ListAll_ReturnsAll(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUserWithBalance(t, 20000)
+	u2 := seedUserWithBalance(t, 20000)
+
+	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
+	seedWithdrawalRequest(t, u1.ID, 1000)
+	seedWithdrawalRequest(t, u2.ID, 2000)
+
+	all, err := repo.ListAll(context.Background(), "")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(all) != 2 {
+		t.Errorf("expected 2 records, got %d", len(all))
+	}
+}
+
+func TestWithdrawalRequestRepository_ListAll_FilterByStatus(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUserWithBalance(t, 20000)
+	u2 := seedUserWithBalance(t, 20000)
+	admin := seedUser(t)
+
+	repo := repository.NewPostgresWithdrawalRequestRepository(testDB)
+	seedWithdrawalRequest(t, u1.ID, 1000)
+	req2 := seedWithdrawalRequest(t, u2.ID, 2000)
+	if _, err := repo.ApproveAndDebit(context.Background(), int(req2.ID), admin.ID, "ok"); err != nil {
+		t.Fatalf("ApproveAndDebit: %v", err)
+	}
+
+	pending, err := repo.ListAll(context.Background(), "pending")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("expected 1 pending record, got %d", len(pending))
+	}
+	if pending[0].Status != domain.WithdrawalPending {
+		t.Errorf("status: got %q, want pending", pending[0].Status)
+	}
+}

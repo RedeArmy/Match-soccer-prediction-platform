@@ -70,7 +70,7 @@ chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${WCQ_DIR}"
 # If running via `ssh root@host 'bash -s' < server/setup.sh` you need to scp
 # the files separately. This block is a no-op if run directly on the server
 # from the cloned repo.
-if [ -f "$(dirname "$0")/../docker-compose.prod.yml" ]; then
+if [[ -f "$(dirname "$0")/../docker-compose.prod.yml" ]]; then
   REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
   cp "${REPO_ROOT}/docker-compose.prod.yml"          "${WCQ_DIR}/"
   cp "${REPO_ROOT}/docker-compose.observability.yml" "${WCQ_DIR}/"
@@ -115,8 +115,8 @@ echo "${GHCR_TOKEN}" | sudo -u "${DEPLOY_USER}" \
 echo "    GHCR login saved ✓"
 
 echo "==> [7/7] Starting services..."
-if [ ! -f "${WCQ_DIR}/.env" ]; then
-  echo "ERROR: ${WCQ_DIR}/.env not found."
+if [[ ! -f "${WCQ_DIR}/.env" ]]; then
+  echo "ERROR: ${WCQ_DIR}/.env not found." >&2
   echo "       Copy server/.env.example to ${WCQ_DIR}/.env and fill in real values,"
   echo "       then re-run this step manually:"
   echo "         cd ${WCQ_DIR}"

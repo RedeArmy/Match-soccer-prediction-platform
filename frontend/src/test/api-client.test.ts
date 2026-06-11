@@ -686,6 +686,98 @@ describe('api – admin bank and account-type methods', () => {
   })
 })
 
+// ── Admin: bank-transfer methods ──────────────────────────────────────────────
+
+describe('api – admin bank-transfer methods', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('adminListBankTransfers sends GET to /api/v1/admin/bank-transfers', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]))
+    await api.adminListBankTransfers('tok')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/bank-transfers')
+  })
+
+  it('adminApproveBankTransfer sends POST with notes and approved_amount_cents', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 5, status: 'approved' }))
+    await api.adminApproveBankTransfer('tok', 5, { notes: 'ok', approved_amount_cents: 10000 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/bank-transfers/5/approve')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ notes: 'ok', approved_amount_cents: 10000 })
+  })
+
+  it('adminApproveBankTransfer sends POST with empty data object', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 5, status: 'approved' }))
+    await api.adminApproveBankTransfer('tok', 5, {})
+    const [, init] = mockFetch.mock.calls[0]
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({})
+  })
+
+  it('adminRejectBankTransfer sends POST with notes', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 7, status: 'rejected' }))
+    await api.adminRejectBankTransfer('tok', 7, 'invalid proof')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/bank-transfers/7/reject')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ notes: 'invalid proof' })
+  })
+})
+
+// ── Admin: withdrawal methods ─────────────────────────────────────────────────
+
+describe('api – admin withdrawal methods', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('adminListWithdrawals without status omits query string', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]))
+    await api.adminListWithdrawals('tok')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/withdrawals')
+    expect(String(url)).not.toContain('?status=')
+  })
+
+  it('adminListWithdrawals with status appends ?status= query', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]))
+    await api.adminListWithdrawals('tok', 'pending')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/withdrawals?status=pending')
+  })
+
+  it('adminApproveWithdrawal with notes sends notes in body', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 3, status: 'approved' }))
+    await api.adminApproveWithdrawal('tok', 3, 'all good')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/withdrawals/3/approve')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ notes: 'all good' })
+  })
+
+  it('adminApproveWithdrawal without notes sends empty string', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 3, status: 'approved' }))
+    await api.adminApproveWithdrawal('tok', 3)
+    const [, init] = mockFetch.mock.calls[0]
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ notes: '' })
+  })
+
+  it('adminRejectWithdrawal sends POST with notes', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 4, status: 'rejected' }))
+    await api.adminRejectWithdrawal('tok', 4, 'fraud suspected')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/withdrawals/4/reject')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ notes: 'fraud suspected' })
+  })
+
+  it('adminProcessWithdrawal sends POST to /process', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 6, status: 'processed' }))
+    await api.adminProcessWithdrawal('tok', 6)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/admin/withdrawals/6/process')
+    expect((init as RequestInit).method).toBe('POST')
+  })
+})
+
 // ── serverAPI ─────────────────────────────────────────────────────────────────
 
 describe('serverAPI()', () => {
