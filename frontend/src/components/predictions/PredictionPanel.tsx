@@ -28,10 +28,33 @@ type GroupLabel = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K
 
 const GROUPS: GroupLabel[] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
 
+function getEmptyState(params: {
+  noTodayMatches: boolean;
+  filter: Filter;
+  filterHides: boolean;
+  isToday: boolean;
+  t: (key: string) => string;
+}): { title: string; desc: string } {
+  const { noTodayMatches, filter, filterHides, isToday, t } = params;
+  if (noTodayMatches) {
+    return { title: t("predictions.noMatchesToday"), desc: t("predictions.noMatchesTodayDesc") };
+  }
+  if (filter === "past") {
+    return { title: t("predictions.noPastMatches"), desc: t("predictions.noPastMatchesDesc") };
+  }
+  if (filterHides && isToday && filter === "pending") {
+    return { title: t("predictions.allSavedToday"), desc: t("predictions.allSavedTodayDesc") };
+  }
+  if (filterHides && isToday && filter === "saved") {
+    return { title: t("predictions.noPredictionsToday"), desc: t("predictions.noPredictionsTodayDesc") };
+  }
+  return { title: t("predictions.noMatches"), desc: t("predictions.noMatchesDesc") };
+}
+
 export function PredictionPanel() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
-  const { t, teamName, phaseName, formatKickoff, timeZone } = useI18n();
+  const { t, timeZone } = useI18n();
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
   const [viewMode, setViewMode] = useState<ViewMode>("by-group");
@@ -143,7 +166,9 @@ export function PredictionPanel() {
       .sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
   }, [matchesQuery.data]);
 
-  const baseMatches = viewMode === "by-day"
+  const isToday = viewMode === "by-day";
+
+  const baseMatches = isToday
     ? sortedMatches.filter((match) => {
         if (!match.kickoff_at) return false;
         return new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone }) === todayStr;
@@ -162,32 +187,64 @@ export function PredictionPanel() {
   });
 
   const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
-  const isError = matchesQuery.isError || predictionsQuery.isError;
+  const isError   = matchesQuery.isError   || predictionsQuery.isError;
 
-  // Context-aware empty state.
-  const isToday        = viewMode === "by-day"
-  const noTodayMatches = isToday && baseMatches.length === 0
-  const filterHides    = baseMatches.length > 0 && visibleMatches.length === 0
+  const noTodayMatches = isToday && baseMatches.length === 0;
+  const filterHides    = baseMatches.length > 0 && visibleMatches.length === 0;
 
-  const emptyTitle = noTodayMatches
-    ? t("predictions.noMatchesToday")
-    : filter === "past"
-      ? t("predictions.noPastMatches")
-      : filterHides && isToday && filter === "pending"
-        ? t("predictions.allSavedToday")
-        : filterHides && isToday && filter === "saved"
-          ? t("predictions.noPredictionsToday")
-          : t("predictions.noMatches")
+  const { title: emptyTitle, desc: emptyDesc } = getEmptyState({
+    noTodayMatches,
+    filter,
+    filterHides,
+    isToday,
+    t,
+  });
 
-  const emptyDesc = noTodayMatches
-    ? t("predictions.noMatchesTodayDesc")
-    : filter === "past"
-      ? t("predictions.noPastMatchesDesc")
-      : filterHides && isToday && filter === "pending"
-        ? t("predictions.allSavedTodayDesc")
-        : filterHides && isToday && filter === "saved"
-          ? t("predictions.noPredictionsTodayDesc")
-          : t("predictions.noMatchesDesc")
+  function renderContent() {
+    if (isLoading) return <LoadingState rows={4} />;
+    if (isError) {
+      return (
+        <EmptyState
+          title={t("predictions.loadError")}
+          description={t("predictions.loadErrorDesc")}
+          icon={<Target className="h-10 w-10" />}
+        />
+      );
+    }
+    if (visibleMatches.length === 0) {
+      return (
+        <EmptyState
+          title={emptyTitle}
+          description={emptyDesc}
+          icon={<Target className="h-10 w-10" />}
+        />
+      );
+    }
+    return (
+      <div className="grid gap-3">
+        {visibleMatches.map((match) => {
+          const prediction = predictionByMatch.get(match.id);
+          const draft = drafts[match.id] ?? {
+            home: prediction?.home_score ?? 0,
+            away: prediction?.away_score ?? 0,
+          };
+          return (
+            <PredictionMatchCard
+              key={match.id}
+              match={match}
+              prediction={prediction}
+              draft={draft}
+              isPending={mutation.isPending && mutation.variables?.match.id === match.id}
+              onDraftChange={(value) =>
+                setDrafts((current) => ({ ...current, [match.id]: value }))
+              }
+              onSave={() => mutation.mutate({ match, draft })}
+            />
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <section className="panel overflow-hidden">
@@ -282,185 +339,7 @@ export function PredictionPanel() {
         </div>
       )}
 
-      {isLoading && <LoadingState rows={4} />}
-
-      {!isLoading && isError && (
-        <EmptyState
-          title={t("predictions.loadError")}
-          description={t("predictions.loadErrorDesc")}
-          icon={<Target className="h-10 w-10" />}
-        />
-      )}
-
-      {!isLoading && !isError && visibleMatches.length === 0 && (
-        <EmptyState
-          title={emptyTitle}
-          description={emptyDesc}
-          icon={<Target className="h-10 w-10" />}
-        />
-      )}
-
-      {!isLoading && !isError && visibleMatches.length > 0 && (
-        <div className="grid gap-3">
-          {visibleMatches.map((match) => {
-            const prediction = predictionByMatch.get(match.id);
-            const draft = drafts[match.id] ?? {
-              home: prediction?.home_score ?? 0,
-              away: prediction?.away_score ?? 0,
-            };
-            const isLive     = match.status === "in_progress";
-            const isFinished = match.status === "finished" || match.status === "cancelled";
-            const locked     = isLive || isFinished ||
-              (match.kickoff_at !== null && new Date(match.kickoff_at).getTime() <= Date.now());
-            const pending =
-              mutation.isPending && mutation.variables?.match.id === match.id;
-            let buttonLabel = t("predictions.submit")
-            if (pending) buttonLabel = t("common.saving")
-            else if (prediction) buttonLabel = t("predictions.update")
-
-            return (
-              <article
-                key={match.id}
-                className={cn(
-                  "rounded border p-4 transition-colors",
-                  isLive
-                    ? "border-green-500/30 bg-green-500/[0.04]"
-                    : "border-white/10 bg-white/[0.025]",
-                )}
-              >
-                <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                  <div className="min-w-0">
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
-                      {isLive ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-300">
-                          <span className="relative flex h-1.5 w-1.5 shrink-0">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
-                          </span>
-                          {t("predictions.liveLabel")}
-                        </span>
-                      ) : (
-                        <StatusBadge status={match.status} size="sm" />
-                      )}
-                      {!isFinished && (
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium",
-                            prediction
-                              ? "border-green-400/30 bg-green-400/10 text-green-200"
-                              : "border-gold-400/25 bg-gold-400/10 text-gold-200",
-                          )}
-                        >
-                          {prediction ? (
-                            <CheckCircle2 className="h-3 w-3" />
-                          ) : (
-                            <Target className="h-3 w-3" />
-                          )}
-                          {prediction
-                            ? t("predictions.saved")
-                            : t("predictions.unsaved")}
-                        </span>
-                      )}
-                      {!isLive && !isFinished && locked && (
-                        <span className="text-[10px] uppercase text-red-300">
-                          {t("predictions.locked")}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                      <TeamLabel label={teamName(match.home_team)} align="right" />
-                      {(isLive || isFinished) ? (
-                        <span className="font-score text-lg font-bold tabular-nums text-white">
-                          {match.home_score ?? 0}&nbsp;–&nbsp;{match.away_score ?? 0}
-                        </span>
-                      ) : (
-                        <span className="font-score text-xs text-text-muted">vs</span>
-                      )}
-                      <TeamLabel label={teamName(match.away_team)} align="left" />
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
-                      <span className="inline-flex items-center gap-1.5">
-                        <CalendarClock className="h-3.5 w-3.5" />
-                        {t("predictions.kickoff")}:{" "}
-                        <span suppressHydrationWarning>{formatKickoff(match.kickoff_at)}</span>
-                      </span>
-                      {match.stadium && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <MapPin className="h-3.5 w-3.5" />
-                          {match.stadium.name}
-                        </span>
-                      )}
-                      {(match.phase || match.group_label) && (
-                        <span>
-                          {t("predictions.phase")}:{" "}
-                          {phaseName(match.phase ?? match.group_label)}
-                        </span>
-                      )}
-                      {!isLive && !isFinished && (
-                        <MatchCountdown kickoffAt={match.kickoff_at} />
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <ScoreInput
-                      label={t("predictions.home")}
-                      value={draft.home}
-                      disabled={locked}
-                      onChange={(value) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [match.id]: { ...draft, home: value },
-                        }))
-                      }
-                    />
-                    <ScoreInput
-                      label={t("predictions.away")}
-                      value={draft.away}
-                      disabled={locked}
-                      onChange={(value) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [match.id]: { ...draft, away: value },
-                        }))
-                      }
-                    />
-                    {isFinished ? (
-                      <div className="flex w-full flex-col items-center justify-center gap-0.5 rounded-lg border border-gold-400/20 bg-gold-400/10 px-4 py-2 sm:w-auto sm:min-w-[4.5rem]">
-                        <span className="text-[10px] uppercase tracking-wide text-text-muted">
-                          {t("predictions.points")}
-                        </span>
-                        <span className="font-score text-2xl font-bold tabular-nums text-gold-300">
-                          {prediction?.points != null ? prediction.points : "–"}
-                        </span>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={locked || pending}
-                        onClick={() => mutation.mutate({ match, draft })}
-                        className="btn-gold w-full px-3 py-2 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Save className="h-4 w-4 shrink-0" />
-                        <span className="relative">
-                          <span aria-hidden className="invisible">
-                            {t("predictions.submit")}
-                          </span>
-                          <span className="absolute inset-0 flex items-center justify-center">
-                            {buttonLabel}
-                          </span>
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      )}
+      {renderContent()}
 
       <p className="mt-4 text-xs text-text-muted">
         {t("predictions.exactHint")}
@@ -469,6 +348,167 @@ export function PredictionPanel() {
     </section>
   );
 }
+
+// ── Per-match card ─────────────────────────────────────────────────────────────
+
+interface PredictionMatchCardProps {
+  readonly match: MatchResponse;
+  readonly prediction: PredictionResponse | undefined;
+  readonly draft: { home: number; away: number };
+  readonly isPending: boolean;
+  readonly onDraftChange: (value: { home: number; away: number }) => void;
+  readonly onSave: () => void;
+}
+
+function PredictionMatchCard({
+  match,
+  prediction,
+  draft,
+  isPending,
+  onDraftChange,
+  onSave,
+}: PredictionMatchCardProps) {
+  const { t, teamName, formatKickoff, phaseName } = useI18n();
+
+  const isLive     = match.status === "in_progress";
+  const isFinished = match.status === "finished" || match.status === "cancelled";
+  const locked     = isLive || isFinished ||
+    (match.kickoff_at !== null && new Date(match.kickoff_at).getTime() <= Date.now());
+
+  let buttonLabel = t("predictions.submit");
+  if (isPending)       buttonLabel = t("common.saving");
+  else if (prediction) buttonLabel = t("predictions.update");
+
+  return (
+    <article
+      className={cn(
+        "rounded border p-4 transition-colors",
+        isLive
+          ? "border-green-500/30 bg-green-500/[0.04]"
+          : "border-white/10 bg-white/[0.025]",
+      )}
+    >
+      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+        <div className="min-w-0">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {isLive ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-300">
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+                </span>
+                {t("predictions.liveLabel")}
+              </span>
+            ) : (
+              <StatusBadge status={match.status} size="sm" />
+            )}
+            {!isFinished && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium",
+                  prediction
+                    ? "border-green-400/30 bg-green-400/10 text-green-200"
+                    : "border-gold-400/25 bg-gold-400/10 text-gold-200",
+                )}
+              >
+                {prediction ? (
+                  <CheckCircle2 className="h-3 w-3" />
+                ) : (
+                  <Target className="h-3 w-3" />
+                )}
+                {prediction ? t("predictions.saved") : t("predictions.unsaved")}
+              </span>
+            )}
+            {!isLive && !isFinished && locked && (
+              <span className="text-[10px] uppercase text-red-300">
+                {t("predictions.locked")}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+            <TeamLabel label={teamName(match.home_team)} align="right" />
+            {isLive || isFinished ? (
+              <span className="font-score text-lg font-bold tabular-nums text-white">
+                {match.home_score ?? 0}&nbsp;–&nbsp;{match.away_score ?? 0}
+              </span>
+            ) : (
+              <span className="font-score text-xs text-text-muted">vs</span>
+            )}
+            <TeamLabel label={teamName(match.away_team)} align="left" />
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <CalendarClock className="h-3.5 w-3.5" />
+              {t("predictions.kickoff")}:{" "}
+              <span suppressHydrationWarning>{formatKickoff(match.kickoff_at)}</span>
+            </span>
+            {match.stadium && (
+              <span className="inline-flex items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5" />
+                {match.stadium.name}
+              </span>
+            )}
+            {(match.phase || match.group_label) && (
+              <span>
+                {t("predictions.phase")}:{" "}
+                {phaseName(match.phase ?? match.group_label)}
+              </span>
+            )}
+            {!isLive && !isFinished && (
+              <MatchCountdown kickoffAt={match.kickoff_at} />
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <ScoreInput
+            label={t("predictions.home")}
+            value={draft.home}
+            disabled={locked}
+            onChange={(value) => onDraftChange({ ...draft, home: value })}
+          />
+          <ScoreInput
+            label={t("predictions.away")}
+            value={draft.away}
+            disabled={locked}
+            onChange={(value) => onDraftChange({ ...draft, away: value })}
+          />
+          {isFinished ? (
+            <div className="flex w-full flex-col items-center justify-center gap-0.5 rounded-lg border border-gold-400/20 bg-gold-400/10 px-4 py-2 sm:w-auto sm:min-w-[4.5rem]">
+              <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                {t("predictions.points")}
+              </span>
+              <span className="font-score text-2xl font-bold tabular-nums text-gold-300">
+                {prediction?.points ?? "–"}
+              </span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={locked || isPending}
+              onClick={onSave}
+              className="btn-gold w-full px-3 py-2 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Save className="h-4 w-4 shrink-0" />
+              <span className="relative">
+                <span aria-hidden className="invisible">
+                  {t("predictions.submit")}
+                </span>
+                <span className="absolute inset-0 flex items-center justify-center">
+                  {buttonLabel}
+                </span>
+              </span>
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+// ── Shared sub-components ──────────────────────────────────────────────────────
 
 function normalizeGroup(group: string | null | undefined): GroupLabel | null {
   const value = group?.trim().toUpperCase().replace(/^GROUP\s+/, "").replace(/^GRUPO\s+/, "");
@@ -517,13 +557,13 @@ function MatchCountdown({ kickoffAt }: Readonly<{ kickoffAt: string | null | und
   const mins  = Math.floor((diff % 3_600_000) / 60_000);
   const secs  = Math.floor((diff % 60_000) / 1_000);
 
-  let label: string
+  let label: string;
   if (days > 0) {
-    label = `${days}d ${hours}h ${mins}m`
+    label = `${days}d ${hours}h ${mins}m`;
   } else if (hours > 0) {
-    label = `${hours}h ${mins}m ${secs}s`
+    label = `${hours}h ${mins}m ${secs}s`;
   } else {
-    label = `${mins}m ${secs}s`
+    label = `${mins}m ${secs}s`;
   }
 
   return (
