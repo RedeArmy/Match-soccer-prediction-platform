@@ -205,6 +205,15 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
     return 'FT'
   }
 
+  let chipClass: string
+  if (live) {
+    chipClass = 'bg-green-500/20 text-green-300'
+  } else if (done) {
+    chipClass = 'bg-white/10 text-text-muted'
+  } else {
+    chipClass = 'bg-blue-500/10 text-blue-300'
+  }
+
   return (
     <div className={cn(
       'overflow-hidden rounded-xl border transition-colors',
@@ -228,19 +237,12 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
           )}
 
           {/* Status/time chip */}
-          {(() => {
-            const chipClass = live ? 'bg-green-500/20 text-green-300'
-              : done             ? 'bg-white/10 text-text-muted'
-              :                    'bg-blue-500/10 text-blue-300'
-            return (
-              <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums', chipClass)}>
-                {live || done
-                  ? statusLabel()
-                  : <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{timeStr}</span>
-                }
-              </span>
-            )
-          })()}
+          <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums', chipClass)}>
+            {live || done
+              ? statusLabel()
+              : <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{timeStr}</span>
+            }
+          </span>
 
           {/* Teams + score */}
           <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
