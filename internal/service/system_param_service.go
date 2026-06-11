@@ -600,6 +600,16 @@ var paramStringConstraints = map[string]paramStringValidator{
 		}
 		return apperrors.Validation(fmt.Sprintf("value %q is not a recognized provider (accepted: api-football, or empty)", value))
 	},
+	// system.date must be empty (no override) or a valid RFC 3339 datetime string.
+	domain.ParamKeySystemDate: func(value string) error {
+		if value == "" {
+			return nil
+		}
+		if _, err := time.Parse(time.RFC3339, value); err != nil {
+			return apperrors.Validation(fmt.Sprintf("system.date value %q is not a valid RFC 3339 datetime (e.g. 2026-06-20T15:00:00Z)", value))
+		}
+		return nil
+	},
 	// notify.admin_emails must be empty or a comma-separated list of RFC 5322 addresses.
 	domain.ParamKeyNotifyAdminEmails: func(value string) error {
 		if value == "" {

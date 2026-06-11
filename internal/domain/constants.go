@@ -263,6 +263,15 @@ const (
 	// ParamKeyMatchSyncSeason is the four-digit tournament year (e.g. 2026).
 	ParamKeyMatchSyncSeason = "match.sync.season"
 
+	// ParamKeySystemDate overrides the wall-clock time reported by the application
+	// clock. Accepts an RFC 3339 datetime string (e.g. "2026-06-20T15:00:00Z").
+	// An empty value (the production default) means "use real time".
+	//
+	// DEV/TEST ONLY — the override is silently ignored when the application is
+	// running in production mode (WCQ_ENVIRONMENT != "dev"/"development"/"test").
+	// This param must never be set in production.
+	ParamKeySystemDate = "system.date"
+
 	// ParamKeyAdminBulkMaxItems is the maximum number of IDs accepted in a single
 	// bulk admin operation (BulkDeleteGroups, BulkRemoveMembers). Requests that
 	// exceed this limit are rejected with 422 to prevent oversized ANY($1) queries.
@@ -405,6 +414,8 @@ func AllParamKeys() []string {
 		ParamKeyMatchSyncProvider,
 		ParamKeyMatchSyncLeagueID,
 		ParamKeyMatchSyncSeason,
+		// System clock override (dev/test only)
+		ParamKeySystemDate,
 		// Admin
 		ParamKeyAdminBulkMaxItems,
 		// Cache

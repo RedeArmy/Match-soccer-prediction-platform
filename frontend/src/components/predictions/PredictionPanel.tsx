@@ -22,7 +22,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { useI18n } from "@/lib/i18n";
 
 type DraftScores = Record<number, { home: number; away: number }>;
-type Filter = "all" | "pending" | "saved";
+type Filter = "all" | "pending" | "saved" | "past";
 type ViewMode = "by-group" | "by-day";
 type GroupLabel = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L";
 
@@ -58,6 +58,17 @@ export function PredictionPanel() {
     },
   });
 
+  const systemClockQuery = useQuery({
+    queryKey: ["system-clock"],
+    queryFn: async () => {
+      const res = await fetch("/api/v1/system/clock");
+      if (!res.ok) return null;
+      const data = await res.json() as { now: string };
+      return data.now;
+    },
+    staleTime: 30_000,
+  });
+
   const predictionByMatch = useMemo(() => {
     const map = new Map<number, PredictionResponse>();
     for (const prediction of predictionsQuery.data ?? []) {
@@ -67,8 +78,11 @@ export function PredictionPanel() {
   }, [predictionsQuery.data]);
 
   useEffect(() => {
-    setTodayStr(new Date().toLocaleDateString("sv", { timeZone }));
-  }, [timeZone]);
+    const base = systemClockQuery.data
+      ? new Date(systemClockQuery.data)
+      : new Date();
+    setTodayStr(base.toLocaleDateString("sv", { timeZone }));
+  }, [timeZone, systemClockQuery.data]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -140,13 +154,40 @@ export function PredictionPanel() {
 
   const visibleMatches = baseMatches.filter((match) => {
     const hasPrediction = predictionByMatch.has(match.id);
-    if (filter === "pending") return !hasPrediction;
-    if (filter === "saved") return hasPrediction;
+    const isFinished = match.status === "finished" || match.status === "cancelled";
+    if (filter === "pending") return !isFinished && !hasPrediction;
+    if (filter === "saved")   return !isFinished && hasPrediction;
+    if (filter === "past")    return isFinished;
     return true;
   });
 
-const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
+  const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
   const isError = matchesQuery.isError || predictionsQuery.isError;
+
+  // Context-aware empty state.
+  const isToday        = viewMode === "by-day"
+  const noTodayMatches = isToday && baseMatches.length === 0
+  const filterHides    = baseMatches.length > 0 && visibleMatches.length === 0
+
+  const emptyTitle = noTodayMatches
+    ? t("predictions.noMatchesToday")
+    : filter === "past"
+      ? t("predictions.noPastMatches")
+      : filterHides && isToday && filter === "pending"
+        ? t("predictions.allSavedToday")
+        : filterHides && isToday && filter === "saved"
+          ? t("predictions.noPredictionsToday")
+          : t("predictions.noMatches")
+
+  const emptyDesc = noTodayMatches
+    ? t("predictions.noMatchesTodayDesc")
+    : filter === "past"
+      ? t("predictions.noPastMatchesDesc")
+      : filterHides && isToday && filter === "pending"
+        ? t("predictions.allSavedTodayDesc")
+        : filterHides && isToday && filter === "saved"
+          ? t("predictions.noPredictionsTodayDesc")
+          : t("predictions.noMatchesDesc")
 
   return (
     <section className="panel overflow-hidden">
@@ -169,9 +210,10 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
           <SlidersHorizontal className="ml-2 h-4 w-4 text-text-muted" />
           {(
             [
-              ["all", t("predictions.filterAll")],
+              ["all",     t("predictions.filterAll")],
               ["pending", t("predictions.filterPending")],
-              ["saved", t("predictions.filterSaved")],
+              ["saved",   t("predictions.filterSaved")],
+              ["past",    t("predictions.filterPast")],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -252,8 +294,8 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
 
       {!isLoading && !isError && visibleMatches.length === 0 && (
         <EmptyState
-          title={t("predictions.noMatches")}
-          description={t("predictions.noMatchesDesc")}
+          title={emptyTitle}
+          description={emptyDesc}
           icon={<Target className="h-10 w-10" />}
         />
       )}
@@ -266,9 +308,10 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
               home: prediction?.home_score ?? 0,
               away: prediction?.away_score ?? 0,
             };
-            const locked =
-              (match.kickoff_at !== null && new Date(match.kickoff_at).getTime() <= Date.now()) ||
-              match.status !== "scheduled";
+            const isLive     = match.status === "in_progress";
+            const isFinished = match.status === "finished" || match.status === "cancelled";
+            const locked     = isLive || isFinished ||
+              (match.kickoff_at !== null && new Date(match.kickoff_at).getTime() <= Date.now());
             const pending =
               mutation.isPending && mutation.variables?.match.id === match.id;
             let buttonLabel = t("predictions.submit")
@@ -278,30 +321,47 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
             return (
               <article
                 key={match.id}
-                className="rounded border border-white/10 bg-white/[0.025] p-4"
+                className={cn(
+                  "rounded border p-4 transition-colors",
+                  isLive
+                    ? "border-green-500/30 bg-green-500/[0.04]"
+                    : "border-white/10 bg-white/[0.025]",
+                )}
               >
                 <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
                   <div className="min-w-0">
                     <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <StatusBadge status={match.status} size="sm" />
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium",
-                          prediction
-                            ? "border-green-400/30 bg-green-400/10 text-green-200"
-                            : "border-gold-400/25 bg-gold-400/10 text-gold-200",
-                        )}
-                      >
-                        {prediction ? (
-                          <CheckCircle2 className="h-3 w-3" />
-                        ) : (
-                          <Target className="h-3 w-3" />
-                        )}
-                        {prediction
-                          ? t("predictions.saved")
-                          : t("predictions.unsaved")}
-                      </span>
-                      {locked && (
+                      {isLive ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-300">
+                          <span className="relative flex h-1.5 w-1.5 shrink-0">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+                          </span>
+                          {t("predictions.liveLabel")}
+                        </span>
+                      ) : (
+                        <StatusBadge status={match.status} size="sm" />
+                      )}
+                      {!isFinished && (
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium",
+                            prediction
+                              ? "border-green-400/30 bg-green-400/10 text-green-200"
+                              : "border-gold-400/25 bg-gold-400/10 text-gold-200",
+                          )}
+                        >
+                          {prediction ? (
+                            <CheckCircle2 className="h-3 w-3" />
+                          ) : (
+                            <Target className="h-3 w-3" />
+                          )}
+                          {prediction
+                            ? t("predictions.saved")
+                            : t("predictions.unsaved")}
+                        </span>
+                      )}
+                      {!isLive && !isFinished && locked && (
                         <span className="text-[10px] uppercase text-red-300">
                           {t("predictions.locked")}
                         </span>
@@ -310,9 +370,13 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
 
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
                       <TeamLabel label={teamName(match.home_team)} align="right" />
-                      <span className="font-score text-xs text-text-muted">
-                        vs
-                      </span>
+                      {(isLive || isFinished) ? (
+                        <span className="font-score text-lg font-bold tabular-nums text-white">
+                          {match.home_score ?? 0}&nbsp;–&nbsp;{match.away_score ?? 0}
+                        </span>
+                      ) : (
+                        <span className="font-score text-xs text-text-muted">vs</span>
+                      )}
                       <TeamLabel label={teamName(match.away_team)} align="left" />
                     </div>
 
@@ -334,13 +398,9 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
                           {phaseName(match.phase ?? match.group_label)}
                         </span>
                       )}
-                      <MatchCountdown kickoffAt={match.kickoff_at} />
-                      {prediction?.points !== null &&
-                        prediction?.points !== undefined && (
-                          <span className="text-gold-300">
-                            {prediction.points} {t("predictions.points")}
-                          </span>
-                        )}
+                      {!isLive && !isFinished && (
+                        <MatchCountdown kickoffAt={match.kickoff_at} />
+                      )}
                     </div>
                   </div>
 
@@ -367,22 +427,33 @@ const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
                         }))
                       }
                     />
-                    <button
-                      type="button"
-                      disabled={locked || pending}
-                      onClick={() => mutation.mutate({ match, draft })}
-                      className="btn-gold w-full px-3 py-2 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Save className="h-4 w-4 shrink-0" />
-                      <span className="relative">
-                        <span aria-hidden className="invisible">
-                          {t("predictions.submit")}
+                    {isFinished ? (
+                      <div className="flex w-full flex-col items-center justify-center gap-0.5 rounded-lg border border-gold-400/20 bg-gold-400/10 px-4 py-2 sm:w-auto sm:min-w-[4.5rem]">
+                        <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                          {t("predictions.points")}
                         </span>
-                        <span className="absolute inset-0 flex items-center justify-center">
-                          {buttonLabel}
+                        <span className="font-score text-2xl font-bold tabular-nums text-gold-300">
+                          {prediction?.points != null ? prediction.points : "–"}
                         </span>
-                      </span>
-                    </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={locked || pending}
+                        onClick={() => mutation.mutate({ match, draft })}
+                        className="btn-gold w-full px-3 py-2 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Save className="h-4 w-4 shrink-0" />
+                        <span className="relative">
+                          <span aria-hidden className="invisible">
+                            {t("predictions.submit")}
+                          </span>
+                          <span className="absolute inset-0 flex items-center justify-center">
+                            {buttonLabel}
+                          </span>
+                        </span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </article>
