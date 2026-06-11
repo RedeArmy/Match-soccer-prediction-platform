@@ -200,6 +200,10 @@ export function PredictionPanel() {
     t,
   });
 
+  function updateDraft(matchId: number, value: { home: number; away: number }) {
+    setDrafts((current) => ({ ...current, [matchId]: value }));
+  }
+
   function renderContent() {
     if (isLoading) return <LoadingState rows={4} />;
     if (isError) {
@@ -235,9 +239,7 @@ export function PredictionPanel() {
               prediction={prediction}
               draft={draft}
               isPending={mutation.isPending && mutation.variables?.match.id === match.id}
-              onDraftChange={(value) =>
-                setDrafts((current) => ({ ...current, [match.id]: value }))
-              }
+              onDraftChange={(value) => updateDraft(match.id, value)}
               onSave={() => mutation.mutate({ match, draft })}
             />
           );
