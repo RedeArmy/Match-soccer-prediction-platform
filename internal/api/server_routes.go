@@ -196,6 +196,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// frontend clients can display current buy/sell rates.
 	r.Get("/api/exchange-rate", h.exchangeRate.GetCurrent)
 
+	// Public group leaderboard — no auth required, covered by L1 IP limiter.
+	// Allows unauthenticated visitors to preview a group's standings by invite
+	// code. Prize-winner flags and payment state are stripped by the handler.
+	r.Get("/api/public/groups/leaderboard", h.publicGroup.GetPublicLeaderboard)
+
 	// Webhook endpoints — authenticated via provider-specific signatures, not Clerk JWT.
 	// Grouped under /webhooks so the L2 IP rate limiter can be applied once to the
 	// entire group. This protects CPU-expensive RSA verification (PayPal) from

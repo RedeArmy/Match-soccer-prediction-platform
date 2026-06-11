@@ -85,6 +85,7 @@ type appHandlers struct {
 	adminObsCircuit    *handler.AdminCircuitBreakersHandler
 	adminObsDLQ        *handler.AdminObservabilityDLQHandler
 	adminN8n           *handler.AdminN8nHandler
+	publicGroup        *handler.PublicGroupHandler
 	kyc                *handler.KYCHandler
 	adminKYC           *handler.AdminKYCHandler
 	user               *handler.UserHandler
@@ -296,6 +297,7 @@ func (s *Server) buildHandlers(
 		prediction:         handler.NewPredictionHandler(predSvc, s.log),
 		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, groupAuthz, params, s.log),
 		leaderboard:        handler.NewLeaderboardHandler(ranker, groupAuthz, s.log),
+		publicGroup:        handler.NewPublicGroupHandler(quinielaSvc, ranker, s.log),
 		userStats:          handler.NewUserStatsHandler(userStatsSvc, s.log),
 		tiebreaker:         handler.NewTiebreakerHandler(tiebreakerSvc, s.log),
 		tournament:         handler.NewTournamentHandler(tournamentSvc, s.log),
