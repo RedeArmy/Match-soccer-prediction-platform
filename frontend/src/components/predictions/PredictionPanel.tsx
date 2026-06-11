@@ -375,6 +375,16 @@ export function PredictionPanel() {
 
 // ── Per-match card ─────────────────────────────────────────────────────────────
 
+function getButtonLabel(
+  isPending: boolean,
+  hasPrediction: boolean,
+  t: (key: string) => string,
+): string {
+  if (isPending) return t("common.saving");
+  if (hasPrediction) return t("predictions.update");
+  return t("predictions.submit");
+}
+
 interface PredictionMatchCardProps {
   readonly match: MatchResponse;
   readonly prediction: PredictionResponse | undefined;
@@ -418,21 +428,14 @@ function PredictionMatchCard({
   const isFinished = isStatusFinished || (!isStatusLive && isTimeBasedFinished);
   const locked     = isLive || isFinished;
 
-  let buttonLabel = t("predictions.submit");
-  if (isPending)       buttonLabel = t("common.saving");
-  else if (prediction) buttonLabel = t("predictions.update");
+  const buttonLabel = getButtonLabel(isPending, prediction !== undefined, t);
+
+  let articleClass = "border-white/10 bg-white/[0.025]";
+  if (isFinished)  articleClass = "border-red-500/30 bg-red-500/[0.04]";
+  else if (isLive) articleClass = "border-green-500/30 bg-green-500/[0.04]";
 
   return (
-    <article
-      className={cn(
-        "rounded border p-4 transition-colors",
-        isFinished
-          ? "border-red-500/30 bg-red-500/[0.04]"
-          : isLive
-            ? "border-green-500/30 bg-green-500/[0.04]"
-            : "border-white/10 bg-white/[0.025]",
-      )}
-    >
+    <article className={cn("rounded border p-4 transition-colors", articleClass)}>
       <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">

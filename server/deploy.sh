@@ -54,11 +54,11 @@ $COMPOSE pull --quiet api worker frontend
 wait_healthy() {
   local svc=$1 timeout=${2:-90} elapsed=0 cid status
   echo "    waiting for ${svc} to be healthy..."
-  while [ $elapsed -lt "$timeout" ]; do
+  while [[ $elapsed -lt "$timeout" ]]; do
     cid=$($COMPOSE ps -q "$svc" 2>/dev/null || true)
-    if [ -n "$cid" ]; then
+    if [[ -n "$cid" ]]; then
       status=$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "")
-      if [ "$status" = "healthy" ]; then
+      if [[ "$status" = "healthy" ]]; then
         echo "    ${svc}: healthy ✓"
         return 0
       fi
@@ -88,7 +88,7 @@ $COMPOSE up -d --no-deps --force-recreate frontend
 wait_healthy frontend 60
 
 # ── 4. Ensure observability stack is up ──────────────────────────────────────
-if [ -f "${WCQ_DIR}/docker-compose.observability.yml" ]; then
+if [[ -f "${WCQ_DIR}/docker-compose.observability.yml" ]]; then
   echo "==> reconciling observability stack..."
   $OBS_COMPOSE up -d --remove-orphans
 fi
