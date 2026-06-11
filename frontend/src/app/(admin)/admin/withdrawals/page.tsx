@@ -7,10 +7,9 @@ import { CheckCircle, XCircle, ArrowRight, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { WithdrawalResponse, WithdrawalStatus } from '@/lib/api-types'
 import { cn, formatGTQ, formatUSD, formatRelative, formatDateTime } from '@/lib/utils'
-import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import {
-  AdminPageHeader, AdminModalOverlay, AdminPagination,
+  AdminPageHeader, AdminModalOverlay, AdminPagination, AdminContentState,
   ModalHeader, ModalCancelButton, ModalErrorLine, InfoRow,
 } from '@/components/admin/shared'
 
@@ -299,19 +298,14 @@ export default function AdminWithdrawalsPage() {
       </div>
 
       {/* Content */}
-      {isLoading && <LoadingState />}
-      {!isLoading && !!error && (
-        <div className="text-center py-12 text-red-400 text-sm">
-          Error al cargar los retiros. Intenta actualizar la página.
-        </div>
-      )}
-      {!isLoading && !error && filtered.length === 0 && (
-        <div className="text-center py-16 text-white/40">
-          <p className="text-lg font-medium">No hay retiros</p>
-          <p className="text-sm mt-1">{emptyMsg}</p>
-        </div>
-      )}
-      {!isLoading && !error && filtered.length > 0 && (
+      <AdminContentState
+        isLoading={isLoading}
+        error={error}
+        isEmpty={filtered.length === 0}
+        emptyTitle="No hay retiros"
+        emptyMessage={emptyMsg}
+        errorMessage="Error al cargar los retiros. Intenta actualizar la página."
+      >
         <>
           <div className="overflow-x-auto rounded-xl border border-white/10">
             <table className="w-full text-sm">
@@ -422,7 +416,7 @@ export default function AdminWithdrawalsPage() {
             onPageChange={setPage}
           />
         </>
-      )}
+      </AdminContentState>
 
       {actionModal && (
         <AdminModalOverlay onClose={closeModal}>

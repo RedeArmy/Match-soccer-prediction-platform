@@ -2,6 +2,7 @@
 
 import { RefreshCw, ChevronLeft, ChevronRight, X, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { LoadingState } from '@/components/shared/LoadingState'
 
 // ── AdminPageHeader ───────────────────────────────────────────────────────────
 
@@ -173,4 +174,40 @@ export function AdminPagination({ page, pageCount, rangeStart, rangeEnd, total, 
       </div>
     </div>
   )
+}
+
+// ── AdminContentState ─────────────────────────────────────────────────────────
+
+interface AdminContentStateProps {
+  readonly isLoading: boolean
+  readonly error: unknown
+  readonly isEmpty: boolean
+  readonly emptyTitle: string
+  readonly emptyMessage: string
+  readonly errorMessage: string
+  readonly children: React.ReactNode
+}
+
+export function AdminContentState({
+  isLoading,
+  error,
+  isEmpty,
+  emptyTitle,
+  emptyMessage,
+  errorMessage,
+  children,
+}: AdminContentStateProps) {
+  if (isLoading) return <LoadingState />
+  if (error) return (
+    <div className="text-center py-12 text-red-400 text-sm">
+      {errorMessage}
+    </div>
+  )
+  if (isEmpty) return (
+    <div className="text-center py-16 text-white/40">
+      <p className="text-lg font-medium">{emptyTitle}</p>
+      <p className="text-sm mt-1">{emptyMessage}</p>
+    </div>
+  )
+  return <>{children}</>
 }
