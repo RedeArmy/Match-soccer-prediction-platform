@@ -27,7 +27,7 @@ export function Footer() {
               {t('common.responsible')}
             </p>
             <p className="text-xs text-text-muted">
-              Creado por{' '}
+              {t('common.createdBy')}{' '}
               <a
                 href="https://github.com/RedeArmy"
                 target="_blank"
