@@ -25,9 +25,27 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
   redis-data:
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-quiniela}
+      POSTGRES_USER:     ${POSTGRES_USER:-quiniela}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [wcq-net]
+    healthcheck:
+      test:         ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quiniela} -d ${POSTGRES_DB:-quiniela}"]
+      interval:     10s
+      timeout:      5s
+      retries:      5
+      start_period: 10s
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -45,8 +63,8 @@ services:
     image: ${API_IMAGE}
     restart: unless-stopped
     environment:
-      # ── Database (Supabase — Session-mode pooler, supports advisory locks) ──
-      WCQ_DATABASE_DSN:           ${WCQ_DATABASE_DSN}
+      # ── Database ────────────────────────────────────────────────────────────
+      WCQ_DATABASE_DSN:           postgres://${POSTGRES_USER:-quiniela}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quiniela}?sslmode=disable
       WCQ_DATABASE_MAXOPENCONNS:  "20"
       # ── Redis ────────────────────────────────────────────────────────────────
       WCQ_REDIS_ADDR:             redis:6379
@@ -80,7 +98,8 @@ services:
       - "127.0.0.1:8080:8080"  # Caddy reverse-proxies externally; loopback only
       - "127.0.0.1:9091:9091"  # Prometheus scrape endpoint; loopback only
     depends_on:
-      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
     networks: [wcq-net]
     healthcheck:
       # /health/ready waits for DB migrations and connection pool warm-up.
@@ -95,7 +114,7 @@ services:
     image: ${WORKER_IMAGE}
     restart: unless-stopped
     environment:
-      WCQ_DATABASE_DSN:           ${WCQ_DATABASE_DSN}
+      WCQ_DATABASE_DSN:           postgres://${POSTGRES_USER:-quiniela}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quiniela}?sslmode=disable
       WCQ_REDIS_ADDR:             redis:6379
       WCQ_REDIS_PASSWORD:         ${REDIS_PASSWORD}
       WCQ_ENVIRONMENT:            production
@@ -111,7 +130,8 @@ services:
     ports:
       - "127.0.0.1:8081:8081"  # Prometheus scrape + health check; loopback only
     depends_on:
-      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
     networks: [wcq-net]
     healthcheck:
       test:         ["CMD", "wget", "-qO-", "http://localhost:8081/health/ready"]

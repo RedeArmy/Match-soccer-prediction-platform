@@ -37,7 +37,7 @@ apt-get update -qq
 apt-get install -y -qq ca-certificates curl gnupg lsb-release
 
 install -m 0755 -d /etc/apt/keyrings
-curl --proto '=https' --tlsv1.2 -fsSL https://download.docker.com/linux/ubuntu/gpg \
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
   | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 chmod a+r /etc/apt/keyrings/docker.gpg
 
@@ -54,9 +54,9 @@ echo "    Docker $(docker --version) installed ✓"
 
 echo "==> [3/7] Installing Caddy..."
 apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl
-curl --proto '=https' --tlsv1.2 -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
   | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl --proto '=https' --tlsv1.2 -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
   | tee /etc/apt/sources.list.d/caddy-stable.list
 apt-get update -qq
 apt-get install -y -qq caddy
@@ -70,7 +70,7 @@ chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${WCQ_DIR}"
 # If running via `ssh root@host 'bash -s' < server/setup.sh` you need to scp
 # the files separately. This block is a no-op if run directly on the server
 # from the cloned repo.
-if [[ -f "$(dirname "$0")/../docker-compose.prod.yml" ]]; then
+if [ -f "$(dirname "$0")/../docker-compose.prod.yml" ]; then
   REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
   cp "${REPO_ROOT}/docker-compose.prod.yml"          "${WCQ_DIR}/"
   cp "${REPO_ROOT}/docker-compose.observability.yml" "${WCQ_DIR}/"
@@ -115,8 +115,8 @@ echo "${GHCR_TOKEN}" | sudo -u "${DEPLOY_USER}" \
 echo "    GHCR login saved ✓"
 
 echo "==> [7/7] Starting services..."
-if [[ ! -f "${WCQ_DIR}/.env" ]]; then
-  echo "ERROR: ${WCQ_DIR}/.env not found." >&2
+if [ ! -f "${WCQ_DIR}/.env" ]; then
+  echo "ERROR: ${WCQ_DIR}/.env not found."
   echo "       Copy server/.env.example to ${WCQ_DIR}/.env and fill in real values,"
   echo "       then re-run this step manually:"
   echo "         cd ${WCQ_DIR}"

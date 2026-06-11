@@ -388,13 +388,10 @@ jobs:
       # Using HETZNER_SSH_KNOWN_HOST avoids TOFU / MITM risk from ssh-keyscan at deploy time.
       # Obtain the value with: ssh-keyscan <server-ip>
       - name: Configure SSH
-        env:
-          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
-          KNOWN_HOST: ${{ secrets.HETZNER_SSH_KNOWN_HOST }}
         run: |
           install -m 600 -D /dev/null ~/.ssh/id_hetzner
-          printf '%s' "$SSH_KEY" > ~/.ssh/id_hetzner
-          printf '%s\n' "$KNOWN_HOST" >> ~/.ssh/known_hosts
+          printf '%s' '${{ secrets.HETZNER_SSH_KEY }}' > ~/.ssh/id_hetzner
+          printf '%s\n' '${{ secrets.HETZNER_SSH_KNOWN_HOST }}' >> ~/.ssh/known_hosts
 
       # Copy the deploy script to the server so it is always the latest version.
       # Then execute it with the new image tags passed as environment variables.
