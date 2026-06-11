@@ -118,7 +118,7 @@ export default function AdminSystemParamsPage() {
   const categories = useMemo(() => {
     const seen = new Set<string>()
     for (const p of params) if (p.category) seen.add(p.category)
-    return ['all', ...Array.from(seen).sort()]
+    return ['all', ...Array.from(seen).sort((a, b) => a.localeCompare(b))]
   }, [params])
 
   const filtered = useMemo(() => {
@@ -252,6 +252,10 @@ export default function AdminSystemParamsPage() {
                     const isDirty     = param.value !== param.default_value
                     const sensitive   = isSensitive(param.key)
 
+                    let valueClass = 'text-text-primary'
+                    if (param.value === '') valueClass = 'italic text-text-muted'
+                    else if (isDirty)       valueClass = 'font-semibold text-gold-300'
+
                     return (
                       <tr
                         key={param.key}
@@ -305,16 +309,7 @@ export default function AdminSystemParamsPage() {
                               )}
                             </div>
                           ) : (
-                            <span
-                              className={cn(
-                                'font-mono text-xs',
-                                param.value === ''
-                                  ? 'italic text-text-muted'
-                                  : isDirty
-                                  ? 'font-semibold text-gold-300'
-                                  : 'text-text-primary',
-                              )}
-                            >
+                            <span className={cn('font-mono text-xs', valueClass)}>
                               {param.value === '' ? '(vacío)' : param.value}
                             </span>
                           )}
@@ -444,10 +439,10 @@ export default function AdminSystemParamsPage() {
               </button>
 
               {/* Page numbers */}
-              {getPageNumbers(safePage, pageCount).map((n, i) =>
+              {getPageNumbers(safePage, pageCount).map((n, i, arr) =>
                 n === '...'
                   ? (
-                    <span key={`ellipsis-${i}`} className="flex h-8 w-8 items-center justify-center text-xs text-text-muted">
+                    <span key={`gap-${arr[i + 1]}`} className="flex h-8 w-8 items-center justify-center text-xs text-text-muted">
                       …
                     </span>
                   )
