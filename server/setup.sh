@@ -37,7 +37,7 @@ apt-get update -qq
 apt-get install -y -qq ca-certificates curl gnupg lsb-release
 
 install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+curl --proto '=https' --tlsv1.2 -fsSL https://download.docker.com/linux/ubuntu/gpg \
   | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 chmod a+r /etc/apt/keyrings/docker.gpg
 
@@ -54,9 +54,9 @@ echo "    Docker $(docker --version) installed ✓"
 
 echo "==> [3/7] Installing Caddy..."
 apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+curl --proto '=https' --tlsv1.2 -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
   | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+curl --proto '=https' --tlsv1.2 -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
   | tee /etc/apt/sources.list.d/caddy-stable.list
 apt-get update -qq
 apt-get install -y -qq caddy
