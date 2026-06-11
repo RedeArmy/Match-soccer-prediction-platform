@@ -25,8 +25,7 @@ vi.mock('@clerk/nextjs', () => ({
   useClerk:      vi.fn().mockReturnValue({ signOut: vi.fn() }),
   SignedIn:      ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SignedOut:     ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  UserButton:    () => null,
-  SignOutButton: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  UserButton: () => null,
 }))
 
 vi.mock('@/hooks/useExchangeRate', () => ({
@@ -96,12 +95,14 @@ describe('AdminSidebar', () => {
     mockUsePathname.mockReturnValue('/')
   })
 
-  it('renders all 8 nav items', () => {
+  it('renders all 10 nav items', () => {
     render(<AdminSidebar />)
     expect(screen.getByText('Dashboard')).toBeInTheDocument()
     expect(screen.getByText('Usuarios')).toBeInTheDocument()
     expect(screen.getByText('KYC Queue')).toBeInTheDocument()
     expect(screen.getByText('Torneos')).toBeInTheDocument()
+    expect(screen.getByText('Partidos')).toBeInTheDocument()
+    expect(screen.getByText('Transferencias')).toBeInTheDocument()
     expect(screen.getByText('Retiros')).toBeInTheDocument()
     expect(screen.getByText('Tipo de cambio')).toBeInTheDocument()
     expect(screen.getByText('Observabilidad')).toBeInTheDocument()

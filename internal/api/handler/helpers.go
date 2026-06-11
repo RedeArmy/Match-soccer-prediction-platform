@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -189,6 +190,19 @@ func parsePaginationParams(r *http.Request) (limit, offset int) {
 		offset = 0
 	}
 	return limit, offset
+}
+
+// formatUploadStorageKey builds a human-readable storage key for user-uploaded files.
+//
+// Format: {prefix}_{userID}_{fileType}_{YYYY}_{MM}_{DD}_{HH}:{MM}:{SS}{ext}
+//
+// Examples:
+//
+//	kyc_9_selfie_2026_06_11_11:18:59.jpg
+//	bank_transfer_42_voucher_2026_06_11_10:34:45.pdf
+func formatUploadStorageKey(userID int, prefix, fileType string, t time.Time, ext string) string {
+	ts := t.UTC().Format("2006_01_02_15:04:05")
+	return fmt.Sprintf("%s_%d_%s_%s%s", prefix, userID, fileType, ts, ext)
 }
 
 // applySlicePagination returns a subslice of items bounded by limit and offset.

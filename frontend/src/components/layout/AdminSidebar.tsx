@@ -3,27 +3,31 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { UserButton, SignOutButton } from '@clerk/nextjs'
+import { UserButton, useClerk } from '@clerk/nextjs'
 import {
   LayoutDashboard, Users, ShieldCheck, Trophy,
   Wallet, TrendingUp, Activity, Settings, LogOut,
+  Swords, ArrowLeftRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { href: '/admin/dashboard',     label: 'Dashboard',    icon: LayoutDashboard },
-  { href: '/admin/users',         label: 'Usuarios',     icon: Users           },
-  { href: '/admin/kyc/queue',     label: 'KYC Queue',    icon: ShieldCheck     },
-  { href: '/admin/tournaments',   label: 'Torneos',      icon: Trophy          },
-  { href: '/admin/withdrawals',   label: 'Retiros',      icon: Wallet          },
-  { href: '/admin/exchange-rate', label: 'Tipo de cambio', icon: TrendingUp    },
-  { href: '/admin/observability', label: 'Observabilidad', icon: Activity      },
-  { href: '/admin/system-params', label: 'Parámetros',   icon: Settings        },
+  { href: '/admin/dashboard',       label: 'Dashboard',       icon: LayoutDashboard },
+  { href: '/admin/users',           label: 'Usuarios',        icon: Users           },
+  { href: '/admin/kyc/queue',       label: 'KYC Queue',       icon: ShieldCheck     },
+  { href: '/admin/tournaments',     label: 'Torneos',         icon: Trophy          },
+  { href: '/admin/matches',         label: 'Partidos',        icon: Swords          },
+  { href: '/admin/bank-transfers',  label: 'Transferencias',  icon: ArrowLeftRight  },
+  { href: '/admin/withdrawals',     label: 'Retiros',         icon: Wallet          },
+  { href: '/admin/exchange-rate',   label: 'Tipo de cambio',  icon: TrendingUp      },
+  { href: '/admin/observability',   label: 'Observabilidad',  icon: Activity        },
+  { href: '/admin/system-params',   label: 'Parámetros',      icon: Settings        },
 ]
 
 export function AdminSidebar() {
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
+  const { signOut } = useClerk()
   useEffect(() => { setMounted(true) }, [])
 
   return (
@@ -62,15 +66,14 @@ export function AdminSidebar() {
       <div className="p-4 border-t border-blue-800/60 flex items-center gap-3">
         {mounted && <UserButton appearance={{ elements: { avatarBox: 'w-8 h-8' } }} />}
         <span className="flex-1 text-xs text-text-muted">Admin</span>
-        <SignOutButton>
-          <button
-            type="button"
-            title="Cerrar sesión"
-            className="rounded p-1.5 text-text-muted transition-colors hover:bg-blue-900 hover:text-red-400"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
-        </SignOutButton>
+        <button
+          type="button"
+          title="Cerrar sesión"
+          onClick={() => signOut({ redirectUrl: '/' })}
+          className="rounded p-1.5 text-text-muted transition-colors hover:bg-blue-900 hover:text-red-400"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
       </div>
     </aside>
   )

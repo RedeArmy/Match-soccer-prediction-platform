@@ -24,7 +24,7 @@ func NewPostgresBankTransferProofRepository(db *pgxpool.Pool) *PostgresBankTrans
 }
 
 const (
-	bankTransferColumns     = "id, user_id, amount_cents, currency, storage_key, content_type, file_size, status, reviewed_by, notes, approved_at, created_at, updated_at"
+	bankTransferColumns     = "id, user_id, amount_cents, currency, storage_key, content_type, file_size, status, reviewed_by, notes, approved_amount_cents, approved_at, created_at, updated_at"
 	msgBankTransferNotFound = "bank transfer proof not found"
 )
 
@@ -35,7 +35,7 @@ func scanBankTransferProofFields(s rowScanner) (*domain.BankTransferProof, error
 	return p, s.Scan(
 		&p.ID, &p.UserID, &p.AmountCents, &p.Currency,
 		&p.StorageKey, &p.ContentType, &p.FileSize,
-		&p.Status, &p.ReviewedBy, &p.Notes, &p.ApprovedAt,
+		&p.Status, &p.ReviewedBy, &p.Notes, &p.ApprovedAmountCents, &p.ApprovedAt,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
 }
@@ -103,22 +103,37 @@ func (r *PostgresBankTransferProofRepository) ListPending(ctx context.Context) (
 	})
 }
 
+// ListAll returns all proofs across all statuses ordered by created_at DESC.
+func (r *PostgresBankTransferProofRepository) ListAll(ctx context.Context) ([]*domain.BankTransferProof, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+bankTransferColumns+` FROM bank_transfer_proofs ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return collectRows(rows, func(r pgx.Rows) (*domain.BankTransferProof, error) {
+		return scanBankTransferProofFields(r)
+	})
+}
+
 // ApproveAndCredit atomically approves the proof and credits the user's balance.
-func (r *PostgresBankTransferProofRepository) ApproveAndCredit(ctx context.Context, id, reviewerID int, notes string) (*domain.BankTransferProof, error) {
+// When overrideAmountCents is non-nil, that value is credited instead of the
+// user-declared amount; it is also stored in the approved_amount_cents column.
+func (r *PostgresBankTransferProofRepository) ApproveAndCredit(ctx context.Context, id, reviewerID int, overrideAmountCents *int, notes string) (*domain.BankTransferProof, error) {
 	var proof *domain.BankTransferProof
 	err := withTx(ctx, r.db, "BankTransferProofRepository.ApproveAndCredit", func(tx pgx.Tx) error {
-		// Approve the proof and capture the user_id + amount for the balance update.
-		var userID, amountCents int
+		// Approve the proof and capture user_id + declared amount.
 		row := tx.QueryRow(ctx, `
 			UPDATE bank_transfer_proofs
-			   SET status      = 'approved',
-			       reviewed_by = $2,
-			       notes       = $3,
-			       approved_at = NOW(),
-			       updated_at  = NOW()
+			   SET status               = 'approved',
+			       reviewed_by          = $2,
+			       notes                = $3,
+			       approved_amount_cents = $4,
+			       approved_at          = NOW(),
+			       updated_at           = NOW()
 			 WHERE id = $1 AND status = 'pending'
 			 RETURNING `+bankTransferColumns,
-			id, reviewerID, notes,
+			id, reviewerID, notes, overrideAmountCents,
 		)
 		p, scanErr := scanBankTransferProofFields(row)
 		if errors.Is(scanErr, pgx.ErrNoRows) {
@@ -128,8 +143,12 @@ func (r *PostgresBankTransferProofRepository) ApproveAndCredit(ctx context.Conte
 			return apperrors.Internal(scanErr)
 		}
 		proof = p
-		userID = p.UserID
-		amountCents = p.AmountCents
+
+		// Use override when provided, otherwise credit the user-declared amount.
+		creditCents := p.AmountCents
+		if overrideAmountCents != nil {
+			creditCents = *overrideAmountCents
+		}
 
 		// Credit the user's balance.
 		var balanceAfter int
@@ -139,13 +158,13 @@ func (r *PostgresBankTransferProofRepository) ApproveAndCredit(ctx context.Conte
 			       updated_at    = NOW()
 			 WHERE id = $1 AND deleted_at IS NULL
 			 RETURNING balance_cents
-		`, userID, amountCents).Scan(&balanceAfter); err != nil {
+		`, p.UserID, creditCents).Scan(&balanceAfter); err != nil {
 			return apperrors.Internal(err)
 		}
 
 		refID := p.ID
 		refType := "bank_transfer_proof"
-		return insertLedgerTx(ctx, tx, ledgerRow{UserID: userID, DeltaCents: amountCents, Kind: domain.LedgerKindBankTransfer, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: reviewerID})
+		return insertLedgerTx(ctx, tx, ledgerRow{UserID: p.UserID, DeltaCents: creditCents, Kind: domain.LedgerKindBankTransfer, BalanceAfter: balanceAfter, RefID: refID, RefType: refType, CreatorID: reviewerID})
 	})
 	if err != nil {
 		return nil, err

@@ -97,19 +97,20 @@ const (
 // StorageKey is an opaque reference to the file inside the configured FileStore;
 // raw file bytes are never stored in the database.
 type BankTransferProof struct {
-	ID          int64
-	UserID      int
-	AmountCents int
-	Currency    string
-	StorageKey  string
-	ContentType string
-	FileSize    int
-	Status      BankTransferStatus
-	ReviewedBy  *int
-	Notes       string
-	ApprovedAt  *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                  int64
+	UserID              int
+	AmountCents         int
+	Currency            string
+	StorageKey          string
+	ContentType         string
+	FileSize            int
+	Status              BankTransferStatus
+	ReviewedBy          *int
+	Notes               string
+	ApprovedAmountCents *int
+	ApprovedAt          *time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // ── Withdrawal requests ───────────────────────────────────────────────────────
