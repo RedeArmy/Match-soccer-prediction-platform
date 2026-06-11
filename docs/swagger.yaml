@@ -132,6 +132,8 @@ definitions:
     properties:
       amount_cents:
         type: integer
+      approved_amount_cents:
+        type: integer
       approved_at:
         type: string
       content_type:
@@ -1208,6 +1210,8 @@ definitions:
     type: object
   internal_api_handler.reviewBankTransferRequest:
     properties:
+      approved_amount_cents:
+        type: integer
       notes:
         type: string
     type: object
@@ -1520,6 +1524,32 @@ paths:
       summary: List audit log by entity
       tags:
       - admin-audit-log
+  /api/v1/admin/bank-transfers:
+    get:
+      description: Returns all bank transfer proofs across all statuses for admin
+        overview. Requires admin role.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.BankTransferResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all bank transfers
+      tags:
+      - admin-payments
   /api/v1/admin/bank-transfers/{id}/approve:
     post:
       consumes:
@@ -1532,7 +1562,7 @@ paths:
         name: id
         required: true
         type: integer
-      - description: Optional notes
+      - description: Optional notes and amount override
         in: body
         name: body
         schema:

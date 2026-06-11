@@ -217,6 +217,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/bank-transfers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all bank transfer proofs across all statuses for admin overview. Requires admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-payments"
+                ],
+                "summary": "List all bank transfers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.BankTransferResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/bank-transfers/pending": {
             "get": {
                 "security": [
@@ -284,7 +324,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Optional notes",
+                        "description": "Optional notes and amount override",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -6570,6 +6610,9 @@ const docTemplate = `{
                 "amount_cents": {
                     "type": "integer"
                 },
+                "approved_amount_cents": {
+                    "type": "integer"
+                },
                 "approved_at": {
                     "type": "string"
                 },
@@ -8181,6 +8224,9 @@ const docTemplate = `{
         "internal_api_handler.reviewBankTransferRequest": {
             "type": "object",
             "properties": {
+                "approved_amount_cents": {
+                    "type": "integer"
+                },
                 "notes": {
                     "type": "string"
                 }
