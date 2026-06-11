@@ -391,3 +391,241 @@ describe('SSE stream proxy – upstream responds', () => {
     expect(res.headers.get('content-type')).toContain('text/event-stream')
   })
 })
+
+// ── live/today/route ──────────────────────────────────────────────────────────
+
+describe('GET /api/live/today – no API key', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    delete process.env.FOOTBALL_API_KEY
+  })
+
+  it('returns { fixtures: [] } gracefully when key is absent', async () => {
+    const { GET } = await import('@/app/api/live/today/route')
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.fixtures).toEqual([])
+  })
+})
+
+describe('GET /api/live/today – upstream OK', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    process.env.FOOTBALL_API_KEY = 'test_key_live_today'
+  })
+
+  it('maps api-football response to TodayFixture array', async () => {
+    const afPayload = {
+      results: 1,
+      errors:  [],
+      response: [
+        {
+          fixture: { id: 42, date: '2026-06-10T20:00:00Z', status: { short: '1H', elapsed: 30 }, venue: { name: 'Estadio X', city: null } },
+          league:  { round: 'Group Stage - 1' },
+          teams:   { home: { id: 1, name: 'Brazil', logo: 'https://logo/br.png' }, away: { id: 2, name: 'Germany', logo: 'https://logo/de.png' } },
+          goals:   { home: 1, away: 0 },
+        },
+      ],
+    }
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(afPayload), { status: 200 }))
+    const { GET } = await import('@/app/api/live/today/route')
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.fixtures).toHaveLength(1)
+    expect(body.fixtures[0].id).toBe(42)
+    expect(body.fixtures[0].homeTeam).toBe('Brazil')
+    expect(body.fixtures[0].status).toBe('1H')
+    expect(body.fixtures[0].elapsed).toBe(30)
+    expect(body.fixtures[0].homeScore).toBe(1)
+    expect(body.fixtures[0].venue).toBe('Estadio X')
+  })
+})
+
+describe('GET /api/live/today – upstream fetch throws', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    process.env.FOOTBALL_API_KEY = 'test_key_live_today'
+  })
+
+  it('returns { fixtures: [] } on network error', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'))
+    const { GET } = await import('@/app/api/live/today/route')
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.fixtures).toEqual([])
+  })
+})
+
+describe('GET /api/live/today – upstream non-OK', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    process.env.FOOTBALL_API_KEY = 'test_key_live_today'
+  })
+
+  it('returns { fixtures: [] } on upstream 429', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('', { status: 429 }))
+    const { GET } = await import('@/app/api/live/today/route')
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.fixtures).toEqual([])
+  })
+})
+
+describe('GET /api/live/today – empty response array', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    process.env.FOOTBALL_API_KEY = 'test_key_live_today'
+  })
+
+  it('returns { fixtures: [] } when no matches scheduled today', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: 0, errors: [], response: [] }), { status: 200 }),
+    )
+    const { GET } = await import('@/app/api/live/today/route')
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.fixtures).toEqual([])
+  })
+})
+
+// ── live/fixture/[id]/route ───────────────────────────────────────────────────
+
+type FixtureContext = { params: Promise<{ id: string }> }
+function makeFixtureCtx(id: string): FixtureContext {
+  return { params: Promise.resolve({ id }) }
+}
+
+describe('GET /api/live/fixture/[id] – no API key', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    delete process.env.FOOTBALL_API_KEY
+  })
+
+  it('returns 503 when FOOTBALL_API_KEY is absent', async () => {
+    const { GET } = await import('@/app/api/live/fixture/[id]/route')
+    const res = await GET(makeReq('http://localhost/api/live/fixture/42'), makeFixtureCtx('42'))
+    expect(res.status).toBe(503)
+  })
+})
+
+describe('GET /api/live/fixture/[id] – invalid id', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    process.env.FOOTBALL_API_KEY = 'test_key_fixture'
+  })
+
+  it('returns 400 for non-numeric id', async () => {
+    const { GET } = await import('@/app/api/live/fixture/[id]/route')
+    const res = await GET(makeReq('http://localhost/api/live/fixture/abc'), makeFixtureCtx('abc'))
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 for zero id', async () => {
+    const { GET } = await import('@/app/api/live/fixture/[id]/route')
+    const res = await GET(makeReq('http://localhost/api/live/fixture/0'), makeFixtureCtx('0'))
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('GET /api/live/fixture/[id] – upstream OK', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    process.env.FOOTBALL_API_KEY = 'test_key_fixture'
+  })
+
+  it('returns mapped FixtureDetail on success', async () => {
+    const afPayload = {
+      response: [
+        {
+          fixture: { id: 42, date: '2026-06-10T20:00:00Z', status: { short: '1H', elapsed: 35 }, venue: { name: 'AT&T Stadium', city: 'Arlington' } },
+          league:  { round: 'Group Stage - 1' },
+          teams:   {
+            home: { name: 'Brazil',  logo: 'https://logo/br.png' },
+            away: { name: 'Germany', logo: 'https://logo/de.png' },
+          },
+          goals: { home: 1, away: 0 },
+          score: { halftime: { home: null, away: null } },
+          lineups: [
+            {
+              team: { name: 'Brazil' },
+              formation: '4-3-3',
+              startXI: [{ player: { id: 1, name: 'Alisson', number: 1, pos: 'G' } }],
+              substitutes: [],
+            },
+          ],
+          events: [
+            {
+              time:   { elapsed: 22, extra: null },
+              team:   { name: 'Brazil' },
+              player: { name: 'Vinicius Jr.' },
+              assist: { name: 'Rodrygo' },
+              type:   'Goal',
+              detail: 'Normal Goal',
+            },
+          ],
+        },
+      ],
+    }
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(afPayload), { status: 200 }))
+    const { GET } = await import('@/app/api/live/fixture/[id]/route')
+    const res = await GET(makeReq('http://localhost/api/live/fixture/42'), makeFixtureCtx('42'))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.fixture.id).toBe(42)
+    expect(body.fixture.homeTeam).toBe('Brazil')
+    expect(body.fixture.lineups).toHaveLength(1)
+    expect(body.fixture.lineups[0].formation).toBe('4-3-3')
+    expect(body.fixture.events).toHaveLength(1)
+    expect(body.fixture.events[0].player).toBe('Vinicius Jr.')
+    expect(body.fixture.events[0].assist).toBe('Rodrygo')
+  })
+})
+
+describe('GET /api/live/fixture/[id] – upstream fetch throws', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    process.env.FOOTBALL_API_KEY = 'test_key_fixture'
+  })
+
+  it('returns 502 on network error', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'))
+    const { GET } = await import('@/app/api/live/fixture/[id]/route')
+    const res = await GET(makeReq('http://localhost/api/live/fixture/99'), makeFixtureCtx('99'))
+    expect(res.status).toBe(502)
+  })
+})
+
+describe('GET /api/live/fixture/[id] – upstream non-OK', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    process.env.FOOTBALL_API_KEY = 'test_key_fixture'
+  })
+
+  it('proxies upstream status code on error', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('', { status: 503 }))
+    const { GET } = await import('@/app/api/live/fixture/[id]/route')
+    const res = await GET(makeReq('http://localhost/api/live/fixture/5'), makeFixtureCtx('5'))
+    expect(res.status).toBe(503)
+  })
+})
+
+describe('GET /api/live/fixture/[id] – empty response array', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    process.env.FOOTBALL_API_KEY = 'test_key_fixture'
+  })
+
+  it('returns 404 when api-football returns no items', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ response: [] }), { status: 200 }),
+    )
+    const { GET } = await import('@/app/api/live/fixture/[id]/route')
+    const res = await GET(makeReq('http://localhost/api/live/fixture/1'), makeFixtureCtx('1'))
+    expect(res.status).toBe(404)
+  })
+})

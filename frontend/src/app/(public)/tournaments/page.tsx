@@ -1,6 +1,7 @@
 'use client'
 
-import { FeaturedPoolsSection } from '@/components/groups/FeaturedPoolsSection'
+import { GroupCodeLookup } from '@/components/public/GroupCodeLookup'
+import { LiveMatchFeed } from '@/components/public/LiveMatchFeed'
 import { useI18n } from '@/lib/i18n'
 
 export default function TournamentsPage() {
@@ -8,8 +9,9 @@ export default function TournamentsPage() {
 
   return (
     <div className="px-4 py-8">
-      <div className="mx-auto max-w-7xl">
-        <section className="panel mb-8 overflow-hidden">
+      <div className="mx-auto max-w-7xl space-y-8">
+        {/* Hero header */}
+        <section className="panel overflow-hidden">
           <div className="wc26-stripe" />
           <div className="p-5">
             <p className="text-xs uppercase text-gold-300">{t('common.event')}</p>
@@ -18,7 +20,11 @@ export default function TournamentsPage() {
           </div>
         </section>
 
-        <FeaturedPoolsSection />
+        {/* Group code lookup above live feed; side-by-side on large screens */}
+        <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+          <GroupCodeLookup />
+          <LiveMatchFeed />
+        </div>
       </div>
     </div>
   )

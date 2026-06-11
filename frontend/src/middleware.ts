@@ -15,6 +15,10 @@ const isPublicRoute = createRouteMatcher([
   // before the dev-browser cookie syncs; letting the BFF handle auth avoids
   // that race and keeps authentication logic in one place (the backend).
   "/api/v1/(.*)",
+  // Public group leaderboard preview (no auth required — backend enforces limits).
+  "/api/public/(.*)",
+  // Live match feed proxied to api-football.com (no user session needed).
+  "/api/live/(.*)",
   // Clerk webhook relay — authenticated by Svix HMAC, not by session
   "/webhooks/(.*)",
 ]);
