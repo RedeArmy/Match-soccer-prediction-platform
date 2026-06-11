@@ -176,6 +176,48 @@ export function AdminPagination({ page, pageCount, rangeStart, rangeEnd, total, 
   )
 }
 
+// ── AdminTabBar ───────────────────────────────────────────────────────────────
+
+interface AdminTabBarProps<TKey extends string> {
+  readonly tabs: ReadonlyArray<{ readonly key: TKey; readonly label: string }>
+  readonly activeTab: TKey
+  readonly counts: Readonly<Record<string, number>>
+  readonly onTabChange: (key: TKey) => void
+  readonly activeButtonClass: string
+  readonly activeBadgeClass: string
+}
+
+export function AdminTabBar<TKey extends string>({
+  tabs, activeTab, counts, onTabChange, activeButtonClass, activeBadgeClass,
+}: AdminTabBarProps<TKey>) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tabs.map(t => {
+        const count = counts[t.key] ?? 0
+        const isActive = activeTab === t.key
+        return (
+          <button
+            key={t.key}
+            onClick={() => onTabChange(t.key)}
+            className={cn(
+              'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isActive ? activeButtonClass : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white',
+            )}
+          >
+            {t.label}
+            <span className={cn(
+              'text-xs px-1.5 py-0.5 rounded-full tabular-nums',
+              isActive ? activeBadgeClass : 'bg-white/10 text-white/40',
+            )}>
+              {count}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── AdminContentState ─────────────────────────────────────────────────────────
 
 interface AdminContentStateProps {

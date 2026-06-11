@@ -9,6 +9,7 @@ import {
   InfoRow,
   AdminPagination,
   AdminContentState,
+  AdminTabBar,
 } from '@/components/admin/shared'
 
 // ── AdminPageHeader ───────────────────────────────────────────────────────────
@@ -186,6 +187,22 @@ describe('AdminPagination', () => {
     )
     expect(screen.getAllByText('…').length).toBeGreaterThan(0)
   })
+
+  it('calls onPageChange with page - 1 when the prev button is clicked', () => {
+    const handler = vi.fn()
+    render(<AdminPagination {...base} page={2} onPageChange={handler} />)
+    const buttons = screen.getAllByRole('button')
+    fireEvent.click(buttons[0])
+    expect(handler).toHaveBeenCalledWith(1)
+  })
+
+  it('calls onPageChange with page + 1 when the next button is clicked', () => {
+    const handler = vi.fn()
+    render(<AdminPagination {...base} page={1} onPageChange={handler} />)
+    const buttons = screen.getAllByRole('button')
+    fireEvent.click(buttons[buttons.length - 1])
+    expect(handler).toHaveBeenCalledWith(2)
+  })
 })
 
 // ── AdminContentState ─────────────────────────────────────────────────────────
@@ -238,5 +255,95 @@ describe('AdminContentState', () => {
       </AdminContentState>,
     )
     expect(screen.getByText('table data')).toBeInTheDocument()
+  })
+})
+
+// ── AdminTabBar ───────────────────────────────────────────────────────────────
+
+describe('AdminTabBar', () => {
+  const TABS = [
+    { key: 'all', label: 'Todos' },
+    { key: 'pending', label: 'Pendientes' },
+    { key: 'approved', label: 'Aprobados' },
+  ]
+  const counts = { all: 10, pending: 4, approved: 6 }
+
+  it('renders a button for every tab', () => {
+    render(
+      <AdminTabBar
+        tabs={TABS} activeTab="all" counts={counts} onTabChange={() => {}}
+        activeButtonClass="bg-blue-500/20 text-blue-400"
+        activeBadgeClass="bg-blue-500/30 text-blue-300"
+      />,
+    )
+    expect(screen.getByRole('button', { name: /Todos/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Pendientes/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Aprobados/ })).toBeInTheDocument()
+  })
+
+  it('displays the correct count for each tab', () => {
+    render(
+      <AdminTabBar
+        tabs={TABS} activeTab="all" counts={counts} onTabChange={() => {}}
+        activeButtonClass="bg-blue-500/20 text-blue-400"
+        activeBadgeClass="bg-blue-500/30 text-blue-300"
+      />,
+    )
+    expect(screen.getByText('10')).toBeInTheDocument()
+    expect(screen.getByText('4')).toBeInTheDocument()
+    expect(screen.getByText('6')).toBeInTheDocument()
+  })
+
+  it('applies activeButtonClass to the active tab button', () => {
+    render(
+      <AdminTabBar
+        tabs={TABS} activeTab="pending" counts={counts} onTabChange={() => {}}
+        activeButtonClass="test-active-btn"
+        activeBadgeClass="test-active-badge"
+      />,
+    )
+    expect(screen.getByRole('button', { name: /Pendientes/ }).className).toContain('test-active-btn')
+    expect(screen.getByRole('button', { name: /Todos/ }).className).not.toContain('test-active-btn')
+  })
+
+  it('applies activeBadgeClass to the badge of the active tab', () => {
+    const { container } = render(
+      <AdminTabBar
+        tabs={TABS} activeTab="approved" counts={counts} onTabChange={() => {}}
+        activeButtonClass="test-active-btn"
+        activeBadgeClass="test-active-badge"
+      />,
+    )
+    const badges = container.querySelectorAll('span')
+    const activeBadge = badges[2]
+    expect(activeBadge.className).toContain('test-active-badge')
+    expect(badges[0].className).not.toContain('test-active-badge')
+  })
+
+  it('calls onTabChange with the tab key when a button is clicked', () => {
+    const handler = vi.fn()
+    render(
+      <AdminTabBar
+        tabs={TABS} activeTab="all" counts={counts} onTabChange={handler}
+        activeButtonClass="bg-blue-500/20 text-blue-400"
+        activeBadgeClass="bg-blue-500/30 text-blue-300"
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Pendientes/ }))
+    expect(handler).toHaveBeenCalledWith('pending')
+  })
+
+  it('falls back to 0 when a tab key is absent from counts', () => {
+    render(
+      <AdminTabBar
+        tabs={[{ key: 'unknown', label: 'Desconocido' }]}
+        activeTab="unknown"
+        counts={{}}
+        onTabChange={() => {}}
+        activeButtonClass="x"
+        activeBadgeClass="y"
+      />,
+    )
+    expect(screen.getByText('0')).toBeInTheDocument()
   })
 })

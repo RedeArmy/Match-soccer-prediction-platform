@@ -9,7 +9,7 @@ import type { MatchResponse, MatchStatus } from '@/lib/api-types'
 import { cn, formatDateTime, formatRelative } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import {
-  AdminPageHeader, AdminModalOverlay, AdminContentState,
+  AdminPageHeader, AdminModalOverlay, AdminContentState, AdminTabBar,
   ModalHeader, ModalCancelButton, ModalErrorLine,
 } from '@/components/admin/shared'
 
@@ -346,32 +346,14 @@ export default function AdminMatchesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2">
-        {TABS.map(t => {
-          const count = counts[t.key] ?? 0
-          const isActive = tab === t.key
-          return (
-            <button
-              key={t.key}
-              onClick={() => changeTab(t.key)}
-              className={cn(
-                'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/40'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white',
-              )}
-            >
-              {t.label}
-              <span className={cn(
-                'text-xs px-1.5 py-0.5 rounded-full tabular-nums',
-                isActive ? 'bg-blue-500/30 text-blue-300' : 'bg-white/10 text-white/40',
-              )}>
-                {count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+      <AdminTabBar
+        tabs={TABS}
+        activeTab={tab}
+        counts={counts}
+        onTabChange={changeTab}
+        activeButtonClass="bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/40"
+        activeBadgeClass="bg-blue-500/30 text-blue-300"
+      />
 
       {/* Content */}
       <AdminContentState
