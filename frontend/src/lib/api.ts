@@ -262,6 +262,36 @@ class APIClient {
     return this.request('/api/v1/bank-account-types', {}, token)
   }
 
+  // ── Admin: matches ───────────────────────────────────────────────────────
+
+  adminStartMatch(token: string, id: number): Promise<MatchResponse> {
+    return this.request(`/api/v1/matches/${id}/start`, { method: 'POST' }, token)
+  }
+
+  adminUpdateMatchResult(token: string, id: number, data: { home_score: number; away_score: number; win_method?: string }): Promise<MatchResponse> {
+    return this.request(`/api/v1/matches/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token)
+  }
+
+  // ── Admin: bank transfers ─────────────────────────────────────────────────
+
+  adminListBankTransfers(token: string): Promise<BankTransferResponse[]> {
+    return this.request('/api/v1/admin/bank-transfers', {}, token)
+  }
+
+  adminApproveBankTransfer(token: string, id: number, data: { notes?: string; approved_amount_cents?: number }): Promise<BankTransferResponse> {
+    return this.request(`/api/v1/admin/bank-transfers/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, token)
+  }
+
+  adminRejectBankTransfer(token: string, id: number, notes: string): Promise<BankTransferResponse> {
+    return this.request(`/api/v1/admin/bank-transfers/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    }, token)
+  }
+
   // ── Admin: withdrawals ────────────────────────────────────────────────────
 
   adminListWithdrawals(token: string, status?: string): Promise<WithdrawalResponse[]> {

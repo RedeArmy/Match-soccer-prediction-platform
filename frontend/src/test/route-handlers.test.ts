@@ -409,10 +409,14 @@ describe('GET /api/live/today – no API key', () => {
   })
 })
 
+const clockOkResponse = () =>
+  new Response(JSON.stringify({ now: '2026-06-11T12:00:00Z' }), { status: 200 })
+
 describe('GET /api/live/today – upstream OK', () => {
   beforeEach(() => {
     mockFetch.mockReset()
     process.env.FOOTBALL_API_KEY = 'test_key_live_today'
+    mockFetch.mockResolvedValueOnce(clockOkResponse())
   })
 
   it('maps api-football response to TodayFixture array', async () => {
@@ -447,6 +451,7 @@ describe('GET /api/live/today – upstream fetch throws', () => {
   beforeEach(() => {
     mockFetch.mockReset()
     process.env.FOOTBALL_API_KEY = 'test_key_live_today'
+    mockFetch.mockResolvedValueOnce(clockOkResponse())
   })
 
   it('returns { fixtures: [] } on network error', async () => {
@@ -463,6 +468,7 @@ describe('GET /api/live/today – upstream non-OK', () => {
   beforeEach(() => {
     mockFetch.mockReset()
     process.env.FOOTBALL_API_KEY = 'test_key_live_today'
+    mockFetch.mockResolvedValueOnce(clockOkResponse())
   })
 
   it('returns { fixtures: [] } on upstream 429', async () => {
@@ -479,6 +485,7 @@ describe('GET /api/live/today – empty response array', () => {
   beforeEach(() => {
     mockFetch.mockReset()
     process.env.FOOTBALL_API_KEY = 'test_key_live_today'
+    mockFetch.mockResolvedValueOnce(clockOkResponse())
   })
 
   it('returns { fixtures: [] } when no matches scheduled today', async () => {

@@ -337,7 +337,10 @@ func (s *stubBankTransferSvc) ListByUser(_ context.Context, _ int) ([]*domain.Ba
 func (s *stubBankTransferSvc) ListPending(_ context.Context) ([]*domain.BankTransferProof, error) {
 	return s.proofs, s.err
 }
-func (s *stubBankTransferSvc) ApproveTransfer(_ context.Context, _, _ int, _ string) (*domain.BankTransferProof, error) {
+func (s *stubBankTransferSvc) ListAll(_ context.Context) ([]*domain.BankTransferProof, error) {
+	return s.proofs, s.err
+}
+func (s *stubBankTransferSvc) ApproveTransfer(_ context.Context, _, _ int, _ *int, _ string) (*domain.BankTransferProof, error) {
 	return s.proof, s.err
 }
 func (s *stubBankTransferSvc) RejectTransfer(_ context.Context, _, _ int, _ string) (*domain.BankTransferProof, error) {
