@@ -381,18 +381,19 @@ export default function AdminBankTransfersPage() {
       </div>
 
       {/* Content */}
-      {isLoading ? (
-        <LoadingState />
-      ) : error ? (
+      {isLoading && <LoadingState />}
+      {!isLoading && !!error && (
         <div className="text-center py-12 text-red-400 text-sm">
           Error al cargar las transferencias.
         </div>
-      ) : filtered.length === 0 ? (
+      )}
+      {!isLoading && !error && filtered.length === 0 && (
         <div className="text-center py-16 text-white/40">
           <p className="text-lg font-medium">Sin transferencias</p>
           <p className="text-sm mt-1">{emptyMsg}</p>
         </div>
-      ) : (
+      )}
+      {!isLoading && !error && filtered.length > 0 && (
         <>
           <div className="overflow-x-auto rounded-xl border border-white/10">
             <table className="w-full text-sm">

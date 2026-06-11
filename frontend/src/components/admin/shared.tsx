@@ -6,10 +6,10 @@ import { cn } from '@/lib/utils'
 // ── AdminPageHeader ───────────────────────────────────────────────────────────
 
 interface AdminPageHeaderProps {
-  title: string
-  subtitle: string
-  onRefresh: () => void
-  isLoading: boolean
+  readonly title: string
+  readonly subtitle: string
+  readonly onRefresh: () => void
+  readonly isLoading: boolean
 }
 
 export function AdminPageHeader({ title, subtitle, onRefresh, isLoading }: AdminPageHeaderProps) {
@@ -34,9 +34,9 @@ export function AdminPageHeader({ title, subtitle, onRefresh, isLoading }: Admin
 // ── AdminModalOverlay ─────────────────────────────────────────────────────────
 
 interface AdminModalOverlayProps {
-  onClose: () => void
-  children: React.ReactNode
-  scrollable?: boolean
+  readonly onClose: () => void
+  readonly children: React.ReactNode
+  readonly scrollable?: boolean
 }
 
 export function AdminModalOverlay({ onClose, children, scrollable }: AdminModalOverlayProps) {
@@ -55,7 +55,7 @@ export function AdminModalOverlay({ onClose, children, scrollable }: AdminModalO
 
 // ── ModalHeader ───────────────────────────────────────────────────────────────
 
-export function ModalHeader({ title, onClose }: { title: string; onClose: () => void }) {
+export function ModalHeader({ title, onClose }: Readonly<{ title: string; onClose: () => void }>) {
   return (
     <div className="flex items-start justify-between gap-4">
       <h2 className="text-lg font-semibold text-white">{title}</h2>
@@ -68,7 +68,7 @@ export function ModalHeader({ title, onClose }: { title: string; onClose: () => 
 
 // ── ModalErrorLine ────────────────────────────────────────────────────────────
 
-export function ModalErrorLine({ error }: { error: string }) {
+export function ModalErrorLine({ error }: Readonly<{ error: string }>) {
   if (!error) return null
   return (
     <p className="text-red-400 text-sm flex items-center gap-1.5">
@@ -80,7 +80,7 @@ export function ModalErrorLine({ error }: { error: string }) {
 
 // ── ModalCancelButton ─────────────────────────────────────────────────────────
 
-export function ModalCancelButton({ onClose, disabled }: { onClose: () => void; disabled: boolean }) {
+export function ModalCancelButton({ onClose, disabled }: Readonly<{ onClose: () => void; disabled: boolean }>) {
   return (
     <button
       onClick={onClose}
@@ -94,7 +94,7 @@ export function ModalCancelButton({ onClose, disabled }: { onClose: () => void; 
 
 // ── InfoRow ───────────────────────────────────────────────────────────────────
 
-export function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+export function InfoRow({ label, value }: Readonly<{ label: string; value: React.ReactNode }>) {
   return (
     <div className="flex justify-between items-start gap-4 py-1.5 border-b border-white/5 last:border-0">
       <span className="text-white/50 text-sm shrink-0">{label}</span>
@@ -120,13 +120,13 @@ function getPageNumbers(current: number, total: number): (number | '...')[] {
 }
 
 interface AdminPaginationProps {
-  page: number
-  pageCount: number
-  rangeStart: number
-  rangeEnd: number
-  total: number
-  itemLabel: string
-  onPageChange: (page: number) => void
+  readonly page: number
+  readonly pageCount: number
+  readonly rangeStart: number
+  readonly rangeEnd: number
+  readonly total: number
+  readonly itemLabel: string
+  readonly onPageChange: (page: number) => void
 }
 
 export function AdminPagination({ page, pageCount, rangeStart, rangeEnd, total, itemLabel, onPageChange }: AdminPaginationProps) {

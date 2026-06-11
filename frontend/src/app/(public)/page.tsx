@@ -343,7 +343,7 @@ export default function LandingPage() {
                       <span className="text-sm text-text-secondary">{label}</span>
                     </div>
                     <span className="text-xs tabular-nums text-text-muted">
-                      {matches} {matches !== 1 ? t('landing.matchPlural') : t('landing.matchSingular')}
+                      {matches} {matches === 1 ? t('landing.matchSingular') : t('landing.matchPlural')}
                     </span>
                   </div>
                 ))}
