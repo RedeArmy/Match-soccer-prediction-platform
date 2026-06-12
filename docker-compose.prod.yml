@@ -59,11 +59,18 @@ services:
       WCQ_CLERK_JWKSURL:          ${CLERK_JWKS_URL}
       WCQ_CLERK_WEBHOOKSECRET:    ${CLERK_WEBHOOK_SECRET}
       # ── Payments ─────────────────────────────────────────────────────────────
+      WCQ_PAYMENT_RECURRENTEAPIKEY:        ${RECURRENTE_API_KEY}
       WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET: ${RECURRENTE_WEBHOOK_SECRET}
       WCQ_PAYMENT_PAYPALWEBHOOKID:         ${PAYPAL_WEBHOOK_ID}
       WCQ_PAYMENT_PAYOUTENCRYPTIONKEY:     ${PAYOUT_ENCRYPTION_KEY}
+      # ── Email ────────────────────────────────────────────────────────────────
+      WCQ_EMAIL_UNSUBSCRIBESECRET: ${EMAIL_UNSUBSCRIBE_SECRET}
+      # ── Storage ──────────────────────────────────────────────────────────────
+      WCQ_STORAGE_DRIVER: ${STORAGE_DRIVER}
       # ── Observability ────────────────────────────────────────────────────────
       WCQ_METRICS_ENABLED:             "true"
+      WCQ_TRACING_ENABLED:             "true"
+      WCQ_TRACING_OTLPENDPOINT:        http://tempo:4318
       WCQ_OBSERVABILITY_TEMPOURL:      http://tempo:4318
       WCQ_OBSERVABILITY_PROMETHEUSURL: http://prometheus:9090
       WCQ_METRICSBINDADDR:             :9091
@@ -102,6 +109,8 @@ services:
       WCQ_ENVIRONMENT:            production
       WCQ_EVENTBUS_DRIVER:        redis
       WCQ_METRICS_ENABLED:        "true"
+      WCQ_TRACING_ENABLED:        "true"
+      WCQ_TRACING_OTLPENDPOINT:   http://tempo:4318
       WCQ_OBSERVABILITY_TEMPOURL: http://tempo:4318
       WCQ_N8N_BASEURL:            http://n8n:5678
       WCQ_N8N_WEBHOOKURL:         http://n8n:5678/webhook
