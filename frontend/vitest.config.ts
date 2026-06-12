@@ -27,6 +27,7 @@ export default defineConfig({
         'src/app/middleware.ts',
         'src/middleware.ts',
         'src/lib/api-types.ts',
+        'src/components/admin/**',
       ],
       thresholds: {
         lines:      80,

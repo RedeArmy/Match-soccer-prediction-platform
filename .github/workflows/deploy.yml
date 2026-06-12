@@ -389,11 +389,11 @@ jobs:
       # Obtain the value with: ssh-keyscan <server-ip>
       - name: Configure SSH
         env:
-          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_KEY:    ${{ secrets.HETZNER_SSH_KEY }}
           KNOWN_HOST: ${{ secrets.HETZNER_SSH_KNOWN_HOST }}
         run: |
           install -m 600 -D /dev/null ~/.ssh/id_hetzner
-          printf '%s' "$SSH_KEY" > ~/.ssh/id_hetzner
+          printf '%s' "$SSH_KEY" | base64 -d > ~/.ssh/id_hetzner
           printf '%s\n' "$KNOWN_HOST" >> ~/.ssh/known_hosts
 
       # Copy the deploy script to the server so it is always the latest version.
@@ -412,10 +412,23 @@ jobs:
         run: |
           SSH="ssh -i ~/.ssh/id_hetzner -o StrictHostKeyChecking=yes"
 
-          # Keep deploy script in sync with the repo on every deploy.
+          # Ensure the directory structure exists on the server.
+          $SSH "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "mkdir -p /opt/wcq/server"
+
+          # Sync all server-side config files on every deploy so the server
+          # always runs the version of Compose / Caddy config from the same
+          # commit as the images being deployed.
           scp -i ~/.ssh/id_hetzner \
             server/deploy.sh \
-            "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/server/deploy.sh"
+            docker-compose.prod.yml \
+            docker-compose.observability.yml \
+            Caddyfile \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/"
+
+          # deploy.sh must remain executable after the copy.
+          $SSH "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "mv /opt/wcq/deploy.sh /opt/wcq/server/deploy.sh && chmod +x /opt/wcq/server/deploy.sh"
 
           # Login to GHCR on the server using the ephemeral GITHUB_TOKEN
           # (valid for the duration of this workflow run).
