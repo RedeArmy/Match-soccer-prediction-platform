@@ -1,5 +1,5 @@
 {
-  "name": "KYC Submission \u2014 Admin Notify",
+  "name": "KYC Submission — Admin Notify",
   "nodes": [
     {
       "parameters": {
@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    subject: `[KYC] New submission requires review \u2014 User ${p.user_id}`,\n    body: `A user has submitted a KYC profile for review.\\n\\nUser ID: ${p.user_id}\\nProfile ID: ${p.profile_id}\\nSubmitted at: ${p.submitted_at}\\nTrace ID: ${p.trace_id}\\n\\nLog in to the admin panel to review: ${process.env.ADMIN_BASE_URL}/admin/kyc/queue`\n  }\n}];"
+        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    subject: `[KYC] New submission requires review — User ${p.user_id}`,\n    body: `A user has submitted a KYC profile for review.\\n\\nUser ID: ${p.user_id}\\nProfile ID: ${p.profile_id}\\nSubmitted at: ${p.submitted_at}\\nTrace ID: ${p.trace_id}\\n\\nLog in to the admin panel to review: ${process.env.ADMIN_BASE_URL}/admin/kyc/queue`\n  }\n}];"
       },
       "id": "kyc-sub-format",
       "name": "Format Email",
@@ -72,7 +72,7 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },

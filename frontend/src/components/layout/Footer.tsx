@@ -22,9 +22,22 @@ export function Footer() {
             <Link href="/sign-up" className="transition-colors hover:text-text-secondary">{t('common.signUp')}</Link>
           </nav>
 
-          <p className="max-w-xs text-center text-xs text-text-muted md:text-right">
-            {t('common.responsible')}
-          </p>
+          <div className="flex flex-col items-center gap-1 md:items-end">
+            <p className="max-w-xs text-center text-xs text-text-muted md:text-right">
+              {t('common.responsible')}
+            </p>
+            <p className="text-xs text-text-muted">
+              {t('common.createdBy')}{' '}
+              <a
+                href="https://github.com/RedeArmy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-gold-400/70 transition-colors hover:text-gold-300"
+              >
+                @RedeArmy
+              </a>
+            </p>
+          </div>
         </div>
       </div>
     </footer>

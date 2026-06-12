@@ -125,16 +125,18 @@ export interface StadiumInfo {
 }
 
 export interface MatchResponse {
-  id:          number
-  home_team:   string
-  away_team:   string
-  home_score:  number | null
-  away_score:  number | null
-  status:      MatchStatus
-  kickoff_at:  string | null
-  stadium:     StadiumInfo | null
-  phase:       string | null
-  group_label: string | null
+  id:           number
+  home_team:    string
+  away_team:    string
+  home_score:   number | null
+  away_score:   number | null
+  win_method:   string | null
+  status:       MatchStatus
+  kickoff_at:   string | null
+  stadium:      StadiumInfo | null
+  phase:        string | null
+  group_label:  string | null
+  round_number: number | null
 }
 
 // ── Prediction ────────────────────────────────────────────────────────────────
@@ -323,14 +325,19 @@ export type BankTransferStatus = 'pending' | 'approved' | 'rejected'
 export type WithdrawalStatus   = 'pending' | 'approved' | 'rejected' | 'processed'
 
 export interface BankTransferResponse {
-  id:            number
-  amount_cents:  number
-  currency:      string
-  status:        BankTransferStatus
-  notes:         string | null
-  reviewed_by:   number | null
-  reviewed_at:   string | null
-  created_at:    string
+  id:                    number
+  user_id:               number
+  amount_cents:          number
+  currency:              string
+  content_type:          string
+  file_size:             number
+  status:                BankTransferStatus
+  reviewed_by:           number | null
+  notes:                 string | null
+  approved_amount_cents: number | null
+  approved_at:           string | null
+  created_at:            string
+  updated_at:            string
 }
 
 export interface PaymentIntentResponse {
@@ -347,13 +354,17 @@ export interface PayPalOrderResponse {
 
 export interface WithdrawalResponse {
   id:              number
+  user_id:         number
   amount_cents:    number
   currency:        string
   method:          string
+  payout_details:  Record<string, string> | null
   status:          WithdrawalStatus
-  payout_reference: string | null
-  notes:           string | null
+  reviewed_by:     number | null
+  notes:           string
+  processed_at:    string | null
   created_at:      string
+  updated_at:      string
 }
 
 export interface WithdrawalLimits {
@@ -459,11 +470,24 @@ export interface SSEStatsResponse {
 }
 
 export interface SystemParamResponse {
-  key:         string
-  value:       string
-  description: string
-  is_runtime:  boolean
-  updated_at:  string
+  key:           string
+  value:         string
+  default_value: string
+  type:          string
+  category:      string
+  description:   string
+  is_runtime:    boolean
+  updated_at:    string
+}
+
+export interface SystemParamHistoryResponse {
+  id:         number
+  key:        string
+  old_value:  string
+  new_value:  string
+  actor_id:   number
+  action:     string
+  changed_at: string
 }
 
 export interface ScoringRuleResponse {

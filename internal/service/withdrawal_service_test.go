@@ -36,6 +36,9 @@ func (r *withdrawalReqRepoStub) ListByUser(_ context.Context, _ int) ([]*domain.
 func (r *withdrawalReqRepoStub) ListPending(_ context.Context) ([]*domain.WithdrawalRequest, error) {
 	return r.reqs, r.err
 }
+func (r *withdrawalReqRepoStub) ListAll(_ context.Context, _ string) ([]*domain.WithdrawalRequest, error) {
+	return r.reqs, r.err
+}
 func (r *withdrawalReqRepoStub) ApproveAndDebit(_ context.Context, _ int, _ int, _ string) (*domain.WithdrawalRequest, error) {
 	return r.req, r.err
 }
@@ -229,6 +232,37 @@ func TestWithdrawalService_ListPending_ReturnsAll(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 pending request, got %d", len(got))
+	}
+}
+
+// ── ListAll ───────────────────────────────────────────────────────────────────
+
+func TestWithdrawalService_ListAll_ReturnsAll(t *testing.T) {
+	reqs := []*domain.WithdrawalRequest{
+		{ID: 1, Status: domain.WithdrawalPending},
+		{ID: 2, Status: domain.WithdrawalApproved},
+	}
+	svc := newWithdrawalSvc(&withdrawalReqRepoStub{reqs: reqs}, nil)
+
+	got, err := svc.ListAll(context.Background(), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 requests, got %d", len(got))
+	}
+}
+
+func TestWithdrawalService_ListAll_WithStatusFilter(t *testing.T) {
+	reqs := []*domain.WithdrawalRequest{{ID: 3, Status: domain.WithdrawalApproved}}
+	svc := newWithdrawalSvc(&withdrawalReqRepoStub{reqs: reqs}, nil)
+
+	got, err := svc.ListAll(context.Background(), "approved")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected 1 request, got %d", len(got))
 	}
 }
 

@@ -99,7 +99,7 @@ func TestBankTransferProofRepository_ListPending_ReturnsOnlyPending(t *testing.T
 
 	repo := repository.NewPostgresBankTransferProofRepository(testDB)
 	// Approve one proof so it's no longer pending.
-	if _, err := repo.ApproveAndCredit(context.Background(), int(p.ID), admin.ID, "ok"); err != nil {
+	if _, err := repo.ApproveAndCredit(context.Background(), int(p.ID), admin.ID, nil, "ok"); err != nil {
 		t.Fatalf("ApproveAndCredit: %v", err)
 	}
 
@@ -112,6 +112,27 @@ func TestBankTransferProofRepository_ListPending_ReturnsOnlyPending(t *testing.T
 	}
 }
 
+func TestBankTransferProofRepository_ListAll_ReturnsAllStatuses(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	seedBankTransferProof(t, u.ID, 1000) // pending
+	p := seedBankTransferProof(t, u.ID, 2000)
+
+	repo := repository.NewPostgresBankTransferProofRepository(testDB)
+	if _, err := repo.ApproveAndCredit(context.Background(), int(p.ID), admin.ID, nil, "ok"); err != nil {
+		t.Fatalf("ApproveAndCredit: %v", err)
+	}
+
+	all, err := repo.ListAll(context.Background())
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(all) != 2 {
+		t.Errorf("expected 2 proofs (one pending, one approved), got %d", len(all))
+	}
+}
+
 func TestBankTransferProofRepository_ApproveAndCredit_UpdatesStatusAndBalance(t *testing.T) {
 	cleanTables(t)
 	u := seedUser(t)
@@ -119,7 +140,7 @@ func TestBankTransferProofRepository_ApproveAndCredit_UpdatesStatusAndBalance(t 
 	proof := seedBankTransferProof(t, u.ID, 5000)
 	repo := repository.NewPostgresBankTransferProofRepository(testDB)
 
-	approved, err := repo.ApproveAndCredit(context.Background(), int(proof.ID), admin.ID, "valid receipt")
+	approved, err := repo.ApproveAndCredit(context.Background(), int(proof.ID), admin.ID, nil, "valid receipt")
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -143,7 +164,7 @@ func TestBankTransferProofRepository_ApproveAndCredit_NotFound(t *testing.T) {
 	admin := seedUser(t)
 	repo := repository.NewPostgresBankTransferProofRepository(testDB)
 
-	_, err := repo.ApproveAndCredit(context.Background(), 999999, admin.ID, "")
+	_, err := repo.ApproveAndCredit(context.Background(), 999999, admin.ID, nil, "")
 	if !isNotFound(err) {
 		t.Errorf("expected not-found, got %v", err)
 	}
@@ -156,11 +177,11 @@ func TestBankTransferProofRepository_ApproveAndCredit_AlreadyApproved_Idempotent
 	proof := seedBankTransferProof(t, u.ID, 1000)
 	repo := repository.NewPostgresBankTransferProofRepository(testDB)
 
-	if _, err := repo.ApproveAndCredit(context.Background(), int(proof.ID), admin.ID, "ok"); err != nil {
+	if _, err := repo.ApproveAndCredit(context.Background(), int(proof.ID), admin.ID, nil, "ok"); err != nil {
 		t.Fatalf("first approve: %v", err)
 	}
 	// Second approve should return existing (idempotent) or conflict — not an error panic.
-	result, err := repo.ApproveAndCredit(context.Background(), int(proof.ID), admin.ID, "ok")
+	result, err := repo.ApproveAndCredit(context.Background(), int(proof.ID), admin.ID, nil, "ok")
 	if err != nil && !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected idempotent result or conflict, got %v", err)
 	}

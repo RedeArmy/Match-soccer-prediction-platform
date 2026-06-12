@@ -1,19 +1,20 @@
 ﻿"use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PayPalScriptProvider, PayPalButtons, FUNDING } from "@paypal/react-paypal-js";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import {
   sniffMIME,
   isAllowedUploadType,
   formatGTQ,
   usdToGTQ,
 } from "@/lib/utils";
-import { ImagePlaceholder } from "@/components/shared/ImagePlaceholder";
 import { FormFeedback } from "@/components/shared/FormFeedback";
 import { FileUploadField } from "@/components/shared/FileUploadField";
 import { SubmitButton } from "@/components/shared/SubmitButton";
@@ -27,6 +28,7 @@ const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
 export default function DepositPage() {
   const { getToken } = useAuth();
   const { data: rate } = useExchangeRate();
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const [method, setMethod] = useState<Method>("recurrente");
   const [amountGTQ, setAmountGTQ] = useState("");
@@ -286,17 +288,22 @@ export default function DepositPage() {
         {/* Bank transfer */}
         {method === "bank" && (
           <>
-            <div className="bg-blue-900 rounded-xl p-4 space-y-2 text-sm">
-              <p className="font-medium text-text-primary">Datos bancarios</p>
-              <ImagePlaceholder
-                aspectRatio="4/3"
-                label="Bank account QR code"
-                dataSrc="/images/bank-qr.png"
-                className="max-w-[160px]"
-              />
-              <p className="text-text-muted text-xs mt-2">
-                Deposita al banco y adjunta el comprobante. La revisión toma
-                24-48 horas.
+            <div className="bg-blue-900/80 rounded-2xl border border-blue-700/50 p-3 space-y-3 text-sm">
+              <div className="overflow-hidden rounded-xl border border-blue-700/60 bg-blue-950">
+                <Image
+                  src="/images/bank-transfer-info.svg"
+                  alt={t("deposit.bankImageAlt")}
+                  width={960}
+                  height={640}
+                  className="w-full h-auto"
+                  priority={false}
+                />
+              </div>
+              <p className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-200">
+                {t("deposit.bankNoteGT")}
+              </p>
+              <p className="text-text-muted text-xs">
+                {t("deposit.bankHelp")}
               </p>
             </div>
 

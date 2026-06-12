@@ -38,7 +38,10 @@ func (r *bankTransferProofRepoStub) ListByUser(_ context.Context, _ int) ([]*dom
 func (r *bankTransferProofRepoStub) ListPending(_ context.Context) ([]*domain.BankTransferProof, error) {
 	return r.proofs, r.err
 }
-func (r *bankTransferProofRepoStub) ApproveAndCredit(_ context.Context, _ int, _ int, _ string) (*domain.BankTransferProof, error) {
+func (r *bankTransferProofRepoStub) ListAll(_ context.Context) ([]*domain.BankTransferProof, error) {
+	return r.proofs, r.err
+}
+func (r *bankTransferProofRepoStub) ApproveAndCredit(_ context.Context, _ int, _ int, _ *int, _ string) (*domain.BankTransferProof, error) {
 	if r.approveErr != nil {
 		return nil, r.approveErr
 	}
@@ -182,13 +185,40 @@ func TestBankTransferService_ListPending_ReturnsAll(t *testing.T) {
 	}
 }
 
+// ── ListAll ───────────────────────────────────────────────────────────────────
+
+func TestBankTransferService_ListAll_ReturnsAll(t *testing.T) {
+	proofs := []*domain.BankTransferProof{
+		{ID: 1, Status: domain.BankTransferPending},
+		{ID: 2, Status: domain.BankTransferApproved},
+	}
+	svc := newBankTransferSvc(&bankTransferProofRepoStub{proofs: proofs})
+
+	got, err := svc.ListAll(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 proofs, got %d", len(got))
+	}
+}
+
+func TestBankTransferService_ListAll_PropagatesRepoError(t *testing.T) {
+	svc := newBankTransferSvc(&bankTransferProofRepoStub{err: errors.New("db down")})
+
+	_, err := svc.ListAll(context.Background())
+	if err == nil {
+		t.Fatal("expected error from repo, got nil")
+	}
+}
+
 // ── ApproveTransfer ───────────────────────────────────────────────────────────
 
 func TestBankTransferService_ApproveTransfer_HappyPath(t *testing.T) {
 	approved := &domain.BankTransferProof{ID: 1, Status: domain.BankTransferApproved, UserID: 5, AmountCents: 5000}
 	svc := newBankTransferSvc(&bankTransferProofRepoStub{proof: approved})
 
-	got, err := svc.ApproveTransfer(context.Background(), 1, 99, "valid receipt")
+	got, err := svc.ApproveTransfer(context.Background(), 1, 99, nil, "valid receipt")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,7 +231,7 @@ func TestBankTransferService_ApproveTransfer_RepoErrorPropagates(t *testing.T) {
 	// GetByID (for the velocity check) fails.
 	svc := newBankTransferSvc(&bankTransferProofRepoStub{err: errors.New("not found")})
 
-	_, err := svc.ApproveTransfer(context.Background(), 999, 99, "")
+	_, err := svc.ApproveTransfer(context.Background(), 999, 99, nil, "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -211,7 +241,7 @@ func TestBankTransferService_ApproveTransfer_ProofNotFound_ReturnsNotFound(t *te
 	// GetByID returns (nil, nil) — proof does not exist.
 	svc := newBankTransferSvc(&bankTransferProofRepoStub{proof: nil})
 
-	_, err := svc.ApproveTransfer(context.Background(), 999, 99, "")
+	_, err := svc.ApproveTransfer(context.Background(), 999, 99, nil, "")
 	if err == nil {
 		t.Fatal("expected not-found error, got nil")
 	}
@@ -236,7 +266,7 @@ func TestBankTransferService_ApproveTransfer_VelocityExceeded_RejectsBeforeCredi
 
 	svc := newBankTransferSvcWithGate(countingRepo, velocityBlockGate{})
 
-	_, err := svc.ApproveTransfer(context.Background(), 5, 99, "")
+	_, err := svc.ApproveTransfer(context.Background(), 5, 99, nil, "")
 	if err == nil {
 		t.Fatal("expected velocity error, got nil")
 	}
@@ -256,7 +286,7 @@ func TestBankTransferService_ApproveTransfer_VelocityPasses_CreditsBalance(t *te
 	repo := &bankTransferProofRepoStub{proof: pending, approvedProof: approved}
 	svc := newBankTransferSvc(repo) // NoopKYCGate always passes
 
-	got, err := svc.ApproveTransfer(context.Background(), 5, 99, "OK")
+	got, err := svc.ApproveTransfer(context.Background(), 5, 99, nil, "OK")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -285,9 +315,12 @@ func (r *countingApproveRepo) ListByUser(ctx context.Context, userID int) ([]*do
 func (r *countingApproveRepo) ListPending(ctx context.Context) ([]*domain.BankTransferProof, error) {
 	return r.stub.ListPending(ctx)
 }
-func (r *countingApproveRepo) ApproveAndCredit(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error) {
+func (r *countingApproveRepo) ListAll(ctx context.Context) ([]*domain.BankTransferProof, error) {
+	return r.stub.ListAll(ctx)
+}
+func (r *countingApproveRepo) ApproveAndCredit(ctx context.Context, proofID, adminID int, overrideAmountCents *int, notes string) (*domain.BankTransferProof, error) {
 	*r.count++
-	return r.stub.ApproveAndCredit(ctx, proofID, adminID, notes)
+	return r.stub.ApproveAndCredit(ctx, proofID, adminID, overrideAmountCents, notes)
 }
 func (r *countingApproveRepo) Reject(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error) {
 	return r.stub.Reject(ctx, proofID, adminID, notes)

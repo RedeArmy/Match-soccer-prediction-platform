@@ -71,11 +71,11 @@ export function formatDateTime(iso: string | null | undefined): string {
   }).format(d)
 }
 
-export function formatRelative(iso: string | null | undefined): string {
+export function formatRelative(iso: string | null | undefined, nowMs = Date.now()): string {
   const d = parseDate(iso)
   if (!d) return '—'
   const rtf = new Intl.RelativeTimeFormat('es', { numeric: 'auto' })
-  const diff = (d.getTime() - Date.now()) / 1000
+  const diff = (d.getTime() - nowMs) / 1000
 
   if (Math.abs(diff) < 60)     return rtf.format(Math.round(diff), 'second')
   if (Math.abs(diff) < 3600)   return rtf.format(Math.round(diff / 60), 'minute')
@@ -84,10 +84,10 @@ export function formatRelative(iso: string | null | undefined): string {
   return formatDate(iso)
 }
 
-export function formatCountdown(iso: string | null | undefined): string {
+export function formatCountdown(iso: string | null | undefined, nowMs = Date.now()): string {
   const d = parseDate(iso)
   if (!d) return '—'
-  const diff = d.getTime() - Date.now()
+  const diff = d.getTime() - nowMs
   if (diff <= 0) return 'Finalizado'
 
   const days  = Math.floor(diff / 86_400_000)
