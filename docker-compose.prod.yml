@@ -63,6 +63,7 @@ services:
       WCQ_PAYMENT_PAYPALWEBHOOKID:         ${PAYPAL_WEBHOOK_ID}
       WCQ_PAYMENT_PAYOUTENCRYPTIONKEY:     ${PAYOUT_ENCRYPTION_KEY}
       # ── Observability ────────────────────────────────────────────────────────
+      WCQ_METRICS_ENABLED:             "true"
       WCQ_OBSERVABILITY_TEMPOURL:      http://tempo:4318
       WCQ_OBSERVABILITY_PROMETHEUSURL: http://prometheus:9090
       WCQ_METRICSBINDADDR:             :9091
@@ -100,6 +101,7 @@ services:
       WCQ_REDIS_PASSWORD:         ${REDIS_PASSWORD}
       WCQ_ENVIRONMENT:            production
       WCQ_EVENTBUS_DRIVER:        redis
+      WCQ_METRICS_ENABLED:        "true"
       WCQ_OBSERVABILITY_TEMPOURL: http://tempo:4318
       WCQ_N8N_BASEURL:            http://n8n:5678
       WCQ_N8N_WEBHOOKURL:         http://n8n:5678/webhook
