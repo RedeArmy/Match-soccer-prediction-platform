@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const payload = $input.first().json;\nconst amountFormatted = (payload.amount_cents / 100).toFixed(2);\n\nreturn [{\n  json: {\n    subject: `Payout approved \u2014 Q${amountFormatted} via ${payload.method}`,\n    body: `A withdrawal request has been approved.\\n\\nUser ID: ${payload.user_id}\\nAmount: Q${amountFormatted} GTQ\\nMethod: ${payload.method}\\nApproved by Admin ID: ${payload.admin_id}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nProceed with the transfer through the ${payload.method} payment channel.`,\n    user_id: payload.user_id,\n    amount_cents: payload.amount_cents,\n    method: payload.method,\n    admin_id: payload.admin_id,\n    trace_id: payload.trace_id\n  }\n}];"
+        "jsCode": "const payload = $input.first().json;\nconst amountFormatted = (payload.amount_cents / 100).toFixed(2);\n\nreturn [{\n  json: {\n    subject: `Payout approved — Q${amountFormatted} via ${payload.method}`,\n    body: `A withdrawal request has been approved.\\n\\nUser ID: ${payload.user_id}\\nAmount: Q${amountFormatted} GTQ\\nMethod: ${payload.method}\\nApproved by Admin ID: ${payload.admin_id}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nProceed with the transfer through the ${payload.method} payment channel.`,\n    user_id: payload.user_id,\n    amount_cents: payload.amount_cents,\n    method: payload.method,\n    admin_id: payload.admin_id,\n    trace_id: payload.trace_id\n  }\n}];"
       },
       "id": "format-confirmation",
       "name": "Format Confirmation",
@@ -82,5 +82,6 @@
   ],
   "meta": {
     "n8n_version": "1.49.0"
-  }
+  },
+  "active": true
 }

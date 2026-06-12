@@ -29,18 +29,19 @@ type LedgerEntryResponse struct {
 // must never be handed to API consumers.  Use GET /bank-transfers/{id}/download
 // to retrieve the file content through the application layer.
 type BankTransferResponse struct {
-	ID          int64   `json:"id"`
-	UserID      int     `json:"user_id"`
-	AmountCents int     `json:"amount_cents"`
-	Currency    string  `json:"currency"`
-	ContentType string  `json:"content_type"`
-	FileSize    int     `json:"file_size"`
-	Status      string  `json:"status"`
-	ReviewedBy  *int    `json:"reviewed_by,omitempty"`
-	Notes       string  `json:"notes,omitempty"`
-	ApprovedAt  *string `json:"approved_at,omitempty"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	ID                  int64   `json:"id"`
+	UserID              int     `json:"user_id"`
+	AmountCents         int     `json:"amount_cents"`
+	Currency            string  `json:"currency"`
+	ContentType         string  `json:"content_type"`
+	FileSize            int     `json:"file_size"`
+	Status              string  `json:"status"`
+	ReviewedBy          *int    `json:"reviewed_by,omitempty"`
+	Notes               string  `json:"notes,omitempty"`
+	ApprovedAmountCents *int    `json:"approved_amount_cents,omitempty"`
+	ApprovedAt          *string `json:"approved_at,omitempty"`
+	CreatedAt           string  `json:"created_at"`
+	UpdatedAt           string  `json:"updated_at"`
 }
 
 // WithdrawalResponse is returned by withdrawal request endpoints.
@@ -81,17 +82,18 @@ func ledgerEntryToResponse(e *domain.BalanceLedger) LedgerEntryResponse {
 
 func bankTransferToResponse(p *domain.BankTransferProof) BankTransferResponse {
 	r := BankTransferResponse{
-		ID:          p.ID,
-		UserID:      p.UserID,
-		AmountCents: p.AmountCents,
-		Currency:    p.Currency,
-		ContentType: p.ContentType,
-		FileSize:    p.FileSize,
-		Status:      string(p.Status),
-		ReviewedBy:  p.ReviewedBy,
-		Notes:       p.Notes,
-		CreatedAt:   p.CreatedAt.Format(timeFormat),
-		UpdatedAt:   p.UpdatedAt.Format(timeFormat),
+		ID:                  p.ID,
+		UserID:              p.UserID,
+		AmountCents:         p.AmountCents,
+		Currency:            p.Currency,
+		ContentType:         p.ContentType,
+		FileSize:            p.FileSize,
+		Status:              string(p.Status),
+		ReviewedBy:          p.ReviewedBy,
+		Notes:               p.Notes,
+		ApprovedAmountCents: p.ApprovedAmountCents,
+		CreatedAt:           p.CreatedAt.Format(timeFormat),
+		UpdatedAt:           p.UpdatedAt.Format(timeFormat),
 	}
 	if p.ApprovedAt != nil {
 		s := p.ApprovedAt.Format(timeFormat)

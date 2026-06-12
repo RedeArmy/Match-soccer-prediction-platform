@@ -31,6 +31,7 @@ import type {
   DashboardStatsResponse,
   SSEStatsResponse,
   SystemParamResponse,
+  SystemParamHistoryResponse,
   ScoringRuleResponse,
   CircuitBreakerResponse,
   TournamentModeRequest,
@@ -261,6 +262,61 @@ class APIClient {
     return this.request('/api/v1/bank-account-types', {}, token)
   }
 
+  // ── Admin: matches ───────────────────────────────────────────────────────
+
+  adminStartMatch(token: string, id: number): Promise<MatchResponse> {
+    return this.request(`/api/v1/matches/${id}/start`, { method: 'POST' }, token)
+  }
+
+  adminUpdateMatchResult(token: string, id: number, data: { home_score: number; away_score: number; win_method?: string }): Promise<MatchResponse> {
+    return this.request(`/api/v1/matches/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token)
+  }
+
+  // ── Admin: bank transfers ─────────────────────────────────────────────────
+
+  adminListBankTransfers(token: string): Promise<BankTransferResponse[]> {
+    return this.request('/api/v1/admin/bank-transfers', {}, token)
+  }
+
+  adminApproveBankTransfer(token: string, id: number, data: { notes?: string; approved_amount_cents?: number }): Promise<BankTransferResponse> {
+    return this.request(`/api/v1/admin/bank-transfers/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, token)
+  }
+
+  adminRejectBankTransfer(token: string, id: number, notes: string): Promise<BankTransferResponse> {
+    return this.request(`/api/v1/admin/bank-transfers/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    }, token)
+  }
+
+  // ── Admin: withdrawals ────────────────────────────────────────────────────
+
+  adminListWithdrawals(token: string, status?: string): Promise<WithdrawalResponse[]> {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+    return this.request(`/api/v1/admin/withdrawals${qs}`, {}, token)
+  }
+
+  adminApproveWithdrawal(token: string, id: number, notes?: string): Promise<WithdrawalResponse> {
+    return this.request(`/api/v1/admin/withdrawals/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ notes: notes ?? '' }),
+    }, token)
+  }
+
+  adminRejectWithdrawal(token: string, id: number, notes: string): Promise<WithdrawalResponse> {
+    return this.request(`/api/v1/admin/withdrawals/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    }, token)
+  }
+
+  adminProcessWithdrawal(token: string, id: number): Promise<WithdrawalResponse> {
+    return this.request(`/api/v1/admin/withdrawals/${id}/process`, { method: 'POST' }, token)
+  }
+
   // ── Admin: banks ──────────────────────────────────────────────────────────
 
   adminListBanks(token: string, onlyActive?: boolean): Promise<AdminBankResponse[]> {
@@ -378,6 +434,24 @@ class APIClient {
 
   adminGetSystemParams(token: string): Promise<SystemParamResponse[]> {
     return this.request('/api/v1/admin/system-params', {}, token)
+  }
+
+  adminSetSystemParam(token: string, key: string, value: string): Promise<SystemParamResponse> {
+    return this.request(`/api/v1/admin/system-params/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ value }),
+    }, token)
+  }
+
+  adminResetSystemParam(token: string, key: string): Promise<SystemParamResponse> {
+    return this.request(`/api/v1/admin/system-params/${encodeURIComponent(key)}/reset`, {
+      method: 'POST',
+    }, token)
+  }
+
+  adminGetSystemParamHistory(token: string, key: string, cursor?: string): Promise<CursorPaged<SystemParamHistoryResponse>> {
+    const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+    return this.request(`/api/v1/admin/system-params/${encodeURIComponent(key)}/history${q}`, {}, token)
   }
 
   adminGetScoringRules(token: string): Promise<ScoringRuleResponse[]> {

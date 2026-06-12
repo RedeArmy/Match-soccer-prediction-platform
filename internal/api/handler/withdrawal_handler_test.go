@@ -30,6 +30,9 @@ func withdrawalRouter(t *testing.T, svc *stubWithdrawalSvc) http.Handler {
 	r.Post("/withdrawals", h.Create)
 	r.Get("/withdrawals", h.ListMine)
 	r.Get("/withdrawals/limits", h.Limits)
+	r.Route("/admin", func(r chi.Router) {
+		r.Get("/withdrawals", h.AdminListAll)
+	})
 	r.Get("/withdrawals/pending", h.AdminListPending)
 	r.Post("/withdrawals/{id}/approve", h.AdminApprove)
 	r.Post("/withdrawals/{id}/reject", h.AdminReject)
@@ -390,6 +393,86 @@ func TestWithdrawalHandler_AdminListPending_ServiceError(t *testing.T) {
 	router := withdrawalRouter(t, svc)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/withdrawals/pending", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+// ── AdminListAll ──────────────────────────────────────────────────────────────
+
+func TestWithdrawalHandler_AdminListAll_OK(t *testing.T) {
+	svc := &stubWithdrawalSvc{reqs: []*domain.WithdrawalRequest{fixedWithdrawal(), fixedWithdrawal()}}
+	router := withdrawalRouter(t, svc)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/withdrawals", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp []handler.WithdrawalResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 2 {
+		t.Errorf("expected 2 withdrawals, got %d", len(resp))
+	}
+}
+
+func TestWithdrawalHandler_AdminListAll_StatusFilter_OK(t *testing.T) {
+	svc := &stubWithdrawalSvc{reqs: []*domain.WithdrawalRequest{fixedWithdrawal()}}
+	router := withdrawalRouter(t, svc)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/withdrawals?status=pending", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestWithdrawalHandler_AdminListAll_InvalidStatus(t *testing.T) {
+	svc := &stubWithdrawalSvc{}
+	router := withdrawalRouter(t, svc)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/withdrawals?status=bogus", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d", rec.Code)
+	}
+}
+
+func TestWithdrawalHandler_AdminListAll_MasksPayoutDetails(t *testing.T) {
+	w := fixedWithdrawal()
+	w.PayoutDetails = map[string]string{
+		"account_number": "12345678901",
+		"bank_name":      "BAC Guatemala",
+	}
+	svc := &stubWithdrawalSvc{reqs: []*domain.WithdrawalRequest{w}}
+	router := withdrawalRouter(t, svc)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/withdrawals", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp []handler.WithdrawalResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	pd := resp[0].PayoutDetails
+	if pd["account_number"] == "12345678901" {
+		t.Error("AdminListAll must mask plain account_number")
+	}
+	if pd["account_number"] != "*******8901" {
+		t.Errorf("account_number mask: got %q, want %q", pd["account_number"], "*******8901")
+	}
+}
+
+func TestWithdrawalHandler_AdminListAll_ServiceError(t *testing.T) {
+	svc := &stubWithdrawalSvc{err: errors.New("db error")}
+	router := withdrawalRouter(t, svc)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/withdrawals", nil)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", rec.Code)

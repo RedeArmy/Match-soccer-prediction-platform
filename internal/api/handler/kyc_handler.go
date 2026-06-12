@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -255,7 +254,7 @@ func (h *KYCHandler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ext := extensionForContentType(contentType)
-	storageKey := fmt.Sprintf("kyc/%d/%s%s", caller.ID, generateID(), ext)
+	storageKey := formatUploadStorageKey(caller.ID, "kyc", string(docType), time.Now(), ext)
 
 	// Reconstruct the full file reader (sniffed prefix + remainder) so the
 	// SHA-256 and FileStore.Put receive the complete content.

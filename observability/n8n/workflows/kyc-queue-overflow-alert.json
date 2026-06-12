@@ -1,5 +1,5 @@
 {
-  "name": "KYC Queue Overflow \u2014 Operations Alert",
+  "name": "KYC Queue Overflow — Operations Alert",
   "nodes": [
     {
       "parameters": {
@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    subject: `[OPS] KYC review queue overloaded \u2014 ${p.queue_depth} pending profiles`,\n    body: `The KYC review queue has exceeded the overflow threshold.\\n\\nCurrent queue depth: ${p.queue_depth}\\nThreshold: ${p.threshold}\\nOldest submission: ${p.oldest_submitted_at}\\nTrace ID: ${p.trace_id}\\n\\nPlease assign additional compliance reviewers or escalate to operations management.\\n\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/queue`\n  }\n}];"
+        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    subject: `[OPS] KYC review queue overloaded — ${p.queue_depth} pending profiles`,\n    body: `The KYC review queue has exceeded the overflow threshold.\\n\\nCurrent queue depth: ${p.queue_depth}\\nThreshold: ${p.threshold}\\nOldest submission: ${p.oldest_submitted_at}\\nTrace ID: ${p.trace_id}\\n\\nPlease assign additional compliance reviewers or escalate to operations management.\\n\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/queue`\n  }\n}];"
       },
       "id": "kyc-qo-format",
       "name": "Format Alert",

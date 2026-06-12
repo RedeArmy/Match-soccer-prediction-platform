@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 )
@@ -164,5 +165,45 @@ func TestApplySlicePagination_ZeroOffset_ReturnsFromStart(t *testing.T) {
 		if result[i] != expected[i] {
 			t.Errorf("index %d: expected %q, got %q", i, expected[i], result[i])
 		}
+	}
+}
+
+// ── formatUploadStorageKey ────────────────────────────────────────────────────
+
+func TestFormatUploadStorageKey_KYCSelfie(t *testing.T) {
+	ts := time.Date(2026, 6, 11, 11, 18, 59, 0, time.UTC)
+	got := formatUploadStorageKey(9, "kyc", "selfie", ts, ".jpg")
+	want := "kyc_9_selfie_2026_06_11_11:18:59.jpg"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestFormatUploadStorageKey_KYCGovID(t *testing.T) {
+	ts := time.Date(2026, 6, 11, 10, 34, 45, 0, time.UTC)
+	got := formatUploadStorageKey(9, "kyc", "gov_id", ts, ".pdf")
+	want := "kyc_9_gov_id_2026_06_11_10:34:45.pdf"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestFormatUploadStorageKey_BankTransferVoucher(t *testing.T) {
+	ts := time.Date(2026, 6, 11, 15, 0, 0, 0, time.UTC)
+	got := formatUploadStorageKey(42, "bank_transfer", "voucher", ts, ".png")
+	want := "bank_transfer_42_voucher_2026_06_11_15:00:00.png"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestFormatUploadStorageKey_UsesUTC(t *testing.T) {
+	// A time in UTC+5: 14:00 → 09:00 UTC. The key must use UTC.
+	loc := time.FixedZone("UTC+5", 5*60*60)
+	ts := time.Date(2026, 1, 5, 14, 0, 0, 0, loc) // 09:00 UTC
+	got := formatUploadStorageKey(1, "kyc", "selfie", ts, ".jpg")
+	want := "kyc_1_selfie_2026_01_05_09:00:00.jpg"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

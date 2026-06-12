@@ -33,6 +33,9 @@ type WithdrawalService interface {
 	ListByUser(ctx context.Context, userID int) ([]*domain.WithdrawalRequest, error)
 	// ListPending returns all pending requests for admin review.
 	ListPending(ctx context.Context) ([]*domain.WithdrawalRequest, error)
+	// ListAll returns all requests optionally filtered by status.
+	// Pass an empty string to return all statuses.
+	ListAll(ctx context.Context, status string) ([]*domain.WithdrawalRequest, error)
 	// ApproveRequest transitions the request to approved (admin queue step).
 	ApproveRequest(ctx context.Context, requestID, adminID int, notes string) (*domain.WithdrawalRequest, error)
 	// RejectRequest transitions the request to rejected and releases the
@@ -166,6 +169,10 @@ func (s *withdrawalService) ListByUser(ctx context.Context, userID int) ([]*doma
 
 func (s *withdrawalService) ListPending(ctx context.Context) ([]*domain.WithdrawalRequest, error) {
 	return s.withdrawalRepo.ListPending(ctx)
+}
+
+func (s *withdrawalService) ListAll(ctx context.Context, status string) ([]*domain.WithdrawalRequest, error) {
+	return s.withdrawalRepo.ListAll(ctx, status)
 }
 
 func (s *withdrawalService) ApproveRequest(ctx context.Context, requestID, adminID int, notes string) (*domain.WithdrawalRequest, error) {

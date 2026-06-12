@@ -37,6 +37,7 @@ func bankTransferRouter(t *testing.T, svc *stubBankTransferSvc, fs *stubFileStor
 	r.Get("/bank-transfers", h.ListMine)
 	r.Get("/bank-transfers/{id}/download", h.DownloadProof)
 	r.Get("/bank-transfers/pending", h.AdminListPending)
+	r.Get("/admin/bank-transfers", h.AdminListAll)
 	r.Get("/admin/bank-transfers/{id}/download", h.AdminDownloadProof)
 	r.Post("/bank-transfers/{id}/approve", h.AdminApprove)
 	r.Post("/bank-transfers/{id}/reject", h.AdminReject)
@@ -612,6 +613,131 @@ func TestBankTransferHandler_SetNotifier_DoesNotPanic(t *testing.T) {
 	h := handler.NewBankTransferHandler(&stubBankTransferSvc{}, &stubFileStore{}, 1<<20, 0, 0, zaptest.NewLogger(t))
 	// SetNotifier must not panic; it simply stores the notifier for later use.
 	h.SetNotifier(nil)
+}
+
+// ── AdminListAll ──────────────────────────────────────────────────────────────
+
+func TestBankTransferHandler_AdminListAll_OK(t *testing.T) {
+	svc := &stubBankTransferSvc{proofs: []*domain.BankTransferProof{fixedProof(), fixedProof()}}
+	router := bankTransferRouter(t, svc, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/bank-transfers", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []handler.BankTransferResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 2 {
+		t.Errorf("expected 2 proofs, got %d", len(resp))
+	}
+}
+
+func TestBankTransferHandler_AdminListAll_Empty(t *testing.T) {
+	svc := &stubBankTransferSvc{proofs: []*domain.BankTransferProof{}}
+	router := bankTransferRouter(t, svc, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/bank-transfers", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for empty list, got %d", rec.Code)
+	}
+	var resp []handler.BankTransferResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 0 {
+		t.Errorf("expected empty slice, got %d items", len(resp))
+	}
+}
+
+func TestBankTransferHandler_AdminListAll_ServiceError(t *testing.T) {
+	svc := &stubBankTransferSvc{err: errors.New("db down")}
+	router := bankTransferRouter(t, svc, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/bank-transfers", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on service error, got %d", rec.Code)
+	}
+}
+
+// ── AdminApprove — override amount ────────────────────────────────────────────
+
+func TestBankTransferHandler_AdminApprove_WithAmountOverride_OK(t *testing.T) {
+	proof := fixedProof()
+	proof.Status = domain.BankTransferApproved
+	overrideAmt := 4500
+	proof.ApprovedAmountCents = &overrideAmt
+	svc := &stubBankTransferSvc{proof: proof}
+	router := bankTransferRouter(t, svc, nil)
+	rec := httptest.NewRecorder()
+	body := strings.NewReader(`{"approved_amount_cents":4500,"notes":"short by 500"}`)
+	req := httptest.NewRequest(http.MethodPost, "/bank-transfers/1/approve", body)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp handler.BankTransferResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.ApprovedAmountCents == nil || *resp.ApprovedAmountCents != 4500 {
+		t.Errorf("expected approved_amount_cents=4500, got %v", resp.ApprovedAmountCents)
+	}
+}
+
+func TestBankTransferHandler_AdminApprove_ZeroAmountOverride_Returns422(t *testing.T) {
+	router := bankTransferRouter(t, &stubBankTransferSvc{}, nil)
+	rec := httptest.NewRecorder()
+	body := strings.NewReader(`{"approved_amount_cents":0}`)
+	req := httptest.NewRequest(http.MethodPost, "/bank-transfers/1/approve", body)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for zero override amount, got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_AdminApprove_ServiceError_Returns500(t *testing.T) {
+	svc := &stubBankTransferSvc{err: errors.New("db error")}
+	router := bankTransferRouter(t, svc, nil)
+	rec := httptest.NewRecorder()
+	body := strings.NewReader(`{"notes":"ok"}`)
+	req := httptest.NewRequest(http.MethodPost, "/bank-transfers/1/approve", body)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on service error, got %d", rec.Code)
+	}
+}
+
+// ── AdminReject — additional branches ────────────────────────────────────────
+
+func TestBankTransferHandler_AdminReject_InvalidID_Returns422(t *testing.T) {
+	router := bankTransferRouter(t, &stubBankTransferSvc{}, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/bank-transfers/bad/reject", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for invalid reject id, got %d", rec.Code)
+	}
+}
+
+func TestBankTransferHandler_AdminReject_ServiceError_Returns500(t *testing.T) {
+	svc := &stubBankTransferSvc{err: errors.New("db error")}
+	router := bankTransferRouter(t, svc, nil)
+	rec := httptest.NewRecorder()
+	body := strings.NewReader(`{"notes":"bad proof"}`)
+	req := httptest.NewRequest(http.MethodPost, "/bank-transfers/1/reject", body)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on service error, got %d", rec.Code)
+	}
 }
 
 func TestBankTransferHandler_AdminApprove_ReturnsApprovedAt(t *testing.T) {

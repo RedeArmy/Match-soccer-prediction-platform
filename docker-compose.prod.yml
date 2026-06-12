@@ -1,111 +1,142 @@
-# Production orchestration — all 4 services: postgres, redis, backend, frontend.
-# The existing docker-compose.yml is kept for local dev (infra only).
-# Usage: docker compose -f docker-compose.prod.yml up --build -d
+# Production orchestration — all services use pre-built GHCR images.
+#
+# GitHub Actions builds and pushes three images on every merge to main:
+#   ghcr.io/<owner>/<repo>          → API
+#   ghcr.io/<owner>/<repo>-worker   → background worker
+#   ghcr.io/<owner>/<repo>-frontend → Next.js frontend
+#
+# server/deploy.sh (called by the deploy job) updates API_IMAGE, WORKER_IMAGE,
+# and FRONTEND_IMAGE in /opt/wcq/.env before restarting containers.
+#
+# Initial server setup:
+#   bash server/setup.sh
+#
+# Manual rolling update:
+#   API_IMAGE=... WORKER_IMAGE=... FRONTEND_IMAGE=... bash server/deploy.sh
+#
+# Tail logs:
+#   docker compose -f docker-compose.prod.yml logs -f api
 
 networks:
-  quiniela-net:
+  wcq-net:
+    # Fixed name so docker-compose.observability.yml can join via `external: true`
+    # regardless of the Compose project name.
+    name: wcq-net
     driver: bridge
 
 volumes:
-  postgres-data:
   redis-data:
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB:       ${POSTGRES_DB:-quiniela}
-      POSTGRES_USER:     ${POSTGRES_USER:-quiniela}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks: [quiniela-net]
-    healthcheck:
-      test:         ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quiniela} -d ${POSTGRES_DB:-quiniela}"]
-      interval:     10s
-      timeout:      5s
-      retries:      5
-      start_period: 10s
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --aof-use-rdb-preamble yes
     volumes:
       - redis-data:/data
-    networks: [quiniela-net]
+    networks: [wcq-net]
     healthcheck:
       test:     ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout:  3s
       retries:  5
 
-  backend:
-    build:
-      context:    .
-      dockerfile: Dockerfile
+  api:
+    image: ${API_IMAGE}
     restart: unless-stopped
     environment:
-      WCQ_DATABASE_DSN:              postgres://${POSTGRES_USER:-quiniela}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quiniela}?sslmode=disable
-      WCQ_REDIS_ADDR:                redis:6379
-      WCQ_REDIS_PASSWORD:            ${REDIS_PASSWORD}
-      WCQ_ENVIRONMENT:               production
-      WCQ_CORS_ALLOWEDORIGINS:       ${FRONTEND_PUBLIC_URL},http://frontend:3000
-      WCQ_CLERK_JWKSURL:             ${CLERK_JWKS_URL}
-      WCQ_CLERK_WEBHOOKSECRET:       ${CLERK_WEBHOOK_SECRET}
-      WCQ_EVENTBUS_DRIVER:           redis
+      # ── Database (Supabase — Session-mode pooler, supports advisory locks) ──
+      WCQ_DATABASE_DSN:           ${WCQ_DATABASE_DSN}
+      WCQ_DATABASE_MAXOPENCONNS:  "20"
+      # ── Redis ────────────────────────────────────────────────────────────────
+      WCQ_REDIS_ADDR:             redis:6379
+      WCQ_REDIS_PASSWORD:         ${REDIS_PASSWORD}
+      # ── Core ─────────────────────────────────────────────────────────────────
+      WCQ_ENVIRONMENT:            production
+      WCQ_EVENTBUS_DRIVER:        redis
+      WCQ_CORS_ALLOWEDORIGINS:    ${FRONTEND_PUBLIC_URL}
+      # ── Auth ─────────────────────────────────────────────────────────────────
+      WCQ_CLERK_JWKSURL:          ${CLERK_JWKS_URL}
+      WCQ_CLERK_WEBHOOKSECRET:    ${CLERK_WEBHOOK_SECRET}
+      # ── Payments ─────────────────────────────────────────────────────────────
       WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET: ${RECURRENTE_WEBHOOK_SECRET}
-      WCQ_PAYMENT_PAYPALWEBHOOKID:   ${PAYPAL_WEBHOOK_ID}
+      WCQ_PAYMENT_PAYPALWEBHOOKID:         ${PAYPAL_WEBHOOK_ID}
+      WCQ_PAYMENT_PAYOUTENCRYPTIONKEY:     ${PAYOUT_ENCRYPTION_KEY}
+      # ── Observability ────────────────────────────────────────────────────────
+      WCQ_OBSERVABILITY_TEMPOURL:      http://tempo:4318
+      WCQ_OBSERVABILITY_PROMETHEUSURL: http://prometheus:9090
+      WCQ_METRICSBINDADDR:             :9091
+      # ── n8n integration ──────────────────────────────────────────────────────
+      WCQ_N8N_BASEURL:        http://n8n:5678
+      WCQ_N8N_WEBHOOKURL:     http://n8n:5678/webhook
+      WCQ_N8N_APIKEY:         ${N8N_API_KEY}
+      # HMAC-SHA256 key for signing outbound webhook calls to n8n.
+      # Must match N8N_WEBHOOK_SECRET in docker-compose.observability.yml.
+      WCQ_N8N_WEBHOOKSECRET:  ${N8N_WEBHOOK_SECRET}
+      # ── GC tuning — API budget ~2 GB on Hetzner CX53 ────────────────────────
+      GOMEMLIMIT: "1800MiB"
+      GOGC:       "100"
+    ports:
+      - "127.0.0.1:8080:8080"  # Caddy reverse-proxies externally; loopback only
+      - "127.0.0.1:9091:9091"  # Prometheus scrape endpoint; loopback only
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks: [quiniela-net]
+      redis: { condition: service_healthy }
+    networks: [wcq-net]
     healthcheck:
-      test:         ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      # /health/ready waits for DB migrations and connection pool warm-up.
+      # Allow 30s start_period: migrations can take several seconds on first deploy.
+      test:         ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
+      interval:     15s
+      timeout:      5s
+      start_period: 30s
+      retries:      3
+
+  worker:
+    image: ${WORKER_IMAGE}
+    restart: unless-stopped
+    environment:
+      WCQ_DATABASE_DSN:           ${WCQ_DATABASE_DSN}
+      WCQ_REDIS_ADDR:             redis:6379
+      WCQ_REDIS_PASSWORD:         ${REDIS_PASSWORD}
+      WCQ_ENVIRONMENT:            production
+      WCQ_EVENTBUS_DRIVER:        redis
+      WCQ_OBSERVABILITY_TEMPOURL: http://tempo:4318
+      WCQ_N8N_BASEURL:            http://n8n:5678
+      WCQ_N8N_WEBHOOKURL:         http://n8n:5678/webhook
+      WCQ_N8N_APIKEY:             ${N8N_API_KEY}
+      WCQ_N8N_WEBHOOKSECRET:      ${N8N_WEBHOOK_SECRET}
+      # ── GC tuning — worker budget ~1 GB ─────────────────────────────────────
+      GOMEMLIMIT: "900MiB"
+      GOGC:       "100"
+    ports:
+      - "127.0.0.1:8081:8081"  # Prometheus scrape + health check; loopback only
+    depends_on:
+      redis: { condition: service_healthy }
+    networks: [wcq-net]
+    healthcheck:
+      test:         ["CMD", "wget", "-qO-", "http://localhost:8081/health/ready"]
       interval:     15s
       timeout:      5s
       start_period: 20s
       retries:      3
 
-  worker:
-    build:
-      context:    .
-      dockerfile: Dockerfile.worker
-    restart: unless-stopped
-    environment:
-      WCQ_DATABASE_DSN:    postgres://${POSTGRES_USER:-quiniela}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quiniela}?sslmode=disable
-      WCQ_REDIS_ADDR:      redis:6379
-      WCQ_REDIS_PASSWORD:  ${REDIS_PASSWORD}
-      WCQ_ENVIRONMENT:     production
-      WCQ_EVENTBUS_DRIVER: redis
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks: [quiniela-net]
-
   frontend:
-    build:
-      context:    ./frontend
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+    image: ${FRONTEND_IMAGE}
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
-      CLERK_SECRET_KEY:                  ${CLERK_SECRET_KEY}
-      NEXT_PUBLIC_CLERK_SIGN_IN_URL:     /sign-in
-      NEXT_PUBLIC_CLERK_SIGN_UP_URL:     /sign-up
-      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL:  /dashboard
-      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL:  /onboarding
-      BACKEND_INTERNAL_URL:              http://backend:8080
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks: [quiniela-net]
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:   ${CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY:                    ${CLERK_SECRET_KEY}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL:       /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL:       /sign-up
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: /dashboard
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: /onboarding
+      NEXT_PUBLIC_APP_URL:                 ${FRONTEND_PUBLIC_URL}
+      NEXT_PUBLIC_PAYPAL_CLIENT_ID:        ${PAYPAL_CLIENT_ID}
+      PAYPAL_CLIENT_SECRET:                ${PAYPAL_CLIENT_SECRET}
+      # BFF proxy: Next.js server-side routes call the API via this internal URL.
+      BACKEND_INTERNAL_URL:                http://api:8080
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"  # Caddy reverse-proxies externally; loopback only
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [wcq-net]

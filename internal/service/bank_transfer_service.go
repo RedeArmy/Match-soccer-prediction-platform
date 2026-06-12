@@ -29,8 +29,11 @@ type BankTransferService interface {
 	ListByUser(ctx context.Context, userID int) ([]*domain.BankTransferProof, error)
 	// ListPending returns all pending proofs for admin review.
 	ListPending(ctx context.Context) ([]*domain.BankTransferProof, error)
+	// ListAll returns all proofs across all statuses for admin overview.
+	ListAll(ctx context.Context) ([]*domain.BankTransferProof, error)
 	// ApproveTransfer atomically approves the proof and credits the user's balance.
-	ApproveTransfer(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error)
+	// overrideAmountCents, when non-nil, is credited instead of the user-declared amount.
+	ApproveTransfer(ctx context.Context, proofID, adminID int, overrideAmountCents *int, notes string) (*domain.BankTransferProof, error)
 	// RejectTransfer transitions a pending proof to rejected.
 	RejectTransfer(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error)
 }
@@ -130,7 +133,11 @@ func (s *bankTransferService) ListPending(ctx context.Context) ([]*domain.BankTr
 	return s.proofRepo.ListPending(ctx)
 }
 
-func (s *bankTransferService) ApproveTransfer(ctx context.Context, proofID, adminID int, notes string) (*domain.BankTransferProof, error) {
+func (s *bankTransferService) ListAll(ctx context.Context) ([]*domain.BankTransferProof, error) {
+	return s.proofRepo.ListAll(ctx)
+}
+
+func (s *bankTransferService) ApproveTransfer(ctx context.Context, proofID, adminID int, overrideAmountCents *int, notes string) (*domain.BankTransferProof, error) {
 	// Load the proof before crediting so we can run the velocity check.
 	// CheckDepositVelocity uses the balance_ledger (credits only appear there
 	// after ApproveAndCredit), so the upload-time check cannot enforce the 24 h
@@ -143,21 +150,32 @@ func (s *bankTransferService) ApproveTransfer(ctx context.Context, proofID, admi
 	if pending == nil {
 		return nil, apperrors.NotFound("bank transfer proof not found")
 	}
-	if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, pending.AmountCents); err != nil {
+	// Velocity check uses the effective credit amount (override when provided).
+	velocityAmount := pending.AmountCents
+	if overrideAmountCents != nil {
+		velocityAmount = *overrideAmountCents
+	}
+	if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, velocityAmount); err != nil {
 		return nil, err
 	}
 
-	proof, err := s.proofRepo.ApproveAndCredit(ctx, proofID, adminID, notes)
+	proof, err := s.proofRepo.ApproveAndCredit(ctx, proofID, adminID, overrideAmountCents, notes)
 	if err != nil {
 		return nil, err
+	}
+
+	creditedCents := proof.AmountCents
+	if proof.ApprovedAmountCents != nil {
+		creditedCents = *proof.ApprovedAmountCents
 	}
 
 	resType := "bank_transfer_proof"
 	role := domain.RoleAdmin
 	s.audit.Log(ctx, &adminID, &role, domain.AuditActionBankTransferApproved, &resType, &proofID, map[string]any{
-		"notes":        notes,
-		"user_id":      proof.UserID,
-		"amount_cents": proof.AmountCents,
+		"notes":          notes,
+		"user_id":        proof.UserID,
+		"claimed_cents":  proof.AmountCents,
+		"credited_cents": creditedCents,
 	})
 
 	s.writeOutbox(ctx, notification.EventPaymentBankTransferApproved,
@@ -165,7 +183,7 @@ func (s *bankTransferService) ApproveTransfer(ctx context.Context, proofID, admi
 		notification.BankTransferPayload{
 			UserID:      proof.UserID,
 			ProofID:     proof.ID,
-			AmountCents: proof.AmountCents,
+			AmountCents: creditedCents,
 			Currency:    proof.Currency,
 			AdminID:     &adminID,
 			Notes:       notes,

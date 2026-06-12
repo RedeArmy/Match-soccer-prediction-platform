@@ -1,0 +1,55 @@
+# Caddyfile — HTTPS reverse proxy for Hetzner production server.
+#
+# Caddy automatically provisions and renews TLS certificates via Let's Encrypt.
+# All four env vars must be set before starting Caddy (see server/setup.sh):
+#   APP_DOMAIN      — frontend app domain,    e.g. app.example.com
+#   API_DOMAIN      — backend API domain,     e.g. api.example.com
+#   GRAFANA_DOMAIN  — Grafana dashboard,      e.g. grafana.example.com
+#   N8N_DOMAIN      — n8n automation,         e.g. n8n.example.com
+#   ACME_EMAIL      — Let's Encrypt contact,  e.g. admin@example.com
+#
+# Caddy reads {$VAR} placeholders from the environment. On the server the
+# systemd unit loads /opt/wcq/.env via EnvironmentFile (see server/setup.sh).
+
+{
+    email {$ACME_EMAIL}
+}
+
+# ── Frontend application ──────────────────────────────────────────────────────
+{$APP_DOMAIN} {
+    encode gzip zstd
+
+    reverse_proxy localhost:3000
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "SAMEORIGIN"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        Permissions-Policy        "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+}
+
+# ── Backend API ───────────────────────────────────────────────────────────────
+{$API_DOMAIN} {
+    encode gzip
+
+    reverse_proxy localhost:8080
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        -Server
+    }
+}
+
+# ── Grafana (restrict to VPN/office IP in production if needed) ───────────────
+{$GRAFANA_DOMAIN} {
+    reverse_proxy localhost:3001
+}
+
+# ── n8n automation (restrict access in production if needed) ──────────────────
+{$N8N_DOMAIN} {
+    reverse_proxy localhost:5678
+}

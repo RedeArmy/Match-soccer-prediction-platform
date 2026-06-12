@@ -26,6 +26,10 @@ type Filter = "all" | "pending" | "saved" | "past";
 type ViewMode = "by-group" | "by-day";
 type GroupLabel = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L";
 
+// Approximate duration of a football match including halftime (used for
+// time-based live/finished detection when the DB status hasn't updated yet).
+const MATCH_DURATION_MS = 2 * 60 * 60 * 1_000; // 2 hours
+
 const GROUPS: GroupLabel[] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
 
 function getEmptyState(params: {
@@ -58,7 +62,6 @@ export function PredictionPanel() {
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
   const [viewMode, setViewMode] = useState<ViewMode>("by-group");
-  const [todayStr, setTodayStr] = useState<string>("");
   const [drafts, setDrafts] = useState<DraftScores>({});
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -87,10 +90,26 @@ export function PredictionPanel() {
       const res = await fetch("/api/v1/system/clock");
       if (!res.ok) return null;
       const data = await res.json() as { now: string };
-      return data.now;
+      // fetchedAt is captured here (at network completion) so the offset
+      // between server time and browser time is as accurate as possible.
+      // Including it in the return value ensures TanStack Query detects a
+      // change on every refetch even when the server returns the same frozen
+      // system.date string, which forces serverOffsetMs to be recomputed.
+      return { now: data.now, fetchedAt: Date.now() };
     },
-    staleTime: 30_000,
+    staleTime: 5_000,
+    refetchInterval: 30_000,
   });
+
+  // serverOffsetMs = (server time at fetch) - (browser time at fetch).
+  // Adding this to Date.now() anywhere gives the virtual "system time",
+  // honouring system.date in dev. In production the offset is ~0 ms.
+  // Using data.fetchedAt (not Date.now() at render) gives a stable reference
+  // that doesn't drift between re-renders; refetchInterval keeps it fresh.
+  const serverOffsetMs = useMemo(() => {
+    if (!systemClockQuery.data) return 0;
+    return new Date(systemClockQuery.data.now).getTime() - systemClockQuery.data.fetchedAt;
+  }, [systemClockQuery.data]);
 
   const predictionByMatch = useMemo(() => {
     const map = new Map<number, PredictionResponse>();
@@ -100,12 +119,14 @@ export function PredictionPanel() {
     return map;
   }, [predictionsQuery.data]);
 
-  useEffect(() => {
+  // todayStr is derived synchronously so the "Hoy" filter is correct on the
+  // very first render (no empty-string flash waiting for useEffect to run).
+  const todayStr = useMemo(() => {
     const base = systemClockQuery.data
-      ? new Date(systemClockQuery.data)
+      ? new Date(systemClockQuery.data.now)
       : new Date();
-    setTodayStr(base.toLocaleDateString("sv", { timeZone }));
-  }, [timeZone, systemClockQuery.data]);
+    return base.toLocaleDateString("sv", { timeZone });
+  }, [systemClockQuery.data, timeZone]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -239,6 +260,7 @@ export function PredictionPanel() {
               prediction={prediction}
               draft={draft}
               isPending={mutation.isPending && mutation.variables?.match.id === match.id}
+              serverOffsetMs={serverOffsetMs}
               onDraftChange={(value) => updateDraft(match.id, value)}
               onSave={() => mutation.mutate({ match, draft })}
             />
@@ -353,11 +375,22 @@ export function PredictionPanel() {
 
 // ── Per-match card ─────────────────────────────────────────────────────────────
 
+function getButtonLabel(
+  isPending: boolean,
+  hasPrediction: boolean,
+  t: (key: string) => string,
+): string {
+  if (isPending) return t("common.saving");
+  if (hasPrediction) return t("predictions.update");
+  return t("predictions.submit");
+}
+
 interface PredictionMatchCardProps {
   readonly match: MatchResponse;
   readonly prediction: PredictionResponse | undefined;
   readonly draft: { home: number; away: number };
   readonly isPending: boolean;
+  readonly serverOffsetMs: number;
   readonly onDraftChange: (value: { home: number; away: number }) => void;
   readonly onSave: () => void;
 }
@@ -367,29 +400,42 @@ function PredictionMatchCard({
   prediction,
   draft,
   isPending,
+  serverOffsetMs,
   onDraftChange,
   onSave,
 }: PredictionMatchCardProps) {
   const { t, teamName, formatKickoff, phaseName } = useI18n();
 
-  const isLive     = match.status === "in_progress";
-  const isFinished = match.status === "finished" || match.status === "cancelled";
-  const locked     = isLive || isFinished ||
-    (match.kickoff_at !== null && new Date(match.kickoff_at).getTime() <= Date.now());
+  // Virtual clock — single interval drives background colour, lock state, and countdown.
+  const [virtualNow, setVirtualNow] = useState(() => Date.now() + serverOffsetMs);
+  useEffect(() => {
+    const id = setInterval(() => setVirtualNow(Date.now() + serverOffsetMs), 1_000);
+    return () => clearInterval(id);
+  }, [serverOffsetMs]);
 
-  let buttonLabel = t("predictions.submit");
-  if (isPending)       buttonLabel = t("common.saving");
-  else if (prediction) buttonLabel = t("predictions.update");
+  const kickoffMs = match.kickoff_at ? new Date(match.kickoff_at).getTime() : null;
+
+  // DB status is authoritative. Time-based flags fill in when the backend
+  // hasn't updated the row yet (e.g. match just started or just ended).
+  const isStatusLive     = match.status === "in_progress";
+  const isStatusFinished = match.status === "finished" || match.status === "cancelled";
+  const isTimeBasedLive     = kickoffMs !== null && virtualNow >= kickoffMs && virtualNow < kickoffMs + MATCH_DURATION_MS;
+  const isTimeBasedFinished = kickoffMs !== null && virtualNow >= kickoffMs + MATCH_DURATION_MS;
+
+  // If the DB says "in_progress", never let time-based logic mark it finished
+  // (covers extra time / penalties beyond the 2-hr window).
+  const isLive     = isStatusLive || (!isStatusFinished && isTimeBasedLive);
+  const isFinished = isStatusFinished || (!isStatusLive && isTimeBasedFinished);
+  const locked     = isLive || isFinished;
+
+  const buttonLabel = getButtonLabel(isPending, prediction !== undefined, t);
+
+  let articleClass = "border-white/10 bg-white/[0.025]";
+  if (isFinished)  articleClass = "border-red-500/30 bg-red-500/[0.04]";
+  else if (isLive) articleClass = "border-green-500/30 bg-green-500/[0.04]";
 
   return (
-    <article
-      className={cn(
-        "rounded border p-4 transition-colors",
-        isLive
-          ? "border-green-500/30 bg-green-500/[0.04]"
-          : "border-white/10 bg-white/[0.025]",
-      )}
-    >
+    <article className={cn("rounded border p-4 transition-colors", articleClass)}>
       <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -459,7 +505,7 @@ function PredictionMatchCard({
               </span>
             )}
             {!isLive && !isFinished && (
-              <MatchCountdown kickoffAt={match.kickoff_at} />
+              <MatchCountdown kickoffAt={match.kickoff_at} virtualNow={virtualNow} />
             )}
           </div>
         </div>
@@ -542,16 +588,12 @@ function GroupButton({
   );
 }
 
-function MatchCountdown({ kickoffAt }: Readonly<{ kickoffAt: string | null | undefined }>) {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
+function MatchCountdown({
+  kickoffAt,
+  virtualNow,
+}: Readonly<{ kickoffAt: string | null | undefined; virtualNow: number }>) {
   if (!kickoffAt) return null;
-  const diff = new Date(kickoffAt).getTime() - now;
+  const diff = new Date(kickoffAt).getTime() - virtualNow;
   if (diff <= 0) return null;
 
   const days  = Math.floor(diff / 86_400_000);

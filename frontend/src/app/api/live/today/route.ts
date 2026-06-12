@@ -73,7 +73,20 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ fixtures: [] })
   }
 
-  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD (UTC)
+  // Use the backend system clock so the system.date param is respected in dev.
+  let today: string
+  try {
+    const backendUrl = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
+    const clockRes = await fetch(`${backendUrl}/api/v1/system/clock`, { cache: 'no-store' })
+    if (clockRes.ok) {
+      const { now } = await clockRes.json() as { now: string }
+      today = now.slice(0, 10)
+    } else {
+      today = new Date().toISOString().slice(0, 10)
+    }
+  } catch {
+    today = new Date().toISOString().slice(0, 10)
+  }
 
   const url = new URL('/fixtures', BASE_URL)
   url.searchParams.set('date',   today)

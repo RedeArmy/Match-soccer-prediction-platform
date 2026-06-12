@@ -263,12 +263,14 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 		r.Post("/payments/{id}/reject", d.h.adminPayment.RejectDeposit)
 
 		// Bank transfers
+		r.Get("/bank-transfers", d.h.bankTransfer.AdminListAll)
 		r.Get("/bank-transfers/pending", d.h.bankTransfer.AdminListPending)
 		r.Get("/bank-transfers/{id}/download", d.h.bankTransfer.AdminDownloadProof)
 		r.Post("/bank-transfers/{id}/approve", d.h.bankTransfer.AdminApprove)
 		r.Post("/bank-transfers/{id}/reject", d.h.bankTransfer.AdminReject)
 
 		// Withdrawals
+		r.Get("/withdrawals", d.h.withdrawal.AdminListAll)
 		r.Get("/withdrawals/pending", d.h.withdrawal.AdminListPending)
 		r.Post("/withdrawals/{id}/approve", d.h.withdrawal.AdminApprove)
 		r.Post("/withdrawals/{id}/reject", d.h.withdrawal.AdminReject)

@@ -3,14 +3,13 @@ package handler
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -21,12 +20,6 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
-
-func generateID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
 
 // decodeJSONOptional decodes the request body into v, silently ignoring JSON
 // parse errors. Returns a non-nil error only when the body exceeds the reader
@@ -174,7 +167,7 @@ func (h *BankTransferHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ext := extensionForContentType(contentType)
-	storageKey := fmt.Sprintf("bank-transfers/%d/%s%s", caller.ID, generateID(), ext) //nolint:perfsprint
+	storageKey := formatUploadStorageKey(caller.ID, "bank_transfer", "voucher", time.Now(), ext)
 
 	// Reconstruct the full file reader (sniffed prefix + remainder) so
 	// FileStore.Put receives the complete file content.
@@ -250,19 +243,48 @@ func (h *BankTransferHandler) AdminListPending(w http.ResponseWriter, r *http.Re
 }
 
 type reviewBankTransferRequest struct {
-	Notes string `json:"notes"`
+	Notes               string `json:"notes"`
+	ApprovedAmountCents *int   `json:"approved_amount_cents,omitempty"`
+}
+
+// AdminListAll handles GET /api/v1/admin/bank-transfers.
+//
+// @Summary      List all bank transfers
+// @Description  Returns all bank transfer proofs across all statuses for admin overview. Requires admin role.
+// @Tags         admin-payments
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}   handler.BankTransferResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/bank-transfers [get]
+func (h *BankTransferHandler) AdminListAll(w http.ResponseWriter, r *http.Request) {
+	proofs, err := h.svc.ListAll(r.Context())
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	data := make([]BankTransferResponse, len(proofs))
+	for i, p := range proofs {
+		data[i] = bankTransferToResponse(p)
+	}
+	writeJSON(w, http.StatusOK, data)
 }
 
 // AdminApprove handles POST /admin/bank-transfers/{id}/approve.
 //
 // @Summary      Approve bank transfer
 // @Description  Approves a pending bank transfer proof and credits the user's balance. Requires admin role.
+//
+//	When approved_amount_cents is provided it overrides the user-declared amount —
+//	use this when the scanned proof shows a different figure than the user typed.
+//
 // @Tags         admin-payments
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id    path      int                                 true  "Proof ID"
-// @Param        body  body      handler.reviewBankTransferRequest   false "Optional notes"
+// @Param        body  body      handler.reviewBankTransferRequest   false "Optional notes and amount override"
 // @Success      200  {object}  handler.BankTransferResponse
 // @Failure      401  {object}  handler.ErrorResponse
 // @Failure      403  {object}  handler.ErrorResponse
@@ -285,8 +307,12 @@ func (h *BankTransferHandler) AdminApprove(w http.ResponseWriter, r *http.Reques
 		writeError(w, r, h.log, err)
 		return
 	}
+	if req.ApprovedAmountCents != nil && *req.ApprovedAmountCents <= 0 {
+		writeError(w, r, h.log, apperrors.Validation("approved_amount_cents must be positive"))
+		return
+	}
 
-	proof, err := h.svc.ApproveTransfer(r.Context(), id, caller.ID, req.Notes)
+	proof, err := h.svc.ApproveTransfer(r.Context(), id, caller.ID, req.ApprovedAmountCents, req.Notes)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

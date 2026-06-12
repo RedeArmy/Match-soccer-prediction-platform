@@ -915,10 +915,13 @@ type BankTransferProofRepository interface {
 	ListByUser(ctx context.Context, userID int) ([]*domain.BankTransferProof, error)
 	// ListPending returns all pending proofs ordered by created_at ASC.
 	ListPending(ctx context.Context) ([]*domain.BankTransferProof, error)
+	// ListAll returns all proofs across all statuses ordered by created_at DESC.
+	ListAll(ctx context.Context) ([]*domain.BankTransferProof, error)
 	// ApproveAndCredit atomically transitions a pending proof to approved AND
-	// credits proof.AmountCents to the user's balance AND inserts a ledger row.
-	// Returns NotFound when the proof does not exist or is not pending.
-	ApproveAndCredit(ctx context.Context, id, reviewerID int, notes string) (*domain.BankTransferProof, error)
+	// credits overrideAmountCents (or proof.AmountCents when nil) to the user's
+	// balance AND inserts a ledger row.  Returns NotFound when the proof does not
+	// exist or is not pending.
+	ApproveAndCredit(ctx context.Context, id, reviewerID int, overrideAmountCents *int, notes string) (*domain.BankTransferProof, error)
 	// Reject transitions a pending proof to rejected.  Returns NotFound when
 	// the proof does not exist or is not in pending status.
 	Reject(ctx context.Context, id, reviewerID int, notes string) (*domain.BankTransferProof, error)
@@ -939,6 +942,10 @@ type WithdrawalRequestRepository interface {
 	ListByUser(ctx context.Context, userID int) ([]*domain.WithdrawalRequest, error)
 	// ListPending returns all pending requests ordered by created_at ASC.
 	ListPending(ctx context.Context) ([]*domain.WithdrawalRequest, error)
+	// ListAll returns all requests optionally filtered by status, ordered by
+	// created_at DESC. An empty status returns all records. The result set is
+	// capped at 500 rows as a safety limit for admin queries.
+	ListAll(ctx context.Context, status string) ([]*domain.WithdrawalRequest, error)
 	// ApproveAndDebit atomically transitions a pending request to approved AND
 	// deducts the GTQ amount from the user's balance_cents AND inserts a ledger
 	// row (withdrawal_deduct). Returns Conflict when the available balance is
