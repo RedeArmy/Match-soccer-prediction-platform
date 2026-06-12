@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle, XCircle, ArrowRight, AlertTriangle } from 'lucide-react'
@@ -261,6 +261,137 @@ export default function AdminWithdrawalsPage() {
     }
   }
 
+  let content: React.ReactNode
+  if (isLoading) {
+    content = <LoadingState />
+  } else if (error) {
+    content = (
+      <div className="text-center py-12 text-red-400 text-sm">
+        Error al cargar los retiros. Intenta actualizar la página.
+      </div>
+    )
+  } else if (filtered.length === 0) {
+    content = (
+      <div className="text-center py-16 text-white/40">
+        <p className="text-lg font-medium">No hay retiros</p>
+        <p className="text-sm mt-1">{emptyMsg}</p>
+      </div>
+    )
+  } else {
+    content = (
+      <>
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/5 text-white/50 text-left">
+                <th className="px-4 py-3 font-medium">#</th>
+                <th className="px-4 py-3 font-medium">Usuario</th>
+                <th className="px-4 py-3 font-medium">Monto</th>
+                <th className="px-4 py-3 font-medium">Método</th>
+                <th className="px-4 py-3 font-medium">Destino</th>
+                <th className="px-4 py-3 font-medium">Estado</th>
+                <th className="px-4 py-3 font-medium">Solicitado</th>
+                <th className="px-4 py-3 font-medium text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginated.map(item => (
+                <tr
+                  key={item.id}
+                  className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+                >
+                  <td className="px-4 py-3 text-white/50 font-mono text-xs">#{item.id}</td>
+
+                  <td className="px-4 py-3">
+                    <span className="text-white/70 font-mono text-xs bg-white/5 px-2 py-0.5 rounded">
+                      #{item.user_id}
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-3 font-semibold text-white tabular-nums">
+                    {formatAmount(item.amount_cents, item.currency)}
+                  </td>
+
+                  <td className="px-4 py-3 text-white/70">
+                    {METHOD_LABEL[item.method] ?? item.method}
+                  </td>
+
+                  <td
+                    className="px-4 py-3 text-white/60 font-mono text-xs max-w-[200px] truncate"
+                    title={payoutSummary(item.method, item.payout_details)}
+                  >
+                    {payoutSummary(item.method, item.payout_details)}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <StatusBadge status={item.status} />
+                  </td>
+
+                  <td
+                    className="px-4 py-3 text-white/50 text-xs"
+                    title={formatDateTime(item.created_at)}
+                  >
+                    {formatRelative(item.created_at)}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2">
+                      {item.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => openAction('approve', item)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium transition-colors"
+                          >
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            Aprobar
+                          </button>
+                          <button
+                            onClick={() => openAction('reject', item)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs font-medium transition-colors"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            Rechazar
+                          </button>
+                        </>
+                      )}
+                      {item.status === 'approved' && (
+                        <button
+                          onClick={() => openAction('process', item)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
+                        >
+                          <ArrowRight className="h-3.5 w-3.5" />
+                          Procesar
+                        </button>
+                      )}
+                      {(item.status === 'rejected' || item.status === 'processed') && item.notes && (
+                        <span
+                          className="text-white/30 text-xs italic max-w-[120px] truncate"
+                          title={item.notes}
+                        >
+                          {item.notes}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <AdminPagination
+          page={safePage}
+          pageCount={pageCount}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          total={filtered.length}
+          itemLabel="retiros"
+          onPageChange={setPage}
+        />
+      </>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -298,130 +429,7 @@ export default function AdminWithdrawalsPage() {
         })}
       </div>
 
-      {/* Content */}
-      {isLoading ? (
-        <LoadingState />
-      ) : error ? (
-        <div className="text-center py-12 text-red-400 text-sm">
-          Error al cargar los retiros. Intenta actualizar la página.
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-white/40">
-          <p className="text-lg font-medium">No hay retiros</p>
-          <p className="text-sm mt-1">{emptyMsg}</p>
-        </div>
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-xl border border-white/10">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/10 bg-white/5 text-white/50 text-left">
-                  <th className="px-4 py-3 font-medium">#</th>
-                  <th className="px-4 py-3 font-medium">Usuario</th>
-                  <th className="px-4 py-3 font-medium">Monto</th>
-                  <th className="px-4 py-3 font-medium">Método</th>
-                  <th className="px-4 py-3 font-medium">Destino</th>
-                  <th className="px-4 py-3 font-medium">Estado</th>
-                  <th className="px-4 py-3 font-medium">Solicitado</th>
-                  <th className="px-4 py-3 font-medium text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.map(item => (
-                  <tr
-                    key={item.id}
-                    className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
-                  >
-                    <td className="px-4 py-3 text-white/50 font-mono text-xs">#{item.id}</td>
-
-                    <td className="px-4 py-3">
-                      <span className="text-white/70 font-mono text-xs bg-white/5 px-2 py-0.5 rounded">
-                        #{item.user_id}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3 font-semibold text-white tabular-nums">
-                      {formatAmount(item.amount_cents, item.currency)}
-                    </td>
-
-                    <td className="px-4 py-3 text-white/70">
-                      {METHOD_LABEL[item.method] ?? item.method}
-                    </td>
-
-                    <td
-                      className="px-4 py-3 text-white/60 font-mono text-xs max-w-[200px] truncate"
-                      title={payoutSummary(item.method, item.payout_details)}
-                    >
-                      {payoutSummary(item.method, item.payout_details)}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <StatusBadge status={item.status} />
-                    </td>
-
-                    <td
-                      className="px-4 py-3 text-white/50 text-xs"
-                      title={formatDateTime(item.created_at)}
-                    >
-                      {formatRelative(item.created_at)}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        {item.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => openAction('approve', item)}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium transition-colors"
-                            >
-                              <CheckCircle className="h-3.5 w-3.5" />
-                              Aprobar
-                            </button>
-                            <button
-                              onClick={() => openAction('reject', item)}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs font-medium transition-colors"
-                            >
-                              <XCircle className="h-3.5 w-3.5" />
-                              Rechazar
-                            </button>
-                          </>
-                        )}
-                        {item.status === 'approved' && (
-                          <button
-                            onClick={() => openAction('process', item)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
-                          >
-                            <ArrowRight className="h-3.5 w-3.5" />
-                            Procesar
-                          </button>
-                        )}
-                        {(item.status === 'rejected' || item.status === 'processed') && item.notes && (
-                          <span
-                            className="text-white/30 text-xs italic max-w-[120px] truncate"
-                            title={item.notes}
-                          >
-                            {item.notes}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <AdminPagination
-            page={safePage}
-            pageCount={pageCount}
-            rangeStart={rangeStart}
-            rangeEnd={rangeEnd}
-            total={filtered.length}
-            itemLabel="retiros"
-            onPageChange={setPage}
-          />
-        </>
-      )}
+      {content}
 
       {actionModal && (
         <AdminModalOverlay onClose={closeModal}>
