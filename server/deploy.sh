@@ -71,6 +71,14 @@ wait_healthy() {
   return 1
 }
 
+# Redis must be healthy before any app container starts.
+# `--no-deps` is intentionally omitted here so that the network and
+# volume are created on the first deploy. On subsequent deploys this
+# is a no-op if Redis is already healthy.
+echo "==> ensuring redis is healthy..."
+$COMPOSE up -d --no-deps redis
+wait_healthy redis 30
+
 # Worker first — no user traffic; can tolerate a brief restart gap.
 echo "==> restarting worker..."
 $COMPOSE up -d --no-deps --force-recreate worker
