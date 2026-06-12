@@ -7,10 +7,9 @@ import { CheckCircle, XCircle, ExternalLink, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { BankTransferResponse, BankTransferStatus } from '@/lib/api-types'
 import { cn, formatGTQ, formatDateTime, formatRelative } from '@/lib/utils'
-import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import {
-  AdminPageHeader, AdminModalOverlay, AdminPagination,
+  AdminPageHeader, AdminModalOverlay, AdminPagination, AdminContentState,
   ModalHeader, ModalCancelButton, ModalErrorLine, InfoRow,
 } from '@/components/admin/shared'
 
@@ -381,18 +380,14 @@ export default function AdminBankTransfersPage() {
       </div>
 
       {/* Content */}
-      {isLoading ? (
-        <LoadingState />
-      ) : error ? (
-        <div className="text-center py-12 text-red-400 text-sm">
-          Error al cargar las transferencias.
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-white/40">
-          <p className="text-lg font-medium">Sin transferencias</p>
-          <p className="text-sm mt-1">{emptyMsg}</p>
-        </div>
-      ) : (
+      <AdminContentState
+        isLoading={isLoading}
+        error={error}
+        isEmpty={filtered.length === 0}
+        emptyTitle="Sin transferencias"
+        emptyMessage={emptyMsg}
+        errorMessage="Error al cargar las transferencias."
+      >
         <>
           <div className="overflow-x-auto rounded-xl border border-white/10">
             <table className="w-full text-sm">
@@ -515,7 +510,7 @@ export default function AdminBankTransfersPage() {
             onPageChange={setPage}
           />
         </>
-      )}
+      </AdminContentState>
 
       {modal && (
         <AdminModalOverlay onClose={closeModal} scrollable>

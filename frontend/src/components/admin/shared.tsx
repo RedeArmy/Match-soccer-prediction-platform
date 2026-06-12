@@ -2,14 +2,15 @@
 
 import { RefreshCw, ChevronLeft, ChevronRight, X, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { LoadingState } from '@/components/shared/LoadingState'
 
 // ── AdminPageHeader ───────────────────────────────────────────────────────────
 
 interface AdminPageHeaderProps {
-  title: string
-  subtitle: string
-  onRefresh: () => void
-  isLoading: boolean
+  readonly title: string
+  readonly subtitle: string
+  readonly onRefresh: () => void
+  readonly isLoading: boolean
 }
 
 export function AdminPageHeader({ title, subtitle, onRefresh, isLoading }: AdminPageHeaderProps) {
@@ -34,9 +35,9 @@ export function AdminPageHeader({ title, subtitle, onRefresh, isLoading }: Admin
 // ── AdminModalOverlay ─────────────────────────────────────────────────────────
 
 interface AdminModalOverlayProps {
-  onClose: () => void
-  children: React.ReactNode
-  scrollable?: boolean
+  readonly onClose: () => void
+  readonly children: React.ReactNode
+  readonly scrollable?: boolean
 }
 
 export function AdminModalOverlay({ onClose, children, scrollable }: AdminModalOverlayProps) {
@@ -55,7 +56,7 @@ export function AdminModalOverlay({ onClose, children, scrollable }: AdminModalO
 
 // ── ModalHeader ───────────────────────────────────────────────────────────────
 
-export function ModalHeader({ title, onClose }: { title: string; onClose: () => void }) {
+export function ModalHeader({ title, onClose }: Readonly<{ title: string; onClose: () => void }>) {
   return (
     <div className="flex items-start justify-between gap-4">
       <h2 className="text-lg font-semibold text-white">{title}</h2>
@@ -68,7 +69,7 @@ export function ModalHeader({ title, onClose }: { title: string; onClose: () => 
 
 // ── ModalErrorLine ────────────────────────────────────────────────────────────
 
-export function ModalErrorLine({ error }: { error: string }) {
+export function ModalErrorLine({ error }: Readonly<{ error: string }>) {
   if (!error) return null
   return (
     <p className="text-red-400 text-sm flex items-center gap-1.5">
@@ -80,7 +81,7 @@ export function ModalErrorLine({ error }: { error: string }) {
 
 // ── ModalCancelButton ─────────────────────────────────────────────────────────
 
-export function ModalCancelButton({ onClose, disabled }: { onClose: () => void; disabled: boolean }) {
+export function ModalCancelButton({ onClose, disabled }: Readonly<{ onClose: () => void; disabled: boolean }>) {
   return (
     <button
       onClick={onClose}
@@ -94,7 +95,7 @@ export function ModalCancelButton({ onClose, disabled }: { onClose: () => void; 
 
 // ── InfoRow ───────────────────────────────────────────────────────────────────
 
-export function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+export function InfoRow({ label, value }: Readonly<{ label: string; value: React.ReactNode }>) {
   return (
     <div className="flex justify-between items-start gap-4 py-1.5 border-b border-white/5 last:border-0">
       <span className="text-white/50 text-sm shrink-0">{label}</span>
@@ -120,13 +121,13 @@ function getPageNumbers(current: number, total: number): (number | '...')[] {
 }
 
 interface AdminPaginationProps {
-  page: number
-  pageCount: number
-  rangeStart: number
-  rangeEnd: number
-  total: number
-  itemLabel: string
-  onPageChange: (page: number) => void
+  readonly page: number
+  readonly pageCount: number
+  readonly rangeStart: number
+  readonly rangeEnd: number
+  readonly total: number
+  readonly itemLabel: string
+  readonly onPageChange: (page: number) => void
 }
 
 export function AdminPagination({ page, pageCount, rangeStart, rangeEnd, total, itemLabel, onPageChange }: AdminPaginationProps) {
@@ -173,4 +174,82 @@ export function AdminPagination({ page, pageCount, rangeStart, rangeEnd, total, 
       </div>
     </div>
   )
+}
+
+// ── AdminTabBar ───────────────────────────────────────────────────────────────
+
+interface AdminTabBarProps<TKey extends string> {
+  readonly tabs: ReadonlyArray<{ readonly key: TKey; readonly label: string }>
+  readonly activeTab: TKey
+  readonly counts: Readonly<Record<string, number>>
+  readonly onTabChange: (key: TKey) => void
+  readonly activeButtonClass: string
+  readonly activeBadgeClass: string
+}
+
+export function AdminTabBar<TKey extends string>({
+  tabs, activeTab, counts, onTabChange, activeButtonClass, activeBadgeClass,
+}: AdminTabBarProps<TKey>) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tabs.map(t => {
+        const count = counts[t.key] ?? 0
+        const isActive = activeTab === t.key
+        return (
+          <button
+            key={t.key}
+            onClick={() => onTabChange(t.key)}
+            className={cn(
+              'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isActive ? activeButtonClass : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white',
+            )}
+          >
+            {t.label}
+            <span className={cn(
+              'text-xs px-1.5 py-0.5 rounded-full tabular-nums',
+              isActive ? activeBadgeClass : 'bg-white/10 text-white/40',
+            )}>
+              {count}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── AdminContentState ─────────────────────────────────────────────────────────
+
+interface AdminContentStateProps {
+  readonly isLoading: boolean
+  readonly error: unknown
+  readonly isEmpty: boolean
+  readonly emptyTitle: string
+  readonly emptyMessage: string
+  readonly errorMessage: string
+  readonly children: React.ReactNode
+}
+
+export function AdminContentState({
+  isLoading,
+  error,
+  isEmpty,
+  emptyTitle,
+  emptyMessage,
+  errorMessage,
+  children,
+}: AdminContentStateProps) {
+  if (isLoading) return <LoadingState />
+  if (error) return (
+    <div className="text-center py-12 text-red-400 text-sm">
+      {errorMessage}
+    </div>
+  )
+  if (isEmpty) return (
+    <div className="text-center py-16 text-white/40">
+      <p className="text-lg font-medium">{emptyTitle}</p>
+      <p className="text-sm mt-1">{emptyMessage}</p>
+    </div>
+  )
+  return <>{children}</>
 }

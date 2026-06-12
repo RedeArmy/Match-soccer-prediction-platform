@@ -7,10 +7,9 @@ import { CheckCircle, XCircle, ArrowRight, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { WithdrawalResponse, WithdrawalStatus } from '@/lib/api-types'
 import { cn, formatGTQ, formatUSD, formatRelative, formatDateTime } from '@/lib/utils'
-import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import {
-  AdminPageHeader, AdminModalOverlay, AdminPagination,
+  AdminPageHeader, AdminModalOverlay, AdminPagination, AdminContentState, AdminTabBar,
   ModalHeader, ModalCancelButton, ModalErrorLine, InfoRow,
 } from '@/components/admin/shared'
 
@@ -271,46 +270,24 @@ export default function AdminWithdrawalsPage() {
       />
 
       {/* Status tabs */}
-      <div className="flex flex-wrap gap-2">
-        {TABS.map(t => {
-          const count = counts[t.key === 'all' ? 'all' : t.key] ?? 0
-          const isActive = tab === t.key
-          return (
-            <button
-              key={t.key}
-              onClick={() => changeTab(t.key)}
-              className={cn(
-                'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white',
-              )}
-            >
-              {t.label}
-              <span className={cn(
-                'text-xs px-1.5 py-0.5 rounded-full tabular-nums',
-                isActive ? 'bg-emerald-500/30 text-emerald-300' : 'bg-white/10 text-white/40',
-              )}>
-                {count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+      <AdminTabBar
+        tabs={TABS}
+        activeTab={tab}
+        counts={counts}
+        onTabChange={changeTab}
+        activeButtonClass="bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40"
+        activeBadgeClass="bg-emerald-500/30 text-emerald-300"
+      />
 
       {/* Content */}
-      {isLoading ? (
-        <LoadingState />
-      ) : error ? (
-        <div className="text-center py-12 text-red-400 text-sm">
-          Error al cargar los retiros. Intenta actualizar la página.
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-white/40">
-          <p className="text-lg font-medium">No hay retiros</p>
-          <p className="text-sm mt-1">{emptyMsg}</p>
-        </div>
-      ) : (
+      <AdminContentState
+        isLoading={isLoading}
+        error={error}
+        isEmpty={filtered.length === 0}
+        emptyTitle="No hay retiros"
+        emptyMessage={emptyMsg}
+        errorMessage="Error al cargar los retiros. Intenta actualizar la página."
+      >
         <>
           <div className="overflow-x-auto rounded-xl border border-white/10">
             <table className="w-full text-sm">
@@ -421,7 +398,7 @@ export default function AdminWithdrawalsPage() {
             onPageChange={setPage}
           />
         </>
-      )}
+      </AdminContentState>
 
       {actionModal && (
         <AdminModalOverlay onClose={closeModal}>
