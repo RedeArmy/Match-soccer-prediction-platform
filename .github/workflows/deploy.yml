@@ -393,7 +393,7 @@ jobs:
           KNOWN_HOST: ${{ secrets.HETZNER_SSH_KNOWN_HOST }}
         run: |
           install -m 600 -D /dev/null ~/.ssh/id_hetzner
-          printf '%s' "$SSH_KEY" | base64 -d > ~/.ssh/id_hetzner
+          printf '%s' "$SSH_KEY" > ~/.ssh/id_hetzner
           printf '%s\n' "$KNOWN_HOST" >> ~/.ssh/known_hosts
 
       # Copy the deploy script to the server so it is always the latest version.
