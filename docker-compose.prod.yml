@@ -120,6 +120,8 @@ services:
       WCQ_N8N_WEBHOOKSECRET:      ${N8N_WEBHOOK_SECRET}
       # ── Email ────────────────────────────────────────────────────────────────
       WCQ_EMAIL_RESENDAPIKEY:     ${RESEND_API_KEY}
+      # ── Web Push ─────────────────────────────────────────────────────────────
+      WCQ_WEBPUSH_VAPIDPRIVATEKEY: ${VAPID_PRIVATE_KEY}
       # ── GC tuning — worker budget ~1 GB ─────────────────────────────────────
       GOMEMLIMIT: "900MiB"
       GOGC:       "100"
