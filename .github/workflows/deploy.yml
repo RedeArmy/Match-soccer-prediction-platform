@@ -427,11 +427,12 @@ jobs:
             Caddyfile \
             "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/"
 
-          # Reclaim ownership of /opt/wcq/observability before syncing.
-          # Container processes (n8n, tempo) write files as root or other UIDs,
-          # making subdirectories unwritable by the deploy user.
+          # Reclaim ownership of /opt/wcq/observability using Docker (runs as
+          # root inside the container) so rsync can overwrite files created by
+          # container-process UIDs without requiring a NOPASSWD sudoers rule.
           $SSH "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "sudo chown -R deploy:deploy /opt/wcq/observability || true"
+            "docker run --rm -v /opt/wcq/observability:/data alpine \
+               sh -c 'chown -R \$(stat -c %u:%g /data/.. ) /data 2>/dev/null; exit 0' || true"
 
           # Sync observability config using rsync so that type conflicts
           # (e.g. a directory created where a file is expected) are resolved
