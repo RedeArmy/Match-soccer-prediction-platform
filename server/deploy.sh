@@ -108,8 +108,16 @@ fi
 
 # ── 5. Ensure observability stack is up ──────────────────────────────────────
 if [[ -f "${WCQ_DIR}/docker-compose.observability.yml" ]]; then
+  # Remove any config files that were accidentally created as directories by a
+  # failed scp run. Docker is used here so the cleanup runs as root inside the
+  # container and can remove directories owned by container-process UIDs without
+  # requiring a NOPASSWD sudoers rule.
+  echo "==> fixing observability config type conflicts..."
+  docker run --rm -v "${WCQ_DIR}/observability:/data" alpine \
+    sh -c 'find /data -maxdepth 5 \( -name "*.yml" -o -name "*.json" \) -type d -exec rm -rf {} + 2>/dev/null; exit 0'
+
   echo "==> reconciling observability stack..."
-  $OBS_COMPOSE up -d --remove-orphans
+  $OBS_COMPOSE up -d
 fi
 
 # ── 6. Prune old images (keep last 2 per repo via `latest` + previous SHA) ───
