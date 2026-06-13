@@ -44,12 +44,16 @@ fi
 
 usermod -aG sudo "$DEPLOY_USER" 2>/dev/null || true
 
-# Passwordless systemctl reload/restart for caddy only — required by deploy.sh.
-cat > /etc/sudoers.d/deploy-caddy << 'EOF'
+# Passwordless rules required by deploy.sh:
+#   - systemctl reload/restart caddy  — picks up Caddyfile changes on every deploy
+#   - chown /opt/wcq/observability    — reclaims ownership before scp -r when
+#     container processes (n8n, tempo) have written files as root or other UIDs
+cat > /etc/sudoers.d/deploy-wcq << 'EOF'
 deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload caddy, /usr/bin/systemctl restart caddy
+deploy ALL=(ALL) NOPASSWD: /usr/bin/chown -R deploy\:deploy /opt/wcq/observability
 EOF
-chmod 440 /etc/sudoers.d/deploy-caddy
-echo "    sudoers caddy rule written ✓"
+chmod 440 /etc/sudoers.d/deploy-wcq
+echo "    sudoers rules written ✓"
 
 # ── 2. Docker CE ─────────────────────────────────────────────────────────────
 echo "==> [2/7] Installing Docker CE..."
