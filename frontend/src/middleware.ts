@@ -71,7 +71,7 @@ function buildCSP(nonce: string): string {
     "img-src 'self' data: blob: https:",
     "font-src 'self' https://fonts.gstatic.com",
     `connect-src 'self' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://clerk-telemetry.com https://*.paypal.com https://*.sandbox.paypal.com https://www.sandbox.paypal.com${clerkApiEntry}`,
-    `frame-src https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://*.sandbox.paypal.com https://www.sandbox.paypal.com${clerkApiEntry}`,
+    `frame-src https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://*.sandbox.paypal.com https://www.sandbox.paypal.com https://challenges.cloudflare.com${clerkApiEntry}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
