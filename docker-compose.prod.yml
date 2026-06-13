@@ -164,3 +164,9 @@ services:
     depends_on:
       api: { condition: service_healthy }
     networks: [wcq-net]
+    healthcheck:
+      test:         ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval:     15s
+      timeout:      5s
+      start_period: 30s
+      retries:      3
