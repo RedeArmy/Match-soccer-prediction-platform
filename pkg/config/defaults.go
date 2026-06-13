@@ -140,6 +140,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("n8n.baseURL", "")
 	v.SetDefault("n8n.apiKey", "")
 
+	// webPush.vapidPrivateKey is a P-256 secret injected via WCQ_WEBPUSH_VAPIDPRIVATEKEY.
+	// An empty default is required so AutomaticEnv resolves the env var during Unmarshal.
+	v.SetDefault("webPush.vapidPrivateKey", "")
+
 	// footballProvider: API key defaults to empty (sync disabled until key is supplied).
 	// baseURL defaults to empty (production endpoint used when empty).
 	v.SetDefault("footballProvider.apiKey", "")
