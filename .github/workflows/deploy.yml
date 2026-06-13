@@ -427,12 +427,15 @@ jobs:
             Caddyfile \
             "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/"
 
-          # Reclaim ownership of /opt/wcq/observability using Docker (runs as
-          # root inside the container) so rsync can overwrite files created by
+          # Reclaim ownership of /opt/wcq/observability using Docker (runs as root
+          # inside the container) so rsync can overwrite files created by
           # container-process UIDs without requiring a NOPASSWD sudoers rule.
+          # DUID/DGID are captured from the deploy user on the server and passed
+          # via -e so the alpine shell can expand them inside single quotes.
           $SSH "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "docker run --rm -v /opt/wcq/observability:/data alpine \
-               sh -c 'chown -R \$(stat -c %u:%g /data/.. ) /data 2>/dev/null; exit 0' || true"
+            "DUID=\$(id -u); DGID=\$(id -g); docker run --rm -e DUID -e DGID \
+               -v /opt/wcq/observability:/data alpine \
+               sh -c 'chown -R \$DUID:\$DGID /data' 2>/dev/null || true"
 
           # Sync observability config using rsync so that type conflicts
           # (e.g. a directory created where a file is expected) are resolved
