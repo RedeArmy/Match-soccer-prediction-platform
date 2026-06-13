@@ -32,30 +32,46 @@ function generateNonce(): string {
   return btoa(String.fromCodePoint(...bytes));
 }
 
+// clerkFrontendApiOrigin derives the Clerk Frontend API origin from the
+// publishable key. Clerk encodes the hostname in the third segment of the key
+// as base64 with a trailing '$' separator, e.g.
+//   pk_live_Y2xlcmsua2luaWVsYS51ayQ → atob(...) → 'clerk.kiniela.uk$'
+// The derived origin must appear in both script-src (the SDK is served from
+// this domain) and connect-src (all Clerk auth API calls go here).
+function clerkFrontendApiOrigin(): string {
+  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '';
+  const segment = key.split('_')[2] ?? '';
+  if (!segment) return '';
+  try {
+    return `https://${atob(segment).replace('$', '')}`;
+  } catch {
+    return '';
+  }
+}
+
 // buildCSP constructs the Content-Security-Policy header value for a given nonce.
 //
 // script-src strategy:
-//   'nonce-{nonce}' + 'strict-dynamic' — modern browsers (CSP Level 3+) require
-//   every inline script to carry the nonce. 'strict-dynamic' additionally trusts
-//   scripts loaded by already-trusted scripts, so Clerk and Next.js can load
-//   their own sub-resources without being whitelisted individually.
-//   'unsafe-inline' — kept as fallback for browsers that do not support
-//   'strict-dynamic'. In CSP Level 3+ browsers 'unsafe-inline' is silently
-//   ignored when 'strict-dynamic' is present, so it provides no weakening there.
+//   'nonce-{nonce}' + 'strict-dynamic' — the root layout passes the nonce to
+//   ClerkProvider and Next.js auto-attaches it to its inline bootstrap scripts
+//   via the x-nonce request header. 'strict-dynamic' trusts scripts dynamically
+//   loaded by those nonce-carrying scripts (Next.js chunks, Clerk sub-resources).
+//   'unsafe-inline' is a fallback for pre-CSP3 browsers; CSP3 browsers ignore
+//   it when 'strict-dynamic' is present.
 //
 // style-src retains 'unsafe-inline' because the root layout injects a
-// <style> block for CSS custom properties that cannot carry a nonce through
-// next.config.ts-level headers. Style injection attacks are significantly
-// lower-risk than script injection on a sports pool app.
+// <style> block for CSS custom properties that cannot carry a nonce.
 function buildCSP(nonce: string): string {
+  const clerkApi = clerkFrontendApiOrigin();
+  const clerkApiEntry = clerkApi ? ` ${clerkApi}` : '';
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://www.paypalobjects.com`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://www.paypalobjects.com${clerkApiEntry}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https:",
     "font-src 'self' https://fonts.gstatic.com",
-    "connect-src 'self' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://clerk-telemetry.com https://*.paypal.com https://*.sandbox.paypal.com https://www.sandbox.paypal.com",
-    "frame-src https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://*.sandbox.paypal.com https://www.sandbox.paypal.com",
+    `connect-src 'self' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://clerk-telemetry.com https://*.paypal.com https://*.sandbox.paypal.com https://www.sandbox.paypal.com${clerkApiEntry}`,
+    `frame-src https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://*.sandbox.paypal.com https://www.sandbox.paypal.com${clerkApiEntry}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
