@@ -35,8 +35,12 @@ RUN find /app -type d -exec chmod 555 {} \;
 
 USER nextjs
 EXPOSE 3000
+# Next.js standalone reads HOSTNAME to determine the bind address.
+# Docker injects HOSTNAME=<container-id> by default, causing the server to
+# bind to the container's Docker network IP instead of all interfaces.
+ENV HOSTNAME=0.0.0.0
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+  CMD node -e "require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
 CMD ["node", "server.js"]
