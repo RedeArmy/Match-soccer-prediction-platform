@@ -430,11 +430,13 @@ jobs:
           # Reclaim ownership of /opt/wcq/observability using Docker (runs as root
           # inside the container) so rsync can overwrite files created by
           # container-process UIDs without requiring a NOPASSWD sudoers rule.
-          # DUID/DGID are captured from the deploy user on the server before the
-          # docker run so the alpine shell can expand them from the environment
-          # (stat /data/.. inside the container returns 0:0 — the container root).
+          # id -u / id -g are evaluated by the server shell and passed as
+          # -e KEY=VALUE so the container receives numeric UID/GID directly.
+          # Using -e KEY (no value) would read from the process environment,
+          # not from a shell variable, leaving DUID/DGID empty in the container.
           $SSH "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "DUID=\$(id -u); DGID=\$(id -g); docker run --rm -e DUID -e DGID \
+            "docker run --rm \
+               -e DUID=\$(id -u) -e DGID=\$(id -g) \
                -v /opt/wcq/observability:/data alpine \
                sh -c 'chown -R \$DUID:\$DGID /data'"
 
