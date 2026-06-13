@@ -31,6 +31,11 @@ DEPLOY_USER=deploy
 echo "==> [1/7] Creating deploy user..."
 id "$DEPLOY_USER" &>/dev/null || useradd -m -s /bin/bash "$DEPLOY_USER"
 usermod -aG sudo "$DEPLOY_USER" 2>/dev/null || true
+# Allow the deploy user to reload/restart Caddy without a password so that
+# deploy.sh can pick up Caddyfile changes on every CI deploy.
+echo "${DEPLOY_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload caddy, /usr/bin/systemctl restart caddy" \
+  > /etc/sudoers.d/deploy-caddy
+chmod 440 /etc/sudoers.d/deploy-caddy
 
 echo "==> [2/7] Installing Docker CE..."
 apt-get update -qq

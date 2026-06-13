@@ -97,13 +97,18 @@ echo "==> restarting frontend..."
 $COMPOSE up -d --no-deps --force-recreate frontend
 wait_healthy frontend 60
 
-# ── 4. Ensure observability stack is up ──────────────────────────────────────
+# ── 4. Reload Caddy to pick up any Caddyfile changes ────────────────────────
+echo "==> reloading caddy..."
+sudo systemctl reload caddy
+echo "    caddy: reloaded ✓"
+
+# ── 5. Ensure observability stack is up ──────────────────────────────────────
 if [[ -f "${WCQ_DIR}/docker-compose.observability.yml" ]]; then
   echo "==> reconciling observability stack..."
   $OBS_COMPOSE up -d --remove-orphans
 fi
 
-# ── 5. Prune old images (keep last 2 per repo via `latest` + previous SHA) ───
+# ── 6. Prune old images (keep last 2 per repo via `latest` + previous SHA) ───
 echo "==> pruning dangling images..."
 docker image prune -f
 
