@@ -5,7 +5,7 @@ import '@/styles/globals.css'
 
 export const metadata: Metadata = {
   title: 'Kiniela',
-  description: 'Predice resultados del Mundial 2026 y compite en kinielas internacionales',
+  description: 'Predice resultados del torneo internacional de fútbol 2026 y compite en kinielas',
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'),
   openGraph: {
     type: 'website',
