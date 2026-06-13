@@ -421,14 +421,22 @@ jobs:
           # commit as the images being deployed.
           scp -i ~/.ssh/id_hetzner \
             server/deploy.sh \
+            server/setup.sh \
             docker-compose.prod.yml \
             docker-compose.observability.yml \
             Caddyfile \
             "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/"
 
-          # deploy.sh must remain executable after the copy.
+          # Sync observability config (prometheus, alertmanager, grafana, tempo).
+          # Mounted as files/dirs by docker-compose.observability.yml.
+          scp -r -i ~/.ssh/id_hetzner \
+            observability/ \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/"
+
+          # Move scripts to server/ subdirectory and make them executable.
           $SSH "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "mv /opt/wcq/deploy.sh /opt/wcq/server/deploy.sh && chmod +x /opt/wcq/server/deploy.sh"
+            "mv /opt/wcq/deploy.sh /opt/wcq/server/deploy.sh && chmod +x /opt/wcq/server/deploy.sh && \
+             mv /opt/wcq/setup.sh  /opt/wcq/server/setup.sh  && chmod +x /opt/wcq/server/setup.sh"
 
           # Login to GHCR on the server using the ephemeral GITHUB_TOKEN
           # (valid for the duration of this workflow run).

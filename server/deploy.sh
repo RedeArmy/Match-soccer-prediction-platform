@@ -98,9 +98,13 @@ $COMPOSE up -d --no-deps --force-recreate frontend
 wait_healthy frontend 60
 
 # ── 4. Reload Caddy to pick up any Caddyfile changes ────────────────────────
-echo "==> reloading caddy..."
-sudo systemctl reload caddy
-echo "    caddy: reloaded ✓"
+if systemctl list-units --full -all 2>/dev/null | grep -qF "caddy.service"; then
+  echo "==> reloading caddy..."
+  sudo systemctl reload caddy
+  echo "    caddy: reloaded ✓"
+else
+  echo "==> caddy not managed by systemd — skipping reload"
+fi
 
 # ── 5. Ensure observability stack is up ──────────────────────────────────────
 if [[ -f "${WCQ_DIR}/docker-compose.observability.yml" ]]; then
