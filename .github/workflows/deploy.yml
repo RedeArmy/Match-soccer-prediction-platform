@@ -427,11 +427,19 @@ jobs:
             Caddyfile \
             "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/"
 
-          # Sync observability config (prometheus, alertmanager, grafana, tempo).
-          # Mounted as files/dirs by docker-compose.observability.yml.
-          scp -r -i ~/.ssh/id_hetzner \
+          # Reclaim ownership of /opt/wcq/observability before syncing.
+          # Container processes (n8n, tempo) write files as root or other UIDs,
+          # making subdirectories unwritable by the deploy user.
+          $SSH "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "sudo chown -R deploy:deploy /opt/wcq/observability || true"
+
+          # Sync observability config using rsync so that type conflicts
+          # (e.g. a directory created where a file is expected) are resolved
+          # by --delete before the new files land.
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/id_hetzner -o StrictHostKeyChecking=yes" \
             observability/ \
-            "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/"
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/observability/"
 
           # Move scripts to server/ subdirectory and make them executable.
           $SSH "${DEPLOY_USER}@${DEPLOY_HOST}" \
