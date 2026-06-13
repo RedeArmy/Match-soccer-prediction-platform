@@ -79,16 +79,18 @@ echo "==> ensuring redis is healthy..."
 $COMPOSE up -d --no-deps redis
 wait_healthy redis 30
 
-# Worker first — no user traffic; can tolerate a brief restart gap.
-echo "==> restarting worker..."
-$COMPOSE up -d --no-deps --force-recreate worker
-wait_healthy worker 90
-
-# API second — runs DB migrations on startup (advisory lock, multi-replica safe).
+# API first — runs DB migrations on startup (advisory lock, multi-replica safe).
+# The worker reads from system_params and other tables seeded by migrations, so
+# it must not start until the API has completed all pending migrations.
 # Allow 120s: migrations may take up to ~30s on a large database.
 echo "==> restarting api..."
 $COMPOSE up -d --no-deps --force-recreate api
 wait_healthy api 120
+
+# Worker second — all migrations are guaranteed applied by this point.
+echo "==> restarting worker..."
+$COMPOSE up -d --no-deps --force-recreate worker
+wait_healthy worker 90
 
 # Frontend last — BFF proxy routes require API to be healthy first.
 echo "==> restarting frontend..."
