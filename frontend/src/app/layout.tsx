@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { ClerkProvider } from '@clerk/nextjs'
 import { Providers } from './providers'
 import '@/styles/globals.css'
@@ -41,9 +40,8 @@ const clerkAppearance = {
 }
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const nonce = (await headers()).get('x-nonce') ?? undefined
   return (
-    <ClerkProvider appearance={clerkAppearance} nonce={nonce}>
+    <ClerkProvider appearance={clerkAppearance} dynamic>
       <html lang="es" suppressHydrationWarning>
         <head>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
