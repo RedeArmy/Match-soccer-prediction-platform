@@ -427,25 +427,25 @@ jobs:
             Caddyfile \
             "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/wcq/"
 
-          # Reclaim ownership of /opt/wcq/observability using Docker (runs as root
-          # inside the container) so rsync can overwrite files created by
-          # container-process UIDs without requiring a NOPASSWD sudoers rule.
-          # id -u / id -g are evaluated by the server shell and passed as
-          # -e KEY=VALUE so the container receives numeric UID/GID directly.
-          # Using -e KEY (no value) would read from the process environment,
-          # not from a shell variable, leaving DUID/DGID empty in the container.
+          # Pre-rsync preparation: run as root inside an alpine container so that
+          # files owned by container-process UIDs can be modified without a
+          # NOPASSWD sudoers rule.  Two operations in one docker run to avoid
+          # a second image pull:
+          #   1. Remove any paths that are directories where a file is expected
+          #      (created by a failed scp run). rsync cannot replace a directory
+          #      with a file; the cleanup must happen BEFORE rsync, not after.
+          #   2. Chown everything to the deploy user so rsync can write files.
+          #      -e KEY=$(id -u) passes the numeric UID/GID evaluated on the
+          #      server; -e KEY (no value) reads from the process env, which
+          #      does not contain shell-local variables, leaving them empty.
           $SSH "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "docker run --rm \
                -e DUID=\$(id -u) -e DGID=\$(id -g) \
                -v /opt/wcq/observability:/data alpine \
-               sh -c 'chown -R \$DUID:\$DGID /data'"
+               sh -c 'find /data \( -name \"*.yml\" -o -name \"*.json\" \) -type d -exec rm -rf {} + 2>/dev/null; chown -R \$DUID:\$DGID /data'"
 
-          # Sync observability config using rsync so that type conflicts
-          # (e.g. a directory created where a file is expected) are resolved
-          # by --delete before the new files land.
-          # --no-group: do not attempt to preserve the source group (the GitHub
-          # Actions runner group does not exist on the server; rsync's -g flag
-          # would trigger chgrp errors on every directory even after chown).
+          # Sync observability config. --no-group: do not preserve the source
+          # group (the GitHub Actions runner group does not exist on the server).
           rsync -az --delete --no-group \
             -e "ssh -i ~/.ssh/id_hetzner -o StrictHostKeyChecking=yes" \
             observability/ \

@@ -98,7 +98,7 @@ $COMPOSE up -d --no-deps --force-recreate frontend
 wait_healthy frontend 60
 
 # ── 4. Reload Caddy to pick up any Caddyfile changes ────────────────────────
-if systemctl list-units --full -all 2>/dev/null | grep -qF "caddy.service"; then
+if systemctl is-active --quiet caddy 2>/dev/null; then
   echo "==> reloading caddy..."
   sudo systemctl reload caddy
   echo "    caddy: reloaded ✓"
