@@ -66,7 +66,12 @@ services:
       # ── Email ────────────────────────────────────────────────────────────────
       WCQ_EMAIL_UNSUBSCRIBESECRET: ${EMAIL_UNSUBSCRIBE_SECRET}
       # ── Storage ──────────────────────────────────────────────────────────────
-      WCQ_STORAGE_DRIVER: ${STORAGE_DRIVER}
+      WCQ_STORAGE_DRIVER:          ${STORAGE_DRIVER}
+      WCQ_STORAGE_S3BUCKET:        ${WCQ_STORAGE_S3BUCKET}
+      WCQ_STORAGE_S3ENDPOINT:      ${WCQ_STORAGE_S3ENDPOINT}
+      WCQ_STORAGE_S3REGION:        ${WCQ_STORAGE_S3REGION}
+      WCQ_STORAGE_S3ACCESSKEYID:   ${WCQ_STORAGE_S3ACCESSKEYID}
+      WCQ_STORAGE_S3SECRETKEY:     ${WCQ_STORAGE_S3SECRETKEY}
       # ── Observability ────────────────────────────────────────────────────────
       WCQ_METRICS_ENABLED:             "true"
       WCQ_TRACING_ENABLED:             "true"
