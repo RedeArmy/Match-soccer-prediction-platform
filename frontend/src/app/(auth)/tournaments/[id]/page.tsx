@@ -14,6 +14,7 @@ import { LoadingState } from '@/components/shared/LoadingState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { TournamentSettingsModal } from '@/components/groups/TournamentSettingsModal'
 import { useI18n } from '@/lib/i18n'
+import { LivePredictionsCarousel } from '@/components/groups/LivePredictionsCarousel'
 export default function TournamentDetailPage() {
   const { getToken } = useAuth()
   const params = useParams<{ id: string }>()
@@ -229,6 +230,9 @@ export default function TournamentDetailPage() {
         )}
 
       </div>
+
+      {/* Live predictions carousel — only renders when ≥1 match is in_progress */}
+      {!Number.isNaN(groupId) && <LivePredictionsCarousel groupId={groupId} />}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         {/* Leaderboard */}

@@ -132,6 +132,9 @@ const translations: TranslationNode = {
     cancel:      { es: 'Cancelar',               en: 'Cancel'               },
     you:         { es: 'tú',                      en: 'you'                  },
     notFound:    { es: 'Grupo no encontrado.',    en: 'Group not found.'     },
+    live:        { es: 'EN VIVO',                 en: 'LIVE'                 },
+    scrollLeft:  { es: 'Desplazar a la izquierda', en: 'Scroll left'         },
+    scrollRight: { es: 'Desplazar a la derecha',   en: 'Scroll right'        },
   },
   group: {
     leaderboard:         { es: 'Clasificación',              en: 'Leaderboard'              },
@@ -323,6 +326,13 @@ const translations: TranslationNode = {
     checkingAvailability:  { es: 'Verificando disponibilidad…',                             en: 'Checking availability…'                                    },
     nameAvailable:         { es: 'Nombre disponible',                                       en: 'Name available'                                            },
     nameTaken:             { es: 'Ya existe un grupo con ese nombre. Elige otro.',          en: 'A group with that name already exists. Please choose another.' },
+    livePredictionsTitle:  { es: 'Predicciones en Vivo',                                    en: 'Live Predictions'                                              },
+    livePredictionsEmpty:  { es: 'No hay partidos en vivo en este momento.',                en: 'No matches are currently in progress.'                         },
+    noPrediction:          { es: 'Sin predicción',                                          en: 'No prediction'                                                 },
+    predictionVs:          { es: 'vs',                                                      en: 'vs'                                                            },
+    showPredictions:       { es: 'Ver predicciones de',                                      en: 'Show predictions for'                                          },
+    hidePredictions:       { es: 'Ocultar predicciones de',                                 en: 'Hide predictions for'                                          },
+    predCount:             { es: 'predicciones',                                             en: 'predictions'                                                   },
   },
   ledger: {
     credit:     { es: 'Crédito',          en: 'Credit'      },

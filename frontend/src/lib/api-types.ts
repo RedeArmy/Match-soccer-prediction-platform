@@ -139,6 +139,25 @@ export interface MatchResponse {
   round_number: number | null
 }
 
+// ── Live predictions carousel ─────────────────────────────────────────────────
+export interface MatchPredictionSnapshot {
+  match_id:       number
+  home_score:     number
+  away_score:     number
+  has_prediction: boolean
+}
+
+export interface UserLivePrediction {
+  user_id:      number
+  display_name: string
+  predictions:  MatchPredictionSnapshot[]
+}
+
+export interface LivePredictionsResponse {
+  live_matches:     MatchResponse[]
+  user_predictions: UserLivePrediction[]
+}
+
 // ── Prediction ────────────────────────────────────────────────────────────────
 export interface PredictionResponse {
   id:          number

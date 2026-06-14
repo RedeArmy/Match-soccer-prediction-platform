@@ -86,6 +86,9 @@ func (s *Server) registerGroupRoutes(r chi.Router, d apiV1Deps) {
 		r.Delete("/{id}/members/{membershipID}", d.h.group.RejectJoin)
 		// Self-removal only — a user removes themselves from the group.
 		r.Delete("/{id}/members/me", d.h.group.Leave)
+		// Live-predictions carousel: returns all active members' predictions for
+		// currently-live matches. Read-only; predictions cannot be modified here.
+		r.Get("/{id}/live-predictions", d.h.group.GetLivePredictions)
 		// Tiebreaker: active members submit and view their own prediction.
 		r.Post("/{id}/tiebreaker", d.h.tiebreaker.Submit)
 		r.Get("/{id}/tiebreaker", d.h.tiebreaker.GetMine)

@@ -203,6 +203,11 @@ type PredictionRepository interface {
 	// need a fresh leaderboard snapshot. Returns an empty slice (not an error)
 	// when no active members have predictions for the match.
 	ListQuinielaIDsByMatch(ctx context.Context, matchID int) ([]int, error)
+	// ListByGroupAndMatches returns all predictions submitted by active members of
+	// quinielaID for the given matchIDs. Used by the live-predictions carousel to
+	// fetch every member's predicted score for currently-live matches in a single
+	// database round-trip. Returns nil when matchIDs is empty.
+	ListByGroupAndMatches(ctx context.Context, quinielaID int, matchIDs []int) ([]*domain.Prediction, error)
 	// ListByUserAndQuiniela returns all predictions for userID where the user is
 	// an active member of the given quiniela. The EXISTS gate ensures that callers
 	// who are not active members of quinielaID receive an empty slice, not an

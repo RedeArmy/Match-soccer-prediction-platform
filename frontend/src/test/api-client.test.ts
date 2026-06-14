@@ -253,6 +253,13 @@ describe('api – group methods', () => {
     expect(String(url)).toContain('/api/v1/groups/1/members/99')
     expect((init as RequestInit).method).toBe('DELETE')
   })
+
+  it('getGroupLivePredictions sends GET to /api/v1/groups/:id/live-predictions', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ live_matches: [], user_predictions: [] }))
+    await api.getGroupLivePredictions('tok', 7)
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/groups/7/live-predictions')
+  })
 })
 
 describe('api – match and prediction methods', () => {

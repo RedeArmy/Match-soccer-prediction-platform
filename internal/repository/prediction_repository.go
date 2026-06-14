@@ -773,4 +773,33 @@ func (r *PostgresPredictionRepository) GetScoringCfgSnapshot(ctx context.Context
 	return &s, nil
 }
 
+// ListByGroupAndMatches returns predictions made by active members of quinielaID
+// for the given matchIDs. A single INNER JOIN against group_memberships ensures
+// only active members' rows are returned, avoiding N+1 per-member queries.
+// Returns nil when matchIDs is empty (nothing to look up).
+func (r *PostgresPredictionRepository) ListByGroupAndMatches(
+	ctx context.Context, quinielaID int, matchIDs []int,
+) ([]*domain.Prediction, error) {
+	if len(matchIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx,
+		`SELECT p.id, p.user_id, p.match_id, p.home_score, p.away_score,
+		        p.predicted_win_method, p.points, p.scored_at, p.created_at, p.updated_at
+		   FROM predictions p
+		  INNER JOIN group_memberships gm
+		          ON gm.user_id     = p.user_id
+		         AND gm.quiniela_id = $1
+		         AND gm.status      = 'active'
+		  WHERE p.match_id = ANY($2::int[])
+		  ORDER BY p.user_id ASC, p.match_id ASC`,
+		quinielaID, matchIDs,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectPredictions(rows)
+}
+
 var _ PredictionRepository = (*PostgresPredictionRepository)(nil)
