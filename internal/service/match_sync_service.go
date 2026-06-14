@@ -366,24 +366,30 @@ func (s *matchSyncService) autoLinkByDateRange(ctx context.Context, leagueID, se
 			continue
 		}
 		for _, fix := range fixtures {
-			m, err := s.matchRepo.FindByTeams(ctx, fix.HomeTeam, fix.AwayTeam)
-			if err != nil || m == nil {
-				continue
-			}
-			if m.ExternalMatchID != nil {
-				continue // already linked
-			}
-			if err := s.matchRepo.LinkExternal(ctx, m.ID, "api-football", fix.ExternalID); err != nil {
-				s.log.Warn("match daily sync: auto-link failed",
-					zap.Int("match_id", m.ID), zap.Int64("external_id", fix.ExternalID), zap.Error(err))
-				continue
-			}
-			result.Linked++
-			s.log.Info("match daily sync: linked match",
-				zap.Int("match_id", m.ID), zap.Int64("external_id", fix.ExternalID),
-				zap.String("home", fix.HomeTeam), zap.String("away", fix.AwayTeam))
+			s.tryAutoLink(ctx, fix, result)
 		}
 	}
+}
+
+// tryAutoLink attempts to link a single provider fixture to an internal match
+// by team name. It is a no-op when the match is already linked or not found.
+func (s *matchSyncService) tryAutoLink(ctx context.Context, fix *footballprovider.Fixture, result *DailySyncResult) {
+	m, err := s.matchRepo.FindByTeams(ctx, fix.HomeTeam, fix.AwayTeam)
+	if err != nil || m == nil {
+		return
+	}
+	if m.ExternalMatchID != nil {
+		return // already linked
+	}
+	if err := s.matchRepo.LinkExternal(ctx, m.ID, "api-football", fix.ExternalID); err != nil {
+		s.log.Warn("match daily sync: auto-link failed",
+			zap.Int("match_id", m.ID), zap.Int64("external_id", fix.ExternalID), zap.Error(err))
+		return
+	}
+	result.Linked++
+	s.log.Info("match daily sync: linked match",
+		zap.Int("match_id", m.ID), zap.Int64("external_id", fix.ExternalID),
+		zap.String("home", fix.HomeTeam), zap.String("away", fix.AwayTeam))
 }
 
 // filterByDateRange returns only the matches whose kickoff falls within
