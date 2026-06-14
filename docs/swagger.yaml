@@ -1091,6 +1091,17 @@ definitions:
           type: string
         type: object
     type: object
+  internal_api_handler.dailySyncResponse:
+    properties:
+      kickoffs_updated:
+        type: integer
+      linked:
+        type: integer
+      scores_corrected:
+        type: integer
+      total:
+        type: integer
+    type: object
   internal_api_handler.eventBusDLQEntry:
     properties:
       count:
@@ -2512,6 +2523,34 @@ paths:
       security:
       - BearerAuth: []
       summary: Reconcile local match state against external provider
+      tags:
+      - admin-match-sync
+  /api/v1/admin/match-sync/today:
+    post:
+      description: Admin only. Validates all linked scheduled and live matches against
+      parameters:
+      - description: Kickoff date range start (YYYY-MM-DD, inclusive)
+        in: query
+        name: start_date
+        type: string
+      - description: Kickoff date range end (YYYY-MM-DD, inclusive)
+        in: query
+        name: end_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.dailySyncResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Trigger fixture sync for all linked scheduled/live matches
       tags:
       - admin-match-sync
   /api/v1/admin/matches/{id}/external-link:

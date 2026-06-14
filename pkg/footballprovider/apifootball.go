@@ -57,7 +57,17 @@ type apiResponse struct {
 
 type apiFixtureItem struct {
 	Fixture apiFixtureDetail `json:"fixture"`
+	Teams   apiTeams         `json:"teams"`
 	Goals   apiGoals         `json:"goals"`
+}
+
+type apiTeams struct {
+	Home apiTeamDetail `json:"home"`
+	Away apiTeamDetail `json:"away"`
+}
+
+type apiTeamDetail struct {
+	Name string `json:"name"`
 }
 
 type apiFixtureDetail struct {
@@ -76,13 +86,17 @@ type apiGoals struct {
 	Away *int `json:"away"`
 }
 
+// pathFixtures is the API-Football endpoint shared by GetFixture,
+// GetLiveFixtures, and GetFixturesByDate.
+const pathFixtures = "/fixtures"
+
 // ── Public methods ────────────────────────────────────────────────────────────
 
 // GetFixture fetches the current state of a single fixture by its
 // provider-assigned ID. Returns an error when the HTTP request fails or
 // the fixture ID is not found in the API-Football response.
 func (c *APIFootballClient) GetFixture(ctx context.Context, externalID int64) (*Fixture, error) {
-	items, err := c.fetch(ctx, "/fixtures", map[string]string{
+	items, err := c.fetch(ctx, pathFixtures, map[string]string{
 		"id": strconv.FormatInt(externalID, 10),
 	})
 	if err != nil {
@@ -98,10 +112,29 @@ func (c *APIFootballClient) GetFixture(ctx context.Context, externalID int64) (*
 // and season. Used by the scheduler to determine whether to apply the fast or
 // slow polling interval on the next tick.
 func (c *APIFootballClient) GetLiveFixtures(ctx context.Context, leagueID, season int) ([]*Fixture, error) {
-	items, err := c.fetch(ctx, "/fixtures", map[string]string{
+	items, err := c.fetch(ctx, pathFixtures, map[string]string{
 		"live":   "all",
 		"league": strconv.Itoa(leagueID),
 		"season": strconv.Itoa(season),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*Fixture, 0, len(items))
+	for _, item := range items {
+		out = append(out, itemToFixture(item))
+	}
+	return out, nil
+}
+
+// GetFixturesByDate returns all fixtures for the given league, season, and UTC
+// date (formatted as YYYY-MM-DD). Used by the daily fixture sync job to link
+// matches and update kickoff times for every game scheduled on a given day.
+func (c *APIFootballClient) GetFixturesByDate(ctx context.Context, leagueID, season int, date string) ([]*Fixture, error) {
+	items, err := c.fetch(ctx, pathFixtures, map[string]string{
+		"league": strconv.Itoa(leagueID),
+		"season": strconv.Itoa(season),
+		"date":   date,
 	})
 	if err != nil {
 		return nil, err
@@ -172,6 +205,8 @@ func itemToFixture(item apiFixtureItem) *Fixture {
 	}
 	return &Fixture{
 		ExternalID: item.Fixture.ID,
+		HomeTeam:   item.Teams.Home.Name,
+		AwayTeam:   item.Teams.Away.Name,
 		Status:     status,
 		HomeScore:  home,
 		AwayScore:  away,

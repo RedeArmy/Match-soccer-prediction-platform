@@ -375,6 +375,7 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 
 		// Match-sync — automated result ingestion from external provider.
 		r.Post("/match-sync/poll", d.h.adminMatchSync.TriggerPoll)
+		r.Post("/match-sync/today", d.h.adminMatchSync.TriggerDailySync)
 		r.Get("/match-sync/reconcile", d.h.adminMatchSync.Reconcile)
 
 		// Notification content templates (DB-backed, operator-editable)

@@ -1,73 +1,143 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Activity, ChevronDown, ChevronUp, Clock } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { useI18n } from '@/lib/i18n'
-import { LoadingState } from '@/components/shared/LoadingState'
-import type { TodayFixture } from '@/app/api/live/today/route'
-import type { FixtureDetail, FixtureEvent, FixtureLineup } from '@/app/api/live/fixture/[id]/route'
+import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Activity, ChevronDown, ChevronUp, Clock } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
+import { LoadingState } from "@/components/shared/LoadingState";
+import type { TodayFixture } from "@/app/api/live/today/route";
+import type {
+  FixtureDetail,
+  FixtureEvent,
+  FixtureLineup,
+} from "@/app/api/live/fixture/[id]/route";
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
 
-const LIVE_STATUSES = new Set(['1H', 'HT', '2H', 'ET', 'PEN_LIVE', 'BT'])
-const DONE_STATUSES = new Set(['FT', 'AET', 'PEN'])
+const LIVE_STATUSES = new Set(["1H", "HT", "2H", "ET", "PEN_LIVE", "BT"]);
+const DONE_STATUSES = new Set(["FT", "AET", "PEN"]);
 
-function isLive(status: string) { return LIVE_STATUSES.has(status) }
-function isDone(status: string) { return DONE_STATUSES.has(status) }
+function isLive(status: string) {
+  return LIVE_STATUSES.has(status);
+}
+function isDone(status: string) {
+  return DONE_STATUSES.has(status);
+}
+
+// ── Polling interval computation ───────────────────────────────────────────────
+//
+// State machine:
+//  LIVE        → fast poll every 30s
+//  PRE_MATCH   → slow poll every 60s (starts 10 min before kickoff)
+//  IDLE/DONE   → false (no polling; last data stays on screen until page reload)
+
+const LIVE_POLL_MS = 30_000;
+const PRE_MATCH_POLL_MS = 60_000;
+const PRE_MATCH_WINDOW_MS = 10 * 60 * 1_000; // 10 min
+const MAX_SLEEP_MS = 60 * 60 * 1_000; // 1 h cap against clock skew
+
+export function computeFeedInterval(
+  fixtures: TodayFixture[],
+  now: number,
+): number | false {
+  if (fixtures.length === 0) return false;
+
+  // At least one live match → fast poll
+  if (fixtures.some((f) => isLive(f.status))) return LIVE_POLL_MS;
+
+  // Upcoming = not started and not finished
+  const upcoming = fixtures.filter(
+    (f) => !isLive(f.status) && !isDone(f.status),
+  );
+
+  // All done (or only cancelled/postponed) → stop polling, keep last data
+  if (upcoming.length === 0) return false;
+
+  const kickoffTimes = upcoming
+    .map((f) => new Date(f.kickoffAt).getTime())
+    .filter((t) => !Number.isNaN(t));
+  if (kickoffTimes.length === 0) return false;
+
+  const msToKickoff = Math.min(...kickoffTimes) - now;
+
+  // Inside the 10-min pre-match window (or kickoff already past but still NS)
+  if (msToKickoff <= PRE_MATCH_WINDOW_MS) return PRE_MATCH_POLL_MS;
+
+  // Sleep until the window opens; cap at 1 h to guard against stale data
+  return Math.min(msToKickoff - PRE_MATCH_WINDOW_MS, MAX_SLEEP_MS);
+}
 
 // ── Event icon ─────────────────────────────────────────────────────────────────
 
-function EventIcon({ type, detail }: Readonly<{ type: string; detail: string }>) {
-  if (type === 'Goal') return <span className="text-sm">⚽</span>
-  if (type === 'Card' && detail.toLowerCase().includes('yellow')) return <span className="text-sm">🟨</span>
-  if (type === 'Card') return <span className="text-sm">🟥</span>
-  if (type === 'subst') return <span className="text-sm">🔄</span>
-  return <span className="text-sm">📋</span>
+function EventIcon({
+  type,
+  detail,
+}: Readonly<{ type: string; detail: string }>) {
+  if (type === "Goal") return <span className="text-sm">⚽</span>;
+  if (type === "Card" && detail.toLowerCase().includes("yellow"))
+    return <span className="text-sm">🟨</span>;
+  if (type === "Card") return <span className="text-sm">🟥</span>;
+  if (type === "subst") return <span className="text-sm">🔄</span>;
+  return <span className="text-sm">📋</span>;
 }
 
 // ── Lineup panel ───────────────────────────────────────────────────────────────
 
 interface LineupPanelProps {
-  readonly lineup: FixtureLineup
+  readonly lineup: FixtureLineup;
 }
 
 function LineupPanel({ lineup }: LineupPanelProps) {
-  const { t } = useI18n()
+  const { t, teamName } = useI18n();
 
-  const posSortOrder: Record<string, number> = { G: 0, D: 1, M: 2, F: 3 }
+  const posSortOrder: Record<string, number> = { G: 0, D: 1, M: 2, F: 3 };
   const sorted = [...lineup.startXI].sort(
     (a, b) => (posSortOrder[a.pos] ?? 9) - (posSortOrder[b.pos] ?? 9),
-  )
+  );
 
   return (
     <div className="flex-1 min-w-0">
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
-        {lineup.teamName}
+        {teamName(lineup.teamName)}
         {lineup.formation && (
           <span className="ml-2 text-gold-400">{lineup.formation}</span>
         )}
       </p>
       <div className="space-y-0.5">
         {sorted.map((p) => (
-          <div key={`${p.number}-${p.name}`} className="flex items-center gap-1.5 text-xs">
-            <span className="w-5 text-center font-bold tabular-nums text-text-muted">{p.number}</span>
-            <span className={cn('truncate', p.pos === 'G' ? 'text-gold-300' : 'text-text-primary')}>
+          <div
+            key={`${p.number}-${p.name}`}
+            className="flex items-center gap-1.5 text-xs"
+          >
+            <span className="w-5 text-center font-bold tabular-nums text-text-muted">
+              {p.number}
+            </span>
+            <span
+              className={cn(
+                "truncate",
+                p.pos === "G" ? "text-gold-300" : "text-text-primary",
+              )}
+            >
               {p.name}
             </span>
-            <span className="ml-auto shrink-0 text-[9px] text-text-muted">{p.pos}</span>
+            <span className="ml-auto shrink-0 text-[9px] text-text-muted">
+              {p.pos}
+            </span>
           </div>
         ))}
       </div>
       {lineup.substitutes.length > 0 && (
         <details className="mt-2">
           <summary className="cursor-pointer text-[10px] text-text-muted hover:text-text-secondary">
-            {t('tournaments.liveSubs')} ({lineup.substitutes.length})
+            {t("tournaments.liveSubs")} ({lineup.substitutes.length})
           </summary>
           <div className="mt-1 space-y-0.5 pl-2">
             {lineup.substitutes.map((p) => (
-              <div key={`sub-${p.number}-${p.name}`} className="flex items-center gap-1.5 text-xs text-text-muted">
+              <div
+                key={`sub-${p.number}-${p.name}`}
+                className="flex items-center gap-1.5 text-xs text-text-muted"
+              >
                 <span className="w-5 text-center tabular-nums">{p.number}</span>
                 <span className="truncate">{p.name}</span>
               </div>
@@ -76,16 +146,20 @@ function LineupPanel({ lineup }: LineupPanelProps) {
         </details>
       )}
     </div>
-  )
+  );
 }
 
 // ── Events list ────────────────────────────────────────────────────────────────
 
 function EventsList({ events }: Readonly<{ events: FixtureEvent[] }>) {
-  const { t } = useI18n()
+  const { t, teamName } = useI18n();
 
   if (events.length === 0) {
-    return <p className="py-4 text-center text-xs text-text-muted">{t('tournaments.liveNoEvents')}</p>
+    return (
+      <p className="py-4 text-center text-xs text-text-muted">
+        {t("tournaments.liveNoEvents")}
+      </p>
+    );
   }
 
   return (
@@ -101,50 +175,71 @@ function EventsList({ events }: Readonly<{ events: FixtureEvent[] }>) {
           <EventIcon type={ev.type} detail={ev.detail} />
           <div className="min-w-0 flex-1">
             <span className="font-medium text-text-primary">{ev.player}</span>
-            {ev.assist && ev.type !== 'subst' && (
+            {ev.assist && ev.type !== "subst" && (
               <span className="text-text-muted"> ({ev.assist})</span>
             )}
-            {ev.type === 'subst' && ev.assist && (
+            {ev.type === "subst" && ev.assist && (
               <span className="text-green-400"> ↑ {ev.assist}</span>
             )}
           </div>
-          <span className="shrink-0 text-[10px] text-text-muted">{ev.team}</span>
+          <span className="shrink-0 text-[10px] text-text-muted">
+            {teamName(ev.team)}
+          </span>
         </div>
       ))}
     </div>
-  )
+  );
 }
 
 // ── Fixture detail panel ──────────────────────────────────────────────────────
 
-function FixtureDetailPanel({ fixtureId }: Readonly<{ fixtureId: number }>) {
-  const { t } = useI18n()
-
+function FixtureDetailPanel({
+  fixtureId,
+  onCollapse,
+}: Readonly<{ fixtureId: number; onCollapse: () => void }>) {
+  const { t } = useI18n();
   const { data, isLoading, isError } = useQuery<{ fixture?: FixtureDetail }>({
-    queryKey: ['live-fixture', fixtureId],
-    queryFn:  () => fetch(`/api/live/fixture/${fixtureId}`).then((r) => r.json()),
-    refetchInterval: 30_000,
-    staleTime:       15_000,
-  })
+    queryKey: ["live-fixture", fixtureId],
+    queryFn: () =>
+      fetch(`/api/live/fixture/${fixtureId}`).then((r) => r.json()),
+    // Only poll while the match is live; pre-match and post-match details are static.
+    refetchInterval: (query) => {
+      const fixture = query.state.data?.fixture;
+      return fixture && isLive(fixture.status) ? LIVE_POLL_MS : false;
+    },
+    refetchOnWindowFocus: false,
+    staleTime: 15_000,
+  });
 
-  if (isLoading) return <div className="px-4 pb-4"><LoadingState rows={3} /></div>
+  // When the fetch settles with no usable data, collapse the card instead of
+  // showing an error. useRef prevents double-firing if the parent re-renders
+  // before the component unmounts.
+  const collapsedRef = useRef(false);
+  useEffect(() => {
+    if (!isLoading && (isError || !data?.fixture) && !collapsedRef.current) {
+      collapsedRef.current = true;
+      onCollapse();
+    }
+  }, [isLoading, isError, data, onCollapse]);
 
-  if (isError || !data?.fixture) {
+  if (isLoading)
     return (
-      <p className="px-4 pb-4 text-xs text-text-muted">
-        {t('tournaments.liveFixtureError')}
-      </p>
-    )
-  }
+      <div className="px-4 pb-4">
+        <LoadingState rows={3} />
+      </div>
+    );
 
-  const { fixture } = data
+  if (isError || !data?.fixture) return null;
+
+  const { fixture } = data;
 
   return (
     <div className="border-t border-white/10 px-4 pb-4 pt-3 space-y-4">
       {/* Halftime score */}
       {(fixture.halftimeHome != null || fixture.halftimeAway != null) && (
         <p className="text-center text-[11px] text-text-muted">
-          {t('tournaments.liveHalftime')}: {fixture.halftimeHome ?? 0} – {fixture.halftimeAway ?? 0}
+          {t("tournaments.liveHalftime")}: {fixture.halftimeHome ?? 0} –{" "}
+          {fixture.halftimeAway ?? 0}
         </p>
       )}
 
@@ -152,7 +247,7 @@ function FixtureDetailPanel({ fixtureId }: Readonly<{ fixtureId: number }>) {
       {fixture.events.length > 0 && (
         <section>
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
-            {t('tournaments.liveEvents')}
+            {t("tournaments.liveEvents")}
           </p>
           <EventsList events={fixture.events} />
         </section>
@@ -162,7 +257,7 @@ function FixtureDetailPanel({ fixtureId }: Readonly<{ fixtureId: number }>) {
       {fixture.lineups.length > 0 && (
         <section>
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
-            {t('tournaments.liveLineups')}
+            {t("tournaments.liveLineups")}
           </p>
           <div className="flex gap-4">
             {fixture.lineups.map((l) => (
@@ -174,53 +269,59 @@ function FixtureDetailPanel({ fixtureId }: Readonly<{ fixtureId: number }>) {
 
       {fixture.lineups.length === 0 && fixture.events.length === 0 && (
         <p className="text-center text-xs text-text-muted">
-          {t('tournaments.liveNoData')}
+          {t("tournaments.liveNoData")}
         </p>
       )}
     </div>
-  )
+  );
 }
 
 // ── Match card ─────────────────────────────────────────────────────────────────
 
 interface MatchCardProps {
-  readonly fixture:  TodayFixture
-  readonly expanded: boolean
-  readonly onToggle: () => void
+  readonly fixture: TodayFixture;
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
 }
 
 function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
-  const { t } = useI18n()
+  const { t, teamName } = useI18n();
 
-  const live    = isLive(fixture.status)
-  const done    = isDone(fixture.status)
-  const kickoff = new Date(fixture.kickoffAt)
-  const timeStr = kickoff.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit', hour12: true })
+  const live = isLive(fixture.status);
+  const done = isDone(fixture.status);
+  const kickoff = new Date(fixture.kickoffAt);
+  const timeStr = kickoff.toLocaleTimeString("es-GT", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
 
   function statusLabel(): string {
-    if (!live && !done) return ''
-    if (fixture.status === 'HT') return t('tournaments.liveHT')
-    if (live && fixture.elapsed != null) return `${fixture.elapsed}'`
-    if (live) return t('tournaments.liveInPlay')
-    return 'FT'
+    if (!live && !done) return "";
+    if (fixture.status === "HT") return t("tournaments.liveHT");
+    if (live && fixture.elapsed != null) return `${fixture.elapsed}'`;
+    if (live) return t("tournaments.liveInPlay");
+    return "FT";
   }
 
-  let chipClass: string
+  let chipClass: string;
   if (live) {
-    chipClass = 'bg-green-500/20 text-green-300'
+    chipClass = "bg-green-500/20 text-green-300";
   } else if (done) {
-    chipClass = 'bg-white/10 text-text-muted'
+    chipClass = "bg-white/10 text-text-muted";
   } else {
-    chipClass = 'bg-blue-500/10 text-blue-300'
+    chipClass = "bg-blue-500/10 text-blue-300";
   }
 
   return (
-    <div className={cn(
-      'overflow-hidden rounded-xl border transition-colors',
-      live
-        ? 'border-green-500/30 bg-green-500/5'
-        : 'border-white/10 bg-white/[0.02] hover:border-white/20',
-    )}>
+    <div
+      className={cn(
+        "overflow-hidden rounded-xl border transition-colors",
+        live
+          ? "border-green-500/30 bg-green-500/5"
+          : "border-white/10 bg-white/[0.02] hover:border-white/20",
+      )}
+    >
       <button
         type="button"
         className="w-full p-3 text-left"
@@ -237,20 +338,29 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
           )}
 
           {/* Status/time chip */}
-          <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums', chipClass)}>
-            {live || done
-              ? statusLabel()
-              : <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{timeStr}</span>
-            }
+          <span
+            className={cn(
+              "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+              chipClass,
+            )}
+          >
+            {live || done ? (
+              statusLabel()
+            ) : (
+              <span className="flex items-center gap-1">
+                <Clock className="h-2.5 w-2.5" />
+                {timeStr}
+              </span>
+            )}
           </span>
 
           {/* Teams + score */}
           <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
             <span className="truncate text-sm font-medium text-white">
-              {fixture.homeTeam}
+              {teamName(fixture.homeTeam)}
             </span>
 
-            {(live || done) ? (
+            {live || done ? (
               <span className="shrink-0 text-base font-bold tabular-nums text-white">
                 {fixture.homeScore ?? 0} – {fixture.awayScore ?? 0}
               </span>
@@ -259,56 +369,69 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
             )}
 
             <span className="truncate text-right text-sm font-medium text-white">
-              {fixture.awayTeam}
+              {teamName(fixture.awayTeam)}
             </span>
           </div>
 
           {/* Expand chevron */}
           <span className="shrink-0 text-text-muted">
-            {expanded
-              ? <ChevronUp className="h-4 w-4" />
-              : <ChevronDown className="h-4 w-4" />}
+            {expanded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
           </span>
         </div>
 
         {fixture.round && (
-          <p className="mt-1 pl-4 text-[10px] text-text-muted">{fixture.round}</p>
+          <p className="mt-1 pl-4 text-[10px] text-text-muted">
+            {fixture.round}
+          </p>
         )}
       </button>
 
-      {expanded && <FixtureDetailPanel fixtureId={fixture.id} />}
+      {expanded && (
+        <FixtureDetailPanel fixtureId={fixture.id} onCollapse={onToggle} />
+      )}
     </div>
-  )
+  );
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function LiveMatchFeed() {
-  const { t } = useI18n()
-  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const { t } = useI18n();
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const { data, isLoading, isError } = useQuery<{ fixtures: TodayFixture[] }>({
-    queryKey: ['live-today'],
-    queryFn:  () => fetch('/api/live/today').then((r) => r.json()),
-    refetchInterval: (query) => {
-      const fixtures = query.state.data?.fixtures ?? []
-      return fixtures.some((f) => isLive(f.status)) ? 30_000 : 120_000
+    queryKey: ["live-today"],
+    queryFn: () => {
+      const localDate = new Date().toLocaleDateString("sv"); // 'sv' locale → YYYY-MM-DD
+      return fetch(`/api/live/today?date=${localDate}`).then((r) => r.json());
     },
+    // Always fetch on mount (page load, reload, SPA navigation) so the user
+    // sees an up-to-date schedule even when no match is live.
+    refetchOnMount: "always",
+    // Smart interval: live→30s, pre-match window→60s, idle/done→false.
+    // This controls background polling only; the mount fetch above is separate.
+    refetchInterval: (query) =>
+      computeFeedInterval(query.state.data?.fixtures ?? [], Date.now()),
+    refetchOnWindowFocus: false,
     staleTime: 20_000,
-  })
+  });
 
-  const fixtures = data?.fixtures ?? []
+  const fixtures = data?.fixtures ?? [];
 
   return (
     <div className="panel p-5">
       <div className="mb-4 flex items-center gap-2">
         <Activity className="h-5 w-5 text-green-400" />
         <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
-          {t('tournaments.liveTitle')}
+          {t("tournaments.liveTitle")}
         </h2>
         {fixtures.some((f) => isLive(f.status)) && (
           <span className="ml-auto rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-300">
-            {t('tournaments.liveBadge')}
+            {t("tournaments.liveBadge")}
           </span>
         )}
       </div>
@@ -317,13 +440,13 @@ export function LiveMatchFeed() {
 
       {isError && (
         <p className="py-6 text-center text-xs text-text-muted">
-          {t('tournaments.liveError')}
+          {t("tournaments.liveError")}
         </p>
       )}
 
       {!isLoading && !isError && fixtures.length === 0 && (
         <p className="py-6 text-center text-xs text-text-muted">
-          {t('tournaments.liveEmpty')}
+          {t("tournaments.liveEmpty")}
         </p>
       )}
 
@@ -334,11 +457,13 @@ export function LiveMatchFeed() {
               key={f.id}
               fixture={f}
               expanded={expandedId === f.id}
-              onToggle={() => setExpandedId((prev) => (prev === f.id ? null : f.id))}
+              onToggle={() =>
+                setExpandedId((prev) => (prev === f.id ? null : f.id))
+              }
             />
           ))}
         </div>
       )}
     </div>
-  )
+  );
 }

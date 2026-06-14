@@ -86,6 +86,7 @@ type paramSpec struct {
 //   - 000184_seed_free_max_members_param               (+1)
 //   - 000186_seed_match_sync_params                    (+6)
 //   - 000187_seed_system_date_param                    (+1)
+//   - 000192_seed_daily_sync_params                    (+3)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -338,6 +339,10 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyMatchSyncProvider, defaultValue: domain.DefaultMatchSyncProvider, paramType: "string", category: "match", isRuntime: true},
 	{key: domain.ParamKeyMatchSyncLeagueID, defaultValue: strconv.Itoa(domain.DefaultMatchSyncLeagueID), paramType: "int", category: "match", isRuntime: true},
 	{key: domain.ParamKeyMatchSyncSeason, defaultValue: strconv.Itoa(domain.DefaultMatchSyncSeason), paramType: "int", category: "match", isRuntime: true},
+	// Daily fixture sync scheduling (migration 000192); all runtime.
+	{key: domain.ParamKeyMatchDailySyncHour, defaultValue: strconv.Itoa(domain.DefaultMatchDailySyncHour), paramType: "int", category: "match", isRuntime: true},
+	{key: domain.ParamKeyMatchSyncPrematchWindowMin, defaultValue: strconv.Itoa(domain.DefaultMatchSyncPrematchWindowMin), paramType: "int", category: "match", isRuntime: true},
+	{key: domain.ParamKeyMatchSyncStopAfterZeroLiveCount, defaultValue: strconv.Itoa(domain.DefaultMatchSyncStopAfterZeroLiveCount), paramType: "int", category: "match", isRuntime: true},
 
 	// System clock override — dev/test only (migration 000187).
 	// Empty default = real wall-clock time. Ignored in production.

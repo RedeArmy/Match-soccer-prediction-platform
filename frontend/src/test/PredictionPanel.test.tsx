@@ -178,6 +178,120 @@ describe('PredictionPanel', () => {
     expect(screen.queryByText('Estados Unidos')).toBeNull()
   })
 
+  it('shows error state when getMatches rejects', async () => {
+    vi.mocked(api.getMatches).mockRejectedValueOnce(new Error('Network error'))
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([])
+
+    renderPanel()
+
+    expect(await screen.findByText('No se pudieron cargar los partidos')).toBeInTheDocument()
+  })
+
+  it('filters past matches with the "past" filter', async () => {
+    const finishedMatch = {
+      ...scheduledMatch,
+      id: 15,
+      home_team: 'Argentina',
+      away_team: 'Chile',
+      status: 'finished',
+      home_score: 2,
+      away_score: 1,
+    }
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch, finishedMatch] as never)
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([])
+
+    renderPanel()
+    await screen.findByText('Canadá') // wait for data to load in group A
+
+    // Switch to Past filter — only finished match (Argentina) should appear
+    fireEvent.click(screen.getByRole('button', { name: 'Pasados' }))
+    expect(await screen.findByText('Argentina')).toBeInTheDocument()
+    expect(screen.queryByText('Canadá')).toBeNull()
+  })
+
+  it('shows today-filter empty state when no matches are scheduled today', async () => {
+    const farFutureMatch = {
+      ...scheduledMatch,
+      id: 20,
+      kickoff_at: '2099-12-31T18:00:00Z',
+    }
+    vi.mocked(api.getMatches).mockResolvedValueOnce([farFutureMatch] as never)
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([])
+
+    renderPanel()
+    await screen.findByText('Canadá') // wait for data to load
+
+    // Switch to by-day view
+    fireEvent.click(screen.getByRole('button', { name: 'Hoy' }))
+
+    // No matches today → noTodayMatches empty state
+    expect(await screen.findByText('Sin partidos para hoy')).toBeInTheDocument()
+  })
+
+  it('shows mutation error feedback on submission failure', async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never)
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([])
+    vi.mocked(api.submitPrediction).mockRejectedValueOnce(new Error('Server error'))
+
+    renderPanel()
+
+    expect(await screen.findByText('Canadá')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Guardar prediccion/ }))
+
+    expect(await screen.findByText('No se pudo guardar la prediccion')).toBeInTheDocument()
+  })
+
+  it('shows points placeholder when finished match has no scored prediction', async () => {
+    const finishedMatch = {
+      ...scheduledMatch,
+      id: 30,
+      status: 'finished',
+      home_score: 1,
+      away_score: 0,
+    }
+    vi.mocked(api.getMatches).mockResolvedValueOnce([finishedMatch] as never)
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([])
+
+    renderPanel()
+
+    // Switch to past filter to see the finished match
+    fireEvent.click(screen.getByRole('button', { name: 'Pasados' }))
+    await screen.findByText('Canadá')
+
+    // No prediction → points should show "–"
+    expect(screen.getByText('–')).toBeInTheDocument()
+  })
+
+  it('shows allSavedToday empty state in by-day+pending view', async () => {
+    const todayKickoff = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString()
+    const todayMatch = {
+      ...scheduledMatch,
+      id: 40,
+      kickoff_at: todayKickoff,
+    }
+    vi.mocked(api.getMatches).mockResolvedValueOnce([todayMatch] as never)
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([
+      {
+        id: 1,
+        match_id: todayMatch.id,
+        home_score: 2,
+        away_score: 0,
+        points: null,
+        scored_at: null,
+        created_at: '',
+      },
+    ])
+
+    renderPanel()
+    await screen.findByText('Canadá')
+
+    // Switch to by-day, then pending — all today's matches have predictions
+    fireEvent.click(screen.getByRole('button', { name: 'Hoy' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pendientes' }))
+
+    expect(await screen.findByText('Todas las predicciones del día guardadas')).toBeInTheDocument()
+  })
+
   it('disables score editing for locked matches and filters pending matches', async () => {
     vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch, lockedMatch] as never)
     vi.mocked(api.getMyPredictions).mockResolvedValueOnce([

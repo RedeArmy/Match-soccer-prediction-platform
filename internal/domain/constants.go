@@ -126,6 +126,11 @@ const (
 	DefaultMatchSyncLeagueID            = 1              // match.sync.league_id
 	DefaultMatchSyncSeason              = 2026           // match.sync.season
 
+	// Daily fixture sync — validates linked matches via API-Football (migration 000192)
+	DefaultMatchDailySyncHour              = 1  // match.dailysync.hour (Guatemala local time)
+	DefaultMatchSyncPrematchWindowMin      = 10 // match.sync.prematch_window_min
+	DefaultMatchSyncStopAfterZeroLiveCount = 3  // match.sync.stop_after_zero_live_count
+
 	// Pagination
 	DefaultPaginationDefaultLimit = 50  // pagination.default_limit
 	DefaultPaginationMaxLimit     = 200 // pagination.max_limit
@@ -262,6 +267,20 @@ const (
 	ParamKeyMatchSyncLeagueID = "match.sync.league_id"
 	// ParamKeyMatchSyncSeason is the four-digit tournament year (e.g. 2026).
 	ParamKeyMatchSyncSeason = "match.sync.season"
+	// ParamKeyMatchDailySyncHour is the local hour (0–23, Guatemala time) at which
+	// the daily fixture sync job runs once to validate all linked scheduled/live
+	// matches against API-Football. Defaults to 1 (1 AM Guatemala). is_runtime=TRUE.
+	ParamKeyMatchDailySyncHour = "match.dailysync.hour"
+	// ParamKeyMatchSyncPrematchWindowMin is the number of minutes before kick-off
+	// after which the polling job starts calling the provider for a scheduled match.
+	// Matches with a kickoff more than N minutes in the future are skipped to
+	// conserve API quota. Live matches are always polled regardless of this value.
+	// Defaults to 10. is_runtime=TRUE.
+	ParamKeyMatchSyncPrematchWindowMin = "match.sync.prematch_window_min"
+	// ParamKeyMatchSyncStopAfterZeroLiveCount is the number of consecutive poll
+	// cycles that return zero live matches before the polling job pauses and waits
+	// for the next scheduled match kickoff window. Defaults to 3. is_runtime=TRUE.
+	ParamKeyMatchSyncStopAfterZeroLiveCount = "match.sync.stop_after_zero_live_count"
 
 	// ParamKeySystemDate overrides the wall-clock time reported by the application
 	// clock. Accepts an RFC 3339 datetime string (e.g. "2026-06-20T15:00:00Z").
@@ -414,6 +433,9 @@ func AllParamKeys() []string {
 		ParamKeyMatchSyncProvider,
 		ParamKeyMatchSyncLeagueID,
 		ParamKeyMatchSyncSeason,
+		ParamKeyMatchDailySyncHour,
+		ParamKeyMatchSyncPrematchWindowMin,
+		ParamKeyMatchSyncStopAfterZeroLiveCount,
 		// System clock override (dev/test only)
 		ParamKeySystemDate,
 		// Admin

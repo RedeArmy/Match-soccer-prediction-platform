@@ -71,6 +71,8 @@ func (s FixtureStatus) IsCancelled() bool {
 // additional raw data is discarded at the decode layer.
 type Fixture struct {
 	ExternalID int64
+	HomeTeam   string
+	AwayTeam   string
 	Status     FixtureStatus
 	HomeScore  int
 	AwayScore  int
@@ -78,7 +80,7 @@ type Fixture struct {
 }
 
 // Client is the interface every football data provider must satisfy.
-// It is kept narrow intentionally: the sync worker only needs two operations.
+// It is kept narrow intentionally: the sync worker only needs three operations.
 type Client interface {
 	// GetFixture fetches the current state of a single fixture by its
 	// provider-assigned ID. Returns an error when the request fails or
@@ -88,4 +90,9 @@ type Client interface {
 	// GetLiveFixtures returns all fixtures currently in play for the given
 	// league and season. Used by the slow-to-fast interval upgrade logic.
 	GetLiveFixtures(ctx context.Context, leagueID, season int) ([]*Fixture, error)
+
+	// GetFixturesByDate returns all fixtures for the given league, season, and
+	// UTC date (YYYY-MM-DD). Used by the daily fixture sync job to link and
+	// update kickoff times for every match scheduled on a given day.
+	GetFixturesByDate(ctx context.Context, leagueID, season int, date string) ([]*Fixture, error)
 }

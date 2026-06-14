@@ -116,14 +116,24 @@ type MatchRepository interface {
 	// reverting it to manual-only management.
 	UnlinkExternal(ctx context.Context, matchID int) error
 
-	// ListSyncCandidates returns all matches that have an external ID and are
-	// not yet finished. Used by the match-sync worker to build its polling set.
-	ListSyncCandidates(ctx context.Context) ([]*domain.Match, error)
+	// ListSyncCandidates returns linked, non-finished matches eligible for
+	// polling. When prematchWindowMin > 0, scheduled matches are only included
+	// if their kickoff is within that many minutes; live matches are always
+	// included. Pass 0 to return all linked non-finished matches.
+	ListSyncCandidates(ctx context.Context, prematchWindowMin int) ([]*domain.Match, error)
 
 	// UpdateSyncState persists the current external status observation by
 	// recording last_synced_at on the row. Called after every successful poll
 	// regardless of whether the local status changed.
 	UpdateSyncState(ctx context.Context, matchID int) error
+
+	// FindByTeams returns the first match whose home_team and away_team match
+	// the given names (case-insensitive). Returns nil, nil when no match is found.
+	FindByTeams(ctx context.Context, homeTeam, awayTeam string) (*domain.Match, error)
+
+	// UpdateKickoff sets kickoff_at on the match row to the given time. Used by
+	// the daily fixture sync to correct kickoff times sourced from API-Football.
+	UpdateKickoff(ctx context.Context, matchID int, kickoffAt time.Time) error
 }
 
 // PredictionRepository defines the persistence operations for the Prediction
