@@ -449,7 +449,7 @@ describe("GET /api/live/today – no API key", () => {
 
   it("returns { fixtures: [] } gracefully when key is absent", async () => {
     const { GET } = await import("@/app/api/live/today/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.fixtures).toEqual([]);
@@ -493,7 +493,7 @@ describe("GET /api/live/today – upstream OK", () => {
       new Response(JSON.stringify(afPayload), { status: 200 }),
     );
     const { GET } = await import("@/app/api/live/today/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.fixtures).toHaveLength(1);
@@ -516,7 +516,7 @@ describe("GET /api/live/today – upstream fetch throws", () => {
   it("returns { fixtures: [] } on network error", async () => {
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const { GET } = await import("@/app/api/live/today/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.fixtures).toEqual([]);
@@ -533,7 +533,7 @@ describe("GET /api/live/today – upstream non-OK", () => {
   it("returns { fixtures: [] } on upstream 429", async () => {
     mockFetch.mockResolvedValueOnce(new Response("", { status: 429 }));
     const { GET } = await import("@/app/api/live/today/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.fixtures).toEqual([]);
@@ -554,7 +554,7 @@ describe("GET /api/live/today – empty response array", () => {
       }),
     );
     const { GET } = await import("@/app/api/live/today/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.fixtures).toEqual([]);
@@ -575,7 +575,7 @@ describe("GET /api/live/today – clock non-OK falls back to current date", () =
       }),
     );
     const { GET } = await import("@/app/api/live/today/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.fixtures).toEqual([]);
@@ -596,7 +596,7 @@ describe("GET /api/live/today – clock fetch throws falls back to current date"
       }),
     );
     const { GET } = await import("@/app/api/live/today/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.fixtures).toEqual([]);
@@ -1072,10 +1072,14 @@ describe("GET /api/live/fixture/[id] – lineups with substitutes", () => {
               team: { name: "Mexico" },
               formation: "4-4-2",
               startXI: [
-                { player: { id: 10, name: "Memo Ochoa", number: 13, pos: "G" } },
+                {
+                  player: { id: 10, name: "Memo Ochoa", number: 13, pos: "G" },
+                },
               ],
               substitutes: [
-                { player: { id: 20, name: "Raul Jimenez", number: 9, pos: "F" } },
+                {
+                  player: { id: 20, name: "Raul Jimenez", number: 9, pos: "F" },
+                },
               ],
             },
           ],
