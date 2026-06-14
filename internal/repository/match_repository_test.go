@@ -360,7 +360,7 @@ func TestMatchRepository_ListSyncCandidates_ReturnsLinkedScheduled(t *testing.T)
 	repo := repository.NewPostgresMatchRepository(testDB)
 
 	// Unlinked match must not appear.
-	candidates, err := repo.ListSyncCandidates(context.Background())
+	candidates, err := repo.ListSyncCandidates(context.Background(), 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -372,7 +372,7 @@ func TestMatchRepository_ListSyncCandidates_ReturnsLinkedScheduled(t *testing.T)
 		t.Fatalf("link: %v", err)
 	}
 
-	candidates, err = repo.ListSyncCandidates(context.Background())
+	candidates, err = repo.ListSyncCandidates(context.Background(), 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -398,7 +398,7 @@ func TestMatchRepository_ListSyncCandidates_ExcludesFinished(t *testing.T) {
 		t.Fatalf("update to finished: %v", err)
 	}
 
-	candidates, err := repo.ListSyncCandidates(context.Background())
+	candidates, err := repo.ListSyncCandidates(context.Background(), 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -417,4 +417,141 @@ func TestMatchRepository_UpdateSyncState_SetsLastSyncedAt(t *testing.T) {
 	}
 	// Verify by fetching: last_synced_at is not in the domain.Match struct
 	// but the call must complete without error.
+}
+
+// ── FindByTeams ───────────────────────────────────────────────────────────────
+
+func TestMatchRepository_FindByTeams_Found(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t) // HomeTeam=Brazil, AwayTeam=Argentina
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	got, err := repo.FindByTeams(context.Background(), repoBrazil, repoArgentina)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil match, got nil")
+	}
+	if got.ID != m.ID {
+		t.Errorf(fmtIDMismatch, got.ID, m.ID)
+	}
+}
+
+func TestMatchRepository_FindByTeams_NotFound_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	skipIfNoDB(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	got, err := repo.FindByTeams(context.Background(), "Netherlands", "Belgium")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for unknown teams, got %+v", got)
+	}
+}
+
+func TestMatchRepository_FindByTeams_CancelledContext_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	skipIfNoDB(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := repo.FindByTeams(ctx, repoBrazil, repoArgentina)
+	if err == nil {
+		t.Fatal(repoMsgCancelledCtx)
+	}
+}
+
+// ── UpdateKickoff ─────────────────────────────────────────────────────────────
+
+func TestMatchRepository_UpdateKickoff_Persists(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	newKickoff := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Microsecond)
+	if err := repo.UpdateKickoff(context.Background(), m.ID, newKickoff); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if !got.KickoffAt.Equal(newKickoff) {
+		t.Errorf("KickoffAt: got %v, want %v", got.KickoffAt, newKickoff)
+	}
+}
+
+func TestMatchRepository_UpdateKickoff_NonExistentID_ReturnsNil(t *testing.T) {
+	// UpdateKickoff uses a bare UPDATE with no rows-affected check, so a
+	// missing ID is a silent no-op rather than a NotFoundError.
+	cleanTables(t)
+	skipIfNoDB(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	err := repo.UpdateKickoff(context.Background(), 999999, time.Now().Add(1*time.Hour))
+	if err != nil {
+		t.Errorf("expected nil for non-existent match ID (silent no-op), got %v", err)
+	}
+}
+
+func TestMatchRepository_UpdateKickoff_CancelledContext_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := repo.UpdateKickoff(ctx, m.ID, time.Now().Add(1*time.Hour))
+	if err == nil {
+		t.Fatal(repoMsgCancelledCtx)
+	}
+}
+
+// ── ListSyncCandidates with prematchWindowMin ─────────────────────────────────
+
+func TestMatchRepository_ListSyncCandidates_PrematchWindowFiltersDistantMatches(t *testing.T) {
+	cleanTables(t)
+	skipIfNoDB(t)
+
+	repo := repository.NewPostgresMatchRepository(testDB)
+	ctx := context.Background()
+
+	// Seed a scheduled match with kickoff 5 hours from now.
+	m := seedMatch(t)
+	if err := repo.LinkExternal(ctx, m.ID, "api-football", 12345); err != nil {
+		t.Fatalf("link external: %v", err)
+	}
+	// Kickoff is 5 h away but window is only 30 min → should be excluded.
+	if candidates, err := repo.ListSyncCandidates(ctx, 30); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	} else if len(candidates) != 0 {
+		t.Errorf("expected 0 candidates when kickoff > prematch window, got %d", len(candidates))
+	}
+}
+
+func TestMatchRepository_ListSyncCandidates_ZeroWindow_ReturnsAll(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+	ctx := context.Background()
+
+	if err := repo.LinkExternal(ctx, m.ID, "api-football", 99999); err != nil {
+		t.Fatalf("link external: %v", err)
+	}
+
+	// window=0 must return all linked non-finished matches.
+	candidates, err := repo.ListSyncCandidates(ctx, 0)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(candidates) == 0 {
+		t.Error("expected at least 1 candidate with zero prematch window")
+	}
 }

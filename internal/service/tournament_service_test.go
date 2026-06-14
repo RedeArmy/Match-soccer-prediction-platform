@@ -47,10 +47,16 @@ func (r *stubMatchRepoTournament) LinkExternal(_ context.Context, _ int, _ strin
 	return r.err
 }
 func (r *stubMatchRepoTournament) UnlinkExternal(_ context.Context, _ int) error { return r.err }
-func (r *stubMatchRepoTournament) ListSyncCandidates(_ context.Context) ([]*domain.Match, error) {
+func (r *stubMatchRepoTournament) ListSyncCandidates(_ context.Context, _ int) ([]*domain.Match, error) {
 	return r.matches, r.err
 }
 func (r *stubMatchRepoTournament) UpdateSyncState(_ context.Context, _ int) error { return r.err }
+func (r *stubMatchRepoTournament) FindByTeams(_ context.Context, _, _ string) (*domain.Match, error) {
+	return nil, nil
+}
+func (r *stubMatchRepoTournament) UpdateKickoff(_ context.Context, _ int, _ time.Time) error {
+	return nil
+}
 
 type stubTournamentRepo struct {
 	slot  *domain.TournamentSlot

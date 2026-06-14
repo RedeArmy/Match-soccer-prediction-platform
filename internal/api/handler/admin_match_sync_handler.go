@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -37,6 +38,13 @@ type linkExternalResponse struct {
 
 type pollResponse struct {
 	LiveCount int `json:"live_count"`
+}
+
+type dailySyncResponse struct {
+	Total     int `json:"total"`
+	Linked    int `json:"linked"`
+	Updated   int `json:"kickoffs_updated"`
+	Corrected int `json:"scores_corrected"`
 }
 
 type syncDiffItem struct {
@@ -128,12 +136,51 @@ func (h *AdminMatchSyncHandler) UnlinkExternal(w http.ResponseWriter, r *http.Re
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/match-sync/poll [post]
 func (h *AdminMatchSyncHandler) TriggerPoll(w http.ResponseWriter, r *http.Request) {
-	liveCount, err := h.svc.PollAndApply(r.Context())
+	liveCount, err := h.svc.PollAndApply(r.Context(), 0)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, pollResponse{LiveCount: liveCount})
+}
+
+// TriggerDailySync handles POST /api/v1/admin/match-sync/today
+//
+// @Summary      Trigger fixture sync for all linked scheduled/live matches
+// @Description  Admin only. Validates all linked scheduled and live matches against
+//
+//	API-Football: corrects kickoff times and transitions matches to finished when
+//	the provider reports a terminal status. Optional start_date/end_date
+//	(YYYY-MM-DD) restrict processing to matches within that kickoff window.
+//
+// @Tags         admin-match-sync
+// @Produce      json
+// @Security     BearerAuth
+// @Param        start_date  query     string  false  "Kickoff date range start (YYYY-MM-DD, inclusive)"
+// @Param        end_date    query     string  false  "Kickoff date range end (YYYY-MM-DD, inclusive)"
+// @Success      200  {object}  handler.dailySyncResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/admin/match-sync/today [post]
+func (h *AdminMatchSyncHandler) TriggerDailySync(w http.ResponseWriter, r *http.Request) {
+	startDate := queryDateParam(r, "start_date")
+	endDate := queryDateParam(r, "end_date")
+	// endDate is inclusive: extend to end of the day so kickoffs on that day match.
+	if endDate != nil {
+		t := endDate.Add(24*time.Hour - time.Second)
+		endDate = &t
+	}
+
+	result, err := h.svc.DailyFixtureSync(r.Context(), startDate, endDate)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dailySyncResponse{
+		Total:     result.Total,
+		Linked:    result.Linked,
+		Updated:   result.Updated,
+		Corrected: result.Corrected,
+	})
 }
 
 // Reconcile handles GET /api/v1/admin/match-sync/reconcile
@@ -187,4 +234,19 @@ func queryIntDefault(r *http.Request, param string, defaultVal int) int {
 		return defaultVal
 	}
 	return n
+}
+
+// queryDateParam parses a YYYY-MM-DD query parameter and returns a pointer to
+// midnight UTC on that date. Returns nil when the parameter is absent or invalid.
+func queryDateParam(r *http.Request, param string) *time.Time {
+	raw := r.URL.Query().Get(param)
+	if raw == "" {
+		return nil
+	}
+	t, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil
+	}
+	utc := t.UTC()
+	return &utc
 }

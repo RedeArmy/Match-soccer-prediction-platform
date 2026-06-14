@@ -560,3 +560,44 @@ func TestNotifyFXRateStale_PayloadFields(t *testing.T) {
 		t.Error("timestamp must not be empty")
 	}
 }
+
+func TestNotifyDailyFixtureSyncFailed_Disabled_IsNoOp(t *testing.T) {
+	ts := &testServer{}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	n := newNotifier(t, "", "") // disabled
+	n.NotifyDailyFixtureSyncFailed(context.Background(), "2026-06-14", "err")
+
+	time.Sleep(30 * time.Millisecond)
+	if ts.count() != 0 {
+		t.Errorf("expected 0 requests when disabled, got %d", ts.count())
+	}
+}
+
+func TestNotifyDailyFixtureSyncFailed_PostsToCorrectPathAndPayload(t *testing.T) {
+	ts := &testServer{}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	n := newNotifier(t, srv.URL, "")
+	n.NotifyDailyFixtureSyncFailed(context.Background(), "2026-06-14", "provider timeout")
+	ts.waitForCount(t, 1)
+
+	if got := ts.lastPath(); got != "/webhook/daily-fixture-sync-failed" {
+		t.Errorf("path: want /webhook/daily-fixture-sync-failed, got %s", got)
+	}
+	var p observability.DailyFixtureSyncFailedPayload
+	if err := json.Unmarshal([]byte(ts.lastBody()), &p); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if p.Date != "2026-06-14" {
+		t.Errorf("date: want 2026-06-14, got %s", p.Date)
+	}
+	if p.Error != "provider timeout" {
+		t.Errorf("error: want provider timeout, got %s", p.Error)
+	}
+	if p.Timestamp == "" {
+		t.Error("timestamp must not be empty")
+	}
+}
