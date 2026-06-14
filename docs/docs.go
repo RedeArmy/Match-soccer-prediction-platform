@@ -1714,7 +1714,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Admin only. Validates all linked scheduled and live matches against",
+                "description": "Admin only. Auto-links any unlinked matches by team name, then",
                 "produces": [
                     "application/json"
                 ],
@@ -1723,6 +1723,18 @@ const docTemplate = `{
                 ],
                 "summary": "Trigger fixture sync for all linked scheduled/live matches",
                 "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "API-Football league ID (default: 1 = FIFA World Cup)",
+                        "name": "league_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Season year (default: 2026)",
+                        "name": "season",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "description": "Kickoff date range start (YYYY-MM-DD, inclusive)",
