@@ -1,10 +1,14 @@
-'use client'
+"use client";
 
-import Link from 'next/link'
-import { useI18n } from '@/lib/i18n'
+import Link from "next/link";
+import { useAuth } from "@clerk/nextjs";
+import { useI18n } from "@/lib/i18n";
 
 export function Footer() {
-  const { t } = useI18n()
+  const { t } = useI18n();
+  const { isSignedIn, isLoaded } = useAuth();
+
+  const authenticated = isLoaded && isSignedIn;
 
   return (
     <footer className="mt-auto border-t border-white/10 bg-[#070A0F]">
@@ -12,22 +16,64 @@ export function Footer() {
         <div className="wc26-stripe mb-6" />
         <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
           <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded border border-gold-400/40 bg-gold-400/10 font-display text-lg text-gold-300">K26</span>
-            <span className="text-sm text-text-muted">{t('common.event')}</span>
+            <span className="grid h-8 w-8 place-items-center rounded border border-gold-400/40 bg-gold-400/10 font-display text-lg text-gold-300">
+              K26
+            </span>
+            <span className="text-sm text-text-muted">{t("common.event")}</span>
           </div>
 
           <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-text-muted">
-            <Link href="/tournaments" className="transition-colors hover:text-text-secondary">{t('common.tournaments')}</Link>
-            <Link href="/sign-in" className="transition-colors hover:text-text-secondary">{t('common.signIn')}</Link>
-            <Link href="/sign-up" className="transition-colors hover:text-text-secondary">{t('common.signUp')}</Link>
+            {authenticated ? (
+              <>
+                <Link
+                  href="/"
+                  className="transition-colors hover:text-text-secondary"
+                >
+                  {t("nav.home")}
+                </Link>
+                <Link
+                  href="/dashboard"
+                  className="transition-colors hover:text-text-secondary"
+                >
+                  {t("common.dashboard")}
+                </Link>
+                <Link
+                  href="/quinielas"
+                  className="transition-colors hover:text-text-secondary"
+                >
+                  {t("common.kinielas")}
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/tournaments"
+                  className="transition-colors hover:text-text-secondary"
+                >
+                  {t("common.tournaments")}
+                </Link>
+                <Link
+                  href="/sign-in"
+                  className="transition-colors hover:text-text-secondary"
+                >
+                  {t("common.signIn")}
+                </Link>
+                <Link
+                  href="/sign-up"
+                  className="transition-colors hover:text-text-secondary"
+                >
+                  {t("common.signUp")}
+                </Link>
+              </>
+            )}
           </nav>
 
           <div className="flex flex-col items-center gap-1 md:items-end">
             <p className="max-w-xs text-center text-xs text-text-muted md:text-right">
-              {t('common.responsible')}
+              {t("common.responsible")}
             </p>
             <p className="text-xs text-text-muted">
-              {t('common.createdBy')}{' '}
+              {t("common.createdBy")}{" "}
               <a
                 href="https://github.com/RedeArmy"
                 target="_blank"
@@ -41,5 +87,5 @@ export function Footer() {
         </div>
       </div>
     </footer>
-  )
+  );
 }

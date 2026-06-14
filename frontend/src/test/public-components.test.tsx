@@ -320,12 +320,13 @@ describe("LiveMatchFeed – fixture list", () => {
     } as never);
   });
 
-  it("renders team names for all fixtures", () => {
+  it("renders team names for all fixtures (translated to active locale)", () => {
     renderFeed();
-    expect(screen.getByText("Brazil")).toBeInTheDocument();
-    expect(screen.getByText("Germany")).toBeInTheDocument();
-    expect(screen.getByText("France")).toBeInTheDocument();
-    expect(screen.getByText("Spain")).toBeInTheDocument();
+    // I18nProvider defaults to 'es'; teamName() translates via teamTranslations dict.
+    expect(screen.getByText("Brasil")).toBeInTheDocument();
+    expect(screen.getByText("Alemania")).toBeInTheDocument();
+    expect(screen.getByText("Francia")).toBeInTheDocument();
+    expect(screen.getByText("España")).toBeInTheDocument();
   });
 
   it("shows LIVE badge when at least one fixture is live", () => {
@@ -389,7 +390,7 @@ describe("LiveMatchFeed – expand/collapse fixture", () => {
 
   it("toggles fixture detail on click", async () => {
     renderFeed();
-    const button = screen.getByRole("button", { name: /brazil|germany/i });
+    const button = screen.getByRole("button", { name: /brasil|alemania/i });
     fireEvent.click(button);
     await waitFor(() =>
       expect(button).toHaveAttribute("aria-expanded", "true"),
@@ -440,9 +441,9 @@ describe("LiveMatchFeed – MatchCard HT (halftime) status", () => {
     } as never);
   });
 
-  it("shows halftime label (ET in Spanish locale) in status chip", () => {
+  it("shows halftime label (MT in Spanish locale) in status chip", () => {
     renderFeed();
-    expect(screen.getByText("ET")).toBeInTheDocument();
+    expect(screen.getByText("MT")).toBeInTheDocument();
   });
 });
 
@@ -482,7 +483,7 @@ describe("LiveMatchFeed – MatchCard no round", () => {
 
   it("renders the fixture card without a round paragraph", () => {
     renderFeed();
-    expect(screen.getByText("Brazil")).toBeInTheDocument();
+    expect(screen.getByText("Brasil")).toBeInTheDocument();
   });
 });
 
@@ -895,12 +896,12 @@ describe("LiveMatchFeed – scheduled (NS) fixtures are shown without live badge
     } as never);
   });
 
-  it("renders team names for all upcoming fixtures", () => {
+  it("renders team names for all upcoming fixtures (translated to active locale)", () => {
     renderFeed();
-    expect(screen.getByText("Mexico")).toBeInTheDocument();
-    expect(screen.getByText("Argentina")).toBeInTheDocument();
-    expect(screen.getByText("USA")).toBeInTheDocument();
-    expect(screen.getByText("Canada")).toBeInTheDocument();
+    expect(screen.getByText("México")).toBeInTheDocument();
+    expect(screen.getByText("Argentina")).toBeInTheDocument(); // same in both locales
+    expect(screen.getByText("Estados Unidos")).toBeInTheDocument();
+    expect(screen.getByText("Canadá")).toBeInTheDocument();
   });
 
   it("does NOT show the LIVE badge when no match is live", () => {
@@ -938,8 +939,8 @@ describe("LiveMatchFeed – finished (FT) fixtures are shown, polling is stopped
 
   it("renders team names and final score for a finished match", () => {
     renderFeed();
-    expect(screen.getByText("Brazil")).toBeInTheDocument();
-    expect(screen.getByText("Germany")).toBeInTheDocument();
+    expect(screen.getByText("Brasil")).toBeInTheDocument();
+    expect(screen.getByText("Alemania")).toBeInTheDocument();
     expect(screen.getByText("2 – 1")).toBeInTheDocument();
   });
 
