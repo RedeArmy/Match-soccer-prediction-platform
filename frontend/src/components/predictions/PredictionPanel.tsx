@@ -24,13 +24,34 @@ import { useI18n } from "@/lib/i18n";
 type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved" | "past";
 type ViewMode = "by-group" | "by-day";
-type GroupLabel = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L";
+type GroupLabel =
+  | "A"
+  | "B"
+  | "C"
+  | "D"
+  | "E"
+  | "F"
+  | "G"
+  | "H"
+  | "I"
+  | "J"
+  | "K"
+  | "L";
 
-// Approximate duration of a football match including halftime (used for
-// time-based live/finished detection when the DB status hasn't updated yet).
-const MATCH_DURATION_MS = 2 * 60 * 60 * 1_000; // 2 hours
-
-const GROUPS: GroupLabel[] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
+const GROUPS: GroupLabel[] = [
+  "A",
+  "B",
+  "C",
+  "D",
+  "E",
+  "F",
+  "G",
+  "H",
+  "I",
+  "J",
+  "K",
+  "L",
+];
 
 function getEmptyState(params: {
   noTodayMatches: boolean;
@@ -41,18 +62,33 @@ function getEmptyState(params: {
 }): { title: string; desc: string } {
   const { noTodayMatches, filter, filterHides, isToday, t } = params;
   if (noTodayMatches) {
-    return { title: t("predictions.noMatchesToday"), desc: t("predictions.noMatchesTodayDesc") };
+    return {
+      title: t("predictions.noMatchesToday"),
+      desc: t("predictions.noMatchesTodayDesc"),
+    };
   }
   if (filter === "past") {
-    return { title: t("predictions.noPastMatches"), desc: t("predictions.noPastMatchesDesc") };
+    return {
+      title: t("predictions.noPastMatches"),
+      desc: t("predictions.noPastMatchesDesc"),
+    };
   }
   if (filterHides && isToday && filter === "pending") {
-    return { title: t("predictions.allSavedToday"), desc: t("predictions.allSavedTodayDesc") };
+    return {
+      title: t("predictions.allSavedToday"),
+      desc: t("predictions.allSavedTodayDesc"),
+    };
   }
   if (filterHides && isToday && filter === "saved") {
-    return { title: t("predictions.noPredictionsToday"), desc: t("predictions.noPredictionsTodayDesc") };
+    return {
+      title: t("predictions.noPredictionsToday"),
+      desc: t("predictions.noPredictionsTodayDesc"),
+    };
   }
-  return { title: t("predictions.noMatches"), desc: t("predictions.noMatchesDesc") };
+  return {
+    title: t("predictions.noMatches"),
+    desc: t("predictions.noMatchesDesc"),
+  };
 }
 
 export function PredictionPanel() {
@@ -89,7 +125,7 @@ export function PredictionPanel() {
     queryFn: async () => {
       const res = await fetch("/api/v1/system/clock");
       if (!res.ok) return null;
-      const data = await res.json() as { now: string };
+      const data = (await res.json()) as { now: string };
       // fetchedAt is captured here (at network completion) so the offset
       // between server time and browser time is as accurate as possible.
       // Including it in the return value ensures TanStack Query detects a
@@ -108,7 +144,10 @@ export function PredictionPanel() {
   // that doesn't drift between re-renders; refetchInterval keeps it fresh.
   const serverOffsetMs = useMemo(() => {
     if (!systemClockQuery.data) return 0;
-    return new Date(systemClockQuery.data.now).getTime() - systemClockQuery.data.fetchedAt;
+    return (
+      new Date(systemClockQuery.data.now).getTime() -
+      systemClockQuery.data.fetchedAt
+    );
   }, [systemClockQuery.data]);
 
   const predictionByMatch = useMemo(() => {
@@ -181,7 +220,7 @@ export function PredictionPanel() {
   });
 
   const sortedMatches = useMemo(() => {
-    const ts = (s: string | null) => (s ? new Date(s).getTime() : Infinity)
+    const ts = (s: string | null) => (s ? new Date(s).getTime() : Infinity);
     return [...(matchesQuery.data ?? [])]
       .filter((m) => isPhaseVisible(m.phase))
       .sort((a, b) => ts(a.kickoff_at) - ts(b.kickoff_at));
@@ -192,7 +231,10 @@ export function PredictionPanel() {
   const baseMatches = isToday
     ? sortedMatches.filter((match) => {
         if (!match.kickoff_at) return false;
-        return new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone }) === todayStr;
+        return (
+          new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone }) ===
+          todayStr
+        );
       })
     : sortedMatches.filter(
         (match) => normalizeGroup(match.group_label) === selectedGroup,
@@ -200,18 +242,19 @@ export function PredictionPanel() {
 
   const visibleMatches = baseMatches.filter((match) => {
     const hasPrediction = predictionByMatch.has(match.id);
-    const isFinished = match.status === "finished" || match.status === "cancelled";
+    const isFinished =
+      match.status === "finished" || match.status === "cancelled";
     if (filter === "pending") return !isFinished && !hasPrediction;
-    if (filter === "saved")   return !isFinished && hasPrediction;
-    if (filter === "past")    return isFinished;
+    if (filter === "saved") return !isFinished && hasPrediction;
+    if (filter === "past") return isFinished;
     return true;
   });
 
   const isLoading = matchesQuery.isLoading || predictionsQuery.isLoading;
-  const isError   = matchesQuery.isError   || predictionsQuery.isError;
+  const isError = matchesQuery.isError || predictionsQuery.isError;
 
   const noTodayMatches = isToday && baseMatches.length === 0;
-  const filterHides    = baseMatches.length > 0 && visibleMatches.length === 0;
+  const filterHides = baseMatches.length > 0 && visibleMatches.length === 0;
 
   const { title: emptyTitle, desc: emptyDesc } = getEmptyState({
     noTodayMatches,
@@ -259,7 +302,9 @@ export function PredictionPanel() {
               match={match}
               prediction={prediction}
               draft={draft}
-              isPending={mutation.isPending && mutation.variables?.match.id === match.id}
+              isPending={
+                mutation.isPending && mutation.variables?.match.id === match.id
+              }
               serverOffsetMs={serverOffsetMs}
               onDraftChange={(value) => updateDraft(match.id, value)}
               onSave={() => mutation.mutate({ match, draft })}
@@ -274,36 +319,60 @@ export function PredictionPanel() {
     <section className="panel overflow-hidden">
       <div className="wc26-stripe" />
       <div className="p-4 sm:p-5">
-      <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <Target className="h-5 w-5 text-green-300" />
-            <h2 className="text-lg font-semibold text-white">
-              {t("predictions.title")}
-            </h2>
+        <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <Target className="h-5 w-5 text-green-300" />
+              <h2 className="text-lg font-semibold text-white">
+                {t("predictions.title")}
+              </h2>
+            </div>
+            <p className="max-w-2xl text-sm text-text-secondary">
+              {t("predictions.subtitle")}
+            </p>
           </div>
-          <p className="max-w-2xl text-sm text-text-secondary">
-            {t("predictions.subtitle")}
-          </p>
+
+          <div className="flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] p-1">
+            <SlidersHorizontal className="ml-2 h-4 w-4 text-text-muted" />
+            {(
+              [
+                ["all", t("predictions.filterAll")],
+                ["pending", t("predictions.filterPending")],
+                ["saved", t("predictions.filterSaved")],
+                ["past", t("predictions.filterPast")],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key)}
+                className={cn(
+                  "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  filter === key
+                    ? "bg-gold-400 text-blue-950"
+                    : "text-text-muted hover:text-text-primary",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] p-1">
-          <SlidersHorizontal className="ml-2 h-4 w-4 text-text-muted" />
+        <div className="mb-4 inline-flex gap-1 rounded-xl border border-white/10 bg-white/[0.035] p-1">
           {(
             [
-              ["all",     t("predictions.filterAll")],
-              ["pending", t("predictions.filterPending")],
-              ["saved",   t("predictions.filterSaved")],
-              ["past",    t("predictions.filterPast")],
+              ["by-group", t("predictions.viewByGroup")],
+              ["by-day", t("predictions.viewByDay")],
             ] as const
           ).map(([key, label]) => (
             <button
               key={key}
               type="button"
-              onClick={() => setFilter(key)}
+              onClick={() => setViewMode(key)}
               className={cn(
-                "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
-                filter === key
+                "rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
+                viewMode === key
                   ? "bg-gold-400 text-blue-950"
                   : "text-text-muted hover:text-text-primary",
               )}
@@ -312,62 +381,40 @@ export function PredictionPanel() {
             </button>
           ))}
         </div>
-      </div>
 
-      <div className="mb-4 inline-flex gap-1 rounded-xl border border-white/10 bg-white/[0.035] p-1">
-        {([
-          ["by-group", t("predictions.viewByGroup")],
-          ["by-day",   t("predictions.viewByDay")],
-        ] as const).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setViewMode(key)}
+        {viewMode === "by-group" && (
+          <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
+            <div className="grid grid-cols-6 gap-2 lg:grid-cols-12">
+              {GROUPS.map((group) => (
+                <GroupButton
+                  key={group}
+                  label={group}
+                  active={selectedGroup === group}
+                  onClick={() => setSelectedGroup(group)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {feedback && (
+          <div
             className={cn(
-              "rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
-              viewMode === key
-                ? "bg-gold-400 text-blue-950"
-                : "text-text-muted hover:text-text-primary",
+              "mb-4 rounded border px-3 py-2 text-sm",
+              feedback.type === "success"
+                ? "border-green-400/25 bg-green-400/10 text-green-200"
+                : "border-red-400/25 bg-red-400/10 text-red-200",
             )}
           >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {viewMode === "by-group" && (
-        <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
-          <div className="grid grid-cols-6 gap-2 lg:grid-cols-12">
-            {GROUPS.map((group) => (
-              <GroupButton
-                key={group}
-                label={group}
-                active={selectedGroup === group}
-                onClick={() => setSelectedGroup(group)}
-              />
-            ))}
+            {feedback.message}
           </div>
-        </div>
-      )}
+        )}
 
-      {feedback && (
-        <div
-          className={cn(
-            "mb-4 rounded border px-3 py-2 text-sm",
-            feedback.type === "success"
-              ? "border-green-400/25 bg-green-400/10 text-green-200"
-              : "border-red-400/25 bg-red-400/10 text-red-200",
-          )}
-        >
-          {feedback.message}
-        </div>
-      )}
+        {renderContent()}
 
-      {renderContent()}
-
-      <p className="mt-4 text-xs text-text-muted">
-        {t("predictions.exactHint")}
-      </p>
+        <p className="mt-4 text-xs text-text-muted">
+          {t("predictions.exactHint")}
+        </p>
       </div>
     </section>
   );
@@ -407,35 +454,35 @@ function PredictionMatchCard({
   const { t, teamName, formatKickoff, phaseName } = useI18n();
 
   // Virtual clock — single interval drives background colour, lock state, and countdown.
-  const [virtualNow, setVirtualNow] = useState(() => Date.now() + serverOffsetMs);
+  const [virtualNow, setVirtualNow] = useState(
+    () => Date.now() + serverOffsetMs,
+  );
   useEffect(() => {
-    const id = setInterval(() => setVirtualNow(Date.now() + serverOffsetMs), 1_000);
+    const id = setInterval(
+      () => setVirtualNow(Date.now() + serverOffsetMs),
+      1_000,
+    );
     return () => clearInterval(id);
   }, [serverOffsetMs]);
 
-  const kickoffMs = match.kickoff_at ? new Date(match.kickoff_at).getTime() : null;
-
-  // DB status is authoritative. Time-based flags fill in when the backend
-  // hasn't updated the row yet (e.g. match just started or just ended).
-  const isStatusLive     = match.status === "in_progress";
-  const isStatusFinished = match.status === "finished" || match.status === "cancelled";
-  const isTimeBasedLive     = kickoffMs !== null && virtualNow >= kickoffMs && virtualNow < kickoffMs + MATCH_DURATION_MS;
-  const isTimeBasedFinished = kickoffMs !== null && virtualNow >= kickoffMs + MATCH_DURATION_MS;
-
-  // If the DB says "in_progress", never let time-based logic mark it finished
-  // (covers extra time / penalties beyond the 2-hr window).
-  const isLive     = isStatusLive || (!isStatusFinished && isTimeBasedLive);
-  const isFinished = isStatusFinished || (!isStatusLive && isTimeBasedFinished);
-  const locked     = isLive || isFinished;
+  // DB status is the sole source of truth — kept current by the match-sync worker.
+  const isStatusLive = match.status === "in_progress";
+  const isStatusFinished =
+    match.status === "finished" || match.status === "cancelled";
+  const isLive = isStatusLive;
+  const isFinished = isStatusFinished;
+  const locked = isLive || isFinished;
 
   const buttonLabel = getButtonLabel(isPending, prediction !== undefined, t);
 
   let articleClass = "border-white/10 bg-white/[0.025]";
-  if (isFinished)  articleClass = "border-red-500/30 bg-red-500/[0.04]";
+  if (isFinished) articleClass = "border-red-500/30 bg-red-500/[0.04]";
   else if (isLive) articleClass = "border-green-500/30 bg-green-500/[0.04]";
 
   return (
-    <article className={cn("rounded border p-4 transition-colors", articleClass)}>
+    <article
+      className={cn("rounded border p-4 transition-colors", articleClass)}
+    >
       <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -490,7 +537,9 @@ function PredictionMatchCard({
             <span className="inline-flex items-center gap-1.5">
               <CalendarClock className="h-3.5 w-3.5" />
               {t("predictions.kickoff")}:{" "}
-              <span suppressHydrationWarning>{formatKickoff(match.kickoff_at)}</span>
+              <span suppressHydrationWarning>
+                {formatKickoff(match.kickoff_at)}
+              </span>
             </span>
             {match.stadium && (
               <span className="inline-flex items-center gap-1.5">
@@ -505,7 +554,10 @@ function PredictionMatchCard({
               </span>
             )}
             {!isLive && !isFinished && (
-              <MatchCountdown kickoffAt={match.kickoff_at} virtualNow={virtualNow} />
+              <MatchCountdown
+                kickoffAt={match.kickoff_at}
+                virtualNow={virtualNow}
+              />
             )}
           </div>
         </div>
@@ -559,7 +611,11 @@ function PredictionMatchCard({
 // ── Shared sub-components ──────────────────────────────────────────────────────
 
 function normalizeGroup(group: string | null | undefined): GroupLabel | null {
-  const value = group?.trim().toUpperCase().replace(/^GROUP\s+/, "").replace(/^GRUPO\s+/, "");
+  const value = group
+    ?.trim()
+    .toUpperCase()
+    .replace(/^GROUP\s+/, "")
+    .replace(/^GRUPO\s+/, "");
   return GROUPS.includes(value as GroupLabel) ? (value as GroupLabel) : null;
 }
 
@@ -596,10 +652,10 @@ function MatchCountdown({
   const diff = new Date(kickoffAt).getTime() - virtualNow;
   if (diff <= 0) return null;
 
-  const days  = Math.floor(diff / 86_400_000);
+  const days = Math.floor(diff / 86_400_000);
   const hours = Math.floor((diff % 86_400_000) / 3_600_000);
-  const mins  = Math.floor((diff % 3_600_000) / 60_000);
-  const secs  = Math.floor((diff % 60_000) / 1_000);
+  const mins = Math.floor((diff % 3_600_000) / 60_000);
+  const secs = Math.floor((diff % 60_000) / 1_000);
 
   let label: string;
   if (days > 0) {
@@ -656,7 +712,12 @@ function ScoreInput({
         value={value}
         onFocus={(event) => event.target.select()}
         onKeyDown={(event) => {
-          if (!/[\d\b]/.test(event.key) && !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(event.key)) {
+          if (
+            !/[\d\b]/.test(event.key) &&
+            !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(
+              event.key,
+            )
+          ) {
             event.preventDefault();
           }
         }}

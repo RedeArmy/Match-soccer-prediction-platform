@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -160,18 +161,48 @@ func (r *PostgresMatchRepository) UnlinkExternal(ctx context.Context, matchID in
 	return nil
 }
 
-func (r *PostgresMatchRepository) ListSyncCandidates(ctx context.Context) ([]*domain.Match, error) {
+func (r *PostgresMatchRepository) ListSyncCandidates(ctx context.Context, prematchWindowMin int) ([]*domain.Match, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT `+matchReadColumns+matchFromStadium+
 			` WHERE m.external_match_id IS NOT NULL
-			   AND m.status IN ('scheduled','live')
+			   AND (
+			         m.status = 'live'
+			         OR (m.status = 'scheduled' AND ($1 = 0 OR m.kickoff_at <= NOW() + ($1 * interval '1 minute')))
+			       )
 			 ORDER BY m.kickoff_at ASC`,
+		prematchWindowMin,
 	)
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
 	defer rows.Close()
 	return collectMatches(rows)
+}
+
+func (r *PostgresMatchRepository) FindByTeams(ctx context.Context, homeTeam, awayTeam string) (*domain.Match, error) {
+	row := r.db.QueryRow(ctx,
+		`SELECT `+matchReadColumns+matchFromStadium+
+			` WHERE lower(m.home_team) = lower($1)
+			   AND lower(m.away_team) = lower($2)
+			 LIMIT 1`,
+		homeTeam, awayTeam,
+	)
+	m, err := scanMatchWithStadium(row)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return m, nil
+}
+
+func (r *PostgresMatchRepository) UpdateKickoff(ctx context.Context, matchID int, kickoffAt time.Time) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE matches SET kickoff_at=$1, updated_at=NOW() WHERE id=$2`,
+		kickoffAt, matchID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
 }
 
 func (r *PostgresMatchRepository) UpdateSyncState(ctx context.Context, matchID int) error {

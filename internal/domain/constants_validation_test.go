@@ -200,6 +200,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyMatchSyncProvider":            ParamKeyMatchSyncProvider,
 		"ParamKeyMatchSyncLeagueID":            ParamKeyMatchSyncLeagueID,
 		"ParamKeyMatchSyncSeason":              ParamKeyMatchSyncSeason,
+		// Daily fixture sync scheduling (migration 000192)
+		"ParamKeyMatchDailySyncHour":              ParamKeyMatchDailySyncHour,
+		"ParamKeyMatchSyncPrematchWindowMin":      ParamKeyMatchSyncPrematchWindowMin,
+		"ParamKeyMatchSyncStopAfterZeroLiveCount": ParamKeyMatchSyncStopAfterZeroLiveCount,
 		// System clock override — dev/test only (migration 000187)
 		"ParamKeySystemDate": ParamKeySystemDate,
 	}
@@ -390,7 +394,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 151 // update when adding a new ParamKey* constant
+		const expectedCount = 154 // update when adding a new ParamKey* constant (+3 daily sync scheduling from 000192)
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -624,6 +628,10 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyMatchSyncProvider", ParamKeyMatchSyncProvider, "match"},
 		{"ParamKeyMatchSyncLeagueID", ParamKeyMatchSyncLeagueID, "match"},
 		{"ParamKeyMatchSyncSeason", ParamKeyMatchSyncSeason, "match"},
+		// Daily fixture sync scheduling (migration 000192)
+		{"ParamKeyMatchDailySyncHour", ParamKeyMatchDailySyncHour, "match"},
+		{"ParamKeyMatchSyncPrematchWindowMin", ParamKeyMatchSyncPrematchWindowMin, "match"},
+		{"ParamKeyMatchSyncStopAfterZeroLiveCount", ParamKeyMatchSyncStopAfterZeroLiveCount, "match"},
 		// System clock override — dev/test only (migration 000187)
 		{"ParamKeySystemDate", ParamKeySystemDate, "system"},
 	}

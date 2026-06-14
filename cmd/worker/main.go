@@ -508,7 +508,14 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	matchSyncFastSec := params.GetInt(ctx, domain.ParamKeyMatchSyncFastPollIntervalSec, domain.DefaultMatchSyncFastPollIntervalSec)
 	notifScheduler.RegisterInterval("match.sync",
 		time.Duration(matchSyncFastSec)*time.Second,
-		makeMatchSyncJob(params, matchSyncSvc, log))
+		makeMatchSyncJob(params, matchSyncSvc, matchRepo, log))
+	// Daily fixture sync — validates all linked scheduled/live matches against
+	// API-Football once per day at match.dailysync.hour (Guatemala time).
+	// On failure an n8n alert is fired; the job does not retry until tomorrow.
+	dailySyncHour := params.GetInt(ctx, domain.ParamKeyMatchDailySyncHour, domain.DefaultMatchDailySyncHour)
+	dailySyncNotifier := setupObservabilityNotifier(cfg, log)
+	notifScheduler.RegisterDaily("match.daily_fixture_sync", dailySyncHour, 0,
+		makeDailyFixtureSyncJob(params, matchSyncSvc, dailySyncNotifier, log))
 
 	// snapshotLockTTL covers the worst-case snapshot retry window with generous
 	// headroom. The lock is also released explicitly by Unlock in the happy path;

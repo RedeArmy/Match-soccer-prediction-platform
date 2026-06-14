@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -26,17 +27,21 @@ type stubMatchSyncer struct {
 	pollErr       error
 	reconcileDiff []service.SyncDiff
 	reconcileErr  error
+	dailySyncErr  error
 }
 
 func (s *stubMatchSyncer) LinkExternal(_ context.Context, _ int, _ string, _ int64) error {
 	return s.linkErr
 }
 func (s *stubMatchSyncer) UnlinkExternal(_ context.Context, _ int) error { return s.unlinkErr }
-func (s *stubMatchSyncer) PollAndApply(_ context.Context) (int, error) {
+func (s *stubMatchSyncer) PollAndApply(_ context.Context, _ int) (int, error) {
 	return s.pollLiveCount, s.pollErr
 }
 func (s *stubMatchSyncer) ReconcileDate(_ context.Context, _, _ int) ([]service.SyncDiff, error) {
 	return s.reconcileDiff, s.reconcileErr
+}
+func (s *stubMatchSyncer) DailyFixtureSync(_ context.Context, _, _ *time.Time) (*service.DailySyncResult, error) {
+	return &service.DailySyncResult{}, s.dailySyncErr
 }
 
 func newSyncHandler(svc *stubMatchSyncer) *handler.AdminMatchSyncHandler {
@@ -150,6 +155,60 @@ func TestAdminMatchSync_TriggerPoll_ProviderError_Returns500(t *testing.T) {
 	w := chiRoute(http.HandlerFunc(h.TriggerPoll), "/poll", http.MethodPost, "/poll")
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status: got %d, want 500", w.Code)
+	}
+}
+
+// ── Reconcile ─────────────────────────────────────────────────────────────────
+
+// ── TriggerDailySync ─────────────────────────────────────────────────────────
+
+func TestAdminMatchSync_TriggerDailySync_NoDateParams_Returns200(t *testing.T) {
+	h := newSyncHandler(&stubMatchSyncer{})
+
+	req := httptest.NewRequest(http.MethodPost, "/match-sync/today", nil)
+	w := httptest.NewRecorder()
+	h.TriggerDailySync(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want 200", w.Code)
+	}
+}
+
+func TestAdminMatchSync_TriggerDailySync_WithDateRange_Returns200(t *testing.T) {
+	h := newSyncHandler(&stubMatchSyncer{})
+
+	req := httptest.NewRequest(http.MethodPost, "/match-sync/today?start_date=2026-06-14&end_date=2026-06-14", nil)
+	w := httptest.NewRecorder()
+	h.TriggerDailySync(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want 200", w.Code)
+	}
+}
+
+func TestAdminMatchSync_TriggerDailySync_ServiceError_Returns500(t *testing.T) {
+	stub := &stubMatchSyncer{dailySyncErr: errors.New("provider down")}
+	h := newSyncHandler(stub)
+
+	req := httptest.NewRequest(http.MethodPost, "/match-sync/today", nil)
+	w := httptest.NewRecorder()
+	h.TriggerDailySync(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status: got %d, want 500", w.Code)
+	}
+}
+
+func TestQueryDateParam_InvalidFormat_ReturnsNil(t *testing.T) {
+	h := newSyncHandler(&stubMatchSyncer{})
+
+	req := httptest.NewRequest(http.MethodPost, "/match-sync/today?start_date=not-a-date", nil)
+	w := httptest.NewRecorder()
+	h.TriggerDailySync(w, req)
+
+	// Invalid date → nil → handler proceeds without filtering; should still return 200.
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want 200", w.Code)
 	}
 }
 

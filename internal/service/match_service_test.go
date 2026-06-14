@@ -58,10 +58,14 @@ func (r *stubMatchRepo) LinkExternal(_ context.Context, _ int, _ string, _ int64
 	return r.err
 }
 func (r *stubMatchRepo) UnlinkExternal(_ context.Context, _ int) error { return r.err }
-func (r *stubMatchRepo) ListSyncCandidates(_ context.Context) ([]*domain.Match, error) {
+func (r *stubMatchRepo) ListSyncCandidates(_ context.Context, _ int) ([]*domain.Match, error) {
 	return r.matches, r.err
 }
 func (r *stubMatchRepo) UpdateSyncState(_ context.Context, _ int) error { return r.err }
+func (r *stubMatchRepo) FindByTeams(_ context.Context, _, _ string) (*domain.Match, error) {
+	return nil, nil
+}
+func (r *stubMatchRepo) UpdateKickoff(_ context.Context, _ int, _ time.Time) error { return nil }
 
 // stubPublisher records published envelopes without delivering them.
 type stubPublisher struct {
