@@ -291,9 +291,11 @@ describe("PredictionPanel", () => {
   });
 
   it("shows allSavedToday empty state in by-day+pending view", async () => {
-    const todayKickoff = new Date(
-      Date.now() + 3 * 60 * 60 * 1000,
-    ).toISOString();
+    // Pin to noon UTC today so the match is always "today" regardless of when
+    // the test runs — Date.now() + 3 h would roll into tomorrow after 21:00 UTC.
+    const todayNoon = new Date();
+    todayNoon.setUTCHours(12, 0, 0, 0);
+    const todayKickoff = todayNoon.toISOString();
     const todayMatch = {
       ...scheduledMatch,
       id: 40,
