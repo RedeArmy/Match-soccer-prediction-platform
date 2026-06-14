@@ -110,6 +110,11 @@ export function PredictionPanel() {
       const token = await getToken();
       return api.getMatches(token!);
     },
+    refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
+      const hasLive = query.state.data?.some((m) => m.status === "in_progress");
+      return hasLive ? 30_000 : 120_000;
+    },
   });
 
   const predictionsQuery = useQuery({

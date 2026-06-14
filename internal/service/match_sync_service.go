@@ -208,7 +208,14 @@ func (s *matchSyncService) processOne(ctx context.Context, m *domain.Match) (boo
 		return s.applyKickoff(ctx, m.ID, isLive)
 	case fix.Status.IsLive() && m.Status == domain.MatchStatusLive:
 		return true, false, nil
-	case fix.Status.IsFinished() && m.Status != domain.MatchStatusFinished:
+	case fix.Status.IsFinished() && m.Status == domain.MatchStatusScheduled:
+		// The live phase was missed entirely. Start the match first so that
+		// predictions are locked before the result is written.
+		if _, err := s.matchSvc.StartMatch(ctx, m.ID); err != nil && !errors.Is(err, apperrors.ErrValidation) {
+			return false, false, fmt.Errorf("StartMatch (missed live phase): %w", err)
+		}
+		return s.applyResult(ctx, m.ID, fix)
+	case fix.Status.IsFinished() && m.Status == domain.MatchStatusLive:
 		return s.applyResult(ctx, m.ID, fix)
 	case fix.Status.IsCancelled():
 		s.log.Warn("match sync: fixture cancelled/postponed — manual action required",
@@ -383,6 +390,15 @@ func (s *matchSyncService) maybeTransitionStatus(ctx context.Context, m *domain.
 func (s *matchSyncService) applyFinishedTransition(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture) {
 	switch m.Status {
 	case domain.MatchStatusLive, domain.MatchStatusScheduled:
+		if m.Status == domain.MatchStatusScheduled {
+			// Live phase was missed; start the match to lock predictions before
+			// writing the result.
+			if _, err := s.matchSvc.StartMatch(ctx, m.ID); err != nil && !errors.Is(err, apperrors.ErrValidation) {
+				s.log.Warn("match daily sync: StartMatch (missed live phase) failed",
+					zap.Int("match_id", m.ID), zap.Error(err))
+				return
+			}
+		}
 		winMethod := winMethodFromStatus(fix.Status)
 		if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod); err != nil {
 			if !errors.Is(err, apperrors.ErrValidation) {
