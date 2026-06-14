@@ -106,7 +106,9 @@ describe("StatusBadge", () => {
   });
 
   it("applies sm size class", () => {
-    const { container } = renderWithI18n(<StatusBadge status="active" size="sm" />);
+    const { container } = renderWithI18n(
+      <StatusBadge status="active" size="sm" />,
+    );
     expect(container.firstElementChild?.className).toContain("text-[10px]");
   });
 

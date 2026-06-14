@@ -35,13 +35,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@clerk/nextjs", () => ({
-  useAuth: vi
-    .fn()
-    .mockReturnValue({
-      isSignedIn: false,
-      isLoaded: true,
-      getToken: vi.fn().mockResolvedValue("tok"),
-    }),
+  useAuth: vi.fn().mockReturnValue({
+    isSignedIn: false,
+    isLoaded: true,
+    getToken: vi.fn().mockResolvedValue("tok"),
+  }),
   useClerk: vi.fn().mockReturnValue({ signOut: vi.fn() }),
   SignedIn: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SignedOut: ({ children }: { children: React.ReactNode }) => <>{children}</>,

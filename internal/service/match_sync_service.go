@@ -55,12 +55,14 @@ type MatchSyncer interface {
 	// are performed; the caller decides whether to apply corrections.
 	ReconcileDate(ctx context.Context, leagueID, season int) ([]SyncDiff, error)
 
-	// DailyFixtureSync iterates all linked scheduled and live matches and validates
-	// each one against the external provider: corrects kickoff times for scheduled
-	// matches and transitions live/scheduled matches to finished when the provider
-	// reports a terminal status. startDate and endDate, when non-nil, restrict
-	// processing to matches whose kickoff falls within [startDate, endDate].
-	DailyFixtureSync(ctx context.Context, startDate, endDate *time.Time) (*DailySyncResult, error)
+	// DailyFixtureSync first auto-links any unlinked matches for the given date
+	// range by fetching all fixtures from the provider (leagueID, season) and
+	// matching them against internal matches by team name. It then validates every
+	// linked scheduled/live match: correcting kickoff times and transitioning to
+	// finished when the provider reports a terminal status. startDate and endDate,
+	// when non-nil, restrict both the auto-link scan and the candidate processing
+	// to matches whose kickoff falls within [startDate, endDate].
+	DailyFixtureSync(ctx context.Context, leagueID, season int, startDate, endDate *time.Time) (*DailySyncResult, error)
 }
 
 // DailySyncResult summarises the outcome of a DailyFixtureSync call.
@@ -312,27 +314,76 @@ func (s *matchSyncService) ReconcileDate(ctx context.Context, leagueID, season i
 	return diffs, nil
 }
 
-// DailyFixtureSync iterates all linked scheduled and live matches and validates
-// each one against the external provider. When startDate/endDate are non-nil,
-// only matches whose kickoff falls within [*startDate, *endDate] are processed.
-func (s *matchSyncService) DailyFixtureSync(ctx context.Context, startDate, endDate *time.Time) (*DailySyncResult, error) {
+// DailyFixtureSync auto-links unlinked matches and validates all linked
+// candidates against the provider for the given date range.
+func (s *matchSyncService) DailyFixtureSync(ctx context.Context, leagueID, season int, startDate, endDate *time.Time) (*DailySyncResult, error) {
 	if s.provider == nil {
 		return nil, fmt.Errorf("match sync: no provider configured (missing API key)")
 	}
 
+	result := &DailySyncResult{}
+
+	// Phase 1: auto-link unlinked matches by fetching provider fixtures for each
+	// date in the range and matching by team name.
+	s.autoLinkByDateRange(ctx, leagueID, season, startDate, endDate, result)
+
+	// Phase 2: validate all linked candidates.
 	candidates, err := s.matchRepo.ListSyncCandidates(ctx, 0)
 	if err != nil {
 		return nil, fmt.Errorf("daily fixture sync: list candidates: %w", err)
 	}
 
 	candidates = filterByDateRange(candidates, startDate, endDate)
-	result := &DailySyncResult{Total: len(candidates)}
+	result.Total = len(candidates)
 
 	for _, m := range candidates {
 		s.dailySyncOneMatch(ctx, m, result)
 	}
 
 	return result, nil
+}
+
+// autoLinkByDateRange fetches provider fixtures for every UTC date in
+// [startDate, endDate] (today when both are nil) and links any internal match
+// that is not yet associated with an external fixture ID.
+func (s *matchSyncService) autoLinkByDateRange(ctx context.Context, leagueID, season int, startDate, endDate *time.Time, result *DailySyncResult) {
+	now := time.Now().UTC().Truncate(24 * time.Hour)
+	start := now
+	if startDate != nil {
+		start = startDate.UTC().Truncate(24 * time.Hour)
+	}
+	end := now
+	if endDate != nil {
+		end = endDate.UTC().Truncate(24 * time.Hour)
+	}
+
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		dateStr := d.Format("2006-01-02")
+		fixtures, err := s.provider.GetFixturesByDate(ctx, leagueID, season, dateStr)
+		if err != nil {
+			s.log.Warn("match daily sync: GetFixturesByDate failed",
+				zap.String("date", dateStr), zap.Error(err))
+			continue
+		}
+		for _, fix := range fixtures {
+			m, err := s.matchRepo.FindByTeams(ctx, fix.HomeTeam, fix.AwayTeam)
+			if err != nil || m == nil {
+				continue
+			}
+			if m.ExternalMatchID != nil {
+				continue // already linked
+			}
+			if err := s.matchRepo.LinkExternal(ctx, m.ID, "api-football", fix.ExternalID); err != nil {
+				s.log.Warn("match daily sync: auto-link failed",
+					zap.Int("match_id", m.ID), zap.Int64("external_id", fix.ExternalID), zap.Error(err))
+				continue
+			}
+			result.Linked++
+			s.log.Info("match daily sync: linked match",
+				zap.Int("match_id", m.ID), zap.Int64("external_id", fix.ExternalID),
+				zap.String("home", fix.HomeTeam), zap.String("away", fix.AwayTeam))
+		}
+	}
 }
 
 // filterByDateRange returns only the matches whose kickoff falls within

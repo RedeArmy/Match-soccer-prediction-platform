@@ -36,7 +36,7 @@ type stubDailySyncer struct {
 	dailyErr    error
 }
 
-func (s *stubDailySyncer) DailyFixtureSync(_ context.Context, _, _ *time.Time) (*service.DailySyncResult, error) {
+func (s *stubDailySyncer) DailyFixtureSync(_ context.Context, _, _ int, _, _ *time.Time) (*service.DailySyncResult, error) {
 	if s.dailyErr != nil {
 		return nil, s.dailyErr
 	}
@@ -179,9 +179,9 @@ func (s *trackingDailySyncer) UnlinkExternal(ctx context.Context, id int) error 
 func (s *trackingDailySyncer) ReconcileDate(ctx context.Context, l, se int) ([]service.SyncDiff, error) {
 	return s.inner.ReconcileDate(ctx, l, se)
 }
-func (s *trackingDailySyncer) DailyFixtureSync(ctx context.Context, start, end *time.Time) (*service.DailySyncResult, error) {
+func (s *trackingDailySyncer) DailyFixtureSync(ctx context.Context, leagueID, season int, start, end *time.Time) (*service.DailySyncResult, error) {
 	*s.count++
-	return s.inner.DailyFixtureSync(ctx, start, end)
+	return s.inner.DailyFixtureSync(ctx, leagueID, season, start, end)
 }
 
 var _ service.MatchSyncer = (*trackingDailySyncer)(nil)

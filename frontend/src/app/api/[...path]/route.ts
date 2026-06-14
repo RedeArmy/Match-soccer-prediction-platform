@@ -2,33 +2,37 @@
 // The Go backend URL is never sent to the browser.
 // The Clerk JWT is forwarded from the client (obtained via useAuth().getToken());
 // the Go backend validates it via JWKS on every request.
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND = process.env.BACKEND_INTERNAL_URL!
+const BACKEND = process.env.BACKEND_INTERNAL_URL!;
 
 // Hop-by-hop headers that must NOT be forwarded to the client
 const HOP_HEADERS = new Set([
-  'content-encoding',
-  'transfer-encoding',
-  'connection',
-  'keep-alive',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailers',
-  'upgrade',
-])
+  "content-encoding",
+  "transfer-encoding",
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailers",
+  "upgrade",
+]);
 
-type Context = { params: Promise<{ path: string[] }> }
+type Context = { params: Promise<{ path: string[] }> };
 
-async function proxy(req: NextRequest, ctx: Context, method: string): Promise<NextResponse> {
-  const { path } = await ctx.params
+async function proxy(
+  req: NextRequest,
+  ctx: Context,
+  method: string,
+): Promise<NextResponse> {
+  const { path } = await ctx.params;
 
   // [...]path captures everything AFTER /api/ in the frontend URL.
   // Prepend /api/ so the upstream path matches the backend routing table.
   // e.g. frontend /api/v1/users/me → segments ['v1','users','me'] → backend /api/v1/users/me
-  const upstreamPath = path.join('/')
-  const url = `${BACKEND}/api/${upstreamPath}${req.nextUrl.search}`
+  const upstreamPath = path.join("/");
+  const url = `${BACKEND}/api/${upstreamPath}${req.nextUrl.search}`;
 
   // Forward the Authorization header the client already attached.
   // Each api.ts call obtains a fresh token via useAuth().getToken() (Clerk
@@ -38,60 +42,71 @@ async function proxy(req: NextRequest, ctx: Context, method: string): Promise<Ne
   // the server to return a stale or null token even though the client session
   // is valid.  The Go backend validates the JWT via JWKS regardless, so
   // forwarding the client header is safe.
-  const clientAuth = req.headers.get('authorization')
+  const clientAuth = req.headers.get("authorization");
 
   const headers: Record<string, string> = {
-    'X-Request-ID':    req.headers.get('x-request-id') ?? crypto.randomUUID(),
-    'X-Forwarded-For': req.headers.get('x-forwarded-for') ?? '',
-  }
-  if (clientAuth) headers['Authorization'] = clientAuth
+    "X-Request-ID": req.headers.get("x-request-id") ?? crypto.randomUUID(),
+    "X-Forwarded-For": req.headers.get("x-forwarded-for") ?? "",
+  };
+  if (clientAuth) headers["Authorization"] = clientAuth;
 
   // Forward Content-Type and idempotency key only when present
-  const ct = req.headers.get('content-type')
-  if (ct) headers['Content-Type'] = ct
-  const idemKey = req.headers.get('idempotency-key')
-  if (idemKey) headers['Idempotency-Key'] = idemKey
+  const ct = req.headers.get("content-type");
+  if (ct) headers["Content-Type"] = ct;
+  const idemKey = req.headers.get("idempotency-key");
+  if (idemKey) headers["Idempotency-Key"] = idemKey;
 
-  const body = ['GET', 'HEAD'].includes(method)
+  const body = ["GET", "HEAD"].includes(method)
     ? undefined
-    : await req.arrayBuffer()
+    : await req.arrayBuffer();
 
-  let upstream: Response
+  let upstream: Response;
   try {
-    upstream = await fetch(url, { method, headers, body, cache: 'no-store' })
+    upstream = await fetch(url, { method, headers, body, cache: "no-store" });
   } catch (err) {
-    console.error('[BFF proxy] upstream fetch failed', { url, err })
+    console.error("[BFF proxy] upstream fetch failed", { url, err });
     return NextResponse.json(
-      { error: { schema_version: 1, code: 'ERR_UPSTREAM', message: 'Backend unavailable' } },
+      {
+        error: {
+          schema_version: 1,
+          code: "ERR_UPSTREAM",
+          message: "Backend unavailable",
+        },
+      },
       { status: 502 },
-    )
+    );
   }
 
   if (!upstream.ok) {
-    const preview = await upstream.clone().text().catch(() => '<unreadable>')
-    console.error('[BFF proxy] upstream error', {
+    const preview = await upstream
+      .clone()
+      .text()
+      .catch(() => "<unreadable>");
+    console.error("[BFF proxy] upstream error", {
       method,
       url,
       status: upstream.status,
       body: preview.slice(0, 500),
-    })
+    });
   }
 
-  const resHeaders = new Headers()
+  const resHeaders = new Headers();
   upstream.headers.forEach((v, k) => {
     if (!HOP_HEADERS.has(k.toLowerCase())) {
-      resHeaders.set(k, v)
+      resHeaders.set(k, v);
     }
-  })
+  });
 
   return new NextResponse(upstream.body, {
-    status:  upstream.status,
+    status: upstream.status,
     headers: resHeaders,
-  })
+  });
 }
 
-export const GET    = (req: NextRequest, ctx: Context) => proxy(req, ctx, 'GET')
-export const POST   = (req: NextRequest, ctx: Context) => proxy(req, ctx, 'POST')
-export const PUT    = (req: NextRequest, ctx: Context) => proxy(req, ctx, 'PUT')
-export const PATCH  = (req: NextRequest, ctx: Context) => proxy(req, ctx, 'PATCH')
-export const DELETE = (req: NextRequest, ctx: Context) => proxy(req, ctx, 'DELETE')
+export const GET = (req: NextRequest, ctx: Context) => proxy(req, ctx, "GET");
+export const POST = (req: NextRequest, ctx: Context) => proxy(req, ctx, "POST");
+export const PUT = (req: NextRequest, ctx: Context) => proxy(req, ctx, "PUT");
+export const PATCH = (req: NextRequest, ctx: Context) =>
+  proxy(req, ctx, "PATCH");
+export const DELETE = (req: NextRequest, ctx: Context) =>
+  proxy(req, ctx, "DELETE");

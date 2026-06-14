@@ -5,7 +5,11 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { PayPalScriptProvider, PayPalButtons, FUNDING } from "@paypal/react-paypal-js";
+import {
+  PayPalScriptProvider,
+  PayPalButtons,
+  FUNDING,
+} from "@paypal/react-paypal-js";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -119,7 +123,9 @@ export default function DepositPage() {
   const router = useRouter();
 
   const validUSD = amountUSD && Number.parseFloat(amountUSD) > 0;
-  const paypalAmountCents = validUSD ? Math.round(Number.parseFloat(amountUSD) * 100) : 0;
+  const paypalAmountCents = validUSD
+    ? Math.round(Number.parseFloat(amountUSD) * 100)
+    : 0;
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -222,9 +228,7 @@ export default function DepositPage() {
                 className="input-base"
               />
               {gtqEquiv && (
-                <p className="text-xs text-text-muted mt-1">
-                  ≈ {gtqEquiv} GTQ
-                </p>
+                <p className="text-xs text-text-muted mt-1">≈ {gtqEquiv} GTQ</p>
               )}
             </div>
 
@@ -256,12 +260,18 @@ export default function DepositPage() {
                   }}
                   createOrder={async () => {
                     const token = await getToken();
-                    if (!token) throw new Error("Sesión expirada. Inicia sesión nuevamente antes de pagar con PayPal.");
+                    if (!token)
+                      throw new Error(
+                        "Sesión expirada. Inicia sesión nuevamente antes de pagar con PayPal.",
+                      );
                     const order = await api.createPayPalOrder(token, {
                       amount_cents: paypalAmountCents,
                       currency: "USD",
                     });
-                    if (!order.id) throw new Error("PayPal no devolvió un ID de orden válido.");
+                    if (!order.id)
+                      throw new Error(
+                        "PayPal no devolvió un ID de orden válido.",
+                      );
                     return order.id;
                   }}
                   onApprove={async (_data: unknown, actions: PayPalActions) => {
@@ -269,7 +279,9 @@ export default function DepositPage() {
                     await Promise.all([
                       queryClient.invalidateQueries({ queryKey: ["balance"] }),
                       queryClient.invalidateQueries({ queryKey: ["ledger"] }),
-                      queryClient.invalidateQueries({ queryKey: ["ledger-preview"] }),
+                      queryClient.invalidateQueries({
+                        queryKey: ["ledger-preview"],
+                      }),
                     ]);
                     const usd = (paypalAmountCents / 100).toFixed(2);
                     router.replace(`/balance?paypal=success&usd=${usd}`);
@@ -277,7 +289,11 @@ export default function DepositPage() {
                   onCancel={() => setError("Pago cancelado.")}
                   onError={(err: unknown) => {
                     console.error("[PayPal] onError:", err);
-                    setError(err instanceof Error ? err.message : "Error al procesar el pago con PayPal.");
+                    setError(
+                      err instanceof Error
+                        ? err.message
+                        : "Error al procesar el pago con PayPal.",
+                    );
                   }}
                 />
               </PayPalScriptProvider>
@@ -302,9 +318,7 @@ export default function DepositPage() {
               <p className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-200">
                 {t("deposit.bankNoteGT")}
               </p>
-              <p className="text-text-muted text-xs">
-                {t("deposit.bankHelp")}
-              </p>
+              <p className="text-text-muted text-xs">{t("deposit.bankHelp")}</p>
             </div>
 
             <div>

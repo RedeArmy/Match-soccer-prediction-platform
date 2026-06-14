@@ -18,14 +18,25 @@ import { ShieldCheck, CheckCircle2, Clock, UploadCloud } from "lucide-react";
 const statusSteps = ["unverified", "pending", "under_review", "approved"];
 
 type UploadedEntry = { kind: "uploaded"; name: string; id: number };
-type PendingEntry  = { kind: "pending";  name: string; file: File; previewUrl?: string };
+type PendingEntry = {
+  kind: "pending";
+  name: string;
+  file: File;
+  previewUrl?: string;
+};
 type DocEntry = UploadedEntry | PendingEntry;
 
 export default function KYCPage() {
   const { getToken } = useAuth();
   const { t } = useI18n();
   const qc = useQueryClient();
-  const { kyc, docs: existingDocs, isLoading, hasPendingReview, effectiveStatus } = useKYCEffectiveStatus();
+  const {
+    kyc,
+    docs: existingDocs,
+    isLoading,
+    hasPendingReview,
+    effectiveStatus,
+  } = useKYCEffectiveStatus();
   const [error, setError] = useState("");
 
   const docTypes = [
@@ -34,10 +45,10 @@ export default function KYCPage() {
   ];
 
   const statusLabels: Record<string, string> = {
-    unverified:   t("kyc.stepUnverified"),
-    pending:      t("kyc.stepPending"),
+    unverified: t("kyc.stepUnverified"),
+    pending: t("kyc.stepPending"),
     under_review: t("kyc.stepUnderReview"),
-    approved:     t("kyc.stepApproved"),
+    approved: t("kyc.stepApproved"),
   };
 
   // prettier-ignore
@@ -67,15 +78,18 @@ export default function KYCPage() {
         if (!next[doc.document_type]) {
           next[doc.document_type] = {
             kind: "uploaded",
-            name: doc.document_type === "gov_id" ? t("kyc.docGovIdShort") : t("kyc.docSelfieShort"),
+            name:
+              doc.document_type === "gov_id"
+                ? t("kyc.docGovIdShort")
+                : t("kyc.docSelfieShort"),
             id: doc.id,
           };
         }
       }
       return next;
     });
-  // t is stable per locale; existingDocs is the real dependency.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // t is stable per locale; existingDocs is the real dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingDocs]);
 
   // Profile form state
@@ -171,7 +185,9 @@ export default function KYCPage() {
       setError(t("kyc.errFileType"));
       return;
     }
-    const previewUrl = mime.startsWith("image/") ? URL.createObjectURL(file) : undefined;
+    const previewUrl = mime.startsWith("image/")
+      ? URL.createObjectURL(file)
+      : undefined;
     setDocEntries((prev) => ({
       ...prev,
       [docType]: { kind: "pending", name: file.name, file, previewUrl },
@@ -188,7 +204,10 @@ export default function KYCPage() {
         delete next[docType];
         return next;
       });
-      setResetKeys((prev) => ({ ...prev, [docType]: (prev[docType] ?? 0) + 1 }));
+      setResetKeys((prev) => ({
+        ...prev,
+        [docType]: (prev[docType] ?? 0) + 1,
+      }));
     } else {
       deleteDoc.mutate(entry.id);
     }
@@ -199,9 +218,11 @@ export default function KYCPage() {
   // hasPendingReview: docs already uploaded but admin hasn't transitioned status yet.
   // showValidating: covers both the in-session upload flow and page reloads.
   const showValidating = submitted || isSubmitting || hasPendingReview;
-  const currentStep   = statusSteps.indexOf(effectiveStatus);
+  const currentStep = statusSteps.indexOf(effectiveStatus);
   const allDocsFilled = docTypes.every(({ id }) => Boolean(docEntries[id]));
-  const hasPending    = docTypes.some(({ id }) => docEntries[id]?.kind === "pending");
+  const hasPending = docTypes.some(
+    ({ id }) => docEntries[id]?.kind === "pending",
+  );
   const isUnderReview = kyc?.status === "under_review";
 
   return (
@@ -215,10 +236,14 @@ export default function KYCPage() {
       <div className="card p-4">
         <div className="flex items-center justify-between relative">
           {statusSteps.map((step, i) => {
-            const done   = i <= currentStep;
+            const done = i <= currentStep;
             const active = i === currentStep;
-            const doneActiveClass = active ? "bg-green-500 border-green-400 text-white" : "bg-green-600 border-green-500 text-white";
-            const stepClass = done ? doneActiveClass : "border-blue-600 text-text-muted";
+            const doneActiveClass = active
+              ? "bg-green-500 border-green-400 text-white"
+              : "bg-green-600 border-green-500 text-white";
+            const stepClass = done
+              ? doneActiveClass
+              : "border-blue-600 text-text-muted";
             return (
               <div
                 key={step}
@@ -229,7 +254,9 @@ export default function KYCPage() {
                 >
                   {done ? <CheckCircle2 className="w-4 h-4" /> : i + 1}
                 </div>
-                <span className={`text-[10px] text-center ${done ? "text-green-400" : "text-text-muted"}`}>
+                <span
+                  className={`text-[10px] text-center ${done ? "text-green-400" : "text-text-muted"}`}
+                >
                   {statusLabels[step]}
                 </span>
                 {i < statusSteps.length - 1 && (
@@ -260,16 +287,24 @@ export default function KYCPage() {
         <div className="card border border-blue-500/30 bg-blue-500/10 p-5 flex items-start gap-3">
           <Clock className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
           <div>
-            <p className="text-sm font-medium text-blue-300">{t("kyc.reviewBannerTitle")}</p>
-            <p className="mt-1 text-xs text-text-secondary">{t("kyc.reviewBannerBody")}</p>
+            <p className="text-sm font-medium text-blue-300">
+              {t("kyc.reviewBannerTitle")}
+            </p>
+            <p className="mt-1 text-xs text-text-secondary">
+              {t("kyc.reviewBannerBody")}
+            </p>
           </div>
         </div>
       )}
 
       {/* Profile form (only when unverified or rejected) */}
-      {(!kyc?.status || kyc.status === "unverified" || kyc.status === "rejected") && (
+      {(!kyc?.status ||
+        kyc.status === "unverified" ||
+        kyc.status === "rejected") && (
         <div className="card p-6 space-y-4">
-          <h2 className="font-semibold text-text-primary">{t("kyc.profileTitle")}</h2>
+          <h2 className="font-semibold text-text-primary">
+            {t("kyc.profileTitle")}
+          </h2>
 
           <div className="grid sm:grid-cols-2 gap-4">
             {profileFields.map(({ name, label, type, placeholder }) => (
@@ -277,7 +312,9 @@ export default function KYCPage() {
                 <input
                   type={type}
                   value={form[name as keyof typeof form]}
-                  onChange={(e) => setForm((f) => ({ ...f, [name]: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, [name]: e.target.value }))
+                  }
                   placeholder={placeholder}
                   className="input-base"
                 />
@@ -287,7 +324,10 @@ export default function KYCPage() {
 
           <SubmitButton
             isPending={submitProfile.isPending}
-            onClick={() => { setError(""); submitProfile.mutate(); }}
+            onClick={() => {
+              setError("");
+              submitProfile.mutate();
+            }}
           >
             {t("kyc.submitProfile")}
           </SubmitButton>
@@ -295,72 +335,83 @@ export default function KYCPage() {
       )}
 
       {/* Document upload (shown after profile submitted, not yet under review or approved) */}
-      {kyc?.status && kyc.status !== "unverified" && kyc.status !== "approved" && !isUnderReview && (
-        <div className="card p-6 space-y-4">
-          {showValidating ? (
-            /* Validating / uploading state — replaces the upload boxes */
-            <div className="flex flex-col items-center gap-4 py-8">
-              {isSubmitting ? (
-                <LoadingSpinner size={40} />
-              ) : (
-                <Clock className="w-10 h-10 text-blue-400" />
-              )}
-              <div className="text-center">
-                <p className="text-sm font-semibold text-blue-300">
-                  {isSubmitting ? t("kyc.uploadingTitle") : t("kyc.validatingTitle")}
-                </p>
-                <p className="mt-1 text-xs text-text-muted">
-                  {isSubmitting ? t("kyc.uploadingBody") : t("kyc.validatingBody")}
-                </p>
+      {kyc?.status &&
+        kyc.status !== "unverified" &&
+        kyc.status !== "approved" &&
+        !isUnderReview && (
+          <div className="card p-6 space-y-4">
+            {showValidating ? (
+              /* Validating / uploading state — replaces the upload boxes */
+              <div className="flex flex-col items-center gap-4 py-8">
+                {isSubmitting ? (
+                  <LoadingSpinner size={40} />
+                ) : (
+                  <Clock className="w-10 h-10 text-blue-400" />
+                )}
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-blue-300">
+                    {isSubmitting
+                      ? t("kyc.uploadingTitle")
+                      : t("kyc.validatingTitle")}
+                  </p>
+                  <p className="mt-1 text-xs text-text-muted">
+                    {isSubmitting
+                      ? t("kyc.uploadingBody")
+                      : t("kyc.validatingBody")}
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            /* Upload boxes */
-            <>
-              <div>
-                <h2 className="font-semibold text-text-primary">{t("kyc.docsTitle")}</h2>
-                <p className="mt-1 text-xs text-text-muted">
-                  {t("kyc.docsHintA")}{" "}
-                  <strong className="text-amber-400">{t("kyc.uploadBtn")}</strong>{" "}
-                  {t("kyc.docsHintB")}
-                </p>
-              </div>
+            ) : (
+              /* Upload boxes */
+              <>
+                <div>
+                  <h2 className="font-semibold text-text-primary">
+                    {t("kyc.docsTitle")}
+                  </h2>
+                  <p className="mt-1 text-xs text-text-muted">
+                    {t("kyc.docsHintA")}{" "}
+                    <strong className="text-amber-400">
+                      {t("kyc.uploadBtn")}
+                    </strong>{" "}
+                    {t("kyc.docsHintB")}
+                  </p>
+                </div>
 
-              <div className="grid sm:grid-cols-2 gap-3">
-                {docTypes.map(({ id, label }) => {
-                  const entry = docEntries[id];
-                  const isPending = entry?.kind === "pending";
-                  const previewUrl = isPending ? entry.previewUrl : undefined;
-                  return (
-                    <FileUploadField
-                      key={`${id}-${resetKeys[id] ?? 0}`}
-                      label={label}
-                      fileName={entry?.name}
-                      hasFile={Boolean(entry)}
-                      isPending={isPending}
-                      pendingLabel={t("kyc.pendingLabel")}
-                      previewUrl={previewUrl}
-                      onChange={(e) => handleFileSelect(e, id)}
-                      onRemove={() => handleRemove(id)}
-                    />
-                  );
-                })}
-              </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {docTypes.map(({ id, label }) => {
+                    const entry = docEntries[id];
+                    const isPending = entry?.kind === "pending";
+                    const previewUrl = isPending ? entry.previewUrl : undefined;
+                    return (
+                      <FileUploadField
+                        key={`${id}-${resetKeys[id] ?? 0}`}
+                        label={label}
+                        fileName={entry?.name}
+                        hasFile={Boolean(entry)}
+                        isPending={isPending}
+                        pendingLabel={t("kyc.pendingLabel")}
+                        previewUrl={previewUrl}
+                        onChange={(e) => handleFileSelect(e, id)}
+                        onRemove={() => handleRemove(id)}
+                      />
+                    );
+                  })}
+                </div>
 
-              {allDocsFilled && hasPending && (
-                <button
-                  type="button"
-                  onClick={handleSendDocuments}
-                  className="btn-gold w-full py-3 text-sm font-semibold flex items-center justify-center gap-2"
-                >
-                  <UploadCloud className="w-4 h-4" />
-                  {t("kyc.uploadBtn")}
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
+                {allDocsFilled && hasPending && (
+                  <button
+                    type="button"
+                    onClick={handleSendDocuments}
+                    className="btn-gold w-full py-3 text-sm font-semibold flex items-center justify-center gap-2"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    {t("kyc.uploadBtn")}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
       <FormFeedback error={error} success="" />
     </div>

@@ -40,7 +40,7 @@ func (s *stubMatchSyncer) PollAndApply(_ context.Context, _ int) (int, error) {
 func (s *stubMatchSyncer) ReconcileDate(_ context.Context, _, _ int) ([]service.SyncDiff, error) {
 	return s.reconcileDiff, s.reconcileErr
 }
-func (s *stubMatchSyncer) DailyFixtureSync(_ context.Context, _, _ *time.Time) (*service.DailySyncResult, error) {
+func (s *stubMatchSyncer) DailyFixtureSync(_ context.Context, _, _ int, _, _ *time.Time) (*service.DailySyncResult, error) {
 	return &service.DailySyncResult{}, s.dailySyncErr
 }
 

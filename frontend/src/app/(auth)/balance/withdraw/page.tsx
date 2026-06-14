@@ -12,7 +12,14 @@ import { useI18n } from "@/lib/i18n";
 import { formatGTQ, formatUSD, gtqToUSD } from "@/lib/utils";
 import { FormField } from "@/components/shared/FormField";
 import { SubmitButton } from "@/components/shared/SubmitButton";
-import { CheckCircle2, ShieldAlert, Banknote, Globe, XCircle, X } from "lucide-react";
+import {
+  CheckCircle2,
+  ShieldAlert,
+  Banknote,
+  Globe,
+  XCircle,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 
 type Method = "bank_gt" | "paypal";
@@ -25,9 +32,17 @@ interface WithdrawParams {
   accountHolder: string;
 }
 
-function buildPayoutDetails(method: Method, params: WithdrawParams): Record<string, string> {
+function buildPayoutDetails(
+  method: Method,
+  params: WithdrawParams,
+): Record<string, string> {
   if (method === "bank_gt") {
-    return { bank_name: params.bankName, account_type: params.accountType, account_number: params.accountNumber, account_holder: params.accountHolder };
+    return {
+      bank_name: params.bankName,
+      account_type: params.accountType,
+      account_number: params.accountNumber,
+      account_holder: params.accountHolder,
+    };
   }
   return { paypal_email: params.paypalEmail };
 }
@@ -41,13 +56,17 @@ function isWithdrawValid(
 ): boolean {
   if (amountCents < minCents || amountCents > availableDisplay) return false;
   if (method === "paypal") return params.paypalEmail.trim() !== "";
-  return params.bankName !== "" && params.accountType !== "" && params.accountNumber.trim() !== "" && params.accountHolder.trim() !== "";
+  return (
+    params.bankName !== "" &&
+    params.accountType !== "" &&
+    params.accountNumber.trim() !== "" &&
+    params.accountHolder.trim() !== ""
+  );
 }
 
 function formatAmount(currency: string, amountCents: number): string {
   return currency === "USD" ? formatUSD(amountCents) : formatGTQ(amountCents);
 }
-
 
 export default function WithdrawPage() {
   const { getToken } = useAuth();
@@ -64,7 +83,10 @@ export default function WithdrawPage() {
   const [accountNumber, setAccountNumber] = useState("");
   const [accountHolder, setAccountHolder] = useState("");
   const [paypalEmail, setPaypalEmail] = useState("");
-  const [popup, setPopup] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [popup, setPopup] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const available = balance?.available_cents ?? 0;
   // PayPal withdrawals are always in USD; bank deposits follow the locale currency.
@@ -112,8 +134,20 @@ export default function WithdrawPage() {
   const amountCents = Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
   const belowMinimum = amountCents > 0 && amountCents < minCents;
   const exceedsBalance = amountCents > 0 && amountCents > availableDisplay;
-  const withdrawParams: WithdrawParams = { paypalEmail, bankName, accountType, accountNumber, accountHolder };
-  const valid = isWithdrawValid(method, amountCents, minCents, availableDisplay, withdrawParams);
+  const withdrawParams: WithdrawParams = {
+    paypalEmail,
+    bankName,
+    accountType,
+    accountNumber,
+    accountHolder,
+  };
+  const valid = isWithdrawValid(
+    method,
+    amountCents,
+    minCents,
+    availableDisplay,
+    withdrawParams,
+  );
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -134,13 +168,16 @@ export default function WithdrawPage() {
       setAccountHolder("");
       setPaypalEmail("");
     },
-    onError: () => setPopup({ kind: "error", message: t("withdraw.errorGeneric") }),
+    onError: () =>
+      setPopup({ kind: "error", message: t("withdraw.errorGeneric") }),
   });
 
   if (kycLoading) {
     return (
       <div className="max-w-lg mx-auto space-y-4">
-        <h1 className="font-display text-3xl text-white">{t("withdraw.title")}</h1>
+        <h1 className="font-display text-3xl text-white">
+          {t("withdraw.title")}
+        </h1>
         <div className="card p-8 flex justify-center">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
         </div>
@@ -151,7 +188,9 @@ export default function WithdrawPage() {
   if (!kycApproved) {
     return (
       <div className="max-w-lg mx-auto space-y-4">
-        <h1 className="font-display text-3xl text-white">{t("withdraw.title")}</h1>
+        <h1 className="font-display text-3xl text-white">
+          {t("withdraw.title")}
+        </h1>
         <div className="card p-8 flex flex-col items-center text-center gap-4">
           <ShieldAlert className="w-12 h-12 text-gold-400" />
           <div className="space-y-2">
@@ -174,201 +213,238 @@ export default function WithdrawPage() {
   }
 
   const amountLabel = formatAmount(currency, amountCents);
-  const submitLabel = valid ? `${t("withdraw.submit")} ${amountLabel}` : t("withdraw.submit");
+  const submitLabel = valid
+    ? `${t("withdraw.submit")} ${amountLabel}`
+    : t("withdraw.submit");
 
   return (
     <>
-    <div className="max-w-lg mx-auto space-y-6">
-      <h1 className="font-display text-3xl text-white">{t("withdraw.title")}</h1>
+      <div className="max-w-lg mx-auto space-y-6">
+        <h1 className="font-display text-3xl text-white">
+          {t("withdraw.title")}
+        </h1>
 
-      {/* Available balance */}
-      <div className="card p-4 flex items-center justify-between">
-        <span className="text-sm text-text-secondary">{t("withdraw.available")}</span>
-        <span className="font-score text-xl text-white">{formatGTQ(available)}</span>
-      </div>
-
-      <div className="card p-6 space-y-5">
-        {/* Method tabs */}
-        <div>
-          <p className="block text-sm text-text-secondary mb-2">{t("withdraw.method")}</p>
-          <div className="flex gap-2">
-            {(
-              [
-                { id: "bank_gt", label: t("withdraw.methodBankGT"), icon: <Banknote className="w-4 h-4" /> },
-                { id: "paypal", label: t("withdraw.methodPayPal"),  icon: <Globe className="w-4 h-4" />    },
-              ] as const
-            ).map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => { setMethod(m.id); setAmount(""); setPopup(null); }}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm border transition-colors ${
-                  method === m.id
-                    ? "bg-blue-700 border-blue-500 text-white"
-                    : "border-blue-700 text-text-muted hover:text-text-secondary"
-                }`}
-              >
-                {m.icon}
-                {m.label}
-              </button>
-            ))}
-          </div>
+        {/* Available balance */}
+        <div className="card p-4 flex items-center justify-between">
+          <span className="text-sm text-text-secondary">
+            {t("withdraw.available")}
+          </span>
+          <span className="font-score text-xl text-white">
+            {formatGTQ(available)}
+          </span>
         </div>
 
-        {/* Amount */}
-        <div>
-          <label
-            htmlFor="withdraw-amount"
-            className="block text-sm text-text-secondary mb-1.5"
-          >
-            {effectiveIsUSD ? t("withdraw.amountUSD") : t("withdraw.amount")}
-          </label>
-          <input
-            id="withdraw-amount"
-            type="number"
-            min={minCents / 100}
-            step="0.01"
-            max={availableDisplay / 100}
-            value={amount}
-            onChange={(e) => { setAmount(e.target.value); setPopup(null); }}
-            placeholder={(minCents / 100).toFixed(2)}
-            className="input-base"
-          />
-          {belowMinimum && (
-            <p className="text-red-400 text-xs mt-1">
-              {t("withdraw.amountBelowMin")} {formatAmount(currency, minCents)}
+        <div className="card p-6 space-y-5">
+          {/* Method tabs */}
+          <div>
+            <p className="block text-sm text-text-secondary mb-2">
+              {t("withdraw.method")}
             </p>
-          )}
-          {exceedsBalance && (
-            <p className="text-red-400 text-xs mt-1">{t("withdraw.amountExceeds")}</p>
-          )}
-        </div>
+            <div className="flex gap-2">
+              {(
+                [
+                  {
+                    id: "bank_gt",
+                    label: t("withdraw.methodBankGT"),
+                    icon: <Banknote className="w-4 h-4" />,
+                  },
+                  {
+                    id: "paypal",
+                    label: t("withdraw.methodPayPal"),
+                    icon: <Globe className="w-4 h-4" />,
+                  },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    setMethod(m.id);
+                    setAmount("");
+                    setPopup(null);
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm border transition-colors ${
+                    method === m.id
+                      ? "bg-blue-700 border-blue-500 text-white"
+                      : "border-blue-700 text-text-muted hover:text-text-secondary"
+                  }`}
+                >
+                  {m.icon}
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-        {/* Bank GT fields */}
-        {method === "bank_gt" && (
-          <>
-            <FormField label={t("withdraw.bankSelect")} spacing="normal">
-              <select
-                value={bankName}
-                onChange={(e) => setBankName(e.target.value)}
-                className="input-base"
-                disabled={loadingBanks}
-              >
-                <option value="">
-                  {loadingBanks ? t("withdraw.bankSelectLoading") : t("withdraw.bankSelectPh")}
-                </option>
-                {(banks ?? []).map((b) => (
-                  <option key={b.id} value={b.name}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label={t("withdraw.accountType")} spacing="normal">
-              <select
-                value={accountType}
-                onChange={(e) => setAccountType(e.target.value)}
-                className="input-base"
-                disabled={loadingAccountTypes}
-              >
-                <option value="">
-                  {loadingAccountTypes ? t("withdraw.accountTypeLoading") : t("withdraw.accountTypePh")}
-                </option>
-                {(accountTypes ?? []).map((at) => (
-                  <option key={at.id} value={at.name}>
-                    {accountTypeName(at.name)}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label={t("withdraw.accountNumber")} spacing="normal">
-              <input
-                type="text"
-                value={accountNumber}
-                onChange={(e) => setAccountNumber(e.target.value)}
-                placeholder={t("withdraw.accountNumberPh")}
-                className="input-base"
-              />
-            </FormField>
-
-            <FormField label={t("withdraw.accountHolder")} spacing="normal">
-              <input
-                type="text"
-                value={accountHolder}
-                onChange={(e) => setAccountHolder(e.target.value)}
-                placeholder={t("withdraw.accountHolderPh")}
-                className="input-base"
-              />
-            </FormField>
-          </>
-        )}
-
-        {/* PayPal field */}
-        {method === "paypal" && (
-          <FormField label={t("withdraw.paypalEmail")} spacing="normal">
+          {/* Amount */}
+          <div>
+            <label
+              htmlFor="withdraw-amount"
+              className="block text-sm text-text-secondary mb-1.5"
+            >
+              {effectiveIsUSD ? t("withdraw.amountUSD") : t("withdraw.amount")}
+            </label>
             <input
-              id="withdraw-paypal-email"
-              type="email"
-              value={paypalEmail}
-              onChange={(e) => setPaypalEmail(e.target.value)}
-              placeholder={t("withdraw.paypalEmailPh")}
+              id="withdraw-amount"
+              type="number"
+              min={minCents / 100}
+              step="0.01"
+              max={availableDisplay / 100}
+              value={amount}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                setPopup(null);
+              }}
+              placeholder={(minCents / 100).toFixed(2)}
               className="input-base"
             />
-          </FormField>
-        )}
-
-        <SubmitButton
-          isPending={mutation.isPending}
-          disabled={!valid}
-          onClick={() => {
-            setPopup(null);
-            mutation.mutate();
-          }}
-        >
-          {submitLabel}
-        </SubmitButton>
-      </div>
-    </div>
-
-    {/* Result popup */}
-    {popup && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col items-center gap-4 text-center">
-          {popup.kind === "success" ? (
-            <CheckCircle2 className="w-14 h-14 text-green-400" />
-          ) : (
-            <XCircle className="w-14 h-14 text-red-400" />
-          )}
-          <div>
-            <p className="text-white font-semibold text-lg mb-1">
-              {popup.kind === "success" ? t("withdraw.successTitle") : t("withdraw.errorTitle")}
-            </p>
-            <p className="text-text-secondary text-sm">{popup.message}</p>
-          </div>
-          <div className="flex gap-3 w-full">
-            {popup.kind === "error" && (
-              <button
-                type="button"
-                onClick={() => { setPopup(null); mutation.mutate(); }}
-                className="flex-1 btn-gold py-2 text-sm"
-              >
-                {t("withdraw.errorRetry")}
-              </button>
+            {belowMinimum && (
+              <p className="text-red-400 text-xs mt-1">
+                {t("withdraw.amountBelowMin")}{" "}
+                {formatAmount(currency, minCents)}
+              </p>
             )}
-            <button
-              type="button"
-              onClick={() => setPopup(null)}
-              className="flex-1 flex items-center justify-center gap-1.5 border border-white/20 rounded-lg py-2 text-sm text-text-secondary hover:text-white transition-colors"
-            >
-              <X className="w-4 h-4" />
-              {t("withdraw.errorClose")}
-            </button>
+            {exceedsBalance && (
+              <p className="text-red-400 text-xs mt-1">
+                {t("withdraw.amountExceeds")}
+              </p>
+            )}
           </div>
+
+          {/* Bank GT fields */}
+          {method === "bank_gt" && (
+            <>
+              <FormField label={t("withdraw.bankSelect")} spacing="normal">
+                <select
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  className="input-base"
+                  disabled={loadingBanks}
+                >
+                  <option value="">
+                    {loadingBanks
+                      ? t("withdraw.bankSelectLoading")
+                      : t("withdraw.bankSelectPh")}
+                  </option>
+                  {(banks ?? []).map((b) => (
+                    <option key={b.id} value={b.name}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label={t("withdraw.accountType")} spacing="normal">
+                <select
+                  value={accountType}
+                  onChange={(e) => setAccountType(e.target.value)}
+                  className="input-base"
+                  disabled={loadingAccountTypes}
+                >
+                  <option value="">
+                    {loadingAccountTypes
+                      ? t("withdraw.accountTypeLoading")
+                      : t("withdraw.accountTypePh")}
+                  </option>
+                  {(accountTypes ?? []).map((at) => (
+                    <option key={at.id} value={at.name}>
+                      {accountTypeName(at.name)}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label={t("withdraw.accountNumber")} spacing="normal">
+                <input
+                  type="text"
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value)}
+                  placeholder={t("withdraw.accountNumberPh")}
+                  className="input-base"
+                />
+              </FormField>
+
+              <FormField label={t("withdraw.accountHolder")} spacing="normal">
+                <input
+                  type="text"
+                  value={accountHolder}
+                  onChange={(e) => setAccountHolder(e.target.value)}
+                  placeholder={t("withdraw.accountHolderPh")}
+                  className="input-base"
+                />
+              </FormField>
+            </>
+          )}
+
+          {/* PayPal field */}
+          {method === "paypal" && (
+            <FormField label={t("withdraw.paypalEmail")} spacing="normal">
+              <input
+                id="withdraw-paypal-email"
+                type="email"
+                value={paypalEmail}
+                onChange={(e) => setPaypalEmail(e.target.value)}
+                placeholder={t("withdraw.paypalEmailPh")}
+                className="input-base"
+              />
+            </FormField>
+          )}
+
+          <SubmitButton
+            isPending={mutation.isPending}
+            disabled={!valid}
+            onClick={() => {
+              setPopup(null);
+              mutation.mutate();
+            }}
+          >
+            {submitLabel}
+          </SubmitButton>
         </div>
       </div>
-    )}
+
+      {/* Result popup */}
+      {popup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col items-center gap-4 text-center">
+            {popup.kind === "success" ? (
+              <CheckCircle2 className="w-14 h-14 text-green-400" />
+            ) : (
+              <XCircle className="w-14 h-14 text-red-400" />
+            )}
+            <div>
+              <p className="text-white font-semibold text-lg mb-1">
+                {popup.kind === "success"
+                  ? t("withdraw.successTitle")
+                  : t("withdraw.errorTitle")}
+              </p>
+              <p className="text-text-secondary text-sm">{popup.message}</p>
+            </div>
+            <div className="flex gap-3 w-full">
+              {popup.kind === "error" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPopup(null);
+                    mutation.mutate();
+                  }}
+                  className="flex-1 btn-gold py-2 text-sm"
+                >
+                  {t("withdraw.errorRetry")}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setPopup(null)}
+                className="flex-1 flex items-center justify-center gap-1.5 border border-white/20 rounded-lg py-2 text-sm text-text-secondary hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+                {t("withdraw.errorClose")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
