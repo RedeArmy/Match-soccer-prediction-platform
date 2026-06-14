@@ -105,7 +105,7 @@ func (s *stubWorkerMatchSyncer) UnlinkExternal(_ context.Context, _ int) error {
 func (s *stubWorkerMatchSyncer) ReconcileDate(_ context.Context, _, _ int) ([]service.SyncDiff, error) {
 	return nil, nil
 }
-func (s *stubWorkerMatchSyncer) DailyFixtureSync(_ context.Context, _, _ *time.Time) (*service.DailySyncResult, error) {
+func (s *stubWorkerMatchSyncer) DailyFixtureSync(_ context.Context, _, _ int, _, _ *time.Time) (*service.DailySyncResult, error) {
 	return &service.DailySyncResult{}, nil
 }
 

@@ -1,16 +1,27 @@
-import { cn } from '@/lib/utils'
+import { cn } from "@/lib/utils";
 
 interface EmptyStateProps {
-  readonly title:       string
-  readonly description?: string
-  readonly action?:     React.ReactNode
-  readonly className?:  string
-  readonly icon?:       React.ReactNode
+  readonly title: string;
+  readonly description?: string;
+  readonly action?: React.ReactNode;
+  readonly className?: string;
+  readonly icon?: React.ReactNode;
 }
 
-export function EmptyState({ title, description, action, className, icon }: EmptyStateProps) {
+export function EmptyState({
+  title,
+  description,
+  action,
+  className,
+  icon,
+}: EmptyStateProps) {
   return (
-    <div className={cn('flex flex-col items-center justify-center py-16 text-center', className)}>
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center py-16 text-center",
+        className,
+      )}
+    >
       {icon && <div className="mb-4 text-blue-500">{icon}</div>}
       <h3 className="text-lg font-semibold text-text-primary mb-1">{title}</h3>
       {description && (
@@ -18,5 +29,5 @@ export function EmptyState({ title, description, action, className, icon }: Empt
       )}
       {action && <div className="mt-6">{action}</div>}
     </div>
-  )
+  );
 }

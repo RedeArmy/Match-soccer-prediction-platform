@@ -2527,8 +2527,16 @@ paths:
       - admin-match-sync
   /api/v1/admin/match-sync/today:
     post:
-      description: Admin only. Validates all linked scheduled and live matches against
+      description: Admin only. Auto-links any unlinked matches by team name, then
       parameters:
+      - description: 'API-Football league ID (default: 1 = FIFA World Cup)'
+        in: query
+        name: league_id
+        type: integer
+      - description: 'Season year (default: 2026)'
+        in: query
+        name: season
+        type: integer
       - description: Kickoff date range start (YYYY-MM-DD, inclusive)
         in: query
         name: start_date

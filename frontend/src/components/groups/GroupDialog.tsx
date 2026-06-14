@@ -1,110 +1,116 @@
-'use client'
+"use client";
 
-import { useEffect, useRef, useState } from 'react'
-import { useAuth } from '@clerk/nextjs'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, Loader2, Plus, Users, X } from 'lucide-react'
-import { api } from '@/lib/api'
-import type { QuinielaResponse } from '@/lib/api-types'
-import { cn } from '@/lib/utils'
-import { useI18n } from '@/lib/i18n'
+import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Check, Copy, Loader2, Plus, Users, X } from "lucide-react";
+import { api } from "@/lib/api";
+import type { QuinielaResponse } from "@/lib/api-types";
+import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
-type Tab = 'create' | 'join'
+type Tab = "create" | "join";
 
 interface Props {
-  open: boolean
-  defaultTab?: Tab
-  onClose: () => void
+  open: boolean;
+  defaultTab?: Tab;
+  onClose: () => void;
 }
 
-export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<Props>) {
-  const { getToken } = useAuth()
-  const queryClient = useQueryClient()
-  const { t } = useI18n()
+export function GroupDialog({
+  open,
+  defaultTab = "create",
+  onClose,
+}: Readonly<Props>) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+  const { t } = useI18n();
 
-  const [tab, setTab] = useState<Tab>(defaultTab)
-  const [created, setCreated] = useState<QuinielaResponse | null>(null)
+  const [tab, setTab] = useState<Tab>(defaultTab);
+  const [created, setCreated] = useState<QuinielaResponse | null>(null);
 
   // Sync active tab and reset form state each time the dialog opens
   useEffect(() => {
     if (open) {
-      setTab(defaultTab)
-      setCreated(null)
-      setName('')
-      setInviteCode('')
-      setNameState('idle')
+      setTab(defaultTab);
+      setCreated(null);
+      setName("");
+      setInviteCode("");
+      setNameState("idle");
     }
-  }, [open, defaultTab])
-  const [copied, setCopied] = useState(false)
+  }, [open, defaultTab]);
+  const [copied, setCopied] = useState(false);
 
-  const [name, setName] = useState('')
-  const [inviteCode, setInviteCode] = useState('')
+  const [name, setName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
 
   // ── Name availability check (debounced 400 ms) ───────────────────────────
-  type NameState = 'idle' | 'checking' | 'available' | 'taken'
-  const [nameState, setNameState] = useState<NameState>('idle')
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  type NameState = "idle" | "checking" | "available" | "taken";
+  const [nameState, setNameState] = useState<NameState>("idle");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const trimmed = name.trim()
+    const trimmed = name.trim();
     if (trimmed.length < 2) {
-      setNameState('idle')
-      return
+      setNameState("idle");
+      return;
     }
-    setNameState('checking')
-    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setNameState("checking");
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const token = await getToken()
-        const { available } = await api.checkGroupName(token!, trimmed)
-        setNameState(available ? 'available' : 'taken')
+        const token = await getToken();
+        const { available } = await api.checkGroupName(token!, trimmed);
+        setNameState(available ? "available" : "taken");
       } catch {
-        setNameState('idle')
+        setNameState("idle");
       }
-    }, 400)
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [name, getToken])
+    }, 400);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [name, getToken]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const token = await getToken()
-      return api.createGroup(token!, { name: name.trim() })
+      const token = await getToken();
+      return api.createGroup(token!, { name: name.trim() });
     },
     onSuccess: (data) => {
-      setCreated(data)
-      queryClient.invalidateQueries({ queryKey: ['my-groups'] })
+      setCreated(data);
+      queryClient.invalidateQueries({ queryKey: ["my-groups"] });
     },
-  })
+  });
 
   const joinMutation = useMutation({
     mutationFn: async () => {
-      const token = await getToken()
-      return api.joinGroup(token!, inviteCode.trim().toUpperCase())
+      const token = await getToken();
+      return api.joinGroup(token!, inviteCode.trim().toUpperCase());
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['my-groups'] })
-      handleClose()
+      queryClient.invalidateQueries({ queryKey: ["my-groups"] });
+      handleClose();
     },
-  })
+  });
 
   function handleClose() {
-    setCreated(null)
-    setCopied(false)
-    setName('')
-    setInviteCode('')
-    setNameState('idle')
-    createMutation.reset()
-    joinMutation.reset()
-    onClose()
+    setCreated(null);
+    setCopied(false);
+    setName("");
+    setInviteCode("");
+    setNameState("idle");
+    createMutation.reset();
+    joinMutation.reset();
+    onClose();
   }
 
   async function copyCode(code: string) {
-    await navigator.clipboard.writeText(code)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
-  if (!open) return null
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -119,12 +125,12 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-gold-300">
-              {t('groups.eyebrow')}
+              {t("groups.eyebrow")}
             </p>
             <h2 className="mt-0.5 text-lg font-semibold text-white">
-              {created || tab === 'create'
-                ? t('groups.createTitle')
-                : t('groups.joinTitle')}
+              {created || tab === "create"
+                ? t("groups.createTitle")
+                : t("groups.joinTitle")}
             </h2>
           </div>
           <button
@@ -138,19 +144,19 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
 
         {!created && (
           <div className="mb-5 flex gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">
-            {(['create', 'join'] as Tab[]).map((key) => (
+            {(["create", "join"] as Tab[]).map((key) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => setTab(key)}
                 className={cn(
-                  'flex-1 rounded-lg py-2 text-sm font-medium transition-colors',
+                  "flex-1 rounded-lg py-2 text-sm font-medium transition-colors",
                   tab === key
-                    ? 'bg-gold-400 text-blue-950'
-                    : 'text-text-muted hover:text-text-primary',
+                    ? "bg-gold-400 text-blue-950"
+                    : "text-text-muted hover:text-text-primary",
                 )}
               >
-                {key === 'create' ? t('groups.tabCreate') : t('groups.tabJoin')}
+                {key === "create" ? t("groups.tabCreate") : t("groups.tabJoin")}
               </button>
             ))}
           </div>
@@ -160,13 +166,15 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
           <div className="space-y-4">
             <div className="rounded-xl border border-green-400/20 bg-green-400/10 p-4 text-center">
               <Check className="mx-auto mb-2 h-8 w-8 text-green-400" />
-              <p className="text-sm font-medium text-green-200">{t('groups.createSuccess')}</p>
+              <p className="text-sm font-medium text-green-200">
+                {t("groups.createSuccess")}
+              </p>
               <p className="mt-0.5 text-xs text-text-muted">{created.name}</p>
             </div>
 
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                {t('groups.inviteCodeLabel')}
+                {t("groups.inviteCodeLabel")}
               </p>
               <div className="flex items-center gap-3 rounded-xl border border-white/15 bg-white/[0.05] px-4 py-3">
                 <span className="flex-1 font-mono text-2xl font-bold tracking-widest text-gold-300">
@@ -177,36 +185,49 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
                   onClick={() => copyCode(created.invite_code)}
                   className="rounded p-1 text-text-muted transition-colors hover:text-white"
                 >
-                  {copied
-                    ? <Check className="h-4 w-4 text-green-400" />
-                    : <Copy className="h-4 w-4" />}
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-400" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
                 </button>
               </div>
-              <p className="mt-2 text-[11px] text-text-muted">{t('groups.inviteCodeHint')}</p>
+              <p className="mt-2 text-[11px] text-text-muted">
+                {t("groups.inviteCodeHint")}
+              </p>
             </div>
 
-            <button type="button" onClick={handleClose} className="btn-gold w-full py-2.5 text-sm">
-              {t('groups.done')}
+            <button
+              type="button"
+              onClick={handleClose}
+              className="btn-gold w-full py-2.5 text-sm"
+            >
+              {t("groups.done")}
             </button>
           </div>
         )}
 
-        {!created && tab === 'create' && (
+        {!created && tab === "create" && (
           <form
             className="space-y-4"
-            onSubmit={(e) => { e.preventDefault(); createMutation.mutate() }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              createMutation.mutate();
+            }}
           >
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-muted">
-                {t('groups.nameLabel')}
+                {t("groups.nameLabel")}
               </label>
               <input
                 className={cn(
-                  'input-base transition-colors',
-                  nameState === 'taken'     && 'border-red-500/60 focus:ring-red-500/40',
-                  nameState === 'available' && 'border-green-500/50 focus:ring-green-500/30',
+                  "input-base transition-colors",
+                  nameState === "taken" &&
+                    "border-red-500/60 focus:ring-red-500/40",
+                  nameState === "available" &&
+                    "border-green-500/50 focus:ring-green-500/30",
                 )}
-                placeholder={t('groups.namePlaceholder')}
+                placeholder={t("groups.namePlaceholder")}
                 maxLength={60}
                 required
                 value={name}
@@ -214,52 +235,63 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
                 autoComplete="off"
               />
               {/* Inline availability feedback */}
-              {nameState === 'checking' && (
+              {nameState === "checking" && (
                 <p className="mt-1.5 flex items-center gap-1.5 text-xs text-text-muted">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  {t('groups.checkingAvailability')}
+                  {t("groups.checkingAvailability")}
                 </p>
               )}
-              {nameState === 'available' && (
+              {nameState === "available" && (
                 <p className="mt-1.5 flex items-center gap-1.5 text-xs text-green-400">
                   <Check className="h-3 w-3" />
-                  {t('groups.nameAvailable')}
+                  {t("groups.nameAvailable")}
                 </p>
               )}
-              {nameState === 'taken' && (
+              {nameState === "taken" && (
                 <p className="mt-1.5 text-xs text-red-400">
-                  {t('groups.nameTaken')}
+                  {t("groups.nameTaken")}
                 </p>
               )}
             </div>
 
             {createMutation.isError && (
               <p className="rounded border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-300">
-                {createMutation.error instanceof Error && createMutation.error.message.toLowerCase().includes('nombre')
+                {createMutation.error instanceof Error &&
+                createMutation.error.message.toLowerCase().includes("nombre")
                   ? createMutation.error.message
-                  : t('groups.createError')}
+                  : t("groups.createError")}
               </p>
             )}
 
             <button
               type="submit"
-              disabled={!name.trim() || createMutation.isPending || nameState === 'taken' || nameState === 'checking'}
+              disabled={
+                !name.trim() ||
+                createMutation.isPending ||
+                nameState === "taken" ||
+                nameState === "checking"
+              }
               className="btn-gold w-full py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
-              {createMutation.isPending ? t('common.saving') : t('groups.createAction')}
+              {createMutation.isPending
+                ? t("common.saving")
+                : t("groups.createAction")}
             </button>
           </form>
         )}
 
-        {!created && tab === 'join' && (
+        {!created && tab === "join" && (
           <form
             className="space-y-4"
-            onSubmit={(e) => { e.preventDefault(); joinMutation.mutate() }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              joinMutation.mutate();
+            }}
           >
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-muted">
-                {t('groups.inviteCodeLabel')}
+                {t("groups.inviteCodeLabel")}
               </label>
               <input
                 className="input-base font-mono tracking-widest"
@@ -273,7 +305,7 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
 
             {joinMutation.isError && (
               <p className="rounded border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-300">
-                {t('groups.joinError')}
+                {t("groups.joinError")}
               </p>
             )}
 
@@ -283,11 +315,13 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
               className="btn-gold w-full py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Users className="h-4 w-4" />
-              {joinMutation.isPending ? t('common.saving') : t('groups.joinAction')}
+              {joinMutation.isPending
+                ? t("common.saving")
+                : t("groups.joinAction")}
             </button>
           </form>
         )}
       </div>
     </div>
-  )
+  );
 }
