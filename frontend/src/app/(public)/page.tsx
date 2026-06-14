@@ -5,8 +5,23 @@ import {
   ArrowRight, ShieldCheck, Trophy,
   Zap, Award, Globe, MapPin, Flag,
   CheckCircle2, XCircle, Star, Layers, BarChart3, Users,
+  LayoutDashboard,
 } from 'lucide-react'
+import { useAuth } from '@clerk/nextjs'
 import { useI18n } from '@/lib/i18n'
+
+// ── Logged-in overrides ───────────────────────────────────────────────────────
+// When the user is already signed in every sign-up/join CTA is replaced with
+// dashboard/quiniela links so there are no contradictory "create account" prompts.
+
+const LOGGED_IN = {
+  heroPrimary:  { href: '/dashboard', icon: LayoutDashboard },
+  heroSecondary: { href: '/quinielas' },
+  freeModeHref: '/quinielas',
+  premModeHref: '/quinielas',
+  ctaPrimary:   { href: '/dashboard' },
+  ctaSecondary: { href: '/quinielas' },
+}
 
 // ── Style-only constants (no translatable strings) ────────────────────────────
 
@@ -19,14 +34,14 @@ const SCORING_RULE_META = [
 const MODE_META = [
   {
     tagClass:  'bg-blue-500/15 text-blue-300',
-    href:      '/sign-up',
+    guestHref: '/sign-up',
     btnClass:  'btn-ghost w-full py-2.5 text-sm',
     cardClass: 'border-white/10',
     highlight: false,
   },
   {
     tagClass:  'bg-gold-600/20 text-gold-300 border border-gold-600/35',
-    href:      '/sign-up',
+    guestHref: '/sign-up',
     btnClass:  'btn-gold w-full py-2.5 text-sm',
     cardClass: 'border-gold-600/35 bg-gold-600/[0.04]',
     highlight: true,
@@ -136,6 +151,8 @@ function PredictionPreview() {
 
 export default function LandingPage() {
   const { t } = useI18n()
+  const { isSignedIn } = useAuth()
+  const HeroPrimaryIcon = LOGGED_IN.heroPrimary.icon
 
   const tournamentStats = [
     { value: '48',               label: t('landing.statTeams'),     icon: Users  },
@@ -157,7 +174,8 @@ export default function LandingPage() {
       tagLabel: t('landing.freeModeTag'),
       desc:     t('landing.freeModeDesc'),
       features: [t('landing.freeF1'), t('landing.freeF2'), t('landing.freeF3'), t('landing.freeF4')],
-      cta:      t('landing.freeCta'),
+      cta:  isSignedIn ? t('landing.loggedInFreeCta') : t('landing.freeCta'),
+      href: isSignedIn ? LOGGED_IN.freeModeHref : MODE_META[0].guestHref,
     },
     {
       ...MODE_META[1],
@@ -165,7 +183,8 @@ export default function LandingPage() {
       tagLabel: t('landing.premModeTag'),
       desc:     t('landing.premModeDesc'),
       features: [t('landing.premF1'), t('landing.premF2'), t('landing.premF3'), t('landing.premF4')],
-      cta:      t('landing.premCta'),
+      cta:  t('landing.premCta'),
+      href: isSignedIn ? LOGGED_IN.premModeHref : MODE_META[1].guestHref,
     },
   ]
 
@@ -212,13 +231,27 @@ export default function LandingPage() {
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
-              <Link href="/sign-up" className="btn-gold px-7 py-3 text-base">
-                {t('landing.primary')}
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link href="/tournaments" className="btn-ghost px-7 py-3 text-base">
-                {t('landing.secondary')}
-              </Link>
+              {isSignedIn ? (
+                <>
+                  <Link href={LOGGED_IN.heroPrimary.href} className="btn-gold px-7 py-3 text-base">
+                    <HeroPrimaryIcon className="h-4 w-4" />
+                    {t('landing.loggedInHeroPrimary')}
+                  </Link>
+                  <Link href={LOGGED_IN.heroSecondary.href} className="btn-ghost px-7 py-3 text-base">
+                    {t('landing.loggedInHeroSecondary')}
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link href="/sign-up" className="btn-gold px-7 py-3 text-base">
+                    {t('landing.primary')}
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                  <Link href="/tournaments" className="btn-ghost px-7 py-3 text-base">
+                    {t('landing.secondary')}
+                  </Link>
+                </>
+              )}
             </div>
 
             {/* Quick proof points */}
@@ -424,20 +457,36 @@ export default function LandingPage() {
         <div className="mx-auto max-w-2xl text-center space-y-6">
           <div className="wc26-stripe mx-auto w-16" />
           <h2 className="font-display text-5xl text-white sm:text-6xl">
-            {t('landing.ctaTitle1')}<br />
-            <span className="text-gold-300">{t('landing.ctaGold')}</span>
+            {isSignedIn ? t('landing.loggedInCtaTitle1') : t('landing.ctaTitle1')}<br />
+            <span className="text-gold-300">
+              {isSignedIn ? t('landing.loggedInCtaGold') : t('landing.ctaGold')}
+            </span>
           </h2>
           <p className="text-text-secondary text-lg">
-            {t('landing.ctaSubtitle')}
+            {isSignedIn ? t('landing.loggedInCtaSubtitle') : t('landing.ctaSubtitle')}
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/sign-up" className="btn-gold px-8 py-3 text-base">
-              {t('landing.ctaPrimary')}
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link href="/tournaments" className="btn-ghost px-8 py-3 text-base">
-              {t('landing.ctaSecondary')}
-            </Link>
+            {isSignedIn ? (
+              <>
+                <Link href={LOGGED_IN.ctaPrimary.href} className="btn-gold px-8 py-3 text-base">
+                  <LayoutDashboard className="h-4 w-4" />
+                  {t('landing.loggedInCtaPrimary')}
+                </Link>
+                <Link href={LOGGED_IN.ctaSecondary.href} className="btn-ghost px-8 py-3 text-base">
+                  {t('landing.loggedInCtaSecondary')}
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/sign-up" className="btn-gold px-8 py-3 text-base">
+                  {t('landing.ctaPrimary')}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link href="/tournaments" className="btn-ghost px-8 py-3 text-base">
+                  {t('landing.ctaSecondary')}
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </section>

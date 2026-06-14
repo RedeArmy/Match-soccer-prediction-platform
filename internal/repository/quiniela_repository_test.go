@@ -3,6 +3,7 @@ package repository_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -696,5 +697,85 @@ func TestQuinielaRepository_UpdateTournamentMode_NotFound_ReturnsError(t *testin
 	_, err := repo.UpdateTournamentMode(context.Background(), 99999, false, false, false, 0)
 	if !isNotFound(err) {
 		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+// ── ExistsByName ──────────────────────────────────────────────────────────────
+
+func TestQuinielaRepository_ExistsByName_NameNotPresent_ReturnsFalse(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	exists, err := repo.ExistsByName(context.Background(), "Nonexistent Group", 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exists {
+		t.Error("expected false for a name that does not exist")
+	}
+}
+
+func TestQuinielaRepository_ExistsByName_NamePresent_ReturnsTrue(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	exists, err := repo.ExistsByName(context.Background(), q.Name, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !exists {
+		t.Error("expected true for a name that exists")
+	}
+}
+
+func TestQuinielaRepository_ExistsByName_CaseInsensitive_ReturnsTrue(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	upper := strings.ToUpper(q.Name)
+	exists, err := repo.ExistsByName(context.Background(), upper, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !exists {
+		t.Errorf("expected true for case-variant %q of existing name %q", upper, q.Name)
+	}
+}
+
+func TestQuinielaRepository_ExistsByName_ExcludeID_SkipsSelf(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	// Excluding the quiniela's own ID must return false (rename to same name is allowed).
+	exists, err := repo.ExistsByName(context.Background(), q.Name, q.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exists {
+		t.Error("expected false when the only match is the excluded ID")
+	}
+}
+
+func TestQuinielaRepository_ExistsByName_ExcludeID_StillFindsDifferentGroup(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	q1 := seedQuiniela(t, u1.ID)
+	q2 := seedQuiniela(t, u2.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	// Excluding q2 must still find q1's name as taken.
+	exists, err := repo.ExistsByName(context.Background(), q1.Name, q2.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !exists {
+		t.Error("expected true: q1 has the same name and is not excluded")
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
@@ -17,19 +18,33 @@ type GroupHandler struct {
 	memberSvc   service.GroupMembershipService
 	authz       service.GroupAuthz
 	params      service.SystemParamService
+	matchSvc    service.MatchService
+	predRepo    repository.PredictionRepository
 	log         *zap.Logger
 }
 
 // NewGroupHandler constructs a GroupHandler.
 // authz enforces that only active group members may read group details and member lists.
+// matchSvc and predRepo are used by GetLivePredictions; both may be nil in tests that
+// do not exercise that endpoint.
 func NewGroupHandler(
 	quinielaSvc service.QuinielaService,
 	memberSvc service.GroupMembershipService,
 	authz service.GroupAuthz,
 	params service.SystemParamService,
+	matchSvc service.MatchService,
+	predRepo repository.PredictionRepository,
 	log *zap.Logger,
 ) *GroupHandler {
-	return &GroupHandler{quinielaSvc: quinielaSvc, memberSvc: memberSvc, authz: authz, params: params, log: log}
+	return &GroupHandler{
+		quinielaSvc: quinielaSvc,
+		memberSvc:   memberSvc,
+		authz:       authz,
+		params:      params,
+		matchSvc:    matchSvc,
+		predRepo:    predRepo,
+		log:         log,
+	}
 }
 
 // renameGroupRequest is the JSON body accepted by PATCH /api/v1/groups/{id}.
@@ -95,6 +110,37 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, groupToResponse(quiniela))
+}
+
+// checkNameResponse is the JSON body returned by GET /api/v1/groups/check-name.
+type checkNameResponse struct {
+	Available bool `json:"available"`
+}
+
+// CheckName handles GET /api/v1/groups/check-name?name=...
+//
+// @Summary      Check group name availability
+// @Description  Returns whether the given name is available for a new group (case-insensitive).
+// @Tags         groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name  query     string  true  "Group name to check"
+// @Success      200   {object}  handler.checkNameResponse
+// @Failure      400   {object}  handler.ErrorResponse  "name query param missing"
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/groups/check-name [get]
+func (h *GroupHandler) CheckName(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		writeError(w, r, h.log, apperrors.Validation("name query parameter is required"))
+		return
+	}
+	available, err := h.quinielaSvc.IsNameAvailable(r.Context(), name, 0)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, checkNameResponse{Available: available})
 }
 
 // GetByID handles GET /api/v1/groups/{id}.
@@ -483,6 +529,136 @@ func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// GroupLivePredictionsResponse is the JSON envelope for GET /api/v1/groups/{id}/live-predictions.
+type GroupLivePredictionsResponse struct {
+	LiveMatches     []MatchResponse         `json:"live_matches"`
+	UserPredictions []UserLivePredictionRow `json:"user_predictions"`
+}
+
+// UserLivePredictionRow holds one member's predictions for the currently-live matches.
+type UserLivePredictionRow struct {
+	UserID      int                       `json:"user_id"`
+	DisplayName string                    `json:"display_name"`
+	Predictions []MatchPredictionSnapshot `json:"predictions"`
+}
+
+// MatchPredictionSnapshot is a member's predicted score for a single live match.
+// HasPrediction is false when the member has not submitted a prediction, in which
+// case HomeScore and AwayScore are zero-valued.
+type MatchPredictionSnapshot struct {
+	MatchID       int  `json:"match_id"`
+	HomeScore     int  `json:"home_score"`
+	AwayScore     int  `json:"away_score"`
+	HasPrediction bool `json:"has_prediction"`
+}
+
+// predKey indexes a prediction by (userID, matchID) for O(1) lookup.
+type predKey struct{ userID, matchID int }
+
+// buildSnapshots returns one MatchPredictionSnapshot per match ID, populated
+// from predMap when a prediction exists for the given member.
+func buildSnapshots(memberUserID int, matchIDs []int, predMap map[predKey]*domain.Prediction) []MatchPredictionSnapshot {
+	snaps := make([]MatchPredictionSnapshot, len(matchIDs))
+	for i, mID := range matchIDs {
+		snap := MatchPredictionSnapshot{MatchID: mID}
+		if p, ok := predMap[predKey{memberUserID, mID}]; ok {
+			snap.HomeScore = p.HomeScore
+			snap.AwayScore = p.AwayScore
+			snap.HasPrediction = true
+		}
+		snaps[i] = snap
+	}
+	return snaps
+}
+
+// GetLivePredictions handles GET /api/v1/groups/{id}/live-predictions.
+//
+// @Summary      Live match predictions for all group members
+// @Description  Returns the currently-live matches and each active member's predicted
+//
+//	score. Used by the live-predictions carousel on the tournament detail page.
+//	Returns empty arrays when no matches are currently in progress.
+//
+// @Tags         groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Group ID"
+// @Success      200  {object}  handler.GroupLivePredictionsResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      403  {object}  handler.ErrorResponse  "Not an active member of this group"
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/groups/{id}/live-predictions [get]
+func (h *GroupHandler) GetLivePredictions(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	if _, ok := requireGroupMember(w, r, h.log, h.authz, id); !ok {
+		return
+	}
+
+	ctx := r.Context()
+
+	liveMatches, err := h.matchSvc.ListMatchesByStatus(ctx, domain.MatchStatusLive)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if len(liveMatches) == 0 {
+		writeJSON(w, http.StatusOK, GroupLivePredictionsResponse{
+			LiveMatches:     []MatchResponse{},
+			UserPredictions: []UserLivePredictionRow{},
+		})
+		return
+	}
+
+	matchIDs := make([]int, len(liveMatches))
+	for i, m := range liveMatches {
+		matchIDs[i] = m.ID
+	}
+
+	predictions, err := h.predRepo.ListByGroupAndMatches(ctx, id, matchIDs)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	members, err := h.memberSvc.ListByQuiniela(ctx, id)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	predMap := make(map[predKey]*domain.Prediction, len(predictions))
+	for _, p := range predictions {
+		predMap[predKey{p.UserID, p.MatchID}] = p
+	}
+
+	matchResponses := make([]MatchResponse, len(liveMatches))
+	for i, m := range liveMatches {
+		matchResponses[i] = matchToResponse(m)
+	}
+
+	rows := make([]UserLivePredictionRow, 0, len(members))
+	for _, m := range members {
+		if m.Status != domain.MembershipActive {
+			continue
+		}
+		rows = append(rows, UserLivePredictionRow{
+			UserID:      m.UserID,
+			DisplayName: m.DisplayName,
+			Predictions: buildSnapshots(m.UserID, matchIDs, predMap),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, GroupLivePredictionsResponse{
+		LiveMatches:     matchResponses,
+		UserPredictions: rows,
+	})
 }
 
 // setTournamentModeRequest is the JSON body for PATCH /api/v1/groups/{id}/tournament-mode.

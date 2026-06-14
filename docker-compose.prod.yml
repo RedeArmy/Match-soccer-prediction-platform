@@ -86,6 +86,8 @@ services:
       # HMAC-SHA256 key for signing outbound webhook calls to n8n.
       # Must match N8N_WEBHOOK_SECRET in docker-compose.observability.yml.
       WCQ_N8N_WEBHOOKSECRET:  ${N8N_WEBHOOK_SECRET}
+      # ── API-Football ─────────────────────────────────────────────────────────
+      WCQ_FOOTBALLPROVIDER_APIKEY: ${FOOTBALL_API_KEY}
       # ── GC tuning — API budget ~2 GB on Hetzner CX53 ────────────────────────
       GOMEMLIMIT: "1800MiB"
       GOGC:       "100"
@@ -127,6 +129,8 @@ services:
       WCQ_EMAIL_RESENDAPIKEY:     ${RESEND_API_KEY}
       # ── Web Push ─────────────────────────────────────────────────────────────
       WCQ_WEBPUSH_VAPIDPRIVATEKEY: ${VAPID_PRIVATE_KEY}
+      # ── API-Football ─────────────────────────────────────────────────────────
+      WCQ_FOOTBALLPROVIDER_APIKEY: ${FOOTBALL_API_KEY}
       # ── GC tuning — worker budget ~1 GB ─────────────────────────────────────
       GOMEMLIMIT: "900MiB"
       GOGC:       "100"
@@ -162,6 +166,10 @@ services:
       PAYPAL_CLIENT_SECRET:                ${PAYPAL_CLIENT_SECRET}
       # BFF proxy: Next.js server-side routes call the API via this internal URL.
       BACKEND_INTERNAL_URL:                http://api:8080
+      # API-Football — live match feed (/api/live/today, /api/live/fixture/[id])
+      FOOTBALL_API_KEY:                    ${FOOTBALL_API_KEY}
+      FOOTBALL_LEAGUE_ID:                  ${FOOTBALL_LEAGUE_ID:-1}
+      FOOTBALL_SEASON:                     ${FOOTBALL_SEASON:-2026}
     ports:
       - "127.0.0.1:3000:3000"  # Caddy reverse-proxies externally; loopback only
     depends_on:

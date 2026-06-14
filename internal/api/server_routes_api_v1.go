@@ -36,6 +36,8 @@ func (s *Server) registerMatchRoutes(r chi.Router, d apiV1Deps) {
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/", d.h.match.CreateMatch)
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Patch("/{id}", d.h.match.UpdateResult)
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/{id}/start", d.h.match.StartMatch)
+		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/{id}/correct-result", d.h.match.CorrectMatchResult)
+		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/{id}/cancel", d.h.match.CancelMatch)
 		// External provider linking — admin only.
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/{id}/external-link", d.h.adminMatchSync.LinkExternal)
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Delete("/{id}/external-link", d.h.adminMatchSync.UnlinkExternal)
@@ -68,6 +70,7 @@ func (s *Server) registerGroupRoutes(r chi.Router, d apiV1Deps) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
 		r.Use(middleware.ResolveUser(d.repos.user, s.log))
 		r.Post("/", d.h.group.Create)
+		r.Get("/check-name", d.h.group.CheckName)
 		r.Post("/join", d.h.group.Join)
 		r.Post("/join-with-balance", d.h.group.JoinWithBalance)
 		r.Get("/me", d.h.group.ListMyGroups)
@@ -83,6 +86,9 @@ func (s *Server) registerGroupRoutes(r chi.Router, d apiV1Deps) {
 		r.Delete("/{id}/members/{membershipID}", d.h.group.RejectJoin)
 		// Self-removal only — a user removes themselves from the group.
 		r.Delete("/{id}/members/me", d.h.group.Leave)
+		// Live-predictions carousel: returns all active members' predictions for
+		// currently-live matches. Read-only; predictions cannot be modified here.
+		r.Get("/{id}/live-predictions", d.h.group.GetLivePredictions)
 		// Tiebreaker: active members submit and view their own prediction.
 		r.Post("/{id}/tiebreaker", d.h.tiebreaker.Submit)
 		r.Get("/{id}/tiebreaker", d.h.tiebreaker.GetMine)

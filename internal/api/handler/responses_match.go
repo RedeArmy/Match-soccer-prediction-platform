@@ -22,6 +22,16 @@ type MatchResponse struct {
 	UpdatedAt  string           `json:"updated_at"`
 }
 
+// matchStatusToAPI maps domain status values to the API contract string.
+// The domain uses "live" internally; the API contract uses "in_progress" so
+// frontend code can use a stable, predictable enum without knowing the DB value.
+func matchStatusToAPI(s domain.MatchStatus) string {
+	if s == domain.MatchStatusLive {
+		return "in_progress"
+	}
+	return string(s)
+}
+
 func matchToResponse(m *domain.Match) MatchResponse {
 	resp := MatchResponse{
 		ID:         m.ID,
@@ -29,7 +39,7 @@ func matchToResponse(m *domain.Match) MatchResponse {
 		AwayTeam:   m.AwayTeam,
 		HomeScore:  m.HomeScore,
 		AwayScore:  m.AwayScore,
-		Status:     string(m.Status),
+		Status:     matchStatusToAPI(m.Status),
 		Phase:      string(m.Phase),
 		GroupLabel: m.GroupLabel,
 		StadiumID:  m.StadiumID,

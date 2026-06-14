@@ -108,6 +108,12 @@ func (s *stubMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domai
 func (s *stubMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, error) {
 	return s.match, s.err
 }
+func (s *stubMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod) (*domain.Match, error) {
+	return s.match, s.err
+}
+func (s *stubMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
+	return s.match, s.err
+}
 
 // stubPredSvc implements service.PredictionService with configurable returns.
 type stubPredSvc struct {
@@ -139,9 +145,10 @@ func (s *stubPredSvc) GetByMatch(_ context.Context, _ int) ([]*domain.Prediction
 
 // stubQuinielaSvc implements service.QuinielaService with configurable returns.
 type stubQuinielaSvc struct {
-	quiniela  *domain.Quiniela
-	quinielas []*domain.Quiniela
-	err       error
+	quiniela      *domain.Quiniela
+	quinielas     []*domain.Quiniela
+	err           error
+	nameAvailable bool // used by IsNameAvailable; default false → override to true in tests
 }
 
 func (s *stubQuinielaSvc) Create(_ context.Context, q *domain.Quiniela) error {
@@ -167,6 +174,9 @@ func (s *stubQuinielaSvc) RenameGroup(_ context.Context, _, _ int, _ string) (*d
 }
 func (s *stubQuinielaSvc) SetTournamentMode(_ context.Context, _, _ int, _, _ bool) (*domain.Quiniela, error) {
 	return s.quiniela, s.err
+}
+func (s *stubQuinielaSvc) IsNameAvailable(_ context.Context, _ string, _ int) (bool, error) {
+	return s.nameAvailable, s.err
 }
 
 // stubRanker implements service.Ranker with configurable returns.
@@ -463,3 +473,78 @@ func (s *stubSystemParamSvc) GetHistory(_ context.Context, _ string, _ repositor
 	return nil, "", nil
 }
 func (s *stubFileStore) Delete(_ context.Context, _ string) error { return nil }
+
+// stubPredRepo implements repository.PredictionRepository for handler tests.
+// Only ListByGroupAndMatches returns configurable values; all other methods
+// return zero values and are not exercised by GroupHandler tests.
+type stubPredRepo struct {
+	preds []*domain.Prediction
+	err   error
+}
+
+func (r *stubPredRepo) Upsert(_ context.Context, _ *domain.Prediction) (bool, error) {
+	return false, r.err
+}
+func (r *stubPredRepo) Create(_ context.Context, _ *domain.Prediction) error { return r.err }
+func (r *stubPredRepo) GetByID(_ context.Context, _ int) (*domain.Prediction, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) Update(_ context.Context, _ *domain.Prediction) error { return r.err }
+func (r *stubPredRepo) UpdateIfUnchanged(_ context.Context, _ *domain.Prediction, _ time.Time) error {
+	return r.err
+}
+func (r *stubPredRepo) GetByUserAndMatch(_ context.Context, _, _ int) (*domain.Prediction, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) ListByUser(_ context.Context, _ int) ([]*domain.Prediction, error) {
+	return r.preds, r.err
+}
+func (r *stubPredRepo) ListByMatch(_ context.Context, _ int) ([]*domain.Prediction, error) {
+	return r.preds, r.err
+}
+func (r *stubPredRepo) UpdateManyPoints(_ context.Context, _ map[int]int) error { return r.err }
+func (r *stubPredRepo) ScoreMatchBatch(_ context.Context, _ int, _ func([]*domain.Prediction) (map[int]int, error), _ int) error {
+	return r.err
+}
+func (r *stubPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) ListByGroupAndMatches(_ context.Context, _ int, _ []int) ([]*domain.Prediction, error) {
+	return r.preds, r.err
+}
+func (r *stubPredRepo) ListByUserAndQuiniela(_ context.Context, _, _ int) ([]*domain.Prediction, error) {
+	return r.preds, r.err
+}
+func (r *stubPredRepo) PredictionStatsByQuiniela(_ context.Context, _ int) (map[int]*domain.UserPredictionStats, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) GetUserPredictionCounts(_ context.Context, _ int) (*domain.UserPredictionCounts, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) GetUserPointsByPhase(_ context.Context, _ int) (map[domain.MatchPhase]int, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) ListUserScoredPointsChronological(_ context.Context, _ int) ([]int, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) ListAdmin(_ context.Context, _ repository.PredictionAdminFilters, _ repository.Pagination) ([]*domain.Prediction, error) {
+	return r.preds, r.err
+}
+func (r *stubPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([]*domain.GlobalLeaderboardEntry, error) {
+	return nil, r.err
+}
+func (r *stubPredRepo) InsertScoringBatch(_ context.Context, _ []domain.PredictionScoreLog) error {
+	return r.err
+}
+func (r *stubPredRepo) GetScoringCfgSnapshot(_ context.Context, _ int) (*domain.ScoringCfgSnapshot, error) {
+	return nil, r.err
+}

@@ -102,6 +102,12 @@ func (s *stubInnerMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *
 func (s *stubInnerMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, error) {
 	return s.match, s.err
 }
+func (s *stubInnerMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod) (*domain.Match, error) {
+	return s.match, s.err
+}
+func (s *stubInnerMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
+	return s.match, s.err
+}
 func (s *stubInnerMatchSvc) GetMatch(_ context.Context, _ int) (*domain.Match, error) {
 	s.called++
 	return s.match, s.err
@@ -411,5 +417,63 @@ func TestCachedMatchService_InvalidateMatchLists_DeleteError_NonFatal(t *testing
 	_, err := svc.UpdateResult(context.Background(), 1, 2, 1, nil)
 	if err != nil {
 		t.Fatalf("delete error must not propagate from invalidateMatchLists, got: %v", err)
+	}
+}
+
+// ── CancelMatch ───────────────────────────────────────────────────────────────
+
+func TestCachedMatchService_CancelMatch_DelegatesAndInvalidates(t *testing.T) {
+	st := newStubCache()
+	m := &domain.Match{ID: 5, Phase: domain.PhaseGroupStage, Status: domain.MatchStatusCancelled}
+	inner := &stubInnerMatchSvc{match: m}
+
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
+	got, err := svc.CancelMatch(context.Background(), 5)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil || got.Status != domain.MatchStatusCancelled {
+		t.Errorf("expected cancelled match, got %v", got)
+	}
+}
+
+func TestCachedMatchService_CancelMatch_PropagatesInnerError(t *testing.T) {
+	st := newStubCache()
+	inner := &stubInnerMatchSvc{err: errors.New(errDBMsg)}
+
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
+	_, err := svc.CancelMatch(context.Background(), 5)
+	if err == nil {
+		t.Fatal("expected error from inner, got nil")
+	}
+}
+
+// ── CorrectResult ─────────────────────────────────────────────────────────────
+
+func TestCachedMatchService_CorrectResult_DelegatesAndInvalidates(t *testing.T) {
+	st := newStubCache()
+	home, away := 3, 1
+	m := &domain.Match{ID: 6, Phase: domain.PhaseFinal, Status: domain.MatchStatusFinished,
+		HomeScore: &home, AwayScore: &away}
+	inner := &stubInnerMatchSvc{match: m}
+
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
+	got, err := svc.CorrectResult(context.Background(), 6, 3, 1, nil)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil || got.ID != 6 {
+		t.Errorf("expected match ID 6, got %v", got)
+	}
+}
+
+func TestCachedMatchService_CorrectResult_PropagatesInnerError(t *testing.T) {
+	st := newStubCache()
+	inner := &stubInnerMatchSvc{err: errors.New(errDBMsg)}
+
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
+	_, err := svc.CorrectResult(context.Background(), 6, 2, 0, nil)
+	if err == nil {
+		t.Fatal("expected error from inner, got nil")
 	}
 }

@@ -29,6 +29,13 @@ type MatchService interface {
 	ListMatchesByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
 	UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error)
 	StartMatch(ctx context.Context, id int) (*domain.Match, error)
+	// CorrectResult overwrites the score on a finished match and re-emits
+	// MatchFinished so the scoring engine re-scores all predictions. Use this
+	// when the API-Football feed provided a wrong score that was already confirmed.
+	CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error)
+	// CancelMatch marks a scheduled or live match as cancelled. Cancelled matches
+	// are excluded from prediction scoring and cannot transition to any other status.
+	CancelMatch(ctx context.Context, id int) (*domain.Match, error)
 }
 
 // matchService is the concrete implementation of MatchService.
@@ -152,6 +159,40 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 	if m.Status != domain.MatchStatusLive {
 		return nil, apperrors.Validation("match result can only be confirmed while the match is live")
 	}
+	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, domain.AuditActionMatchResultSet, false)
+}
+
+// CorrectResult overwrites the score on a match that is already finished (or
+// still live if the API confirmed the score early) and re-emits MatchFinished
+// so the scoring engine recomputes predictions. It is the admin escape-hatch
+// for when API-Football delivered a wrong final score.
+func (s *matchService) CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error) {
+	if err := domain.ValidateMatchResult(&homeScore, &awayScore); err != nil {
+		return nil, err
+	}
+	m, err := s.GetMatch(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if m.Status != domain.MatchStatusFinished && m.Status != domain.MatchStatusLive {
+		return nil, apperrors.Validation("result can only be corrected on a live or finished match")
+	}
+	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, domain.AuditActionMatchResultCorrected, true)
+}
+
+// applyScoreAndPublish writes the final score to the repository, logs the audit
+// entry, and publishes MatchFinished. If publishing fails, it falls back to
+// synchronous scoring via the scorer. Both UpdateResult and CorrectResult share
+// this path; they differ only in their pre-conditions, audit action, and whether
+// the call is a score correction (correction=true) or an initial result set.
+func (s *matchService) applyScoreAndPublish(
+	ctx context.Context,
+	m *domain.Match,
+	homeScore, awayScore int,
+	winMethod *domain.WinMethod,
+	auditAction string,
+	correction bool,
+) (*domain.Match, error) {
 	m.HomeScore = &homeScore
 	m.AwayScore = &awayScore
 	m.WinMethod = winMethod
@@ -160,16 +201,17 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 		return nil, err
 	}
 
-	auditMeta := map[string]any{
-		"home_score": homeScore,
-		"away_score": awayScore,
-	}
+	auditMeta := map[string]any{"home_score": homeScore, "away_score": awayScore}
 	if winMethod != nil {
 		auditMeta["win_method"] = string(*winMethod)
 	}
 	resType := "match"
-	s.audit.Log(ctx, nil, nil, domain.AuditActionMatchResultSet, &resType, &id, auditMeta)
+	s.audit.Log(ctx, nil, nil, auditAction, &resType, &m.ID, auditMeta)
 
+	suffix := ""
+	if correction {
+		suffix = " (correction)"
+	}
 	if err := s.pub.Publish(ctx, events.Envelope{
 		Type:       events.EventMatchFinished,
 		OccurredAt: time.Now().UTC(),
@@ -182,13 +224,31 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 			WinMethod: winMethodString(winMethod),
 		},
 	}); err != nil {
-		s.log.Error("failed to publish MatchFinished event; falling back to synchronous scoring",
-			append([]zap.Field{zap.Int("match_id", id), zap.Error(err)}, tracing.LogFields(ctx)...)...)
+		s.log.Error("failed to publish MatchFinished event"+suffix+"; falling back to synchronous scoring",
+			append([]zap.Field{zap.Int("match_id", m.ID), zap.Error(err)}, tracing.LogFields(ctx)...)...)
 		if scoreErr := s.scorer.ScoreMatch(ctx, m.ID); scoreErr != nil {
-			s.log.Error("synchronous fallback scoring failed - predictions for this match may be unscored",
-				append([]zap.Field{zap.Int("match_id", id), zap.Error(scoreErr)}, tracing.LogFields(ctx)...)...)
+			s.log.Error("synchronous fallback scoring failed"+suffix,
+				append([]zap.Field{zap.Int("match_id", m.ID), zap.Error(scoreErr)}, tracing.LogFields(ctx)...)...)
 		}
 	}
+	return m, nil
+}
+
+// CancelMatch marks a scheduled or live match as cancelled.
+func (s *matchService) CancelMatch(ctx context.Context, id int) (*domain.Match, error) {
+	m, err := s.GetMatch(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if m.Status == domain.MatchStatusFinished || m.Status == domain.MatchStatusCancelled {
+		return nil, apperrors.Validation("only scheduled or live matches can be cancelled")
+	}
+	m.Status = domain.MatchStatusCancelled
+	if err := s.repo.Update(ctx, m); err != nil {
+		return nil, err
+	}
+	resType := "match"
+	s.audit.Log(ctx, nil, nil, domain.AuditActionMatchCancelled, &resType, &id, nil)
 	return m, nil
 }
 
