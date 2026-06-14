@@ -360,7 +360,7 @@ func TestMatchRepository_ListSyncCandidates_ReturnsLinkedScheduled(t *testing.T)
 	repo := repository.NewPostgresMatchRepository(testDB)
 
 	// Unlinked match must not appear.
-	candidates, err := repo.ListSyncCandidates(context.Background())
+	candidates, err := repo.ListSyncCandidates(context.Background(), 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -372,7 +372,7 @@ func TestMatchRepository_ListSyncCandidates_ReturnsLinkedScheduled(t *testing.T)
 		t.Fatalf("link: %v", err)
 	}
 
-	candidates, err = repo.ListSyncCandidates(context.Background())
+	candidates, err = repo.ListSyncCandidates(context.Background(), 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -398,7 +398,7 @@ func TestMatchRepository_ListSyncCandidates_ExcludesFinished(t *testing.T) {
 		t.Fatalf("update to finished: %v", err)
 	}
 
-	candidates, err := repo.ListSyncCandidates(context.Background())
+	candidates, err := repo.ListSyncCandidates(context.Background(), 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}

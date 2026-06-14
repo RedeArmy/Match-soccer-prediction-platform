@@ -27,15 +27,16 @@ import (
 )
 
 const (
-	pathDLQOverflow      = "/webhook/dlq-overflow"
-	pathCircuitBreaker   = "/webhook/circuit-breaker"
-	pathPaymentError     = "/webhook/payment-error"
-	pathOutboxLag        = "/webhook/outbox-lag"
-	pathPayoutApproved   = "/webhook/payout-approved"
-	pathTransferUploaded = "/webhook/transfer-uploaded"
-	pathBalanceCredited  = "/webhook/balance-credited"
-	pathKYCWinnerFreeze  = "/webhook/kyc-winner-freeze"
-	pathFXRateStale      = "/webhook/fx-rate-stale"
+	pathDLQOverflow            = "/webhook/dlq-overflow"
+	pathCircuitBreaker         = "/webhook/circuit-breaker"
+	pathPaymentError           = "/webhook/payment-error"
+	pathOutboxLag              = "/webhook/outbox-lag"
+	pathPayoutApproved         = "/webhook/payout-approved"
+	pathTransferUploaded       = "/webhook/transfer-uploaded"
+	pathBalanceCredited        = "/webhook/balance-credited"
+	pathKYCWinnerFreeze        = "/webhook/kyc-winner-freeze"
+	pathFXRateStale            = "/webhook/fx-rate-stale"
+	pathDailyFixtureSyncFailed = "/webhook/daily-fixture-sync-failed"
 
 	defaultWebhookTimeout = 5 * time.Second
 )
@@ -276,6 +277,26 @@ func (n *Notifier) NotifyBalanceCredited(ctx context.Context, userID, amountCent
 		AmountCents: amountCents,
 		Source:      source,
 		TraceID:     extractTraceID(ctx),
+	})
+}
+
+// DailyFixtureSyncFailedPayload is the body posted to /webhook/daily-fixture-sync-failed.
+type DailyFixtureSyncFailedPayload struct {
+	Date      string `json:"date"`
+	Error     string `json:"error"`
+	Timestamp string `json:"timestamp"`
+}
+
+// NotifyDailyFixtureSyncFailed fires a non-blocking POST to /webhook/daily-fixture-sync-failed.
+// Called when the daily fixture sync job fails so n8n can send an alert email to the admin.
+func (n *Notifier) NotifyDailyFixtureSyncFailed(ctx context.Context, date, errMsg string) {
+	if !n.Enabled() {
+		return
+	}
+	n.fire(ctx, pathDailyFixtureSyncFailed, DailyFixtureSyncFailedPayload{
+		Date:      date,
+		Error:     errMsg,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
