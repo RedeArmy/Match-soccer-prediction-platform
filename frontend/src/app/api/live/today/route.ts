@@ -63,7 +63,7 @@ export interface TodayFixture {
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 
-export async function GET(request?: Request): Promise<NextResponse> {
+export async function GET(request: Request): Promise<NextResponse> {
   const apiKey = process.env.FOOTBALL_API_KEY;
   const leagueId = process.env.FOOTBALL_LEAGUE_ID ?? "1";
   const season = process.env.FOOTBALL_SEASON ?? "2026";
@@ -75,9 +75,7 @@ export async function GET(request?: Request): Promise<NextResponse> {
 
   // Prefer the date sent by the browser (YYYY-MM-DD in the user's local timezone)
   // so that a Guatemala user at 11 PM sees today's matches, not tomorrow's UTC date.
-  const clientDate = request
-    ? new URL(request.url).searchParams.get("date")
-    : null;
+  const clientDate = new URL(request.url).searchParams.get("date");
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
   let today: string;

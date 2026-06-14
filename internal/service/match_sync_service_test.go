@@ -24,13 +24,20 @@ type stubSyncMatchRepo struct {
 	linkErr       error
 	candidatesErr error
 	kickoffErr    error
+	updateErr     error
+	updateCount   int
+	updatedMatch  *domain.Match
 }
 
 func (r *stubSyncMatchRepo) Create(_ context.Context, _ *domain.Match) error { return nil }
 func (r *stubSyncMatchRepo) GetByID(_ context.Context, _ int) (*domain.Match, error) {
 	return nil, nil
 }
-func (r *stubSyncMatchRepo) Update(_ context.Context, _ *domain.Match) error { return nil }
+func (r *stubSyncMatchRepo) Update(_ context.Context, m *domain.Match) error {
+	r.updateCount++
+	r.updatedMatch = m
+	return r.updateErr
+}
 func (r *stubSyncMatchRepo) List(_ context.Context) ([]*domain.Match, error) { return nil, nil }
 func (r *stubSyncMatchRepo) ListByPhase(_ context.Context, _ domain.MatchPhase) ([]*domain.Match, error) {
 	return nil, nil
@@ -1015,5 +1022,78 @@ func TestMatchSync_DailyFixtureSync_ScheduledGoesFinished_StartMatchFails_SkipsR
 	}
 	if matchSvc.finished != 0 {
 		t.Errorf("UpdateResult must not be called when StartMatch fails, got %d", matchSvc.finished)
+	}
+}
+
+func TestMatchSync_PollAndApply_LiveMatchWritesScoreToDB(t *testing.T) {
+	// When the provider returns a live fixture and the local match is already
+	// live, processOne must persist the current score to the repository so
+	// the API can surface the live marcador to the frontend.
+	id := int64(700)
+	candidate := &domain.Match{
+		ID: 70, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-1 * time.Hour),
+	}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusFirstHalf,
+		HomeScore:  2,
+		AwayScore:  1,
+	}}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	liveCount, err := svc.PollAndApply(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if liveCount != 1 {
+		t.Errorf("liveCount: want 1, got %d", liveCount)
+	}
+	if repo.updateCount != 1 {
+		t.Errorf("repo.Update calls: want 1, got %d", repo.updateCount)
+	}
+	if repo.updatedMatch == nil {
+		t.Fatal("updatedMatch is nil")
+	}
+	if repo.updatedMatch.HomeScore == nil || *repo.updatedMatch.HomeScore != 2 {
+		t.Errorf("HomeScore: want 2, got %v", repo.updatedMatch.HomeScore)
+	}
+	if repo.updatedMatch.AwayScore == nil || *repo.updatedMatch.AwayScore != 1 {
+		t.Errorf("AwayScore: want 1, got %v", repo.updatedMatch.AwayScore)
+	}
+}
+
+func TestMatchSync_PollAndApply_LiveMatch_UpdateScoreFails_StillReturnsLive(t *testing.T) {
+	// A transient repository error when persisting the live score must not
+	// affect the liveCount return — the match is still live and the poll
+	// interval must remain in fast mode.
+	id := int64(701)
+	candidate := &domain.Match{
+		ID: 71, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-1 * time.Hour),
+	}
+	repo := &stubSyncMatchRepo{
+		candidates: []*domain.Match{candidate},
+		updateErr:  errors.New("db timeout"),
+	}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusFirstHalf,
+		HomeScore:  1,
+		AwayScore:  0,
+	}}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	liveCount, err := svc.PollAndApply(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if liveCount != 1 {
+		t.Errorf("liveCount: want 1, got %d", liveCount)
 	}
 }

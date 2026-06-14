@@ -25,7 +25,7 @@ import (
 // from the external API and applies the appropriate local transition:
 //
 //   - NS → live  : StartMatch (emits MatchStarted, closes prediction window)
-//   - 1H/HT/2H/ET/PEN_LIVE : already live — no action
+//   - 1H/HT/2H/ET/PEN_LIVE : already live — write current score to DB
 //   - FT  → finished (normal time)    : UpdateResult with no win method
 //   - AET → finished (after extra time): UpdateResult with extra_time
 //   - PEN → finished (after penalties) : UpdateResult with penalties
@@ -207,6 +207,10 @@ func (s *matchSyncService) processOne(ctx context.Context, m *domain.Match) (boo
 	case fix.Status.IsLive() && m.Status == domain.MatchStatusScheduled:
 		return s.applyKickoff(ctx, m.ID, isLive)
 	case fix.Status.IsLive() && m.Status == domain.MatchStatusLive:
+		if err := s.applyLiveScore(ctx, m, fix); err != nil {
+			s.log.Warn("match sync: live score update failed",
+				zap.Int("match_id", m.ID), zap.Error(err))
+		}
 		return true, false, nil
 	case fix.Status.IsFinished() && m.Status == domain.MatchStatusScheduled:
 		// The live phase was missed entirely. Start the match first so that
@@ -239,6 +243,13 @@ func (s *matchSyncService) applyKickoff(ctx context.Context, matchID int, isLive
 	}
 	s.log.Info("match sync: started match", zap.Int("match_id", matchID))
 	return true, true, nil
+}
+
+func (s *matchSyncService) applyLiveScore(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture) error {
+	home, away := fix.HomeScore, fix.AwayScore
+	m.HomeScore = &home
+	m.AwayScore = &away
+	return s.matchRepo.Update(ctx, m)
 }
 
 func (s *matchSyncService) applyResult(ctx context.Context, matchID int, fix *footballprovider.Fixture) (bool, bool, error) {
