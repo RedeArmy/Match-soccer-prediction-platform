@@ -17,16 +17,19 @@ import (
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type stubSyncMatchRepo struct {
-	candidates    []*domain.Match
-	linkCalled    bool
-	unlinkCalled  bool
-	updateSyncAt  int
-	linkErr       error
-	candidatesErr error
-	kickoffErr    error
-	updateErr     error
-	updateCount   int
-	updatedMatch  *domain.Match
+	candidates       []*domain.Match
+	linkCalled       bool
+	unlinkCalled     bool
+	updateSyncAt     int
+	linkErr          error
+	candidatesErr    error
+	kickoffErr       error
+	updateErr        error
+	updateCount      int
+	updatedMatch     *domain.Match
+	findByTeamsMatch *domain.Match
+	findByTeamsErr   error
+	linkCalledCount  int
 }
 
 func (r *stubSyncMatchRepo) Create(_ context.Context, _ *domain.Match) error { return nil }
@@ -47,6 +50,7 @@ func (r *stubSyncMatchRepo) ListByStatus(_ context.Context, _ domain.MatchStatus
 }
 func (r *stubSyncMatchRepo) LinkExternal(_ context.Context, _ int, _ string, _ int64) error {
 	r.linkCalled = true
+	r.linkCalledCount++
 	return r.linkErr
 }
 func (r *stubSyncMatchRepo) UnlinkExternal(_ context.Context, _ int) error {
@@ -57,7 +61,7 @@ func (r *stubSyncMatchRepo) ListSyncCandidates(_ context.Context, _ int) ([]*dom
 	return r.candidates, r.candidatesErr
 }
 func (r *stubSyncMatchRepo) FindByTeams(_ context.Context, _, _ string) (*domain.Match, error) {
-	return nil, nil
+	return r.findByTeamsMatch, r.findByTeamsErr
 }
 func (r *stubSyncMatchRepo) UpdateKickoff(_ context.Context, _ int, _ time.Time) error {
 	return r.kickoffErr
@@ -101,9 +105,11 @@ func (s *stubSyncMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match,
 }
 
 type stubProvider struct {
-	fixture    *footballprovider.Fixture
-	fetchErr   error
-	liveCalled bool
+	fixture        *footballprovider.Fixture
+	fetchErr       error
+	liveCalled     bool
+	byDateFixtures []*footballprovider.Fixture
+	byDateErr      error
 }
 
 func (p *stubProvider) GetFixture(_ context.Context, _ int64) (*footballprovider.Fixture, error) {
@@ -114,7 +120,7 @@ func (p *stubProvider) GetLiveFixtures(_ context.Context, _, _ int) ([]*football
 	return nil, nil
 }
 func (p *stubProvider) GetFixturesByDate(_ context.Context, _, _ int, _ string) ([]*footballprovider.Fixture, error) {
-	return nil, nil
+	return p.byDateFixtures, p.byDateErr
 }
 
 func extID(n int64) *int64 { return &n }
@@ -385,7 +391,7 @@ func strPtr(s string) *string { return &s }
 
 func TestMatchSync_DailyFixtureSync_NoProvider_ReturnsError(t *testing.T) {
 	svc := service.NewMatchSyncService(&stubSyncMatchRepo{}, &stubSyncMatchSvc{}, nil, zap.NewNop())
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err == nil {
 		t.Fatal("expected error when provider is nil")
 	}
@@ -395,7 +401,7 @@ func TestMatchSync_DailyFixtureSync_NoCandidates_ReturnsEmptyResult(t *testing.T
 	repo := &stubSyncMatchRepo{candidates: nil}
 	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, &stubProvider{})
 
-	result, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -425,7 +431,7 @@ func TestMatchSync_DailyFixtureSync_UpdatesKickoffWhenDiffers(t *testing.T) {
 	}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	result, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -459,7 +465,7 @@ func TestMatchSync_DailyFixtureSync_DateRangeFilter_ExcludesOutOfRange(t *testin
 	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
 
 	start := today
-	result, err := svc.DailyFixtureSync(context.Background(), &start, nil)
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, &start, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -488,7 +494,7 @@ func TestMatchSync_DailyFixtureSync_FinishedFixture_TransitionsLiveMatch(t *test
 	}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -501,7 +507,7 @@ func TestMatchSync_DailyFixtureSync_RepoError_ReturnsError(t *testing.T) {
 	repo := &stubSyncMatchRepo{candidatesErr: errors.New("db down")}
 	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, &stubProvider{})
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err == nil {
 		t.Fatal("expected error when repo fails")
 	}
@@ -529,7 +535,7 @@ func TestMatchSync_DailyFixtureSync_EndDateFilter_ExcludesFutureMatch(t *testing
 	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
 
 	end := today
-	result, err := svc.DailyFixtureSync(context.Background(), nil, &end)
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, &end)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -564,7 +570,7 @@ func TestMatchSync_DailyFixtureSync_GetFixtureError_ContinuesOtherMatches(t *tes
 	}}
 	svc := service.NewMatchSyncService(repo, matchSvc, provider, zap.NewNop())
 
-	result, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -594,7 +600,7 @@ func TestMatchSync_DailyFixtureSync_LiveFixture_StartsScheduledMatch(t *testing.
 	}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -638,7 +644,7 @@ func TestMatchSync_DailyFixtureSync_FinishedMatch_IsNoOp(t *testing.T) {
 	}}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -664,7 +670,7 @@ func TestMatchSync_DailyFixtureSync_CancelledMatch_IsNoOp(t *testing.T) {
 	}}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -694,7 +700,7 @@ func TestMatchSync_DailyFixtureSync_UpdateKickoffFails_ContinuesGracefully(t *te
 	}}
 	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
 
-	result, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -722,7 +728,7 @@ func TestMatchSync_DailyFixtureSync_KickoffDiffUnder60s_SkipsUpdate(t *testing.T
 	}}
 	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
 
-	result, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -749,7 +755,7 @@ func TestMatchSync_DailyFixtureSync_LiveMatch_KickoffNotUpdated(t *testing.T) {
 	}}
 	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
 
-	result, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -786,7 +792,7 @@ func TestMatchSync_DailyFixtureSync_BothDates_FiltersCorrectly(t *testing.T) {
 
 	start := today
 	end := today.Add(24 * time.Hour)
-	result, err := svc.DailyFixtureSync(context.Background(), &start, &end)
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, &start, &end)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -812,7 +818,7 @@ func TestMatchSync_DailyFixtureSync_UpdateResultNonValidationError_LogsAndContin
 	}}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -837,7 +843,7 @@ func TestMatchSync_DailyFixtureSync_StartMatchNonValidationError_LogsAndContinue
 	}}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -863,7 +869,7 @@ func TestMatchSync_DailyFixtureSync_AfterExtraTime_UsesAETWinMethod(t *testing.T
 	}}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -888,7 +894,7 @@ func TestMatchSync_DailyFixtureSync_StartMatchValidationError_IsIdempotentViaDai
 	}}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -983,7 +989,7 @@ func TestMatchSync_DailyFixtureSync_ScheduledGoesDirectlyFinished_StartsAndRecor
 	}}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1013,7 +1019,7 @@ func TestMatchSync_DailyFixtureSync_ScheduledGoesFinished_StartMatchFails_SkipsR
 	}}
 	svc := buildSyncSvc(repo, matchSvc, provider)
 
-	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1095,5 +1101,118 @@ func TestMatchSync_PollAndApply_LiveMatch_UpdateScoreFails_StillReturnsLive(t *t
 	}
 	if liveCount != 1 {
 		t.Errorf("liveCount: want 1, got %d", liveCount)
+	}
+}
+
+// ── autoLinkByDateRange ───────────────────────────────────────────────────────
+
+func TestMatchSync_DailyFixtureSync_AutoLinks_UnlinkedMatch(t *testing.T) {
+	// The provider returns a fixture for today. An internal match exists with
+	// the same team names but no external link. DailyFixtureSync must call
+	// LinkExternal and increment result.Linked.
+	internalMatch := &domain.Match{ID: 99, Status: domain.MatchStatusScheduled}
+	repo := &stubSyncMatchRepo{
+		candidates:       []*domain.Match{}, // no linked candidates yet
+		findByTeamsMatch: internalMatch,
+	}
+	provider := &stubProvider{
+		byDateFixtures: []*footballprovider.Fixture{{
+			ExternalID: 42, HomeTeam: "Germany", AwayTeam: "Curacao",
+			Status: footballprovider.StatusNotStarted,
+		}},
+	}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Linked != 1 {
+		t.Errorf("Linked: want 1, got %d", result.Linked)
+	}
+	if !repo.linkCalled {
+		t.Error("expected LinkExternal to be called")
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_AutoLink_AlreadyLinked_Skips(t *testing.T) {
+	// A match that already has an external ID must not be re-linked.
+	id := int64(42)
+	internalMatch := &domain.Match{
+		ID: 99, Status: domain.MatchStatusScheduled,
+		ExternalMatchID: &id, // already linked
+	}
+	repo := &stubSyncMatchRepo{
+		candidates:       []*domain.Match{internalMatch},
+		findByTeamsMatch: internalMatch,
+	}
+	provider := &stubProvider{
+		fixture:        &footballprovider.Fixture{ExternalID: id, Status: footballprovider.StatusNotStarted},
+		byDateFixtures: []*footballprovider.Fixture{{ExternalID: id, HomeTeam: "Germany", AwayTeam: "Curacao"}},
+	}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Linked != 0 {
+		t.Errorf("Linked: want 0 (already linked), got %d", result.Linked)
+	}
+	// linkCalledCount must be 0 from the auto-link phase (the initial candidates
+	// stub returns the match already linked, so FindByTeams returns it with
+	// ExternalMatchID set).
+	if repo.linkCalledCount != 0 {
+		t.Errorf("LinkExternal called unexpectedly: %d times", repo.linkCalledCount)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_AutoLink_FindByTeamsReturnsNil_Skips(t *testing.T) {
+	// Provider returns a fixture but no internal match has those team names —
+	// FindByTeams returns nil. Must not call LinkExternal.
+	repo := &stubSyncMatchRepo{
+		findByTeamsMatch: nil, // no match
+	}
+	provider := &stubProvider{
+		byDateFixtures: []*footballprovider.Fixture{{ExternalID: 99, HomeTeam: "Unknown", AwayTeam: "Also Unknown"}},
+	}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Linked != 0 {
+		t.Errorf("Linked: want 0, got %d", result.Linked)
+	}
+	if repo.linkCalled {
+		t.Error("LinkExternal must not be called when FindByTeams returns nil")
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_AutoLink_GetFixturesByDateError_ContinuesToPhase2(t *testing.T) {
+	// GetFixturesByDate fails but phase 2 (linked candidates) must still run.
+	id := int64(10)
+	candidate := &domain.Match{
+		ID: 10, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-time.Hour),
+	}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{
+		fixture:   &footballprovider.Fixture{ExternalID: id, Status: footballprovider.StatusFullTime},
+		byDateErr: errors.New("provider down"),
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Phase 2 must still finish the live match.
+	if matchSvc.finished != 1 {
+		t.Errorf("UpdateResult calls: want 1, got %d", matchSvc.finished)
 	}
 }

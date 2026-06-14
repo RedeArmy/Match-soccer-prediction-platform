@@ -403,12 +403,24 @@ export function LiveMatchFeed() {
   const { t } = useI18n();
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
+  // Track the local date so that when midnight passes and the date changes,
+  // the query key changes and React Query automatically fetches the new day's
+  // fixtures — even if the user left the tab open overnight and polling stopped
+  // because all previous-day matches had finished.
+  const [localDate, setLocalDate] = useState(() =>
+    new Date().toLocaleDateString("sv"),
+  );
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLocalDate(new Date().toLocaleDateString("sv"));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const { data, isLoading, isError } = useQuery<{ fixtures: TodayFixture[] }>({
-    queryKey: ["live-today"],
-    queryFn: () => {
-      const localDate = new Date().toLocaleDateString("sv"); // 'sv' locale → YYYY-MM-DD
-      return fetch(`/api/live/today?date=${localDate}`).then((r) => r.json());
-    },
+    queryKey: ["live-today", localDate],
+    queryFn: () =>
+      fetch(`/api/live/today?date=${localDate}`).then((r) => r.json()),
     // Always fetch on mount (page load, reload, SPA navigation) so the user
     // sees an up-to-date schedule even when no match is live.
     refetchOnMount: "always",

@@ -39,13 +39,13 @@ function generateNonce(): string {
 // The derived origin must appear in both script-src (the SDK is served from
 // this domain) and connect-src (all Clerk auth API calls go here).
 function clerkFrontendApiOrigin(): string {
-  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '';
-  const segment = key.split('_')[2] ?? '';
-  if (!segment) return '';
+  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+  const segment = key.split("_")[2] ?? "";
+  if (!segment) return "";
   try {
-    return `https://${atob(segment).replace('$', '')}`;
+    return `https://${atob(segment).replace("$", "")}`;
   } catch {
-    return '';
+    return "";
   }
 }
 
@@ -63,7 +63,7 @@ function clerkFrontendApiOrigin(): string {
 // <style> block for CSS custom properties that cannot carry a nonce.
 function buildCSP(nonce: string): string {
   const clerkApi = clerkFrontendApiOrigin();
-  const clerkApiEntry = clerkApi ? ` ${clerkApi}` : '';
+  const clerkApiEntry = clerkApi ? ` ${clerkApi}` : "";
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://www.paypalobjects.com${clerkApiEntry}`,
@@ -81,7 +81,7 @@ function buildCSP(nonce: string): string {
 
 // isDashboardEntry returns true only for the exact /dashboard path so that
 // the role-check fetch does not fire on every sub-route.
-const isDashboardEntry = createRouteMatcher(['/dashboard']);
+const isDashboardEntry = createRouteMatcher(["/dashboard"]);
 
 // resolveDashboardRedirect fetches /users/me and returns:
 //   - a 307 redirect to /admin/dashboard for admin users
@@ -104,14 +104,14 @@ async function resolveDashboardRedirect(
     });
     if (!meRes.ok) return null;
 
-    const me = await meRes.json() as { role?: string };
-    if (me.role === 'admin') {
-      return NextResponse.redirect(new URL('/admin/dashboard', req.url));
+    const me = (await meRes.json()) as { role?: string };
+    if (me.role === "admin") {
+      return NextResponse.redirect(new URL("/admin/dashboard", req.url));
     }
     // Pass role to DashboardPage via a request header so it can skip
     // its own /users/me fetch.
     const reqHeaders = new Headers(req.headers);
-    reqHeaders.set('x-user-role', me.role ?? 'user');
+    reqHeaders.set("x-user-role", me.role ?? "user");
     return NextResponse.next({ request: { headers: reqHeaders } });
   } catch {
     // Backend unreachable — return null; DashboardPage handles the fallback.
@@ -119,41 +119,46 @@ async function resolveDashboardRedirect(
   }
 }
 
-export default clerkMiddleware(async (auth, req: NextRequest) => {
-  if (!isPublicRoute(req)) {
-    await auth.protect();
-  }
+export default clerkMiddleware(
+  async (auth, req: NextRequest) => {
+    if (!isPublicRoute(req)) {
+      await auth.protect();
+    }
 
-  // Fast admin redirect — runs before any page renders so the browser never
-  // loads /dashboard for admin users. The backend /users/me call is cheap
-  // (same-network, no DB query beyond a primary-key lookup).
-  if (isDashboardEntry(req)) {
-    const redirect = await resolveDashboardRedirect(auth, req);
-    if (redirect) return redirect;
-  }
+    // Fast admin redirect — runs before any page renders so the browser never
+    // loads /dashboard for admin users. The backend /users/me call is cheap
+    // (same-network, no DB query beyond a primary-key lookup).
+    if (isDashboardEntry(req)) {
+      const redirect = await resolveDashboardRedirect(auth, req);
+      if (redirect) return redirect;
+    }
 
-  // CSP with per-request nonce is enforced only in production.
-  // In development (Turbopack), the edge runtime does not hot-reload middleware
-  // modules, so stale compiled code would serve the wrong CSP regardless of
-  // file changes. Turbopack also requires 'unsafe-eval' for HMR, which defeats
-  // the purpose of a strict script-src policy. Development therefore runs
-  // without CSP so third-party SDKs (PayPal, Clerk) can load unrestricted.
-  if (process.env.NODE_ENV !== "production") {
-    const devRes = NextResponse.next();
-    devRes.headers.set("X-Dev-Middleware", "v2-no-csp");
-    return devRes;
-  }
+    // CSP with per-request nonce is enforced only in production.
+    // In development (Turbopack), the edge runtime does not hot-reload middleware
+    // modules, so stale compiled code would serve the wrong CSP regardless of
+    // file changes. Turbopack also requires 'unsafe-eval' for HMR, which defeats
+    // the purpose of a strict script-src policy. Development therefore runs
+    // without CSP so third-party SDKs (PayPal, Clerk) can load unrestricted.
+    if (process.env.NODE_ENV !== "production") {
+      const devRes = NextResponse.next();
+      devRes.headers.set("X-Dev-Middleware", "v2-no-csp");
+      return devRes;
+    }
 
-  const nonce = generateNonce();
-  const csp = buildCSP(nonce);
+    const nonce = generateNonce();
+    const csp = buildCSP(nonce);
 
-  const requestHeaders = new Headers(req.headers);
-  requestHeaders.set("x-nonce", nonce);
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set("x-nonce", nonce);
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
-  response.headers.set("Content-Security-Policy", csp);
-  return response;
-}, { clockSkewInMs: 10_000 });
+    const response = NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+    response.headers.set("Content-Security-Policy", csp);
+    return response;
+  },
+  { clockSkewInMs: 10_000 },
+);
 
 export const config = {
   matcher: [

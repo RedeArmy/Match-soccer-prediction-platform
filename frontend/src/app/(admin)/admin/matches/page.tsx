@@ -352,6 +352,7 @@ export default function AdminMatchesPage() {
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState<ModalState>(null);
   const [modalError, setModalError] = useState("");
+  const [syncCooldown, setSyncCooldown] = useState(false);
   const [resultForm, setResultForm] = useState<ResultForm>({
     homeScore: "",
     awayScore: "",
@@ -547,8 +548,10 @@ export default function AdminMatchesPage() {
   });
 
   async function handleSync() {
+    setSyncCooldown(true);
     await dailySyncMutation.mutateAsync().catch(() => {});
     refetch();
+    setTimeout(() => setSyncCooldown(false), 5_000);
   }
 
   const isBusy =
@@ -624,7 +627,7 @@ export default function AdminMatchesPage() {
     );
   }
 
-  const isSyncing = isLoading || dailySyncMutation.isPending;
+  const isSyncing = isLoading || dailySyncMutation.isPending || syncCooldown;
 
   return (
     <div className="space-y-6">

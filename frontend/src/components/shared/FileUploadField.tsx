@@ -34,7 +34,9 @@ export function FileUploadField({
   const borderClass = getBorderClass(hasSelectedFile, isPending);
 
   return (
-    <label className={`relative flex flex-col border-2 border-dashed rounded-xl cursor-pointer transition-colors overflow-hidden ${borderClass}`}>
+    <label
+      className={`relative flex flex-col border-2 border-dashed rounded-xl cursor-pointer transition-colors overflow-hidden ${borderClass}`}
+    >
       {previewUrl ? (
         <div className="w-full">
           {/* eslint-disable-next-line @next/next/no-img-element -- previewUrl is a blob: object URL, incompatible with next/image */}
@@ -43,12 +45,20 @@ export function FileUploadField({
             alt={fileName ?? label}
             className="w-full h-36 object-cover"
           />
-          <div className={`flex items-center gap-2 px-3 py-2 ${isPending ? "bg-amber-500/10" : "bg-green-500/10"}`}>
-            {isPending
-              ? <Clock className="w-4 h-4 shrink-0 text-amber-400" />
-              : <CheckCircle className="w-4 h-4 shrink-0 text-green-400" />}
+          <div
+            className={`flex items-center gap-2 px-3 py-2 ${isPending ? "bg-amber-500/10" : "bg-green-500/10"}`}
+          >
+            {isPending ? (
+              <Clock className="w-4 h-4 shrink-0 text-amber-400" />
+            ) : (
+              <CheckCircle className="w-4 h-4 shrink-0 text-green-400" />
+            )}
             <div className="min-w-0">
-              <p className={`text-xs truncate ${isPending ? "text-amber-300" : "text-green-300"}`}>{fileName}</p>
+              <p
+                className={`text-xs truncate ${isPending ? "text-amber-300" : "text-green-300"}`}
+              >
+                {fileName}
+              </p>
               {isPending && (
                 <p className="text-[10px] text-amber-500">{pendingLabel}</p>
               )}
@@ -78,11 +88,20 @@ export function FileUploadField({
           )}
         </div>
       )}
-      <input type="file" accept={accept} onChange={onChange} className="sr-only" />
+      <input
+        type="file"
+        accept={accept}
+        onChange={onChange}
+        className="sr-only"
+      />
       {hasSelectedFile && onRemove && (
         <button
           type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove();
+          }}
           className="absolute top-2 right-2 rounded-full p-0.5 bg-black/50 text-white hover:bg-black/70 transition-colors"
           aria-label="Eliminar archivo"
         >

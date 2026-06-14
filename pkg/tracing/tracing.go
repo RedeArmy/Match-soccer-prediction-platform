@@ -67,9 +67,12 @@ func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error)
 		return func(context.Context) error { return nil }, nil
 	}
 
+	// WithEndpointURL accepts a full URL (e.g. "http://tempo:4318") and derives
+	// the scheme (http vs https) from the URL itself. The older WithEndpoint
+	// takes only host:port and always requires WithInsecure for plaintext, but
+	// it URL-encodes a full URL string, producing an invalid port error.
 	exporter, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpoint(cfg.OTLPEndpoint),
-		otlptracehttp.WithInsecure(),
+		otlptracehttp.WithEndpointURL(cfg.OTLPEndpoint),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("tracing: create OTLP exporter: %w", err)

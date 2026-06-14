@@ -1,16 +1,16 @@
-import { ImageIcon } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { ImageIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ImagePlaceholderProps {
-  readonly aspectRatio?: string
-  readonly label?:       string
-  readonly dataSrc?:     string
-  readonly className?:   string
-  readonly rounded?:     boolean
+  readonly aspectRatio?: string;
+  readonly label?: string;
+  readonly dataSrc?: string;
+  readonly className?: string;
+  readonly rounded?: boolean;
 }
 
 export function ImagePlaceholder({
-  aspectRatio = '16/9',
+  aspectRatio = "16/9",
   label,
   dataSrc,
   className,
@@ -19,15 +19,15 @@ export function ImagePlaceholder({
   return (
     <div
       className={cn(
-        'relative overflow-hidden bg-blue-800 border border-blue-600/50',
-        'flex flex-col items-center justify-center gap-2',
-        rounded && 'rounded-xl',
+        "relative overflow-hidden bg-blue-800 border border-blue-600/50",
+        "flex flex-col items-center justify-center gap-2",
+        rounded && "rounded-xl",
         className,
       )}
       style={{ aspectRatio }}
       data-future-src={dataSrc}
       role="img"
-      aria-label={label ?? 'Image placeholder'}
+      aria-label={label ?? "Image placeholder"}
     >
       <ImageIcon className="w-8 h-8 text-blue-400/60" />
       {label && (
@@ -41,5 +41,5 @@ export function ImagePlaceholder({
         </span>
       )}
     </div>
-  )
+  );
 }

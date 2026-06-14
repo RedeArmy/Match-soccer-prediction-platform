@@ -147,21 +147,26 @@ func (h *AdminMatchSyncHandler) TriggerPoll(w http.ResponseWriter, r *http.Reque
 // TriggerDailySync handles POST /api/v1/admin/match-sync/today
 //
 // @Summary      Trigger fixture sync for all linked scheduled/live matches
-// @Description  Admin only. Validates all linked scheduled and live matches against
+// @Description  Admin only. Auto-links any unlinked matches by team name, then
 //
-//	API-Football: corrects kickoff times and transitions matches to finished when
-//	the provider reports a terminal status. Optional start_date/end_date
-//	(YYYY-MM-DD) restrict processing to matches within that kickoff window.
+//	validates all linked scheduled and live matches against API-Football:
+//	corrects kickoff times and transitions matches to finished when the provider
+//	reports a terminal status. Optional start_date/end_date (YYYY-MM-DD) restrict
+//	processing to matches within that kickoff window.
 //
 // @Tags         admin-match-sync
 // @Produce      json
 // @Security     BearerAuth
+// @Param        league_id   query     int     false  "API-Football league ID (default: 1 = FIFA World Cup)"
+// @Param        season      query     int     false  "Season year (default: 2026)"
 // @Param        start_date  query     string  false  "Kickoff date range start (YYYY-MM-DD, inclusive)"
 // @Param        end_date    query     string  false  "Kickoff date range end (YYYY-MM-DD, inclusive)"
 // @Success      200  {object}  handler.dailySyncResponse
 // @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/admin/match-sync/today [post]
 func (h *AdminMatchSyncHandler) TriggerDailySync(w http.ResponseWriter, r *http.Request) {
+	leagueID := queryIntDefault(r, "league_id", 1)
+	season := queryIntDefault(r, "season", 2026)
 	startDate := queryDateParam(r, "start_date")
 	endDate := queryDateParam(r, "end_date")
 	// endDate is inclusive: extend to end of the day so kickoffs on that day match.
@@ -170,7 +175,7 @@ func (h *AdminMatchSyncHandler) TriggerDailySync(w http.ResponseWriter, r *http.
 		endDate = &t
 	}
 
-	result, err := h.svc.DailyFixtureSync(r.Context(), startDate, endDate)
+	result, err := h.svc.DailyFixtureSync(r.Context(), leagueID, season, startDate, endDate)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

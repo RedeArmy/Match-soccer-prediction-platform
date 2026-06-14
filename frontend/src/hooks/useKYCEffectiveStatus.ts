@@ -1,10 +1,10 @@
-'use client'
+"use client";
 
-import { useAuth } from '@clerk/nextjs'
-import { useQuery } from '@tanstack/react-query'
-import { useKYCStatus } from './useKYCStatus'
-import { api } from '@/lib/api'
-import type { KYCStatus } from '@/lib/api-types'
+import { useAuth } from "@clerk/nextjs";
+import { useQuery } from "@tanstack/react-query";
+import { useKYCStatus } from "./useKYCStatus";
+import { api } from "@/lib/api";
+import type { KYCStatus } from "@/lib/api-types";
 
 /**
  * Extends useKYCStatus with a derived `effectiveStatus` and `hasPendingReview`
@@ -20,26 +20,33 @@ import type { KYCStatus } from '@/lib/api-types'
  * so a prior navigation to /kyc means no extra network request here.
  */
 export function useKYCEffectiveStatus() {
-  const { getToken } = useAuth()
-  const { data: kyc, isLoading } = useKYCStatus()
+  const { getToken } = useAuth();
+  const { data: kyc, isLoading } = useKYCStatus();
 
   const { data: docs, isLoading: isDocsLoading } = useQuery({
-    queryKey: ['kyc-documents'],
+    queryKey: ["kyc-documents"],
     queryFn: async () => {
-      const token = await getToken()
-      return api.getKYCDocuments(token!)
+      const token = await getToken();
+      return api.getKYCDocuments(token!);
     },
-    enabled: kyc?.status === 'pending',
+    enabled: kyc?.status === "pending",
     staleTime: 30_000,
-  })
+  });
 
   // Docs have been uploaded but admin hasn't moved the profile to under_review yet.
   const hasPendingReview =
-    kyc?.status === 'pending' && !isDocsLoading && (docs?.length ?? 0) > 0
+    kyc?.status === "pending" && !isDocsLoading && (docs?.length ?? 0) > 0;
 
   const effectiveStatus: KYCStatus = hasPendingReview
-    ? 'under_review'
-    : (kyc?.status ?? 'unverified')
+    ? "under_review"
+    : (kyc?.status ?? "unverified");
 
-  return { kyc, docs, isLoading, isDocsLoading, hasPendingReview, effectiveStatus }
+  return {
+    kyc,
+    docs,
+    isLoading,
+    isDocsLoading,
+    hasPendingReview,
+    effectiveStatus,
+  };
 }

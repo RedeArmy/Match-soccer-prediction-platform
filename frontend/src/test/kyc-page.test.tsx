@@ -65,8 +65,16 @@ describe("KYCPage document upload flow", () => {
     });
     mocks.getKYCDocuments.mockResolvedValue([]);
     mocks.uploadKYCDocument
-      .mockResolvedValueOnce({ id: 101, document_type: "gov_id", status: "pending" })
-      .mockResolvedValueOnce({ id: 102, document_type: "selfie", status: "pending" });
+      .mockResolvedValueOnce({
+        id: 101,
+        document_type: "gov_id",
+        status: "pending",
+      })
+      .mockResolvedValueOnce({
+        id: 102,
+        document_type: "selfie",
+        status: "pending",
+      });
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   });
@@ -75,28 +83,39 @@ describe("KYCPage document upload flow", () => {
     const { container } = renderKYCPage();
 
     await screen.findByText("Documentos");
-    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]');
+    const inputs =
+      container.querySelectorAll<HTMLInputElement>('input[type="file"]');
     expect(inputs).toHaveLength(2);
 
-    fireEvent.change(inputs[0], { target: { files: [makeJpegFile("id-front.jpg")] } });
+    fireEvent.change(inputs[0], {
+      target: { files: [makeJpegFile("id-front.jpg")] },
+    });
 
     await screen.findByText("id-front.jpg");
-    expect(screen.queryByRole("button", { name: /cargar archivos/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /cargar archivos/i }),
+    ).toBeNull();
     expect(mocks.uploadKYCDocument).not.toHaveBeenCalled();
 
-    fireEvent.change(inputs[1], { target: { files: [makeJpegFile("selfie.jpg")] } });
+    fireEvent.change(inputs[1], {
+      target: { files: [makeJpegFile("selfie.jpg")] },
+    });
 
     await screen.findByText("selfie.jpg");
     expect(mocks.uploadKYCDocument).not.toHaveBeenCalled();
 
-    const uploadButton = screen.getByRole("button", { name: /cargar archivos/i });
+    const uploadButton = screen.getByRole("button", {
+      name: /cargar archivos/i,
+    });
     expect(uploadButton).toBeVisible();
     expect(uploadButton).toHaveClass("w-full");
     expect(uploadButton.previousElementSibling).toHaveClass("grid");
 
     fireEvent.click(uploadButton);
 
-    await waitFor(() => expect(mocks.uploadKYCDocument).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(mocks.uploadKYCDocument).toHaveBeenCalledTimes(2),
+    );
     expect(mocks.uploadKYCDocument).toHaveBeenNthCalledWith(
       1,
       "tok_kyc",

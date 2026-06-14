@@ -46,7 +46,7 @@ func makeDailyFixtureSyncJob(
 			return nil
 		}
 
-		result, err := syncSvc.DailyFixtureSync(ctx, nil, nil)
+		result, err := syncSvc.DailyFixtureSync(ctx, 1, 2026, nil, nil)
 		if err != nil {
 			log.Error("match daily sync: failed",
 				zap.String("date", today),
