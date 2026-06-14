@@ -326,6 +326,9 @@ func (r *stubWorkerPredRepo) GetScoringCfgSnapshot(_ context.Context, _ int) (*d
 func (r *stubWorkerPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
 	return nil, nil
 }
+func (r *stubWorkerPredRepo) ListByGroupAndMatches(_ context.Context, _ int, _ []int) ([]*domain.Prediction, error) {
+	return nil, nil
+}
 
 func TestPostScoringWork_NilPredRepo_Noop(t *testing.T) {
 	postScoringWork(context.Background(), 1, postScoringDeps{snapshotter: &stubSnapshotter{}}, zap.NewNop())
