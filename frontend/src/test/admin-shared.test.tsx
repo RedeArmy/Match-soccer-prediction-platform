@@ -297,18 +297,17 @@ describe("AdminTabBar", () => {
     { key: "approved", label: "Aprobados" },
   ];
   const counts = { all: 10, pending: 4, approved: 6 };
+  const base = {
+    tabs: TABS,
+    activeTab: "all",
+    counts,
+    onTabChange: () => {},
+    activeButtonClass: "bg-blue-500/20 text-blue-400",
+    activeBadgeClass: "bg-blue-500/30 text-blue-300",
+  };
 
   it("renders a button for every tab", () => {
-    render(
-      <AdminTabBar
-        tabs={TABS}
-        activeTab="all"
-        counts={counts}
-        onTabChange={() => {}}
-        activeButtonClass="bg-blue-500/20 text-blue-400"
-        activeBadgeClass="bg-blue-500/30 text-blue-300"
-      />,
-    );
+    render(<AdminTabBar {...base} />);
     expect(screen.getByRole("button", { name: /Todos/ })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Pendientes/ }),
@@ -319,16 +318,7 @@ describe("AdminTabBar", () => {
   });
 
   it("displays the correct count for each tab", () => {
-    render(
-      <AdminTabBar
-        tabs={TABS}
-        activeTab="all"
-        counts={counts}
-        onTabChange={() => {}}
-        activeButtonClass="bg-blue-500/20 text-blue-400"
-        activeBadgeClass="bg-blue-500/30 text-blue-300"
-      />,
-    );
+    render(<AdminTabBar {...base} />);
     expect(screen.getByText("10")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
     expect(screen.getByText("6")).toBeInTheDocument();
@@ -337,10 +327,8 @@ describe("AdminTabBar", () => {
   it("applies activeButtonClass to the active tab button", () => {
     render(
       <AdminTabBar
-        tabs={TABS}
+        {...base}
         activeTab="pending"
-        counts={counts}
-        onTabChange={() => {}}
         activeButtonClass="test-active-btn"
         activeBadgeClass="test-active-badge"
       />,
@@ -356,10 +344,8 @@ describe("AdminTabBar", () => {
   it("applies activeBadgeClass to the badge of the active tab", () => {
     const { container } = render(
       <AdminTabBar
-        tabs={TABS}
+        {...base}
         activeTab="approved"
-        counts={counts}
-        onTabChange={() => {}}
         activeButtonClass="test-active-btn"
         activeBadgeClass="test-active-badge"
       />,
@@ -372,16 +358,7 @@ describe("AdminTabBar", () => {
 
   it("calls onTabChange with the tab key when a button is clicked", () => {
     const handler = vi.fn();
-    render(
-      <AdminTabBar
-        tabs={TABS}
-        activeTab="all"
-        counts={counts}
-        onTabChange={handler}
-        activeButtonClass="bg-blue-500/20 text-blue-400"
-        activeBadgeClass="bg-blue-500/30 text-blue-300"
-      />,
-    );
+    render(<AdminTabBar {...base} onTabChange={handler} />);
     fireEvent.click(screen.getByRole("button", { name: /Pendientes/ }));
     expect(handler).toHaveBeenCalledWith("pending");
   });
