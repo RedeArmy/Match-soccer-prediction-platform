@@ -89,7 +89,7 @@ interface LineupPanelProps {
 }
 
 function LineupPanel({ lineup }: LineupPanelProps) {
-  const { t } = useI18n();
+  const { t, teamName } = useI18n();
 
   const posSortOrder: Record<string, number> = { G: 0, D: 1, M: 2, F: 3 };
   const sorted = [...lineup.startXI].sort(
@@ -99,7 +99,7 @@ function LineupPanel({ lineup }: LineupPanelProps) {
   return (
     <div className="flex-1 min-w-0">
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
-        {lineup.teamName}
+        {teamName(lineup.teamName)}
         {lineup.formation && (
           <span className="ml-2 text-gold-400">{lineup.formation}</span>
         )}
@@ -152,7 +152,7 @@ function LineupPanel({ lineup }: LineupPanelProps) {
 // ── Events list ────────────────────────────────────────────────────────────────
 
 function EventsList({ events }: Readonly<{ events: FixtureEvent[] }>) {
-  const { t } = useI18n();
+  const { t, teamName } = useI18n();
 
   if (events.length === 0) {
     return (
@@ -183,7 +183,7 @@ function EventsList({ events }: Readonly<{ events: FixtureEvent[] }>) {
             )}
           </div>
           <span className="shrink-0 text-[10px] text-text-muted">
-            {ev.team}
+            {teamName(ev.team)}
           </span>
         </div>
       ))}
@@ -287,7 +287,7 @@ interface MatchCardProps {
 }
 
 function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
-  const { t } = useI18n();
+  const { t, teamName } = useI18n();
 
   const live = isLive(fixture.status);
   const done = isDone(fixture.status);
@@ -359,7 +359,7 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
           {/* Teams + score */}
           <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
             <span className="truncate text-sm font-medium text-white">
-              {fixture.homeTeam}
+              {teamName(fixture.homeTeam)}
             </span>
 
             {live || done ? (
@@ -371,7 +371,7 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
             )}
 
             <span className="truncate text-right text-sm font-medium text-white">
-              {fixture.awayTeam}
+              {teamName(fixture.awayTeam)}
             </span>
           </div>
 

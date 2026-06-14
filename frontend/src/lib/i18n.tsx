@@ -13,93 +13,96 @@ const localeTags: Record<Locale, string> = {
 };
 
 const accountTypeTranslations: Record<string, LeafEntry> = {
-  "ahorros gtq":      { es: "Ahorros GTQ",        en: "Savings GTQ"    },
-  "ahorros usd":      { es: "Ahorros USD",        en: "Savings USD"    },
-  "monetaria gtq":    { es: "Monetaria GTQ",      en: "Checking GTQ"   },
-  "monetaria usd":    { es: "Monetaria USD",      en: "Checking USD"   },
-  "tarjeta de credito": { es: "Tarjeta de Crédito", en: "Credit Card"  },
+  "ahorros gtq": { es: "Ahorros GTQ", en: "Savings GTQ" },
+  "ahorros usd": { es: "Ahorros USD", en: "Savings USD" },
+  "monetaria gtq": { es: "Monetaria GTQ", en: "Checking GTQ" },
+  "monetaria usd": { es: "Monetaria USD", en: "Checking USD" },
+  "tarjeta de credito": { es: "Tarjeta de Crédito", en: "Credit Card" },
 };
 
 const teamTranslations: Record<string, LeafEntry> = {
   // Group A
-  "mexico":                 { es: "México",                 en: "Mexico"                 },
-  "south africa":           { es: "Sudáfrica",              en: "South Africa"           },
-  "south korea":            { es: "Corea del Sur",          en: "South Korea"            },
-  "czechia":                { es: "República Checa",        en: "Czechia"                },
-  "czech republic":         { es: "República Checa",        en: "Czech Republic"         },
+  mexico: { es: "México", en: "Mexico" },
+  "south africa": { es: "Sudáfrica", en: "South Africa" },
+  "south korea": { es: "Corea del Sur", en: "South Korea" },
+  czechia: { es: "República Checa", en: "Czechia" },
+  "czech republic": { es: "República Checa", en: "Czech Republic" },
   // Group B
-  "canada":                 { es: "Canadá",                 en: "Canada"                 },
-  "bosnia and herzegovina": { es: "Bosnia y Herzegovina",   en: "Bosnia and Herzegovina" },
-  "qatar":                  { es: "Catar",                  en: "Qatar"                  },
-  "switzerland":            { es: "Suiza",                  en: "Switzerland"            },
+  canada: { es: "Canadá", en: "Canada" },
+  "bosnia and herzegovina": {
+    es: "Bosnia y Herzegovina",
+    en: "Bosnia and Herzegovina",
+  },
+  qatar: { es: "Catar", en: "Qatar" },
+  switzerland: { es: "Suiza", en: "Switzerland" },
   // Group C
-  "brazil":                 { es: "Brasil",                 en: "Brazil"                 },
-  "morocco":                { es: "Marruecos",              en: "Morocco"                },
-  "haiti":                  { es: "Haití",                  en: "Haiti"                  },
-  "scotland":               { es: "Escocia",                en: "Scotland"               },
+  brazil: { es: "Brasil", en: "Brazil" },
+  morocco: { es: "Marruecos", en: "Morocco" },
+  haiti: { es: "Haití", en: "Haiti" },
+  scotland: { es: "Escocia", en: "Scotland" },
   // Group D
-  "united states":          { es: "Estados Unidos",         en: "United States"          },
-  "usa":                    { es: "Estados Unidos",         en: "United States"          },
-  "paraguay":               { es: "Paraguay",               en: "Paraguay"               },
-  "australia":              { es: "Australia",              en: "Australia"              },
-  "türkiye":                { es: "Turquía",                en: "Türkiye"                },
-  "turkiye":                { es: "Turquía",                en: "Türkiye"                },
+  "united states": { es: "Estados Unidos", en: "United States" },
+  usa: { es: "Estados Unidos", en: "United States" },
+  paraguay: { es: "Paraguay", en: "Paraguay" },
+  australia: { es: "Australia", en: "Australia" },
+  türkiye: { es: "Turquía", en: "Türkiye" },
+  turkiye: { es: "Turquía", en: "Türkiye" },
   // Group E
-  "germany":                { es: "Alemania",               en: "Germany"                },
-  "curaçao":                { es: "Curazao",                en: "Curaçao"                },
-  "curacao":                { es: "Curazao",                en: "Curaçao"                },
-  "ivory coast":            { es: "Costa de Marfil",        en: "Ivory Coast"            },
-  "cote d'ivoire":          { es: "Costa de Marfil",        en: "Côte d'Ivoire"          },
-  "côte d'ivoire":          { es: "Costa de Marfil",        en: "Côte d'Ivoire"          },
-  "ecuador":                { es: "Ecuador",                en: "Ecuador"                },
+  germany: { es: "Alemania", en: "Germany" },
+  curaçao: { es: "Curazao", en: "Curaçao" },
+  curacao: { es: "Curazao", en: "Curaçao" },
+  "ivory coast": { es: "Costa de Marfil", en: "Ivory Coast" },
+  "cote d'ivoire": { es: "Costa de Marfil", en: "Côte d'Ivoire" },
+  "côte d'ivoire": { es: "Costa de Marfil", en: "Côte d'Ivoire" },
+  ecuador: { es: "Ecuador", en: "Ecuador" },
   // Group F
-  "netherlands":            { es: "Países Bajos",           en: "Netherlands"            },
-  "japan":                  { es: "Japón",                  en: "Japan"                  },
-  "sweden":                 { es: "Suecia",                 en: "Sweden"                 },
-  "tunisia":                { es: "Túnez",                  en: "Tunisia"                },
+  netherlands: { es: "Países Bajos", en: "Netherlands" },
+  japan: { es: "Japón", en: "Japan" },
+  sweden: { es: "Suecia", en: "Sweden" },
+  tunisia: { es: "Túnez", en: "Tunisia" },
   // Group G
-  "belgium":                { es: "Bélgica",                en: "Belgium"                },
-  "egypt":                  { es: "Egipto",                 en: "Egypt"                  },
-  "iran":                   { es: "Irán",                   en: "Iran"                   },
-  "new zealand":            { es: "Nueva Zelanda",          en: "New Zealand"            },
+  belgium: { es: "Bélgica", en: "Belgium" },
+  egypt: { es: "Egipto", en: "Egypt" },
+  iran: { es: "Irán", en: "Iran" },
+  "new zealand": { es: "Nueva Zelanda", en: "New Zealand" },
   // Group H
-  "spain":                  { es: "España",                 en: "Spain"                  },
-  "cape verde":             { es: "Cabo Verde",             en: "Cape Verde"             },
-  "saudi arabia":           { es: "Arabia Saudita",         en: "Saudi Arabia"           },
-  "uruguay":                { es: "Uruguay",                en: "Uruguay"                },
+  spain: { es: "España", en: "Spain" },
+  "cape verde": { es: "Cabo Verde", en: "Cape Verde" },
+  "saudi arabia": { es: "Arabia Saudita", en: "Saudi Arabia" },
+  uruguay: { es: "Uruguay", en: "Uruguay" },
   // Group I
-  "france":                 { es: "Francia",                en: "France"                 },
-  "senegal":                { es: "Senegal",                en: "Senegal"                },
-  "iraq":                   { es: "Irak",                   en: "Iraq"                   },
-  "norway":                 { es: "Noruega",                en: "Norway"                 },
+  france: { es: "Francia", en: "France" },
+  senegal: { es: "Senegal", en: "Senegal" },
+  iraq: { es: "Irak", en: "Iraq" },
+  norway: { es: "Noruega", en: "Norway" },
   // Group J
-  "argentina":              { es: "Argentina",              en: "Argentina"              },
-  "algeria":                { es: "Argelia",                en: "Algeria"                },
-  "austria":                { es: "Austria",                en: "Austria"                },
-  "jordan":                 { es: "Jordania",               en: "Jordan"                 },
+  argentina: { es: "Argentina", en: "Argentina" },
+  algeria: { es: "Argelia", en: "Algeria" },
+  austria: { es: "Austria", en: "Austria" },
+  jordan: { es: "Jordania", en: "Jordan" },
   // Group K
-  "portugal":               { es: "Portugal",               en: "Portugal"               },
-  "dr congo":               { es: "Rep. Dem. del Congo",    en: "DR Congo"               },
-  "uzbekistan":             { es: "Uzbekistán",             en: "Uzbekistan"             },
-  "colombia":               { es: "Colombia",               en: "Colombia"               },
+  portugal: { es: "Portugal", en: "Portugal" },
+  "dr congo": { es: "Rep. Dem. del Congo", en: "DR Congo" },
+  uzbekistan: { es: "Uzbekistán", en: "Uzbekistan" },
+  colombia: { es: "Colombia", en: "Colombia" },
   // Group L
-  "england":                { es: "Inglaterra",             en: "England"                },
-  "croatia":                { es: "Croacia",                en: "Croatia"                },
-  "ghana":                  { es: "Ghana",                  en: "Ghana"                  },
-  "panama":                 { es: "Panamá",                 en: "Panama"                 },
+  england: { es: "Inglaterra", en: "England" },
+  croatia: { es: "Croacia", en: "Croatia" },
+  ghana: { es: "Ghana", en: "Ghana" },
+  panama: { es: "Panamá", en: "Panama" },
 };
 
 const phaseTranslations: Record<string, LeafEntry> = {
-  "group_stage": { es: "Fase de Grupos", en: "Group Stage" },
+  group_stage: { es: "Fase de Grupos", en: "Group Stage" },
   "group stage": { es: "Fase de Grupos", en: "Group Stage" },
-  "round_of_32": { es: "Dieciseisavos de Final", en: "Round of 32" },
-  "round_of_16": { es: "Octavos de Final", en: "Round of 16" },
-  "quarter_final": { es: "Cuartos de Final", en: "Quarter-Final" },
-  "quarterfinal": { es: "Cuartos de Final", en: "Quarter-Final" },
-  "semi_final": { es: "Semifinal", en: "Semi-Final" },
-  "semifinal": { es: "Semifinal", en: "Semi-Final" },
-  "third_place": { es: "Tercer Lugar", en: "Third Place" },
-  "final": { es: "Final", en: "Final" },
+  round_of_32: { es: "Dieciseisavos de Final", en: "Round of 32" },
+  round_of_16: { es: "Octavos de Final", en: "Round of 16" },
+  quarter_final: { es: "Cuartos de Final", en: "Quarter-Final" },
+  quarterfinal: { es: "Cuartos de Final", en: "Quarter-Final" },
+  semi_final: { es: "Semifinal", en: "Semi-Final" },
+  semifinal: { es: "Semifinal", en: "Semi-Final" },
+  third_place: { es: "Tercer Lugar", en: "Third Place" },
+  final: { es: "Final", en: "Final" },
 };
 
 // prettier-ignore
@@ -447,10 +450,9 @@ const translations: TranslationNode = {
     liveTitle:         { es: 'Partidos de hoy',                                    en: "Today's Matches"                                     },
     liveBadge:         { es: 'EN VIVO',                                            en: 'LIVE'                                                 },
     liveInPlay:        { es: 'En juego',                                           en: 'In play'                                              },
-    liveHT:            { es: 'ET',                                                 en: 'HT'                                                   },
+    liveHT:            { es: 'MT',                                                 en: 'HT'                                                   },
     liveEmpty:         { es: 'No hay partidos programados para hoy.',              en: 'No matches scheduled for today.'                      },
     liveError:         { es: 'No se pudo cargar la información de partidos.',      en: 'Could not load match information.'                    },
-    liveFixtureError:  { es: 'No se pudo cargar la información del partido.',      en: 'Could not load match details.'                        },
     liveHalftime:      { es: 'Medio tiempo',                                       en: 'Half time'                                            },
     liveEvents:        { es: 'Eventos',                                            en: 'Events'                                               },
     liveNoEvents:      { es: 'Sin eventos aún.',                                   en: 'No events yet.'                                       },
@@ -594,8 +596,7 @@ export function I18nProvider({
       document.documentElement.lang = stored;
     }
     setTimeZone(
-      Intl.DateTimeFormat().resolvedOptions().timeZone ||
-        "America/Guatemala",
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Guatemala",
     );
   }, []);
 
@@ -611,9 +612,12 @@ export function I18nProvider({
       t: (key) =>
         getTranslation(key, locale) ?? getTranslation(key, "es") ?? key,
       formatKickoff: (iso) => formatLocalizedDateTime(iso, locale, timeZone),
-      phaseName: (phase) => translateDictionaryValue(phase, phaseTranslations, locale),
-      teamName: (name) => translateDictionaryValue(name, teamTranslations, locale),
-      accountTypeName: (name) => translateDictionaryValue(name, accountTypeTranslations, locale),
+      phaseName: (phase) =>
+        translateDictionaryValue(phase, phaseTranslations, locale),
+      teamName: (name) =>
+        translateDictionaryValue(name, teamTranslations, locale),
+      accountTypeName: (name) =>
+        translateDictionaryValue(name, accountTypeTranslations, locale),
     }),
     [locale, timeZone],
   );
