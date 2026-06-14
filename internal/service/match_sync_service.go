@@ -307,71 +307,101 @@ func (s *matchSyncService) DailyFixtureSync(ctx context.Context, startDate, endD
 		return nil, fmt.Errorf("daily fixture sync: list candidates: %w", err)
 	}
 
-	// Filter by date range when supplied (inclusive on both ends, day granularity).
-	if startDate != nil || endDate != nil {
-		kept := candidates[:0]
-		for _, m := range candidates {
-			if startDate != nil && m.KickoffAt.Before(*startDate) {
-				continue
-			}
-			if endDate != nil && m.KickoffAt.After(*endDate) {
-				continue
-			}
-			kept = append(kept, m)
-		}
-		candidates = kept
-	}
-
+	candidates = filterByDateRange(candidates, startDate, endDate)
 	result := &DailySyncResult{Total: len(candidates)}
 
 	for _, m := range candidates {
-		fix, err := s.provider.GetFixture(ctx, *m.ExternalMatchID)
-		if err != nil {
-			s.log.Warn("match daily sync: GetFixture failed",
-				zap.Int("match_id", m.ID),
-				zap.Int64("external_id", *m.ExternalMatchID),
-				zap.Error(err),
-			)
-			continue
-		}
-
-		if m.Status == domain.MatchStatusScheduled && !fix.KickoffUTC.IsZero() {
-			diff := fix.KickoffUTC.Unix() - m.KickoffAt.Unix()
-			if diff < 0 {
-				diff = -diff
-			}
-			if diff > 60 {
-				if err := s.matchRepo.UpdateKickoff(ctx, m.ID, fix.KickoffUTC); err != nil {
-					s.log.Warn("match daily sync: UpdateKickoff failed",
-						zap.Int("match_id", m.ID), zap.Error(err))
-				} else {
-					result.Updated++
-				}
-			}
-		}
-
-		if fix.Status.IsFinished() {
-			winMethod := winMethodFromStatus(fix.Status)
-			switch m.Status {
-			case domain.MatchStatusLive, domain.MatchStatusScheduled:
-				if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod); err != nil {
-					if !errors.Is(err, apperrors.ErrValidation) {
-						s.log.Warn("match daily sync: UpdateResult failed",
-							zap.Int("match_id", m.ID), zap.Error(err))
-					}
-				}
-			}
-		} else if fix.Status.IsLive() && m.Status == domain.MatchStatusScheduled {
-			if _, err := s.matchSvc.StartMatch(ctx, m.ID); err != nil {
-				if !errors.Is(err, apperrors.ErrValidation) {
-					s.log.Warn("match daily sync: StartMatch failed",
-						zap.Int("match_id", m.ID), zap.Error(err))
-				}
-			}
-		}
+		s.dailySyncOneMatch(ctx, m, result)
 	}
 
 	return result, nil
+}
+
+// filterByDateRange returns only the matches whose kickoff falls within
+// [startDate, endDate] (inclusive, day granularity). Returns candidates
+// unchanged when both pointers are nil.
+func filterByDateRange(candidates []*domain.Match, startDate, endDate *time.Time) []*domain.Match {
+	if startDate == nil && endDate == nil {
+		return candidates
+	}
+	kept := candidates[:0]
+	for _, m := range candidates {
+		if startDate != nil && m.KickoffAt.Before(*startDate) {
+			continue
+		}
+		if endDate != nil && m.KickoffAt.After(*endDate) {
+			continue
+		}
+		kept = append(kept, m)
+	}
+	return kept
+}
+
+func (s *matchSyncService) dailySyncOneMatch(ctx context.Context, m *domain.Match, result *DailySyncResult) {
+	fix, err := s.provider.GetFixture(ctx, *m.ExternalMatchID)
+	if err != nil {
+		s.log.Warn("match daily sync: GetFixture failed",
+			zap.Int("match_id", m.ID),
+			zap.Int64("external_id", *m.ExternalMatchID),
+			zap.Error(err),
+		)
+		return
+	}
+	s.maybeCorrectKickoff(ctx, m, fix, result)
+	s.maybeTransitionStatus(ctx, m, fix)
+}
+
+func (s *matchSyncService) maybeCorrectKickoff(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture, result *DailySyncResult) {
+	if m.Status != domain.MatchStatusScheduled || fix.KickoffUTC.IsZero() {
+		return
+	}
+	diff := fix.KickoffUTC.Unix() - m.KickoffAt.Unix()
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff <= 60 {
+		return
+	}
+	if err := s.matchRepo.UpdateKickoff(ctx, m.ID, fix.KickoffUTC); err != nil {
+		s.log.Warn("match daily sync: UpdateKickoff failed",
+			zap.Int("match_id", m.ID), zap.Error(err))
+		return
+	}
+	result.Updated++
+}
+
+func (s *matchSyncService) maybeTransitionStatus(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture) {
+	if fix.Status.IsFinished() {
+		s.applyFinishedTransition(ctx, m, fix)
+		return
+	}
+	if fix.Status.IsLive() && m.Status == domain.MatchStatusScheduled {
+		s.applyStartTransition(ctx, m)
+	}
+}
+
+func (s *matchSyncService) applyFinishedTransition(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture) {
+	switch m.Status {
+	case domain.MatchStatusLive, domain.MatchStatusScheduled:
+		winMethod := winMethodFromStatus(fix.Status)
+		if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod); err != nil {
+			if !errors.Is(err, apperrors.ErrValidation) {
+				s.log.Warn("match daily sync: UpdateResult failed",
+					zap.Int("match_id", m.ID), zap.Error(err))
+			}
+		}
+	case domain.MatchStatusFinished, domain.MatchStatusCancelled:
+		// already in a terminal state; no transition needed
+	}
+}
+
+func (s *matchSyncService) applyStartTransition(ctx context.Context, m *domain.Match) {
+	if _, err := s.matchSvc.StartMatch(ctx, m.ID); err != nil {
+		if !errors.Is(err, apperrors.ErrValidation) {
+			s.log.Warn("match daily sync: StartMatch failed",
+				zap.Int("match_id", m.ID), zap.Error(err))
+		}
+	}
 }
 
 // winMethodFromStatus maps the terminal provider status to the domain WinMethod.

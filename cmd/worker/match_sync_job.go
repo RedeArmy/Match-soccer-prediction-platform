@@ -53,20 +53,8 @@ func makeMatchSyncJob(
 
 		prematchWindow := params.GetInt(ctx, domain.ParamKeyMatchSyncPrematchWindowMin, domain.DefaultMatchSyncPrematchWindowMin)
 
-		// When paused, check if we've reached the resume threshold.
-		// resumeAtUnix == 0 is the sentinel for "no upcoming matches found at
-		// pause time" — keep the pause until the operator adds a match or the
-		// daily sync updates kickoffs, then the next pause cycle will recalculate.
-		if globalMatchSyncState.pollingPaused.Load() {
-			resumeAt := globalMatchSyncState.resumeAtUnix.Load()
-			if resumeAt == 0 || time.Now().Unix() < resumeAt {
-				return nil
-			}
-			// Resume: reset pause state.
-			globalMatchSyncState.pollingPaused.Store(false)
-			globalMatchSyncState.consecutiveZeroCount.Store(0)
-			globalMatchSyncState.resumeAtUnix.Store(0)
-			log.Info("match sync: polling resumed — approaching next scheduled match")
+		if handlePauseResume(log) {
+			return nil
 		}
 
 		// Adaptive interval: skip the API call when no matches were live on the
@@ -97,37 +85,64 @@ func makeMatchSyncJob(
 			return nil
 		}
 
-		// Accumulate consecutive zero-live observations.
-		stopThreshold := int32(params.GetInt(ctx, domain.ParamKeyMatchSyncStopAfterZeroLiveCount, domain.DefaultMatchSyncStopAfterZeroLiveCount))
-		newZeroCount := globalMatchSyncState.consecutiveZeroCount.Add(1)
-		if newZeroCount < stopThreshold {
-			return nil
-		}
-
-		// Threshold reached: pause polling until near the next scheduled match.
-		nextKickoff, found := nextScheduledMatchKickoff(ctx, matchRepo)
-		if !found {
-			// No upcoming matches known — pause indefinitely (slow poll will still
-			// fire, but this state will keep returning nil until a new match appears).
-			globalMatchSyncState.pollingPaused.Store(true)
-			globalMatchSyncState.resumeAtUnix.Store(0)
-			log.Info("match sync: no upcoming matches found — polling suspended")
-			return nil
-		}
-
-		resumeAt := nextKickoff.Unix() - int64(prematchWindow*60)
-		if resumeAt <= time.Now().Unix() {
-			// Next match is already within the prematch window — do not pause.
-			return nil
-		}
-		globalMatchSyncState.pollingPaused.Store(true)
-		globalMatchSyncState.resumeAtUnix.Store(resumeAt)
-		log.Info("match sync: all matches finished — polling suspended until pre-match window",
-			zap.Time("next_kickoff", nextKickoff),
-			zap.Time("resume_at", time.Unix(resumeAt, 0).UTC()),
-		)
+		suspendPollingIfThresholdReached(ctx, params, matchRepo, prematchWindow, log)
 		return nil
 	}
+}
+
+// handlePauseResume checks the global pause state on each tick.
+// Returns true when the tick should be skipped entirely.
+// resumeAtUnix == 0 is the sentinel for "no upcoming matches found at pause
+// time" — keep the pause until the daily sync or the operator adds a match.
+func handlePauseResume(log *zap.Logger) bool {
+	if !globalMatchSyncState.pollingPaused.Load() {
+		return false
+	}
+	resumeAt := globalMatchSyncState.resumeAtUnix.Load()
+	if resumeAt == 0 || time.Now().Unix() < resumeAt {
+		return true
+	}
+	globalMatchSyncState.pollingPaused.Store(false)
+	globalMatchSyncState.consecutiveZeroCount.Store(0)
+	globalMatchSyncState.resumeAtUnix.Store(0)
+	log.Info("match sync: polling resumed — approaching next scheduled match")
+	return false
+}
+
+// suspendPollingIfThresholdReached accumulates consecutive zero-live ticks and,
+// once the configured threshold is reached, pauses polling until the pre-match
+// window of the next scheduled match.
+func suspendPollingIfThresholdReached(
+	ctx context.Context,
+	params service.SystemParamService,
+	matchRepo repository.MatchRepository,
+	prematchWindow int,
+	log *zap.Logger,
+) {
+	stopThreshold := int32(params.GetInt(ctx, domain.ParamKeyMatchSyncStopAfterZeroLiveCount, domain.DefaultMatchSyncStopAfterZeroLiveCount))
+	if globalMatchSyncState.consecutiveZeroCount.Add(1) < stopThreshold {
+		return
+	}
+
+	nextKickoff, found := nextScheduledMatchKickoff(ctx, matchRepo)
+	if !found {
+		globalMatchSyncState.pollingPaused.Store(true)
+		globalMatchSyncState.resumeAtUnix.Store(0)
+		log.Info("match sync: no upcoming matches found — polling suspended")
+		return
+	}
+
+	resumeAt := nextKickoff.Unix() - int64(prematchWindow*60)
+	if resumeAt <= time.Now().Unix() {
+		// Already within the pre-match window — do not pause.
+		return
+	}
+	globalMatchSyncState.pollingPaused.Store(true)
+	globalMatchSyncState.resumeAtUnix.Store(resumeAt)
+	log.Info("match sync: all matches finished — polling suspended until pre-match window",
+		zap.Time("next_kickoff", nextKickoff),
+		zap.Time("resume_at", time.Unix(resumeAt, 0).UTC()),
+	)
 }
 
 // nextScheduledMatchKickoff returns the earliest upcoming linked scheduled match
