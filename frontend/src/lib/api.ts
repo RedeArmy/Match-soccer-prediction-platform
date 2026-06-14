@@ -38,6 +38,7 @@ import type {
   CursorPaged,
   AdminUserResponse,
   AdminUserProfileResponse,
+  LivePredictionsResponse,
 } from './api-types'
 
 // ── Base fetch ────────────────────────────────────────────────────────────────
@@ -157,6 +158,10 @@ class APIClient {
 
   leaveGroup(token: string, id: number): Promise<void> {
     return this.request(`/api/v1/groups/${id}/members/me`, { method: 'DELETE' }, token)
+  }
+
+  getGroupLivePredictions(token: string, id: number): Promise<LivePredictionsResponse> {
+    return this.request(`/api/v1/groups/${id}/live-predictions`, {}, token)
   }
 
   // ── Matches ───────────────────────────────────────────────────────────────

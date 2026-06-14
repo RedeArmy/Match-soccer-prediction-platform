@@ -81,7 +81,20 @@ func buildGroupRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
 	r.Post("/groups/{id}/members/{membershipID}/approve", h.ApproveJoin)
 	r.Delete("/groups/{id}/members/{membershipID}", h.RejectJoin)
 	r.Delete("/groups/{id}/members/me", h.Leave)
+	r.Get("/groups/{id}/live-predictions", h.GetLivePredictions)
 	return r
+}
+
+// newGroupHandlerWithLiveDeps wires the extra deps required by GetLivePredictions.
+func newGroupHandlerWithLiveDeps(
+	t *testing.T,
+	qs *stubQuinielaSvc,
+	ms *stubMemberSvc,
+	matchSvc *stubMatchSvc,
+	predRepo *stubPredRepo,
+) *handler.GroupHandler {
+	t.Helper()
+	return handler.NewGroupHandler(qs, ms, &stubGroupAuthz{}, &stubSystemParamSvc{}, matchSvc, predRepo, zaptest.NewLogger(t))
 }
 
 func fixedQuiniela() *domain.Quiniela {
@@ -125,13 +138,13 @@ func pendingMembership() *domain.GroupMembership {
 
 func newGroupHandler(t *testing.T, qs *stubQuinielaSvc, ms *stubMemberSvc) *handler.GroupHandler {
 	t.Helper()
-	return handler.NewGroupHandler(qs, ms, &stubGroupAuthz{}, &stubSystemParamSvc{}, zaptest.NewLogger(t))
+	return handler.NewGroupHandler(qs, ms, &stubGroupAuthz{}, &stubSystemParamSvc{}, nil, nil, zaptest.NewLogger(t))
 }
 
 // newGroupHandlerWithAuthz is used by tests that need to control the authz outcome.
 func newGroupHandlerWithAuthz(t *testing.T, qs *stubQuinielaSvc, ms *stubMemberSvc, authz *stubGroupAuthz) *handler.GroupHandler {
 	t.Helper()
-	return handler.NewGroupHandler(qs, ms, authz, &stubSystemParamSvc{}, zaptest.NewLogger(t))
+	return handler.NewGroupHandler(qs, ms, authz, &stubSystemParamSvc{}, nil, nil, zaptest.NewLogger(t))
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
@@ -1141,5 +1154,236 @@ func TestCheckName_ServiceError_Returns500(t *testing.T) {
 
 	if rec.Code == http.StatusOK {
 		t.Errorf("expected error response on service failure, got 200")
+	}
+}
+
+// ── GetLivePredictions ────────────────────────────────────────────────────────
+
+func liveMatch() *domain.Match {
+	return &domain.Match{
+		ID:        5,
+		HomeTeam:  "Brazil",
+		AwayTeam:  "Argentina",
+		Status:    domain.MatchStatusLive,
+		Phase:     domain.PhaseGroupStage,
+		KickoffAt: time.Now(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+}
+
+func liveActiveMember(userID int, name string) *domain.GroupMembership {
+	now := time.Now()
+	return &domain.GroupMembership{
+		ID:          userID * 10,
+		QuinielaID:  1,
+		UserID:      userID,
+		DisplayName: name,
+		Status:      domain.MembershipActive,
+		JoinedAt:    &now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+}
+
+func TestGetLivePredictions_NoLiveMatches_ReturnsEmptyArrays(t *testing.T) {
+	matchSvc := &stubMatchSvc{matches: nil}
+	predRepo := &stubPredRepo{}
+	ms := &stubMemberSvc{memberships: []*domain.GroupMembership{liveActiveMember(10, "Alice")}}
+
+	h := newGroupHandlerWithLiveDeps(t, &stubQuinielaSvc{}, ms, matchSvc, predRepo)
+	req := httptest.NewRequest(http.MethodGet, "/groups/1/live-predictions", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	matches := resp["live_matches"].([]interface{})
+	users := resp["user_predictions"].([]interface{})
+	if len(matches) != 0 || len(users) != 0 {
+		t.Errorf("expected empty arrays when no live matches, got matches=%d users=%d", len(matches), len(users))
+	}
+}
+
+func TestGetLivePredictions_WithLiveMatchAndPrediction_Returns200(t *testing.T) {
+	match := liveMatch()
+	matchSvc := &stubMatchSvc{matches: []*domain.Match{match}}
+
+	pred := &domain.Prediction{
+		ID:        1,
+		UserID:    10,
+		MatchID:   match.ID,
+		HomeScore: 2,
+		AwayScore: 1,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	predRepo := &stubPredRepo{preds: []*domain.Prediction{pred}}
+	ms := &stubMemberSvc{memberships: []*domain.GroupMembership{liveActiveMember(10, "Alice")}}
+
+	h := newGroupHandlerWithLiveDeps(t, &stubQuinielaSvc{}, ms, matchSvc, predRepo)
+	req := httptest.NewRequest(http.MethodGet, "/groups/1/live-predictions", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp struct {
+		LiveMatches     []map[string]interface{} `json:"live_matches"`
+		UserPredictions []struct {
+			UserID      int    `json:"user_id"`
+			DisplayName string `json:"display_name"`
+			Predictions []struct {
+				MatchID       int  `json:"match_id"`
+				HomeScore     int  `json:"home_score"`
+				AwayScore     int  `json:"away_score"`
+				HasPrediction bool `json:"has_prediction"`
+			} `json:"predictions"`
+		} `json:"user_predictions"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.LiveMatches) != 1 {
+		t.Fatalf("expected 1 live match, got %d", len(resp.LiveMatches))
+	}
+	if len(resp.UserPredictions) != 1 {
+		t.Fatalf("expected 1 user row, got %d", len(resp.UserPredictions))
+	}
+	row := resp.UserPredictions[0]
+	if row.UserID != 10 || row.DisplayName != "Alice" {
+		t.Errorf("unexpected user row: %+v", row)
+	}
+	if len(row.Predictions) != 1 {
+		t.Fatalf("expected 1 prediction slot, got %d", len(row.Predictions))
+	}
+	snap := row.Predictions[0]
+	if !snap.HasPrediction || snap.HomeScore != 2 || snap.AwayScore != 1 {
+		t.Errorf("unexpected prediction snapshot: %+v", snap)
+	}
+}
+
+func TestGetLivePredictions_MemberWithoutPrediction_HasPredictionFalse(t *testing.T) {
+	match := liveMatch()
+	matchSvc := &stubMatchSvc{matches: []*domain.Match{match}}
+	predRepo := &stubPredRepo{preds: nil} // no predictions submitted
+	ms := &stubMemberSvc{memberships: []*domain.GroupMembership{liveActiveMember(10, "Alice")}}
+
+	h := newGroupHandlerWithLiveDeps(t, &stubQuinielaSvc{}, ms, matchSvc, predRepo)
+	req := httptest.NewRequest(http.MethodGet, "/groups/1/live-predictions", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp struct {
+		UserPredictions []struct {
+			Predictions []struct {
+				HasPrediction bool `json:"has_prediction"`
+			} `json:"predictions"`
+		} `json:"user_predictions"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.UserPredictions) == 0 || resp.UserPredictions[0].Predictions[0].HasPrediction {
+		t.Error("expected has_prediction=false when no prediction submitted")
+	}
+}
+
+func TestGetLivePredictions_PendingMembersExcluded(t *testing.T) {
+	match := liveMatch()
+	matchSvc := &stubMatchSvc{matches: []*domain.Match{match}}
+	predRepo := &stubPredRepo{}
+
+	now := time.Now()
+	pending := &domain.GroupMembership{
+		ID: 99, QuinielaID: 1, UserID: 20, DisplayName: "Bob",
+		Status: domain.MembershipPending, CreatedAt: now, UpdatedAt: now,
+	}
+	ms := &stubMemberSvc{memberships: []*domain.GroupMembership{
+		liveActiveMember(10, "Alice"),
+		pending,
+	}}
+
+	h := newGroupHandlerWithLiveDeps(t, &stubQuinielaSvc{}, ms, matchSvc, predRepo)
+	req := httptest.NewRequest(http.MethodGet, "/groups/1/live-predictions", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp struct {
+		UserPredictions []struct{ UserID int `json:"user_id"` } `json:"user_predictions"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.UserPredictions) != 1 || resp.UserPredictions[0].UserID != 10 {
+		t.Errorf("expected only active member Alice, got %+v", resp.UserPredictions)
+	}
+}
+
+func TestGetLivePredictions_MatchServiceError_Returns500(t *testing.T) {
+	matchSvc := &stubMatchSvc{err: errors.New(errDBDown)}
+	predRepo := &stubPredRepo{}
+	ms := &stubMemberSvc{}
+
+	h := newGroupHandlerWithLiveDeps(t, &stubQuinielaSvc{}, ms, matchSvc, predRepo)
+	req := httptest.NewRequest(http.MethodGet, "/groups/1/live-predictions", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected error status on match service failure, got 200")
+	}
+}
+
+func TestGetLivePredictions_PredRepoError_Returns500(t *testing.T) {
+	matchSvc := &stubMatchSvc{matches: []*domain.Match{liveMatch()}}
+	predRepo := &stubPredRepo{err: errors.New(errDBDown)}
+	ms := &stubMemberSvc{memberships: []*domain.GroupMembership{liveActiveMember(10, "Alice")}}
+
+	h := newGroupHandlerWithLiveDeps(t, &stubQuinielaSvc{}, ms, matchSvc, predRepo)
+	req := httptest.NewRequest(http.MethodGet, "/groups/1/live-predictions", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected error status on pred repo failure, got 200")
+	}
+}
+
+func TestGetLivePredictions_MemberServiceError_Returns500(t *testing.T) {
+	matchSvc := &stubMatchSvc{matches: []*domain.Match{liveMatch()}}
+	predRepo := &stubPredRepo{}
+	ms := &stubMemberSvc{err: errors.New(errDBDown)}
+
+	h := newGroupHandlerWithLiveDeps(t, &stubQuinielaSvc{}, ms, matchSvc, predRepo)
+	req := httptest.NewRequest(http.MethodGet, "/groups/1/live-predictions", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected error status on member service failure, got 200")
+	}
+}
+
+func TestGetLivePredictions_InvalidID_Returns400(t *testing.T) {
+	h := newGroupHandlerWithLiveDeps(t, &stubQuinielaSvc{}, &stubMemberSvc{}, &stubMatchSvc{}, &stubPredRepo{})
+	req := httptest.NewRequest(http.MethodGet, "/groups/not-a-number/live-predictions", nil)
+	rec := httptest.NewRecorder()
+	testGroupRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected error on invalid id, got 200")
 	}
 }
