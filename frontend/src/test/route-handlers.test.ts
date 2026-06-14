@@ -698,6 +698,24 @@ describe("GET /api/live/fixture/[id] – invalid id", () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it("returns 400 for negative id", async () => {
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/-5"),
+      makeFixtureCtx("-5"),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for float id", async () => {
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/42.5"),
+      makeFixtureCtx("42.5"),
+    );
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("GET /api/live/fixture/[id] – upstream OK", () => {
@@ -870,5 +888,214 @@ describe("GET /api/live/fixture/[id] – null inner fields (pre-match)", () => {
     expect(body.fixture.lineups[0].startXI).toEqual([]);
     expect(body.fixture.lineups[0].substitutes).toEqual([]);
     expect(body.fixture.events).toEqual([]);
+  });
+});
+
+// ── live/fixture/[id]/route – edge cases ─────────────────────────────────────
+
+describe("GET /api/live/fixture/[id] – null assist and halftime numbers", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    process.env.FOOTBALL_API_KEY = "test_key_fixture";
+  });
+
+  it("maps null assist to null in the assist field", async () => {
+    // Covers the ev.assist?.name ?? null branch where assist is null.
+    const payload = {
+      response: [
+        {
+          fixture: {
+            id: 200,
+            date: "2026-06-15T20:00:00Z",
+            status: { short: "FT", elapsed: 90 },
+            venue: { name: "Stadium X", city: "City" },
+          },
+          league: { round: "Quarter-final" },
+          teams: {
+            home: { name: "Spain", logo: "" },
+            away: { name: "Portugal", logo: "" },
+          },
+          goals: { home: 2, away: 1 },
+          score: { halftime: { home: 1, away: 0 } },
+          lineups: [],
+          events: [
+            {
+              time: { elapsed: 34, extra: null },
+              team: { name: "Spain" },
+              player: { name: "Morata" },
+              assist: null, // null assist — must not throw
+              type: "Goal",
+              detail: "Normal Goal",
+            },
+          ],
+        },
+      ],
+    };
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(payload), { status: 200 }),
+    );
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/200"),
+      makeFixtureCtx("200"),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fixture.events[0].assist).toBeNull();
+    // Halftime values are numbers (covers the non-null halftime branch).
+    expect(body.fixture.halftimeHome).toBe(1);
+    expect(body.fixture.halftimeAway).toBe(0);
+  });
+
+  it("maps venue name null inside venue object to null", async () => {
+    // Covers item.fixture.venue?.name ?? null when venue exists but name is null.
+    const payload = {
+      response: [
+        {
+          fixture: {
+            id: 201,
+            date: "2026-06-16T20:00:00Z",
+            status: { short: "NS", elapsed: null },
+            venue: { name: null, city: "Unknown City" },
+          },
+          league: { round: "Group Stage - 1" },
+          teams: {
+            home: { name: "Japan", logo: "" },
+            away: { name: "Korea", logo: "" },
+          },
+          goals: { home: null, away: null },
+          score: { halftime: { home: null, away: null } },
+          lineups: [],
+          events: [],
+        },
+      ],
+    };
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(payload), { status: 200 }),
+    );
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/201"),
+      makeFixtureCtx("201"),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fixture.venue).toBeNull();
+  });
+});
+
+describe("GET /api/live/fixture/[id] – event with missing optional fields", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    process.env.FOOTBALL_API_KEY = "test_key_fixture";
+  });
+
+  it("falls back to defaults for null event fields", async () => {
+    // Covers the ?? fallback branches in events.map:
+    // ev.time?.elapsed ?? 0, ev.team?.name ?? "", ev.player?.name ?? "",
+    // ev.type ?? "", ev.detail ?? ""
+    const payload = {
+      response: [
+        {
+          fixture: {
+            id: 203,
+            date: "2026-06-18T20:00:00Z",
+            status: { short: "HT", elapsed: 45 },
+            venue: { name: "Rose Bowl", city: "Pasadena" },
+          },
+          league: { round: "Semi-final" },
+          teams: {
+            home: { name: "France", logo: "" },
+            away: { name: "England", logo: "" },
+          },
+          goals: { home: 0, away: 0 },
+          score: { halftime: { home: 0, away: 0 } },
+          lineups: [],
+          events: [
+            {
+              time: null,
+              team: null,
+              player: null,
+              assist: null,
+              type: null,
+              detail: null,
+            },
+          ],
+        },
+      ],
+    };
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(payload), { status: 200 }),
+    );
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/203"),
+      makeFixtureCtx("203"),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fixture.events).toHaveLength(1);
+    const ev = body.fixture.events[0];
+    expect(ev.elapsed).toBe(0);
+    expect(ev.team).toBe("");
+    expect(ev.player).toBe("");
+    expect(ev.type).toBe("");
+    expect(ev.detail).toBe("");
+  });
+});
+
+describe("GET /api/live/fixture/[id] – lineups with substitutes", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    process.env.FOOTBALL_API_KEY = "test_key_fixture";
+  });
+
+  it("maps substitute players in lineup", async () => {
+    const payload = {
+      response: [
+        {
+          fixture: {
+            id: 202,
+            date: "2026-06-17T20:00:00Z",
+            status: { short: "2H", elapsed: 60 },
+            venue: { name: "Estadio Azteca", city: "Mexico City" },
+          },
+          league: { round: "Group Stage - 2" },
+          teams: {
+            home: { name: "Mexico", logo: "" },
+            away: { name: "USA", logo: "" },
+          },
+          goals: { home: 1, away: 1 },
+          score: { halftime: { home: 1, away: 0 } },
+          lineups: [
+            {
+              team: { name: "Mexico" },
+              formation: "4-4-2",
+              startXI: [
+                { player: { id: 10, name: "Memo Ochoa", number: 13, pos: "G" } },
+              ],
+              substitutes: [
+                { player: { id: 20, name: "Raul Jimenez", number: 9, pos: "F" } },
+              ],
+            },
+          ],
+          events: [],
+        },
+      ],
+    };
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(payload), { status: 200 }),
+    );
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/202"),
+      makeFixtureCtx("202"),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fixture.lineups[0].substitutes).toHaveLength(1);
+    expect(body.fixture.lineups[0].substitutes[0].name).toBe("Raul Jimenez");
+    expect(body.fixture.lineups[0].substitutes[0].number).toBe(9);
+    expect(body.fixture.lineups[0].substitutes[0].pos).toBe("F");
   });
 });

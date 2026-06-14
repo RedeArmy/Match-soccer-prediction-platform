@@ -204,9 +204,7 @@ function FixtureDetailPanel({
       fetch(`/api/live/fixture/${fixtureId}`).then((r) => r.json()),
     // Only poll while the match is live; pre-match and post-match details are static.
     refetchInterval: (query) => {
-      const fixture = (
-        query.state.data as { fixture?: FixtureDetail } | undefined
-      )?.fixture;
+      const fixture = query.state.data?.fixture;
       return fixture && isLive(fixture.status) ? LIVE_POLL_MS : false;
     },
     refetchOnWindowFocus: false,

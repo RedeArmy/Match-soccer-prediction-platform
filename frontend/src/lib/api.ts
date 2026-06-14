@@ -478,11 +478,8 @@ class APIClient {
     if (startDate) params.set("start_date", startDate);
     if (endDate) params.set("end_date", endDate);
     const qs = params.toString();
-    return this.request(
-      `/api/v1/admin/match-sync/today${qs ? `?${qs}` : ""}`,
-      { method: "POST" },
-      token,
-    );
+    const url = "/api/v1/admin/match-sync/today" + (qs ? "?" + qs : "");
+    return this.request(url, { method: "POST" }, token);
   }
 
   // ── Admin: bank transfers ─────────────────────────────────────────────────

@@ -23,6 +23,7 @@ type stubSyncMatchRepo struct {
 	updateSyncAt  int
 	linkErr       error
 	candidatesErr error
+	kickoffErr    error
 }
 
 func (r *stubSyncMatchRepo) Create(_ context.Context, _ *domain.Match) error { return nil }
@@ -52,7 +53,7 @@ func (r *stubSyncMatchRepo) FindByTeams(_ context.Context, _, _ string) (*domain
 	return nil, nil
 }
 func (r *stubSyncMatchRepo) UpdateKickoff(_ context.Context, _ int, _ time.Time) error {
-	return nil
+	return r.kickoffErr
 }
 func (r *stubSyncMatchRepo) UpdateSyncState(_ context.Context, _ int) error {
 	r.updateSyncAt++
@@ -608,4 +609,283 @@ func (p *stubProviderFn) GetLiveFixtures(_ context.Context, _, _ int) ([]*footba
 }
 func (p *stubProviderFn) GetFixturesByDate(_ context.Context, _, _ int, _ string) ([]*footballprovider.Fixture, error) {
 	return nil, nil
+}
+
+// ── Additional DailyFixtureSync coverage ─────────────────────────────────────
+
+func TestMatchSync_DailyFixtureSync_FinishedMatch_IsNoOp(t *testing.T) {
+	// applyFinishedTransition: match already Finished → UpdateResult must not be called.
+	id := int64(201)
+	candidate := &domain.Match{
+		ID: 10, Status: domain.MatchStatusFinished,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-3 * time.Hour),
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusFullTime,
+		HomeScore:  1, AwayScore: 0,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matchSvc.finished != 0 {
+		t.Errorf("UpdateResult should not be called when match is already Finished, got %d calls", matchSvc.finished)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_CancelledMatch_IsNoOp(t *testing.T) {
+	// applyFinishedTransition: match already Cancelled → UpdateResult must not be called.
+	id := int64(202)
+	candidate := &domain.Match{
+		ID: 11, Status: domain.MatchStatusCancelled,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-3 * time.Hour),
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusFullTime,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matchSvc.finished != 0 {
+		t.Errorf("UpdateResult should not be called when match is already Cancelled, got %d calls", matchSvc.finished)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_UpdateKickoffFails_ContinuesGracefully(t *testing.T) {
+	// maybeCorrectKickoff: UpdateKickoff returns error → log and skip, no panic.
+	id := int64(203)
+	kickoff := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+	candidate := &domain.Match{
+		ID: 12, Status: domain.MatchStatusScheduled,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        kickoff,
+	}
+	repo := &stubSyncMatchRepo{
+		candidates: []*domain.Match{candidate},
+		kickoffErr: errors.New("db write error"),
+	}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		KickoffUTC: kickoff.Add(10 * time.Minute), // triggers UpdateKickoff
+		Status:     footballprovider.StatusNotStarted,
+	}}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Updated must remain 0 because UpdateKickoff failed.
+	if result.Updated != 0 {
+		t.Errorf("Updated: want 0 on UpdateKickoff failure, got %d", result.Updated)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_KickoffDiffUnder60s_SkipsUpdate(t *testing.T) {
+	// maybeCorrectKickoff: diff ≤ 60 s → no UpdateKickoff call.
+	id := int64(204)
+	kickoff := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+	candidate := &domain.Match{
+		ID: 13, Status: domain.MatchStatusScheduled,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        kickoff,
+	}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		KickoffUTC: kickoff.Add(30 * time.Second), // diff = 30 s ≤ 60 s
+		Status:     footballprovider.StatusNotStarted,
+	}}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Updated != 0 {
+		t.Errorf("Updated: want 0 when diff ≤ 60 s, got %d", result.Updated)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_LiveMatch_KickoffNotUpdated(t *testing.T) {
+	// maybeCorrectKickoff: only runs for Scheduled matches; Live match is skipped.
+	id := int64(205)
+	kickoff := time.Now().Add(-30 * time.Minute).Truncate(time.Second)
+	candidate := &domain.Match{
+		ID: 14, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        kickoff,
+	}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		KickoffUTC: kickoff.Add(30 * time.Minute), // large diff but match is Live
+		Status:     footballprovider.StatusFirstHalf,
+	}}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Updated != 0 {
+		t.Errorf("Updated: want 0 for Live match, got %d", result.Updated)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_BothDates_FiltersCorrectly(t *testing.T) {
+	// filterByDateRange with both start and end set.
+	eid1, eid2, eid3 := int64(301), int64(302), int64(303)
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	before := &domain.Match{
+		ID: 20, Status: domain.MatchStatusScheduled,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &eid1,
+		KickoffAt:        today.Add(-48 * time.Hour),
+	}
+	within := &domain.Match{
+		ID: 21, Status: domain.MatchStatusScheduled,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &eid2,
+		KickoffAt:        today.Add(2 * time.Hour),
+	}
+	after := &domain.Match{
+		ID: 22, Status: domain.MatchStatusScheduled,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &eid3,
+		KickoffAt:        today.Add(72 * time.Hour),
+	}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{before, within, after}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{Status: footballprovider.StatusNotStarted}}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	start := today
+	end := today.Add(24 * time.Hour)
+	result, err := svc.DailyFixtureSync(context.Background(), &start, &end)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Total != 1 {
+		t.Errorf("total: want 1 (only 'within' match), got %d", result.Total)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_UpdateResultNonValidationError_LogsAndContinues(t *testing.T) {
+	id := int64(401)
+	candidate := &domain.Match{
+		ID: 40, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-2 * time.Hour),
+	}
+	matchSvc := &stubSyncMatchSvc{finishErr: errors.New("database unavailable")}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusFullTime,
+		HomeScore:  1, AwayScore: 0,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matchSvc.finished != 1 {
+		t.Errorf("UpdateResult calls: want 1, got %d", matchSvc.finished)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_StartMatchNonValidationError_LogsAndContinues(t *testing.T) {
+	id := int64(402)
+	candidate := &domain.Match{
+		ID: 41, Status: domain.MatchStatusScheduled,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-5 * time.Minute),
+	}
+	matchSvc := &stubSyncMatchSvc{startErr: errors.New("database unavailable")}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusFirstHalf,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matchSvc.started != 1 {
+		t.Errorf("StartMatch calls: want 1, got %d", matchSvc.started)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_AfterExtraTime_UsesAETWinMethod(t *testing.T) {
+	id := int64(403)
+	candidate := &domain.Match{
+		ID: 42, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-2 * time.Hour),
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusAfterET,
+		HomeScore:  2, AwayScore: 1,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matchSvc.finished != 1 {
+		t.Errorf("UpdateResult calls: want 1, got %d", matchSvc.finished)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_StartMatchValidationError_IsIdempotentViaDaily(t *testing.T) {
+	id := int64(404)
+	candidate := &domain.Match{
+		ID: 43, Status: domain.MatchStatusScheduled,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-5 * time.Minute),
+	}
+	matchSvc := &stubSyncMatchSvc{startErr: apperrors.Validation("already live")}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusFirstHalf,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matchSvc.started != 1 {
+		t.Errorf("StartMatch calls: want 1, got %d", matchSvc.started)
+	}
 }

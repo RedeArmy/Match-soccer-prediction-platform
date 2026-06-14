@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -323,5 +324,212 @@ func TestGetFixture_UnknownStatus_NormalisedToUnknown(t *testing.T) {
 	}
 	if fix.Status != footballprovider.StatusUnknown {
 		t.Errorf("expected StatusUnknown, got %q", fix.Status)
+	}
+}
+
+// ── GetFixturesByDate ─────────────────────────────────────────────────────────
+
+func TestGetFixturesByDate_ReturnsAllFixtures(t *testing.T) {
+	// Two fixtures on the same date; both should be returned.
+	type resp struct {
+		Results  int              `json:"results"`
+		Errors   []any            `json:"errors"`
+		Response []map[string]any `json:"response"`
+	}
+	makeItem := func(id int64, status string) map[string]any {
+		return map[string]any{
+			"fixture": map[string]any{
+				"id":     id,
+				"date":   "2026-06-14T20:00:00+00:00",
+				"status": map[string]any{"short": status, "elapsed": nil},
+			},
+			"teams": map[string]any{
+				"home": map[string]any{"name": "Mexico"},
+				"away": map[string]any{"name": "Canada"},
+			},
+			"goals": map[string]any{"home": intPtr(1), "away": intPtr(0)},
+		}
+	}
+	body, _ := json.Marshal(resp{
+		Results: 2,
+		Errors:  []any{},
+		Response: []map[string]any{
+			makeItem(101, "FT"),
+			makeItem(102, "NS"),
+		},
+	})
+	srv := buildServer(t, http.StatusOK, string(body))
+	defer srv.Close()
+
+	fixtures, err := newClient(t, srv).GetFixturesByDate(context.Background(), 1, 2026, "2026-06-14")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fixtures) != 2 {
+		t.Errorf("expected 2 fixtures, got %d", len(fixtures))
+	}
+	if fixtures[0].ExternalID != 101 {
+		t.Errorf("first fixture ExternalID: got %d, want 101", fixtures[0].ExternalID)
+	}
+	if fixtures[1].Status != footballprovider.StatusNotStarted {
+		t.Errorf("second fixture status: got %q, want NS", fixtures[1].Status)
+	}
+}
+
+func TestGetFixturesByDate_EmptyDate_ReturnsEmpty(t *testing.T) {
+	body := `{"results":0,"errors":[],"response":[]}`
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	fixtures, err := newClient(t, srv).GetFixturesByDate(context.Background(), 1, 2026, "2026-06-15")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fixtures) != 0 {
+		t.Errorf("expected 0 fixtures, got %d", len(fixtures))
+	}
+}
+
+func TestGetFixturesByDate_RateLimit_ReturnsError(t *testing.T) {
+	srv := buildServer(t, http.StatusTooManyRequests, "")
+	defer srv.Close()
+
+	_, err := newClient(t, srv).GetFixturesByDate(context.Background(), 1, 2026, "2026-06-14")
+	if err == nil {
+		t.Fatal("expected error on 429, got nil")
+	}
+}
+
+func TestGetFixturesByDate_APIError_ReturnsError(t *testing.T) {
+	body := `{"results":0,"errors":{"key":"invalid"},"response":[]}`
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	_, err := newClient(t, srv).GetFixturesByDate(context.Background(), 1, 2026, "2026-06-14")
+	if err == nil {
+		t.Fatal("expected error on API error field, got nil")
+	}
+}
+
+// ── Team name decoding ────────────────────────────────────────────────────────
+
+func buildFixtureJSONWithTeams(id int64, homeTeam, awayTeam string) string {
+	type fixtureResp struct {
+		Results  int              `json:"results"`
+		Errors   []any            `json:"errors"`
+		Response []map[string]any `json:"response"`
+	}
+	item := map[string]any{
+		"fixture": map[string]any{
+			"id":     id,
+			"date":   "2026-06-14T20:00:00+00:00",
+			"status": map[string]any{"short": "NS", "elapsed": nil},
+		},
+		"teams": map[string]any{
+			"home": map[string]any{"name": homeTeam},
+			"away": map[string]any{"name": awayTeam},
+		},
+		"goals": map[string]any{"home": nil, "away": nil},
+	}
+	r := fixtureResp{Results: 1, Errors: []any{}, Response: []map[string]any{item}}
+	b, _ := json.Marshal(r)
+	return string(b)
+}
+
+func TestGetFixture_TeamNames_DecodedFromTeamsField(t *testing.T) {
+	body := buildFixtureJSONWithTeams(999, "Argentina", "Brazil")
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	fix, err := newClient(t, srv).GetFixture(context.Background(), 999)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fix.HomeTeam != "Argentina" {
+		t.Errorf("HomeTeam: got %q, want Argentina", fix.HomeTeam)
+	}
+	if fix.AwayTeam != "Brazil" {
+		t.Errorf("AwayTeam: got %q, want Brazil", fix.AwayTeam)
+	}
+}
+
+func TestGetLiveFixtures_TeamNames_DecodedFromTeamsField(t *testing.T) {
+	body := `{"results":1,"errors":[],"response":[` +
+		`{"fixture":{"id":42,"date":"2026-06-14T20:00:00+00:00","status":{"short":"1H","elapsed":30}},` +
+		`"teams":{"home":{"name":"Spain"},"away":{"name":"Germany"}},` +
+		`"goals":{"home":1,"away":0}}]}`
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	fixtures, err := newClient(t, srv).GetLiveFixtures(context.Background(), 1, 2026)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fixtures) != 1 {
+		t.Fatalf("expected 1 fixture, got %d", len(fixtures))
+	}
+	if fixtures[0].HomeTeam != "Spain" {
+		t.Errorf("HomeTeam: got %q, want Spain", fixtures[0].HomeTeam)
+	}
+	if fixtures[0].AwayTeam != "Germany" {
+		t.Errorf("AwayTeam: got %q, want Germany", fixtures[0].AwayTeam)
+	}
+}
+
+func TestGetFixturesByDate_TeamNames_DecodedFromTeamsField(t *testing.T) {
+	body := buildFixtureJSONWithTeams(55, "France", "Portugal")
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	fixtures, err := newClient(t, srv).GetFixturesByDate(context.Background(), 1, 2026, "2026-06-14")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fixtures) != 1 {
+		t.Fatalf("expected 1 fixture, got %d", len(fixtures))
+	}
+	if fixtures[0].HomeTeam != "France" {
+		t.Errorf("HomeTeam: got %q, want France", fixtures[0].HomeTeam)
+	}
+	if fixtures[0].AwayTeam != "Portugal" {
+		t.Errorf("AwayTeam: got %q, want Portugal", fixtures[0].AwayTeam)
+	}
+}
+
+// TestGetFixture_NilGoals_DefaultsToZero verifies that nil goal values in the
+// API response are decoded as 0 rather than panicking.
+func TestGetFixture_NilGoals_DefaultsToZero(t *testing.T) {
+	body := buildFixtureJSONWithTeams(77, "USA", "Mexico")
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	fix, err := newClient(t, srv).GetFixture(context.Background(), 77)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fix.HomeScore != 0 || fix.AwayScore != 0 {
+		t.Errorf("expected zero scores for nil goals, got home=%d away=%d", fix.HomeScore, fix.AwayScore)
+	}
+}
+
+// TestGetFixturesByDate_PassesQueryParams verifies that league, season, and
+// date are forwarded as query parameters to the API.
+func TestGetFixturesByDate_PassesQueryParams(t *testing.T) {
+	var capturedQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"results":0,"errors":[],"response":[]}`))
+	}))
+	defer srv.Close()
+
+	client := footballprovider.NewAPIFootballClient("test-key", srv.URL, srv.Client())
+	_, _ = client.GetFixturesByDate(context.Background(), 123, 2026, "2026-06-14")
+
+	for _, want := range []string{"league=123", "season=2026", "date=2026-06-14"} {
+		if !strings.Contains(capturedQuery, want) {
+			t.Errorf("expected query param %q in %q", want, capturedQuery)
+		}
 	}
 }
