@@ -253,6 +253,13 @@ describe('api – group methods', () => {
     expect(String(url)).toContain('/api/v1/groups/1/members/99')
     expect((init as RequestInit).method).toBe('DELETE')
   })
+
+  it('getGroupLivePredictions sends GET to /api/v1/groups/:id/live-predictions', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ live_matches: [], user_predictions: [] }))
+    await api.getGroupLivePredictions('tok', 7)
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/groups/7/live-predictions')
+  })
 })
 
 describe('api – match and prediction methods', () => {
@@ -697,6 +704,59 @@ describe('api – adminStartMatch', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(String(url)).toContain('/api/v1/matches/5/start')
     expect((init as RequestInit).method).toBe('POST')
+  })
+})
+
+describe('api – adminCancelMatch', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends POST to /api/v1/matches/:id/cancel with no body', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 7, status: 'cancelled' }))
+    await api.adminCancelMatch('tok', 7)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/matches/7/cancel')
+    expect((init as RequestInit).method).toBe('POST')
+  })
+})
+
+describe('api – adminCorrectMatchResult', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends POST to /api/v1/matches/:id/correct-result with score data', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 4, home_score: 3, away_score: 1 }))
+    await api.adminCorrectMatchResult('tok', 4, { home_score: 3, away_score: 1 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/matches/4/correct-result')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ home_score: 3, away_score: 1 })
+  })
+
+  it('includes win_method when provided', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 4, home_score: 1, away_score: 0, win_method: 'extra_time' }))
+    await api.adminCorrectMatchResult('tok', 4, { home_score: 1, away_score: 0, win_method: 'extra_time' })
+    const [, init] = mockFetch.mock.calls[0]
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      home_score: 1, away_score: 0, win_method: 'extra_time',
+    })
+  })
+})
+
+describe('api – checkGroupName', () => {
+  beforeEach(() => mockFetch.mockReset())
+
+  it('sends GET to /api/v1/groups/check-name with name param', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ available: true }))
+    const result = await api.checkGroupName('tok', 'MiGrupo')
+    const [url] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('/api/v1/groups/check-name')
+    expect(String(url)).toContain('name=MiGrupo')
+    expect(result.available).toBe(true)
+  })
+
+  it('returns available=false when name is taken', async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ available: false }))
+    const result = await api.checkGroupName('tok', 'Ocupado')
+    expect(result.available).toBe(false)
   })
 })
 

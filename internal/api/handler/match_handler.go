@@ -168,30 +168,11 @@ func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/matches/{id} [patch]
 func (h *MatchHandler) UpdateResult(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r, "id")
-	if err != nil {
-		writeError(w, r, h.log, err)
+	id, homeScore, awayScore, winMethod, ok := h.parseScoreChange(w, r)
+	if !ok {
 		return
 	}
-	req, err := decodeJSON[updateResultRequest](r)
-	if err != nil {
-		writeError(w, r, h.log, err)
-		return
-	}
-	if req.HomeScore == nil || req.AwayScore == nil {
-		writeError(w, r, h.log, apperrors.Validation("request body is missing required fields"))
-		return
-	}
-	var winMethod *domain.WinMethod
-	if req.WinMethod != nil {
-		wm, err := domain.ParseWinMethod(*req.WinMethod)
-		if err != nil {
-			writeError(w, r, h.log, err)
-			return
-		}
-		winMethod = &wm
-	}
-	match, err := h.svc.UpdateResult(r.Context(), id, *req.HomeScore, *req.AwayScore, winMethod)
+	match, err := h.svc.UpdateResult(r.Context(), id, homeScore, awayScore, winMethod)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
@@ -224,6 +205,91 @@ func (h *MatchHandler) StartMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, matchToResponse(match))
+}
+
+// CancelMatch handles POST /api/v1/matches/{id}/cancel (admin only).
+//
+// @Summary      Cancel a match
+// @Description  Admin only. Manually cancels a scheduled or live match.
+// @Tags         matches
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Match ID"
+// @Success      200  {object}  handler.MatchResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      422  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/matches/{id}/cancel [post]
+func (h *MatchHandler) CancelMatch(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	match, err := h.svc.CancelMatch(r.Context(), id)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, matchToResponse(match))
+}
+
+// CorrectMatchResult handles POST /api/v1/matches/{id}/correct-result (admin only).
+//
+// @Summary      Correct a match result
+// @Description  Admin only. Overwrites the score on a live or finished match and re-triggers scoring.
+// @Tags         matches
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                          true  "Match ID"
+// @Param        body  body      handler.updateResultRequest  true  "Corrected score"
+// @Success      200   {object}  handler.MatchResponse
+// @Failure      404   {object}  handler.ErrorResponse
+// @Failure      422   {object}  handler.ErrorResponse
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/matches/{id}/correct-result [post]
+func (h *MatchHandler) CorrectMatchResult(w http.ResponseWriter, r *http.Request) {
+	id, homeScore, awayScore, winMethod, ok := h.parseScoreChange(w, r)
+	if !ok {
+		return
+	}
+	match, err := h.svc.CorrectResult(r.Context(), id, homeScore, awayScore, winMethod)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, matchToResponse(match))
+}
+
+// parseScoreChange is shared by UpdateResult and CorrectMatchResult. It parses
+// the path ID, decodes the JSON body, validates that both scores are present,
+// and resolves the optional win method. Returns ok=false when it has already
+// written an error response and the caller should return immediately.
+func (h *MatchHandler) parseScoreChange(w http.ResponseWriter, r *http.Request) (id, homeScore, awayScore int, winMethod *domain.WinMethod, ok bool) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	req, err := decodeJSON[updateResultRequest](r)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	if req.HomeScore == nil || req.AwayScore == nil {
+		writeError(w, r, h.log, apperrors.Validation("request body is missing required fields"))
+		return
+	}
+	if req.WinMethod != nil {
+		wm, err := domain.ParseWinMethod(*req.WinMethod)
+		if err != nil {
+			writeError(w, r, h.log, err)
+			return
+		}
+		winMethod = &wm
+	}
+	return id, *req.HomeScore, *req.AwayScore, winMethod, true
 }
 
 // pathID extracts a numeric path parameter from the chi URL context.

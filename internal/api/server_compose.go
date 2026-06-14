@@ -296,7 +296,7 @@ func (s *Server) buildHandlers(
 		match:              handler.NewMatchHandler(matchSvc, s.log),
 		adminMatchSync:     handler.NewAdminMatchSyncHandler(matchSyncSvc, s.log),
 		prediction:         handler.NewPredictionHandler(predSvc, s.log),
-		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, groupAuthz, params, s.log),
+		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, groupAuthz, params, matchSvc, repos.pred, s.log),
 		leaderboard:        handler.NewLeaderboardHandler(ranker, groupAuthz, s.log),
 		publicGroup:        handler.NewPublicGroupHandler(quinielaSvc, ranker, s.log),
 		userStats:          handler.NewUserStatsHandler(userStatsSvc, s.log),

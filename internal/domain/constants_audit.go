@@ -7,6 +7,8 @@ const (
 	AuditActionMatchCreated         = "match.created"
 	AuditActionMatchStarted         = "match.started"
 	AuditActionMatchResultSet       = "match.result_set"
+	AuditActionMatchResultCorrected = "match.result_corrected"
+	AuditActionMatchCancelled       = "match.cancelled"
 	AuditActionTiebreakerQuestion   = "tiebreaker.question_set"
 	AuditActionTiebreakerResult     = "tiebreaker.result_confirmed"
 	AuditActionSlotConfirmed        = "tournament.slot_confirmed"

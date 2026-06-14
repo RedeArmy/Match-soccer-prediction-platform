@@ -1868,3 +1868,131 @@ func TestPredictionRepository_GetScoringCfgSnapshot_ReturnsEarliestEntry(t *test
 		t.Errorf("CorrectOutcome: got %d, want 2", snap.CorrectOutcome)
 	}
 }
+
+// ── ListByGroupAndMatches ─────────────────────────────────────────────────────
+
+func TestPredictionRepository_ListByGroupAndMatches_EmptyMatchIDs_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresPredictionRepository(testDB)
+
+	got, err := repo.ListByGroupAndMatches(context.Background(), 1, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for empty matchIDs, got %v", got)
+	}
+}
+
+func TestPredictionRepository_ListByGroupAndMatches_ReturnsPredictionsForActiveMembers(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	m := seedMatch(t)
+	q := seedQuiniela(t, u1.ID)
+	seedActiveMembership(t, q.ID, u1.ID)
+	seedActiveMembership(t, q.ID, u2.ID)
+
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	ctx := context.Background()
+
+	p1 := &domain.Prediction{UserID: u1.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	if _, err := repo.Upsert(ctx, p1); err != nil {
+		t.Fatalf("upsert u1 prediction: %v", err)
+	}
+	p2 := &domain.Prediction{UserID: u2.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 1}
+	if _, err := repo.Upsert(ctx, p2); err != nil {
+		t.Fatalf("upsert u2 prediction: %v", err)
+	}
+
+	got, err := repo.ListByGroupAndMatches(ctx, q.ID, []int{m.ID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 predictions, got %d", len(got))
+	}
+}
+
+func TestPredictionRepository_ListByGroupAndMatches_ExcludesNonMembers(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t) // not a member of the quiniela
+	m := seedMatch(t)
+	q := seedQuiniela(t, u1.ID)
+	seedActiveMembership(t, q.ID, u1.ID)
+
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	ctx := context.Background()
+
+	if _, err := repo.Upsert(ctx, &domain.Prediction{UserID: u1.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 0}); err != nil {
+		t.Fatalf("upsert u1: %v", err)
+	}
+	// u2 has a prediction but is not a member — must be excluded.
+	if _, err := repo.Upsert(ctx, &domain.Prediction{UserID: u2.ID, MatchID: m.ID, HomeScore: 3, AwayScore: 1}); err != nil {
+		t.Fatalf("upsert u2: %v", err)
+	}
+
+	got, err := repo.ListByGroupAndMatches(ctx, q.ID, []int{m.ID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].UserID != u1.ID {
+		t.Errorf("expected only u1 prediction, got %d rows", len(got))
+	}
+}
+
+func TestPredictionRepository_ListByGroupAndMatches_ExcludesPendingMembers(t *testing.T) {
+	cleanTables(t)
+	u1 := seedUser(t)
+	u2 := seedUser(t) // pending member
+	m := seedMatch(t)
+	q := seedQuiniela(t, u1.ID)
+	seedActiveMembership(t, q.ID, u1.ID)
+	seedMembership(t, q.ID, u2.ID, domain.MembershipPending, false)
+
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	ctx := context.Background()
+
+	if _, err := repo.Upsert(ctx, &domain.Prediction{UserID: u1.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 0}); err != nil {
+		t.Fatalf("upsert u1: %v", err)
+	}
+	if _, err := repo.Upsert(ctx, &domain.Prediction{UserID: u2.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}); err != nil {
+		t.Fatalf("upsert u2: %v", err)
+	}
+
+	got, err := repo.ListByGroupAndMatches(ctx, q.ID, []int{m.ID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].UserID != u1.ID {
+		t.Errorf("expected only active member prediction, got %d rows", len(got))
+	}
+}
+
+func TestPredictionRepository_ListByGroupAndMatches_MultipleMatches(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	m1 := seedMatch(t)
+	m2 := seedMatch(t)
+	q := seedQuiniela(t, u.ID)
+	seedActiveMembership(t, q.ID, u.ID)
+
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	ctx := context.Background()
+
+	if _, err := repo.Upsert(ctx, &domain.Prediction{UserID: u.ID, MatchID: m1.ID, HomeScore: 1, AwayScore: 0}); err != nil {
+		t.Fatalf("upsert m1: %v", err)
+	}
+	if _, err := repo.Upsert(ctx, &domain.Prediction{UserID: u.ID, MatchID: m2.ID, HomeScore: 2, AwayScore: 2}); err != nil {
+		t.Fatalf("upsert m2: %v", err)
+	}
+
+	got, err := repo.ListByGroupAndMatches(ctx, q.ID, []int{m1.ID, m2.ID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 predictions for 2 matches, got %d", len(got))
+	}
+}

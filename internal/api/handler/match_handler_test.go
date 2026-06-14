@@ -25,6 +25,8 @@ func newMatchRouter(svc *stubMatchSvc) http.Handler {
 	r.Get("/{id}", h.GetMatch)
 	r.Patch("/{id}", h.UpdateResult)
 	r.Post("/{id}/start", h.StartMatch)
+	r.Post("/{id}/cancel", h.CancelMatch)
+	r.Post("/{id}/correct-result", h.CorrectMatchResult)
 	return r
 }
 
@@ -236,5 +238,78 @@ func TestStartMatch_ServiceError_Returns422(t *testing.T) {
 	w := do(newMatchRouter(svc), http.MethodPost, "/1/start", "")
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+// ── CancelMatch ───────────────────────────────────────────────────────────────
+
+func TestCancelMatch_Success_Returns200(t *testing.T) {
+	svc := &stubMatchSvc{match: &domain.Match{ID: 1, Status: domain.MatchStatusCancelled}}
+	w := do(newMatchRouter(svc), http.MethodPost, "/1/cancel", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestCancelMatch_InvalidID_Returns422(t *testing.T) {
+	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPost, "/abc/cancel", "")
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestCancelMatch_ServiceError_Returns422(t *testing.T) {
+	svc := &stubMatchSvc{err: apperrors.Validation("only scheduled or live matches can be cancelled")}
+	w := do(newMatchRouter(svc), http.MethodPost, "/1/cancel", "")
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+// ── CorrectMatchResult ────────────────────────────────────────────────────────
+
+func TestCorrectMatchResult_Success_Returns200(t *testing.T) {
+	svc := &stubMatchSvc{match: &domain.Match{ID: 1, Status: domain.MatchStatusFinished}}
+	w := do(newMatchRouter(svc), http.MethodPost, "/1/correct-result", `{"home_score":3,"away_score":1}`)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestCorrectMatchResult_InvalidID_Returns422(t *testing.T) {
+	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPost, "/abc/correct-result", `{"home_score":1,"away_score":0}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestCorrectMatchResult_InvalidJSON_Returns422(t *testing.T) {
+	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPost, "/1/correct-result", `not json`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestCorrectMatchResult_MissingScores_Returns422(t *testing.T) {
+	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPost, "/1/correct-result", `{}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestCorrectMatchResult_ServiceError_Returns422(t *testing.T) {
+	svc := &stubMatchSvc{err: apperrors.Validation("result can only be corrected on a live or finished match")}
+	w := do(newMatchRouter(svc), http.MethodPost, "/1/correct-result", `{"home_score":2,"away_score":0}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestCorrectMatchResult_WithWinMethod_Returns200(t *testing.T) {
+	svc := &stubMatchSvc{match: &domain.Match{ID: 1, Status: domain.MatchStatusFinished}}
+	w := do(newMatchRouter(svc), http.MethodPost, "/1/correct-result",
+		`{"home_score":1,"away_score":0,"win_method":"extra_time"}`)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
 	}
 }

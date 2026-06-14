@@ -436,6 +436,9 @@ func (r *failOnUpdateRepo) ScoreMatchBatch(_ context.Context, _ int, scorer func
 func (r *failOnUpdateRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
 	return nil, nil
 }
+func (r *failOnUpdateRepo) ListByGroupAndMatches(_ context.Context, _ int, _ []int) ([]*domain.Prediction, error) {
+	return nil, nil
+}
 
 // TestScoreMatch_Idempotent_ReplayProducesSameScores verifies the DLQ-replay
 // safety guarantee: a second call to ScoreMatch for the same match must produce

@@ -109,6 +109,9 @@ func (r *stubTotalPointsPredRepo) ListAdmin(_ context.Context, _ repository.Pred
 func (r *stubTotalPointsPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
 	return r.roundPoints, r.roundPointsErr
 }
+func (r *stubTotalPointsPredRepo) ListByGroupAndMatches(_ context.Context, _ int, _ []int) ([]*domain.Prediction, error) {
+	return nil, nil
+}
 
 // stubTiebreakerRepo implements repository.TiebreakerRepository for ranking tests.
 type stubTiebreakerRepo struct {

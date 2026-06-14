@@ -38,6 +38,7 @@ import type {
   CursorPaged,
   AdminUserResponse,
   AdminUserProfileResponse,
+  LivePredictionsResponse,
 } from './api-types'
 
 // ── Base fetch ────────────────────────────────────────────────────────────────
@@ -139,6 +140,10 @@ class APIClient {
     return this.request(`/api/v1/groups/${groupId}/members/${membershipId}`, { method: 'DELETE' }, token)
   }
 
+  checkGroupName(token: string, name: string): Promise<{ available: boolean }> {
+    return this.request(`/api/v1/groups/check-name?name=${encodeURIComponent(name)}`, {}, token)
+  }
+
   createGroup(token: string, data: { name: string }): Promise<QuinielaResponse> {
     return this.request('/api/v1/groups', { method: 'POST', body: JSON.stringify(data) }, token)
   }
@@ -153,6 +158,10 @@ class APIClient {
 
   leaveGroup(token: string, id: number): Promise<void> {
     return this.request(`/api/v1/groups/${id}/members/me`, { method: 'DELETE' }, token)
+  }
+
+  getGroupLivePredictions(token: string, id: number): Promise<LivePredictionsResponse> {
+    return this.request(`/api/v1/groups/${id}/live-predictions`, {}, token)
   }
 
   // ── Matches ───────────────────────────────────────────────────────────────
@@ -270,6 +279,14 @@ class APIClient {
 
   adminUpdateMatchResult(token: string, id: number, data: { home_score: number; away_score: number; win_method?: string }): Promise<MatchResponse> {
     return this.request(`/api/v1/matches/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token)
+  }
+
+  adminCorrectMatchResult(token: string, id: number, data: { home_score: number; away_score: number; win_method?: string }): Promise<MatchResponse> {
+    return this.request(`/api/v1/matches/${id}/correct-result`, { method: 'POST', body: JSON.stringify(data) }, token)
+  }
+
+  adminCancelMatch(token: string, id: number): Promise<MatchResponse> {
+    return this.request(`/api/v1/matches/${id}/cancel`, { method: 'POST' }, token)
   }
 
   // ── Admin: bank transfers ─────────────────────────────────────────────────
