@@ -402,3 +402,159 @@ func TestListMatchesByStatus_ReturnsFilteredSlice(t *testing.T) {
 		t.Errorf(fmtExpect1Match, len(got))
 	}
 }
+
+// ── CorrectResult ─────────────────────────────────────────────────────────────
+
+func TestCorrectResult_FinishedMatch_UpdatesScoreAndEmitsEvent(t *testing.T) {
+	home, away := 1, 0
+	match := &domain.Match{ID: 7, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
+		Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away}
+	pub := &stubPublisher{}
+	scorer := &stubScorer{}
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
+
+	result, err := svc.CorrectResult(context.Background(), 7, 2, 1, nil)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	if result.Status != domain.MatchStatusFinished {
+		t.Errorf("status should remain finished after correction, got %s", result.Status)
+	}
+	if len(pub.published) != 1 || pub.published[0].Type != events.EventMatchFinished {
+		t.Errorf("expected one MatchFinished re-emit, got %v", pub.published)
+	}
+}
+
+func TestCorrectResult_LiveMatch_AllowedAndSetsFinished(t *testing.T) {
+	match := &domain.Match{ID: 8, HomeTeam: matchFrance, AwayTeam: matchGermany,
+		Status: domain.MatchStatusLive}
+	svc, _ := newMatchSvc(match)
+
+	result, err := svc.CorrectResult(context.Background(), 8, 1, 0, nil)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	if result.Status != domain.MatchStatusFinished {
+		t.Errorf("expected finished after correct on live, got %s", result.Status)
+	}
+}
+
+func TestCorrectResult_ScheduledMatch_ReturnsValidationError(t *testing.T) {
+	match := &domain.Match{ID: 9, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
+		Status: domain.MatchStatusScheduled}
+	svc, _ := newMatchSvc(match)
+
+	_, err := svc.CorrectResult(context.Background(), 9, 2, 0, nil)
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for scheduled match, got %v", err)
+	}
+}
+
+func TestCorrectResult_CancelledMatch_ReturnsValidationError(t *testing.T) {
+	match := &domain.Match{ID: 10, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
+		Status: domain.MatchStatusCancelled}
+	svc, _ := newMatchSvc(match)
+
+	_, err := svc.CorrectResult(context.Background(), 10, 2, 0, nil)
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for cancelled match, got %v", err)
+	}
+}
+
+func TestCorrectResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) {
+	match := &domain.Match{ID: 11, HomeTeam: matchFrance, AwayTeam: matchGermany,
+		Status: domain.MatchStatusFinished}
+	pub := &stubPublisher{err: errors.New("redis unavailable")}
+	scorer := &stubScorer{}
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
+
+	_, err := svc.CorrectResult(context.Background(), 11, 2, 1, nil)
+	if err != nil {
+		t.Fatalf("CorrectResult must succeed even when publish fails: %v", err)
+	}
+	if len(scorer.called) != 1 || scorer.called[0] != 11 {
+		t.Errorf("expected synchronous fallback scoring for match 11, got %v", scorer.called)
+	}
+}
+
+func TestCorrectResult_WithWinMethod_IncludedInEvent(t *testing.T) {
+	match := &domain.Match{ID: 12, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
+		Status: domain.MatchStatusFinished}
+	pub := &stubPublisher{}
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
+
+	wm := domain.WinMethodExtraTime
+	_, err := svc.CorrectResult(context.Background(), 12, 1, 0, &wm)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	payload, ok := pub.published[0].Payload.(events.MatchFinished)
+	if !ok {
+		t.Fatalf("expected MatchFinished payload")
+	}
+	if payload.WinMethod != string(domain.WinMethodExtraTime) {
+		t.Errorf("expected WinMethod extra_time, got %q", payload.WinMethod)
+	}
+}
+
+// ── CancelMatch ───────────────────────────────────────────────────────────────
+
+func TestCancelMatch_ScheduledMatch_SetsCancelled(t *testing.T) {
+	match := &domain.Match{ID: 20, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
+		Status: domain.MatchStatusScheduled}
+	svc, _ := newMatchSvc(match)
+
+	result, err := svc.CancelMatch(context.Background(), 20)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	if result.Status != domain.MatchStatusCancelled {
+		t.Errorf("expected cancelled, got %s", result.Status)
+	}
+}
+
+func TestCancelMatch_LiveMatch_SetsCancelled(t *testing.T) {
+	match := &domain.Match{ID: 21, HomeTeam: matchFrance, AwayTeam: matchGermany,
+		Status: domain.MatchStatusLive}
+	svc, _ := newMatchSvc(match)
+
+	result, err := svc.CancelMatch(context.Background(), 21)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	if result.Status != domain.MatchStatusCancelled {
+		t.Errorf("expected cancelled, got %s", result.Status)
+	}
+}
+
+func TestCancelMatch_FinishedMatch_ReturnsValidationError(t *testing.T) {
+	home, away := 2, 0
+	match := &domain.Match{ID: 22, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
+		Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away}
+	svc, _ := newMatchSvc(match)
+
+	_, err := svc.CancelMatch(context.Background(), 22)
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for finished match, got %v", err)
+	}
+}
+
+func TestCancelMatch_AlreadyCancelled_ReturnsValidationError(t *testing.T) {
+	match := &domain.Match{ID: 23, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
+		Status: domain.MatchStatusCancelled}
+	svc, _ := newMatchSvc(match)
+
+	_, err := svc.CancelMatch(context.Background(), 23)
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected validation error for already-cancelled match, got %v", err)
+	}
+}
+
+func TestCancelMatch_NotFound_ReturnsNotFound(t *testing.T) {
+	svc, _ := newMatchSvc(nil)
+
+	_, err := svc.CancelMatch(context.Background(), 99)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found error, got %v", err)
+	}
+}

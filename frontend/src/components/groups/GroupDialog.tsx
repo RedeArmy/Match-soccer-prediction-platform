@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, Plus, Users, X } from 'lucide-react'
+import { Check, Copy, Loader2, Plus, Users, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { QuinielaResponse } from '@/lib/api-types'
 import { cn } from '@/lib/utils'
@@ -32,12 +32,38 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
       setCreated(null)
       setName('')
       setInviteCode('')
+      setNameState('idle')
     }
   }, [open, defaultTab])
   const [copied, setCopied] = useState(false)
 
   const [name, setName] = useState('')
   const [inviteCode, setInviteCode] = useState('')
+
+  // ── Name availability check (debounced 400 ms) ───────────────────────────
+  type NameState = 'idle' | 'checking' | 'available' | 'taken'
+  const [nameState, setNameState] = useState<NameState>('idle')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const trimmed = name.trim()
+    if (trimmed.length < 2) {
+      setNameState('idle')
+      return
+    }
+    setNameState('checking')
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const token = await getToken()
+        const { available } = await api.checkGroupName(token!, trimmed)
+        setNameState(available ? 'available' : 'taken')
+      } catch {
+        setNameState('idle')
+      }
+    }, 400)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [name, getToken])
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -66,6 +92,7 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
     setCopied(false)
     setName('')
     setInviteCode('')
+    setNameState('idle')
     createMutation.reset()
     joinMutation.reset()
     onClose()
@@ -174,24 +201,49 @@ export function GroupDialog({ open, defaultTab = 'create', onClose }: Readonly<P
                 {t('groups.nameLabel')}
               </label>
               <input
-                className="input-base"
+                className={cn(
+                  'input-base transition-colors',
+                  nameState === 'taken'     && 'border-red-500/60 focus:ring-red-500/40',
+                  nameState === 'available' && 'border-green-500/50 focus:ring-green-500/30',
+                )}
                 placeholder={t('groups.namePlaceholder')}
                 maxLength={60}
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                autoComplete="off"
               />
+              {/* Inline availability feedback */}
+              {nameState === 'checking' && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-text-muted">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t('groups.checkingAvailability')}
+                </p>
+              )}
+              {nameState === 'available' && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-green-400">
+                  <Check className="h-3 w-3" />
+                  {t('groups.nameAvailable')}
+                </p>
+              )}
+              {nameState === 'taken' && (
+                <p className="mt-1.5 text-xs text-red-400">
+                  {t('groups.nameTaken')}
+                </p>
+              )}
             </div>
 
             {createMutation.isError && (
               <p className="rounded border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-300">
-                {t('groups.createError')}
+                {createMutation.error instanceof Error && createMutation.error.message.toLowerCase().includes('nombre')
+                  ? createMutation.error.message
+                  : t('groups.createError')}
               </p>
             )}
 
             <button
               type="submit"
-              disabled={!name.trim() || createMutation.isPending}
+              disabled={!name.trim() || createMutation.isPending || nameState === 'taken' || nameState === 'checking'}
               className="btn-gold w-full py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />

@@ -154,6 +154,20 @@ func (r *PostgresQuinielaRepository) GetByID(ctx context.Context, id int) (*doma
 	return scanQuiniela(row)
 }
 
+func (r *PostgresQuinielaRepository) ExistsByName(ctx context.Context, name string, excludeID int) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM quinielas
+			WHERE lower(name) = lower($1)
+			  AND deleted_at IS NULL
+			  AND ($2 = 0 OR id != $2)
+		)`,
+		name, excludeID,
+	).Scan(&exists)
+	return exists, err
+}
+
 func (r *PostgresQuinielaRepository) GetByInviteCode(ctx context.Context, code string) (*domain.Quiniela, error) {
 	// The expiry check is enforced here at the persistence layer - not only in
 	// the service - so that any future caller of this method gets consistent

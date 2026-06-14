@@ -79,6 +79,12 @@ func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *d
 	s.finished++
 	return &domain.Match{Status: domain.MatchStatusFinished}, s.finishErr
 }
+func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod) (*domain.Match, error) {
+	return &domain.Match{Status: domain.MatchStatusFinished}, nil
+}
+func (s *stubSyncMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
+	return &domain.Match{Status: domain.MatchStatusCancelled}, nil
+}
 
 type stubProvider struct {
 	fixture    *footballprovider.Fixture

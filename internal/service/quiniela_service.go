@@ -35,6 +35,10 @@ type QuinielaService interface {
 	// enabled (is_premium=true). Disabling premium (is_premium=false) is always
 	// allowed. Returns the updated Quiniela on success.
 	SetTournamentMode(ctx context.Context, quinielaID, callerUserID int, modeGeneral, modeRound bool) (*domain.Quiniela, error)
+	// IsNameAvailable reports whether the given group name is available (i.e. no
+	// active group uses the same name, case-insensitively). excludeID may be
+	// non-zero to skip a specific group (for rename checks).
+	IsNameAvailable(ctx context.Context, name string, excludeID int) (bool, error)
 }
 
 // quinielaService is the concrete implementation of QuinielaService.
@@ -63,9 +67,25 @@ func WithMemberRepo(svc QuinielaService, memberRepo repository.GroupMembershipRe
 	return qs
 }
 
+func (s *quinielaService) IsNameAvailable(ctx context.Context, name string, excludeID int) (bool, error) {
+	exists, err := s.repo.ExistsByName(ctx, strings.TrimSpace(name), excludeID)
+	if err != nil {
+		return false, apperrors.Internal(err)
+	}
+	return !exists, nil
+}
+
 func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela) error {
 	if err := domain.ValidateQuiniela(quiniela); err != nil {
 		return err
+	}
+
+	taken, err := s.repo.ExistsByName(ctx, quiniela.Name, 0)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if taken {
+		return apperrors.Conflict("ya existe un grupo con ese nombre")
 	}
 
 	length := s.params.GetInt(ctx, domain.ParamKeyGroupInviteCodeLength, domain.DefaultGroupInviteCodeLength)
@@ -110,6 +130,14 @@ func (s *quinielaService) RenameGroup(ctx context.Context, quinielaID, callerUse
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, apperrors.Validation("group name cannot be empty")
+	}
+
+	taken, err := s.repo.ExistsByName(ctx, name, quinielaID)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	if taken {
+		return nil, apperrors.Conflict("ya existe un grupo con ese nombre")
 	}
 
 	q, err := s.repo.GetByID(ctx, quinielaID)

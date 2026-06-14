@@ -108,6 +108,12 @@ func (s *stubMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domai
 func (s *stubMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, error) {
 	return s.match, s.err
 }
+func (s *stubMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod) (*domain.Match, error) {
+	return s.match, s.err
+}
+func (s *stubMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
+	return s.match, s.err
+}
 
 // stubPredSvc implements service.PredictionService with configurable returns.
 type stubPredSvc struct {
@@ -139,9 +145,10 @@ func (s *stubPredSvc) GetByMatch(_ context.Context, _ int) ([]*domain.Prediction
 
 // stubQuinielaSvc implements service.QuinielaService with configurable returns.
 type stubQuinielaSvc struct {
-	quiniela  *domain.Quiniela
-	quinielas []*domain.Quiniela
-	err       error
+	quiniela      *domain.Quiniela
+	quinielas     []*domain.Quiniela
+	err           error
+	nameAvailable bool // used by IsNameAvailable; default false → override to true in tests
 }
 
 func (s *stubQuinielaSvc) Create(_ context.Context, q *domain.Quiniela) error {
@@ -167,6 +174,9 @@ func (s *stubQuinielaSvc) RenameGroup(_ context.Context, _, _ int, _ string) (*d
 }
 func (s *stubQuinielaSvc) SetTournamentMode(_ context.Context, _, _ int, _, _ bool) (*domain.Quiniela, error) {
 	return s.quiniela, s.err
+}
+func (s *stubQuinielaSvc) IsNameAvailable(_ context.Context, _ string, _ int) (bool, error) {
+	return s.nameAvailable, s.err
 }
 
 // stubRanker implements service.Ranker with configurable returns.
