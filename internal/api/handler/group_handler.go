@@ -548,9 +548,9 @@ type UserLivePredictionRow struct {
 // HasPrediction is false when the member has not submitted a prediction, in which
 // case HomeScore and AwayScore are zero-valued.
 type MatchPredictionSnapshot struct {
-	MatchID       int `json:"match_id"`
-	HomeScore     int `json:"home_score"`
-	AwayScore     int `json:"away_score"`
+	MatchID       int  `json:"match_id"`
+	HomeScore     int  `json:"home_score"`
+	AwayScore     int  `json:"away_score"`
 	HasPrediction bool `json:"has_prediction"`
 }
 

@@ -1322,7 +1322,9 @@ func TestGetLivePredictions_PendingMembersExcluded(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 	var resp struct {
-		UserPredictions []struct{ UserID int `json:"user_id"` } `json:"user_predictions"`
+		UserPredictions []struct {
+			UserID int `json:"user_id"`
+		} `json:"user_predictions"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
