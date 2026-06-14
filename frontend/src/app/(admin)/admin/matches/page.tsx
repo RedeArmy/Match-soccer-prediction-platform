@@ -427,6 +427,42 @@ export default function AdminMatchesPage() {
 
   const resultMode: 'result' | 'correct' = modal?.kind === 'correct' ? 'correct' : 'result'
 
+  let modalContent: React.ReactNode = null
+  if (modal?.kind === 'start') {
+    modalContent = (
+      <StartModal
+        match={modal.match}
+        isBusy={isBusy}
+        error={modalError}
+        onConfirm={() => startMutation.mutate(modal.match.id)}
+        onClose={closeModal}
+      />
+    )
+  } else if (modal?.kind === 'cancel') {
+    modalContent = (
+      <CancelModal
+        match={modal.match}
+        isBusy={isBusy}
+        error={modalError}
+        onConfirm={() => cancelMutation.mutate(modal.match.id)}
+        onClose={closeModal}
+      />
+    )
+  } else if (modal) {
+    modalContent = (
+      <ResultModal
+        match={modal.match}
+        form={resultForm}
+        onFormChange={setResultForm}
+        isBusy={isBusy}
+        error={modalError}
+        onSubmit={submitResult}
+        onClose={closeModal}
+        mode={resultMode}
+      />
+    )
+  }
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -599,34 +635,7 @@ export default function AdminMatchesPage() {
 
       {modal && (
         <AdminModalOverlay onClose={closeModal}>
-          {modal.kind === 'start' ? (
-            <StartModal
-              match={modal.match}
-              isBusy={isBusy}
-              error={modalError}
-              onConfirm={() => startMutation.mutate(modal.match.id)}
-              onClose={closeModal}
-            />
-          ) : modal.kind === 'cancel' ? (
-            <CancelModal
-              match={modal.match}
-              isBusy={isBusy}
-              error={modalError}
-              onConfirm={() => cancelMutation.mutate(modal.match.id)}
-              onClose={closeModal}
-            />
-          ) : (
-            <ResultModal
-              match={modal.match}
-              form={resultForm}
-              onFormChange={setResultForm}
-              isBusy={isBusy}
-              error={modalError}
-              onSubmit={submitResult}
-              onClose={closeModal}
-              mode={resultMode}
-            />
-          )}
+          {modalContent}
         </AdminModalOverlay>
       )}
     </div>
