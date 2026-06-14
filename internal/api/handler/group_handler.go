@@ -97,6 +97,37 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, groupToResponse(quiniela))
 }
 
+// checkNameResponse is the JSON body returned by GET /api/v1/groups/check-name.
+type checkNameResponse struct {
+	Available bool `json:"available"`
+}
+
+// CheckName handles GET /api/v1/groups/check-name?name=...
+//
+// @Summary      Check group name availability
+// @Description  Returns whether the given name is available for a new group (case-insensitive).
+// @Tags         groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name  query     string  true  "Group name to check"
+// @Success      200   {object}  handler.checkNameResponse
+// @Failure      400   {object}  handler.ErrorResponse  "name query param missing"
+// @Failure      500   {object}  handler.ErrorResponse
+// @Router       /api/v1/groups/check-name [get]
+func (h *GroupHandler) CheckName(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		writeError(w, r, h.log, apperrors.Validation("name query parameter is required"))
+		return
+	}
+	available, err := h.quinielaSvc.IsNameAvailable(r.Context(), name, 0)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, checkNameResponse{Available: available})
+}
+
 // GetByID handles GET /api/v1/groups/{id}.
 //
 // @Summary      Get a group

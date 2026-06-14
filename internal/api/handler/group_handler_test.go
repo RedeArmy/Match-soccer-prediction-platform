@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +70,7 @@ func buildGroupRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
 			})
 		})
 	}
+	r.Get("/groups/check-name", h.CheckName)
 	r.Post("/groups", h.Create)
 	r.Post("/groups/join", h.Join)
 	r.Post("/groups/join-with-balance", h.JoinWithBalance)
@@ -1087,5 +1089,57 @@ func TestGroupSetTournamentMode_Returns422OnServiceError(t *testing.T) {
 
 	if rec.Code == http.StatusOK {
 		t.Errorf("expected non-200 on service error, got 200")
+	}
+}
+
+// ── CheckName ─────────────────────────────────────────────────────────────────
+
+func TestCheckName_Available_Returns200WithTrue(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{nameAvailable: true}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodGet, "/groups/check-name?name=MiGrupo", nil)
+	rec := httptest.NewRecorder()
+	buildGroupRouter(h, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"available":true`) {
+		t.Errorf("expected available=true in body, got: %s", rec.Body.String())
+	}
+}
+
+func TestCheckName_Taken_Returns200WithFalse(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{nameAvailable: false}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodGet, "/groups/check-name?name=NombreRepetido", nil)
+	rec := httptest.NewRecorder()
+	buildGroupRouter(h, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"available":false`) {
+		t.Errorf("expected available=false in body, got: %s", rec.Body.String())
+	}
+}
+
+func TestCheckName_MissingParam_Returns422(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{nameAvailable: true}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodGet, "/groups/check-name", nil)
+	rec := httptest.NewRecorder()
+	buildGroupRouter(h, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 when name param missing, got %d", rec.Code)
+	}
+}
+
+func TestCheckName_ServiceError_Returns500(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{err: errors.New(errDBDown)}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodGet, "/groups/check-name?name=Test", nil)
+	rec := httptest.NewRecorder()
+	buildGroupRouter(h, nil).ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected error response on service failure, got 200")
 	}
 }

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
 import React from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/lib/i18n'
 import { GroupDialog } from '@/components/groups/GroupDialog'
 
@@ -19,10 +19,12 @@ vi.mock('@/lib/api', () => ({
   api: {
     createGroup: vi.fn(),
     joinGroup: vi.fn(),
+    checkGroupName: vi.fn(),
   },
 }))
 
 import { api } from '@/lib/api'
+import { act } from '@testing-library/react'
 
 function render(ui: React.ReactElement) {
   const queryClient = new QueryClient({
@@ -39,6 +41,11 @@ describe('GroupDialog', () => {
   beforeEach(() => {
     vi.mocked(api.createGroup).mockReset()
     vi.mocked(api.joinGroup).mockReset()
+    vi.mocked(api.checkGroupName).mockReset()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('renders nothing when open=false', () => {
@@ -92,13 +99,21 @@ describe('GroupDialog', () => {
     expect(submit).toBeDisabled()
   })
 
-  it('create submit button enabled when name has text', () => {
+  it('create submit button enabled when name has text', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.checkGroupName).mockResolvedValueOnce({ available: true })
+
     render(<GroupDialog open={true} onClose={vi.fn()} />)
     fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Mi grupo' } })
+
+    await act(async () => { await vi.runAllTimersAsync() })
+
     expect(screen.getByRole('button', { name: /Crear kiniela/ })).not.toBeDisabled()
   })
 
   it('shows success state with invite code after create', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.checkGroupName).mockResolvedValueOnce({ available: true })
     vi.mocked(api.createGroup).mockResolvedValueOnce({
       id: 1,
       name: 'Mi grupo',
@@ -113,23 +128,37 @@ describe('GroupDialog', () => {
 
     render(<GroupDialog open={true} onClose={vi.fn()} />)
     fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Mi grupo' } })
+
+    await act(async () => { await vi.runAllTimersAsync() })
+
     fireEvent.click(screen.getByRole('button', { name: /Crear kiniela/ }))
 
-    expect(await screen.findByText('¡Kiniela creada!')).toBeInTheDocument()
+    await act(async () => { await vi.runAllTimersAsync() })
+
+    expect(screen.getByText('¡Kiniela creada!')).toBeInTheDocument()
     expect(screen.getByText('ABC123XYZW')).toBeInTheDocument()
   })
 
   it('shows error message when create fails', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.checkGroupName).mockResolvedValueOnce({ available: true })
     vi.mocked(api.createGroup).mockRejectedValueOnce(new Error('network error'))
 
     render(<GroupDialog open={true} onClose={vi.fn()} />)
     fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Mi grupo' } })
+
+    await act(async () => { await vi.runAllTimersAsync() })
+
     fireEvent.click(screen.getByRole('button', { name: /Crear kiniela/ }))
 
-    expect(await screen.findByText('No se pudo crear la kiniela.')).toBeInTheDocument()
+    await act(async () => { await vi.runAllTimersAsync() })
+
+    expect(screen.getByText('No se pudo crear la kiniela.')).toBeInTheDocument()
   })
 
   it('calls onClose when Done button is clicked after create', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.checkGroupName).mockResolvedValueOnce({ available: true })
     const onClose = vi.fn()
     vi.mocked(api.createGroup).mockResolvedValueOnce({
       id: 1,
@@ -145,9 +174,14 @@ describe('GroupDialog', () => {
 
     render(<GroupDialog open={true} onClose={onClose} />)
     fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Mi grupo' } })
+
+    await act(async () => { await vi.runAllTimersAsync() })
+
     fireEvent.click(screen.getByRole('button', { name: /Crear kiniela/ }))
 
-    await screen.findByText('¡Kiniela creada!')
+    await act(async () => { await vi.runAllTimersAsync() })
+
+    expect(screen.getByText('¡Kiniela creada!')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Listo' }))
     expect(onClose).toHaveBeenCalledOnce()
   })
@@ -202,5 +236,54 @@ describe('GroupDialog', () => {
     // Tab buttons exist for switching
     const tabBtns = within(container.querySelector('.mb-5.flex.gap-1')! as HTMLElement).getAllByRole('button')
     expect(tabBtns).toHaveLength(2)
+  })
+
+  // ── Name availability (debounced) ──────────────────────────────────────────
+
+  it('shows available feedback after debounce when name is free', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.checkGroupName).mockResolvedValueOnce({ available: true })
+
+    render(<GroupDialog open={true} onClose={vi.fn()} />)
+    fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Nuevo Grupo' } })
+
+    await act(async () => { await vi.runAllTimersAsync() })
+
+    expect(screen.getByText('Nombre disponible')).toBeInTheDocument()
+  })
+
+  it('shows taken feedback after debounce when name is taken', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.checkGroupName).mockResolvedValueOnce({ available: false })
+
+    render(<GroupDialog open={true} onClose={vi.fn()} />)
+    fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Nombre Repetido' } })
+
+    await act(async () => { await vi.runAllTimersAsync() })
+
+    expect(screen.getByText(/Ya existe un grupo con ese nombre/)).toBeInTheDocument()
+  })
+
+  it('disables submit when name state is taken', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.checkGroupName).mockResolvedValueOnce({ available: false })
+
+    render(<GroupDialog open={true} onClose={vi.fn()} />)
+    fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'Ocupado' } })
+
+    await act(async () => { await vi.runAllTimersAsync() })
+
+    expect(screen.getByRole('button', { name: /Crear kiniela/ })).toBeDisabled()
+  })
+
+  it('skips availability check when name is shorter than 2 chars', async () => {
+    vi.useFakeTimers()
+
+    render(<GroupDialog open={true} onClose={vi.fn()} />)
+    fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), { target: { value: 'A' } })
+
+    await act(async () => { await vi.runAllTimersAsync() })
+
+    expect(api.checkGroupName).not.toHaveBeenCalled()
   })
 })

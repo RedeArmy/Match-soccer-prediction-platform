@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Play, Edit3, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Play, Edit3, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight, Ban } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { MatchResponse, MatchStatus } from '@/lib/api-types'
 import { cn, formatDateTime, formatRelative } from '@/lib/utils'
@@ -101,6 +101,52 @@ function StartModal({ match, isBusy, error, onConfirm, onClose }: StartModalProp
   )
 }
 
+// ── Cancel confirm modal ──────────────────────────────────────────────────────
+
+interface CancelModalProps {
+  readonly match: MatchResponse
+  readonly isBusy: boolean
+  readonly error: string
+  readonly onConfirm: () => void
+  readonly onClose: () => void
+}
+
+function CancelModal({ match, isBusy, error, onConfirm, onClose }: CancelModalProps) {
+  return (
+    <>
+      <ModalHeader title="Cancelar Partido" onClose={onClose} />
+
+      <div className="bg-white/5 rounded-lg px-4 py-3 space-y-1.5">
+        <p className="text-white font-semibold text-center text-lg">
+          {match.home_team} <span className="text-white/40 mx-2">vs</span> {match.away_team}
+        </p>
+        <p className="text-white/50 text-xs text-center">{match.phase}</p>
+      </div>
+
+      <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+        <AlertTriangle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+        <p className="text-red-300 text-xs">
+          El partido quedará como <strong>cancelado</strong>. Esta acción no puede revertirse desde la UI — contacta a un desarrollador si necesitas restaurarlo.
+        </p>
+      </div>
+
+      <ModalErrorLine error={error} />
+
+      <div className="flex justify-end gap-3">
+        <ModalCancelButton onClose={onClose} disabled={isBusy} />
+        <button
+          onClick={onConfirm}
+          disabled={isBusy}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <Ban className="h-4 w-4" />
+          {isBusy ? 'Cancelando...' : 'Cancelar Partido'}
+        </button>
+      </div>
+    </>
+  )
+}
+
 // ── Result update modal ───────────────────────────────────────────────────────
 
 interface ResultForm {
@@ -117,9 +163,10 @@ interface ResultModalProps {
   readonly error: string
   readonly onSubmit: () => void
   readonly onClose: () => void
+  readonly mode: 'result' | 'correct'
 }
 
-function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClose }: ResultModalProps) {
+function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClose, mode }: ResultModalProps) {
   const isKnockout = match.phase && match.phase !== 'group_stage'
   const homeInt = Number.parseInt(form.homeScore, 10)
   const awayInt = Number.parseInt(form.awayScore, 10)
@@ -127,7 +174,7 @@ function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClo
 
   return (
     <>
-      <ModalHeader title="Actualizar Resultado" onClose={onClose} />
+      <ModalHeader title={mode === 'correct' ? 'Corregir Resultado' : 'Actualizar Resultado'} onClose={onClose} />
 
       <p className="text-white/60 text-sm text-center">
         {match.home_team} <span className="text-white/30 mx-1">vs</span> {match.away_team}
@@ -181,7 +228,10 @@ function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClo
       <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
         <AlertTriangle className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
         <p className="text-blue-300 text-xs">
-          El marcador se actualizará y el partido quedará como <strong>finalizado</strong>. Las predicciones serán puntuadas en el próximo ciclo del worker.
+          {mode === 'correct'
+            ? <>El marcador será <strong>corregido</strong> y las predicciones serán <strong>re-puntuadas</strong> automáticamente.</>
+            : <>El marcador se actualizará y el partido quedará como <strong>finalizado</strong>. Las predicciones serán puntuadas en el próximo ciclo del worker.</>
+          }
         </p>
       </div>
 
@@ -195,7 +245,7 @@ function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClo
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <CheckCircle className="h-4 w-4" />
-          {isBusy ? 'Guardando...' : 'Guardar Resultado'}
+          {isBusy ? 'Guardando...' : mode === 'correct' ? 'Corregir Resultado' : 'Guardar Resultado'}
         </button>
       </div>
     </>
@@ -207,6 +257,8 @@ function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClo
 type ModalState =
   | { kind: 'start'; match: MatchResponse }
   | { kind: 'result'; match: MatchResponse }
+  | { kind: 'correct'; match: MatchResponse }
+  | { kind: 'cancel'; match: MatchResponse }
   | null
 
 export default function AdminMatchesPage() {
@@ -282,6 +334,21 @@ export default function AdminMatchesPage() {
     })
   }
 
+  function openCorrect(match: MatchResponse) {
+    setModal({ kind: 'correct', match })
+    setModalError('')
+    setResultForm({
+      homeScore: match.home_score === null ? '' : String(match.home_score),
+      awayScore: match.away_score === null ? '' : String(match.away_score),
+      winMethod: match.win_method ?? '',
+    })
+  }
+
+  function openCancel(match: MatchResponse) {
+    setModal({ kind: 'cancel', match })
+    setModalError('')
+  }
+
   function closeModal() {
     setModal(null)
     setModalError('')
@@ -309,25 +376,50 @@ export default function AdminMatchesPage() {
     },
   })
 
-  const isBusy = startMutation.isPending || updateMutation.isPending
+  const correctMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { home_score: number; away_score: number; win_method?: string } }) => {
+      const token = await getToken()
+      return api.adminCorrectMatchResult(token!, id, data)
+    },
+    onSuccess: () => { invalidate(); closeModal() },
+    onError: (e: unknown) => {
+      setModalError(e instanceof Error ? e.message : 'Error al corregir el resultado')
+    },
+  })
+
+  const cancelMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const token = await getToken()
+      return api.adminCancelMatch(token!, id)
+    },
+    onSuccess: () => { invalidate(); closeModal() },
+    onError: (e: unknown) => {
+      setModalError(e instanceof Error ? e.message : 'Error al cancelar el partido')
+    },
+  })
+
+  const isBusy = startMutation.isPending || updateMutation.isPending || correctMutation.isPending || cancelMutation.isPending
 
   let emptyMsg = `No hay partidos con estado "${tab}".`
   if (tab === 'all')   emptyMsg = 'No hay partidos registrados.'
   if (tab === 'today') emptyMsg = 'No hay partidos programados para hoy.'
 
   function submitResult() {
-    if (modal?.kind === 'result') {
-      const home = Number.parseInt(resultForm.homeScore, 10)
-      const away = Number.parseInt(resultForm.awayScore, 10)
-      if (Number.isNaN(home) || Number.isNaN(away) || home < 0 || away < 0) {
-        setModalError('Marcador inválido')
-        return
-      }
-      const data: { home_score: number; away_score: number; win_method?: string } = {
-        home_score: home,
-        away_score: away,
-      }
-      if (resultForm.winMethod) data.win_method = resultForm.winMethod
+    if (modal?.kind !== 'result' && modal?.kind !== 'correct') return
+    const home = Number.parseInt(resultForm.homeScore, 10)
+    const away = Number.parseInt(resultForm.awayScore, 10)
+    if (Number.isNaN(home) || Number.isNaN(away) || home < 0 || away < 0) {
+      setModalError('Marcador inválido')
+      return
+    }
+    const data: { home_score: number; away_score: number; win_method?: string } = {
+      home_score: home,
+      away_score: away,
+    }
+    if (resultForm.winMethod) data.win_method = resultForm.winMethod
+    if (modal.kind === 'correct') {
+      correctMutation.mutate({ id: modal.match.id, data })
+    } else {
       updateMutation.mutate({ id: modal.match.id, data })
     }
   }
@@ -438,7 +530,7 @@ export default function AdminMatchesPage() {
                             Iniciar
                           </button>
                         )}
-                        {(match.status === 'in_progress' || match.status === 'scheduled') && (
+                        {match.status === 'in_progress' && (
                           <button
                             onClick={() => openResult(match)}
                             className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
@@ -449,11 +541,20 @@ export default function AdminMatchesPage() {
                         )}
                         {match.status === 'finished' && (
                           <button
-                            onClick={() => openResult(match)}
+                            onClick={() => openCorrect(match)}
                             className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-white/50 text-xs font-medium transition-colors"
                           >
                             <Edit3 className="h-3.5 w-3.5" />
                             Corregir
+                          </button>
+                        )}
+                        {(match.status === 'scheduled' || match.status === 'in_progress') && (
+                          <button
+                            onClick={() => openCancel(match)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition-colors"
+                          >
+                            <Ban className="h-3.5 w-3.5" />
+                            Cancelar
                           </button>
                         )}
                       </div>
@@ -503,6 +604,14 @@ export default function AdminMatchesPage() {
               onConfirm={() => startMutation.mutate(modal.match.id)}
               onClose={closeModal}
             />
+          ) : modal.kind === 'cancel' ? (
+            <CancelModal
+              match={modal.match}
+              isBusy={isBusy}
+              error={modalError}
+              onConfirm={() => cancelMutation.mutate(modal.match.id)}
+              onClose={closeModal}
+            />
           ) : (
             <ResultModal
               match={modal.match}
@@ -512,6 +621,7 @@ export default function AdminMatchesPage() {
               error={modalError}
               onSubmit={submitResult}
               onClose={closeModal}
+              mode={modal.kind === 'correct' ? 'correct' : 'result'}
             />
           )}
         </AdminModalOverlay>

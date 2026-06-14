@@ -31,6 +31,7 @@ type stubQuinielaRepo struct {
 	updateStatusErr       error
 	distributeErr         error
 	distributeAlreadyDone bool
+	nameExists            bool // returned by ExistsByName
 }
 
 func (r *stubQuinielaRepo) CreateWithMembership(_ context.Context, _ *domain.Quiniela, _ *domain.GroupMembership) error {
@@ -86,6 +87,9 @@ func (r *stubQuinielaRepo) DistributePrizesAtomically(_ context.Context, _, _ in
 }
 func (r *stubQuinielaRepo) UpdateTournamentMode(_ context.Context, _ int, _, _, _ bool, _ int) (*domain.Quiniela, error) {
 	return r.quiniela, r.err
+}
+func (r *stubQuinielaRepo) ExistsByName(_ context.Context, _ string, _ int) (bool, error) {
+	return r.nameExists, r.err
 }
 
 // stubMemberRepo implements repository.GroupMembershipRepository for service tests.
@@ -584,3 +588,54 @@ type fixedIntParamService struct {
 }
 
 func (f *fixedIntParamService) GetInt(_ context.Context, _ string, _ int) int { return f.value }
+
+// ── IsNameAvailable ───────────────────────────────────────────────────────────
+
+func TestIsNameAvailable_NameFree_ReturnsTrue(t *testing.T) {
+	repo := &stubQuinielaRepo{nameExists: false}
+	svc := newQuinielaSvc(repo, &stubGroupAuthz{})
+
+	ok, err := svc.IsNameAvailable(context.Background(), "Grupo Nuevo", 0)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if !ok {
+		t.Error("expected true for available name")
+	}
+}
+
+func TestIsNameAvailable_NameTaken_ReturnsFalse(t *testing.T) {
+	repo := &stubQuinielaRepo{nameExists: true}
+	svc := newQuinielaSvc(repo, &stubGroupAuthz{})
+
+	ok, err := svc.IsNameAvailable(context.Background(), "Nombre Ocupado", 0)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if ok {
+		t.Error("expected false for taken name")
+	}
+}
+
+func TestIsNameAvailable_RepoError_ReturnsInternalError(t *testing.T) {
+	repo := &stubQuinielaRepo{err: errors.New("db down")}
+	svc := newQuinielaSvc(repo, &stubGroupAuthz{})
+
+	_, err := svc.IsNameAvailable(context.Background(), "Test", 0)
+	if !errors.Is(err, apperrors.ErrInternal) {
+		t.Errorf("expected internal error on repo failure, got %v", err)
+	}
+}
+
+func TestIsNameAvailable_TrimsWhitespace(t *testing.T) {
+	repo := &stubQuinielaRepo{nameExists: false}
+	svc := newQuinielaSvc(repo, &stubGroupAuthz{})
+
+	ok, err := svc.IsNameAvailable(context.Background(), "  Grupo  ", 0)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if !ok {
+		t.Error("expected true when name with spaces resolves to available")
+	}
+}

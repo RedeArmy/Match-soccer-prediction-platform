@@ -310,6 +310,9 @@ func (r *captureDistributeRepo) DistributePrizesAtomically(_ context.Context, _,
 func (r *captureDistributeRepo) UpdateTournamentMode(_ context.Context, _ int, _, _, _ bool, _ int) (*domain.Quiniela, error) {
 	return nil, r.err
 }
+func (r *captureDistributeRepo) ExistsByName(_ context.Context, _ string, _ int) (bool, error) {
+	return false, r.err
+}
 
 type stubPrizeCrediter struct {
 	credited bool

@@ -262,6 +262,11 @@ type QuinielaRepository interface {
 	CreateWithMembership(ctx context.Context, quiniela *domain.Quiniela, membership *domain.GroupMembership) error
 	Create(ctx context.Context, quiniela *domain.Quiniela) error
 	GetByID(ctx context.Context, id int) (*domain.Quiniela, error)
+	// ExistsByName reports whether an active (non-deleted) group with the given
+	// name already exists. The check is case-insensitive to match the database
+	// index. excludeID may be non-zero to skip a specific group (used when
+	// renaming: the group being renamed must not conflict with itself).
+	ExistsByName(ctx context.Context, name string, excludeID int) (bool, error)
 	// GetByInviteCode returns the quiniela matching code only when the code has
 	// not expired (invite_code_expires_at IS NULL OR > NOW()). Returns nil, nil
 	// for an unknown or expired code - callers should surface a 404 to the client

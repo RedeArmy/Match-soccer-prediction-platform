@@ -109,6 +109,27 @@ func (s *cachedMatchService) StartMatch(ctx context.Context, id int) (*domain.Ma
 	return m, nil
 }
 
+// CancelMatch delegates to the inner service and invalidates match list caches.
+func (s *cachedMatchService) CancelMatch(ctx context.Context, id int) (*domain.Match, error) {
+	m, err := s.inner.CancelMatch(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	s.invalidateMatchLists(ctx, m.Phase, m.Status)
+	return m, nil
+}
+
+// CorrectResult delegates to the inner service and invalidates the same caches
+// as UpdateResult — the match stays Finished but its score changed.
+func (s *cachedMatchService) CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error) {
+	m, err := s.inner.CorrectResult(ctx, id, homeScore, awayScore, winMethod)
+	if err != nil {
+		return nil, err
+	}
+	s.invalidateMatchLists(ctx, m.Phase, m.Status)
+	return m, nil
+}
+
 // GetMatch delegates directly - single-entity reads are not cached because
 // the cache benefit is small (one DB query) and the invalidation surface would
 // grow with every match mutation.

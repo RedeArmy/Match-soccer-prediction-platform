@@ -53,6 +53,7 @@ const (
 	MatchStatusScheduled MatchStatus = "scheduled"
 	MatchStatusLive      MatchStatus = "live"
 	MatchStatusFinished  MatchStatus = "finished"
+	MatchStatusCancelled MatchStatus = "cancelled"
 )
 
 // ── Match ─────────────────────────────────────────────────────────────────────
