@@ -425,6 +425,8 @@ export default function AdminMatchesPage() {
     }
   }
 
+  const resultMode: 'result' | 'correct' = modal?.kind === 'correct' ? 'correct' : 'result'
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -622,7 +624,7 @@ export default function AdminMatchesPage() {
               error={modalError}
               onSubmit={submitResult}
               onClose={closeModal}
-              mode={modal.kind === 'correct' ? 'correct' : 'result'}
+              mode={resultMode}
             />
           )}
         </AdminModalOverlay>
