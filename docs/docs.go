@@ -4734,6 +4734,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/groups/check-name": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns whether the given name is available for a new group (case-insensitive).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "groups"
+                ],
+                "summary": "Check group name availability",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group name to check",
+                        "name": "name",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.checkNameResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "name query param missing",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/groups/join": {
             "post": {
                 "security": [
@@ -5101,6 +5147,58 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/groups/{id}/live-predictions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the currently-live matches and each active member's predicted",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "groups"
+                ],
+                "summary": "Live match predictions for all group members",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.GroupLivePredictionsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Not an active member of this group",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handler.ErrorResponse"
                         }
@@ -7091,6 +7189,23 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.GroupLivePredictionsResponse": {
+            "type": "object",
+            "properties": {
+                "live_matches": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.MatchResponse"
+                    }
+                },
+                "user_predictions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.UserLivePredictionRow"
+                    }
+                }
+            }
+        },
         "internal_api_handler.GroupResponse": {
             "type": "object",
             "properties": {
@@ -7215,6 +7330,23 @@ const docTemplate = `{
                 },
                 "ref_type": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.MatchPredictionSnapshot": {
+            "type": "object",
+            "properties": {
+                "away_score": {
+                    "type": "integer"
+                },
+                "has_prediction": {
+                    "type": "boolean"
+                },
+                "home_score": {
+                    "type": "integer"
+                },
+                "match_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -7856,6 +7988,23 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.UserLivePredictionRow": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "predictions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handler.MatchPredictionSnapshot"
+                    }
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.UserStatsResponse": {
             "type": "object",
             "properties": {
@@ -8015,6 +8164,14 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_api_handler.checkNameResponse": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
                 }
             }
         },

@@ -375,6 +375,17 @@ definitions:
       total:
         type: integer
     type: object
+  internal_api_handler.GroupLivePredictionsResponse:
+    properties:
+      live_matches:
+        items:
+          $ref: '#/definitions/internal_api_handler.MatchResponse'
+        type: array
+      user_predictions:
+        items:
+          $ref: '#/definitions/internal_api_handler.UserLivePredictionRow'
+        type: array
+    type: object
   internal_api_handler.GroupResponse:
     properties:
       created_at:
@@ -467,6 +478,17 @@ definitions:
         type: integer
       ref_type:
         type: string
+    type: object
+  internal_api_handler.MatchPredictionSnapshot:
+    properties:
+      away_score:
+        type: integer
+      has_prediction:
+        type: boolean
+      home_score:
+        type: integer
+      match_id:
+        type: integer
     type: object
   internal_api_handler.MatchResponse:
     properties:
@@ -884,6 +906,17 @@ definitions:
       total:
         type: integer
     type: object
+  internal_api_handler.UserLivePredictionRow:
+    properties:
+      display_name:
+        type: string
+      predictions:
+        items:
+          $ref: '#/definitions/internal_api_handler.MatchPredictionSnapshot'
+        type: array
+      user_id:
+        type: integer
+    type: object
   internal_api_handler.UserStatsResponse:
     properties:
       accuracy_pct:
@@ -995,6 +1028,11 @@ definitions:
         additionalProperties:
           type: string
         type: object
+    type: object
+  internal_api_handler.checkNameResponse:
+    properties:
+      available:
+        type: boolean
     type: object
   internal_api_handler.circuitBreakerEntry:
     properties:
@@ -4559,6 +4597,39 @@ paths:
       summary: Group leaderboard
       tags:
       - groups
+  /api/v1/groups/{id}/live-predictions:
+    get:
+      description: Returns the currently-live matches and each active member's predicted
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.GroupLivePredictionsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Not an active member of this group
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Live match predictions for all group members
+      tags:
+      - groups
   /api/v1/groups/{id}/members:
     get:
       description: Returns all memberships for the given group. Requires active group
@@ -4772,6 +4843,35 @@ paths:
       security:
       - BearerAuth: []
       summary: Set tournament payment mode
+      tags:
+      - groups
+  /api/v1/groups/check-name:
+    get:
+      description: Returns whether the given name is available for a new group (case-insensitive).
+      parameters:
+      - description: Group name to check
+        in: query
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.checkNameResponse'
+        "400":
+          description: name query param missing
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Check group name availability
       tags:
       - groups
   /api/v1/groups/join:
