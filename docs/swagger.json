@@ -1704,6 +1704,51 @@
                 }
             }
         },
+        "/api/v1/admin/match-sync/today": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin only. Validates all linked scheduled and live matches against",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-match-sync"
+                ],
+                "summary": "Trigger fixture sync for all linked scheduled/live matches",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Kickoff date range start (YYYY-MM-DD, inclusive)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Kickoff date range end (YYYY-MM-DD, inclusive)",
+                        "name": "end_date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.dailySyncResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/matches/{id}/external-link": {
             "post": {
                 "security": [
@@ -8257,6 +8302,23 @@
                     "additionalProperties": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_api_handler.dailySyncResponse": {
+            "type": "object",
+            "properties": {
+                "kickoffs_updated": {
+                    "type": "integer"
+                },
+                "linked": {
+                    "type": "integer"
+                },
+                "scores_corrected": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
