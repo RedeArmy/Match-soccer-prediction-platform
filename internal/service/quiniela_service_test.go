@@ -365,6 +365,18 @@ func TestQuinielaService_Create_RepoConflict_ReturnsConflict(t *testing.T) {
 	}
 }
 
+func TestQuinielaService_Create_NameTaken_ReturnsConflict(t *testing.T) {
+	svc := newQuinielaSvc(
+		&stubQuinielaRepo{nameExists: true},
+		&stubGroupAuthz{},
+	)
+	q := &domain.Quiniela{Name: "Taken Name", OwnerID: 1}
+
+	if err := svc.Create(context.Background(), q); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict when name is already taken, got %v", err)
+	}
+}
+
 func TestQuinielaService_GetByInviteCode_Found(t *testing.T) {
 	q := &domain.Quiniela{ID: 1, Name: quinielaPool, InviteCode: "ABC123"}
 	svc := newQuinielaSvc(&stubQuinielaRepo{quiniela: q}, &stubGroupAuthz{})
@@ -471,6 +483,28 @@ func TestQuinielaService_RenameGroup_AuthzError_ReturnsError(t *testing.T) {
 
 	if _, err := svc.RenameGroup(context.Background(), 1, 10, quinielaNewName); err == nil {
 		t.Error("expected an error from authz, got nil")
+	}
+}
+
+func TestQuinielaService_RenameGroup_NameTaken_ReturnsConflict(t *testing.T) {
+	svc := newQuinielaSvc(
+		&stubQuinielaRepo{nameExists: true},
+		&stubGroupAuthz{},
+	)
+
+	if _, err := svc.RenameGroup(context.Background(), 1, 10, "Taken Name"); !errors.Is(err, apperrors.ErrConflict) {
+		t.Errorf("expected ErrConflict when name is already taken, got %v", err)
+	}
+}
+
+func TestQuinielaService_RenameGroup_ExistsByNameError_ReturnsInternal(t *testing.T) {
+	svc := newQuinielaSvc(
+		&stubQuinielaRepo{err: errors.New("db down")},
+		&stubGroupAuthz{},
+	)
+
+	if _, err := svc.RenameGroup(context.Background(), 1, 10, "Any Name"); !errors.Is(err, apperrors.ErrInternal) {
+		t.Errorf("expected ErrInternal on ExistsByName failure, got %v", err)
 	}
 }
 

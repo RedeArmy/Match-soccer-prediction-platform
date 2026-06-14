@@ -123,46 +123,50 @@ function UserPredictionCard({ row, liveMatches, t }: CardProps) {
       {/* Dropdown: prediction per live match */}
       {open && (
         <div className="border-t border-white/10 divide-y divide-white/[0.06]">
-          {liveMatches.map((match) => {
-            const snap = row.predictions.find((p) => p.match_id === match.id)
-
-            return (
-              <div key={match.id} className="px-4 py-3">
-                {/* Team names */}
-                <div className="mb-2 flex items-center justify-between gap-2 text-xs text-text-muted">
-                  <span className="truncate font-medium text-text-secondary">
-                    {match.home_team}
-                  </span>
-                  <span className="shrink-0 text-[10px] uppercase tracking-wide">
-                    {t('groups.predictionVs')}
-                  </span>
-                  <span className="truncate text-right font-medium text-text-secondary">
-                    {match.away_team}
-                  </span>
-                </div>
-
-                {/* Predicted score */}
-                {snap?.has_prediction ? (
-                  <div className="flex items-center justify-center gap-3">
-                    <span className="font-score w-8 text-right text-xl font-bold tabular-nums text-white">
-                      {snap.home_score}
-                    </span>
-                    <span className="text-xs text-text-muted">—</span>
-                    <span className="font-score w-8 text-xl font-bold tabular-nums text-white">
-                      {snap.away_score}
-                    </span>
-                  </div>
-                ) : (
-                  <p className="text-center text-xs italic text-text-muted/60">
-                    {t('groups.noPrediction')}
-                  </p>
-                )}
-              </div>
-            )
-          })}
+          {liveMatches.map((match) => (
+            <MatchPredictionRow
+              key={match.id}
+              match={match}
+              snap={row.predictions.find((p) => p.match_id === match.id)}
+              t={t}
+            />
+          ))}
         </div>
       )}
     </article>
+  )
+}
+
+// ── Match prediction row ──────────────────────────────────────────────────────
+
+interface MatchPredictionRowProps {
+  readonly match: MatchResponse
+  readonly snap: { home_score: number; away_score: number; has_prediction: boolean } | undefined
+  readonly t: ReturnType<typeof useI18n>['t']
+}
+
+function MatchPredictionRow({ match, snap, t }: MatchPredictionRowProps) {
+  return (
+    <div className="px-4 py-3">
+      <div className="mb-2 flex items-center justify-between gap-2 text-xs text-text-muted">
+        <span className="truncate font-medium text-text-secondary">{match.home_team}</span>
+        <span className="shrink-0 text-[10px] uppercase tracking-wide">{t('groups.predictionVs')}</span>
+        <span className="truncate text-right font-medium text-text-secondary">{match.away_team}</span>
+      </div>
+      {snap?.has_prediction ? (
+        <div className="flex items-center justify-center gap-3">
+          <span className="font-score w-8 text-right text-xl font-bold tabular-nums text-white">
+            {snap.home_score}
+          </span>
+          <span className="text-xs text-text-muted">—</span>
+          <span className="font-score w-8 text-xl font-bold tabular-nums text-white">
+            {snap.away_score}
+          </span>
+        </div>
+      ) : (
+        <p className="text-center text-xs italic text-text-muted/60">{t('groups.noPrediction')}</p>
+      )}
+    </div>
   )
 }
 
