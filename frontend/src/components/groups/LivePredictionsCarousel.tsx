@@ -1,12 +1,12 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useState } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react'
+import { Activity, ChevronDown, ChevronUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { LivePredictionsResponse, MatchResponse, UserLivePrediction } from '@/lib/api-types'
-import { cn } from '@/lib/utils'
+import { HorizontalCarousel } from '@/components/shared/HorizontalCarousel'
 import { useI18n } from '@/lib/i18n'
 
 interface Props {
@@ -52,7 +52,13 @@ export function LivePredictionsCarousel({ groupId }: Props) {
           {t('groups.livePredictionsEmpty')}
         </p>
       ) : (
-        <Carousel>
+        <HorizontalCarousel
+          itemWidth="w-64"
+          gap="gap-3"
+          scrollAmount={280}
+          ariaLabelLeft={t('common.scrollLeft')}
+          ariaLabelRight={t('common.scrollRight')}
+        >
           {data.user_predictions.map((row) => (
             <UserPredictionCard
               key={row.user_id}
@@ -61,7 +67,7 @@ export function LivePredictionsCarousel({ groupId }: Props) {
               t={t}
             />
           ))}
-        </Carousel>
+        </HorizontalCarousel>
       )}
     </section>
   )
@@ -170,67 +176,3 @@ function MatchPredictionRow({ match, snap, t }: MatchPredictionRowProps) {
   )
 }
 
-// ── Carousel ─────────────────────────────────────────────────────────────────
-
-function Carousel({ children }: Readonly<{ children: React.ReactNode }>) {
-  const { t } = useI18n()
-  const trackRef = useRef<HTMLDivElement>(null)
-  const [canLeft, setCanLeft]   = useState(false)
-  const [canRight, setCanRight] = useState(false)
-
-  function scroll(dir: 'left' | 'right') {
-    trackRef.current?.scrollBy({ left: dir === 'right' ? 280 : -280, behavior: 'smooth' })
-  }
-
-  useEffect(() => {
-    const el = trackRef.current
-    if (!el) return
-    function update() {
-      setCanLeft(el!.scrollLeft > 4)
-      setCanRight(el!.scrollLeft + el!.clientWidth < el!.scrollWidth - 4)
-    }
-    update()
-    el.addEventListener('scroll', update, { passive: true })
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => { el.removeEventListener('scroll', update); ro.disconnect() }
-  }, [children])
-
-  return (
-    <div className="relative">
-      {canLeft && (
-        <button
-          type="button"
-          onClick={() => scroll('left')}
-          className="absolute -left-3 top-1/2 z-10 -translate-y-1/2 rounded-full border border-white/10 bg-[#0b1929] p-1.5 text-text-muted shadow-lg transition-colors hover:text-white"
-          aria-label={t('common.scrollLeft')}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-      )}
-
-      <div
-        ref={trackRef}
-        className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide"
-        style={{ scrollSnapType: 'x mandatory' }}
-      >
-        {React.Children.map(children, (child) => (
-          <div className="w-64 shrink-0" style={{ scrollSnapAlign: 'start' }}>
-            {child}
-          </div>
-        ))}
-      </div>
-
-      {canRight && (
-        <button
-          type="button"
-          onClick={() => scroll('right')}
-          className="absolute -right-3 top-1/2 z-10 -translate-y-1/2 rounded-full border border-white/10 bg-[#0b1929] p-1.5 text-text-muted shadow-lg transition-colors hover:text-white"
-          aria-label={t('common.scrollRight')}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      )}
-    </div>
-  )
-}

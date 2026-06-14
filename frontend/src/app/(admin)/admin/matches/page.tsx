@@ -171,10 +171,11 @@ function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClo
   const homeInt = Number.parseInt(form.homeScore, 10)
   const awayInt = Number.parseInt(form.awayScore, 10)
   const scoresValid = !Number.isNaN(homeInt) && !Number.isNaN(awayInt) && homeInt >= 0 && awayInt >= 0
+  const modalTitle = mode === 'correct' ? 'Corregir Resultado' : 'Actualizar Resultado'
 
   return (
     <>
-      <ModalHeader title={mode === 'correct' ? 'Corregir Resultado' : 'Actualizar Resultado'} onClose={onClose} />
+      <ModalHeader title={modalTitle} onClose={onClose} />
 
       <p className="text-white/60 text-sm text-center">
         {match.home_team} <span className="text-white/30 mx-1">vs</span> {match.away_team}
@@ -245,7 +246,7 @@ function ResultModal({ match, form, onFormChange, isBusy, error, onSubmit, onClo
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <CheckCircle className="h-4 w-4" />
-          {isBusy ? 'Guardando...' : mode === 'correct' ? 'Corregir Resultado' : 'Guardar Resultado'}
+          {isBusy ? 'Guardando...' : modalTitle}
         </button>
       </div>
     </>

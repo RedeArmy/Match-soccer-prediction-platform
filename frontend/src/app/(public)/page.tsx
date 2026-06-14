@@ -152,6 +152,7 @@ function PredictionPreview() {
 export default function LandingPage() {
   const { t } = useI18n()
   const { isSignedIn } = useAuth()
+  const HeroPrimaryIcon = LOGGED_IN.heroPrimary.icon
 
   const tournamentStats = [
     { value: '48',               label: t('landing.statTeams'),     icon: Users  },
@@ -233,7 +234,7 @@ export default function LandingPage() {
               {isSignedIn ? (
                 <>
                   <Link href={LOGGED_IN.heroPrimary.href} className="btn-gold px-7 py-3 text-base">
-                    <LOGGED_IN.heroPrimary.icon className="h-4 w-4" />
+                    <HeroPrimaryIcon className="h-4 w-4" />
                     {t('landing.loggedInHeroPrimary')}
                   </Link>
                   <Link href={LOGGED_IN.heroSecondary.href} className="btn-ghost px-7 py-3 text-base">

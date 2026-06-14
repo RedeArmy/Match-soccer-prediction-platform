@@ -554,6 +554,25 @@ type MatchPredictionSnapshot struct {
 	HasPrediction bool `json:"has_prediction"`
 }
 
+// predKey indexes a prediction by (userID, matchID) for O(1) lookup.
+type predKey struct{ userID, matchID int }
+
+// buildSnapshots returns one MatchPredictionSnapshot per match ID, populated
+// from predMap when a prediction exists for the given member.
+func buildSnapshots(memberUserID int, matchIDs []int, predMap map[predKey]*domain.Prediction) []MatchPredictionSnapshot {
+	snaps := make([]MatchPredictionSnapshot, len(matchIDs))
+	for i, mID := range matchIDs {
+		snap := MatchPredictionSnapshot{MatchID: mID}
+		if p, ok := predMap[predKey{memberUserID, mID}]; ok {
+			snap.HomeScore = p.HomeScore
+			snap.AwayScore = p.AwayScore
+			snap.HasPrediction = true
+		}
+		snaps[i] = snap
+	}
+	return snaps
+}
+
 // GetLivePredictions handles GET /api/v1/groups/{id}/live-predictions.
 //
 // @Summary      Live match predictions for all group members
@@ -614,8 +633,6 @@ func (h *GroupHandler) GetLivePredictions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Index predictions by (userID, matchID) for O(1) lookup when building rows.
-	type predKey struct{ userID, matchID int }
 	predMap := make(map[predKey]*domain.Prediction, len(predictions))
 	for _, p := range predictions {
 		predMap[predKey{p.UserID, p.MatchID}] = p
@@ -631,20 +648,10 @@ func (h *GroupHandler) GetLivePredictions(w http.ResponseWriter, r *http.Request
 		if m.Status != domain.MembershipActive {
 			continue
 		}
-		snaps := make([]MatchPredictionSnapshot, len(matchIDs))
-		for i, mID := range matchIDs {
-			snap := MatchPredictionSnapshot{MatchID: mID}
-			if p, ok := predMap[predKey{m.UserID, mID}]; ok {
-				snap.HomeScore = p.HomeScore
-				snap.AwayScore = p.AwayScore
-				snap.HasPrediction = true
-			}
-			snaps[i] = snap
-		}
 		rows = append(rows, UserLivePredictionRow{
 			UserID:      m.UserID,
 			DisplayName: m.DisplayName,
-			Predictions: snaps,
+			Predictions: buildSnapshots(m.UserID, matchIDs, predMap),
 		})
 	}
 

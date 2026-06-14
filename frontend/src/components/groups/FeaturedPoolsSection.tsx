@@ -1,14 +1,15 @@
 'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Star, Trophy, Users } from 'lucide-react'
+import { Star, Trophy, Users } from 'lucide-react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import type { GroupResponse } from '@/lib/api-types'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { LoadingState } from '@/components/shared/LoadingState'
+import { HorizontalCarousel } from '@/components/shared/HorizontalCarousel'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { useCurrency } from '@/hooks/useCurrency'
@@ -68,7 +69,7 @@ export function FeaturedPoolsSection() {
           </h2>
         </div>
 
-        <Carousel>
+        <HorizontalCarousel>
             {featured.map((g) => (
               <PoolCard
                 key={g.id}
@@ -79,7 +80,7 @@ export function FeaturedPoolsSection() {
                 t={t}
               />
             ))}
-          </Carousel>
+          </HorizontalCarousel>
       </section>
       )}
 
@@ -229,67 +230,3 @@ function PoolCard({ group, isFeatured, onToggleFeatured, fmt, t }: PoolCardProps
   )
 }
 
-// ── Carousel ─────────────────────────────────────────────────────────────────
-
-function Carousel({ children }: Readonly<{ children: React.ReactNode }>) {
-  const trackRef = useRef<HTMLDivElement>(null)
-
-  function scroll(dir: 'left' | 'right') {
-    const el = trackRef.current
-    if (!el) return
-    el.scrollBy({ left: dir === 'right' ? 300 : -300, behavior: 'smooth' })
-  }
-
-  const [canLeft, setCanLeft] = useState(false)
-  const [canRight, setCanRight] = useState(false)
-
-  useEffect(() => {
-    const el = trackRef.current
-    if (!el) return
-    function update() {
-      setCanLeft(el!.scrollLeft > 4)
-      setCanRight(el!.scrollLeft + el!.clientWidth < el!.scrollWidth - 4)
-    }
-    update()
-    el.addEventListener('scroll', update, { passive: true })
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => { el.removeEventListener('scroll', update); ro.disconnect() }
-  }, [children])
-
-  return (
-    <div className="relative">
-      {canLeft && (
-        <button
-          type="button"
-          onClick={() => scroll('left')}
-          className="absolute -left-3 top-1/2 z-10 -translate-y-1/2 rounded-full border border-white/10 bg-[#0b1929] p-1.5 text-text-muted shadow-lg transition-colors hover:text-white"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-      )}
-      <div
-        ref={trackRef}
-        className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
-        style={{ scrollSnapType: 'x mandatory' }}
-      >
-        {Array.isArray(children)
-          ? React.Children.map(children as React.ReactNode[], (child) => (
-              <div className="w-72 shrink-0" style={{ scrollSnapAlign: 'start' }}>
-                {child}
-              </div>
-            ))
-          : <div className="w-72 shrink-0">{children}</div>}
-      </div>
-      {canRight && (
-        <button
-          type="button"
-          onClick={() => scroll('right')}
-          className="absolute -right-3 top-1/2 z-10 -translate-y-1/2 rounded-full border border-white/10 bg-[#0b1929] p-1.5 text-text-muted shadow-lg transition-colors hover:text-white"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      )}
-    </div>
-  )
-}

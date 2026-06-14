@@ -159,11 +159,7 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 	if m.Status != domain.MatchStatusLive {
 		return nil, apperrors.Validation("match result can only be confirmed while the match is live")
 	}
-	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod,
-		domain.AuditActionMatchResultSet,
-		"failed to publish MatchFinished event; falling back to synchronous scoring",
-		"synchronous fallback scoring failed - predictions for this match may be unscored",
-	)
+	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, domain.AuditActionMatchResultSet, false)
 }
 
 // CorrectResult overwrites the score on a match that is already finished (or
@@ -181,24 +177,21 @@ func (s *matchService) CorrectResult(ctx context.Context, id int, homeScore, awa
 	if m.Status != domain.MatchStatusFinished && m.Status != domain.MatchStatusLive {
 		return nil, apperrors.Validation("result can only be corrected on a live or finished match")
 	}
-	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod,
-		domain.AuditActionMatchResultCorrected,
-		"failed to publish MatchFinished event (correction); falling back to synchronous scoring",
-		"synchronous fallback scoring failed after correction",
-	)
+	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, domain.AuditActionMatchResultCorrected, true)
 }
 
 // applyScoreAndPublish writes the final score to the repository, logs the audit
 // entry, and publishes MatchFinished. If publishing fails, it falls back to
 // synchronous scoring via the scorer. Both UpdateResult and CorrectResult share
-// this path; they differ only in their pre-conditions and audit action.
+// this path; they differ only in their pre-conditions, audit action, and whether
+// the call is a score correction (correction=true) or an initial result set.
 func (s *matchService) applyScoreAndPublish(
 	ctx context.Context,
 	m *domain.Match,
 	homeScore, awayScore int,
 	winMethod *domain.WinMethod,
 	auditAction string,
-	publishErrMsg, fallbackErrMsg string,
+	correction bool,
 ) (*domain.Match, error) {
 	m.HomeScore = &homeScore
 	m.AwayScore = &awayScore
@@ -215,6 +208,10 @@ func (s *matchService) applyScoreAndPublish(
 	resType := "match"
 	s.audit.Log(ctx, nil, nil, auditAction, &resType, &m.ID, auditMeta)
 
+	suffix := ""
+	if correction {
+		suffix = " (correction)"
+	}
 	if err := s.pub.Publish(ctx, events.Envelope{
 		Type:       events.EventMatchFinished,
 		OccurredAt: time.Now().UTC(),
@@ -227,10 +224,10 @@ func (s *matchService) applyScoreAndPublish(
 			WinMethod: winMethodString(winMethod),
 		},
 	}); err != nil {
-		s.log.Error(publishErrMsg,
+		s.log.Error("failed to publish MatchFinished event"+suffix+"; falling back to synchronous scoring",
 			append([]zap.Field{zap.Int("match_id", m.ID), zap.Error(err)}, tracing.LogFields(ctx)...)...)
 		if scoreErr := s.scorer.ScoreMatch(ctx, m.ID); scoreErr != nil {
-			s.log.Error(fallbackErrMsg,
+			s.log.Error("synchronous fallback scoring failed"+suffix,
 				append([]zap.Field{zap.Int("match_id", m.ID), zap.Error(scoreErr)}, tracing.LogFields(ctx)...)...)
 		}
 	}
