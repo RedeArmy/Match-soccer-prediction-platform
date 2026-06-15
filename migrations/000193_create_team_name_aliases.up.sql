@@ -1,6 +1,6 @@
 -- team_name_aliases maps provider-specific team names to the canonical names
 -- stored in the matches table. Required because api-football v3 uses different
--- names for some national teams (e.g. "Cabo Verde" vs our "Cape Verde").
+-- names for some national teams.
 --
 -- canonical_name: the exact value stored in matches.home_team / matches.away_team.
 -- provider_name:  the value returned by the external provider for the same team.
@@ -9,8 +9,8 @@
 -- FindByTeams resolves incoming provider names through this table before the
 -- WHERE clause, so unlinked matches are found even when names diverge.
 --
--- Verification: FOOTBALL_API_KEY=<key> go run ./cmd/check-api-teams
--- compares all 48 team names directly against the api-football response.
+-- Verified with: FOOTBALL_API_KEY=<key> go run ./cmd/check-api-teams
+-- Run against live 2026 World Cup fixtures on 2026-06-15.
 
 CREATE TABLE IF NOT EXISTS team_name_aliases (
     id             SERIAL      PRIMARY KEY,
@@ -21,40 +21,30 @@ CREATE TABLE IF NOT EXISTS team_name_aliases (
     CONSTRAINT uq_team_alias_provider UNIQUE (provider, provider_name)
 );
 
--- ── Confirmed mismatches (verified via Sofascore live data, June 2026) ────────
+-- ── Confirmed mismatches (verified via FOOTBALL_API_KEY live check, 2026-06-15)
+-- api-football uses the full official FIFA name "Cape Verde Islands" whereas
+-- our matches table stores the common short form "Cape Verde".
 INSERT INTO team_name_aliases (canonical_name, provider_name) VALUES
-    -- api-football uses Portuguese/FIFA official name
-    ('Cape Verde',             'Cabo Verde'),
-    -- api-football reverses the word order from FIFA official "DR Congo"
+    ('Cape Verde', 'Cape Verde Islands')
+ON CONFLICT (provider, provider_name) DO NOTHING;
+
+-- ── Defensive aliases for teams not yet seen in live fixtures ─────────────────
+-- These are based on known api-football naming patterns for teams whose matches
+-- fall outside the today/tomorrow window of cmd/check-api-teams.
+-- Re-verify with the tool once those fixtures are scheduled.
+INSERT INTO team_name_aliases (canonical_name, provider_name) VALUES
+    -- Congo DR: Sofascore (which mirrors api-football naming) shows "Congo DR"
     ('DR Congo',               'Congo DR'),
-    -- api-football uses French official FIFA name
+    -- Ivory Coast: api-football may use the French FIFA name on some records
     ('Ivory Coast',            'Côte d''Ivoire'),
-    -- same without diacritics (some API responses strip accents)
     ('Ivory Coast',            'Cote d''Ivoire'),
     -- Bosnia variants: FIFA uses the full name; providers often abbreviate
     ('Bosnia and Herzegovina', 'Bosnia & Herzegovina'),
-    ('Bosnia and Herzegovina', 'Bosnia')
-ON CONFLICT (provider, provider_name) DO NOTHING;
-
--- ── Likely mismatches based on known api-football v3 naming conventions ───────
--- These teams were renamed by FIFA but api-football may still return the old
--- English name.  Verify with: go run ./cmd/check-api-teams
-INSERT INTO team_name_aliases (canonical_name, provider_name) VALUES
-    -- FIFA renamed Turkey → Türkiye in April 2022; some api-football records
-    -- still use the English name "Turkey"
-    ('Türkiye',                'Turkey'),
-    -- FIFA's shorthand is "Czechia"; api-football may return "Czech Republic"
+    ('Bosnia and Herzegovina', 'Bosnia'),
+    -- Czech Republic: FIFA now uses Czechia but some provider records are stale
     ('Czechia',                'Czech Republic'),
-    -- Curaçao: accent often stripped in ASCII-only API responses
-    ('Curaçao',                'Curacao'),
-    -- United States: api-football sometimes returns the abbreviation
+    -- United States: occasionally abbreviated in older provider records
     ('United States',          'USA'),
-    -- South Korea: FIFA uses "Korea Republic" as the official name
-    ('South Korea',            'Korea Republic'),
-    -- New Zealand: FIFA uses "New Zealand" but some providers say "NZ"
-    ('New Zealand',            'NZ'),
-    -- Saudi Arabia: occasionally abbreviated
-    ('Saudi Arabia',           'KSA'),
-    -- Scotland/Wales/Northern Ireland sometimes listed under Great Britain umbrella
-    ('England',                'ENG')
+    -- South Korea: FIFA official name is "Korea Republic"
+    ('South Korea',            'Korea Republic')
 ON CONFLICT (provider, provider_name) DO NOTHING;

@@ -485,17 +485,19 @@ func TestMatchRepository_FindByTeams_ProviderAlias_ResolvesCanonicalName(t *test
 		t.Fatalf("seed match: %v", err)
 	}
 
-	// Insert the alias that api-football uses for Cape Verde.
+	// Insert the alias that api-football actually uses for Cape Verde.
+	// Verified via FOOTBALL_API_KEY live check on 2026-06-15: the API returns
+	// "Cape Verde Islands", not "Cabo Verde" as previously assumed.
 	_, err := testDB.Exec(context.Background(),
 		`INSERT INTO team_name_aliases (canonical_name, provider_name)
-		 VALUES ('Cape Verde', 'Cabo Verde')
+		 VALUES ('Cape Verde', 'Cape Verde Islands')
 		 ON CONFLICT (provider, provider_name) DO NOTHING`)
 	if err != nil {
 		t.Fatalf("seed alias: %v", err)
 	}
 
 	// FindByTeams with the provider name should resolve via the alias table.
-	got, err := repo.FindByTeams(context.Background(), "Spain", "Cabo Verde")
+	got, err := repo.FindByTeams(context.Background(), "Spain", "Cape Verde Islands")
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
