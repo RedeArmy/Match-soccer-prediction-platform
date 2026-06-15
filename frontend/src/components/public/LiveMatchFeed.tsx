@@ -312,19 +312,21 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
 
   let chipClass: string;
   if (live) {
-    chipClass = "bg-green-500/20 text-green-300";
+    chipClass = "bg-green-500 text-white shadow-[0_0_8px_rgba(34,197,94,0.6)]";
   } else if (done) {
     chipClass = "bg-white/10 text-text-muted";
   } else {
     chipClass = "bg-blue-500/10 text-blue-300";
   }
 
+  const scoreClass = live ? "text-green-300" : "text-white";
+
   return (
     <div
       className={cn(
         "overflow-hidden rounded-xl border transition-colors",
         live
-          ? "border-green-500/30 bg-green-500/5"
+          ? "border-green-400/60 bg-green-500/[0.09] shadow-[0_0_12px_rgba(34,197,94,0.12)]"
           : "border-white/10 bg-white/[0.02] hover:border-white/20",
       )}
     >
@@ -367,7 +369,12 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
             </span>
 
             {live || done ? (
-              <span className="shrink-0 text-base font-bold tabular-nums text-white">
+              <span
+                className={cn(
+                  "shrink-0 text-base font-bold tabular-nums",
+                  scoreClass,
+                )}
+              >
                 {fixture.homeScore ?? 0} – {fixture.awayScore ?? 0}
               </span>
             ) : (
@@ -436,15 +443,13 @@ export function LiveMatchFeed() {
     staleTime: 20_000,
   });
 
-  const fixtures = data?.fixtures ?? [];
-
   // Filter to the user's local date and sort: live first, then upcoming by
   // kickoff time ascending, then finished. The route returns two UTC days so
   // that a UTC-6 user at 23:00 local sees matches kicking off at 01:00 UTC
   // (next UTC day but still tonight locally). Client-side filtering removes
   // any matches that genuinely belong to a different local date.
   const displayFixtures = useMemo(() => {
-    const forToday = fixtures.filter(
+    const forToday = (data?.fixtures ?? []).filter(
       (f) => new Date(f.kickoffAt).toLocaleDateString("sv") === localDate,
     );
     const sortOrder = (f: TodayFixture) =>
@@ -454,7 +459,7 @@ export function LiveMatchFeed() {
       if (diff !== 0) return diff;
       return new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime();
     });
-  }, [fixtures, localDate]);
+  }, [data?.fixtures, localDate]);
 
   return (
     <div className="panel p-5">
