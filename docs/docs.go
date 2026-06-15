@@ -5518,88 +5518,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/groups/{id}/tournament-mode": {
-            "patch": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Configures the hybrid payment mode for a group. Only the group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "groups"
-                ],
-                "summary": "Set tournament payment mode",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Group ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Mode flags",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.setTournamentModeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.GroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Validation error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Not the group owner",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Not enough members to enable premium",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/matches": {
             "get": {
                 "security": [
@@ -7301,6 +7219,10 @@ const docTemplate = `{
                 "owner_user_id": {
                     "type": "integer"
                 },
+                "require_approval": {
+                    "description": "RequireApproval mirrors the quiniela.require_approval flag. When false,\nusers who join via invite code are auto-activated with no approval step.",
+                    "type": "boolean"
+                },
                 "status": {
                     "description": "Status is system-managed: \"active\" when the group has ≥ 5 active members,\n\"inactive\" otherwise. Only active groups are eligible for payment processing\nand prize distribution.",
                     "type": "string"
@@ -7418,6 +7340,9 @@ const docTemplate = `{
                 },
                 "created_at": {
                     "type": "string"
+                },
+                "external_match_id": {
+                    "type": "integer"
                 },
                 "group_label": {
                     "type": "string"
@@ -8608,17 +8533,6 @@ const docTemplate = `{
             "properties": {
                 "value": {
                     "type": "string"
-                }
-            }
-        },
-        "internal_api_handler.setTournamentModeRequest": {
-            "type": "object",
-            "properties": {
-                "mode_general": {
-                    "type": "boolean"
-                },
-                "mode_round": {
-                    "type": "boolean"
                 }
             }
         },

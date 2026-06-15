@@ -725,6 +725,7 @@ func (h *GroupHandler) UpdateRequireApproval(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, groupToResponse(q))
 }
 
+// SetTournamentMode handles PATCH /api/v1/groups/{id}/tournament-mode.
 func (h *GroupHandler) SetTournamentMode(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
