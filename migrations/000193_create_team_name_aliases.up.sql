@@ -9,11 +9,8 @@
 -- FindByTeams resolves incoming provider names through this table before the
 -- WHERE clause, so unlinked matches are found even when names diverge.
 --
--- Sources used to verify provider names:
---   Sofascore live match data (June 15 2026, Spain vs Cape Verde in progress)
---   → confirmed: "Cabo Verde", "Congo DR", "Côte d'Ivoire"
---   Run: FOOTBALL_API_KEY=<key> go run ./cmd/check-api-teams
---   to compare all 48 team names directly against the api-football response.
+-- Verification: FOOTBALL_API_KEY=<key> go run ./cmd/check-api-teams
+-- compares all 48 team names directly against the api-football response.
 
 CREATE TABLE IF NOT EXISTS team_name_aliases (
     id             SERIAL      PRIMARY KEY,
@@ -24,22 +21,40 @@ CREATE TABLE IF NOT EXISTS team_name_aliases (
     CONSTRAINT uq_team_alias_provider UNIQUE (provider, provider_name)
 );
 
--- Confirmed: api-football uses Portuguese official FIFA name "Cabo Verde".
--- Sofascore (which mirrors FIFA naming) displays "Cabo Verde", not "Cape Verde".
+-- ── Confirmed mismatches (verified via Sofascore live data, June 2026) ────────
 INSERT INTO team_name_aliases (canonical_name, provider_name) VALUES
-    ('Cape Verde',             'Cabo Verde')
-ON CONFLICT (provider, provider_name) DO NOTHING;
-
--- Likely mismatches based on Sofascore live data (mirrors api-football FIFA naming).
--- Verify with: FOOTBALL_API_KEY=<key> go run ./cmd/check-api-teams
-INSERT INTO team_name_aliases (canonical_name, provider_name) VALUES
-    -- Sofascore shows "Congo DR" (reversed from our "DR Congo")
+    -- api-football uses Portuguese/FIFA official name
+    ('Cape Verde',             'Cabo Verde'),
+    -- api-football reverses the word order from FIFA official "DR Congo"
     ('DR Congo',               'Congo DR'),
-    -- Sofascore shows "Côte d'Ivoire" (French official name vs our English "Ivory Coast")
+    -- api-football uses French official FIFA name
     ('Ivory Coast',            'Côte d''Ivoire'),
-    -- Extra safety: without accents in case provider strips diacritics
+    -- same without diacritics (some API responses strip accents)
     ('Ivory Coast',            'Cote d''Ivoire'),
-    -- Sofascore shows "Bosnia and Herzegovina" matching our DB; add & variant as safety
+    -- Bosnia variants: FIFA uses the full name; providers often abbreviate
     ('Bosnia and Herzegovina', 'Bosnia & Herzegovina'),
     ('Bosnia and Herzegovina', 'Bosnia')
+ON CONFLICT (provider, provider_name) DO NOTHING;
+
+-- ── Likely mismatches based on known api-football v3 naming conventions ───────
+-- These teams were renamed by FIFA but api-football may still return the old
+-- English name.  Verify with: go run ./cmd/check-api-teams
+INSERT INTO team_name_aliases (canonical_name, provider_name) VALUES
+    -- FIFA renamed Turkey → Türkiye in April 2022; some api-football records
+    -- still use the English name "Turkey"
+    ('Türkiye',                'Turkey'),
+    -- FIFA's shorthand is "Czechia"; api-football may return "Czech Republic"
+    ('Czechia',                'Czech Republic'),
+    -- Curaçao: accent often stripped in ASCII-only API responses
+    ('Curaçao',                'Curacao'),
+    -- United States: api-football sometimes returns the abbreviation
+    ('United States',          'USA'),
+    -- South Korea: FIFA uses "Korea Republic" as the official name
+    ('South Korea',            'Korea Republic'),
+    -- New Zealand: FIFA uses "New Zealand" but some providers say "NZ"
+    ('New Zealand',            'NZ'),
+    -- Saudi Arabia: occasionally abbreviated
+    ('Saudi Arabia',           'KSA'),
+    -- Scotland/Wales/Northern Ireland sometimes listed under Great Britain umbrella
+    ('England',                'ENG')
 ON CONFLICT (provider, provider_name) DO NOTHING;
