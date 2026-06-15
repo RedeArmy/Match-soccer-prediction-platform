@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -503,6 +503,31 @@ function PredictionMatchCard({
   else if (isLive) articleClass = "border-green-500/30 bg-green-500/[0.04]";
   else if (isPendingSync) articleClass = "border-amber-500/30 bg-amber-500/[0.04]";
 
+  let statusBadge: ReactNode;
+  if (isLive) {
+    statusBadge = (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-300">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+        </span>
+        {t("predictions.liveLabel")}
+      </span>
+    );
+  } else if (isPendingSync) {
+    statusBadge = (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" />
+        </span>
+        {t("predictions.pendingSync")}
+      </span>
+    );
+  } else {
+    statusBadge = <StatusBadge status={match.status} size="sm" />;
+  }
+
   return (
     <article
       className={cn("rounded border p-4 transition-colors", articleClass)}
@@ -510,25 +535,7 @@ function PredictionMatchCard({
       <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            {isLive ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-300">
-                <span className="relative flex h-1.5 w-1.5 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
-                </span>
-                {t("predictions.liveLabel")}
-              </span>
-            ) : isPendingSync ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
-                <span className="relative flex h-1.5 w-1.5 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" />
-                </span>
-                {t("predictions.pendingSync")}
-              </span>
-            ) : (
-              <StatusBadge status={match.status} size="sm" />
-            )}
+            {statusBadge}
             {!isFinished && (
               <span
                 className={cn(
