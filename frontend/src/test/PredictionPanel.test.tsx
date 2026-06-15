@@ -356,6 +356,44 @@ describe("PredictionPanel", () => {
     expect(screen.getByText("Iniciando...")).toBeInTheDocument();
   });
 
+  it("renders in_progress matches before scheduled ones even when kickoff is later", async () => {
+    // earlierScheduled has an earlier kickoff than liveMatch; without the
+    // live-first sort, it would be rendered first.
+    const earlierScheduled = {
+      ...scheduledMatch,
+      id: 60,
+      home_team: "France",
+      away_team: "Spain",
+      status: "scheduled",
+      kickoff_at: "2026-06-14T10:00:00Z",
+      group_label: "A",
+    };
+    const liveMatch = {
+      ...scheduledMatch,
+      id: 61,
+      home_team: "Brazil",
+      away_team: "Argentina",
+      status: "in_progress",
+      kickoff_at: "2026-06-14T14:00:00Z",
+      group_label: "A",
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      earlierScheduled,
+      liveMatch,
+    ] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    const { container } = renderPanel();
+
+    // Wait for both teams to be in the DOM (group A is default view)
+    await screen.findByText("Francia");
+    await screen.findByText("Brasil");
+
+    const articles = container.querySelectorAll("article");
+    expect(articles[0].textContent).toContain("Brasil");
+    expect(articles[1].textContent).toContain("Francia");
+  });
+
   it("disables score editing for locked matches and filters pending matches", async () => {
     vi.mocked(api.getMatches).mockResolvedValueOnce([
       scheduledMatch,

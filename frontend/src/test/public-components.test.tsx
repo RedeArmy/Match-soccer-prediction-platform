@@ -636,14 +636,15 @@ describe("LiveMatchFeed – FixtureDetailPanel with halftime score", () => {
     );
   });
 
-  it("shows no-data message when both events and lineups are empty", async () => {
+  it("shows empty-events message when both events and lineups are empty", async () => {
     renderFeed();
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() =>
-      expect(
-        screen.getByText("Información del partido aún no disponible."),
-      ).toBeInTheDocument(),
+      expect(screen.getByText("Sin eventos aún.")).toBeInTheDocument(),
     );
+    expect(
+      screen.queryByText("Información del partido aún no disponible."),
+    ).toBeNull();
   });
 });
 
@@ -1043,26 +1044,25 @@ describe("computeFeedInterval – pre-match window (≤ 10 min to kickoff)", () 
 });
 
 describe("computeFeedInterval – idle (kickoff > 10 min away)", () => {
-  it("sleeps until the 10-min window opens (30 min away → 20 min sleep)", () => {
+  it("returns 2 min poll when kickoff is 30 min away", () => {
     const kickoff = new Date(NOW + 30 * 60 * 1_000).toISOString();
     expect(computeFeedInterval([fixture("NS", kickoff)], NOW)).toBe(
-      20 * 60 * 1_000,
+      2 * 60 * 1_000,
     );
   });
 
-  it("caps sleep at 1 h when kickoff is very far away", () => {
-    const kickoff = new Date(NOW + 5 * 60 * 60 * 1_000).toISOString(); // 5 h away
+  it("returns 2 min poll even when kickoff is very far away (5 h)", () => {
+    const kickoff = new Date(NOW + 5 * 60 * 60 * 1_000).toISOString();
     expect(computeFeedInterval([fixture("NS", kickoff)], NOW)).toBe(
-      60 * 60 * 1_000,
+      2 * 60 * 1_000,
     );
   });
 
-  it("uses soonest upcoming kickoff when multiple NS matches exist", () => {
+  it("returns 2 min poll regardless of kickoff ordering when multiple NS matches", () => {
     const soon = new Date(NOW + 25 * 60 * 1_000).toISOString(); // 25 min
     const later = new Date(NOW + 90 * 60 * 1_000).toISOString(); // 90 min
-    // sleep = 25min - 10min = 15 min
     expect(
       computeFeedInterval([fixture("NS", later), fixture("NS", soon)], NOW),
-    ).toBe(15 * 60 * 1_000);
+    ).toBe(2 * 60 * 1_000);
   });
 });

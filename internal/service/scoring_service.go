@@ -307,35 +307,46 @@ func (s *scoringService) writeScoringLog(
 //	Exact scoreline                          -> cfg.exactScore
 //	Correct outcome (non-draw) + same margin -> cfg.correctOutcome + cfg.goalDifference
 //	Correct outcome only                     -> cfg.correctOutcome
+//	Wrong outcome + same goal margin         -> cfg.goalDifference   (no win-method bonus)
 //	Wrong outcome / no prediction            -> 0
 //
-// On top of the base points, a win-method bonus is added when the user
-// predicted the correct win method (extra_time or penalties) and obtained
-// a correct outcome (base points > 0). The bonus is exclusive: at most one
-// of extraTimeBonus or penaltiesBonus is awarded per prediction.
+// A win-method bonus is added on top of the base points when the prediction
+// earned a correct-outcome tier (rules 1–3) and the user correctly predicted
+// extra_time or penalties. The bonus is NOT awarded for the margin-only tier
+// (rule 4): the user did not identify the correct winner. The bonus is
+// exclusive: at most one of extraTimeBonus or penaltiesBonus per prediction.
 func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, actualWinMethod *domain.WinMethod, cfg scoringConfig) int {
-	base := basePoints(pred, actualHome, actualAway, cfg)
-	if base > 0 {
+	base, bonusEligible := basePoints(pred, actualHome, actualAway, cfg)
+	if bonusEligible && base > 0 {
 		base += winMethodBonus(pred.PredictedWinMethod, actualWinMethod, cfg)
 	}
 	return base
 }
 
-// basePoints returns the core score for a prediction ignoring win-method bonuses.
-func basePoints(pred *domain.Prediction, actualHome, actualAway int, cfg scoringConfig) int {
+// basePoints returns the core score and whether the win-method bonus may apply.
+//
+// bonusEligible is true only for correct-outcome tiers (exact, outcome+margin,
+// outcome-only). It is false for the margin-only tier and for wrong outcomes,
+// because the win-method bonus is tied to correctly identifying the winner.
+func basePoints(pred *domain.Prediction, actualHome, actualAway int, cfg scoringConfig) (points int, bonusEligible bool) {
 	if pred.HomeScore == actualHome && pred.AwayScore == actualAway {
-		return cfg.exactScore
+		return cfg.exactScore, true
 	}
 	predOutcome := outcome(pred.HomeScore, pred.AwayScore)
 	actualOutcome := outcome(actualHome, actualAway)
 	if predOutcome != actualOutcome {
-		return domain.PointsIncorrectResult
+		// Margin-only tier: the goal difference matches despite the wrong winner.
+		// Award goalDifference points without win-method bonus eligibility.
+		if goalDiff(pred.HomeScore, pred.AwayScore) == goalDiff(actualHome, actualAway) {
+			return cfg.goalDifference, false
+		}
+		return domain.PointsIncorrectResult, false
 	}
-	points := cfg.correctOutcome
+	pts := cfg.correctOutcome
 	if actualOutcome != outcomeDraw && goalDiff(pred.HomeScore, pred.AwayScore) == goalDiff(actualHome, actualAway) {
-		points += cfg.goalDifference
+		pts += cfg.goalDifference
 	}
-	return points
+	return pts, true
 }
 
 // winMethodBonus returns the bonus when the predicted win method matches the actual one.
