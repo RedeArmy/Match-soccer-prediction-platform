@@ -53,6 +53,7 @@ func setRequiredEnv(t *testing.T) {
 // running before the error they intend to observe.
 func setProductionPaymentEnv(t *testing.T) {
 	t.Helper()
+	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
@@ -265,11 +266,28 @@ func TestLoad_ProductionWithClerkSettings_ReturnsNoError(t *testing.T) {
 	}
 }
 
+func TestLoad_ProductionWithoutAppBaseURL_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	// WCQ_SERVER_APPBASEURL intentionally not set.
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing AppBaseURL in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_SERVER_APPBASEURL") {
+		t.Errorf("expected error to reference WCQ_SERVER_APPBASEURL, got: %v", err)
+	}
+}
+
 func TestLoad_ProductionWithoutRecurrenteAPIKey_ReturnsError(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv(envEnvironment, "production")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	// WCQ_PAYMENT_RECURRENTEAPIKEY intentionally not set.
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
@@ -289,6 +307,7 @@ func TestLoad_ProductionWithoutRecurrenteSecret_ReturnsError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
 	// WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET intentionally not set.
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
@@ -308,6 +327,7 @@ func TestLoad_ProductionWithoutPayPalWebhookID_ReturnsError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
 	// WCQ_PAYMENT_PAYPALWEBHOOKID intentionally not set.
@@ -327,6 +347,7 @@ func TestLoad_ProductionWithoutPayoutEncryptionKey_ReturnsError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
@@ -346,6 +367,7 @@ func TestLoad_ProductionWithoutUnsubscribeSecret_ReturnsError(t *testing.T) {
 	t.Setenv(envEnvironment, "production")
 	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
 	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")

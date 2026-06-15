@@ -346,12 +346,15 @@ func (s *matchSyncService) DailyFixtureSync(ctx context.Context, leagueID, seaso
 // autoLinkByDateRange fetches provider fixtures for every UTC date in
 // [startDate, endDate] and links any internal match not yet associated with
 // an external fixture ID. When both pointers are nil the range is
-// [today UTC, tomorrow UTC] so that evening fixtures for UTC-6 users —
-// which api-football lists under the next UTC calendar day — are captured
-// in the same daily sync run.
+// [today UTC − 30 days, tomorrow UTC] so that any matches the daily job
+// missed (e.g. during a deployment gap) are retroactively linked on the next
+// manual trigger without the operator having to supply explicit dates. Evening
+// fixtures for UTC-6 users — which api-football lists under the next UTC
+// calendar day — are captured in the same sync run because the range extends
+// one day past today.
 func (s *matchSyncService) autoLinkByDateRange(ctx context.Context, leagueID, season int, startDate, endDate *time.Time, result *DailySyncResult) {
 	now := time.Now().UTC().Truncate(24 * time.Hour)
-	start := now
+	start := now.AddDate(0, 0, -30) // default look-back: 30 days
 	if startDate != nil {
 		start = startDate.UTC().Truncate(24 * time.Hour)
 	}
@@ -389,13 +392,30 @@ func (s *matchSyncService) autoLinkByDateRange(ctx context.Context, leagueID, se
 func (s *matchSyncService) tryAutoLink(ctx context.Context, fix *footballprovider.Fixture, result *DailySyncResult, alreadyLinked map[int]struct{}) {
 	m, err := s.matchRepo.FindByTeams(ctx, fix.HomeTeam, fix.AwayTeam)
 	if err != nil {
+		s.log.Warn("match daily sync: FindByTeams error (check team_name_aliases migration)",
+			zap.Int64("external_id", fix.ExternalID),
+			zap.String("provider_home", fix.HomeTeam),
+			zap.String("provider_away", fix.AwayTeam),
+			zap.Error(err))
 		return
 	}
 	if m == nil {
 		// Retry with teams swapped: the provider may assign home/away differently
 		// from the local DB for neutral-venue World Cup fixtures.
 		m, err = s.matchRepo.FindByTeams(ctx, fix.AwayTeam, fix.HomeTeam)
-		if err != nil || m == nil {
+		if err != nil {
+			s.log.Warn("match daily sync: FindByTeams error on swapped retry",
+				zap.Int64("external_id", fix.ExternalID),
+				zap.String("provider_home", fix.HomeTeam),
+				zap.String("provider_away", fix.AwayTeam),
+				zap.Error(err))
+			return
+		}
+		if m == nil {
+			s.log.Warn("match daily sync: no internal match found for provider fixture — add alias if team name differs",
+				zap.Int64("external_id", fix.ExternalID),
+				zap.String("provider_home", fix.HomeTeam),
+				zap.String("provider_away", fix.AwayTeam))
 			return
 		}
 		s.log.Info("match daily sync: resolved match via swapped home/away",

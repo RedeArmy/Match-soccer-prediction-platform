@@ -66,9 +66,15 @@ type Quiniela struct {
 	// quiniela_round_entries row for the active round are included in that
 	// round's distribution (always 1st and 2nd place only).
 	ModeRound bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt *time.Time // nil for active groups; set when the record is soft-deleted
+	// RequireApproval controls the join flow. When true (default), a new
+	// member's request stays pending until any active member approves it and
+	// group members receive a join-request notification. When false, users who
+	// join via invite code are immediately activated with no approval step and
+	// no notification to existing members.
+	RequireApproval bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DeletedAt       *time.Time // nil for active groups; set when the record is soft-deleted
 }
 
 // ── Group membership ──────────────────────────────────────────────────────────

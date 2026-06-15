@@ -64,7 +64,7 @@ func (r *PostgresQuinielaRepository) RegisterMetrics(meter metric.Meter) error {
 	return nil
 }
 
-const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, status, is_premium, mode_general, mode_round, created_at, updated_at, deleted_at"
+const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, status, is_premium, mode_general, mode_round, require_approval, created_at, updated_at, deleted_at"
 
 const msgQuinielaNotFound = "quiniela not found"
 
@@ -73,7 +73,7 @@ func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 	err := row.Scan(
 		&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
 		&q.EntryFee, &q.Currency, &q.Status,
-		&q.IsPremium, &q.ModeGeneral, &q.ModeRound,
+		&q.IsPremium, &q.ModeGeneral, &q.ModeRound, &q.RequireApproval,
 		&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -271,7 +271,7 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 		if err := rows.Scan(
 			&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
 			&q.EntryFee, &q.Currency, &q.Status,
-			&q.IsPremium, &q.ModeGeneral, &q.ModeRound,
+			&q.IsPremium, &q.ModeGeneral, &q.ModeRound, &q.RequireApproval,
 			&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 		); err != nil {
 			return nil, apperrors.Internal(err)
@@ -324,6 +324,27 @@ func (r *PostgresQuinielaRepository) UpdateTournamentMode(
 		  WHERE id = $5`+activeOnly+`
 		  RETURNING `+quinielaColumns,
 		isPremium, modeGeneral, modeRound, entryFee, quinielaID,
+	)
+	result, err := scanQuiniela(row)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, apperrors.NotFound(msgQuinielaNotFound)
+	}
+	return result, nil
+}
+
+// UpdateRequireApproval sets the require_approval flag for the given quiniela.
+// Only the group owner should call this (enforced by the service layer).
+func (r *PostgresQuinielaRepository) UpdateRequireApproval(ctx context.Context, quinielaID int, requireApproval bool) (*domain.Quiniela, error) {
+	row := r.db.QueryRow(ctx,
+		`UPDATE quinielas
+		    SET require_approval = $1,
+		        updated_at       = NOW()
+		  WHERE id = $2`+activeOnly+`
+		  RETURNING `+quinielaColumns,
+		requireApproval, quinielaID,
 	)
 	result, err := scanQuiniela(row)
 	if err != nil {

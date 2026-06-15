@@ -1,0 +1,2 @@
+ALTER TABLE quinielas
+    ADD COLUMN require_approval BOOLEAN NOT NULL DEFAULT TRUE;

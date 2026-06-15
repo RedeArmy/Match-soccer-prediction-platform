@@ -141,6 +141,7 @@ export interface MatchResponse {
   phase: string | null;
   group_label: string | null;
   round_number: number | null;
+  external_match_id?: number | null;
 }
 
 // ── Live predictions carousel ─────────────────────────────────────────────────
@@ -219,6 +220,7 @@ export interface GroupDetailResponse {
   is_premium: boolean;
   mode_general: boolean;
   mode_round: boolean;
+  require_approval: boolean;
   created_at: string;
   updated_at: string;
 }

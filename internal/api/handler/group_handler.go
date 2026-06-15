@@ -690,6 +690,41 @@ type setTournamentModeRequest struct {
 // @Failure      409  {object}  handler.ErrorResponse  "Not enough members to enable premium"
 // @Failure      500  {object}  handler.ErrorResponse
 // @Router       /api/v1/groups/{id}/tournament-mode [patch]
+type updateRequireApprovalRequest struct {
+	RequireApproval bool `json:"require_approval"`
+}
+
+// UpdateRequireApproval handles PATCH /api/v1/groups/{id}/require-approval.
+// Only the group owner may call this. When require_approval is false, users
+// who join via invite code are auto-activated with no pending step or notification.
+func (h *GroupHandler) UpdateRequireApproval(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	req, err := decodeJSON[updateRequireApprovalRequest](r)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	q, err := h.quinielaSvc.UpdateRequireApproval(r.Context(), id, caller.ID, req.RequireApproval)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, groupToResponse(q))
+}
+
 func (h *GroupHandler) SetTournamentMode(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {

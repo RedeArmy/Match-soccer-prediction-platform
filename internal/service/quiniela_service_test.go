@@ -88,6 +88,9 @@ func (r *stubQuinielaRepo) DistributePrizesAtomically(_ context.Context, _, _ in
 func (r *stubQuinielaRepo) UpdateTournamentMode(_ context.Context, _ int, _, _, _ bool, _ int) (*domain.Quiniela, error) {
 	return r.quiniela, r.err
 }
+func (r *stubQuinielaRepo) UpdateRequireApproval(_ context.Context, _ int, _ bool) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
+}
 func (r *stubQuinielaRepo) ExistsByName(_ context.Context, _ string, _ int) (bool, error) {
 	return r.nameExists, r.err
 }
@@ -671,5 +674,36 @@ func TestIsNameAvailable_TrimsWhitespace(t *testing.T) {
 	}
 	if !ok {
 		t.Error("expected true when name with spaces resolves to available")
+	}
+}
+
+// ── UpdateRequireApproval ─────────────────────────────────────────────────────
+
+func TestQuinielaService_UpdateRequireApproval_AuthzError_Propagates(t *testing.T) {
+	authz := &stubGroupAuthz{requireOwnerErr: errors.New("forbidden")}
+	svc := newQuinielaSvc(&stubQuinielaRepo{}, authz)
+	_, err := svc.UpdateRequireApproval(context.Background(), 1, 99, false)
+	if err == nil || err.Error() != "forbidden" {
+		t.Errorf("expected authz error, got %v", err)
+	}
+}
+
+func TestQuinielaService_UpdateRequireApproval_Success_ReturnsQuiniela(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: "Pool", RequireApproval: false}
+	svc := newQuinielaSvc(&stubQuinielaRepo{quiniela: q}, &stubGroupAuthz{})
+	got, err := svc.UpdateRequireApproval(context.Background(), 1, 1, false)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if got == nil || got.ID != 1 {
+		t.Error("expected updated quiniela to be returned")
+	}
+}
+
+func TestQuinielaService_UpdateRequireApproval_RepoError_Propagates(t *testing.T) {
+	svc := newQuinielaSvc(&stubQuinielaRepo{err: errors.New("db error")}, &stubGroupAuthz{})
+	_, err := svc.UpdateRequireApproval(context.Background(), 1, 1, false)
+	if err == nil {
+		t.Error("expected repo error to propagate")
 	}
 }

@@ -110,19 +110,33 @@ export function PredictionPanel() {
       const token = await getToken();
       return api.getMatches(token!);
     },
+    // Re-fetch when the user returns to this tab — the global default is false
+    // but live-match state can change while the user is away.
+    refetchOnWindowFocus: true,
     refetchInterval: (query) => {
       if (query.state.status === "error") return false;
       const matches = query.state.data ?? [];
       if (matches.some((m) => m.status === "in_progress")) return 30_000;
-      // A scheduled match whose kickoff has passed is awaiting the sync worker.
-      // Poll fast so the UI transitions as soon as the DB is updated.
+      const now = Date.now();
+      // A scheduled match whose kickoff has already passed is awaiting the
+      // sync worker to mark it in_progress.
       const hasPendingSync = matches.some(
         (m) =>
           m.status === "scheduled" &&
           m.kickoff_at != null &&
-          new Date(m.kickoff_at).getTime() <= Date.now(),
+          new Date(m.kickoff_at).getTime() <= now,
       );
-      return hasPendingSync ? 30_000 : 120_000;
+      if (hasPendingSync) return 30_000;
+      // A match kicking off within the backend prematch window (10 min) —
+      // start polling fast now so the UI transitions the moment the worker
+      // marks it in_progress, instead of waiting up to 120 s.
+      const hasImminent = matches.some(
+        (m) =>
+          m.status === "scheduled" &&
+          m.kickoff_at != null &&
+          new Date(m.kickoff_at).getTime() <= now + 10 * 60 * 1000,
+      );
+      return hasImminent ? 30_000 : 120_000;
     },
   });
 
