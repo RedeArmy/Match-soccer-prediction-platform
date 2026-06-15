@@ -636,14 +636,15 @@ describe("LiveMatchFeed – FixtureDetailPanel with halftime score", () => {
     );
   });
 
-  it("shows no-data message when both events and lineups are empty", async () => {
+  it("shows empty-events message when both events and lineups are empty", async () => {
     renderFeed();
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() =>
-      expect(
-        screen.getByText("Información del partido aún no disponible."),
-      ).toBeInTheDocument(),
+      expect(screen.getByText("Sin eventos aún.")).toBeInTheDocument(),
     );
+    expect(
+      screen.queryByText("Información del partido aún no disponible."),
+    ).toBeNull();
   });
 });
 

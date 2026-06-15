@@ -231,9 +231,23 @@ function FixtureDetailPanel({
     );
 
   const { fixture } = data;
+  const live = isLive(fixture.status);
 
   return (
     <div className="border-t border-white/10 px-4 pb-4 pt-3 space-y-4">
+      {/* Elapsed time — only visible while the match is in progress */}
+      {live && fixture.elapsed != null && (
+        <div className="flex items-center justify-center gap-1.5">
+          <span className="relative flex h-1.5 w-1.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+          </span>
+          <span className="text-xs font-bold tabular-nums text-green-300">
+            {fixture.elapsed}&apos;
+          </span>
+        </div>
+      )}
+
       {/* Venue */}
       {fixture.venue && (
         <p className="text-center text-[11px] text-text-muted">
@@ -249,17 +263,15 @@ function FixtureDetailPanel({
         </p>
       )}
 
-      {/* Events */}
-      {fixture.events.length > 0 && (
-        <section>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
-            {t("tournaments.liveEvents")}
-          </p>
-          <EventsList events={fixture.events} />
-        </section>
-      )}
+      {/* Events — always rendered; EventsList shows its own empty state */}
+      <section>
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+          {t("tournaments.liveEvents")}
+        </p>
+        <EventsList events={fixture.events} />
+      </section>
 
-      {/* Lineups */}
+      {/* Lineups — only when the API provided them */}
       {fixture.lineups.length > 0 && (
         <section>
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
@@ -271,12 +283,6 @@ function FixtureDetailPanel({
             ))}
           </div>
         </section>
-      )}
-
-      {fixture.lineups.length === 0 && fixture.events.length === 0 && (
-        <p className="text-center text-xs text-text-muted">
-          {t("tournaments.liveNoData")}
-        </p>
       )}
     </div>
   );
