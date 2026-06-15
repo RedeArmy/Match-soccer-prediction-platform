@@ -466,46 +466,109 @@ func TestMatchRepository_FindByTeams_CancelledContext_ReturnsError(t *testing.T)
 	}
 }
 
+// TestMatchRepository_FindByTeams_ProviderAlias covers all 4 confirmed
+// api-football v3 name mismatches verified via live API call on 2026-06-15,
+// plus a control case where no alias entry exists (raw name must still match).
 func TestMatchRepository_FindByTeams_ProviderAlias_ResolvesCanonicalName(t *testing.T) {
-	cleanTables(t)
-	skipIfNoDB(t)
+	cases := []struct {
+		name         string // sub-test label
+		dbHome       string // canonical home_team stored in matches
+		dbAway       string // canonical away_team stored in matches
+		providerHome string // name the provider sends for home
+		providerAway string // name the provider sends for away
+		aliasHome    string // alias to seed for home ("" = no alias)
+		aliasAway    string // alias to seed for away ("" = no alias)
+	}{
+		{
+			name:         "Cape Verde Islands resolved to Cape Verde",
+			dbHome:       "Spain",
+			dbAway:       "Cape Verde",
+			providerHome: "Spain",
+			providerAway: "Cape Verde Islands",
+			aliasAway:    "Cape Verde Islands",
+		},
+		{
+			name:         "Congo DR resolved to DR Congo",
+			dbHome:       "DR Congo",
+			dbAway:       "Morocco",
+			providerHome: "Congo DR",
+			providerAway: "Morocco",
+			aliasHome:    "Congo DR",
+		},
+		{
+			name:         "Bosnia & Herzegovina resolved to Bosnia and Herzegovina",
+			dbHome:       "Bosnia and Herzegovina",
+			dbAway:       "Canada",
+			providerHome: "Bosnia & Herzegovina",
+			providerAway: "Canada",
+			aliasHome:    "Bosnia & Herzegovina",
+		},
+		{
+			name:         "USA resolved to United States",
+			dbHome:       "Mexico",
+			dbAway:       "United States",
+			providerHome: "Mexico",
+			providerAway: "USA",
+			aliasAway:    "USA",
+		},
+		{
+			name:         "no alias needed when provider name matches canonical",
+			dbHome:       "Germany",
+			dbAway:       "Brazil",
+			providerHome: "Germany",
+			providerAway: "Brazil",
+		},
+	}
 
-	// Seed a match using the canonical name stored in the matches table.
-	repo := repository.NewPostgresMatchRepository(testDB)
-	groupH := "H"
-	m := &domain.Match{
-		HomeTeam:   "Spain",
-		AwayTeam:   "Cape Verde",
-		Status:     domain.MatchStatusScheduled,
-		Phase:      domain.PhaseGroupStage,
-		KickoffAt:  time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
-		GroupLabel: &groupH,
-	}
-	if err := repo.Create(context.Background(), m); err != nil {
-		t.Fatalf("seed match: %v", err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cleanTables(t)
+			skipIfNoDB(t)
 
-	// Insert the alias that api-football actually uses for Cape Verde.
-	// Verified via FOOTBALL_API_KEY live check on 2026-06-15: the API returns
-	// "Cape Verde Islands", not "Cabo Verde" as previously assumed.
-	_, err := testDB.Exec(context.Background(),
-		`INSERT INTO team_name_aliases (canonical_name, provider_name)
-		 VALUES ('Cape Verde', 'Cape Verde Islands')
-		 ON CONFLICT (provider, provider_name) DO NOTHING`)
-	if err != nil {
-		t.Fatalf("seed alias: %v", err)
-	}
+			repo := repository.NewPostgresMatchRepository(testDB)
+			groupA := "A"
+			m := &domain.Match{
+				HomeTeam:   tc.dbHome,
+				AwayTeam:   tc.dbAway,
+				Status:     domain.MatchStatusScheduled,
+				Phase:      domain.PhaseGroupStage,
+				KickoffAt:  time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
+				GroupLabel: &groupA,
+			}
+			if err := repo.Create(context.Background(), m); err != nil {
+				t.Fatalf("seed match: %v", err)
+			}
 
-	// FindByTeams with the provider name should resolve via the alias table.
-	got, err := repo.FindByTeams(context.Background(), "Spain", "Cape Verde Islands")
-	if err != nil {
-		t.Fatalf(fmtUnexpectedErr, err)
-	}
-	if got == nil {
-		t.Fatal("expected match via alias lookup, got nil")
-	}
-	if got.ID != m.ID {
-		t.Errorf(fmtIDMismatch, got.ID, m.ID)
+			if tc.aliasHome != "" {
+				_, err := testDB.Exec(context.Background(),
+					`INSERT INTO team_name_aliases (canonical_name, provider_name)
+					 VALUES ($1, $2) ON CONFLICT (provider, provider_name) DO NOTHING`,
+					tc.dbHome, tc.aliasHome)
+				if err != nil {
+					t.Fatalf("seed home alias: %v", err)
+				}
+			}
+			if tc.aliasAway != "" {
+				_, err := testDB.Exec(context.Background(),
+					`INSERT INTO team_name_aliases (canonical_name, provider_name)
+					 VALUES ($1, $2) ON CONFLICT (provider, provider_name) DO NOTHING`,
+					tc.dbAway, tc.aliasAway)
+				if err != nil {
+					t.Fatalf("seed away alias: %v", err)
+				}
+			}
+
+			got, err := repo.FindByTeams(context.Background(), tc.providerHome, tc.providerAway)
+			if err != nil {
+				t.Fatalf(fmtUnexpectedErr, err)
+			}
+			if got == nil {
+				t.Fatalf("expected match via alias lookup, got nil (home=%q away=%q)", tc.providerHome, tc.providerAway)
+			}
+			if got.ID != m.ID {
+				t.Errorf(fmtIDMismatch, got.ID, m.ID)
+			}
+		})
 	}
 }
 
