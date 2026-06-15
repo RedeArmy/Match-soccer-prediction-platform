@@ -22,9 +22,26 @@ import (
 )
 
 const (
-	leagueID = 1 // FIFA World Cup
-	season   = 2026
+	leagueID   = 1 // FIFA World Cup
+	season     = 2026
+	dateLayout = "2006-01-02"
 )
+
+// dbNames are the canonical team names stored in matches.home_team / matches.away_team.
+var dbNames = []string{
+	"Mexico", "South Africa", "South Korea", "Czechia",
+	"Canada", "Bosnia and Herzegovina", "Qatar", "Switzerland",
+	"Brazil", "Morocco", "Haiti", "Scotland",
+	"United States", "Paraguay", "Australia", "Türkiye",
+	"Germany", "Curaçao", "Ivory Coast", "Ecuador",
+	"Netherlands", "Japan", "Sweden", "Tunisia",
+	"Belgium", "Egypt", "Iran", "New Zealand",
+	"Spain", "Cape Verde", "Saudi Arabia", "Uruguay",
+	"France", "Senegal", "Iraq", "Norway",
+	"Argentina", "Algeria", "Austria", "Jordan",
+	"Portugal", "DR Congo", "Uzbekistan", "Colombia",
+	"England", "Croatia", "Ghana", "Panama",
+}
 
 func main() {
 	apiKey := os.Getenv("FOOTBALL_API_KEY")
@@ -40,16 +57,26 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Fetch today + tomorrow to cover evening fixtures under UTC+0.
 	now := time.Now().UTC()
-	seen := make(map[string]struct{})
-	allTeams := []string{}
+	dates := []string{
+		now.Format(dateLayout),
+		now.AddDate(0, 0, 1).Format(dateLayout),
+		now.AddDate(0, 0, -1).Format(dateLayout),
+	}
 
-	for _, d := range []string{
-		now.Format("2006-01-02"),
-		now.AddDate(0, 0, 1).Format("2006-01-02"),
-		now.AddDate(0, 0, -1).Format("2006-01-02"),
-	} {
+	allTeams := collectTeams(ctx, client, dates)
+	if len(allTeams) == 0 {
+		fmt.Println("No fixtures found for today/yesterday/tomorrow. Try querying a specific date.")
+		return
+	}
+
+	printReport(allTeams)
+}
+
+func collectTeams(ctx context.Context, client *footballprovider.APIFootballClient, dates []string) []string {
+	seen := make(map[string]struct{})
+	var teams []string
+	for _, d := range dates {
 		fixtures, err := client.GetFixturesByDate(ctx, leagueID, season, d)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warn: GetFixturesByDate(%s): %v\n", d, err)
@@ -59,45 +86,26 @@ func main() {
 			for _, name := range []string{f.HomeTeam, f.AwayTeam} {
 				if _, ok := seen[name]; !ok {
 					seen[name] = struct{}{}
-					allTeams = append(allTeams, name)
+					teams = append(teams, name)
 				}
 			}
 		}
 	}
+	return teams
+}
 
-	if len(allTeams) == 0 {
-		fmt.Println("No fixtures found for today/yesterday/tomorrow. Try querying a specific date.")
-		cancel()
-		return
-	}
-
-	// DB canonical names (from migrations/000167_seed_teams.up.sql + 000168 matches)
-	dbNames := []string{
-		"Mexico", "South Africa", "South Korea", "Czechia",
-		"Canada", "Bosnia and Herzegovina", "Qatar", "Switzerland",
-		"Brazil", "Morocco", "Haiti", "Scotland",
-		"United States", "Paraguay", "Australia", "Türkiye",
-		"Germany", "Curaçao", "Ivory Coast", "Ecuador",
-		"Netherlands", "Japan", "Sweden", "Tunisia",
-		"Belgium", "Egypt", "Iran", "New Zealand",
-		"Spain", "Cape Verde", "Saudi Arabia", "Uruguay",
-		"France", "Senegal", "Iraq", "Norway",
-		"Argentina", "Algeria", "Austria", "Jordan",
-		"Portugal", "DR Congo", "Uzbekistan", "Colombia",
-		"England", "Croatia", "Ghana", "Panama",
-	}
-
+func printReport(apiTeams []string) {
 	dbSet := make(map[string]struct{}, len(dbNames))
 	for _, n := range dbNames {
 		dbSet[strings.ToLower(n)] = struct{}{}
 	}
 
-	sort.Strings(allTeams)
+	sort.Strings(apiTeams)
 
 	fmt.Println("=== API Team Names vs DB Canonical Names ===")
 	fmt.Println()
 	mismatches := 0
-	for _, apiName := range allTeams {
+	for _, apiName := range apiTeams {
 		if _, ok := dbSet[strings.ToLower(apiName)]; ok {
 			fmt.Printf("  OK       %s\n", apiName)
 		} else {
@@ -105,6 +113,5 @@ func main() {
 			mismatches++
 		}
 	}
-
-	fmt.Printf("\nTotal API teams seen today: %d  |  Mismatches: %d\n", len(allTeams), mismatches)
+	fmt.Printf("\nTotal API teams seen today: %d  |  Mismatches: %d\n", len(apiTeams), mismatches)
 }
