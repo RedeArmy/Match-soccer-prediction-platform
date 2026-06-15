@@ -42,11 +42,11 @@ export function LivePredictionsCarousel({ groupId }: Props) {
   return (
     <section>
       <div className="mb-3 flex items-center gap-2">
-        <Activity className="h-4 w-4 text-red-400 animate-pulse" />
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-red-400">
+        <Activity className="h-4 w-4 text-green-400 animate-pulse" />
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-green-400">
           {t("groups.livePredictionsTitle")}
         </h2>
-        <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-semibold text-red-400">
+        <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
           {t("common.live")}
         </span>
       </div>
@@ -99,7 +99,7 @@ function UserPredictionCard({ row, liveMatches, t }: CardProps) {
   return (
     <article className="flex flex-col rounded-2xl border border-white/10 bg-[#0d1f35] overflow-hidden">
       {/* Live pulse bar */}
-      <div className="h-1 bg-gradient-to-r from-red-500 via-red-400 to-orange-400 animate-pulse" />
+      <div className="h-1 bg-gradient-to-r from-green-500 via-green-400 to-emerald-400 animate-pulse" />
 
       {/* Card header: avatar + name + toggle */}
       <button
@@ -160,17 +160,18 @@ interface MatchPredictionRowProps {
 }
 
 function MatchPredictionRow({ match, snap, t }: MatchPredictionRowProps) {
+  const { teamName } = useI18n();
   return (
     <div className="px-4 py-3">
       <div className="mb-2 flex items-center justify-between gap-2 text-xs text-text-muted">
         <span className="truncate font-medium text-text-secondary">
-          {match.home_team}
+          {teamName(match.home_team)}
         </span>
         <span className="shrink-0 text-[10px] uppercase tracking-wide">
           {t("groups.predictionVs")}
         </span>
         <span className="truncate text-right font-medium text-text-secondary">
-          {match.away_team}
+          {teamName(match.away_team)}
         </span>
       </div>
       {snap?.has_prediction ? (
