@@ -30,12 +30,17 @@ function isDone(status: string) {
 // State machine:
 //  LIVE        → fast poll every 30s
 //  PRE_MATCH   → slow poll every 60s (starts 10 min before kickoff)
-//  IDLE/DONE   → false (no polling; last data stays on screen until page reload)
+//  UPCOMING    → background poll every 2 min (match today, outside pre-match window)
+//  DONE        → false (no polling; last data stays on screen until page reload)
+//
+// UPCOMING must not sleep longer than 2 minutes: React Query fixes the timer at
+// evaluation time, so a long sleep (e.g. "1 h until pre-match window") leaves
+// the page stale if a match kicks off or changes status during that gap.
 
 const LIVE_POLL_MS = 30_000;
 const PRE_MATCH_POLL_MS = 60_000;
 const PRE_MATCH_WINDOW_MS = 10 * 60 * 1_000; // 10 min
-const MAX_SLEEP_MS = 60 * 60 * 1_000; // 1 h cap against clock skew
+const UPCOMING_POLL_MS = 2 * 60 * 1_000; // 2 min
 
 export function computeFeedInterval(
   fixtures: TodayFixture[],
@@ -64,8 +69,9 @@ export function computeFeedInterval(
   // Inside the 10-min pre-match window (or kickoff already past but still NS)
   if (msToKickoff <= PRE_MATCH_WINDOW_MS) return PRE_MATCH_POLL_MS;
 
-  // Sleep until the window opens; cap at 1 h to guard against stale data
-  return Math.min(msToKickoff - PRE_MATCH_WINDOW_MS, MAX_SLEEP_MS);
+  // Outside the pre-match window: poll every 2 minutes so the page reacts
+  // promptly if a match goes live earlier than scheduled.
+  return UPCOMING_POLL_MS;
 }
 
 // ── Event icon ─────────────────────────────────────────────────────────────────
@@ -231,9 +237,23 @@ function FixtureDetailPanel({
     );
 
   const { fixture } = data;
+  const live = isLive(fixture.status);
 
   return (
     <div className="border-t border-white/10 px-4 pb-4 pt-3 space-y-4">
+      {/* Elapsed time — only visible while the match is in progress */}
+      {live && fixture.elapsed != null && (
+        <div className="flex items-center justify-center gap-1.5">
+          <span className="relative flex h-1.5 w-1.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+          </span>
+          <span className="text-xs font-bold tabular-nums text-green-300">
+            {fixture.elapsed}&apos;
+          </span>
+        </div>
+      )}
+
       {/* Venue */}
       {fixture.venue && (
         <p className="text-center text-[11px] text-text-muted">
@@ -249,17 +269,15 @@ function FixtureDetailPanel({
         </p>
       )}
 
-      {/* Events */}
-      {fixture.events.length > 0 && (
-        <section>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
-            {t("tournaments.liveEvents")}
-          </p>
-          <EventsList events={fixture.events} />
-        </section>
-      )}
+      {/* Events — always rendered; EventsList shows its own empty state */}
+      <section>
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+          {t("tournaments.liveEvents")}
+        </p>
+        <EventsList events={fixture.events} />
+      </section>
 
-      {/* Lineups */}
+      {/* Lineups — only when the API provided them */}
       {fixture.lineups.length > 0 && (
         <section>
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
@@ -271,12 +289,6 @@ function FixtureDetailPanel({
             ))}
           </div>
         </section>
-      )}
-
-      {fixture.lineups.length === 0 && fixture.events.length === 0 && (
-        <p className="text-center text-xs text-text-muted">
-          {t("tournaments.liveNoData")}
-        </p>
       )}
     </div>
   );

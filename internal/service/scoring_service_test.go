@@ -19,7 +19,8 @@ import (
 //	3 pts - correct non-draw outcome + correct goal margin
 //	2 pts - correct non-draw outcome, wrong goal margin
 //	2 pts - correct draw (no goal-difference bonus for draws)
-//	0 pts - incorrect outcome
+//	1 pt  - wrong outcome but same goal margin (margin-only tier)
+//	0 pts - wrong outcome and different goal margin
 func TestCalculatePoints(t *testing.T) {
 	const (
 		fmtPoints = "calculatePoints(%d-%d | actual %d-%d): expected %d pts, got %d"
@@ -113,29 +114,51 @@ func TestCalculatePoints(t *testing.T) {
 			wantPts: domain.PointsCorrectOutcome, // 2
 		},
 
-		// ── Tier 3: incorrect outcome ─────────────────────────────────────────
+		// ── Tier 3: wrong outcome, same goal margin (margin-only) ────────────
+		// Canonical example from the business rule: user predicts A 2-1 B,
+		// actual is A 1-2 B. Outcome is wrong but margin (1) matches → 1 pt.
+		{
+			name:     "home_predicted_away_actual_same_margin_1",
+			predHome: 2, predAway: 1, // home win, margin 1
+			realHome: 1, realAway: 2, // away win, margin 1
+			wantPts: domain.PointsGoalDifference, // 1
+		},
+		{
+			name:     "away_predicted_home_actual_same_margin_2",
+			predHome: 0, predAway: 2, // away win, margin 2
+			realHome: 2, realAway: 0, // home win, margin 2
+			wantPts: domain.PointsGoalDifference, // 1
+		},
+		{
+			name:     "home_predicted_away_actual_same_margin_3",
+			predHome: 3, predAway: 0, // home win, margin 3
+			realHome: 0, realAway: 3, // away win, margin 3
+			wantPts: domain.PointsGoalDifference, // 1
+		},
+
+		// ── Tier 4: wrong outcome, different goal margin ──────────────────────
 		{
 			name:     "predicted_home_win_actual_draw",
-			predHome: 2, predAway: 0,
-			realHome: 1, realAway: 1,
+			predHome: 2, predAway: 0, // margin 2
+			realHome: 1, realAway: 1, // margin 0 (draw)
 			wantPts: domain.PointsIncorrectResult, // 0
 		},
 		{
 			name:     "predicted_draw_actual_home_win",
-			predHome: 1, predAway: 1,
-			realHome: 2, realAway: 0,
+			predHome: 1, predAway: 1, // margin 0 (draw)
+			realHome: 2, realAway: 0, // margin 2
 			wantPts: domain.PointsIncorrectResult, // 0
 		},
 		{
-			name:     "predicted_home_win_actual_away_win",
-			predHome: 2, predAway: 1,
-			realHome: 0, realAway: 1,
+			name:     "predicted_home_win_actual_away_win_different_margin",
+			predHome: 2, predAway: 0, // margin 2
+			realHome: 0, realAway: 1, // margin 1
 			wantPts: domain.PointsIncorrectResult, // 0
 		},
 		{
 			name:     "predicted_away_win_actual_draw",
-			predHome: 0, predAway: 2,
-			realHome: 2, realAway: 2,
+			predHome: 0, predAway: 2, // margin 2
+			realHome: 2, realAway: 2, // margin 0 (draw)
 			wantPts: domain.PointsIncorrectResult, // 0
 		},
 	}
@@ -234,13 +257,175 @@ func TestCalculatePoints_NilActualWinMethod_NoBonus(t *testing.T) {
 	}
 }
 
-func TestCalculatePoints_WrongOutcome_NoBonusEvenWithMatchingWinMethod(t *testing.T) {
+// TestCalculatePoints_WrongOutcome_SameMargin_NoWinBonus verifies the margin-only
+// tier in a knockout context: the goal margin matches despite the wrong outcome,
+// so goalDifference points are awarded but the win-method bonus is NOT applied
+// (the user did not identify the correct winner).
+func TestCalculatePoints_WrongOutcome_SameMargin_NoWinBonus(t *testing.T) {
 	pen := domain.WinMethodPenalties
-	pred := &domain.Prediction{HomeScore: 0, AwayScore: 2, PredictedWinMethod: &pen} // predicted away win
+	// pred 0-2 (away win, margin 2) vs actual 2-0 (home win, margin 2): same margin, wrong outcome.
+	pred := &domain.Prediction{HomeScore: 0, AwayScore: 2, PredictedWinMethod: &pen}
 	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
-	got := calculatePoints(pred, 2, 0, &pen, cfg) // actual home win — wrong outcome
+	got := calculatePoints(pred, 2, 0, &pen, cfg)
+	// Margin matches → goalDifference (2), but NO penalties bonus because outcome is wrong.
+	if got != cfg.goalDifference {
+		t.Errorf("expected %d pts (margin-only, no win bonus) on wrong outcome with same margin, got %d",
+			cfg.goalDifference, got)
+	}
+}
+
+// TestCalculatePoints_WrongOutcome_DifferentMargin_Zero verifies that a wrong
+// outcome with a non-matching goal margin still awards zero points.
+func TestCalculatePoints_WrongOutcome_DifferentMargin_Zero(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	// pred 0-2 (away win, margin 2) vs actual 3-0 (home win, margin 3): different margins.
+	pred := &domain.Prediction{HomeScore: 0, AwayScore: 2, PredictedWinMethod: &pen}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 3, 0, &pen, cfg)
 	if got != domain.PointsIncorrectResult {
-		t.Errorf("expected 0 pts on wrong outcome, got %d", got)
+		t.Errorf("expected 0 pts on wrong outcome with different margin, got %d", got)
+	}
+}
+
+// ── calculatePoints: margin-only tier ────────────────────────────────────────
+//
+// Rule: wrong outcome + same goal margin → goalDifference points, no win-method bonus.
+// This covers the case where a user predicts Team A 2-1 Team B but the actual
+// result is Team A 1-2 Team B (wrong winner, same 1-goal margin).
+
+func TestCalculatePoints_MarginOnly(t *testing.T) {
+	type tc struct {
+		name                string
+		predHome, predAway  int
+		realHome, realAway  int
+		goalDifferenceValue int
+		wantPts             int
+	}
+
+	cases := []tc{
+		{
+			// Canonical example from the business rule: pred 2-1 (home), actual 1-2 (away).
+			name:     "home_predicted_away_actual_margin_1_group_stage",
+			predHome: 2, predAway: 1,
+			realHome: 1, realAway: 2,
+			goalDifferenceValue: 1,
+			wantPts:             1,
+		},
+		{
+			// Higher goalDifference value (knockout phase).
+			name:     "home_predicted_away_actual_margin_2_knockout",
+			predHome: 3, predAway: 1,
+			realHome: 0, realAway: 2,
+			goalDifferenceValue: 2,
+			wantPts:             2,
+		},
+		{
+			// Reversed sides, margin 3 (semi-final tier).
+			name:     "away_predicted_home_actual_margin_3_knockout",
+			predHome: 0, predAway: 3,
+			realHome: 3, realAway: 0,
+			goalDifferenceValue: 3,
+			wantPts:             3,
+		},
+		{
+			// Different margins → no points.
+			name:     "wrong_outcome_different_margin_zero",
+			predHome: 2, predAway: 0, // margin 2
+			realHome: 0, realAway: 1, // margin 1
+			goalDifferenceValue: 1,
+			wantPts:             0,
+		},
+		{
+			// Predicted home win vs. actual draw: margins differ (≥1 vs 0) → zero.
+			name:     "home_win_vs_draw_zero",
+			predHome: 1, predAway: 0, // margin 1
+			realHome: 1, realAway: 1, // margin 0 (draw)
+			goalDifferenceValue: 1,
+			wantPts:             0,
+		},
+		{
+			// Predicted draw vs. actual away win: margins differ (0 vs ≥1) → zero.
+			name:     "draw_vs_away_win_zero",
+			predHome: 1, predAway: 1, // margin 0 (draw)
+			realHome: 0, realAway: 2, // margin 2
+			goalDifferenceValue: 1,
+			wantPts:             0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pred := &domain.Prediction{HomeScore: tc.predHome, AwayScore: tc.predAway}
+			cfg := scoringConfig{
+				exactScore:     domain.PointsExactScore,
+				correctOutcome: domain.PointsCorrectOutcome,
+				goalDifference: tc.goalDifferenceValue,
+			}
+			got := calculatePoints(pred, tc.realHome, tc.realAway, nil, cfg)
+			if got != tc.wantPts {
+				t.Errorf("calculatePoints(%d-%d | actual %d-%d): expected %d pts, got %d",
+					tc.predHome, tc.predAway, tc.realHome, tc.realAway, tc.wantPts, got)
+			}
+		})
+	}
+}
+
+// TestCalculatePoints_MarginOnly_WinBonusNotApplied verifies that the win-method
+// bonus is NOT awarded when points come solely from the margin-only tier, even
+// when the user's predicted win method matches the actual one. The user did not
+// identify the correct winner, so the bonus is unwarranted.
+func TestCalculatePoints_MarginOnly_WinBonusNotApplied(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	et := domain.WinMethodExtraTime
+
+	cases := []struct {
+		name            string
+		predHome        int
+		predAway        int
+		realHome        int
+		realAway        int
+		predictedMethod *domain.WinMethod
+		actualMethod    *domain.WinMethod
+		goalDiff        int
+	}{
+		{
+			name:     "penalties_bonus_suppressed_on_margin_only",
+			predHome: 0, predAway: 2, // away win, margin 2
+			realHome: 2, realAway: 0, // home win, margin 2 — wrong outcome, same margin
+			predictedMethod: &pen,
+			actualMethod:    &pen,
+			goalDiff:        2,
+		},
+		{
+			name:     "extra_time_bonus_suppressed_on_margin_only",
+			predHome: 2, predAway: 0, // home win, margin 2
+			realHome: 0, realAway: 2, // away win, margin 2 — wrong outcome, same margin
+			predictedMethod: &et,
+			actualMethod:    &et,
+			goalDiff:        1,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pred := &domain.Prediction{
+				HomeScore:          tc.predHome,
+				AwayScore:          tc.predAway,
+				PredictedWinMethod: tc.predictedMethod,
+			}
+			cfg := scoringConfig{
+				exactScore:     8,
+				correctOutcome: 4,
+				goalDifference: tc.goalDiff,
+				extraTimeBonus: 1,
+				penaltiesBonus: 2,
+			}
+			got := calculatePoints(pred, tc.realHome, tc.realAway, tc.actualMethod, cfg)
+			if got != tc.goalDiff {
+				t.Errorf("%s: expected exactly goalDifference (%d) pts with no win bonus, got %d",
+					tc.name, tc.goalDiff, got)
+			}
+		})
 	}
 }
 

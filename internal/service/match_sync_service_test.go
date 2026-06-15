@@ -30,6 +30,15 @@ type stubSyncMatchRepo struct {
 	findByTeamsMatch *domain.Match
 	findByTeamsErr   error
 	linkCalledCount  int
+	// findByTeamsResponses, when non-nil, is consumed sequentially: the first
+	// call returns index 0, the second returns index 1, and so on.  When the
+	// slice is exhausted the last entry is repeated.  This lets tests exercise
+	// the swapped home/away retry in tryAutoLink.
+	findByTeamsResponses []struct {
+		match *domain.Match
+		err   error
+	}
+	findByTeamsCallCount int
 }
 
 func (r *stubSyncMatchRepo) Create(_ context.Context, _ *domain.Match) error { return nil }
@@ -61,6 +70,15 @@ func (r *stubSyncMatchRepo) ListSyncCandidates(_ context.Context, _ int) ([]*dom
 	return r.candidates, r.candidatesErr
 }
 func (r *stubSyncMatchRepo) FindByTeams(_ context.Context, _, _ string) (*domain.Match, error) {
+	r.findByTeamsCallCount++
+	if len(r.findByTeamsResponses) > 0 {
+		idx := r.findByTeamsCallCount - 1
+		if idx >= len(r.findByTeamsResponses) {
+			idx = len(r.findByTeamsResponses) - 1
+		}
+		resp := r.findByTeamsResponses[idx]
+		return resp.match, resp.err
+	}
 	return r.findByTeamsMatch, r.findByTeamsErr
 }
 func (r *stubSyncMatchRepo) UpdateKickoff(_ context.Context, _ int, _ time.Time) error {
@@ -1191,6 +1209,104 @@ func TestMatchSync_DailyFixtureSync_AutoLink_FindByTeamsReturnsNil_Skips(t *test
 	}
 	if repo.linkCalled {
 		t.Error("LinkExternal must not be called when FindByTeams returns nil")
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_AutoLink_FindByTeamsReturnsError_Skips(t *testing.T) {
+	// FindByTeams returns a hard error on the first call. tryAutoLink must
+	// return early without calling LinkExternal.
+	repo := &stubSyncMatchRepo{
+		findByTeamsErr: errors.New("connection refused"),
+	}
+	provider := &stubProvider{
+		byDateFixtures: []*footballprovider.Fixture{{ExternalID: 88, HomeTeam: "Spain", AwayTeam: "Cape Verde"}},
+	}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Linked != 0 {
+		t.Errorf("Linked: want 0, got %d", result.Linked)
+	}
+	if repo.linkCalled {
+		t.Error("LinkExternal must not be called when FindByTeams returns an error")
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_AutoLink_SwappedOrder_LinksMatch(t *testing.T) {
+	// The provider designates home/away in the opposite order to the local DB
+	// (common for neutral-venue World Cup fixtures). The first FindByTeams call
+	// returns nil; the retry with home and away swapped finds the match and
+	// LinkExternal must be called exactly once.
+	internalMatch := &domain.Match{ID: 77, Status: domain.MatchStatusScheduled}
+	type resp = struct {
+		match *domain.Match
+		err   error
+	}
+	repo := &stubSyncMatchRepo{
+		findByTeamsResponses: []resp{
+			{nil, nil},           // first call (original order) → not found
+			{internalMatch, nil}, // second call (swapped order) → found
+		},
+	}
+	provider := &stubProvider{
+		byDateFixtures: []*footballprovider.Fixture{{
+			ExternalID: 55, HomeTeam: "Cape Verde", AwayTeam: "Spain",
+			Status: footballprovider.StatusNotStarted,
+		}},
+	}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Linked != 1 {
+		t.Errorf("Linked: want 1 (via swapped order), got %d", result.Linked)
+	}
+	// autoLinkByDateRange scans today and tomorrow, so FindByTeams is called at
+	// least twice (original + swap on the first date); the alreadyLinked guard
+	// prevents a second link on the tomorrow scan.
+	if repo.findByTeamsCallCount < 2 {
+		t.Errorf("FindByTeams call count: want >= 2 (original + swap), got %d", repo.findByTeamsCallCount)
+	}
+	if !repo.linkCalled {
+		t.Error("expected LinkExternal to be called after swapped-order match")
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_AutoLink_SwappedOrder_BothNil_Skips(t *testing.T) {
+	// Both the original and the swapped FindByTeams lookups return nil.
+	// LinkExternal must not be called.
+	type resp = struct {
+		match *domain.Match
+		err   error
+	}
+	repo := &stubSyncMatchRepo{
+		findByTeamsResponses: []resp{
+			{nil, nil}, // original order → not found
+			{nil, nil}, // swapped order → still not found
+		},
+	}
+	provider := &stubProvider{
+		byDateFixtures: []*footballprovider.Fixture{{
+			ExternalID: 56, HomeTeam: "Unknown A", AwayTeam: "Unknown B",
+			Status: footballprovider.StatusNotStarted,
+		}},
+	}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Linked != 0 {
+		t.Errorf("Linked: want 0, got %d", result.Linked)
+	}
+	if repo.linkCalled {
+		t.Error("LinkExternal must not be called when both lookups return nil")
 	}
 }
 

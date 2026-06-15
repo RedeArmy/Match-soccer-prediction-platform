@@ -381,10 +381,25 @@ func (s *matchSyncService) autoLinkByDateRange(ctx context.Context, leagueID, se
 // by team name. alreadyLinked tracks matches linked earlier in the same sync
 // run so that a fixture appearing on both the today and tomorrow UTC scans
 // does not trigger a double-link attempt.
+//
+// Team-name resolution goes through the team_name_aliases table (see FindByTeams).
+// If the primary lookup fails, the home/away pair is retried in reverse order:
+// for neutral-venue tournaments the provider may designate the "home" team
+// differently from the local DB, and reversing reliably recovers those cases.
 func (s *matchSyncService) tryAutoLink(ctx context.Context, fix *footballprovider.Fixture, result *DailySyncResult, alreadyLinked map[int]struct{}) {
 	m, err := s.matchRepo.FindByTeams(ctx, fix.HomeTeam, fix.AwayTeam)
-	if err != nil || m == nil {
+	if err != nil {
 		return
+	}
+	if m == nil {
+		// Retry with teams swapped: the provider may assign home/away differently
+		// from the local DB for neutral-venue World Cup fixtures.
+		m, err = s.matchRepo.FindByTeams(ctx, fix.AwayTeam, fix.HomeTeam)
+		if err != nil || m == nil {
+			return
+		}
+		s.log.Info("match daily sync: resolved match via swapped home/away",
+			zap.String("provider_home", fix.HomeTeam), zap.String("provider_away", fix.AwayTeam))
 	}
 	if m.ExternalMatchID != nil {
 		return // already linked in DB
