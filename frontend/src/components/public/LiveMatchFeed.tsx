@@ -452,8 +452,11 @@ export function LiveMatchFeed() {
     const forToday = (data?.fixtures ?? []).filter(
       (f) => new Date(f.kickoffAt).toLocaleDateString("sv") === localDate,
     );
-    const sortOrder = (f: TodayFixture) =>
-      isLive(f.status) ? 0 : isDone(f.status) ? 2 : 1;
+    const sortOrder = (f: TodayFixture): number => {
+      if (isLive(f.status)) return 0;
+      if (isDone(f.status)) return 2;
+      return 1;
+    };
     return [...forToday].sort((a, b) => {
       const diff = sortOrder(a) - sortOrder(b);
       if (diff !== 0) return diff;
