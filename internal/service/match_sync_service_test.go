@@ -1212,6 +1212,29 @@ func TestMatchSync_DailyFixtureSync_AutoLink_FindByTeamsReturnsNil_Skips(t *test
 	}
 }
 
+func TestMatchSync_DailyFixtureSync_AutoLink_FindByTeamsReturnsError_Skips(t *testing.T) {
+	// FindByTeams returns a hard error on the first call. tryAutoLink must
+	// return early without calling LinkExternal.
+	repo := &stubSyncMatchRepo{
+		findByTeamsErr: errors.New("connection refused"),
+	}
+	provider := &stubProvider{
+		byDateFixtures: []*footballprovider.Fixture{{ExternalID: 88, HomeTeam: "Spain", AwayTeam: "Cape Verde"}},
+	}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Linked != 0 {
+		t.Errorf("Linked: want 0, got %d", result.Linked)
+	}
+	if repo.linkCalled {
+		t.Error("LinkExternal must not be called when FindByTeams returns an error")
+	}
+}
+
 func TestMatchSync_DailyFixtureSync_AutoLink_SwappedOrder_LinksMatch(t *testing.T) {
 	// The provider designates home/away in the opposite order to the local DB
 	// (common for neutral-venue World Cup fixtures). The first FindByTeams call
