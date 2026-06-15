@@ -466,6 +466,47 @@ func TestMatchRepository_FindByTeams_CancelledContext_ReturnsError(t *testing.T)
 	}
 }
 
+func TestMatchRepository_FindByTeams_ProviderAlias_ResolvesCanonicalName(t *testing.T) {
+	cleanTables(t)
+	skipIfNoDB(t)
+
+	// Seed a match using the canonical name stored in the matches table.
+	repo := repository.NewPostgresMatchRepository(testDB)
+	groupH := "H"
+	m := &domain.Match{
+		HomeTeam:   "Spain",
+		AwayTeam:   "Cape Verde",
+		Status:     domain.MatchStatusScheduled,
+		Phase:      domain.PhaseGroupStage,
+		KickoffAt:  time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond),
+		GroupLabel: &groupH,
+	}
+	if err := repo.Create(context.Background(), m); err != nil {
+		t.Fatalf("seed match: %v", err)
+	}
+
+	// Insert the alias that api-football uses for Cape Verde.
+	_, err := testDB.Exec(context.Background(),
+		`INSERT INTO team_name_aliases (canonical_name, provider_name)
+		 VALUES ('Cape Verde', 'Cabo Verde')
+		 ON CONFLICT (provider, provider_name) DO NOTHING`)
+	if err != nil {
+		t.Fatalf("seed alias: %v", err)
+	}
+
+	// FindByTeams with the provider name should resolve via the alias table.
+	got, err := repo.FindByTeams(context.Background(), "Spain", "Cabo Verde")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil {
+		t.Fatal("expected match via alias lookup, got nil")
+	}
+	if got.ID != m.ID {
+		t.Errorf(fmtIDMismatch, got.ID, m.ID)
+	}
+}
+
 // ── UpdateKickoff ─────────────────────────────────────────────────────────────
 
 func TestMatchRepository_UpdateKickoff_Persists(t *testing.T) {
