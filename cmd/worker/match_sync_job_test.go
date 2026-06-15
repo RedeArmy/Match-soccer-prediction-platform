@@ -159,16 +159,18 @@ func TestHandlePauseResume_NotPaused_ReturnsFalse(t *testing.T) {
 	}
 }
 
-func TestHandlePauseResume_PausedWithSentinel_ReturnsTrue(t *testing.T) {
+func TestHandlePauseResume_PausedZeroResumeAt_ReturnsFalse(t *testing.T) {
+	// resumeAtUnix=0 means "already due" (Unix epoch is in the past), so the
+	// worker resumes immediately rather than pausing indefinitely.
 	resetGlobalMatchSyncState()
 	globalMatchSyncState.pollingPaused.Store(true)
-	globalMatchSyncState.resumeAtUnix.Store(0) // sentinel: no upcoming match known
+	globalMatchSyncState.resumeAtUnix.Store(0)
 
-	if !handlePauseResume(zap.NewNop()) {
-		t.Error("expected true when paused with sentinel 0")
+	if handlePauseResume(zap.NewNop()) {
+		t.Error("expected false when resumeAt=0 (epoch is in the past)")
 	}
-	if !globalMatchSyncState.pollingPaused.Load() {
-		t.Error("pause state should not be cleared by sentinel 0")
+	if globalMatchSyncState.pollingPaused.Load() {
+		t.Error("pause state should be cleared when resumeAt is in the past")
 	}
 }
 
@@ -272,20 +274,23 @@ func TestSuspendPollingIfThreshold_BelowThreshold_DoesNotPause(t *testing.T) {
 	}
 }
 
-func TestSuspendPollingIfThreshold_AtThreshold_NoMatches_PausesWithSentinel(t *testing.T) {
+func TestSuspendPollingIfThreshold_AtThreshold_NoMatches_PausesWithFiveMinTimer(t *testing.T) {
 	resetGlobalMatchSyncState()
 	globalMatchSyncState.consecutiveZeroCount.Store(2) // next Add(1) reaches 3
 	params := enabledParams(map[string]int{
 		domain.ParamKeyMatchSyncStopAfterZeroLiveCount: 3,
 	})
 
+	before := time.Now().Add(4 * time.Minute).Unix()
 	suspendPollingIfThresholdReached(context.Background(), params, &stubWorkerMatchRepo{}, 10, zap.NewNop())
+	after := time.Now().Add(6 * time.Minute).Unix()
 
 	if !globalMatchSyncState.pollingPaused.Load() {
 		t.Error("expected polling to be paused at threshold with no matches")
 	}
-	if globalMatchSyncState.resumeAtUnix.Load() != 0 {
-		t.Error("expected sentinel 0 when no future matches found")
+	got := globalMatchSyncState.resumeAtUnix.Load()
+	if got < before || got > after {
+		t.Errorf("resumeAtUnix should be ~5 min from now, got %d (window [%d, %d])", got, before, after)
 	}
 }
 
@@ -424,8 +429,9 @@ func TestMakeMatchSyncJob_ThresholdReached_SuspendsPolling(t *testing.T) {
 	if !globalMatchSyncState.pollingPaused.Load() {
 		t.Error("expected polling to be suspended after threshold reached")
 	}
-	if globalMatchSyncState.resumeAtUnix.Load() != 0 {
-		t.Error("expected sentinel 0 (no upcoming matches)")
+	got := globalMatchSyncState.resumeAtUnix.Load()
+	if got <= time.Now().Unix() {
+		t.Errorf("resumeAtUnix should be in the future, got %d", got)
 	}
 }
 

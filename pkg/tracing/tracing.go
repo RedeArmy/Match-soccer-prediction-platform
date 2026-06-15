@@ -19,6 +19,8 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -67,6 +69,10 @@ func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error)
 		return func(context.Context) error { return nil }, nil
 	}
 
+	if err := validateOTLPEndpoint(cfg.OTLPEndpoint); err != nil {
+		return nil, err
+	}
+
 	// WithEndpointURL accepts a full URL (e.g. "http://tempo:4318") and derives
 	// the scheme (http vs https) from the URL itself. The older WithEndpoint
 	// takes only host:port and always requires WithInsecure for plaintext, but
@@ -79,6 +85,26 @@ func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error)
 	}
 
 	return setupWithExporter(cfg, exporter), nil
+}
+
+// validateOTLPEndpoint rejects common mis-configurations before the exporter
+// is created. In particular it catches a double-scheme value such as
+// "http://http://tempo:4318", which url.Parse accepts without error but which
+// produces an invalid-port panic inside the OTel SDK at runtime.
+func validateOTLPEndpoint(endpoint string) error {
+	if endpoint == "" {
+		return fmt.Errorf("tracing: OTLPEndpoint is required when tracing is enabled; set WCQ_TRACING_OTLPENDPOINT=http://tempo:4318")
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("tracing: OTLPEndpoint %q is not a valid URL; expected format: http://tempo:4318", endpoint)
+	}
+	// A double-scheme value ("http://http://tempo:4318") is parsed by url.Parse
+	// without error: the second "http://" ends up in Path as "//tempo:4318".
+	if strings.HasPrefix(u.Path, "//") {
+		return fmt.Errorf("tracing: OTLPEndpoint %q appears to contain a double scheme; correct format: http://tempo:4318", endpoint)
+	}
+	return nil
 }
 
 // setupWithExporter wires a TracerProvider backed by the given exporter.

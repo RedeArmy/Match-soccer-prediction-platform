@@ -105,11 +105,13 @@ func (s *stubSyncMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match,
 }
 
 type stubProvider struct {
-	fixture        *footballprovider.Fixture
-	fetchErr       error
-	liveCalled     bool
-	byDateFixtures []*footballprovider.Fixture
-	byDateErr      error
+	fixture          *footballprovider.Fixture
+	fetchErr         error
+	liveCalled       bool
+	byDateFixtures   []*footballprovider.Fixture
+	byDateErr        error
+	byDateCallCount  int
+	byDateDatesAsked []string
 }
 
 func (p *stubProvider) GetFixture(_ context.Context, _ int64) (*footballprovider.Fixture, error) {
@@ -119,7 +121,9 @@ func (p *stubProvider) GetLiveFixtures(_ context.Context, _, _ int) ([]*football
 	p.liveCalled = true
 	return nil, nil
 }
-func (p *stubProvider) GetFixturesByDate(_ context.Context, _, _ int, _ string) ([]*footballprovider.Fixture, error) {
+func (p *stubProvider) GetFixturesByDate(_ context.Context, _, _ int, date string) ([]*footballprovider.Fixture, error) {
+	p.byDateCallCount++
+	p.byDateDatesAsked = append(p.byDateDatesAsked, date)
 	return p.byDateFixtures, p.byDateErr
 }
 
@@ -1214,5 +1218,55 @@ func TestMatchSync_DailyFixtureSync_AutoLink_GetFixturesByDateError_ContinuesToP
 	// Phase 2 must still finish the live match.
 	if matchSvc.finished != 1 {
 		t.Errorf("UpdateResult calls: want 1, got %d", matchSvc.finished)
+	}
+}
+
+// ── Two-day UTC auto-link scan ────────────────────────────────────────────────
+
+func TestMatchSync_DailyFixtureSync_NilDateRange_ScansToAndTomorrowUTC(t *testing.T) {
+	// When DailyFixtureSync is called with nil dates, autoLinkByDateRange must
+	// query the provider for both today UTC and tomorrow UTC so that evening
+	// fixtures for UTC-6 users (listed under the next UTC day in api-football)
+	// are auto-linked in the same daily run.
+	provider := &stubProvider{byDateFixtures: nil}
+	svc := buildSyncSvc(&stubSyncMatchRepo{}, &stubSyncMatchSvc{}, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if provider.byDateCallCount != 2 {
+		t.Errorf("GetFixturesByDate calls: want 2 (today+tomorrow UTC), got %d", provider.byDateCallCount)
+	}
+	todayUTC := time.Now().UTC().Format("2006-01-02")
+	tomorrowUTC := time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02")
+	if len(provider.byDateDatesAsked) < 2 ||
+		provider.byDateDatesAsked[0] != todayUTC ||
+		provider.byDateDatesAsked[1] != tomorrowUTC {
+		t.Errorf("dates asked: want [%s, %s], got %v", todayUTC, tomorrowUTC, provider.byDateDatesAsked)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_NilDateRange_DeduplicatesAutoLink(t *testing.T) {
+	// The same fixture appearing on both the today and tomorrow scans must
+	// only be linked once (in-run alreadyLinked dedup set).
+	teamMatch := &domain.Match{ID: 99, Status: domain.MatchStatusScheduled}
+	repo := &stubSyncMatchRepo{findByTeamsMatch: teamMatch}
+	fixture := &footballprovider.Fixture{
+		ExternalID: 9999,
+		HomeTeam:   "Sweden",
+		AwayTeam:   "Tunisia",
+	}
+	provider := &stubProvider{byDateFixtures: []*footballprovider.Fixture{fixture}}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repo.linkCalledCount != 1 {
+		t.Errorf("LinkExternal calls: want 1 (dedup), got %d", repo.linkCalledCount)
 	}
 }

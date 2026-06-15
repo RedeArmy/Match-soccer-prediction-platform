@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -112,8 +112,17 @@ export function PredictionPanel() {
     },
     refetchInterval: (query) => {
       if (query.state.status === "error") return false;
-      const hasLive = query.state.data?.some((m) => m.status === "in_progress");
-      return hasLive ? 30_000 : 120_000;
+      const matches = query.state.data ?? [];
+      if (matches.some((m) => m.status === "in_progress")) return 30_000;
+      // A scheduled match whose kickoff has passed is awaiting the sync worker.
+      // Poll fast so the UI transitions as soon as the DB is updated.
+      const hasPendingSync = matches.some(
+        (m) =>
+          m.status === "scheduled" &&
+          m.kickoff_at != null &&
+          new Date(m.kickoff_at).getTime() <= Date.now(),
+      );
+      return hasPendingSync ? 30_000 : 120_000;
     },
   });
 
@@ -470,19 +479,54 @@ function PredictionMatchCard({
     return () => clearInterval(id);
   }, [serverOffsetMs]);
 
-  // DB status is the sole source of truth — kept current by the match-sync worker.
-  const isStatusLive = match.status === "in_progress";
-  const isStatusFinished =
+  // DB status is the authoritative state once the sync worker has caught up.
+  const isLive = match.status === "in_progress";
+  const isFinished =
     match.status === "finished" || match.status === "cancelled";
-  const isLive = isStatusLive;
-  const isFinished = isStatusFinished;
-  const locked = isLive || isFinished;
+
+  // Client-side kickoff guard: lock predictions the moment the countdown
+  // reaches zero, before the sync worker updates the DB status. This closes
+  // the gap between kickoff time and the first PollAndApply cycle.
+  const kickoffMs = match.kickoff_at ? new Date(match.kickoff_at).getTime() : null;
+  const isKickoffPassed = kickoffMs !== null && virtualNow >= kickoffMs;
+
+  // Visible to the user as an amber "Iniciando..." badge while the worker
+  // transitions the DB status from scheduled → in_progress.
+  const isPendingSync = isKickoffPassed && !isLive && !isFinished;
+
+  const locked = isLive || isFinished || isKickoffPassed;
 
   const buttonLabel = getButtonLabel(isPending, prediction !== undefined, t);
 
   let articleClass = "border-white/10 bg-white/[0.025]";
   if (isFinished) articleClass = "border-red-500/30 bg-red-500/[0.04]";
   else if (isLive) articleClass = "border-green-500/30 bg-green-500/[0.04]";
+  else if (isPendingSync) articleClass = "border-amber-500/30 bg-amber-500/[0.04]";
+
+  let statusBadge: ReactNode;
+  if (isLive) {
+    statusBadge = (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-300">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+        </span>
+        {t("predictions.liveLabel")}
+      </span>
+    );
+  } else if (isPendingSync) {
+    statusBadge = (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" />
+        </span>
+        {t("predictions.pendingSync")}
+      </span>
+    );
+  } else {
+    statusBadge = <StatusBadge status={match.status} size="sm" />;
+  }
 
   return (
     <article
@@ -491,17 +535,7 @@ function PredictionMatchCard({
       <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            {isLive ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-300">
-                <span className="relative flex h-1.5 w-1.5 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
-                </span>
-                {t("predictions.liveLabel")}
-              </span>
-            ) : (
-              <StatusBadge status={match.status} size="sm" />
-            )}
+            {statusBadge}
             {!isFinished && (
               <span
                 className={cn(
@@ -517,11 +551,6 @@ function PredictionMatchCard({
                   <Target className="h-3 w-3" />
                 )}
                 {prediction ? t("predictions.saved") : t("predictions.unsaved")}
-              </span>
-            )}
-            {!isLive && !isFinished && locked && (
-              <span className="text-[10px] uppercase text-red-300">
-                {t("predictions.locked")}
               </span>
             )}
           </div>

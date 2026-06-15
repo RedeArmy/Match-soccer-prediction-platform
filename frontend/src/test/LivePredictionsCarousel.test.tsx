@@ -131,7 +131,7 @@ describe("LivePredictionsCarousel", () => {
     });
     fireEvent.click(toggle);
 
-    expect(screen.getByText("Brazil")).toBeTruthy();
+    expect(screen.getByText("Brasil")).toBeTruthy();
     expect(screen.getByText("Argentina")).toBeTruthy();
     expect(screen.getByText("2")).toBeTruthy();
     expect(screen.getByText("1")).toBeTruthy();
@@ -147,7 +147,7 @@ describe("LivePredictionsCarousel", () => {
     fireEvent.click(toggle);
     fireEvent.click(toggle);
 
-    expect(screen.queryByText("Brazil")).toBeNull();
+    expect(screen.queryByText("Brasil")).toBeNull();
   });
 
   it("renders noPrediction inside open accordion when has_prediction is false", () => {
