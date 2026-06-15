@@ -80,6 +80,32 @@ func TestSetup_Disabled_SetsNoopProvider(t *testing.T) {
 	}
 }
 
+// ── OTLPEndpoint validation ────────────────────────────────────────────────────
+
+func TestSetup_Enabled_RejectsEmptyEndpoint(t *testing.T) {
+	resetGlobalProvider(t)
+	_, err := tracing.Setup(context.Background(), tracing.Config{Enabled: true, OTLPEndpoint: ""})
+	if err == nil {
+		t.Fatal("expected error for empty endpoint, got nil")
+	}
+}
+
+func TestSetup_Enabled_RejectsBareHostPort(t *testing.T) {
+	resetGlobalProvider(t)
+	_, err := tracing.Setup(context.Background(), tracing.Config{Enabled: true, OTLPEndpoint: "tempo:4318"})
+	if err == nil {
+		t.Fatal("expected error for bare host:port without scheme, got nil")
+	}
+}
+
+func TestSetup_Enabled_RejectsDoubleScheme(t *testing.T) {
+	resetGlobalProvider(t)
+	_, err := tracing.Setup(context.Background(), tracing.Config{Enabled: true, OTLPEndpoint: "http://http://tempo:4318"})
+	if err == nil {
+		t.Fatal("expected error for double-scheme endpoint, got nil")
+	}
+}
+
 // ── enabled path (in-memory exporter) ─────────────────────────────────────────
 
 func TestSetupWithExporter_ProducesRecordingSpans(t *testing.T) {
@@ -223,7 +249,7 @@ func TestSetup_Enabled_CreatesOTLPExporter(t *testing.T) {
 
 	cfg := tracing.Config{
 		Enabled:        true,
-		OTLPEndpoint:   srv.Listener.Addr().String(),
+		OTLPEndpoint:   "http://" + srv.Listener.Addr().String(),
 		ServiceName:    "setup-test",
 		ServiceVersion: "1.0.0",
 		Environment:    "test",

@@ -92,14 +92,12 @@ func makeMatchSyncJob(
 
 // handlePauseResume checks the global pause state on each tick.
 // Returns true when the tick should be skipped entirely.
-// resumeAtUnix == 0 is the sentinel for "no upcoming matches found at pause
-// time" — keep the pause until the daily sync or the operator adds a match.
 func handlePauseResume(log *zap.Logger) bool {
 	if !globalMatchSyncState.pollingPaused.Load() {
 		return false
 	}
 	resumeAt := globalMatchSyncState.resumeAtUnix.Load()
-	if resumeAt == 0 || time.Now().Unix() < resumeAt {
+	if time.Now().Unix() < resumeAt {
 		return true
 	}
 	globalMatchSyncState.pollingPaused.Store(false)
@@ -127,8 +125,12 @@ func suspendPollingIfThresholdReached(
 	nextKickoff, found := nextScheduledMatchKickoff(ctx, matchRepo)
 	if !found {
 		globalMatchSyncState.pollingPaused.Store(true)
-		globalMatchSyncState.resumeAtUnix.Store(0)
-		log.Info("match sync: no upcoming matches found — polling suspended")
+		// Re-check in 5 minutes instead of pausing indefinitely. This ensures
+		// that a match linked manually after the pause (setting external_match_id
+		// in the DB) is picked up within one re-check cycle rather than waiting
+		// for the daily sync or an operator restart.
+		globalMatchSyncState.resumeAtUnix.Store(time.Now().Add(5 * time.Minute).Unix())
+		log.Info("match sync: no upcoming matches found — polling suspended for 5 min")
 		return
 	}
 

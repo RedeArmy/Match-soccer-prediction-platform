@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, ChevronDown, ChevronUp, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -195,13 +195,15 @@ function EventsList({ events }: Readonly<{ events: FixtureEvent[] }>) {
 
 function FixtureDetailPanel({
   fixtureId,
-  onCollapse,
-}: Readonly<{ fixtureId: number; onCollapse: () => void }>) {
+}: Readonly<{ fixtureId: number }>) {
   const { t } = useI18n();
   const { data, isLoading, isError } = useQuery<{ fixture?: FixtureDetail }>({
     queryKey: ["live-fixture", fixtureId],
     queryFn: () =>
-      fetch(`/api/live/fixture/${fixtureId}`).then((r) => r.json()),
+      fetch(`/api/live/fixture/${fixtureId}`).then((r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return r.json();
+      }),
     // Only poll while the match is live; pre-match and post-match details are static.
     refetchInterval: (query) => {
       const fixture = query.state.data?.fixture;
@@ -211,17 +213,6 @@ function FixtureDetailPanel({
     staleTime: 15_000,
   });
 
-  // When the fetch settles with no usable data, collapse the card instead of
-  // showing an error. useRef prevents double-firing if the parent re-renders
-  // before the component unmounts.
-  const collapsedRef = useRef(false);
-  useEffect(() => {
-    if (!isLoading && (isError || !data?.fixture) && !collapsedRef.current) {
-      collapsedRef.current = true;
-      onCollapse();
-    }
-  }, [isLoading, isError, data, onCollapse]);
-
   if (isLoading)
     return (
       <div className="px-4 pb-4">
@@ -229,12 +220,27 @@ function FixtureDetailPanel({
       </div>
     );
 
-  if (isError || !data?.fixture) return null;
+  // Show inline message rather than collapsing — the user clicked to see info.
+  if (isError || !data?.fixture)
+    return (
+      <div className="border-t border-white/10 px-4 pb-4 pt-3">
+        <p className="text-center text-xs text-text-muted">
+          {t("tournaments.liveNoData")}
+        </p>
+      </div>
+    );
 
   const { fixture } = data;
 
   return (
     <div className="border-t border-white/10 px-4 pb-4 pt-3 space-y-4">
+      {/* Venue */}
+      {fixture.venue && (
+        <p className="text-center text-[11px] text-text-muted">
+          📍 {fixture.venue}
+        </p>
+      )}
+
       {/* Halftime score */}
       {(fixture.halftimeHome != null || fixture.halftimeAway != null) && (
         <p className="text-center text-[11px] text-text-muted">
@@ -306,19 +312,21 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
 
   let chipClass: string;
   if (live) {
-    chipClass = "bg-green-500/20 text-green-300";
+    chipClass = "bg-green-500 text-white shadow-[0_0_8px_rgba(34,197,94,0.6)]";
   } else if (done) {
     chipClass = "bg-white/10 text-text-muted";
   } else {
     chipClass = "bg-blue-500/10 text-blue-300";
   }
 
+  const scoreClass = live ? "text-green-300" : "text-white";
+
   return (
     <div
       className={cn(
         "overflow-hidden rounded-xl border transition-colors",
         live
-          ? "border-green-500/30 bg-green-500/5"
+          ? "border-green-400/60 bg-green-500/[0.09] shadow-[0_0_12px_rgba(34,197,94,0.12)]"
           : "border-white/10 bg-white/[0.02] hover:border-white/20",
       )}
     >
@@ -361,7 +369,12 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
             </span>
 
             {live || done ? (
-              <span className="shrink-0 text-base font-bold tabular-nums text-white">
+              <span
+                className={cn(
+                  "shrink-0 text-base font-bold tabular-nums",
+                  scoreClass,
+                )}
+              >
                 {fixture.homeScore ?? 0} – {fixture.awayScore ?? 0}
               </span>
             ) : (
@@ -390,9 +403,7 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
         )}
       </button>
 
-      {expanded && (
-        <FixtureDetailPanel fixtureId={fixture.id} onCollapse={onToggle} />
-      )}
+      {expanded && <FixtureDetailPanel fixtureId={fixture.id} />}
     </div>
   );
 }
@@ -432,7 +443,26 @@ export function LiveMatchFeed() {
     staleTime: 20_000,
   });
 
-  const fixtures = data?.fixtures ?? [];
+  // Filter to the user's local date and sort: live first, then upcoming by
+  // kickoff time ascending, then finished. The route returns two UTC days so
+  // that a UTC-6 user at 23:00 local sees matches kicking off at 01:00 UTC
+  // (next UTC day but still tonight locally). Client-side filtering removes
+  // any matches that genuinely belong to a different local date.
+  const displayFixtures = useMemo(() => {
+    const forToday = (data?.fixtures ?? []).filter(
+      (f) => new Date(f.kickoffAt).toLocaleDateString("sv") === localDate,
+    );
+    const sortOrder = (f: TodayFixture): number => {
+      if (isLive(f.status)) return 0;
+      if (isDone(f.status)) return 2;
+      return 1;
+    };
+    return [...forToday].sort((a, b) => {
+      const diff = sortOrder(a) - sortOrder(b);
+      if (diff !== 0) return diff;
+      return new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime();
+    });
+  }, [data?.fixtures, localDate]);
 
   return (
     <div className="panel p-5">
@@ -441,7 +471,7 @@ export function LiveMatchFeed() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
           {t("tournaments.liveTitle")}
         </h2>
-        {fixtures.some((f) => isLive(f.status)) && (
+        {displayFixtures.some((f) => isLive(f.status)) && (
           <span className="ml-auto rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-300">
             {t("tournaments.liveBadge")}
           </span>
@@ -456,15 +486,15 @@ export function LiveMatchFeed() {
         </p>
       )}
 
-      {!isLoading && !isError && fixtures.length === 0 && (
+      {!isLoading && !isError && displayFixtures.length === 0 && (
         <p className="py-6 text-center text-xs text-text-muted">
           {t("tournaments.liveEmpty")}
         </p>
       )}
 
-      {fixtures.length > 0 && (
+      {displayFixtures.length > 0 && (
         <div className="space-y-2">
-          {fixtures.map((f) => (
+          {displayFixtures.map((f) => (
             <MatchCard
               key={f.id}
               fixture={f}

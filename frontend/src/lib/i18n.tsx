@@ -494,6 +494,7 @@ const translations: TranslationNode = {
     saved:        { es: 'Guardado',                  en: 'Saved'                      },
     unsaved:      { es: 'Sin guardar',               en: 'Unsaved'                    },
     locked:       { es: 'Bloqueado',                 en: 'Locked'                     },
+    pendingSync:  { es: 'Iniciando...',              en: 'Starting...'                },
     score:        { es: 'Marcador',                  en: 'Score'                      },
     home:         { es: 'Local',                     en: 'Home'                       },
     away:         { es: 'Visitante',                 en: 'Away'                       },

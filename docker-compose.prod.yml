@@ -55,6 +55,7 @@ services:
       WCQ_ENVIRONMENT:            production
       WCQ_EVENTBUS_DRIVER:        redis
       WCQ_CORS_ALLOWEDORIGINS:    ${FRONTEND_PUBLIC_URL}
+      WCQ_SERVER_APPBASEURL:      ${FRONTEND_PUBLIC_URL}
       # ── Auth ─────────────────────────────────────────────────────────────────
       WCQ_CLERK_JWKSURL:          ${CLERK_JWKS_URL}
       WCQ_CLERK_WEBHOOKSECRET:    ${CLERK_WEBHOOK_SECRET}
@@ -117,6 +118,7 @@ services:
       WCQ_REDIS_PASSWORD:         ${REDIS_PASSWORD}
       WCQ_ENVIRONMENT:            production
       WCQ_EVENTBUS_DRIVER:        redis
+      WCQ_SERVER_APPBASEURL:      ${FRONTEND_PUBLIC_URL}
       WCQ_METRICS_ENABLED:        "true"
       WCQ_TRACING_ENABLED:        "true"
       WCQ_TRACING_OTLPENDPOINT:   http://tempo:4318
