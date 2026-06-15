@@ -53,7 +53,7 @@ func makeMatchSyncJob(
 
 		prematchWindow := params.GetInt(ctx, domain.ParamKeyMatchSyncPrematchWindowMin, domain.DefaultMatchSyncPrematchWindowMin)
 
-		if handlePauseResume(log) {
+		if handlePauseResume(ctx, matchRepo, log) {
 			return nil
 		}
 
@@ -90,26 +90,51 @@ func makeMatchSyncJob(
 	}
 }
 
+// resetPauseState clears the three pause-related atomics. Called on normal
+// timer expiry and on early-resume when an overdue linked match is detected.
+func resetPauseState() {
+	globalMatchSyncState.pollingPaused.Store(false)
+	globalMatchSyncState.consecutiveZeroCount.Store(0)
+	globalMatchSyncState.resumeAtUnix.Store(0)
+}
+
 // handlePauseResume checks the global pause state on each tick.
 // Returns true when the tick should be skipped entirely.
-func handlePauseResume(log *zap.Logger) bool {
+//
+// When paused but the resume timer has not yet expired, a lightweight DB check
+// is performed for overdue linked matches — i.e. matches whose kickoff has
+// already passed but whose status is still 'scheduled'. This handles the race
+// condition where external_match_id is set (via a manual admin sync) after the
+// pause began: the overdue check detects the newly-linked match and resumes
+// immediately rather than waiting for the full pause window to elapse.
+func handlePauseResume(ctx context.Context, matchRepo repository.MatchRepository, log *zap.Logger) bool {
 	if !globalMatchSyncState.pollingPaused.Load() {
 		return false
 	}
 	resumeAt := globalMatchSyncState.resumeAtUnix.Load()
-	if time.Now().Unix() < resumeAt {
-		return true
+	if time.Now().Unix() >= resumeAt {
+		resetPauseState()
+		log.Info("match sync: polling resumed — approaching next scheduled match")
+		return false
 	}
-	globalMatchSyncState.pollingPaused.Store(false)
-	globalMatchSyncState.consecutiveZeroCount.Store(0)
-	globalMatchSyncState.resumeAtUnix.Store(0)
-	log.Info("match sync: polling resumed — approaching next scheduled match")
-	return false
+	// Timer has not yet expired. Check for matches linked since the pause began
+	// that are already past their kickoff time.
+	_, _, hasOverdue := nextScheduledMatchKickoff(ctx, matchRepo)
+	if hasOverdue {
+		resetPauseState()
+		log.Info("match sync: polling resumed early — overdue linked match detected")
+		return false
+	}
+	return true
 }
 
 // suspendPollingIfThresholdReached accumulates consecutive zero-live ticks and,
 // once the configured threshold is reached, pauses polling until the pre-match
 // window of the next scheduled match.
+//
+// If any linked scheduled match already has a kickoff in the past (overdue),
+// the counter is reset without pausing: PollAndApply should be retried on the
+// next tick to catch the status transition rather than sleeping through it.
 func suspendPollingIfThresholdReached(
 	ctx context.Context,
 	params service.SystemParamService,
@@ -122,7 +147,14 @@ func suspendPollingIfThresholdReached(
 		return
 	}
 
-	nextKickoff, found := nextScheduledMatchKickoff(ctx, matchRepo)
+	nextKickoff, found, hasOverdue := nextScheduledMatchKickoff(ctx, matchRepo)
+	if hasOverdue {
+		// A linked match whose kickoff has already passed is waiting to be
+		// transitioned to 'live'. Reset the counter so polling continues.
+		globalMatchSyncState.consecutiveZeroCount.Store(0)
+		log.Info("match sync: overdue linked match detected — not pausing")
+		return
+	}
 	if !found {
 		globalMatchSyncState.pollingPaused.Store(true)
 		// Re-check in 5 minutes instead of pausing indefinitely. This ensures
@@ -147,22 +179,31 @@ func suspendPollingIfThresholdReached(
 	)
 }
 
-// nextScheduledMatchKickoff returns the earliest upcoming linked scheduled match
-// kickoff (after now). Returns false when no such match exists.
-func nextScheduledMatchKickoff(ctx context.Context, matchRepo repository.MatchRepository) (time.Time, bool) {
+// nextScheduledMatchKickoff scans linked sync candidates and returns:
+//   - next: the earliest future kickoff among scheduled matches (zero if none)
+//   - found: whether any future scheduled match exists
+//   - hasOverdue: whether any scheduled match has a kickoff already in the past
+//
+// hasOverdue is the key signal for both suspendPollingIfThresholdReached (do
+// not pause) and handlePauseResume (resume early): it indicates that a linked
+// match is waiting to be transitioned but has not yet been seen as live.
+func nextScheduledMatchKickoff(ctx context.Context, matchRepo repository.MatchRepository) (next time.Time, found bool, hasOverdue bool) {
 	candidates, err := matchRepo.ListSyncCandidates(ctx, 0)
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, false, false
 	}
 	now := time.Now()
-	var earliest time.Time
 	for _, m := range candidates {
-		if m.Status != domain.MatchStatusScheduled || !m.KickoffAt.After(now) {
+		if m.Status != domain.MatchStatusScheduled {
 			continue
 		}
-		if earliest.IsZero() || m.KickoffAt.Before(earliest) {
-			earliest = m.KickoffAt
+		if !m.KickoffAt.After(now) {
+			hasOverdue = true
+			continue
+		}
+		if next.IsZero() || m.KickoffAt.Before(next) {
+			next = m.KickoffAt
 		}
 	}
-	return earliest, !earliest.IsZero()
+	return next, !next.IsZero(), hasOverdue
 }
