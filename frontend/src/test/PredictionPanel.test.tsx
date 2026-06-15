@@ -291,11 +291,12 @@ describe("PredictionPanel", () => {
   });
 
   it("shows allSavedToday empty state in by-day+pending view", async () => {
-    // Pin to noon UTC today so the match is always "today" regardless of when
-    // the test runs — Date.now() + 3 h would roll into tomorrow after 21:00 UTC.
-    const todayNoon = new Date();
-    todayNoon.setUTCHours(12, 0, 0, 0);
-    const todayKickoff = todayNoon.toISOString();
+    // Use noon *local* time so the match is always "today" regardless of the
+    // system timezone offset. The PredictionPanel filters by local date using the
+    // i18n timeZone (which inherits the JSDOM environment's system timezone).
+    // toLocaleDateString("sv") + "T12:00:00" (no Z) → parsed as local noon.
+    const todayLocal = new Date().toLocaleDateString("sv");
+    const todayKickoff = `${todayLocal}T12:00:00`;
     const todayMatch = {
       ...scheduledMatch,
       id: 40,

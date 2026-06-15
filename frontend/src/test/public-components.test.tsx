@@ -52,6 +52,12 @@ function renderFeed() {
   );
 }
 
+// toLocaleDateString("sv") returns YYYY-MM-DD in the *local* timezone — the same
+// format the LiveMatchFeed component uses for its `localDate` state. Using local
+// time without a Z suffix ensures the filter always passes regardless of the
+// system timezone offset (e.g. UTC-6 for Guatemala).
+const TODAY_LOCAL = new Date().toLocaleDateString("sv"); // "YYYY-MM-DD" in local TZ
+
 function makeFixture(overrides: Partial<TodayFixture> = {}): TodayFixture {
   return {
     id: 1,
@@ -63,7 +69,7 @@ function makeFixture(overrides: Partial<TodayFixture> = {}): TodayFixture {
     awayScore: null,
     status: "NS",
     elapsed: null,
-    kickoffAt: "2026-06-10T20:00:00Z",
+    kickoffAt: `${TODAY_LOCAL}T20:00:00`, // local time — toLocaleDateString("sv") = TODAY_LOCAL
     round: "Group Stage - 1",
     venue: null,
     ...overrides,
@@ -532,14 +538,16 @@ describe("LiveMatchFeed – FixtureDetailPanel error", () => {
     );
   });
 
-  it("auto-collapses card when detail query fails (no error message shown)", async () => {
+  it("shows no-data message when detail query fails (card stays expanded)", async () => {
     renderFeed();
     const btn = screen.getByRole("button");
     fireEvent.click(btn);
-    await waitFor(() => expect(btn).toHaveAttribute("aria-expanded", "false"));
-    expect(
-      screen.queryByText("No se pudo cargar la información del partido."),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText("Información del partido aún no disponible."),
+      ).toBeInTheDocument(),
+    );
+    expect(btn).toHaveAttribute("aria-expanded", "true");
   });
 });
 
@@ -560,14 +568,16 @@ describe("LiveMatchFeed – FixtureDetailPanel missing fixture", () => {
     );
   });
 
-  it("auto-collapses card when fixture is absent from response (no error message shown)", async () => {
+  it("shows no-data message when fixture is absent from response (card stays expanded)", async () => {
     renderFeed();
     const btn = screen.getByRole("button");
     fireEvent.click(btn);
-    await waitFor(() => expect(btn).toHaveAttribute("aria-expanded", "false"));
-    expect(
-      screen.queryByText("No se pudo cargar la información del partido."),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText("Información del partido aún no disponible."),
+      ).toBeInTheDocument(),
+    );
+    expect(btn).toHaveAttribute("aria-expanded", "true");
   });
 });
 
@@ -882,14 +892,14 @@ describe("LiveMatchFeed – scheduled (NS) fixtures are shown without live badge
             homeTeam: "Mexico",
             awayTeam: "Argentina",
             status: "NS",
-            kickoffAt: "2026-06-15T21:00:00Z",
+            kickoffAt: `${TODAY_LOCAL}T21:00:00`,
           }),
           makeFixture({
             id: 11,
             homeTeam: "USA",
             awayTeam: "Canada",
             status: "NS",
-            kickoffAt: "2026-06-15T23:00:00Z",
+            kickoffAt: `${TODAY_LOCAL}T23:00:00`,
           }),
         ],
       },

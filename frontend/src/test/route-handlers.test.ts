@@ -461,6 +461,11 @@ const clockOkResponse = () =>
     status: 200,
   });
 
+const emptyAfResponse = () =>
+  new Response(JSON.stringify({ results: 0, errors: [], response: [] }), {
+    status: 200,
+  });
+
 describe("GET /api/live/today – upstream OK", () => {
   beforeEach(() => {
     mockFetch.mockReset();
@@ -492,6 +497,7 @@ describe("GET /api/live/today – upstream OK", () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify(afPayload), { status: 200 }),
     );
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // tomorrow — two-day fetch
     const { GET } = await import("@/app/api/live/today/route");
     const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
@@ -514,7 +520,8 @@ describe("GET /api/live/today – upstream fetch throws", () => {
   });
 
   it("returns { fixtures: [] } on network error", async () => {
-    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED")); // today throws
+    mockFetch.mockResolvedValueOnce(emptyAfResponse());          // tomorrow
     const { GET } = await import("@/app/api/live/today/route");
     const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
@@ -531,7 +538,8 @@ describe("GET /api/live/today – upstream non-OK", () => {
   });
 
   it("returns { fixtures: [] } on upstream 429", async () => {
-    mockFetch.mockResolvedValueOnce(new Response("", { status: 429 }));
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 429 })); // today
+    mockFetch.mockResolvedValueOnce(emptyAfResponse());                  // tomorrow
     const { GET } = await import("@/app/api/live/today/route");
     const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
@@ -548,11 +556,8 @@ describe("GET /api/live/today – empty response array", () => {
   });
 
   it("returns { fixtures: [] } when no matches scheduled today", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ results: 0, errors: [], response: [] }), {
-        status: 200,
-      }),
-    );
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // today
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // tomorrow
     const { GET } = await import("@/app/api/live/today/route");
     const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
@@ -569,11 +574,8 @@ describe("GET /api/live/today – clock non-OK falls back to current date", () =
   });
 
   it("still returns fixtures when clock returns non-OK status", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ results: 0, errors: [], response: [] }), {
-        status: 200,
-      }),
-    );
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // today (clock already consumed)
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // tomorrow
     const { GET } = await import("@/app/api/live/today/route");
     const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
@@ -590,11 +592,8 @@ describe("GET /api/live/today – clock fetch throws falls back to current date"
   });
 
   it("still returns fixtures when clock fetch throws", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ results: 0, errors: [], response: [] }), {
-        status: 200,
-      }),
-    );
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // today (clock rejected was already consumed)
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // tomorrow
     const { GET } = await import("@/app/api/live/today/route");
     const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
@@ -607,11 +606,10 @@ describe("GET /api/live/today – client date param used when valid", () => {
   beforeEach(() => {
     mockFetch.mockReset();
     process.env.FOOTBALL_API_KEY = "test_key_client_date";
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ results: 0, errors: [], response: [] }), {
-        status: 200,
-      }),
-    );
+    // Two parallel fetches: today (2026-06-14) and tomorrow (2026-06-15).
+    // No clock fetch when a valid client date is provided.
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // today
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // tomorrow
   });
 
   it("uses browser-supplied date instead of backend clock", async () => {
@@ -619,7 +617,7 @@ describe("GET /api/live/today – client date param used when valid", () => {
     const req = new Request("http://localhost/api/live/today?date=2026-06-14");
     const res = await GET(req);
     expect(res.status).toBe(200);
-    // The upstream fetch URL should contain the client-supplied date.
+    // The first upstream fetch URL should contain the client-supplied date.
     const [upstreamUrl] = mockFetch.mock.calls[0];
     expect(String(upstreamUrl)).toContain("date=2026-06-14");
   });
@@ -629,17 +627,14 @@ describe("GET /api/live/today – invalid client date falls back to clock", () =
   beforeEach(() => {
     mockFetch.mockReset();
     process.env.FOOTBALL_API_KEY = "test_key_invalid_date";
-    // clock response first, then upstream
+    // clock → today's af → tomorrow's af (three fetches when client date is invalid)
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ now: "2026-06-14T10:00:00Z" }), {
         status: 200,
       }),
     );
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ results: 0, errors: [], response: [] }), {
-        status: 200,
-      }),
-    );
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // today
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // tomorrow
   });
 
   it("ignores malformed date param and calls backend clock", async () => {
@@ -647,8 +642,8 @@ describe("GET /api/live/today – invalid client date falls back to clock", () =
     const req = new Request("http://localhost/api/live/today?date=not-a-date");
     const res = await GET(req);
     expect(res.status).toBe(200);
-    // Two fetch calls: clock + upstream (clientDate was invalid)
-    expect(mockFetch.mock.calls).toHaveLength(2);
+    // Three fetch calls: clock + today af + tomorrow af (clientDate was invalid)
+    expect(mockFetch.mock.calls).toHaveLength(3);
   });
 });
 
