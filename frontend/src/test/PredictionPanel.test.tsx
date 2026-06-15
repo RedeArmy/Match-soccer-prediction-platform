@@ -327,6 +327,35 @@ describe("PredictionPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("locks inputs when kickoff has passed but status is still scheduled (pendingSync)", async () => {
+    const pastKickoffLocal = `${new Date().toLocaleDateString("sv")}T00:00:00`;
+    const pastKickoffMatch = {
+      ...scheduledMatch,
+      id: 50,
+      home_team: "Brazil",
+      away_team: "Portugal",
+      status: "scheduled",
+      kickoff_at: pastKickoffLocal,
+      phase: null,
+      group_label: "C",
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([pastKickoffMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: /^C/ }));
+    expect(await screen.findByText("Brasil")).toBeInTheDocument();
+
+    // Inputs must be disabled and save button disabled even though DB says "scheduled"
+    expect(screen.getAllByRole("spinbutton")[0]).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Guardar prediccion/ }),
+    ).toBeDisabled();
+    // Amber "Iniciando..." badge must appear
+    expect(screen.getByText("Iniciando...")).toBeInTheDocument();
+  });
+
   it("disables score editing for locked matches and filters pending matches", async () => {
     vi.mocked(api.getMatches).mockResolvedValueOnce([
       scheduledMatch,

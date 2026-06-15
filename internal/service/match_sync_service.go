@@ -344,19 +344,25 @@ func (s *matchSyncService) DailyFixtureSync(ctx context.Context, leagueID, seaso
 }
 
 // autoLinkByDateRange fetches provider fixtures for every UTC date in
-// [startDate, endDate] (today when both are nil) and links any internal match
-// that is not yet associated with an external fixture ID.
+// [startDate, endDate] and links any internal match not yet associated with
+// an external fixture ID. When both pointers are nil the range is
+// [today UTC, tomorrow UTC] so that evening fixtures for UTC-6 users —
+// which api-football lists under the next UTC calendar day — are captured
+// in the same daily sync run.
 func (s *matchSyncService) autoLinkByDateRange(ctx context.Context, leagueID, season int, startDate, endDate *time.Time, result *DailySyncResult) {
 	now := time.Now().UTC().Truncate(24 * time.Hour)
 	start := now
 	if startDate != nil {
 		start = startDate.UTC().Truncate(24 * time.Hour)
 	}
-	end := now
+	end := now.AddDate(0, 0, 1) // default: today + tomorrow UTC
 	if endDate != nil {
 		end = endDate.UTC().Truncate(24 * time.Hour)
 	}
 
+	// alreadyLinked prevents the same internal match from being linked twice
+	// when the same fixture appears in both the today and tomorrow scans.
+	alreadyLinked := make(map[int]struct{})
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		dateStr := d.Format("2006-01-02")
 		fixtures, err := s.provider.GetFixturesByDate(ctx, leagueID, season, dateStr)
@@ -366,26 +372,32 @@ func (s *matchSyncService) autoLinkByDateRange(ctx context.Context, leagueID, se
 			continue
 		}
 		for _, fix := range fixtures {
-			s.tryAutoLink(ctx, fix, result)
+			s.tryAutoLink(ctx, fix, result, alreadyLinked)
 		}
 	}
 }
 
 // tryAutoLink attempts to link a single provider fixture to an internal match
-// by team name. It is a no-op when the match is already linked or not found.
-func (s *matchSyncService) tryAutoLink(ctx context.Context, fix *footballprovider.Fixture, result *DailySyncResult) {
+// by team name. alreadyLinked tracks matches linked earlier in the same sync
+// run so that a fixture appearing on both the today and tomorrow UTC scans
+// does not trigger a double-link attempt.
+func (s *matchSyncService) tryAutoLink(ctx context.Context, fix *footballprovider.Fixture, result *DailySyncResult, alreadyLinked map[int]struct{}) {
 	m, err := s.matchRepo.FindByTeams(ctx, fix.HomeTeam, fix.AwayTeam)
 	if err != nil || m == nil {
 		return
 	}
 	if m.ExternalMatchID != nil {
-		return // already linked
+		return // already linked in DB
+	}
+	if _, seen := alreadyLinked[m.ID]; seen {
+		return // linked earlier in this sync run
 	}
 	if err := s.matchRepo.LinkExternal(ctx, m.ID, "api-football", fix.ExternalID); err != nil {
 		s.log.Warn("match daily sync: auto-link failed",
 			zap.Int("match_id", m.ID), zap.Int64("external_id", fix.ExternalID), zap.Error(err))
 		return
 	}
+	alreadyLinked[m.ID] = struct{}{}
 	result.Linked++
 	s.log.Info("match daily sync: linked match",
 		zap.Int("match_id", m.ID), zap.Int64("external_id", fix.ExternalID),
