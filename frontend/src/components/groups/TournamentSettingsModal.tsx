@@ -12,6 +12,22 @@ import { cn } from "@/lib/utils";
 // Matches domain.MinMembersPerGroup / system param group.min_members_for_active
 const PREMIUM_MIN_MEMBERS = 5;
 
+function settingsErrorKey(
+  error: unknown,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  if (!error) return t("group.settingsError");
+  const msg = ((error as { message?: string }).message ?? "").toLowerCase();
+  if (msg.includes("requires") || msg.includes("members"))
+    return t("group.settingsErrorMinMembers").replace(
+      "{min}",
+      String(PREMIUM_MIN_MEMBERS),
+    );
+  if (msg.includes("insufficient") || msg.includes("balance"))
+    return t("group.settingsErrorBalance");
+  return t("group.settingsError");
+}
+
 interface Props {
   readonly group: GroupDetailResponse;
   readonly memberCount: number;
@@ -124,7 +140,7 @@ export function TournamentSettingsModal({
 
         {mutation.isError && (
           <p className="mt-3 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-[11px] text-red-400">
-            {(mutation.error as { message?: string })?.message ?? "Error"}
+            {settingsErrorKey(mutation.error, t)}
           </p>
         )}
 

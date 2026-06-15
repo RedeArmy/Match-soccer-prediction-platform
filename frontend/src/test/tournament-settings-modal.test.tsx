@@ -191,7 +191,7 @@ describe("TournamentSettingsModal – mutation states", () => {
     expect(container.querySelector(".animate-spin")).toBeInTheDocument();
   });
 
-  it("shows error message when mutation fails", () => {
+  it("shows generic settings error for unknown error messages", () => {
     vi.mocked(useMutation).mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
@@ -199,10 +199,12 @@ describe("TournamentSettingsModal – mutation states", () => {
       error: { message: "Server error" },
     } as never);
     renderModal({ group: makeGroup({ is_premium: true }), memberCount: 6 });
-    expect(screen.getByText("Server error")).toBeInTheDocument();
+    expect(
+      screen.getByText("No se pudo guardar la configuración."),
+    ).toBeInTheDocument();
   });
 
-  it('shows fallback "Error" when error has no message', () => {
+  it("shows generic settings error when error has no message", () => {
     vi.mocked(useMutation).mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
@@ -210,6 +212,32 @@ describe("TournamentSettingsModal – mutation states", () => {
       error: {},
     } as never);
     renderModal({ group: makeGroup({ is_premium: true }), memberCount: 6 });
-    expect(screen.getByText("Error")).toBeInTheDocument();
+    expect(
+      screen.getByText("No se pudo guardar la configuración."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows min-members error when backend reports requires/members", () => {
+    vi.mocked(useMutation).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: true,
+      error: { message: "premium mode requires at least 5 active members" },
+    } as never);
+    renderModal({ group: makeGroup({ is_premium: false }), memberCount: 6 });
+    expect(
+      screen.getByText(/5 miembros activos/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows balance error when backend reports insufficient balance", () => {
+    vi.mocked(useMutation).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: true,
+      error: { message: "insufficient available balance" },
+    } as never);
+    renderModal({ group: makeGroup({ is_premium: false }), memberCount: 6 });
+    expect(screen.getByText(/saldo suficiente/)).toBeInTheDocument();
   });
 });

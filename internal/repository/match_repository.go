@@ -180,27 +180,28 @@ func (r *PostgresMatchRepository) ListSyncCandidates(ctx context.Context, premat
 }
 
 func (r *PostgresMatchRepository) FindByTeams(ctx context.Context, homeTeam, awayTeam string) (*domain.Match, error) {
-	// Resolve provider names through team_name_aliases before the main lookup
-	// so that mismatches (e.g. api-football "Cabo Verde" vs our "Cape Verde")
-	// are transparently normalised to the canonical match-table value.
+	// Inline subqueries resolve each provider name through team_name_aliases.
+	// COALESCE falls back to the raw parameter when no alias row exists, so
+	// every team that already uses its canonical name continues to match without
+	// requiring an alias entry.  Inline subqueries are used instead of a CTE +
+	// CROSS JOIN to avoid adding extra columns to the result set that would
+	// shift the column positions expected by scanMatchWithStadium.
 	row := r.db.QueryRow(ctx,
-		`WITH resolved AS (
-		     SELECT
-		         COALESCE(
-		             (SELECT canonical_name FROM team_name_aliases
-		              WHERE lower(provider_name) = lower($1) LIMIT 1),
-		             $1
-		         ) AS home_canonical,
-		         COALESCE(
-		             (SELECT canonical_name FROM team_name_aliases
-		              WHERE lower(provider_name) = lower($2) LIMIT 1),
-		             $2
-		         ) AS away_canonical
+		`SELECT `+matchReadColumns+matchFromStadium+`
+		 WHERE lower(m.home_team) = lower(
+		     COALESCE(
+		         (SELECT canonical_name FROM team_name_aliases
+		          WHERE lower(provider_name) = lower($1) LIMIT 1),
+		         $1
+		     )
 		 )
-		 SELECT `+matchReadColumns+matchFromStadium+`
-		 CROSS JOIN resolved
-		 WHERE lower(m.home_team) = lower(resolved.home_canonical)
-		   AND lower(m.away_team) = lower(resolved.away_canonical)
+		 AND lower(m.away_team) = lower(
+		     COALESCE(
+		         (SELECT canonical_name FROM team_name_aliases
+		          WHERE lower(provider_name) = lower($2) LIMIT 1),
+		         $2
+		     )
+		 )
 		 LIMIT 1`,
 		homeTeam, awayTeam,
 	)

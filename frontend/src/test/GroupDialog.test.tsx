@@ -384,4 +384,96 @@ describe("GroupDialog", () => {
 
     expect(api.checkGroupName).not.toHaveBeenCalled();
   });
+
+  // ── createErrorKey ──────────────────────────────────────────────────────────
+
+  it("shows nameTaken error when create fails with 409 name conflict", async () => {
+    vi.useFakeTimers();
+    vi.mocked(api.checkGroupName).mockResolvedValueOnce({ available: true });
+    const conflictError = Object.assign(
+      new Error("a group with this name already exists"),
+      { status: 409 },
+    );
+    vi.mocked(api.createGroup).mockRejectedValueOnce(conflictError);
+
+    render(<GroupDialog open={true} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), {
+      target: { value: "Nombre Repetido" },
+    });
+
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Crear kiniela/ }));
+
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(
+      screen.getByText(/Ya existe un grupo con ese nombre/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows generic create error for non-name 409 conflicts", async () => {
+    vi.useFakeTimers();
+    vi.mocked(api.checkGroupName).mockResolvedValueOnce({ available: true });
+    const conflictError = Object.assign(new Error("other conflict"), {
+      status: 409,
+    });
+    vi.mocked(api.createGroup).mockRejectedValueOnce(conflictError);
+
+    render(<GroupDialog open={true} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/Ej\. Amigos/), {
+      target: { value: "Mi grupo" },
+    });
+
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Crear kiniela/ }));
+
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(
+      screen.getByText("No se pudo crear la kiniela."),
+    ).toBeInTheDocument();
+  });
+
+  // ── Double-click prevention ─────────────────────────────────────────────────
+
+  it("does not call joinGroup a second time when form is re-submitted while pending", async () => {
+    let resolveFn!: () => void;
+    vi.mocked(api.joinGroup).mockReturnValueOnce(
+      new Promise<never>((res) => {
+        resolveFn = res as () => void;
+      }),
+    );
+
+    const { container } = render(
+      <GroupDialog open={true} defaultTab="join" onClose={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByPlaceholderText("XXXXXXXXXX"), {
+      target: { value: "ABC123" },
+    });
+
+    const form = container.querySelector("form")!;
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector<HTMLButtonElement>('form button[type="submit"]'),
+      ).toBeDisabled();
+    });
+
+    // Try to submit again while still pending
+    fireEvent.submit(form);
+
+    resolveFn();
+    expect(api.joinGroup).toHaveBeenCalledTimes(1);
+  });
 });
