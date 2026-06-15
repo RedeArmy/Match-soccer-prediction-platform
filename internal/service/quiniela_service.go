@@ -85,7 +85,7 @@ func (s *quinielaService) Create(ctx context.Context, quiniela *domain.Quiniela)
 		return apperrors.Internal(err)
 	}
 	if taken {
-		return apperrors.Conflict("ya existe un grupo con ese nombre")
+		return apperrors.Conflict("a group with this name already exists")
 	}
 
 	length := s.params.GetInt(ctx, domain.ParamKeyGroupInviteCodeLength, domain.DefaultGroupInviteCodeLength)
@@ -137,7 +137,7 @@ func (s *quinielaService) RenameGroup(ctx context.Context, quinielaID, callerUse
 		return nil, apperrors.Internal(err)
 	}
 	if taken {
-		return nil, apperrors.Conflict("ya existe un grupo con ese nombre")
+		return nil, apperrors.Conflict("a group with this name already exists")
 	}
 
 	q, err := s.repo.GetByID(ctx, quinielaID)
