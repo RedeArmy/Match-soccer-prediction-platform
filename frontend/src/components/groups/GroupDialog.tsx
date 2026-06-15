@@ -11,6 +11,32 @@ import { useI18n } from "@/lib/i18n";
 
 type Tab = "create" | "join";
 
+function createErrorKey(
+  error: unknown,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  if (!error) return t("groups.createError");
+  const e = error as { status?: number; message?: string };
+  const msg = (e.message ?? "").toLowerCase();
+  if (e.status === 409 && (msg.includes("name") || msg.includes("exists")))
+    return t("groups.nameTaken");
+  return t("groups.createError");
+}
+
+function joinErrorKey(
+  error: unknown,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  if (!error) return t("groups.joinError");
+  const e = error as { status?: number; message?: string };
+  if (e.status === 404) return t("groups.joinError");
+  const msg = (e.message ?? "").toLowerCase();
+  if (msg.includes("pending")) return t("groups.joinErrorPending");
+  if (msg.includes("already a member")) return t("groups.joinErrorMember");
+  if (msg.includes("limit") || msg.includes("maximum")) return t("groups.joinErrorFull");
+  return t("groups.joinError");
+}
+
 interface Props {
   open: boolean;
   defaultTab?: Tab;
@@ -256,10 +282,7 @@ export function GroupDialog({
 
             {createMutation.isError && (
               <p className="rounded border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-300">
-                {createMutation.error instanceof Error &&
-                createMutation.error.message.toLowerCase().includes("nombre")
-                  ? createMutation.error.message
-                  : t("groups.createError")}
+                {createErrorKey(createMutation.error, t)}
               </p>
             )}
 
@@ -286,6 +309,7 @@ export function GroupDialog({
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
+              if (joinMutation.isPending) return;
               joinMutation.mutate();
             }}
           >
@@ -305,7 +329,7 @@ export function GroupDialog({
 
             {joinMutation.isError && (
               <p className="rounded border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-300">
-                {t("groups.joinError")}
+                {joinErrorKey(joinMutation.error, t)}
               </p>
             )}
 

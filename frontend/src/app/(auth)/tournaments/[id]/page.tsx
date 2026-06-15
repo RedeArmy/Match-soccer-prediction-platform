@@ -544,7 +544,7 @@ function LeaderboardTable({ entries, t }: LeaderboardTableProps) {
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => (
+          {entries.map((entry, index) => (
             <tr
               key={entry.user_id}
               className={cn(
@@ -554,7 +554,7 @@ function LeaderboardTable({ entries, t }: LeaderboardTableProps) {
             >
               {/* Rank */}
               <td className="px-4 py-2.5 sm:px-5">
-                <RankBadge rank={entry.rank} />
+                <RankBadge position={index + 1} rank={entry.rank} />
               </td>
               {/* Name */}
               <td className="max-w-[140px] px-2 py-2.5">
@@ -599,10 +599,13 @@ function LeaderboardTable({ entries, t }: LeaderboardTableProps) {
   );
 }
 
-function RankBadge({ rank }: Readonly<{ rank: number }>) {
-  if (rank === 1) return <span className="text-base">🥇</span>;
-  if (rank === 2) return <span className="text-base">🥈</span>;
-  if (rank === 3) return <span className="text-base">🥉</span>;
+function RankBadge({
+  position,
+  rank,
+}: Readonly<{ position: number; rank: number }>) {
+  if (position === 1) return <span className="text-base">🥇</span>;
+  if (position === 2) return <span className="text-base">🥈</span>;
+  if (position === 3) return <span className="text-base">🥉</span>;
   return (
     <span className="w-5 text-center text-xs font-bold text-text-muted">
       {rank}
