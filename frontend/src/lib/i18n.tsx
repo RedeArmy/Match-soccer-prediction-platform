@@ -200,7 +200,6 @@ const translations: TranslationNode = {
   },
   nav: {
     home:    { es: 'Inicio',   en: 'Home'    },
-    profile: { es: 'Perfil',   en: 'Profile' },
     matches: { es: 'Partidos', en: 'Matches' },
   },
   landing: {

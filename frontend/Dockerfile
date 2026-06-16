@@ -16,6 +16,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Clerk publishable key must be available at build time for static pages
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+# PayPal client ID is read by client components (e.g. the deposit page) and is
+# inlined into the JS bundle at build time — setting it at container runtime
+# has no effect, so it must be available here too.
+ARG NEXT_PUBLIC_PAYPAL_CLIENT_ID
+ENV NEXT_PUBLIC_PAYPAL_CLIENT_ID=$NEXT_PUBLIC_PAYPAL_CLIENT_ID
 RUN npm run build
 
 # ── Runner (production) ───────────────────────────────────────────────────────

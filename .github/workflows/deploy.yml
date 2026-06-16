@@ -320,8 +320,9 @@ jobs:
 
       # context: frontend/ because the Dockerfile's COPY instructions are
       # relative to the frontend directory. NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-      # is a build-time ARG required by Next.js for static-page generation;
-      # set it as a repository variable under Settings → Variables → Actions.
+      # and NEXT_PUBLIC_PAYPAL_CLIENT_ID are build-time ARGs required by
+      # Next.js for static-page/client-bundle generation; set them as
+      # repository variables under Settings → Variables → Actions.
       - name: Build and push frontend
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
@@ -332,6 +333,7 @@ jobs:
           labels: ${{ steps.meta-frontend.outputs.labels }}
           build-args: |
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_PAYPAL_CLIENT_ID=${{ vars.NEXT_PUBLIC_PAYPAL_CLIENT_ID }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
