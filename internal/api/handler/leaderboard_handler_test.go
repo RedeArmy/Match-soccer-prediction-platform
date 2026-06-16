@@ -13,15 +13,25 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 const (
-	leaderboardAlice     = "Alice"
-	leaderboardPath      = "/groups/1/leaderboard"
-	leaderboardPhasePath = "/groups/1/leaderboard?phase=group_stage"
-	leaderboardCallerID  = 99
+	leaderboardAlice      = "Alice"
+	leaderboardPath       = "/groups/1/leaderboard"
+	leaderboardPhasePath  = "/groups/1/leaderboard?phase=group_stage"
+	leaderboardCallerID   = 99
+	publicLeaderboardPath = "/api/public/groups/leaderboard?code=TEST"
 )
+
+// buildPublicLeaderboardRouter wires a PublicGroupHandler with the given entries
+// so userDisplayName fallback branches can be exercised via HTTP.
+func buildPublicLeaderboardRouter(entries []*domain.LeaderboardEntry) http.Handler {
+	resolver := &stubCodeResolver{q: &domain.Quiniela{ID: 1, InviteCode: "TEST"}}
+	ranker := &stubPublicRanker{result: &service.LeaderboardResult{Entries: entries}}
+	return newPublicGroupRouter(resolver, ranker)
+}
 
 // routeLeaderboard wires a LeaderboardHandler into a chi router for testing.
 // A default caller (ID = leaderboardCallerID) is injected into every request
@@ -204,5 +214,69 @@ func TestGetLeaderboard_Unauthenticated_Returns401(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401 when no user in context, got %d", w.Code)
+	}
+}
+
+// ── userDisplayName ───────────────────────────────────────────────────────────
+// userDisplayName is tested via the public leaderboard endpoint which calls it
+// in GetPublicLeaderboard. Direct unit tests cover the three fallback branches.
+
+func TestUserDisplayName_UsesUsername_WhenSet(t *testing.T) {
+	entries := []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1, Username: "jugador99", Name: "Full Name", Email: "u@example.com"}, Rank: 1},
+	}
+	r := buildPublicLeaderboardRouter(entries)
+	req := httptest.NewRequest(http.MethodGet, publicLeaderboardPath, nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp handler.PublicLeaderboardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(resp.Entries) == 0 || resp.Entries[0].UserName != "jugador99" {
+		t.Errorf("expected display name 'jugador99', got %q", resp.Entries[0].UserName)
+	}
+}
+
+func TestUserDisplayName_FallsBackToName_WhenUsernameEmpty(t *testing.T) {
+	entries := []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 1, Username: "", Name: "Ana García", Email: "ana@example.com"}, Rank: 1},
+	}
+	r := buildPublicLeaderboardRouter(entries)
+	req := httptest.NewRequest(http.MethodGet, publicLeaderboardPath, nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp handler.PublicLeaderboardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(resp.Entries) == 0 || resp.Entries[0].UserName != "Ana García" {
+		t.Errorf("expected display name 'Ana García', got %q", resp.Entries[0].UserName)
+	}
+}
+
+func TestUserDisplayName_FallsBackToEmail_WhenUsernameAndNameEmpty(t *testing.T) {
+	entries := []*domain.LeaderboardEntry{
+		{User: &domain.User{ID: 2, Username: "", Name: "", Email: "bob@example.com"}, Rank: 1},
+	}
+	r := buildPublicLeaderboardRouter(entries)
+	req := httptest.NewRequest(http.MethodGet, publicLeaderboardPath, nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp handler.PublicLeaderboardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(resp.Entries) == 0 || resp.Entries[0].UserName != "bob@example.com" {
+		t.Errorf("expected display name 'bob@example.com', got %q", resp.Entries[0].UserName)
 	}
 }

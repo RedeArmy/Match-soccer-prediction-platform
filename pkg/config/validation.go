@@ -169,14 +169,27 @@ func validateDatabaseConfig(db DatabaseConfig) error {
 	return nil
 }
 
+// validateClerkConfig rejects a ClerkConfig that is missing fields required
+// outside development. Extracted to keep validateProductionConfig within the
+// cognitive-complexity limit.
+func validateClerkConfig(c ClerkConfig) error {
+	if c.JWKSURL == "" {
+		return errors.New("clerk.jwksUrl must not be empty outside development (WCQ_CLERK_JWKSURL)")
+	}
+	if c.WebhookSecret == "" {
+		return errors.New("clerk.webhookSecret must not be empty outside development (WCQ_CLERK_WEBHOOKSECRET)")
+	}
+	return nil
+}
+
 // validateProductionConfig enforces invariants that only apply outside
 // the development environment (production, staging, etc.).
 func validateProductionConfig(cfg *Config) error {
-	if cfg.Clerk.JWKSURL == "" {
-		return errors.New("clerk.jwksUrl must not be empty outside development (WCQ_CLERK_JWKSURL)")
+	if err := validateClerkConfig(cfg.Clerk); err != nil {
+		return err
 	}
-	if cfg.Clerk.WebhookSecret == "" {
-		return errors.New("clerk.webhookSecret must not be empty outside development (WCQ_CLERK_WEBHOOKSECRET)")
+	if cfg.Server.AppBaseURL == "" {
+		return errors.New("server.appBaseURL must not be empty outside development (WCQ_SERVER_APPBASEURL); used for Recurrente redirect URLs and email unsubscribe links")
 	}
 	if cfg.Payment.RecurrenteAPIKey == "" {
 		return errors.New("payment.recurrenteAPIKey must not be empty outside development (WCQ_PAYMENT_RECURRENTEAPIKEY)")

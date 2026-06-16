@@ -155,6 +155,18 @@ class APIClient {
     );
   }
 
+  updateRequireApproval(
+    token: string,
+    id: number,
+    requireApproval: boolean,
+  ): Promise<GroupDetailResponse> {
+    return this.request(
+      `/api/v1/groups/${id}/require-approval`,
+      { method: "PATCH", body: JSON.stringify({ require_approval: requireApproval }) },
+      token,
+    );
+  }
+
   getGroupMembers(token: string, id: number): Promise<MemberResponse[]> {
     return this.request<{ data: MemberResponse[] }>(
       `/api/v1/groups/${id}/members`,

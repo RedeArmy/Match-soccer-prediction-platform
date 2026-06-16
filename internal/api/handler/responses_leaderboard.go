@@ -1,5 +1,20 @@
 package handler
 
+import "github.com/rede/world-cup-quiniela/internal/domain"
+
+// userDisplayName returns the preferred public identifier for a user, matching
+// the COALESCE(username, name, email) convention used by the membership query:
+// Clerk username → full name → email address.
+func userDisplayName(u *domain.User) string {
+	if u.Username != "" {
+		return u.Username
+	}
+	if u.Name != "" {
+		return u.Name
+	}
+	return u.Email
+}
+
 // LeaderboardEntryResponse is the JSON representation of a single leaderboard entry.
 type LeaderboardEntryResponse struct {
 	Rank        int    `json:"rank"`

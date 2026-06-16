@@ -175,6 +175,9 @@ func (s *stubQuinielaSvc) RenameGroup(_ context.Context, _, _ int, _ string) (*d
 func (s *stubQuinielaSvc) SetTournamentMode(_ context.Context, _, _ int, _, _ bool) (*domain.Quiniela, error) {
 	return s.quiniela, s.err
 }
+func (s *stubQuinielaSvc) UpdateRequireApproval(_ context.Context, _, _ int, _ bool) (*domain.Quiniela, error) {
+	return s.quiniela, s.err
+}
 func (s *stubQuinielaSvc) IsNameAvailable(_ context.Context, _ string, _ int) (bool, error) {
 	return s.nameAvailable, s.err
 }

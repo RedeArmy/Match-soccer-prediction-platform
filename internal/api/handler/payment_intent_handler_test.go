@@ -121,6 +121,21 @@ func TestPaymentIntentHandler_Create_RecurrenteProvider_ReturnsRedirectURL(t *te
 	}
 }
 
+func TestPaymentIntentHandler_Create_RecurrenteEmptyBaseURL_Returns422(t *testing.T) {
+	svc := &stubPaymentIntentSvc{}
+	h := handler.NewPaymentIntentHandler(svc, zaptest.NewLogger(t))
+	// Empty appBaseURL — would produce relative redirect URLs which Recurrente rejects.
+	h.WithRecurrente(&stubCheckoutCreator{url: "https://app.recurrente.com/c/ch_test"}, "")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/payment-intents", h.Create)
+
+	rec := postIntentAuthenticated(t, mux, `{"amount_cents":10000,"currency":"GTQ","provider":"recurrente"}`, callerUser)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 when appBaseURL is empty, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPaymentIntentHandler_Create_RecurrenteNotConfigured_Returns422(t *testing.T) {
 	// Handler without WithRecurrente called → recurrente field is nil.
 	svc := &stubPaymentIntentSvc{}

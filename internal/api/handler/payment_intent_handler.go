@@ -116,7 +116,7 @@ func (h *PaymentIntentHandler) createRecurrenteCheckout(w http.ResponseWriter, r
 		return
 	}
 
-	if strings.Contains(h.appBaseURL, "localhost") || strings.Contains(h.appBaseURL, "127.0.0.1") {
+	if h.appBaseURL == "" || strings.Contains(h.appBaseURL, "localhost") || strings.Contains(h.appBaseURL, "127.0.0.1") {
 		writeError(w, r, h.log, apperrors.Validation(
 			"Recurrente requires a public URL for redirects — set WCQ_SERVER_APPBASEURL to an ngrok or production URL",
 		))

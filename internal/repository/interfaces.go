@@ -307,6 +307,11 @@ type QuinielaRepository interface {
 	// or 0 when the group is free. Returns NotFound when the group is absent or
 	// soft-deleted.
 	UpdateTournamentMode(ctx context.Context, quinielaID int, isPremium, modeGeneral, modeRound bool, entryFee int) (*domain.Quiniela, error)
+	// UpdateRequireApproval sets the require_approval flag on a quiniela.
+	// When false, users who join via invite code are auto-activated without
+	// a pending step or join-request notification. Returns NotFound when the
+	// group is absent or soft-deleted.
+	UpdateRequireApproval(ctx context.Context, quinielaID int, requireApproval bool) (*domain.Quiniela, error)
 	// DeleteByAdmin soft-deletes a quiniela on behalf of an administrator.
 	// The audit trail is the caller's responsibility via AuditLogRepository.
 	DeleteByAdmin(ctx context.Context, quinielaID, adminID int) error

@@ -79,6 +79,8 @@ func (s *Server) registerGroupRoutes(r chi.Router, d apiV1Deps) {
 		r.Patch("/{id}", d.h.group.RenameGroup)
 		// Only the group CreateOwner may change the tournament payment mode.
 		r.Patch("/{id}/tournament-mode", d.h.group.SetTournamentMode)
+		// Only the group CreateOwner may change the require-approval setting.
+		r.Patch("/{id}/require-approval", d.h.group.UpdateRequireApproval)
 		r.Get("/{id}/members", d.h.group.ListMembers)
 		r.Get("/{id}/leaderboard", d.h.leaderboard.GetLeaderboard)
 		// Any active member may approve or reject a pending join request.

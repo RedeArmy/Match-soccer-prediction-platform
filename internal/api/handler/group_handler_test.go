@@ -1105,6 +1105,72 @@ func TestGroupSetTournamentMode_Returns422OnServiceError(t *testing.T) {
 	}
 }
 
+// ── UpdateRequireApproval ──────────────────────────────────────────────────────
+
+const requireApprovalPath = "/groups/1/require-approval"
+
+func buildRequireApprovalRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
+	r := chi.NewRouter()
+	if user != nil {
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				ctx := middleware.ContextWithUser(req.Context(), user)
+				next.ServeHTTP(w, req.WithContext(ctx))
+			})
+		})
+	}
+	r.Patch("/groups/{id}/require-approval", h.UpdateRequireApproval)
+	return r
+}
+
+func TestGroupUpdateRequireApproval_Returns200(t *testing.T) {
+	q := fixedQuiniela()
+	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: q}, &stubMemberSvc{})
+	body := `{"require_approval":false}`
+	req := httptest.NewRequest(http.MethodPatch, requireApprovalPath, bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	buildRequireApprovalRouter(h, &domain.User{ID: 10}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestGroupUpdateRequireApproval_Returns4xxOnInvalidJSON(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPatch, requireApprovalPath, bytes.NewBufferString("not-json"))
+	rec := httptest.NewRecorder()
+	buildRequireApprovalRouter(h, &domain.User{ID: 10}).ServeHTTP(rec, req)
+
+	if rec.Code < 400 || rec.Code >= 500 {
+		t.Errorf("expected 4xx for invalid JSON, got %d", rec.Code)
+	}
+}
+
+func TestGroupUpdateRequireApproval_Returns401WhenNoUser(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	body := `{"require_approval":false}`
+	req := httptest.NewRequest(http.MethodPatch, requireApprovalPath, bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	buildRequireApprovalRouter(h, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestGroupUpdateRequireApproval_Returns422OnServiceError(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{err: errors.New(errDBDown)}, &stubMemberSvc{})
+	body := `{"require_approval":false}`
+	req := httptest.NewRequest(http.MethodPatch, requireApprovalPath, bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	buildRequireApprovalRouter(h, &domain.User{ID: 10}).ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected non-200 on service error, got 200")
+	}
+}
+
 // ── CheckName ─────────────────────────────────────────────────────────────────
 
 func TestCheckName_Available_Returns200WithTrue(t *testing.T) {
