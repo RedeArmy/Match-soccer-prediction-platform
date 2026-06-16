@@ -63,7 +63,7 @@ func (h *PublicGroupHandler) GetPublicLeaderboard(w http.ResponseWriter, r *http
 		entries = append(entries, LeaderboardEntryResponse{
 			Rank:        e.Rank,
 			UserID:      e.User.ID,
-			UserName:    e.User.Name,
+			UserName:    userDisplayName(e.User),
 			TotalPoints: e.TotalPoints,
 			PrizeWinner: false, // deliberately omitted on the public endpoint
 			RoundPoints: e.RoundPoints,

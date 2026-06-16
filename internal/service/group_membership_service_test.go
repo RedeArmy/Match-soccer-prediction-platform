@@ -77,7 +77,7 @@ func newMemberSvc(qr *stubQuinielaRepo, mr *stubMemberRepo) GroupMembershipServi
 }
 
 func quinielaWithCode(id int, code string) *domain.Quiniela {
-	return &domain.Quiniela{ID: id, Name: "Test", OwnerID: 1, InviteCode: code}
+	return &domain.Quiniela{ID: id, Name: "Test", OwnerID: 1, InviteCode: code, RequireApproval: true}
 }
 
 // activeMembership returns an active membership for use as an approver stub.
@@ -180,7 +180,7 @@ func TestGroupMembershipService_Join_PreviouslyLeft_ReturnsPending(t *testing.T)
 }
 
 func TestGroupMembershipService_Join_MaxMembersReached_ReturnsConflict(t *testing.T) {
-	q := &domain.Quiniela{ID: 1, Name: "Full", OwnerID: 1, InviteCode: membershipCode}
+	q := &domain.Quiniela{ID: 1, Name: "Full", OwnerID: 1, InviteCode: membershipCode, RequireApproval: true}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: q},
 		&stubMemberRepo{joinErr: apperrors.Conflict("this group has reached its maximum number of members")},
@@ -885,7 +885,7 @@ func (r *leaveOwnerMemberRepo) LeaveMembershipAndTransferOwnership(_ context.Con
 // ── checkCapacity error path ───────────────────────────────────────────────────
 
 func TestGroupMembershipService_Join_AtomicJoinError_ReturnsError(t *testing.T) {
-	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 1, InviteCode: membershipCode}
+	q := &domain.Quiniela{ID: 1, Name: "Pool", OwnerID: 1, InviteCode: membershipCode, RequireApproval: true}
 	svc := newMemberSvc(
 		&stubQuinielaRepo{quiniela: q},
 		&stubMemberRepo{joinErr: errors.New(membershipDBError)},
@@ -893,6 +893,72 @@ func TestGroupMembershipService_Join_AtomicJoinError_ReturnsError(t *testing.T) 
 
 	if _, err := svc.Join(context.Background(), membershipCode, 42); err == nil {
 		t.Error("expected error when atomic join operation fails, got nil")
+	}
+}
+
+// ── require_approval=false auto-approve path ──────────────────────────────────
+
+func TestGroupMembershipService_Join_AutoApprove_ReturnsActiveMembership(t *testing.T) {
+	q := quinielaWithCode(1, membershipCode)
+	q.RequireApproval = false
+	pending := &domain.GroupMembership{ID: 7, QuinielaID: 1, UserID: 42, Status: domain.MembershipPending}
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{
+			joinQuiniela:   q,
+			joinMembership: pending,
+			membershipByID: pending, // ApproveMembership stub requires this to return non-nil
+		},
+	)
+
+	m, err := svc.Join(context.Background(), membershipCode, 42)
+	if err != nil {
+		t.Fatalf("expected nil error on auto-approve join, got %v", err)
+	}
+	if m.Status != domain.MembershipActive {
+		t.Errorf("expected active membership on auto-approve, got %s", m.Status)
+	}
+}
+
+func TestGroupMembershipService_Join_AutoApprove_ApproveMembershipError_Propagates(t *testing.T) {
+	q := quinielaWithCode(1, membershipCode)
+	q.RequireApproval = false
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{
+			joinQuiniela:   q,
+			joinMembership: &domain.GroupMembership{ID: 7, QuinielaID: 1, UserID: 42, Status: domain.MembershipPending},
+			approveErr:     errors.New("approve failed"),
+		},
+	)
+
+	_, err := svc.Join(context.Background(), membershipCode, 42)
+	if err == nil {
+		t.Error("expected error when ApproveMembership fails on auto-approve")
+	}
+}
+
+func TestGroupMembershipService_JoinWithBalance_AutoApprove_ReturnsActiveMembership(t *testing.T) {
+	q := quinielaWithCode(1, membershipCode)
+	q.RequireApproval = false
+	q.EntryFee = 100
+	pending := &domain.GroupMembership{ID: 8, QuinielaID: 1, UserID: 42, Status: domain.MembershipPending}
+	svc := newMemberSvc(
+		&stubQuinielaRepo{quiniela: q},
+		&stubMemberRepo{
+			joinQuiniela:   q,
+			joinMembership: pending,
+			membershipByID: pending, // ApproveMembership stub requires this to return non-nil
+			membership:     &domain.GroupMembership{ID: 8, QuinielaID: 1, UserID: 42, Paid: true},
+		},
+	)
+
+	m, err := svc.JoinWithBalance(context.Background(), membershipCode, 42)
+	if err != nil {
+		t.Fatalf("expected nil error on auto-approve JoinWithBalance, got %v", err)
+	}
+	if m.Status != domain.MembershipActive {
+		t.Errorf("expected active membership on auto-approve, got %s", m.Status)
 	}
 }
 

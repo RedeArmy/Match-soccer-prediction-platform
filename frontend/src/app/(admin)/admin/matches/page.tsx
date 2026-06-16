@@ -353,6 +353,12 @@ export default function AdminMatchesPage() {
   const [modal, setModal] = useState<ModalState>(null);
   const [modalError, setModalError] = useState("");
   const [syncCooldown, setSyncCooldown] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    linked: number;
+    kickoffs_updated: number;
+    scores_corrected: number;
+  } | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [resultForm, setResultForm] = useState<ResultForm>({
     homeScore: "",
     awayScore: "",
@@ -549,7 +555,18 @@ export default function AdminMatchesPage() {
 
   async function handleSync() {
     setSyncCooldown(true);
-    await dailySyncMutation.mutateAsync().catch(() => {});
+    setSyncResult(null);
+    setSyncError(null);
+    try {
+      const result = await dailySyncMutation.mutateAsync();
+      setSyncResult({
+        linked: result.linked,
+        kickoffs_updated: result.kickoffs_updated,
+        scores_corrected: result.scores_corrected,
+      });
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : "Error al sincronizar");
+    }
     refetch();
     setTimeout(() => setSyncCooldown(false), 5_000);
   }
@@ -666,6 +683,23 @@ export default function AdminMatchesPage() {
         </div>
       </div>
 
+      {syncResult && (
+        <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-300 text-xs flex items-center gap-2">
+          <CheckCircle className="h-4 w-4 shrink-0" />
+          <span>
+            Sync completado — vinculados: <strong>{syncResult.linked}</strong>,
+            kickoffs corregidos: <strong>{syncResult.kickoffs_updated}</strong>,
+            marcadores corregidos: <strong>{syncResult.scores_corrected}</strong>
+          </span>
+        </div>
+      )}
+      {syncError && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-xs flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{syncError}</span>
+        </div>
+      )}
+
       <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs">
         Los cambios de estado se aplican manualmente desde aquí como respaldo al
         sincronizador automático. El worker de partidos (cada 30 s) puede
@@ -716,6 +750,21 @@ export default function AdminMatchesPage() {
                   >
                     <td className="px-4 py-3 text-white/40 font-mono text-xs">
                       #{match.id}
+                      {match.external_match_id ? (
+                        <span
+                          className="ml-1 text-green-400/70"
+                          title={`API-Football ID: ${match.external_match_id}`}
+                        >
+                          ●
+                        </span>
+                      ) : (
+                        <span
+                          className="ml-1 text-red-400/50"
+                          title="Sin vincular a API-Football"
+                        >
+                          ○
+                        </span>
+                      )}
                     </td>
 
                     <td className="px-4 py-3">

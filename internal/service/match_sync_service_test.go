@@ -1266,9 +1266,9 @@ func TestMatchSync_DailyFixtureSync_AutoLink_SwappedOrder_LinksMatch(t *testing.
 	if result.Linked != 1 {
 		t.Errorf("Linked: want 1 (via swapped order), got %d", result.Linked)
 	}
-	// autoLinkByDateRange scans today and tomorrow, so FindByTeams is called at
-	// least twice (original + swap on the first date); the alreadyLinked guard
-	// prevents a second link on the tomorrow scan.
+	// autoLinkByDateRange scans 32 days (30-day look-back + today + tomorrow),
+	// so FindByTeams is called at least twice (original + swap on the first date
+	// that has a fixture); the alreadyLinked guard prevents double-linking.
 	if repo.findByTeamsCallCount < 2 {
 		t.Errorf("FindByTeams call count: want >= 2 (original + swap), got %d", repo.findByTeamsCallCount)
 	}
@@ -1339,11 +1339,14 @@ func TestMatchSync_DailyFixtureSync_AutoLink_GetFixturesByDateError_ContinuesToP
 
 // ── Two-day UTC auto-link scan ────────────────────────────────────────────────
 
-func TestMatchSync_DailyFixtureSync_NilDateRange_ScansToAndTomorrowUTC(t *testing.T) {
+func TestMatchSync_DailyFixtureSync_NilDateRange_ScansThirtyDaysBackThroughTomorrowUTC(t *testing.T) {
 	// When DailyFixtureSync is called with nil dates, autoLinkByDateRange must
-	// query the provider for both today UTC and tomorrow UTC so that evening
-	// fixtures for UTC-6 users (listed under the next UTC day in api-football)
-	// are auto-linked in the same daily run.
+	// query the provider for every day in [today-30d, tomorrow] UTC (32 calls).
+	// The 30-day look-back ensures any matches missed during deployment gaps
+	// (e.g. when team_name_aliases migration was not yet applied) are retroactively
+	// linked without the operator supplying explicit dates. Tomorrow is included
+	// so that evening fixtures for UTC-6 users (listed under the next UTC calendar
+	// day in api-football) are captured in the same daily run.
 	provider := &stubProvider{byDateFixtures: nil}
 	svc := buildSyncSvc(&stubSyncMatchRepo{}, &stubSyncMatchSvc{}, provider)
 
@@ -1352,15 +1355,24 @@ func TestMatchSync_DailyFixtureSync_NilDateRange_ScansToAndTomorrowUTC(t *testin
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if provider.byDateCallCount != 2 {
-		t.Errorf("GetFixturesByDate calls: want 2 (today+tomorrow UTC), got %d", provider.byDateCallCount)
+	// 30 days ago + 30 in-between days + today + tomorrow = 32
+	const wantCalls = 32
+	if provider.byDateCallCount != wantCalls {
+		t.Errorf("GetFixturesByDate calls: want %d (30-day look-back + today + tomorrow), got %d",
+			wantCalls, provider.byDateCallCount)
 	}
-	todayUTC := time.Now().UTC().Format("2006-01-02")
-	tomorrowUTC := time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02")
+	now := time.Now().UTC().Truncate(24 * time.Hour)
+	wantFirst := now.AddDate(0, 0, -30).Format("2006-01-02")
+	wantLast := now.AddDate(0, 0, 1).Format("2006-01-02")
 	if len(provider.byDateDatesAsked) < 2 ||
-		provider.byDateDatesAsked[0] != todayUTC ||
-		provider.byDateDatesAsked[1] != tomorrowUTC {
-		t.Errorf("dates asked: want [%s, %s], got %v", todayUTC, tomorrowUTC, provider.byDateDatesAsked)
+		provider.byDateDatesAsked[0] != wantFirst ||
+		provider.byDateDatesAsked[wantCalls-1] != wantLast {
+		first, last := "", ""
+		if len(provider.byDateDatesAsked) > 0 {
+			first = provider.byDateDatesAsked[0]
+			last = provider.byDateDatesAsked[len(provider.byDateDatesAsked)-1]
+		}
+		t.Errorf("date range: want [%s … %s], got [%s … %s]", wantFirst, wantLast, first, last)
 	}
 }
 

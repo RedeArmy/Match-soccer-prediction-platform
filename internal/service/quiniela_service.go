@@ -39,6 +39,11 @@ type QuinielaService interface {
 	// active group uses the same name, case-insensitively). excludeID may be
 	// non-zero to skip a specific group (for rename checks).
 	IsNameAvailable(ctx context.Context, name string, excludeID int) (bool, error)
+	// UpdateRequireApproval sets the require_approval flag for a group. Only the
+	// group owner (MembershipRoleCreateOwner) may call this. When set to false,
+	// users who join via invite code are auto-activated with no approval step and
+	// no notification to existing members. Returns the updated Quiniela.
+	UpdateRequireApproval(ctx context.Context, quinielaID, callerUserID int, requireApproval bool) (*domain.Quiniela, error)
 }
 
 // quinielaService is the concrete implementation of QuinielaService.
@@ -253,6 +258,17 @@ func (s *quinielaService) chargeExistingMembersIfNeeded(ctx context.Context, qui
 		}
 	}
 	return nil
+}
+
+func (s *quinielaService) UpdateRequireApproval(ctx context.Context, quinielaID, callerUserID int, requireApproval bool) (*domain.Quiniela, error) {
+	if err := s.authz.RequireOwner(ctx, quinielaID, callerUserID); err != nil {
+		return nil, err
+	}
+	q, err := s.repo.UpdateRequireApproval(ctx, quinielaID, requireApproval)
+	if err != nil {
+		return nil, err
+	}
+	return q, nil
 }
 
 const errQuinielaNotFound = "quiniela %d not found"

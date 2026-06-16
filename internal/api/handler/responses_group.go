@@ -19,10 +19,13 @@ type GroupResponse struct {
 	// paid mode is active. Frontend renders this as "Gratis" (gray) or "Premium" (gold).
 	IsPremium bool `json:"is_premium"`
 	// ModeGeneral and ModeRound reflect which paid sub-modes are active.
-	ModeGeneral bool   `json:"mode_general"`
-	ModeRound   bool   `json:"mode_round"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ModeGeneral bool `json:"mode_general"`
+	ModeRound   bool `json:"mode_round"`
+	// RequireApproval mirrors the quiniela.require_approval flag. When false,
+	// users who join via invite code are auto-activated with no approval step.
+	RequireApproval bool   `json:"require_approval"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
 }
 
 // MyGroupResponse is the enriched view returned by GET /api/v1/groups/me.
@@ -59,18 +62,19 @@ type MemberResponse struct {
 
 func groupToResponse(q *domain.Quiniela) GroupResponse {
 	resp := GroupResponse{
-		ID:          q.ID,
-		Name:        q.Name,
-		OwnerID:     q.OwnerID,
-		InviteCode:  q.InviteCode,
-		Status:      string(q.Status),
-		EntryFee:    q.EntryFee,
-		Currency:    q.Currency,
-		IsPremium:   q.IsPremium,
-		ModeGeneral: q.ModeGeneral,
-		ModeRound:   q.ModeRound,
-		CreatedAt:   q.CreatedAt.Format(timeFormat),
-		UpdatedAt:   q.UpdatedAt.Format(timeFormat),
+		ID:              q.ID,
+		Name:            q.Name,
+		OwnerID:         q.OwnerID,
+		InviteCode:      q.InviteCode,
+		Status:          string(q.Status),
+		EntryFee:        q.EntryFee,
+		Currency:        q.Currency,
+		IsPremium:       q.IsPremium,
+		ModeGeneral:     q.ModeGeneral,
+		ModeRound:       q.ModeRound,
+		RequireApproval: q.RequireApproval,
+		CreatedAt:       q.CreatedAt.Format(timeFormat),
+		UpdatedAt:       q.UpdatedAt.Format(timeFormat),
 	}
 	if q.InviteCodeExpiresAt != nil {
 		s := q.InviteCodeExpiresAt.Format(timeFormat)

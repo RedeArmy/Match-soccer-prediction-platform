@@ -126,6 +126,13 @@ func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, us
 	if quiniela.EntryFee > 0 {
 		s.createPendingPayment(ctx, quiniela, userID)
 	}
+	if !quiniela.RequireApproval {
+		minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
+		m, err = s.memberRepo.ApproveMembership(ctx, m.ID, quiniela.ID, s.clock.Now(), minMembers, maxMembers)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return m, nil
 }
 
@@ -169,6 +176,14 @@ func (s *groupMembershipService) JoinWithBalance(ctx context.Context, inviteCode
 		"amount_cents": quiniela.EntryFee,
 		"currency":     quiniela.Currency,
 	})
+	if !quiniela.RequireApproval {
+		minMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMinMembers, domain.MinMembersForActive)
+		maxMembers := s.params.GetInt(ctx, domain.ParamKeyGroupMaxSize, domain.MaxMembersPerGroup)
+		m, err = s.memberRepo.ApproveMembership(ctx, m.ID, quiniela.ID, s.clock.Now(), minMembers, maxMembers)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return m, nil
 }
 

@@ -414,6 +414,11 @@ definitions:
         type: string
       owner_user_id:
         type: integer
+      require_approval:
+        description: |-
+          RequireApproval mirrors the quiniela.require_approval flag. When false,
+          users who join via invite code are auto-activated with no approval step.
+        type: boolean
       status:
         description: |-
           Status is system-managed: "active" when the group has ≥ 5 active members,
@@ -498,6 +503,8 @@ definitions:
         type: string
       created_at:
         type: string
+      external_match_id:
+        type: integer
       group_label:
         type: string
       home_score:
@@ -1283,13 +1290,6 @@ definitions:
     properties:
       value:
         type: string
-    type: object
-  internal_api_handler.setTournamentModeRequest:
-    properties:
-      mode_general:
-        type: boolean
-      mode_round:
-        type: boolean
     type: object
   internal_api_handler.sseStatsResponse:
     properties:
@@ -4837,59 +4837,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Leave a group
-      tags:
-      - groups
-  /api/v1/groups/{id}/tournament-mode:
-    patch:
-      consumes:
-      - application/json
-      description: Configures the hybrid payment mode for a group. Only the group
-      parameters:
-      - description: Group ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Mode flags
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api_handler.setTournamentModeRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api_handler.GroupResponse'
-        "400":
-          description: Validation error
-          schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
-        "403":
-          description: Not the group owner
-          schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
-        "409":
-          description: Not enough members to enable premium
-          schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api_handler.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Set tournament payment mode
       tags:
       - groups
   /api/v1/groups/check-name:

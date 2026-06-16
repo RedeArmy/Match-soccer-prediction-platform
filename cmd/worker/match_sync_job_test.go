@@ -154,7 +154,7 @@ var _ repository.MatchRepository = (*stubWorkerMatchRepo)(nil)
 func TestHandlePauseResume_NotPaused_ReturnsFalse(t *testing.T) {
 	resetGlobalMatchSyncState()
 
-	if handlePauseResume(zap.NewNop()) {
+	if handlePauseResume(context.Background(), &stubWorkerMatchRepo{}, zap.NewNop()) {
 		t.Error("expected false when not paused")
 	}
 }
@@ -166,7 +166,7 @@ func TestHandlePauseResume_PausedZeroResumeAt_ReturnsFalse(t *testing.T) {
 	globalMatchSyncState.pollingPaused.Store(true)
 	globalMatchSyncState.resumeAtUnix.Store(0)
 
-	if handlePauseResume(zap.NewNop()) {
+	if handlePauseResume(context.Background(), &stubWorkerMatchRepo{}, zap.NewNop()) {
 		t.Error("expected false when resumeAt=0 (epoch is in the past)")
 	}
 	if globalMatchSyncState.pollingPaused.Load() {
@@ -174,16 +174,16 @@ func TestHandlePauseResume_PausedZeroResumeAt_ReturnsFalse(t *testing.T) {
 	}
 }
 
-func TestHandlePauseResume_PausedFutureTime_ReturnsTrue(t *testing.T) {
+func TestHandlePauseResume_PausedFutureTime_NoOverdue_ReturnsTrue(t *testing.T) {
 	resetGlobalMatchSyncState()
 	globalMatchSyncState.pollingPaused.Store(true)
 	globalMatchSyncState.resumeAtUnix.Store(time.Now().Add(10 * time.Minute).Unix())
 
-	if !handlePauseResume(zap.NewNop()) {
-		t.Error("expected true when resume time is in the future")
+	if !handlePauseResume(context.Background(), &stubWorkerMatchRepo{}, zap.NewNop()) {
+		t.Error("expected true when resume time is in the future and no overdue match")
 	}
 	if !globalMatchSyncState.pollingPaused.Load() {
-		t.Error("pause state should not be cleared before resumeAt")
+		t.Error("pause state should not be cleared before resumeAt with no overdue match")
 	}
 }
 
@@ -193,7 +193,7 @@ func TestHandlePauseResume_PausedPastTime_ResetsAndReturnsFalse(t *testing.T) {
 	globalMatchSyncState.resumeAtUnix.Store(time.Now().Add(-1 * time.Minute).Unix())
 	globalMatchSyncState.consecutiveZeroCount.Store(5)
 
-	if handlePauseResume(zap.NewNop()) {
+	if handlePauseResume(context.Background(), &stubWorkerMatchRepo{}, zap.NewNop()) {
 		t.Error("expected false when resumeAt has passed")
 	}
 	if globalMatchSyncState.pollingPaused.Load() {
@@ -207,35 +207,71 @@ func TestHandlePauseResume_PausedPastTime_ResetsAndReturnsFalse(t *testing.T) {
 	}
 }
 
+func TestHandlePauseResume_PausedFutureTime_OverdueMatch_ResumesEarly(t *testing.T) {
+	// Simulates the race: worker paused, then a match is linked whose kickoff
+	// has already passed. The overdue check should force an early resume so
+	// PollAndApply runs on the very next tick.
+	resetGlobalMatchSyncState()
+	globalMatchSyncState.pollingPaused.Store(true)
+	globalMatchSyncState.resumeAtUnix.Store(time.Now().Add(1 * time.Hour).Unix())
+	globalMatchSyncState.consecutiveZeroCount.Store(3)
+
+	repo := &stubWorkerMatchRepo{candidates: []*domain.Match{
+		{Status: domain.MatchStatusScheduled, KickoffAt: time.Now().Add(-20 * time.Minute)},
+	}}
+
+	if handlePauseResume(context.Background(), repo, zap.NewNop()) {
+		t.Error("expected false (resume) when an overdue linked match is detected")
+	}
+	if globalMatchSyncState.pollingPaused.Load() {
+		t.Error("pause state should be cleared on early resume")
+	}
+	if globalMatchSyncState.consecutiveZeroCount.Load() != 0 {
+		t.Error("consecutiveZeroCount should be reset to 0 on early resume")
+	}
+	if globalMatchSyncState.resumeAtUnix.Load() != 0 {
+		t.Error("resumeAtUnix should be reset to 0 on early resume")
+	}
+}
+
 // ── nextScheduledMatchKickoff ─────────────────────────────────────────────────
 
 func TestNextScheduledMatchKickoff_RepoError_ReturnsFalse(t *testing.T) {
 	repo := &stubWorkerMatchRepo{candidatesErr: errors.New("db down")}
-	_, found := nextScheduledMatchKickoff(context.Background(), repo)
+	_, found, hasOverdue := nextScheduledMatchKickoff(context.Background(), repo)
 	if found {
 		t.Error("expected found=false on repo error")
+	}
+	if hasOverdue {
+		t.Error("expected hasOverdue=false on repo error")
 	}
 }
 
 func TestNextScheduledMatchKickoff_NoCandidates_ReturnsFalse(t *testing.T) {
 	repo := &stubWorkerMatchRepo{candidates: nil}
-	_, found := nextScheduledMatchKickoff(context.Background(), repo)
+	_, found, hasOverdue := nextScheduledMatchKickoff(context.Background(), repo)
 	if found {
 		t.Error("expected found=false when no candidates returned")
 	}
+	if hasOverdue {
+		t.Error("expected hasOverdue=false when no candidates returned")
+	}
 }
 
-func TestNextScheduledMatchKickoff_NoFutureScheduled_ReturnsFalse(t *testing.T) {
+func TestNextScheduledMatchKickoff_NoFutureScheduled_ReturnsFalseAndOverdue(t *testing.T) {
 	past := time.Now().Add(-1 * time.Hour)
 	repo := &stubWorkerMatchRepo{candidates: []*domain.Match{
-		// Live match — filtered out regardless of kickoff
+		// Live match — ignored by the scheduled filter
 		{Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(1 * time.Hour)},
-		// Scheduled but in the past
+		// Scheduled but past kickoff — should set hasOverdue
 		{Status: domain.MatchStatusScheduled, KickoffAt: past},
 	}}
-	_, found := nextScheduledMatchKickoff(context.Background(), repo)
+	_, found, hasOverdue := nextScheduledMatchKickoff(context.Background(), repo)
 	if found {
 		t.Error("expected found=false when no future scheduled matches exist")
+	}
+	if !hasOverdue {
+		t.Error("expected hasOverdue=true for the past-kickoff scheduled match")
 	}
 }
 
@@ -246,12 +282,34 @@ func TestNextScheduledMatchKickoff_ReturnsEarliestFuture(t *testing.T) {
 		{Status: domain.MatchStatusScheduled, KickoffAt: later},
 		{Status: domain.MatchStatusScheduled, KickoffAt: earlier},
 	}}
-	kickoff, found := nextScheduledMatchKickoff(context.Background(), repo)
+	kickoff, found, hasOverdue := nextScheduledMatchKickoff(context.Background(), repo)
 	if !found {
 		t.Fatal("expected found=true with future scheduled matches")
 	}
 	if !kickoff.Equal(earlier) {
 		t.Errorf("expected earliest kickoff %v, got %v", earlier, kickoff)
+	}
+	if hasOverdue {
+		t.Error("expected hasOverdue=false when all scheduled matches are in the future")
+	}
+}
+
+func TestNextScheduledMatchKickoff_FutureAndOverdue_ReturnsBoth(t *testing.T) {
+	future := time.Now().Add(2 * time.Hour)
+	past := time.Now().Add(-30 * time.Minute)
+	repo := &stubWorkerMatchRepo{candidates: []*domain.Match{
+		{Status: domain.MatchStatusScheduled, KickoffAt: future},
+		{Status: domain.MatchStatusScheduled, KickoffAt: past},
+	}}
+	kickoff, found, hasOverdue := nextScheduledMatchKickoff(context.Background(), repo)
+	if !found {
+		t.Fatal("expected found=true (future match present)")
+	}
+	if !kickoff.Equal(future) {
+		t.Errorf("expected future kickoff %v, got %v", future, kickoff)
+	}
+	if !hasOverdue {
+		t.Error("expected hasOverdue=true (past-kickoff match present)")
 	}
 }
 
@@ -336,7 +394,57 @@ func TestSuspendPollingIfThreshold_KickoffInsideWindow_DoesNotPause(t *testing.T
 	}
 }
 
+func TestSuspendPollingIfThreshold_AtThreshold_OverdueMatch_DoesNotPause(t *testing.T) {
+	resetGlobalMatchSyncState()
+	globalMatchSyncState.consecutiveZeroCount.Store(2) // next Add(1) reaches threshold 3
+	params := enabledParams(map[string]int{
+		domain.ParamKeyMatchSyncStopAfterZeroLiveCount: 3,
+	})
+	repo := &stubWorkerMatchRepo{candidates: []*domain.Match{
+		{Status: domain.MatchStatusScheduled, KickoffAt: time.Now().Add(-30 * time.Minute)},
+	}}
+
+	suspendPollingIfThresholdReached(context.Background(), params, repo, 10, zap.NewNop())
+
+	if globalMatchSyncState.pollingPaused.Load() {
+		t.Error("should not pause when an overdue linked match is present")
+	}
+	if globalMatchSyncState.consecutiveZeroCount.Load() != 0 {
+		t.Errorf("consecutiveZeroCount should be reset to 0, got %d",
+			globalMatchSyncState.consecutiveZeroCount.Load())
+	}
+}
+
 // ── makeMatchSyncJob ──────────────────────────────────────────────────────────
+
+func TestMakeMatchSyncJob_Paused_OverdueMatch_TriggersResume(t *testing.T) {
+	// Core regression test: worker is paused (timer 1 h away), a match is
+	// linked after the pause and its kickoff has already passed.
+	// The overdue check inside handlePauseResume must clear the pause and
+	// allow PollAndApply to run on this tick.
+	resetGlobalMatchSyncState()
+	globalMatchSyncState.pollingPaused.Store(true)
+	globalMatchSyncState.resumeAtUnix.Store(time.Now().Add(1 * time.Hour).Unix())
+
+	repo := &stubWorkerMatchRepo{candidates: []*domain.Match{
+		{Status: domain.MatchStatusScheduled, KickoffAt: time.Now().Add(-15 * time.Minute)},
+	}}
+	syncer := &stubWorkerMatchSyncer{liveCount: 1}
+	job := makeMatchSyncJob(enabledParams(nil), syncer, repo, zap.NewNop())
+
+	if err := job(context.Background()); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+	if globalMatchSyncState.pollingPaused.Load() {
+		t.Error("pause state should be cleared after overdue match detection")
+	}
+	if globalMatchSyncState.lastPollUnixSec.Load() == 0 {
+		t.Error("lastPollUnixSec should be updated when PollAndApply runs after early resume")
+	}
+	if globalMatchSyncState.lastLiveCount.Load() != 1 {
+		t.Errorf("lastLiveCount should be 1, got %d", globalMatchSyncState.lastLiveCount.Load())
+	}
+}
 
 func TestMakeMatchSyncJob_Disabled_ReturnsNil(t *testing.T) {
 	resetGlobalMatchSyncState()

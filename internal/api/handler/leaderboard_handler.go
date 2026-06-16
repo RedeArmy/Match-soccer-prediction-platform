@@ -94,7 +94,7 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 		out = append(out, LeaderboardEntryResponse{
 			Rank:        e.Rank,
 			UserID:      e.User.ID,
-			UserName:    e.User.Name,
+			UserName:    userDisplayName(e.User),
 			TotalPoints: e.TotalPoints,
 			PrizeWinner: e.PrizeWinner,
 			RoundPoints: e.RoundPoints,

@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 // Matches domain.MinMembersPerGroup / system param group.min_members_for_active
 const PREMIUM_MIN_MEMBERS = 5;
 
+type TabId = "settings" | "mode";
+
 function settingsErrorKey(
   error: unknown,
   t: ReturnType<typeof useI18n>["t"],
@@ -43,13 +45,35 @@ export function TournamentSettingsModal({
   const { t } = useI18n();
   const queryClient = useQueryClient();
 
+  const [activeTab, setActiveTab] = useState<TabId>("settings");
+
+  // ── Tab: Ajustes ──────────────────────────────────────────────────────────
+  const [requireApproval, setRequireApproval] = useState(
+    group.require_approval,
+  );
+
+  const approvalMutation = useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      return api.updateRequireApproval(token!, group.id, requireApproval);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["group", group.id], updated);
+      onClose();
+    },
+  });
+
+  const isApprovalDirty = requireApproval !== group.require_approval;
+
+  // ── Tab: Modo de torneo ───────────────────────────────────────────────────
   const isFree = !group.is_premium;
   const canUpgrade = isFree && memberCount >= PREMIUM_MIN_MEMBERS;
+  const modesDisabled = isFree && !canUpgrade;
 
   const [modeGeneral, setModeGeneral] = useState(group.mode_general);
   const [modeRound, setModeRound] = useState(group.mode_round);
 
-  const mutation = useMutation({
+  const modeMutation = useMutation({
     mutationFn: async () => {
       const token = await getToken();
       return api.setTournamentMode(token!, group.id, {
@@ -63,9 +87,13 @@ export function TournamentSettingsModal({
     },
   });
 
-  const isDirty =
+  const isModeDirty =
     modeGeneral !== group.mode_general || modeRound !== group.mode_round;
-  const modesDisabled = isFree && !canUpgrade;
+
+  const tabs: { id: TabId; label: string }[] = [
+    { id: "settings", label: "Ajustes" },
+    { id: "mode", label: "Modo de torneo" },
+  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -93,71 +121,137 @@ export function TournamentSettingsModal({
           </button>
         </div>
 
-        <h2 className="mb-4 text-lg font-semibold text-white">
-          {t("group.tournamentMode")}
-        </h2>
-
-        {/* Premium eligibility banner — only shown when group is free */}
-        {isFree &&
-          (canUpgrade ? (
-            <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-gold-400/30 bg-gold-400/5 px-3 py-2.5">
-              <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" />
-              <p className="text-[11px] leading-relaxed text-gold-300">
-                {t("group.premiumReady")}
-              </p>
-            </div>
-          ) : (
-            <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-yellow-400/20 bg-yellow-400/5 px-3 py-2.5">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-400" />
-              <p className="text-[11px] leading-relaxed text-yellow-300">
-                {t("group.premiumNotReady").replace(
-                  "{min}",
-                  String(PREMIUM_MIN_MEMBERS),
-                )}
-              </p>
-            </div>
+        {/* Tabs */}
+        <div className="mb-5 flex gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                activeTab === tab.id
+                  ? "bg-white/10 text-white"
+                  : "text-text-muted hover:text-white",
+              )}
+            >
+              {tab.label}
+            </button>
           ))}
-
-        {/* Mode toggles */}
-        <div className="space-y-3">
-          <ModeToggle
-            id="mode-general"
-            checked={modeGeneral}
-            onChange={setModeGeneral}
-            label={t("group.modeGeneral")}
-            description={t("group.modeGeneralDesc")}
-            disabled={modesDisabled || (!isFree && group.mode_general)}
-          />
-          <ModeToggle
-            id="mode-round"
-            checked={modeRound}
-            onChange={setModeRound}
-            label={t("group.modeRound")}
-            description={t("group.modeRoundDesc")}
-            disabled={modesDisabled || (!isFree && group.mode_round)}
-          />
         </div>
 
-        {mutation.isError && (
-          <p className="mt-3 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-[11px] text-red-400">
-            {settingsErrorKey(mutation.error, t)}
-          </p>
+        {/* Tab: Ajustes */}
+        {activeTab === "settings" && (
+          <div>
+            <ModeToggle
+              id="require-approval"
+              checked={requireApproval}
+              onChange={setRequireApproval}
+              label="Requerir aprobación"
+              description={
+                requireApproval
+                  ? "Los nuevos miembros deben ser aprobados por un miembro activo antes de unirse."
+                  : "Los usuarios se unen automáticamente al presentar el código de invitación, sin esperar aprobación."
+              }
+              disabled={false}
+            />
+
+            {approvalMutation.isError && (
+              <p className="mt-3 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-[11px] text-red-400">
+                {t("group.settingsError")}
+              </p>
+            )}
+
+            <button
+              type="button"
+              disabled={!isApprovalDirty || approvalMutation.isPending}
+              onClick={() => approvalMutation.mutate()}
+              className={cn(
+                "mt-5 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
+                isApprovalDirty
+                  ? "bg-gold-400/80 text-bg-base hover:bg-gold-400 disabled:opacity-50"
+                  : "cursor-not-allowed bg-white/5 text-text-muted",
+              )}
+            >
+              {approvalMutation.isPending && (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
+              {t("common.save")}
+            </button>
+          </div>
         )}
 
-        <button
-          type="button"
-          disabled={!isDirty || modesDisabled || mutation.isPending}
-          onClick={() => mutation.mutate()}
-          className={cn(
-            "mt-5 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
-            isDirty && !modesDisabled
-              ? "bg-gold-400/80 text-bg-base hover:bg-gold-400 disabled:opacity-50"
-              : "cursor-not-allowed bg-white/5 text-text-muted",
-          )}
-        >
-          {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-          {t("common.save")}
-        </button>
+        {/* Tab: Modo de torneo */}
+        {activeTab === "mode" && (
+          <div>
+            <h2 className="mb-4 text-lg font-semibold text-white">
+              {t("group.tournamentMode")}
+            </h2>
+
+            {/* Premium eligibility banner */}
+            {isFree &&
+              (canUpgrade ? (
+                <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-gold-400/30 bg-gold-400/5 px-3 py-2.5">
+                  <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" />
+                  <p className="text-[11px] leading-relaxed text-gold-300">
+                    {t("group.premiumReady")}
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-yellow-400/20 bg-yellow-400/5 px-3 py-2.5">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-400" />
+                  <p className="text-[11px] leading-relaxed text-yellow-300">
+                    {t("group.premiumNotReady").replace(
+                      "{min}",
+                      String(PREMIUM_MIN_MEMBERS),
+                    )}
+                  </p>
+                </div>
+              ))}
+
+            <div className="space-y-3">
+              <ModeToggle
+                id="mode-general"
+                checked={modeGeneral}
+                onChange={setModeGeneral}
+                label={t("group.modeGeneral")}
+                description={t("group.modeGeneralDesc")}
+                disabled={modesDisabled || (!isFree && group.mode_general)}
+              />
+              <ModeToggle
+                id="mode-round"
+                checked={modeRound}
+                onChange={setModeRound}
+                label={t("group.modeRound")}
+                description={t("group.modeRoundDesc")}
+                disabled={modesDisabled || (!isFree && group.mode_round)}
+              />
+            </div>
+
+            {modeMutation.isError && (
+              <p className="mt-3 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-[11px] text-red-400">
+                {settingsErrorKey(modeMutation.error, t)}
+              </p>
+            )}
+
+            <button
+              type="button"
+              disabled={!isModeDirty || modesDisabled || modeMutation.isPending}
+              onClick={() => modeMutation.mutate()}
+              className={cn(
+                "mt-5 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
+                isModeDirty && !modesDisabled
+                  ? "bg-gold-400/80 text-bg-base hover:bg-gold-400 disabled:opacity-50"
+                  : "cursor-not-allowed bg-white/5 text-text-muted",
+              )}
+            >
+              {modeMutation.isPending && (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
+              {t("common.save")}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
