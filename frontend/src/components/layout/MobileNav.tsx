@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   LogOut,
   Trophy,
-  User,
   Wallet,
   X,
 } from "lucide-react";
@@ -53,13 +52,6 @@ const navItems = [
     href: "/balance",
     labelKey: "common.balance",
     icon: Wallet,
-    public: false,
-    signedOutOnly: false,
-  },
-  {
-    href: "/profile",
-    labelKey: "nav.profile",
-    icon: User,
     public: false,
     signedOutOnly: false,
   },

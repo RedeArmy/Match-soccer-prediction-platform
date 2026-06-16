@@ -548,9 +548,6 @@ export default function AdminMatchesPage() {
         syncEndDate || undefined,
       );
     },
-    onSuccess: () => {
-      invalidate();
-    },
   });
 
   async function handleSync() {
@@ -559,6 +556,7 @@ export default function AdminMatchesPage() {
     setSyncError(null);
     try {
       const result = await dailySyncMutation.mutateAsync();
+      await refetch();
       setSyncResult({
         linked: result.linked,
         kickoffs_updated: result.kickoffs_updated,
@@ -566,9 +564,9 @@ export default function AdminMatchesPage() {
       });
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : "Error al sincronizar");
+    } finally {
+      setTimeout(() => setSyncCooldown(false), 5_000);
     }
-    refetch();
-    setTimeout(() => setSyncCooldown(false), 5_000);
   }
 
   const isBusy =

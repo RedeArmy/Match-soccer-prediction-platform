@@ -478,6 +478,25 @@ describe("LiveMatchFeed – MatchCard live without elapsed", () => {
   });
 });
 
+describe("LiveMatchFeed – MatchCard round label", () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        fixtures: [makeFixture({ id: 44, round: "Group Stage - 1" })],
+      },
+    } as never);
+  });
+
+  it("translates the phase and strips the matchday suffix", () => {
+    renderFeed();
+    expect(screen.getByText("Fase de Grupos")).toBeInTheDocument();
+    expect(screen.queryByText(/Group Stage - 1/)).toBeNull();
+    expect(screen.queryByText(/-\s*1/)).toBeNull();
+  });
+});
+
 describe("LiveMatchFeed – MatchCard no round", () => {
   beforeEach(() => {
     vi.mocked(useQuery).mockReturnValue({
