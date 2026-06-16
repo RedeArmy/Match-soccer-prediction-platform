@@ -25,6 +25,31 @@ function isDone(status: string) {
   return DONE_STATUSES.has(status);
 }
 
+// API-Football returns round names like "Group Stage - 1", where the trailing
+// number is the matchday — not meaningful to show, so it's stripped before
+// translating the phase name (e.g. "Group Stage" → "Fase de Grupos").
+//
+// Implemented with lastIndexOf/slice rather than a single regex: a pattern
+// like /\s*-\s*\d+\s*$/ is unanchored at the start, so on a string with no
+// qualifying suffix the engine retries the \s*-backtrack at every offset —
+// O(n²) work on a string we don't control (it comes from the upstream
+// API-Football response). lastIndexOf/slice are linear, and the only regex
+// left (/^\d+$/) is anchored on both ends with a single quantifier, so it
+// has no backtracking to exploit.
+function formatRound(
+  round: string,
+  phaseName: (phase: string | null | undefined) => string,
+): string {
+  const trimmed = round.trimEnd();
+  const dashIndex = trimmed.lastIndexOf("-");
+  if (dashIndex === -1) return phaseName(round);
+
+  const suffix = trimmed.slice(dashIndex + 1).trim();
+  if (!/^\d+$/.test(suffix)) return phaseName(round);
+
+  return phaseName(trimmed.slice(0, dashIndex).trimEnd());
+}
+
 // ── Polling interval computation ───────────────────────────────────────────────
 //
 // State machine:
@@ -303,7 +328,7 @@ interface MatchCardProps {
 }
 
 function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
-  const { t, teamName } = useI18n();
+  const { t, teamName, phaseName } = useI18n();
 
   const live = isLive(fixture.status);
   const done = isDone(fixture.status);
@@ -374,26 +399,25 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
             )}
           </span>
 
-          {/* Teams + score */}
-          <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
-            <span className="truncate text-sm font-medium text-white">
+          {/* Teams + score — fixed-width middle column keeps the vs/score
+              lined up across rows regardless of team name length or status */}
+          <div className="flex flex-1 items-center gap-2 min-w-0">
+            <span className="flex-1 truncate text-right text-sm font-medium text-white">
               {teamName(fixture.homeTeam)}
             </span>
 
-            {live || done ? (
-              <span
-                className={cn(
-                  "shrink-0 text-base font-bold tabular-nums",
-                  scoreClass,
-                )}
-              >
-                {fixture.homeScore ?? 0} – {fixture.awayScore ?? 0}
-              </span>
-            ) : (
-              <span className="shrink-0 text-xs text-text-muted">vs</span>
-            )}
+            <span
+              className={cn(
+                "shrink-0 w-12 text-center font-bold tabular-nums",
+                live || done ? cn("text-base", scoreClass) : "text-xs text-text-muted",
+              )}
+            >
+              {live || done
+                ? `${fixture.homeScore ?? 0} – ${fixture.awayScore ?? 0}`
+                : "vs"}
+            </span>
 
-            <span className="truncate text-right text-sm font-medium text-white">
+            <span className="flex-1 truncate text-left text-sm font-medium text-white">
               {teamName(fixture.awayTeam)}
             </span>
           </div>
@@ -410,7 +434,7 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
 
         {fixture.round && (
           <p className="mt-1 pl-4 text-[10px] text-text-muted">
-            {fixture.round}
+            {formatRound(fixture.round, phaseName)}
           </p>
         )}
       </button>
