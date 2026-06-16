@@ -28,11 +28,26 @@ function isDone(status: string) {
 // API-Football returns round names like "Group Stage - 1", where the trailing
 // number is the matchday — not meaningful to show, so it's stripped before
 // translating the phase name (e.g. "Group Stage" → "Fase de Grupos").
+//
+// Implemented with lastIndexOf/slice rather than a single regex: a pattern
+// like /\s*-\s*\d+\s*$/ is unanchored at the start, so on a string with no
+// qualifying suffix the engine retries the \s*-backtrack at every offset —
+// O(n²) work on a string we don't control (it comes from the upstream
+// API-Football response). lastIndexOf/slice are linear, and the only regex
+// left (/^\d+$/) is anchored on both ends with a single quantifier, so it
+// has no backtracking to exploit.
 function formatRound(
   round: string,
   phaseName: (phase: string | null | undefined) => string,
 ): string {
-  return phaseName(round.replace(/\s*-\s*\d+\s*$/, ""));
+  const trimmed = round.trimEnd();
+  const dashIndex = trimmed.lastIndexOf("-");
+  if (dashIndex === -1) return phaseName(round);
+
+  const suffix = trimmed.slice(dashIndex + 1).trim();
+  if (!/^\d+$/.test(suffix)) return phaseName(round);
+
+  return phaseName(trimmed.slice(0, dashIndex).trimEnd());
 }
 
 // ── Polling interval computation ───────────────────────────────────────────────
