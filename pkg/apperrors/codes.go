@@ -82,4 +82,18 @@ const (
 	// wait before the next request will be accepted.
 	// Maps to HTTP 429 Too Many Requests.
 	CodeRateLimited Code = "RATE_LIMITED"
+
+	// CodeServiceUnavailable indicates that an endpoint cannot serve the
+	// request because a required server-side dependency or configuration is
+	// missing - for example, a third-party integration that has not been
+	// set up for this environment. Unlike CodeInternal, this is an
+	// operational gap rather than an unexpected runtime failure.
+	// Maps to HTTP 503 Service Unavailable.
+	CodeServiceUnavailable Code = "SERVICE_UNAVAILABLE"
+
+	// CodeUpstreamError indicates that a call to a third-party service failed
+	// or returned an unexpected response. The cause (the raw upstream error)
+	// is logged internally but never forwarded to the client.
+	// Maps to HTTP 502 Bad Gateway.
+	CodeUpstreamError Code = "UPSTREAM_ERROR"
 )

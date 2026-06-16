@@ -65,8 +65,7 @@ type createPayPalOrderResponse struct {
 func (h *PayPalOrderHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if h.clientID == "" || h.clientSecret == "" {
 		h.log.Error("PayPal credentials not configured")
-		writeJSON(w, http.StatusServiceUnavailable,
-			map[string]string{"error": "PayPal no está configurado en el servidor"})
+		writeError(w, r, h.log, apperrors.Unavailable("PayPal no está configurado en el servidor"))
 		return
 	}
 
@@ -78,7 +77,7 @@ func (h *PayPalOrderHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var req createPayPalOrderRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil || req.AmountCents <= 0 || req.Currency == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Cuerpo de solicitud inválido"})
+		writeError(w, r, h.log, apperrors.Validation("Cuerpo de solicitud inválido"))
 		return
 	}
 
@@ -94,7 +93,7 @@ func (h *PayPalOrderHandler) Create(w http.ResponseWriter, r *http.Request) {
 	accessToken, err := h.getAccessToken(r.Context())
 	if err != nil {
 		h.log.Error("PayPal access token error", zap.Error(err))
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "No se pudo autenticar con PayPal"})
+		writeError(w, r, h.log, apperrors.UpstreamError("No se pudo autenticar con PayPal", err))
 		return
 	}
 
@@ -102,7 +101,7 @@ func (h *PayPalOrderHandler) Create(w http.ResponseWriter, r *http.Request) {
 	orderID, err := h.createOrder(r.Context(), accessToken, amountUSD, intent.Token)
 	if err != nil {
 		h.log.Error("PayPal create order error", zap.Error(err))
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "PayPal rechazó la orden"})
+		writeError(w, r, h.log, apperrors.UpstreamError("PayPal rechazó la orden", err))
 		return
 	}
 

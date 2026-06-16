@@ -27,6 +27,8 @@ func TestCodes_WireValuesAreLocked(t *testing.T) {
 		{apperrors.CodeBadRequest, "BAD_REQUEST"},
 		{apperrors.CodeInternal, "INTERNAL"},
 		{apperrors.CodeRateLimited, "RATE_LIMITED"},
+		{apperrors.CodeServiceUnavailable, "SERVICE_UNAVAILABLE"},
+		{apperrors.CodeUpstreamError, "UPSTREAM_ERROR"},
 	}
 
 	for _, tc := range cases {

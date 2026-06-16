@@ -197,6 +197,12 @@ func validateProductionConfig(cfg *Config) error {
 	if cfg.Payment.RecurrenteWebhookSecret == "" {
 		return errors.New("payment.recurrenteWebhookSecret must not be empty outside development (WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
 	}
+	if cfg.Payment.PayPalClientID == "" {
+		return errors.New("payment.paypalClientID must not be empty outside development (WCQ_PAYMENT_PAYPALCLIENTID); the PayPal deposit endpoint will return 503 without it")
+	}
+	if cfg.Payment.PayPalClientSecret == "" {
+		return errors.New("payment.paypalClientSecret must not be empty outside development (WCQ_PAYMENT_PAYPALCLIENTSECRET); the PayPal deposit endpoint will return 503 without it")
+	}
 	if cfg.Payment.PayPalWebhookID == "" {
 		return errors.New("payment.paypalWebhookID must not be empty outside development (WCQ_PAYMENT_PAYPALWEBHOOKID)")
 	}

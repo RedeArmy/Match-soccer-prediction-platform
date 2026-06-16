@@ -56,6 +56,8 @@ func setProductionPaymentEnv(t *testing.T) {
 	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTID", "test-paypal-client-id")
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTSECRET", "test-paypal-client-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
 	t.Setenv("WCQ_EMAIL_UNSUBSCRIBESECRET", "test-unsubscribe-secret")
 	// 64-char hex = 32 bytes; value is a test-only key, not for real use.
@@ -322,6 +324,50 @@ func TestLoad_ProductionWithoutRecurrenteSecret_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestLoad_ProductionWithoutPayPalClientID_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
+	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
+	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	// WCQ_PAYMENT_PAYPALCLIENTID intentionally not set.
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTSECRET", "test-paypal-client-secret")
+	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing PayPal client ID in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_PAYMENT_PAYPALCLIENTID") {
+		t.Errorf("expected error to reference WCQ_PAYMENT_PAYPALCLIENTID, got: %v", err)
+	}
+}
+
+func TestLoad_ProductionWithoutPayPalClientSecret_ReturnsError(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(envEnvironment, "production")
+	t.Setenv("WCQ_CLERK_JWKSURL", "https://example.clerk.accounts.dev/.well-known/jwks.json")
+	t.Setenv("WCQ_CLERK_WEBHOOKSECRET", "whsec_test")
+	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
+	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
+	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTID", "test-paypal-client-id")
+	// WCQ_PAYMENT_PAYPALCLIENTSECRET intentionally not set.
+	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
+	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing PayPal client secret in production, got nil")
+	}
+	if !strings.Contains(err.Error(), "WCQ_PAYMENT_PAYPALCLIENTSECRET") {
+		t.Errorf("expected error to reference WCQ_PAYMENT_PAYPALCLIENTSECRET, got: %v", err)
+	}
+}
+
 func TestLoad_ProductionWithoutPayPalWebhookID_ReturnsError(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv(envEnvironment, "production")
@@ -330,6 +376,8 @@ func TestLoad_ProductionWithoutPayPalWebhookID_ReturnsError(t *testing.T) {
 	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTID", "test-paypal-client-id")
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTSECRET", "test-paypal-client-secret")
 	// WCQ_PAYMENT_PAYPALWEBHOOKID intentionally not set.
 	t.Setenv("WCQ_EVENTBUS_DRIVER", "redis")
 
@@ -350,6 +398,8 @@ func TestLoad_ProductionWithoutPayoutEncryptionKey_ReturnsError(t *testing.T) {
 	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTID", "test-paypal-client-id")
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTSECRET", "test-paypal-client-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
 	// WCQ_PAYMENT_PAYOUTENCRYPTIONKEY intentionally not set.
 
@@ -370,6 +420,8 @@ func TestLoad_ProductionWithoutUnsubscribeSecret_ReturnsError(t *testing.T) {
 	t.Setenv("WCQ_SERVER_APPBASEURL", "https://app.example.com")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEAPIKEY", "test-recurrente-api-key")
 	t.Setenv("WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET", "test-recurrente-secret")
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTID", "test-paypal-client-id")
+	t.Setenv("WCQ_PAYMENT_PAYPALCLIENTSECRET", "test-paypal-client-secret")
 	t.Setenv("WCQ_PAYMENT_PAYPALWEBHOOKID", "WH-TEST-12345")
 	t.Setenv("WCQ_PAYMENT_PAYOUTENCRYPTIONKEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	// WCQ_EMAIL_UNSUBSCRIBESECRET intentionally not set.

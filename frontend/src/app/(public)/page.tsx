@@ -38,7 +38,7 @@ const LOGGED_IN = {
 
 const SCORING_RULE_META = [
   {
-    points: 3,
+    pointsLabel: "+5–15",
     icon: CheckCircle2,
     iconColor: "text-gold-300",
     border: "border-gold-600/30",
@@ -46,7 +46,7 @@ const SCORING_RULE_META = [
     pill: "bg-gold-600/20 text-gold-300",
   },
   {
-    points: 1,
+    pointsLabel: "+2–8",
     icon: CheckCircle2,
     iconColor: "text-green-300",
     border: "border-green-500/20",
@@ -54,7 +54,7 @@ const SCORING_RULE_META = [
     pill: "bg-green-500/15 text-green-300",
   },
   {
-    points: 0,
+    pointsLabel: "0",
     icon: XCircle,
     iconColor: "text-text-muted",
     border: "border-white/8",
@@ -62,6 +62,19 @@ const SCORING_RULE_META = [
     pill: "bg-white/8 text-text-muted",
   },
 ];
+
+// Real point values from scoring_rules (migrations 000063/000065): every
+// phase pays out exact-score and correct-outcome points at escalating
+// rates so knockout predictions carry more weight than group-stage ones.
+const SCORING_BY_PHASE = [
+  { phase: "group_stage", exact: 5, correct: 2 },
+  { phase: "round_of_32", exact: 6, correct: 3 },
+  { phase: "round_of_16", exact: 8, correct: 4 },
+  { phase: "quarter_final", exact: 10, correct: 5 },
+  { phase: "semi_final", exact: 12, correct: 6 },
+  { phase: "third_place", exact: 12, correct: 6 },
+  { phase: "final", exact: 15, correct: 8 },
+] as const;
 
 const MODE_META = [
   {
@@ -188,7 +201,7 @@ function PredictionPreview() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
-  const { t } = useI18n();
+  const { t, phaseName } = useI18n();
   const { isSignedIn } = useAuth();
   const HeroPrimaryIcon = LOGGED_IN.heroPrimary.icon;
 
@@ -403,7 +416,7 @@ export default function LandingPage() {
           <div className="grid gap-4 sm:grid-cols-3">
             {scoringRules.map(
               ({
-                points,
+                pointsLabel,
                 label,
                 example,
                 icon: Icon,
@@ -421,7 +434,7 @@ export default function LandingPage() {
                     <span
                       className={`rounded-full px-2.5 py-1 text-sm font-bold tabular-nums ${pill}`}
                     >
-                      {points === 0 ? "0 pts" : `+${points} pts`}
+                      {pointsLabel} pts
                     </span>
                   </div>
                   <div>
@@ -431,6 +444,43 @@ export default function LandingPage() {
                 </div>
               ),
             )}
+          </div>
+
+          {/* Per-phase point table — real values from scoring_rules */}
+          <div className="mt-8 overflow-x-auto">
+            <table className="w-full min-w-[480px] text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-text-muted">
+                  <th className="py-2 pr-4 font-medium">
+                    {t("landing.scoringTablePhase")}
+                  </th>
+                  <th className="py-2 pr-4 text-right font-medium">
+                    {t("landing.scoreExactLabel")}
+                  </th>
+                  <th className="py-2 text-right font-medium">
+                    {t("landing.scoreResultLabel")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {SCORING_BY_PHASE.map(({ phase, exact, correct }) => (
+                  <tr
+                    key={phase}
+                    className="border-b border-white/5 last:border-0"
+                  >
+                    <td className="py-2 pr-4 text-text-secondary">
+                      {phaseName(phase)}
+                    </td>
+                    <td className="py-2 pr-4 text-right font-semibold tabular-nums text-gold-300">
+                      +{exact}
+                    </td>
+                    <td className="py-2 text-right font-semibold tabular-nums text-green-300">
+                      +{correct}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {/* Bonus callout */}

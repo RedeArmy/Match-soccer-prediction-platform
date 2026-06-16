@@ -128,6 +128,41 @@ func TestInternal_SetsFieldsAndStoredCause(t *testing.T) {
 	}
 }
 
+func TestUnavailable_SetsFields(t *testing.T) {
+	err := apperrors.Unavailable("PayPal no está configurado en el servidor")
+
+	if err.Code != apperrors.CodeServiceUnavailable {
+		t.Errorf(fmtCode, apperrors.CodeServiceUnavailable, err.Code)
+	}
+	if err.Message != "PayPal no está configurado en el servidor" {
+		t.Errorf("Message: expected %q, got %q", "PayPal no está configurado en el servidor", err.Message)
+	}
+	if err.HTTPStatus != http.StatusServiceUnavailable {
+		t.Errorf(fmtHTTPStatus, http.StatusServiceUnavailable, err.HTTPStatus)
+	}
+	if err.Cause != nil {
+		t.Errorf("Cause: expected nil, got %v", err.Cause)
+	}
+}
+
+func TestUpstreamError_SetsFieldsAndStoredCause(t *testing.T) {
+	cause := errors.New("paypal order 422: invalid currency")
+	err := apperrors.UpstreamError("PayPal rechazó la orden", cause)
+
+	if err.Code != apperrors.CodeUpstreamError {
+		t.Errorf(fmtCode, apperrors.CodeUpstreamError, err.Code)
+	}
+	if err.Message != "PayPal rechazó la orden" {
+		t.Errorf("Message: expected %q, got %q", "PayPal rechazó la orden", err.Message)
+	}
+	if err.HTTPStatus != http.StatusBadGateway {
+		t.Errorf(fmtHTTPStatus, http.StatusBadGateway, err.HTTPStatus)
+	}
+	if !errors.Is(err, cause) {
+		t.Error("expected errors.Is to find the cause via Unwrap")
+	}
+}
+
 // TestError_ReturnsMessage verifies that the error interface is satisfied and
 // returns the user-facing message, not the internal cause details.
 func TestError_ReturnsMessage(t *testing.T) {
