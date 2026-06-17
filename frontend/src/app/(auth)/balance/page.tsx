@@ -51,12 +51,13 @@ export default function BalancePage() {
       ? Math.round(usdToGTQ(usdAmount, rate.buy_rate) * 100)
       : null;
 
+  const recurrenteAmountDisplay =
+    recurrenteCurrency === "GTQ"
+      ? `Q ${(recurrenteAmountCents / 100).toFixed(2)}`
+      : `$${(recurrenteAmountCents / 100).toFixed(2)} ${recurrenteCurrency}`;
+
   const recurrenteAmountFormatted =
-    recurrenteAmountCents > 0
-      ? recurrenteCurrency === "GTQ"
-        ? `Q ${(recurrenteAmountCents / 100).toFixed(2)}`
-        : `$${(recurrenteAmountCents / 100).toFixed(2)} ${recurrenteCurrency}`
-      : null;
+    recurrenteAmountCents > 0 ? recurrenteAmountDisplay : null;
 
   // Poll ledger for 15 s after redirect so the webhook-credited entry appears promptly
   useEffect(() => {
@@ -97,6 +98,10 @@ export default function BalancePage() {
     isVisibleLedgerKind(e.kind),
   );
 
+  const bannerCreditText = paypalSuccess
+    ? t("balance.paypalBannerCredit")
+    : t("balance.recurrenteBannerCredit");
+
   return (
     <div className="space-y-6">
       <h1 className="font-display text-3xl text-white">{t("balance.title")}</h1>
@@ -131,9 +136,7 @@ export default function BalancePage() {
               </p>
             )}
             <p className="text-xs text-text-muted mt-0.5">
-              {paypalSuccess
-                ? t("balance.paypalBannerCredit")
-                : t("balance.recurrenteBannerCredit")}
+              {bannerCreditText}
             </p>
           </div>
           <button

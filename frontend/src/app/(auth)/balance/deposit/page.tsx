@@ -103,7 +103,7 @@ const alertConfig: Record<
   },
 };
 
-function DepositAlert({ feedback }: { feedback: Feedback | null }) {
+function DepositAlert({ feedback }: Readonly<{ feedback: Feedback | null }>) {
   if (!feedback) return null;
   const { bg, border, text, icon } = alertConfig[feedback.kind];
   return (
