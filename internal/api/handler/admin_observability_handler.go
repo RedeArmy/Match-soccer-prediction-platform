@@ -156,17 +156,7 @@ func (h *AdminObservabilityHandler) TracingRecentErrors(w http.ResponseWriter, r
 		writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: []tracingErrorEntry{}})
 		return
 	}
-	entries := make([]tracingErrorEntry, len(sr.Traces))
-	for i, t := range sr.Traces {
-		entries[i] = tracingErrorEntry{
-			TraceID:         t.TraceID,
-			RootServiceName: t.RootServiceName,
-			RootTraceName:   t.RootTraceName,
-			StartTimeNs:     t.StartTimeUnixNano,
-			DurationMs:      t.DurationMs,
-		}
-	}
-	writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: entries})
+	writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: traceEntries(sr.Traces)})
 }
 
 // ── Active connections ───────────────────────────────────────────────────────
@@ -241,9 +231,13 @@ func (h *AdminObservabilityHandler) LogsSearch(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: []tracingErrorEntry{}})
 		return
 	}
-	entries := make([]tracingErrorEntry, len(sr.Traces))
-	for i, t := range sr.Traces {
-		entries[i] = tracingErrorEntry{
+	writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: traceEntries(sr.Traces)})
+}
+
+func traceEntries(traces []tempoclient.TraceSummary) []tracingErrorEntry {
+	out := make([]tracingErrorEntry, len(traces))
+	for i, t := range traces {
+		out[i] = tracingErrorEntry{
 			TraceID:         t.TraceID,
 			RootServiceName: t.RootServiceName,
 			RootTraceName:   t.RootTraceName,
@@ -251,7 +245,7 @@ func (h *AdminObservabilityHandler) LogsSearch(w http.ResponseWriter, r *http.Re
 			DurationMs:      t.DurationMs,
 		}
 	}
-	writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: entries})
+	return out
 }
 
 func clampInt(s string, def, min, max int) int {
