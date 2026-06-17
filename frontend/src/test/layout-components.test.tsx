@@ -93,7 +93,15 @@ describe("Footer – unauthenticated", () => {
     expect(screen.getByText("K26")).toBeInTheDocument();
   });
 
-  it("shows Página Principal link to /", () => {
+  it("shows Fan Fest link to /tournaments on the home page", () => {
+    mockUsePathname.mockReturnValue("/");
+    render(<Footer />);
+    const link = screen.getByRole("link", { name: "Fan Fest" });
+    expect(link).toHaveAttribute("href", "/tournaments");
+  });
+
+  it("shows Página Principal link to / on inner pages", () => {
+    mockUsePathname.mockReturnValue("/tournaments");
     render(<Footer />);
     const link = screen.getByRole("link", { name: "Página Principal" });
     expect(link).toHaveAttribute("href", "/");
@@ -133,7 +141,8 @@ describe("Footer – authenticated", () => {
     } as never);
   });
 
-  it("shows Página Principal link to /", () => {
+  it("shows Página Principal link to / regardless of path", () => {
+    mockUsePathname.mockReturnValue("/");
     render(<Footer />);
     const link = screen.getByRole("link", { name: "Página Principal" });
     expect(link).toHaveAttribute("href", "/");
@@ -172,6 +181,7 @@ describe("Footer – loading (Clerk not yet resolved)", () => {
   });
 
   it("falls back to unauthenticated nav while Clerk loads", () => {
+    mockUsePathname.mockReturnValue("/tournaments");
     render(<Footer />);
     expect(
       screen.getByRole("link", { name: "Página Principal" }),
@@ -198,7 +208,18 @@ describe("Header", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows Página Principal link to / for signed-out users", () => {
+  it("shows Fan Fest link to /tournaments for signed-out users on the home page", () => {
+    mockUsePathname.mockReturnValue("/");
+    render(<Header />);
+    const links = screen.getAllByRole("link", { name: "Fan Fest" });
+    expect(links.length).toBeGreaterThanOrEqual(1);
+    expect(links.every((l) => l.getAttribute("href") === "/tournaments")).toBe(
+      true,
+    );
+  });
+
+  it("shows Página Principal link to / for signed-out users on inner pages", () => {
+    mockUsePathname.mockReturnValue("/tournaments");
     render(<Header />);
     const link = screen.getByRole("link", { name: "Página Principal" });
     expect(link).toHaveAttribute("href", "/");
