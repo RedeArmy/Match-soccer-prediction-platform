@@ -482,12 +482,12 @@ func TestPayPalWebhookAuth_MalformedBase64Sig_Returns401(t *testing.T) {
 
 // TestPayPalWebhookAuth_StaleTimestamp_Returns401 verifies that the full
 // PayPalWebhookAuth middleware rejects a request whose PAYPAL-TRANSMISSION-TIME
-// is more than five minutes in the past, exercising the timestamp-validation
-// error path in checkPayPalWebhook. The signature is built over the stale
-// timestamp; signature verification is never reached because the timestamp
-// check happens first.
+// is more than the tolerance window in the past, exercising the timestamp-
+// validation error path in checkPayPalWebhook. The signature is built over
+// the stale timestamp; signature verification is never reached because the
+// timestamp check happens first.
 func TestPayPalWebhookAuth_StaleTimestamp_Returns401(t *testing.T) {
-	staleTime := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+	staleTime := time.Now().UTC().Add(-25 * time.Hour).Format(time.RFC3339)
 
 	downstream := &captureHandler{}
 	mw := applyPayPalMiddleware(t, testPayPalWebhookID, mockFetcher(testPair.cert), downstream)
@@ -513,10 +513,10 @@ func TestPayPalWebhookAuth_StaleTimestamp_Returns401(t *testing.T) {
 }
 
 // TestPayPalWebhookAuth_FutureTimestamp_Returns401 verifies that a timestamp
-// more than five minutes in the future is also rejected, preventing clock-skew
-// abuse.
+// more than the tolerance window in the future is rejected, preventing
+// clock-skew abuse.
 func TestPayPalWebhookAuth_FutureTimestamp_Returns401(t *testing.T) {
-	futureTime := time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339)
+	futureTime := time.Now().UTC().Add(25 * time.Hour).Format(time.RFC3339)
 
 	downstream := &captureHandler{}
 	mw := applyPayPalMiddleware(t, testPayPalWebhookID, mockFetcher(testPair.cert), downstream)

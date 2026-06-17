@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -129,7 +130,8 @@ func (h *PaymentIntentHandler) createRecurrenteCheckout(w http.ResponseWriter, r
 		return
 	}
 
-	successURL := h.appBaseURL + "/balance?deposit=success"
+	successURL := fmt.Sprintf("%s/balance?deposit=success&amount=%d&currency=%s",
+		h.appBaseURL, amountCents, url.QueryEscape(currency))
 	cancelURL := h.appBaseURL + "/balance/deposit"
 
 	h.log.Debug("recurrente: creating checkout",
