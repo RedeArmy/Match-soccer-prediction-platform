@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { UserButton, SignedIn, SignedOut } from "@clerk/nextjs";
 import { Home, LayoutDashboard, Menu, Trophy, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
@@ -26,6 +27,8 @@ function BrandLogo({
 export function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { t } = useI18n();
+  const pathname = usePathname();
+  const isHome = pathname === "/";
 
   const logoContent = (
     <>
@@ -57,10 +60,17 @@ export function Header() {
 
             <nav className="hidden items-center gap-1 rounded border border-white/10 bg-white/[0.03] p-1 md:flex">
               <SignedOut>
-                <Link href="/" className={NAV_LINK_CLASS}>
-                  <Home className="h-3.5 w-3.5" />
-                  {t("common.goHome")}
-                </Link>
+                {isHome ? (
+                  <Link href="/tournaments" className={NAV_LINK_CLASS}>
+                    <Trophy className="h-3.5 w-3.5" />
+                    {t("common.tournaments")}
+                  </Link>
+                ) : (
+                  <Link href="/" className={NAV_LINK_CLASS}>
+                    <Home className="h-3.5 w-3.5" />
+                    {t("common.goHome")}
+                  </Link>
+                )}
               </SignedOut>
               <SignedIn>
                 <Link href="/" className={NAV_LINK_CLASS}>

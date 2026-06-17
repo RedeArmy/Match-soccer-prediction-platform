@@ -124,6 +124,11 @@ func (h *PayPalOrderHandler) getAccessToken(ctx context.Context) (string, error)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		h.log.Error("PayPal token endpoint rejected request",
+			zap.String("paypal_base_url", h.baseURL),
+			zap.Int("status", resp.StatusCode),
+			zap.ByteString("body", body),
+		)
 		return "", fmt.Errorf("paypal auth %d: %s", resp.StatusCode, body)
 	}
 	var out struct {
@@ -154,6 +159,11 @@ func (h *PayPalOrderHandler) createOrder(ctx context.Context, token, amountUSD, 
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
+		h.log.Error("PayPal orders endpoint rejected request",
+			zap.String("paypal_base_url", h.baseURL),
+			zap.Int("status", resp.StatusCode),
+			zap.ByteString("body", body),
+		)
 		return "", fmt.Errorf("paypal order %d: %s", resp.StatusCode, body)
 	}
 	var out struct {
