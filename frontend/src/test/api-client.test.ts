@@ -1148,3 +1148,108 @@ describe("api – adminTriggerDailySync", () => {
     expect(String(url)).not.toContain("end_date");
   });
 });
+
+// ── adminGetMetricsSummary ─────────────────────────────────────────────────────
+
+describe("api – adminGetMetricsSummary", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("calls the metrics/summary endpoint with Bearer token", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({
+        configured: true,
+        request_rate_per_sec: 1.5,
+        error_rate_5xx: 0.01,
+        p95_latency_seconds: 0.12,
+      }),
+    );
+    const result = await api.adminGetMetricsSummary("tok_admin");
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/api/v1/admin/observability/metrics/summary");
+    expect((init as RequestInit).headers as Record<string, string>).toMatchObject({
+      Authorization: "Bearer tok_admin",
+    });
+    expect(result.configured).toBe(true);
+    expect(result.request_rate_per_sec).toBe(1.5);
+  });
+});
+
+// ── adminQueryMetrics ─────────────────────────────────────────────────────────
+
+describe("api – adminQueryMetrics", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("encodes the PromQL expression and sends it as the q= query parameter", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({ configured: true, results: [] }),
+    );
+    await api.adminQueryMetrics("tok_admin", "rate(http_requests_total[5m])");
+    const [url] = mockFetch.mock.calls[0];
+    // Brackets are percent-encoded; parentheses may remain literal — both are valid.
+    const urlStr = String(url);
+    expect(urlStr).toContain("/api/v1/admin/observability/metrics/query");
+    expect(urlStr).toContain("http_requests_total");
+    expect(urlStr).toMatch(/[?&]q=/);
+  });
+
+  it("returns results array from the response", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({
+        configured: true,
+        results: [{ labels: { job: "api" }, value: 3.14 }],
+      }),
+    );
+    const result = await api.adminQueryMetrics("tok", "up");
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].value).toBe(3.14);
+  });
+});
+
+// ── adminSearchLogs ───────────────────────────────────────────────────────────
+
+describe("api – adminSearchLogs", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("calls the logs endpoint with no params when all are omitted", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({ configured: true, errors: [] }),
+    );
+    await api.adminSearchLogs("tok_admin", {});
+    const [url] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/api/v1/admin/observability/logs");
+    expect(String(url)).not.toContain("q=");
+    expect(String(url)).not.toContain("since=");
+    expect(String(url)).not.toContain("limit=");
+  });
+
+  it("appends q, since, and limit when provided", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({ configured: true, errors: [] }),
+    );
+    await api.adminSearchLogs("tok", { q: "paypal", since: 60, limit: 25 });
+    const [url] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("q=paypal");
+    expect(String(url)).toContain("since=60");
+    expect(String(url)).toContain("limit=25");
+  });
+
+  it("returns errors array from the response", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({
+        configured: true,
+        errors: [
+          {
+            trace_id: "abc123",
+            root_service_name: "api",
+            root_trace_name: "POST /paypal",
+            start_time_unix_nano: "1700000000000000000",
+            duration_ms: 120,
+          },
+        ],
+      }),
+    );
+    const result = await api.adminSearchLogs("tok", { q: "paypal" });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].trace_id).toBe("abc123");
+  });
+});

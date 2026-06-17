@@ -180,11 +180,14 @@ export default function DepositPage() {
   ];
 
   // While geo is loading show only Recurrente to avoid tab flicker.
-  const visibleTabs: TabDef[] = geoLoading
-    ? allTabs.filter((t) => t.id === "recurrente")
-    : isGuatemala
-      ? allTabs.filter((t) => t.id !== "paypal")
-      : allTabs.filter((t) => t.id !== "bank");
+  let visibleTabs: TabDef[];
+  if (geoLoading) {
+    visibleTabs = allTabs.filter((t) => t.id === "recurrente");
+  } else if (isGuatemala) {
+    visibleTabs = allTabs.filter((t) => t.id !== "paypal");
+  } else {
+    visibleTabs = allTabs.filter((t) => t.id !== "bank");
+  }
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -193,9 +196,9 @@ export default function DepositPage() {
       {/* Method tabs */}
       <div className="flex gap-1 p-1 bg-blue-900 rounded-xl">
         {geoLoading
-          ? Array.from({ length: 2 }).map((_, i) => (
+          ? (["sk-tab-1", "sk-tab-2"] as const).map((id) => (
               <div
-                key={i}
+                key={id}
                 className="flex-1 h-9 rounded-lg animate-pulse bg-blue-800/60"
               />
             ))

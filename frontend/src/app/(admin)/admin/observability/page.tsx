@@ -270,7 +270,7 @@ export default function AdminObservabilityPage() {
                   </thead>
                   <tbody className="divide-y divide-blue-800/30">
                     {customResult.results.map((r, i) => (
-                      <tr key={i}>
+                      <tr key={`${Object.values(r.labels).join("-")}-${i}`}>
                         <td className="px-4 py-2 font-mono text-xs text-text-secondary">
                           {Object.entries(r.labels)
                             .filter(([k]) => k !== "__name__")
@@ -399,15 +399,16 @@ export default function AdminObservabilityPage() {
                             <ExternalLink className="h-3 w-3" />
                           </a>
                         ) : (
-                          <span
-                            className="cursor-pointer font-mono text-xs text-blue-400 hover:text-blue-300"
+                          <button
+                            type="button"
+                            className="cursor-pointer font-mono text-xs text-blue-400 hover:text-blue-300 bg-transparent border-0 p-0"
                             title={e.trace_id}
                             onClick={() =>
                               navigator.clipboard.writeText(e.trace_id)
                             }
                           >
                             {e.trace_id.slice(0, 16)}…
-                          </span>
+                          </button>
                         )}
                       </td>
                     </tr>

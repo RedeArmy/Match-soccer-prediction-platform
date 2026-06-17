@@ -1098,3 +1098,136 @@ describe("GET /api/live/fixture/[id] – lineups with substitutes", () => {
     expect(body.fixture.lineups[0].substitutes[0].pos).toBe("F");
   });
 });
+
+// ── geo/route ─────────────────────────────────────────────────────────────────
+
+describe("GET /api/geo – private / loopback IP returns GT", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns GT for 127.x loopback without calling ipapi.co", async () => {
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "127.0.0.1" },
+    });
+    const res = await GET(req as never);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.country).toBe("GT");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns GT for 10.x private IP without calling ipapi.co", async () => {
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "10.0.0.5" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("GT");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns GT when X-Forwarded-For header is absent", async () => {
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo");
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("GT");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns GT for 192.168.x private IP", async () => {
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "192.168.1.100" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("GT");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/geo – public IP calls ipapi.co", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns country_code from ipapi.co for a public IP", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ country_code: "US" }), { status: 200 }),
+    );
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "8.8.8.8" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("US");
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [calledUrl] = mockFetch.mock.calls[0];
+    expect(String(calledUrl)).toContain("8.8.8.8");
+  });
+
+  it("uses the first IP when X-Forwarded-For contains multiple addresses", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ country_code: "MX" }), { status: 200 }),
+    );
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "201.100.1.5, 10.0.0.1" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("MX");
+    const [calledUrl] = mockFetch.mock.calls[0];
+    expect(String(calledUrl)).toContain("201.100.1.5");
+  });
+
+  it("falls back to GT when ipapi.co returns non-OK status", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response("Service Unavailable", { status: 503 }),
+    );
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "8.8.8.8" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("GT");
+  });
+
+  it("falls back to GT when ipapi.co fetch throws", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network timeout"));
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "8.8.8.8" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("GT");
+  });
+
+  it("falls back to GT when ipapi.co returns no country_code field", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ip: "8.8.8.8" }), { status: 200 }),
+    );
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "8.8.8.8" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("GT");
+  });
+
+  it("sets Cache-Control: private, max-age=3600", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ country_code: "GT" }), { status: 200 }),
+    );
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "190.5.10.20" },
+    });
+    const res = await GET(req as never);
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=3600");
+  });
+});
