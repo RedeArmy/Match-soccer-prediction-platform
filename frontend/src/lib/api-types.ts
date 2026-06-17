@@ -550,3 +550,33 @@ export interface N8nWorkflowResponse {
   name: string;
   active: boolean;
 }
+
+export interface MetricsSummaryResponse {
+  configured: boolean;
+  request_rate_per_sec: number;
+  error_rate_5xx: number;
+  p95_latency_seconds: number;
+}
+
+export interface MetricsQueryResult {
+  labels: Record<string, string>;
+  value: number;
+}
+
+export interface MetricsQueryResponse {
+  configured: boolean;
+  results: MetricsQueryResult[];
+}
+
+export interface TracingErrorEntry {
+  trace_id: string;
+  root_service_name: string;
+  root_trace_name: string;
+  start_time_unix_nano: string;
+  duration_ms: number;
+}
+
+export interface LogsSearchResponse {
+  configured: boolean;
+  errors: TracingErrorEntry[];
+}

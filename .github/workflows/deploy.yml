@@ -334,7 +334,8 @@ jobs:
           build-args: |
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
             NEXT_PUBLIC_PAYPAL_CLIENT_ID=${{ vars.NEXT_PUBLIC_PAYPAL_CLIENT_ID }}
-          cache-from: type=gha
+            NEXT_PUBLIC_GRAFANA_URL=${{ vars.NEXT_PUBLIC_GRAFANA_URL }}
+          no-cache: true
           cache-to: type=gha,mode=max
 
       - name: Scan frontend image for CVEs
