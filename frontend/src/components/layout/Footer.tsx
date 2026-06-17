@@ -29,7 +29,7 @@ export function Footer() {
                   href="/"
                   className="transition-colors hover:text-text-secondary"
                 >
-                  {t("nav.home")}
+                  {t("common.goHome")}
                 </Link>
                 <Link
                   href="/dashboard"
@@ -47,10 +47,10 @@ export function Footer() {
             ) : (
               <>
                 <Link
-                  href="/tournaments"
+                  href="/"
                   className="transition-colors hover:text-text-secondary"
                 >
-                  {t("common.tournaments")}
+                  {t("common.goHome")}
                 </Link>
                 <Link
                   href="/sign-in"

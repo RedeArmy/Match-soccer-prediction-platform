@@ -29,6 +29,34 @@ type PayPalActions = { order?: { capture: () => Promise<unknown> } };
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
 
+// Maps the backend's apperrors.Code (always present on API errors) to a
+// localised i18n key, so payment failures are translated regardless of the
+// language the backend's raw error.message was written in.
+const paypalErrorKeyByCode: Record<string, string> = {
+  SERVICE_UNAVAILABLE: "deposit.paypalServiceUnavailable",
+  UPSTREAM_ERROR: "deposit.paypalUpstreamError",
+  VALIDATION: "deposit.paypalInvalidRequest",
+  UNAUTHORISED: "deposit.paypalSessionExpired",
+};
+
+const recurrenteErrorKeyByCode: Record<string, string> = {
+  UNAUTHORISED: "deposit.recurrenteSessionExpired",
+  VALIDATION: "deposit.recurrenteUnavailable",
+  INTERNAL: "deposit.recurrenteError",
+};
+
+function apiErrorMessage(
+  err: unknown,
+  t: (key: string) => string,
+  keyByCode: Record<string, string>,
+  fallbackKey: string,
+): string {
+  const code = (err as { code?: string })?.code;
+  const key = code ? keyByCode[code] : undefined;
+  if (key) return t(key);
+  return err instanceof Error ? err.message : t(fallbackKey);
+}
+
 export default function DepositPage() {
   const { getToken } = useAuth();
   const { data: rate } = useExchangeRate();
@@ -65,7 +93,10 @@ export default function DepositPage() {
     onSuccess: (data) => {
       if (data.redirect_url) globalThis.location.href = data.redirect_url;
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: Error) =>
+      setError(
+        apiErrorMessage(e, t, recurrenteErrorKeyByCode, "deposit.recurrenteError"),
+      ),
   });
 
   // Bank transfer upload
@@ -109,10 +140,14 @@ export default function DepositPage() {
   const tabs: { id: Method; label: string; icon: React.ReactNode }[] = [
     {
       id: "recurrente",
-      label: "Recurrente",
+      label: t("deposit.tabRecurrente"),
       icon: <CreditCard className="w-4 h-4" />,
     },
-    { id: "paypal", label: "PayPal", icon: <CreditCard className="w-4 h-4" /> },
+    {
+      id: "paypal",
+      label: t("deposit.tabPaypal"),
+      icon: <CreditCard className="w-4 h-4" />,
+    },
     {
       id: "bank",
       label: "Transferencia",
@@ -159,15 +194,14 @@ export default function DepositPage() {
         {method === "recurrente" && (
           <>
             <p className="text-sm text-text-secondary">
-              Deposita con tarjeta de débito/crédito guatemalteca vía
-              Recurrente. Serás redirigido al portal de pago.
+              {t("deposit.recurrenteDesc")}
             </p>
             <div>
               <label
                 htmlFor="deposit-gtq-amount"
                 className="block text-sm text-text-secondary mb-1.5"
               >
-                Monto (GTQ)
+                {t("deposit.amountGTQLabel")}
               </label>
               <input
                 id="deposit-gtq-amount"
@@ -186,7 +220,7 @@ export default function DepositPage() {
               disabled={!amountGTQ}
               onClick={() => recurrenteMutation.mutate()}
             >
-              Continuar con Recurrente
+              {t("deposit.recurrenteContinue")}
             </SubmitButton>
           </>
         )}
@@ -195,11 +229,11 @@ export default function DepositPage() {
         {method === "paypal" && (
           <>
             <p className="text-sm text-text-secondary">
-              Deposita con tu cuenta PayPal. Se usa la tasa de compra del día.
+              {t("deposit.paypalDesc")}
             </p>
             {rate && (
               <p className="text-xs text-text-muted">
-                Tasa compra:{" "}
+                {t("deposit.buyRateLabel")}{" "}
                 <span className="text-gold-400">
                   Q{Number.parseFloat(rate.buy_rate).toFixed(4)} / USD
                 </span>
@@ -211,7 +245,7 @@ export default function DepositPage() {
                 htmlFor="deposit-usd-amount"
                 className="block text-sm text-text-secondary mb-1.5"
               >
-                Monto (USD)
+                {t("deposit.amountUSDLabel")}
               </label>
               <input
                 id="deposit-usd-amount"
@@ -234,9 +268,9 @@ export default function DepositPage() {
 
             {!PAYPAL_CLIENT_ID && (
               <p className="text-xs text-red-400 text-center py-2">
-                PayPal no está configurado. Agrega{" "}
+                {t("deposit.paypalNotConfiguredPre")}{" "}
                 <code className="font-mono">NEXT_PUBLIC_PAYPAL_CLIENT_ID</code>{" "}
-                al entorno.
+                {t("deposit.paypalNotConfiguredPost")}
               </p>
             )}
 
@@ -261,17 +295,13 @@ export default function DepositPage() {
                   createOrder={async () => {
                     const token = await getToken();
                     if (!token)
-                      throw new Error(
-                        "Sesión expirada. Inicia sesión nuevamente antes de pagar con PayPal.",
-                      );
+                      throw new Error(t("deposit.paypalSessionExpired"));
                     const order = await api.createPayPalOrder(token, {
                       amount_cents: paypalAmountCents,
                       currency: "USD",
                     });
                     if (!order.id)
-                      throw new Error(
-                        "PayPal no devolvió un ID de orden válido.",
-                      );
+                      throw new Error(t("deposit.paypalNoOrderId"));
                     return order.id;
                   }}
                   onApprove={async (_data: unknown, actions: PayPalActions) => {
@@ -286,13 +316,11 @@ export default function DepositPage() {
                     const usd = (paypalAmountCents / 100).toFixed(2);
                     router.replace(`/balance?paypal=success&usd=${usd}`);
                   }}
-                  onCancel={() => setError("Pago cancelado.")}
+                  onCancel={() => setError(t("deposit.paypalCancelled"))}
                   onError={(err: unknown) => {
                     console.error("[PayPal] onError:", err);
                     setError(
-                      err instanceof Error
-                        ? err.message
-                        : "Error al procesar el pago con PayPal.",
+                      apiErrorMessage(err, t, paypalErrorKeyByCode, "deposit.paypalError"),
                     );
                   }}
                 />

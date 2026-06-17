@@ -211,3 +211,28 @@ func RateLimited(message string) *AppError {
 		HTTPStatus: http.StatusTooManyRequests,
 	}
 }
+
+// Unavailable returns an AppError indicating that the endpoint cannot serve
+// the request because a required server-side dependency or configuration is
+// missing. Use this for operational gaps (an unset API credential, a
+// disabled feature) rather than unexpected runtime failures - those should
+// use Internal instead.
+func Unavailable(message string) *AppError {
+	return &AppError{
+		Code:       CodeServiceUnavailable,
+		Message:    message,
+		HTTPStatus: http.StatusServiceUnavailable,
+	}
+}
+
+// UpstreamError returns an AppError indicating that a call to a third-party
+// service failed or returned an unexpected response. The cause is stored
+// for server-side logging and must never be forwarded to the client.
+func UpstreamError(message string, cause error) *AppError {
+	return &AppError{
+		Code:       CodeUpstreamError,
+		Message:    message,
+		HTTPStatus: http.StatusBadGateway,
+		Cause:      cause,
+	}
+}

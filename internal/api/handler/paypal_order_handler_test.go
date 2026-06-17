@@ -98,6 +98,25 @@ func TestPayPalOrderHandler_MissingCredentials_Returns503(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected 503, got %d", rec.Code)
 	}
+
+	// The body must use the canonical {error:{code,message}} envelope so that
+	// the frontend's generic error parser (body?.error?.message) can surface
+	// the real message instead of falling back to a bare "HTTP 503".
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to parse response body: %v", err)
+	}
+	if body.Error.Code != "SERVICE_UNAVAILABLE" {
+		t.Errorf("expected code SERVICE_UNAVAILABLE, got %q", body.Error.Code)
+	}
+	if body.Error.Message != "PayPal no está configurado en el servidor" {
+		t.Errorf("expected descriptive message, got %q", body.Error.Message)
+	}
 }
 
 func TestPayPalOrderHandler_NoAuth_Returns401(t *testing.T) {
@@ -113,7 +132,7 @@ func TestPayPalOrderHandler_NoAuth_Returns401(t *testing.T) {
 	}
 }
 
-func TestPayPalOrderHandler_BadJSON_Returns400(t *testing.T) {
+func TestPayPalOrderHandler_BadJSON_Returns422(t *testing.T) {
 	srv := newPayPalServer(t, paypalServerOpts{
 		tokenStatus: 200, tokenBody: `{"access_token":"tok"}`,
 		orderStatus: 201, orderBody: `{"id":"ORD"}`,
@@ -121,12 +140,12 @@ func TestPayPalOrderHandler_BadJSON_Returns400(t *testing.T) {
 	defer srv.Close()
 	router := paypalRouter(t, &stubPaymentIntentSvc{}, srv.URL)
 	rec := postPayPalOrder(t, router, `not-json`, paypalTestUser)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 on bad JSON, got %d", rec.Code)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 on bad JSON, got %d", rec.Code)
 	}
 }
 
-func TestPayPalOrderHandler_ZeroAmount_Returns400(t *testing.T) {
+func TestPayPalOrderHandler_ZeroAmount_Returns422(t *testing.T) {
 	srv := newPayPalServer(t, paypalServerOpts{
 		tokenStatus: 200, tokenBody: `{"access_token":"tok"}`,
 		orderStatus: 201, orderBody: `{"id":"ORD"}`,
@@ -134,12 +153,12 @@ func TestPayPalOrderHandler_ZeroAmount_Returns400(t *testing.T) {
 	defer srv.Close()
 	router := paypalRouter(t, &stubPaymentIntentSvc{}, srv.URL)
 	rec := postPayPalOrder(t, router, `{"amount_cents":0,"currency":"USD"}`, paypalTestUser)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 on zero amount, got %d", rec.Code)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 on zero amount, got %d", rec.Code)
 	}
 }
 
-func TestPayPalOrderHandler_MissingCurrency_Returns400(t *testing.T) {
+func TestPayPalOrderHandler_MissingCurrency_Returns422(t *testing.T) {
 	srv := newPayPalServer(t, paypalServerOpts{
 		tokenStatus: 200, tokenBody: `{"access_token":"tok"}`,
 		orderStatus: 201, orderBody: `{"id":"ORD"}`,
@@ -147,8 +166,8 @@ func TestPayPalOrderHandler_MissingCurrency_Returns400(t *testing.T) {
 	defer srv.Close()
 	router := paypalRouter(t, &stubPaymentIntentSvc{}, srv.URL)
 	rec := postPayPalOrder(t, router, `{"amount_cents":500}`, paypalTestUser)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 on missing currency, got %d", rec.Code)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 on missing currency, got %d", rec.Code)
 	}
 }
 

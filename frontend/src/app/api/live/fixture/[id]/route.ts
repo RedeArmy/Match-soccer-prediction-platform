@@ -137,6 +137,13 @@ export async function GET(
   }
 
   if (!upstream.ok) {
+    const errorBody = await upstream.text().catch(() => "");
+    console.error(
+      "[live/fixture] upstream error",
+      fixtureId,
+      upstream.status,
+      errorBody,
+    );
     return NextResponse.json(
       { error: "Upstream error" },
       { status: upstream.status },

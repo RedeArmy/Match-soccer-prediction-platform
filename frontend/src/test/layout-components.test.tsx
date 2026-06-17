@@ -93,10 +93,10 @@ describe("Footer – unauthenticated", () => {
     expect(screen.getByText("K26")).toBeInTheDocument();
   });
 
-  it("shows Fan Fest link to /tournaments", () => {
+  it("shows Página Principal link to /", () => {
     render(<Footer />);
-    const link = screen.getByRole("link", { name: "Fan Fest" });
-    expect(link).toHaveAttribute("href", "/tournaments");
+    const link = screen.getByRole("link", { name: "Página Principal" });
+    expect(link).toHaveAttribute("href", "/");
   });
 
   it("shows sign-in link", () => {
@@ -121,9 +121,6 @@ describe("Footer – unauthenticated", () => {
     expect(
       screen.queryByRole("link", { name: "Kinielas" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "Inicio" }),
-    ).not.toBeInTheDocument();
   });
 });
 
@@ -136,9 +133,9 @@ describe("Footer – authenticated", () => {
     } as never);
   });
 
-  it("shows Inicio link to /", () => {
+  it("shows Página Principal link to /", () => {
     render(<Footer />);
-    const link = screen.getByRole("link", { name: "Inicio" });
+    const link = screen.getByRole("link", { name: "Página Principal" });
     expect(link).toHaveAttribute("href", "/");
   });
 
@@ -154,16 +151,13 @@ describe("Footer – authenticated", () => {
     expect(link).toHaveAttribute("href", "/quinielas");
   });
 
-  it("does not show sign-in, sign-up or Fan Fest links", () => {
+  it("does not show sign-in or sign-up links", () => {
     render(<Footer />);
     expect(
       screen.queryByRole("link", { name: /iniciar/i }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /registrarse/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "Fan Fest" }),
     ).not.toBeInTheDocument();
   });
 });
@@ -179,7 +173,9 @@ describe("Footer – loading (Clerk not yet resolved)", () => {
 
   it("falls back to unauthenticated nav while Clerk loads", () => {
     render(<Footer />);
-    expect(screen.getByRole("link", { name: "Fan Fest" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Página Principal" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "Dashboard" }),
     ).not.toBeInTheDocument();
@@ -200,6 +196,27 @@ describe("Header", () => {
     expect(
       screen.getByRole("button", { name: "Abrir menu" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows Página Principal link to / for signed-out users", () => {
+    render(<Header />);
+    const link = screen.getByRole("link", { name: "Página Principal" });
+    expect(link).toHaveAttribute("href", "/");
+  });
+
+  it("shows Inicio nav link to / for signed-in users", () => {
+    render(<Header />);
+    const links = screen.getAllByRole("link", { name: "Inicio" });
+    expect(links.length).toBeGreaterThanOrEqual(1);
+    expect(links[0]).toHaveAttribute("href", "/");
+  });
+
+  it("shows K26 logo link to /dashboard for signed-in users", () => {
+    render(<Header />);
+    const dashboardLinks = screen
+      .getAllByRole("link")
+      .filter((l) => l.getAttribute("href") === "/dashboard");
+    expect(dashboardLinks.length).toBeGreaterThanOrEqual(1);
   });
 });
 
