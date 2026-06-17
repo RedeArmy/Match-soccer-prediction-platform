@@ -41,16 +41,22 @@ type SearchResponse struct {
 }
 
 // SearchErrors queries Tempo for recent error spans within the given time range.
-// tags is a space-separated list of Tempo tag filters (e.g. "span.status.code=ERROR").
 // limit caps the number of traces returned.
 func (c *Client) SearchErrors(ctx context.Context, since time.Time, limit int) (*SearchResponse, error) {
+	return c.Search(ctx, "span.status.code=ERROR", since, limit, "")
+}
+
+// Search queries Tempo for traces matching the given tag filter string.
+// nameFilter, if non-empty, narrows results to those whose RootTraceName or
+// RootServiceName contains the filter (case-insensitive, client-side).
+func (c *Client) Search(ctx context.Context, tags string, since time.Time, limit int, nameFilter string) (*SearchResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/search", nil)
 	if err != nil {
 		return nil, fmt.Errorf("tempoclient: build request: %w", err)
 	}
 
 	q := url.Values{}
-	q.Set("tags", "span.status.code=ERROR")
+	q.Set("tags", tags)
 	q.Set("start", fmt.Sprintf("%d", since.Unix()))
 	q.Set("end", fmt.Sprintf("%d", time.Now().Unix()))
 	q.Set("limit", fmt.Sprintf("%d", limit))
@@ -70,5 +76,17 @@ func (c *Client) SearchErrors(ctx context.Context, since time.Time, limit int) (
 	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
 		return nil, fmt.Errorf("tempoclient: decode: %w", err)
 	}
+	if nameFilter == "" {
+		return &sr, nil
+	}
+	lower := strings.ToLower(nameFilter)
+	kept := sr.Traces[:0]
+	for _, t := range sr.Traces {
+		if strings.Contains(strings.ToLower(t.RootTraceName), lower) ||
+			strings.Contains(strings.ToLower(t.RootServiceName), lower) {
+			kept = append(kept, t)
+		}
+	}
+	sr.Traces = kept
 	return &sr, nil
 }

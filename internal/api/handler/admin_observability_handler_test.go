@@ -54,6 +54,10 @@ func (s *stubTempoQuerier) SearchErrors(_ context.Context, _ time.Time, _ int) (
 	return s.resp, s.err
 }
 
+func (s *stubTempoQuerier) Search(_ context.Context, _ string, _ time.Time, _ int, _ string) (*tempoclient.SearchResponse, error) {
+	return s.resp, s.err
+}
+
 // obsHub wraps HubStater for observability tests (avoids redeclaring stubHubStater).
 type obsHub struct {
 	conns, broadcasts, dropped int64
@@ -278,6 +282,173 @@ func TestAdminObservabilityHandler_TracingRecentErrors_TempoError(t *testing.T) 
 	errors, _ := resp["errors"].([]any)
 	if len(errors) != 0 {
 		t.Errorf("expected empty errors slice on tempo failure")
+	}
+}
+
+// ── MetricsQuery ──────────────────────────────────────────────────────────────
+
+func TestAdminObservabilityHandler_MetricsQuery_Unconfigured(t *testing.T) {
+	h := handler.NewAdminObservabilityHandler(nil, nil, &obsHub{}, zap.NewNop())
+	router := chi.NewRouter()
+	router.Get("/metrics/query", h.MetricsQuery)
+
+	req := withCaller(newAdminRequest(http.MethodGet, "/metrics/query?q=up", ""), adminCaller)
+	rr := doReq(router, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	var resp map[string]any
+	json.NewDecoder(rr.Body).Decode(&resp)
+	if resp["configured"] != false {
+		t.Errorf("expected configured=false, got %v", resp["configured"])
+	}
+}
+
+func TestAdminObservabilityHandler_MetricsQuery_MissingQ(t *testing.T) {
+	prom := &stubPromQuerier{resp: makeVectorResp("1")}
+	h := handler.NewAdminObservabilityHandler(prom, nil, &obsHub{}, zap.NewNop())
+	router := chi.NewRouter()
+	router.Get("/metrics/query", h.MetricsQuery)
+
+	req := withCaller(newAdminRequest(http.MethodGet, "/metrics/query", ""), adminCaller)
+	rr := doReq(router, req)
+
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 when q is missing, got %d", rr.Code)
+	}
+}
+
+func TestAdminObservabilityHandler_MetricsQuery_Success(t *testing.T) {
+	prom := &stubPromQuerier{resp: &promclient.QueryResponse{
+		Status: "success",
+		Data: promclient.QueryData{
+			ResultType: "vector",
+			Result: []json.RawMessage{
+				json.RawMessage(`{"metric":{"job":"api"},"value":[1700000000,"5.5"]}`),
+			},
+		},
+	}}
+	h := handler.NewAdminObservabilityHandler(prom, nil, &obsHub{}, zap.NewNop())
+	router := chi.NewRouter()
+	router.Get("/metrics/query", h.MetricsQuery)
+
+	req := withCaller(newAdminRequest(http.MethodGet, "/metrics/query?q=up", ""), adminCaller)
+	rr := doReq(router, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	var resp map[string]any
+	json.NewDecoder(rr.Body).Decode(&resp)
+	if resp["configured"] != true {
+		t.Errorf("expected configured=true")
+	}
+	results, _ := resp["results"].([]any)
+	if len(results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(results))
+	}
+}
+
+func TestAdminObservabilityHandler_MetricsQuery_PromError(t *testing.T) {
+	prom := &stubPromQuerier{err: errTestObs}
+	h := handler.NewAdminObservabilityHandler(prom, nil, &obsHub{}, zap.NewNop())
+	router := chi.NewRouter()
+	router.Get("/metrics/query", h.MetricsQuery)
+
+	req := withCaller(newAdminRequest(http.MethodGet, "/metrics/query?q=up", ""), adminCaller)
+	rr := doReq(router, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 (graceful), got %d", rr.Code)
+	}
+	var resp map[string]any
+	json.NewDecoder(rr.Body).Decode(&resp)
+	results, _ := resp["results"].([]any)
+	if len(results) != 0 {
+		t.Errorf("expected empty results on prom error, got %d", len(results))
+	}
+}
+
+// ── LogsSearch ────────────────────────────────────────────────────────────────
+
+func TestAdminObservabilityHandler_LogsSearch_Unconfigured(t *testing.T) {
+	h := handler.NewAdminObservabilityHandler(nil, nil, &obsHub{}, zap.NewNop())
+	router := chi.NewRouter()
+	router.Get("/logs", h.LogsSearch)
+
+	req := withCaller(newAdminRequest(http.MethodGet, "/logs", ""), adminCaller)
+	rr := doReq(router, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	var resp map[string]any
+	json.NewDecoder(rr.Body).Decode(&resp)
+	if resp["configured"] != false {
+		t.Errorf("expected configured=false, got %v", resp["configured"])
+	}
+}
+
+func TestAdminObservabilityHandler_LogsSearch_Success(t *testing.T) {
+	tempo := &stubTempoQuerier{resp: &tempoclient.SearchResponse{
+		Traces: []tempoclient.TraceSummary{
+			{TraceID: "trace1", RootServiceName: "api", RootTraceName: "POST /paypal", DurationMs: 120},
+		},
+	}}
+	h := handler.NewAdminObservabilityHandler(nil, tempo, &obsHub{}, zap.NewNop())
+	router := chi.NewRouter()
+	router.Get("/logs", h.LogsSearch)
+
+	req := withCaller(newAdminRequest(http.MethodGet, "/logs?q=paypal&since=30&limit=10", ""), adminCaller)
+	rr := doReq(router, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	var resp map[string]any
+	json.NewDecoder(rr.Body).Decode(&resp)
+	if resp["configured"] != true {
+		t.Errorf("expected configured=true")
+	}
+	errs, _ := resp["errors"].([]any)
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error entry, got %d", len(errs))
+	}
+}
+
+func TestAdminObservabilityHandler_LogsSearch_DefaultParams(t *testing.T) {
+	tempo := &stubTempoQuerier{resp: &tempoclient.SearchResponse{Traces: []tempoclient.TraceSummary{}}}
+	h := handler.NewAdminObservabilityHandler(nil, tempo, &obsHub{}, zap.NewNop())
+	router := chi.NewRouter()
+	router.Get("/logs", h.LogsSearch)
+
+	// No query params — clampInt should use defaults without panicking.
+	req := withCaller(newAdminRequest(http.MethodGet, "/logs", ""), adminCaller)
+	rr := doReq(router, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestAdminObservabilityHandler_LogsSearch_TempoError(t *testing.T) {
+	tempo := &stubTempoQuerier{err: errTestObs}
+	h := handler.NewAdminObservabilityHandler(nil, tempo, &obsHub{}, zap.NewNop())
+	router := chi.NewRouter()
+	router.Get("/logs", h.LogsSearch)
+
+	req := withCaller(newAdminRequest(http.MethodGet, "/logs", ""), adminCaller)
+	rr := doReq(router, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 (graceful), got %d", rr.Code)
+	}
+	var resp map[string]any
+	json.NewDecoder(rr.Body).Decode(&resp)
+	errs, _ := resp["errors"].([]any)
+	if len(errs) != 0 {
+		t.Errorf("expected empty errors on tempo failure")
 	}
 }
 

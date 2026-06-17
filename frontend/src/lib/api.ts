@@ -34,6 +34,9 @@ import type {
   SystemParamHistoryResponse,
   ScoringRuleResponse,
   CircuitBreakerResponse,
+  MetricsSummaryResponse,
+  MetricsQueryResponse,
+  LogsSearchResponse,
   TournamentModeRequest,
   CursorPaged,
   AdminUserResponse,
@@ -857,6 +860,33 @@ class APIClient {
   adminGetCircuitBreakers(token: string): Promise<CircuitBreakerResponse[]> {
     return this.request(
       "/api/v1/admin/observability/circuit-breakers",
+      {},
+      token,
+    );
+  }
+
+  adminGetMetricsSummary(token: string): Promise<MetricsSummaryResponse> {
+    return this.request("/api/v1/admin/observability/metrics/summary", {}, token);
+  }
+
+  adminQueryMetrics(token: string, q: string): Promise<MetricsQueryResponse> {
+    return this.request(
+      `/api/v1/admin/observability/metrics/query?q=${encodeURIComponent(q)}`,
+      {},
+      token,
+    );
+  }
+
+  adminSearchLogs(
+    token: string,
+    params: { q?: string; since?: number; limit?: number },
+  ): Promise<LogsSearchResponse> {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set("q", params.q);
+    if (params.since) qs.set("since", String(params.since));
+    if (params.limit) qs.set("limit", String(params.limit));
+    return this.request(
+      `/api/v1/admin/observability/logs?${qs.toString()}`,
       {},
       token,
     );

@@ -1,10 +1,10 @@
-﻿"use client";
+"use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   PayPalScriptProvider,
   PayPalButtons,
@@ -29,9 +29,6 @@ type PayPalActions = { order?: { capture: () => Promise<unknown> } };
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
 
-// Maps the backend's apperrors.Code (always present on API errors) to a
-// localised i18n key, so payment failures are translated regardless of the
-// language the backend's raw error.message was written in.
 const paypalErrorKeyByCode: Record<string, string> = {
   SERVICE_UNAVAILABLE: "deposit.paypalServiceUnavailable",
   UPSTREAM_ERROR: "deposit.paypalUpstreamError",
@@ -57,11 +54,26 @@ function apiErrorMessage(
   return err instanceof Error ? err.message : t(fallbackKey);
 }
 
+function useCountry(): { country: string | null; isLoading: boolean } {
+  const { data, isLoading } = useQuery<{ country: string }>({
+    queryKey: ["geo-country"],
+    queryFn: () => fetch("/api/geo").then((r) => r.json()),
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+  });
+  return { country: data?.country ?? null, isLoading };
+}
+
 export default function DepositPage() {
   const { getToken } = useAuth();
   const { data: rate } = useExchangeRate();
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const router = useRouter();
+
+  const { country, isLoading: geoLoading } = useCountry();
+  const isGuatemala = country === "GT";
+
   const [method, setMethod] = useState<Method>("recurrente");
   const [amountGTQ, setAmountGTQ] = useState("");
   const [amountUSD, setAmountUSD] = useState("");
@@ -69,6 +81,13 @@ export default function DepositPage() {
   const [fileError, setFileError] = useState("");
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+
+  // When geo resolves, drop the active tab if it is no longer available.
+  useEffect(() => {
+    if (geoLoading) return;
+    if (isGuatemala && method === "paypal") setMethod("recurrente");
+    if (!isGuatemala && method === "bank") setMethod("recurrente");
+  }, [geoLoading, isGuatemala]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gtqEquiv =
     rate && amountUSD
@@ -79,7 +98,6 @@ export default function DepositPage() {
         )
       : null;
 
-  // Recurrente: creates a hosted checkout session and redirects
   const recurrenteMutation = useMutation({
     mutationFn: async () => {
       const token = await getToken();
@@ -99,7 +117,6 @@ export default function DepositPage() {
       ),
   });
 
-  // Bank transfer upload
   const uploadMutation = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error("Adjunta el comprobante");
@@ -137,7 +154,14 @@ export default function DepositPage() {
     setFile(f);
   }
 
-  const tabs: { id: Method; label: string; icon: React.ReactNode }[] = [
+  const validUSD = amountUSD && Number.parseFloat(amountUSD) > 0;
+  const paypalAmountCents = validUSD
+    ? Math.round(Number.parseFloat(amountUSD) * 100)
+    : 0;
+
+  type TabDef = { id: Method; label: string; icon: React.ReactNode };
+
+  const allTabs: TabDef[] = [
     {
       id: "recurrente",
       label: t("deposit.tabRecurrente"),
@@ -155,12 +179,15 @@ export default function DepositPage() {
     },
   ];
 
-  const router = useRouter();
-
-  const validUSD = amountUSD && Number.parseFloat(amountUSD) > 0;
-  const paypalAmountCents = validUSD
-    ? Math.round(Number.parseFloat(amountUSD) * 100)
-    : 0;
+  // While geo is loading show only Recurrente to avoid tab flicker.
+  let visibleTabs: TabDef[];
+  if (geoLoading) {
+    visibleTabs = allTabs.filter((t) => t.id === "recurrente");
+  } else if (isGuatemala) {
+    visibleTabs = allTabs.filter((t) => t.id !== "paypal");
+  } else {
+    visibleTabs = allTabs.filter((t) => t.id !== "bank");
+  }
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -168,25 +195,32 @@ export default function DepositPage() {
 
       {/* Method tabs */}
       <div className="flex gap-1 p-1 bg-blue-900 rounded-xl">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => {
-              setMethod(tab.id);
-              setError("");
-              setSuccess("");
-            }}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm transition-colors ${
-              method === tab.id
-                ? "bg-blue-700 text-white font-medium"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
+        {geoLoading
+          ? (["sk-tab-1", "sk-tab-2"] as const).map((id) => (
+              <div
+                key={id}
+                className="flex-1 h-9 rounded-lg animate-pulse bg-blue-800/60"
+              />
+            ))
+          : visibleTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setMethod(tab.id);
+                  setError("");
+                  setSuccess("");
+                }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm transition-colors ${
+                  method === tab.id
+                    ? "bg-blue-700 text-white font-medium"
+                    : "text-text-muted hover:text-text-secondary"
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
       </div>
 
       <div className="card p-6 space-y-5">
@@ -225,8 +259,8 @@ export default function DepositPage() {
           </>
         )}
 
-        {/* PayPal */}
-        {method === "paypal" && (
+        {/* PayPal — only for users outside Guatemala */}
+        {method === "paypal" && !isGuatemala && (
           <>
             <p className="text-sm text-text-secondary">
               {t("deposit.paypalDesc")}
@@ -239,7 +273,6 @@ export default function DepositPage() {
                 </span>
               </p>
             )}
-
             <div>
               <label
                 htmlFor="deposit-usd-amount"
@@ -320,7 +353,12 @@ export default function DepositPage() {
                   onError={(err: unknown) => {
                     console.error("[PayPal] onError:", err);
                     setError(
-                      apiErrorMessage(err, t, paypalErrorKeyByCode, "deposit.paypalError"),
+                      apiErrorMessage(
+                        err,
+                        t,
+                        paypalErrorKeyByCode,
+                        "deposit.paypalError",
+                      ),
                     );
                   }}
                 />
@@ -329,8 +367,8 @@ export default function DepositPage() {
           </>
         )}
 
-        {/* Bank transfer */}
-        {method === "bank" && (
+        {/* Bank transfer — only for users inside Guatemala */}
+        {method === "bank" && isGuatemala && (
           <>
             <div className="bg-blue-900/80 rounded-2xl border border-blue-700/50 p-3 space-y-3 text-sm">
               <div className="overflow-hidden rounded-xl border border-blue-700/60 bg-blue-950">

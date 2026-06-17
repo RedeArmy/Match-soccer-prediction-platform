@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/promclient"
 	"github.com/rede/world-cup-quiniela/pkg/tempoclient"
 )
@@ -22,6 +24,7 @@ type PromQuerier interface {
 // client. The concrete *tempoclient.Client satisfies this; tests may supply a stub.
 type TempoQuerier interface {
 	SearchErrors(ctx context.Context, since time.Time, limit int) (*tempoclient.SearchResponse, error)
+	Search(ctx context.Context, tags string, since time.Time, limit int, nameFilter string) (*tempoclient.SearchResponse, error)
 }
 
 // AdminObservabilityHandler exposes admin-only observability endpoints:
@@ -153,17 +156,7 @@ func (h *AdminObservabilityHandler) TracingRecentErrors(w http.ResponseWriter, r
 		writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: []tracingErrorEntry{}})
 		return
 	}
-	entries := make([]tracingErrorEntry, len(sr.Traces))
-	for i, t := range sr.Traces {
-		entries[i] = tracingErrorEntry{
-			TraceID:         t.TraceID,
-			RootServiceName: t.RootServiceName,
-			RootTraceName:   t.RootTraceName,
-			StartTimeNs:     t.StartTimeUnixNano,
-			DurationMs:      t.DurationMs,
-		}
-	}
-	writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: entries})
+	writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: traceEntries(sr.Traces)})
 }
 
 // ── Active connections ───────────────────────────────────────────────────────
@@ -172,6 +165,95 @@ type activeConnectionsResponse struct {
 	Connections int64 `json:"connections"`
 	Broadcasts  int64 `json:"broadcasts"`
 	Dropped     int64 `json:"dropped"`
+}
+
+// ── Custom metrics query ─────────────────────────────────────────────────────
+
+type metricsQueryResult struct {
+	Labels map[string]string `json:"labels"`
+	Value  float64           `json:"value"`
+}
+
+type metricsQueryResponse struct {
+	Configured bool                 `json:"configured"`
+	Results    []metricsQueryResult `json:"results"`
+}
+
+// MetricsQuery handles GET /admin/observability/metrics/query?q=<promql>.
+// Executes an arbitrary instant PromQL query and returns all vector samples.
+func (h *AdminObservabilityHandler) MetricsQuery(w http.ResponseWriter, r *http.Request) {
+	if h.prom == nil {
+		writeJSON(w, http.StatusOK, metricsQueryResponse{Configured: false, Results: []metricsQueryResult{}})
+		return
+	}
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		writeError(w, r, h.log, apperrors.Validation("q parameter is required"))
+		return
+	}
+	qr, err := h.prom.Query(r.Context(), q)
+	if err != nil {
+		h.log.Warn("metrics/query failed", zap.String("q", q), zap.Error(err))
+		writeJSON(w, http.StatusOK, metricsQueryResponse{Configured: true, Results: []metricsQueryResult{}})
+		return
+	}
+	samples, err := promclient.AllSamples(qr)
+	if err != nil {
+		h.log.Warn("metrics/query: parse samples", zap.Error(err))
+		writeJSON(w, http.StatusOK, metricsQueryResponse{Configured: true, Results: []metricsQueryResult{}})
+		return
+	}
+	results := make([]metricsQueryResult, 0, len(samples))
+	for i := range samples {
+		v, _ := promclient.FloatValue(&samples[i])
+		results = append(results, metricsQueryResult{Labels: samples[i].Labels, Value: v})
+	}
+	writeJSON(w, http.StatusOK, metricsQueryResponse{Configured: true, Results: results})
+}
+
+// ── Log search (Tempo traces) ────────────────────────────────────────────────
+
+// LogsSearch handles GET /admin/observability/logs?q=<filter>&since=<minutes>&limit=<n>.
+// Searches Tempo for error-status traces, optionally filtered by operation/service name.
+func (h *AdminObservabilityHandler) LogsSearch(w http.ResponseWriter, r *http.Request) {
+	if h.temp == nil {
+		writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: false, Errors: []tracingErrorEntry{}})
+		return
+	}
+	q := r.URL.Query().Get("q")
+	sinceMin := clampInt(r.URL.Query().Get("since"), 15, 1, 1440)
+	limit := clampInt(r.URL.Query().Get("limit"), 50, 1, 200)
+
+	since := time.Now().Add(-time.Duration(sinceMin) * time.Minute)
+	sr, err := h.temp.Search(r.Context(), "span.status.code=ERROR", since, limit, q)
+	if err != nil {
+		h.log.Warn("observability/logs: tempo search failed", zap.Error(err))
+		writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: []tracingErrorEntry{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, tracingRecentErrorsResponse{Configured: true, Errors: traceEntries(sr.Traces)})
+}
+
+func traceEntries(traces []tempoclient.TraceSummary) []tracingErrorEntry {
+	out := make([]tracingErrorEntry, len(traces))
+	for i, t := range traces {
+		out[i] = tracingErrorEntry{
+			TraceID:         t.TraceID,
+			RootServiceName: t.RootServiceName,
+			RootTraceName:   t.RootTraceName,
+			StartTimeNs:     t.StartTimeUnixNano,
+			DurationMs:      t.DurationMs,
+		}
+	}
+	return out
+}
+
+func clampInt(s string, def, min, max int) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n < min || n > max {
+		return def
+	}
+	return n
 }
 
 // ActiveConnections handles GET /admin/observability/active-connections.
