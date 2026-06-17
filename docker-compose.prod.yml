@@ -168,6 +168,7 @@ services:
       NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: /onboarding
       NEXT_PUBLIC_APP_URL:                 ${FRONTEND_PUBLIC_URL}
       NEXT_PUBLIC_PAYPAL_CLIENT_ID:        ${PAYPAL_CLIENT_ID}
+      NEXT_PUBLIC_GRAFANA_URL:             ${GRAFANA_PUBLIC_URL:-}
       # BFF proxy: Next.js server-side routes call the API via this internal URL.
       BACKEND_INTERNAL_URL:                http://api:8080
       # API-Football — live match feed (/api/live/today, /api/live/fixture/[id])

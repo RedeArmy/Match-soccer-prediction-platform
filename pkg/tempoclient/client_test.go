@@ -100,3 +100,107 @@ func TestSearchErrors_InvalidBaseURL(t *testing.T) {
 		t.Error("expected error for invalid base URL")
 	}
 }
+
+// ── Search (with nameFilter) ──────────────────────────────────────────────────
+
+func makeSearchServer(t *testing.T, traces []tempoclient.TraceSummary) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(tempoclient.SearchResponse{Traces: traces})
+	}))
+}
+
+func TestSearch_NoFilter(t *testing.T) {
+	traces := []tempoclient.TraceSummary{
+		{TraceID: "t1", RootServiceName: "api", RootTraceName: "GET /foo"},
+		{TraceID: "t2", RootServiceName: "worker", RootTraceName: "job.run"},
+	}
+	srv := makeSearchServer(t, traces)
+	defer srv.Close()
+
+	c := tempoclient.New(srv.URL)
+	resp, err := c.Search(context.Background(), "span.status.code=ERROR", time.Now().Add(-time.Hour), 50, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Traces) != 2 {
+		t.Errorf("expected 2 traces without filter, got %d", len(resp.Traces))
+	}
+}
+
+func TestSearch_NameFilterMatches(t *testing.T) {
+	traces := []tempoclient.TraceSummary{
+		{TraceID: "t1", RootServiceName: "api", RootTraceName: "POST /api/v1/paypal/create-order"},
+		{TraceID: "t2", RootServiceName: "api", RootTraceName: "GET /api/v1/users/me"},
+	}
+	srv := makeSearchServer(t, traces)
+	defer srv.Close()
+
+	c := tempoclient.New(srv.URL)
+	resp, err := c.Search(context.Background(), "span.status.code=ERROR", time.Now().Add(-time.Hour), 50, "paypal")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Traces) != 1 {
+		t.Fatalf("expected 1 trace after filter, got %d", len(resp.Traces))
+	}
+	if resp.Traces[0].TraceID != "t1" {
+		t.Errorf("expected traceID t1, got %s", resp.Traces[0].TraceID)
+	}
+}
+
+func TestSearch_NameFilterCaseInsensitive(t *testing.T) {
+	traces := []tempoclient.TraceSummary{
+		{TraceID: "t1", RootServiceName: "API", RootTraceName: "POST /Paypal"},
+	}
+	srv := makeSearchServer(t, traces)
+	defer srv.Close()
+
+	c := tempoclient.New(srv.URL)
+	resp, err := c.Search(context.Background(), "span.status.code=ERROR", time.Now().Add(-time.Hour), 50, "paypal")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Traces) != 1 {
+		t.Errorf("expected case-insensitive match, got %d traces", len(resp.Traces))
+	}
+}
+
+func TestSearch_NameFilterByService(t *testing.T) {
+	traces := []tempoclient.TraceSummary{
+		{TraceID: "t1", RootServiceName: "worker", RootTraceName: "job.cleanup"},
+		{TraceID: "t2", RootServiceName: "api", RootTraceName: "GET /health"},
+	}
+	srv := makeSearchServer(t, traces)
+	defer srv.Close()
+
+	c := tempoclient.New(srv.URL)
+	resp, err := c.Search(context.Background(), "span.status.code=ERROR", time.Now().Add(-time.Hour), 50, "worker")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Traces) != 1 {
+		t.Fatalf("expected 1 trace matching service name, got %d", len(resp.Traces))
+	}
+	if resp.Traces[0].TraceID != "t1" {
+		t.Errorf("expected traceID t1, got %s", resp.Traces[0].TraceID)
+	}
+}
+
+func TestSearch_NameFilterNoMatch(t *testing.T) {
+	traces := []tempoclient.TraceSummary{
+		{TraceID: "t1", RootServiceName: "api", RootTraceName: "GET /foo"},
+	}
+	srv := makeSearchServer(t, traces)
+	defer srv.Close()
+
+	c := tempoclient.New(srv.URL)
+	resp, err := c.Search(context.Background(), "span.status.code=ERROR", time.Now().Add(-time.Hour), 50, "nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Traces) != 0 {
+		t.Errorf("expected 0 traces when filter matches nothing, got %d", len(resp.Traces))
+	}
+}

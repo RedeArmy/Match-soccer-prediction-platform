@@ -48,12 +48,14 @@ services:
     image: grafana/grafana:11.1.0
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_USER:     admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER:      admin
+      GF_SECURITY_ADMIN_PASSWORD:  ${GRAFANA_ADMIN_PASSWORD:-admin}
       # In production GRAFANA_ROOT_URL should be the public HTTPS URL, e.g.
       # https://grafana.example.com — used for redirect URIs and panel links.
-      GF_SERVER_ROOT_URL:         ${GRAFANA_ROOT_URL:-http://localhost:3001}
-      GF_FEATURE_TOGGLES_ENABLE:  traceqlEditor
+      GF_SERVER_ROOT_URL:          ${GRAFANA_ROOT_URL:-http://localhost:3001}
+      GF_FEATURE_TOGGLES_ENABLE:   traceqlEditor
+      # Allow the admin panel to embed Grafana in an iframe.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
     ports:
       # Port 3001 on the host — avoids collision with the frontend on 3000.
       - "127.0.0.1:3001:3000"

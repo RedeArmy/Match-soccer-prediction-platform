@@ -154,3 +154,91 @@ func TestFirstFloat_NonFloatValue(t *testing.T) {
 		t.Error("expected error when value string is not a float")
 	}
 }
+
+// ── FloatValue ────────────────────────────────────────────────────────────────
+
+func makeSample(t *testing.T, raw string) *promclient.ScalarSample {
+	t.Helper()
+	var s promclient.ScalarSample
+	if err := json.Unmarshal([]byte(raw), &s); err != nil {
+		t.Fatalf("makeSample: unmarshal failed: %v", err)
+	}
+	return &s
+}
+
+func TestFloatValue_Valid(t *testing.T) {
+	s := makeSample(t, `{"metric":{},"value":[1234567890,"2.718"]}`)
+	v, err := promclient.FloatValue(s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v != 2.718 {
+		t.Errorf("expected 2.718, got %v", v)
+	}
+}
+
+func TestFloatValue_NilElements(t *testing.T) {
+	// Zero-value [2]json.RawMessage: both elements are nil — json.Unmarshal(nil) errors.
+	var s promclient.ScalarSample
+	_, err := promclient.FloatValue(&s)
+	if err == nil {
+		t.Error("expected error when Value elements are nil JSON")
+	}
+}
+
+func TestFloatValue_BadValueJSON(t *testing.T) {
+	s := makeSample(t, `{"metric":{},"value":[1234567890,{"bad":"json"}]}`)
+	_, err := promclient.FloatValue(s)
+	if err == nil {
+		t.Error("expected error when value[1] is not a JSON string")
+	}
+}
+
+func TestFloatValue_NonFloatString(t *testing.T) {
+	// "abc" is a valid JSON string but fmt.Sscanf cannot parse it as %f.
+	s := makeSample(t, `{"metric":{},"value":[1234567890,"abc"]}`)
+	_, err := promclient.FloatValue(s)
+	if err == nil {
+		t.Error("expected error when value string is not parseable as float")
+	}
+}
+
+// ── AllSamples ────────────────────────────────────────────────────────────────
+
+func TestAllSamples_Multiple(t *testing.T) {
+	qr := &promclient.QueryResponse{Status: "success"}
+	qr.Data.Result = []json.RawMessage{
+		json.RawMessage(`{"metric":{"label":"a"},"value":[1,"1.1"]}`),
+		json.RawMessage(`{"metric":{"label":"b"},"value":[2,"2.2"]}`),
+	}
+	samples, err := promclient.AllSamples(qr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(samples) != 2 {
+		t.Fatalf("expected 2 samples, got %d", len(samples))
+	}
+	if samples[0].Labels["label"] != "a" {
+		t.Errorf("unexpected label on sample 0: %v", samples[0].Labels)
+	}
+}
+
+func TestAllSamples_Empty(t *testing.T) {
+	qr := &promclient.QueryResponse{Status: "success"}
+	samples, err := promclient.AllSamples(qr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(samples) != 0 {
+		t.Errorf("expected 0 samples, got %d", len(samples))
+	}
+}
+
+func TestAllSamples_InvalidJSON(t *testing.T) {
+	qr := &promclient.QueryResponse{}
+	qr.Data.Result = []json.RawMessage{json.RawMessage("not-valid-json")}
+	_, err := promclient.AllSamples(qr)
+	if err == nil {
+		t.Error("expected error on malformed sample JSON")
+	}
+}

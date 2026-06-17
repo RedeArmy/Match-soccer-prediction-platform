@@ -360,7 +360,9 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 		// Observability dashboard endpoints
 		r.Route("/observability", func(r chi.Router) {
 			r.Get("/metrics/summary", d.h.adminObservability.MetricsSummary)
+			r.Get("/metrics/query", d.h.adminObservability.MetricsQuery)
 			r.Get("/tracing/recent-errors", d.h.adminObservability.TracingRecentErrors)
+			r.Get("/logs", d.h.adminObservability.LogsSearch)
 			r.Get("/active-connections", d.h.adminObservability.ActiveConnections)
 			r.Get("/dlq", d.h.adminObsDLQ.Stats)
 			r.Get("/audit-log", d.h.adminAudit.List)

@@ -86,6 +86,11 @@ func FirstFloat(qr *QueryResponse) (float64, error) {
 	if err := json.Unmarshal(qr.Data.Result[0], &s); err != nil {
 		return 0, fmt.Errorf("promclient: unmarshal sample: %w", err)
 	}
+	return FloatValue(&s)
+}
+
+// FloatValue extracts the numeric value from a parsed ScalarSample.
+func FloatValue(s *ScalarSample) (float64, error) {
 	if len(s.Value) < 2 {
 		return 0, nil
 	}
@@ -98,4 +103,17 @@ func FirstFloat(qr *QueryResponse) (float64, error) {
 		return 0, fmt.Errorf("promclient: parse float %q: %w", raw, err)
 	}
 	return v, nil
+}
+
+// AllSamples parses every result in a vector query into ScalarSample structs.
+func AllSamples(qr *QueryResponse) ([]ScalarSample, error) {
+	out := make([]ScalarSample, 0, len(qr.Data.Result))
+	for _, raw := range qr.Data.Result {
+		var s ScalarSample
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, fmt.Errorf("promclient: unmarshal sample: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, nil
 }
