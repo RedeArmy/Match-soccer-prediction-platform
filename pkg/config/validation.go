@@ -169,6 +169,31 @@ func validateDatabaseConfig(db DatabaseConfig) error {
 	return nil
 }
 
+// validatePaymentConfig rejects a PaymentConfig that is missing fields required
+// outside development. Extracted to keep validateProductionConfig within the
+// cognitive-complexity limit.
+func validatePaymentConfig(p PaymentConfig) error {
+	if p.RecurrenteAPIKey == "" {
+		return errors.New("payment.recurrenteAPIKey must not be empty outside development (WCQ_PAYMENT_RECURRENTEAPIKEY)")
+	}
+	if p.RecurrenteWebhookSecret == "" {
+		return errors.New("payment.recurrenteWebhookSecret must not be empty outside development (WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
+	}
+	if p.PayPalClientID == "" {
+		return errors.New("payment.paypalClientID must not be empty outside development (WCQ_PAYMENT_PAYPALCLIENTID); the PayPal deposit endpoint will return 503 without it")
+	}
+	if p.PayPalClientSecret == "" {
+		return errors.New("payment.paypalClientSecret must not be empty outside development (WCQ_PAYMENT_PAYPALCLIENTSECRET); the PayPal deposit endpoint will return 503 without it")
+	}
+	if p.PayPalWebhookID == "" {
+		return errors.New("payment.paypalWebhookID must not be empty outside development (WCQ_PAYMENT_PAYPALWEBHOOKID)")
+	}
+	if p.PayoutEncryptionKey == "" {
+		return errors.New("payment.payoutEncryptionKey must not be empty outside development (WCQ_PAYMENT_PAYOUTENCRYPTIONKEY); generate with: openssl rand -hex 32")
+	}
+	return nil
+}
+
 // validateClerkConfig rejects a ClerkConfig that is missing fields required
 // outside development. Extracted to keep validateProductionConfig within the
 // cognitive-complexity limit.
@@ -191,23 +216,8 @@ func validateProductionConfig(cfg *Config) error {
 	if cfg.Server.AppBaseURL == "" {
 		return errors.New("server.appBaseURL must not be empty outside development (WCQ_SERVER_APPBASEURL); used for Recurrente redirect URLs and email unsubscribe links")
 	}
-	if cfg.Payment.RecurrenteAPIKey == "" {
-		return errors.New("payment.recurrenteAPIKey must not be empty outside development (WCQ_PAYMENT_RECURRENTEAPIKEY)")
-	}
-	if cfg.Payment.RecurrenteWebhookSecret == "" {
-		return errors.New("payment.recurrenteWebhookSecret must not be empty outside development (WCQ_PAYMENT_RECURRENTEWEBHOOKSECRET)")
-	}
-	if cfg.Payment.PayPalClientID == "" {
-		return errors.New("payment.paypalClientID must not be empty outside development (WCQ_PAYMENT_PAYPALCLIENTID); the PayPal deposit endpoint will return 503 without it")
-	}
-	if cfg.Payment.PayPalClientSecret == "" {
-		return errors.New("payment.paypalClientSecret must not be empty outside development (WCQ_PAYMENT_PAYPALCLIENTSECRET); the PayPal deposit endpoint will return 503 without it")
-	}
-	if cfg.Payment.PayPalWebhookID == "" {
-		return errors.New("payment.paypalWebhookID must not be empty outside development (WCQ_PAYMENT_PAYPALWEBHOOKID)")
-	}
-	if cfg.Payment.PayoutEncryptionKey == "" {
-		return errors.New("payment.payoutEncryptionKey must not be empty outside development (WCQ_PAYMENT_PAYOUTENCRYPTIONKEY); generate with: openssl rand -hex 32")
+	if err := validatePaymentConfig(cfg.Payment); err != nil {
+		return err
 	}
 	if cfg.Email.UnsubscribeSecret == "" {
 		return errors.New("email.unsubscribeSecret must not be empty outside development (WCQ_EMAIL_UNSUBSCRIBESECRET); one-click unsubscribe links will be invalid and the endpoint will return 500")
