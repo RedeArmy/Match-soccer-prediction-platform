@@ -31,12 +31,19 @@ export default function BalancePage() {
   const { t } = useI18n();
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  // PayPal success redirect params
+  // Success redirect params (PayPal: ?paypal=success&usd=X, Recurrente: ?deposit=success&amount=X&currency=GTQ)
   const searchParams = useSearchParams();
-  const paypalSuccess = searchParams.get("paypal") === "success";
+  const paypalSuccess     = searchParams.get("paypal")  === "success";
+  const recurrenteSuccess = searchParams.get("deposit") === "success";
+  const anySuccess = paypalSuccess || recurrenteSuccess;
+
   const usdAmount = paypalSuccess ? Number(searchParams.get("usd") ?? "0") : 0;
-  const [bannerVisible, setBannerVisible] = useState(paypalSuccess);
-  const [refetchEnabled, setRefetchEnabled] = useState(paypalSuccess);
+
+  const recurrenteAmountCents  = recurrenteSuccess ? Number(searchParams.get("amount")   ?? "0") : 0;
+  const recurrenteCurrency     = recurrenteSuccess ? (searchParams.get("currency") ?? "GTQ")     : "GTQ";
+
+  const [bannerVisible, setBannerVisible] = useState(anySuccess);
+  const [refetchEnabled, setRefetchEnabled] = useState(anySuccess);
   const { data: rate } = useExchangeRate();
 
   const gtqEstimate =
@@ -44,12 +51,19 @@ export default function BalancePage() {
       ? Math.round(usdToGTQ(usdAmount, rate.buy_rate) * 100)
       : null;
 
-  // Poll ledger for 15 s after PayPal redirect so the webhook-credited entry appears promptly
+  const recurrenteAmountFormatted =
+    recurrenteAmountCents > 0
+      ? recurrenteCurrency === "GTQ"
+        ? `Q ${(recurrenteAmountCents / 100).toFixed(2)}`
+        : `$${(recurrenteAmountCents / 100).toFixed(2)} ${recurrenteCurrency}`
+      : null;
+
+  // Poll ledger for 15 s after redirect so the webhook-credited entry appears promptly
   useEffect(() => {
-    if (!paypalSuccess) return;
+    if (!anySuccess) return;
     const timer = setTimeout(() => setRefetchEnabled(false), 15_000);
     return () => clearTimeout(timer);
-  }, [paypalSuccess]);
+  }, [anySuccess]);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useInfiniteQuery({
@@ -85,30 +99,48 @@ export default function BalancePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-display text-3xl text-white">BALANCE</h1>
+      <h1 className="font-display text-3xl text-white">{t("balance.title")}</h1>
 
-      {/* PayPal success banner */}
+      {/* Payment success banner (PayPal or Recurrente) */}
       {bannerVisible && (
         <div className="flex items-start gap-3 p-4 bg-green-900/50 border border-green-700/50 rounded-xl">
           <CheckCircle className="w-5 h-5 text-green-400 shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-green-300">
-              Pago PayPal de ${usdAmount.toFixed(2)} USD recibido
-            </p>
-            {gtqEstimate !== null && (
-              <p className="text-xs text-green-400/80 mt-0.5">
-                ≈ {formatGTQ(gtqEstimate)} GTQ al tipo de compra
+            {paypalSuccess && (
+              <>
+                <p className="text-sm font-medium text-green-300">
+                  {t("balance.paypalBannerPre")}{" "}
+                  <span className="font-score">${usdAmount.toFixed(2)} USD</span>{" "}
+                  {t("balance.paypalBannerReceived")}
+                </p>
+                {gtqEstimate !== null && (
+                  <p className="text-xs text-green-400/80 mt-0.5">
+                    ≈ {formatGTQ(gtqEstimate)} GTQ{" "}
+                    {t("balance.paypalBannerRate")}
+                  </p>
+                )}
+              </>
+            )}
+            {recurrenteSuccess && (
+              <p className="text-sm font-medium text-green-300">
+                {t("balance.recurrenteBannerPre")}{" "}
+                {recurrenteAmountFormatted && (
+                  <span className="font-score">{recurrenteAmountFormatted}</span>
+                )}{" "}
+                {t("balance.recurrenteBannerReceived")}
               </p>
             )}
             <p className="text-xs text-text-muted mt-0.5">
-              La acreditación aparecerá en el historial en breve.
+              {paypalSuccess
+                ? t("balance.paypalBannerCredit")
+                : t("balance.recurrenteBannerCredit")}
             </p>
           </div>
           <button
             type="button"
             onClick={() => setBannerVisible(false)}
             className="text-text-muted hover:text-text-secondary"
-            aria-label="Cerrar"
+            aria-label={t("balance.bannerClose")}
           >
             <X className="w-4 h-4" />
           </button>
@@ -120,13 +152,13 @@ export default function BalancePage() {
       {/* Transaction history */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
-          Historial de transacciones
+          {t("balance.historyTitle")}
         </h2>
 
         {isLoading && <LoadingState rows={6} />}
         {!isLoading && allEntries.length === 0 && (
           <p className="text-text-muted text-sm text-center py-8">
-            Sin transacciones aún
+            {t("balance.historyEmpty")}
           </p>
         )}
         {!isLoading && allEntries.length > 0 && (

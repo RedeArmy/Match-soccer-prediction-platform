@@ -10,6 +10,13 @@ import {
   PayPalButtons,
   FUNDING,
 } from "@paypal/react-paypal-js";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  CreditCard,
+  Building2,
+} from "lucide-react";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -19,28 +26,34 @@ import {
   formatGTQ,
   usdToGTQ,
 } from "@/lib/utils";
-import { FormFeedback } from "@/components/shared/FormFeedback";
 import { FileUploadField } from "@/components/shared/FileUploadField";
 import { SubmitButton } from "@/components/shared/SubmitButton";
-import { CreditCard, Building2 } from "lucide-react";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type Method = "recurrente" | "paypal" | "bank";
 type PayPalActions = { order?: { capture: () => Promise<unknown> } };
+type FeedbackKind = "error" | "warning" | "success";
+interface Feedback { kind: FeedbackKind; message: string }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
 
 const paypalErrorKeyByCode: Record<string, string> = {
   SERVICE_UNAVAILABLE: "deposit.paypalServiceUnavailable",
-  UPSTREAM_ERROR: "deposit.paypalUpstreamError",
-  VALIDATION: "deposit.paypalInvalidRequest",
-  UNAUTHORISED: "deposit.paypalSessionExpired",
+  UPSTREAM_ERROR:      "deposit.paypalUpstreamError",
+  VALIDATION:          "deposit.paypalInvalidRequest",
+  UNAUTHORISED:        "deposit.paypalSessionExpired",
 };
 
 const recurrenteErrorKeyByCode: Record<string, string> = {
   UNAUTHORISED: "deposit.recurrenteSessionExpired",
-  VALIDATION: "deposit.recurrenteUnavailable",
-  INTERNAL: "deposit.recurrenteError",
+  VALIDATION:   "deposit.recurrenteUnavailable",
+  INTERNAL:     "deposit.recurrenteError",
 };
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function apiErrorMessage(
   err: unknown,
@@ -64,6 +77,48 @@ function useCountry(): { country: string | null; isLoading: boolean } {
   return { country: data?.country ?? null, isLoading };
 }
 
+// ── DepositAlert ──────────────────────────────────────────────────────────────
+
+const alertConfig: Record<
+  FeedbackKind,
+  { bg: string; border: string; text: string; icon: React.ReactNode }
+> = {
+  error: {
+    bg:     "bg-red-500/10",
+    border: "border-red-500/30",
+    text:   "text-red-300",
+    icon:   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />,
+  },
+  warning: {
+    bg:     "bg-amber-400/10",
+    border: "border-amber-400/25",
+    text:   "text-amber-200",
+    icon:   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />,
+  },
+  success: {
+    bg:     "bg-emerald-500/10",
+    border: "border-emerald-500/30",
+    text:   "text-emerald-300",
+    icon:   <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />,
+  },
+};
+
+function DepositAlert({ feedback }: { feedback: Feedback | null }) {
+  if (!feedback) return null;
+  const { bg, border, text, icon } = alertConfig[feedback.kind];
+  return (
+    <div
+      className={`flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm ${bg} ${border} ${text}`}
+      role={feedback.kind === "success" ? "status" : "alert"}
+    >
+      {icon}
+      <span>{feedback.message}</span>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function DepositPage() {
   const { getToken } = useAuth();
   const { data: rate } = useExchangeRate();
@@ -74,29 +129,30 @@ export default function DepositPage() {
   const { country, isLoading: geoLoading } = useCountry();
   const isGuatemala = country === "GT";
 
-  const [method, setMethod] = useState<Method>("recurrente");
+  const [method, setMethod]       = useState<Method>("recurrente");
   const [amountGTQ, setAmountGTQ] = useState("");
   const [amountUSD, setAmountUSD] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile]           = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [error, setError] = useState("");
+  const [feedback, setFeedback]   = useState<Feedback | null>(null);
+
+  const clearFeedback = () => setFeedback(null);
 
   // When geo resolves, drop the active tab if it is no longer available.
   useEffect(() => {
     if (geoLoading) return;
     if (isGuatemala && method === "paypal") setMethod("recurrente");
-    if (!isGuatemala && method === "bank") setMethod("recurrente");
+    if (!isGuatemala && method === "bank")  setMethod("recurrente");
   }, [geoLoading, isGuatemala]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gtqEquiv =
     rate && amountUSD
       ? formatGTQ(
-          Math.round(
-            usdToGTQ(Number.parseFloat(amountUSD), rate.buy_rate) * 100,
-          ),
+          Math.round(usdToGTQ(Number.parseFloat(amountUSD), rate.buy_rate) * 100),
         )
       : null;
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
 
   const recurrenteMutation = useMutation({
     mutationFn: async () => {
@@ -112,30 +168,28 @@ export default function DepositPage() {
       if (data.redirect_url) globalThis.location.href = data.redirect_url;
     },
     onError: (e: Error) =>
-      setError(
-        apiErrorMessage(e, t, recurrenteErrorKeyByCode, "deposit.recurrenteError"),
-      ),
+      setFeedback({
+        kind: "error",
+        message: apiErrorMessage(e, t, recurrenteErrorKeyByCode, "deposit.recurrenteError"),
+      }),
   });
 
   const uploadMutation = useMutation({
     mutationFn: async () => {
-      if (!file) throw new Error("Adjunta el comprobante");
+      if (!file) throw new Error(t("deposit.bankFileNoAttach"));
       const token = await getToken();
       const fd = new FormData();
-      fd.append(
-        "amount_cents",
-        String(Math.round(Number.parseFloat(amountGTQ) * 100)),
-      );
+      fd.append("amount_cents", String(Math.round(Number.parseFloat(amountGTQ) * 100)));
       fd.append("currency", "GTQ");
       fd.append("file", file);
       return api.uploadBankTransfer(token!, fd, crypto.randomUUID());
     },
     onSuccess: () => {
-      setSuccess("Comprobante enviado. Será revisado en 24-48 horas.");
+      setFeedback({ kind: "success", message: t("deposit.bankSuccess") });
       setFile(null);
       setAmountGTQ("");
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: Error) => setFeedback({ kind: "error", message: e.message }),
   });
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -143,12 +197,12 @@ export default function DepositPage() {
     const f = e.target.files?.[0];
     if (!f) return;
     if (f.size > 5 * 1024 * 1024) {
-      setFileError("El archivo no debe superar 5 MB");
+      setFileError(t("deposit.bankFileTooBig"));
       return;
     }
     const mime = await sniffMIME(f);
     if (!isAllowedUploadType(mime)) {
-      setFileError("Tipo no permitido. Usa JPEG, PNG, WebP o PDF.");
+      setFileError(t("deposit.bankFileInvalidType"));
       return;
     }
     setFile(f);
@@ -159,35 +213,26 @@ export default function DepositPage() {
     ? Math.round(Number.parseFloat(amountUSD) * 100)
     : 0;
 
+  // ── Tab definitions ────────────────────────────────────────────────────────
+
   type TabDef = { id: Method; label: string; icon: React.ReactNode };
 
   const allTabs: TabDef[] = [
-    {
-      id: "recurrente",
-      label: t("deposit.tabRecurrente"),
-      icon: <CreditCard className="w-4 h-4" />,
-    },
-    {
-      id: "paypal",
-      label: t("deposit.tabPaypal"),
-      icon: <CreditCard className="w-4 h-4" />,
-    },
-    {
-      id: "bank",
-      label: "Transferencia",
-      icon: <Building2 className="w-4 h-4" />,
-    },
+    { id: "recurrente", label: t("deposit.tabRecurrente"), icon: <CreditCard className="w-4 h-4" /> },
+    { id: "paypal",     label: t("deposit.tabPaypal"),     icon: <CreditCard className="w-4 h-4" /> },
+    { id: "bank",       label: t("deposit.tabBank"),       icon: <Building2  className="w-4 h-4" /> },
   ];
 
-  // While geo is loading show only Recurrente to avoid tab flicker.
   let visibleTabs: TabDef[];
   if (geoLoading) {
-    visibleTabs = allTabs.filter((t) => t.id === "recurrente");
+    visibleTabs = allTabs.filter((tab) => tab.id === "recurrente");
   } else if (isGuatemala) {
-    visibleTabs = allTabs.filter((t) => t.id !== "paypal");
+    visibleTabs = allTabs.filter((tab) => tab.id !== "paypal");
   } else {
-    visibleTabs = allTabs.filter((t) => t.id !== "bank");
+    visibleTabs = allTabs.filter((tab) => tab.id !== "bank");
   }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -208,8 +253,7 @@ export default function DepositPage() {
                 type="button"
                 onClick={() => {
                   setMethod(tab.id);
-                  setError("");
-                  setSuccess("");
+                  clearFeedback();
                 }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm transition-colors ${
                   method === tab.id
@@ -224,7 +268,8 @@ export default function DepositPage() {
       </div>
 
       <div className="card p-6 space-y-5">
-        {/* Recurrente */}
+
+        {/* ── Recurrente ── */}
         {method === "recurrente" && (
           <>
             <p className="text-sm text-text-secondary">
@@ -244,7 +289,7 @@ export default function DepositPage() {
                 max="100000"
                 step="0.01"
                 value={amountGTQ}
-                onChange={(e) => setAmountGTQ(e.target.value)}
+                onChange={(e) => { setAmountGTQ(e.target.value); clearFeedback(); }}
                 placeholder="100.00"
                 className="input-base"
               />
@@ -259,7 +304,7 @@ export default function DepositPage() {
           </>
         )}
 
-        {/* PayPal — only for users outside Guatemala */}
+        {/* ── PayPal — only for users outside Guatemala ── */}
         {method === "paypal" && !isGuatemala && (
           <>
             <p className="text-sm text-text-secondary">
@@ -268,7 +313,7 @@ export default function DepositPage() {
             {rate && (
               <p className="text-xs text-text-muted">
                 {t("deposit.buyRateLabel")}{" "}
-                <span className="text-gold-400">
+                <span className="text-gold-400 font-medium">
                   Q{Number.parseFloat(rate.buy_rate).toFixed(4)} / USD
                 </span>
               </p>
@@ -287,24 +332,24 @@ export default function DepositPage() {
                 max="10000"
                 step="0.01"
                 value={amountUSD}
-                onChange={(e) => {
-                  setAmountUSD(e.target.value);
-                  setError("");
-                }}
+                onChange={(e) => { setAmountUSD(e.target.value); clearFeedback(); }}
                 placeholder="50.00"
                 className="input-base"
               />
               {gtqEquiv && (
-                <p className="text-xs text-text-muted mt-1">≈ {gtqEquiv} GTQ</p>
+                <p className="text-xs text-text-muted mt-1.5">≈ {gtqEquiv} GTQ</p>
               )}
             </div>
 
             {!PAYPAL_CLIENT_ID && (
-              <p className="text-xs text-red-400 text-center py-2">
-                {t("deposit.paypalNotConfiguredPre")}{" "}
-                <code className="font-mono">NEXT_PUBLIC_PAYPAL_CLIENT_ID</code>{" "}
-                {t("deposit.paypalNotConfiguredPost")}
-              </p>
+              <div className="flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  {t("deposit.paypalNotConfiguredPre")}{" "}
+                  <code className="font-mono text-xs">NEXT_PUBLIC_PAYPAL_CLIENT_ID</code>{" "}
+                  {t("deposit.paypalNotConfiguredPost")}
+                </span>
+              </div>
             )}
 
             {PAYPAL_CLIENT_ID && validUSD && (
@@ -319,22 +364,15 @@ export default function DepositPage() {
                 <PayPalButtons
                   key={String(paypalAmountCents)}
                   fundingSource={FUNDING.PAYPAL}
-                  style={{
-                    color: "gold",
-                    shape: "rect",
-                    label: "paypal",
-                    height: 44,
-                  }}
+                  style={{ color: "gold", shape: "rect", label: "paypal", height: 44 }}
                   createOrder={async () => {
                     const token = await getToken();
-                    if (!token)
-                      throw new Error(t("deposit.paypalSessionExpired"));
+                    if (!token) throw new Error(t("deposit.paypalSessionExpired"));
                     const order = await api.createPayPalOrder(token, {
                       amount_cents: paypalAmountCents,
                       currency: "USD",
                     });
-                    if (!order.id)
-                      throw new Error(t("deposit.paypalNoOrderId"));
+                    if (!order.id) throw new Error(t("deposit.paypalNoOrderId"));
                     return order.id;
                   }}
                   onApprove={async (_data: unknown, actions: PayPalActions) => {
@@ -342,24 +380,20 @@ export default function DepositPage() {
                     await Promise.all([
                       queryClient.invalidateQueries({ queryKey: ["balance"] }),
                       queryClient.invalidateQueries({ queryKey: ["ledger"] }),
-                      queryClient.invalidateQueries({
-                        queryKey: ["ledger-preview"],
-                      }),
+                      queryClient.invalidateQueries({ queryKey: ["ledger-preview"] }),
                     ]);
                     const usd = (paypalAmountCents / 100).toFixed(2);
                     router.replace(`/balance?paypal=success&usd=${usd}`);
                   }}
-                  onCancel={() => setError(t("deposit.paypalCancelled"))}
+                  onCancel={() =>
+                    setFeedback({ kind: "warning", message: t("deposit.paypalCancelled") })
+                  }
                   onError={(err: unknown) => {
                     console.error("[PayPal] onError:", err);
-                    setError(
-                      apiErrorMessage(
-                        err,
-                        t,
-                        paypalErrorKeyByCode,
-                        "deposit.paypalError",
-                      ),
-                    );
+                    setFeedback({
+                      kind: "error",
+                      message: apiErrorMessage(err, t, paypalErrorKeyByCode, "deposit.paypalError"),
+                    });
                   }}
                 />
               </PayPalScriptProvider>
@@ -367,7 +401,7 @@ export default function DepositPage() {
           </>
         )}
 
-        {/* Bank transfer — only for users inside Guatemala */}
+        {/* ── Bank transfer — only for users inside Guatemala ── */}
         {method === "bank" && isGuatemala && (
           <>
             <div className="bg-blue-900/80 rounded-2xl border border-blue-700/50 p-3 space-y-3 text-sm">
@@ -392,7 +426,7 @@ export default function DepositPage() {
                 htmlFor="bank-amount"
                 className="block text-sm text-text-secondary mb-1.5"
               >
-                Monto depositado (GTQ)
+                {t("deposit.bankAmountLabel")}
               </label>
               <input
                 id="bank-amount"
@@ -401,7 +435,7 @@ export default function DepositPage() {
                 max="1000000"
                 step="0.01"
                 value={amountGTQ}
-                onChange={(e) => setAmountGTQ(e.target.value)}
+                onChange={(e) => { setAmountGTQ(e.target.value); clearFeedback(); }}
                 placeholder="500.00"
                 className="input-base"
               />
@@ -409,15 +443,18 @@ export default function DepositPage() {
 
             <div>
               <p className="block text-sm text-text-secondary mb-1.5">
-                Comprobante (JPEG, PNG, WebP, PDF — máx. 5 MB)
+                {t("deposit.bankFileLabel")}
               </p>
               <FileUploadField
-                label="Toca para adjuntar"
+                label={t("deposit.bankFileButton")}
                 fileName={file?.name}
                 onChange={handleFileChange}
               />
               {fileError && (
-                <p className="text-red-400 text-xs mt-1">{fileError}</p>
+                <div className="flex items-center gap-2 mt-2 text-xs text-red-300">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  {fileError}
+                </div>
               )}
             </div>
 
@@ -426,12 +463,14 @@ export default function DepositPage() {
               disabled={!file || !amountGTQ}
               onClick={() => uploadMutation.mutate()}
             >
-              Enviar comprobante
+              {t("deposit.bankSubmit")}
             </SubmitButton>
           </>
         )}
 
-        <FormFeedback error={error} success={success} center />
+        {/* ── Inline feedback alert ── */}
+        <DepositAlert feedback={feedback} />
+
       </div>
     </div>
   );

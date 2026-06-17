@@ -165,17 +165,17 @@ func TestValidatePayPalTimestamp_ValidRecentTimestamp_ReturnsNil(t *testing.T) {
 
 func TestValidatePayPalTimestamp_TooOld_ReturnsError(t *testing.T) {
 	now := time.Now().UTC()
-	ts := now.Add(-6 * time.Minute).Format(time.RFC3339)
+	ts := now.Add(-(paypalTimestampTolerance + time.Minute)).Format(time.RFC3339)
 	if err := validatePayPalTimestamp(ts, now); err == nil {
-		t.Error("expected error for 6-minute-old timestamp, got nil")
+		t.Error("expected error for timestamp older than tolerance, got nil")
 	}
 }
 
 func TestValidatePayPalTimestamp_TooFarFuture_ReturnsError(t *testing.T) {
 	now := time.Now().UTC()
-	ts := now.Add(6 * time.Minute).Format(time.RFC3339)
+	ts := now.Add(paypalTimestampTolerance + time.Minute).Format(time.RFC3339)
 	if err := validatePayPalTimestamp(ts, now); err == nil {
-		t.Error("expected error for timestamp 6 minutes in the future, got nil")
+		t.Error("expected error for timestamp beyond tolerance in the future, got nil")
 	}
 }
 
