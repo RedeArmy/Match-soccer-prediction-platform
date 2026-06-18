@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/storage"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
@@ -223,7 +223,7 @@ func (h *PaymentIntentHandler) UploadComprobante(w http.ResponseWriter, r *http.
 		writeError(w, r, h.log, apperrors.Validation("file field is required"))
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	contentType := header.Header.Get("Content-Type")
 	if contentType == "" {
@@ -332,6 +332,50 @@ func (h *PaymentIntentHandler) ListMyAll(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// resubmitUpload holds metadata for a comprobante file uploaded during resubmission.
+type resubmitUpload struct {
+	key         string
+	contentType string
+	size        int
+}
+
+// uploadResubmitFile reads the optional "file" form field, stores it under the
+// resubmit key, and returns its metadata. Returns (nil, nil) when no file was
+// supplied.
+func (h *PaymentIntentHandler) uploadResubmitFile(r *http.Request, intent *domain.PaymentIntent) (*resubmitUpload, error) {
+	file, header, fileErr := r.FormFile("file")
+	if fileErr != nil {
+		return nil, nil //nolint:nilerr // no file is allowed
+	}
+	defer func() { _ = file.Close() }()
+
+	if h.fileStore == nil {
+		return nil, apperrors.Internal(fmt.Errorf("file store not configured"))
+	}
+
+	ct := header.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+
+	full, err := io.ReadAll(io.LimitReader(file, h.maxUpload+1))
+	if err != nil {
+		return nil, apperrors.Internal(fmt.Errorf("read file: %w", err))
+	}
+	if int64(len(full)) > h.maxUpload {
+		return nil, apperrors.RequestBodyTooLarge()
+	}
+
+	// Key format: comprobantes/voucher_{userID}_{provider}_{intentCreatedAt}_review
+	ts := intent.CreatedAt.UTC().Format("2006-01-02T15-04-05")
+	storageKey := fmt.Sprintf("comprobantes/voucher_%d_%s_%s_review", intent.UserID, intent.Provider, ts)
+	if err := h.fileStore.Put(r.Context(), storageKey, ct, bytes.NewReader(full), int64(len(full))); err != nil {
+		return nil, apperrors.Internal(fmt.Errorf("store comprobante: %w", err))
+	}
+
+	return &resubmitUpload{key: storageKey, contentType: ct, size: len(full)}, nil
+}
+
 // ResubmitForReview handles POST /api/v1/payment-intents/{token}/resubmit.
 // Accepts multipart/form-data with a required "notes" field and an optional "file".
 // Transitions a rejected intent to under_review so the admin can re-evaluate.
@@ -360,8 +404,7 @@ func (h *PaymentIntentHandler) ResubmitForReview(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// Look up the intent (which may be rejected or under_review) to obtain the
-	// provider and creation timestamp needed for the storage key.
+	// Look up the intent to obtain provider and creation timestamp for the storage key.
 	allIntents, err := h.svc.ListMyAll(r.Context(), caller.ID)
 	if err != nil {
 		writeError(w, r, h.log, err)
@@ -379,48 +422,21 @@ func (h *PaymentIntentHandler) ResubmitForReview(w http.ResponseWriter, r *http.
 		return
 	}
 
+	upload, err := h.uploadResubmitFile(r, resubmitIntent)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
 	var (
 		comprobanteKey  *string
 		comprobanteType *string
 		comprobanteSize *int
 	)
-
-	file, header, fileErr := r.FormFile("file")
-	if fileErr == nil {
-		defer file.Close()
-
-		if h.fileStore == nil {
-			writeError(w, r, h.log, apperrors.Internal(fmt.Errorf("file store not configured")))
-			return
-		}
-
-		ct := header.Header.Get("Content-Type")
-		if ct == "" {
-			ct = "application/octet-stream"
-		}
-
-		full, err := io.ReadAll(io.LimitReader(file, h.maxUpload+1))
-		if err != nil {
-			writeError(w, r, h.log, apperrors.Internal(fmt.Errorf("read file: %w", err)))
-			return
-		}
-		if int64(len(full)) > h.maxUpload {
-			writeError(w, r, h.log, apperrors.RequestBodyTooLarge())
-			return
-		}
-
-		// Key format: comprobantes/voucher_{userID}_{provider}_{intentCreatedAt}_review
-		// The _review suffix distinguishes re-submissions from the initial upload.
-		ts := resubmitIntent.CreatedAt.UTC().Format("2006-01-02T15-04-05")
-		storageKey := fmt.Sprintf("comprobantes/voucher_%d_%s_%s_review", resubmitIntent.UserID, resubmitIntent.Provider, ts)
-		if err := h.fileStore.Put(r.Context(), storageKey, ct, bytes.NewReader(full), int64(len(full))); err != nil {
-			writeError(w, r, h.log, apperrors.Internal(fmt.Errorf("store comprobante: %w", err)))
-			return
-		}
-
-		sz := len(full)
-		comprobanteKey = &storageKey
-		comprobanteType = &ct
+	if upload != nil {
+		comprobanteKey = &upload.key
+		comprobanteType = &upload.contentType
+		sz := upload.size
 		comprobanteSize = &sz
 	}
 

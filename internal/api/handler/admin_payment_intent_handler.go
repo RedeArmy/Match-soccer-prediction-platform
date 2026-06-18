@@ -275,7 +275,7 @@ func (h *AdminPaymentIntentHandler) DownloadComprobante(w http.ResponseWriter, r
 		writeError(w, r, h.log, apperrors.Internal(err))
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	if ct != "" {
 		w.Header().Set("Content-Type", ct)
