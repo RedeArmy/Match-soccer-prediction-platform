@@ -212,6 +212,11 @@ func (h *PaymentIntentHandler) UploadComprobante(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Cap total body size so the multipart parser cannot exhaust memory.
+	// The ceiling includes per-field overhead (boundary + MIME headers ≈ 512 B)
+	// on top of the allowed file size; the precise per-file limit is enforced
+	// later via io.LimitReader so that oversized payloads yield a clean 413.
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload+(32<<10))
 	if err := r.ParseMultipartForm(4 << 20); err != nil {
 		writeError(w, r, h.log, apperrors.Validation("could not parse multipart form"))
 		return
@@ -391,6 +396,7 @@ func (h *PaymentIntentHandler) ResubmitForReview(w http.ResponseWriter, r *http.
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload+(32<<10))
 	if err := r.ParseMultipartForm(4 << 20); err != nil {
 		writeError(w, r, h.log, apperrors.Validation("could not parse form"))
 		return
