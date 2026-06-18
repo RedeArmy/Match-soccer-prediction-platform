@@ -493,3 +493,54 @@ func TestPaymentWebhookHandler_RegisterMetrics_RecordsDurationOnSuccess(t *testi
 		t.Error("expected 'payment.processing.duration' histogram after request")
 	}
 }
+
+// ── PayPal notifier integration ───────────────────────────────────────────────
+
+func webhookPayPalRouterWithNotifier(t *testing.T, svc *stubWebhookPaymentSvc, notif *stubNotifier) http.Handler {
+	t.Helper()
+	h := handler.NewPaymentWebhookHandler(svc, zaptest.NewLogger(t))
+	h.SetNotifier(notif)
+	mux := http.NewServeMux()
+	mux.Handle("POST /webhooks/paypal", stampVerifiedBody(http.HandlerFunc(h.HandlePayPal)))
+	return mux
+}
+
+func TestWebhookHandler_PayPal_WithNotifier_NotifiesOnServiceError(t *testing.T) {
+	notif := &stubNotifier{}
+	router := webhookPayPalRouterWithNotifier(t, &stubWebhookPaymentSvc{err: errors.New("db error")}, notif)
+	payload := map[string]any{
+		"event_type": "PAYMENT.CAPTURE.COMPLETED",
+		"resource": map[string]any{
+			"id":        "CAP_NOTIF_ERR",
+			"custom_id": testIntentToken,
+			"amount":    map[string]any{"value": "25.00", "currency_code": "USD"},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/paypal", payload)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+	if len(notif.paymentErrors) != 1 {
+		t.Errorf("expected NotifyPaymentError called once for PayPal service error, got %d", len(notif.paymentErrors))
+	}
+}
+
+func TestWebhookHandler_PayPal_WithNotifier_NotifiesOnExpiredIntent(t *testing.T) {
+	notif := &stubNotifier{}
+	router := webhookPayPalRouterWithNotifier(t, &stubWebhookPaymentSvc{err: apperrors.NotFound("intent expired")}, notif)
+	payload := map[string]any{
+		"event_type": "PAYMENT.CAPTURE.COMPLETED",
+		"resource": map[string]any{
+			"id":        "CAP_NOTIF_EXPIRED",
+			"custom_id": testIntentToken,
+			"amount":    map[string]any{"value": "15.00", "currency_code": "USD"},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/paypal", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 for expired intent, got %d", rec.Code)
+	}
+	if len(notif.paymentErrors) != 1 {
+		t.Errorf("expected NotifyPaymentError called once for expired intent, got %d", len(notif.paymentErrors))
+	}
+}

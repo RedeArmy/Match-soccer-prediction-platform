@@ -212,11 +212,11 @@ function GroupTable({
   group,
   rows,
   t,
-}: {
+}: Readonly<{
   group: string;
   rows: TeamRow[];
   t: (k: string) => string;
-}) {
+}>) {
   return (
     <div className="card overflow-hidden">
       {/* Header */}
@@ -293,7 +293,7 @@ function GroupTable({
 
 // ── Legend ────────────────────────────────────────────────────────────────────
 
-function StandingsLegend({ t }: { t: (k: string) => string }) {
+function StandingsLegend({ t }: Readonly<{ t: (k: string) => string }>) {
   return (
     <div className="flex flex-wrap items-center gap-4 text-xs text-text-muted">
       <span className="flex items-center gap-1.5">

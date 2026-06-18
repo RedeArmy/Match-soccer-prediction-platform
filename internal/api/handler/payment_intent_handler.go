@@ -212,7 +212,6 @@ func (h *PaymentIntentHandler) UploadComprobante(w http.ResponseWriter, r *http.
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload)
 	if err := r.ParseMultipartForm(4 << 20); err != nil {
 		writeError(w, r, h.log, apperrors.Validation("could not parse multipart form"))
 		return
@@ -392,7 +391,6 @@ func (h *PaymentIntentHandler) ResubmitForReview(w http.ResponseWriter, r *http.
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload)
 	if err := r.ParseMultipartForm(4 << 20); err != nil {
 		writeError(w, r, h.log, apperrors.Validation("could not parse form"))
 		return

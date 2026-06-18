@@ -274,6 +274,14 @@ func (r *PostgresPaymentIntentRepository) SetComprobante(ctx context.Context, id
 	return nil
 }
 
+// creditLedgerKind returns the ledger entry kind for the payment provider.
+func creditLedgerKind(provider string) domain.BalanceLedgerKind {
+	if provider == "recurrente" {
+		return domain.LedgerKindWebhookRecurrente
+	}
+	return domain.LedgerKindWebhookPayPal
+}
+
 // AdminCreditExpired credits creditAmountCents to the user, transitions the
 // intent to captured, and records the reviewer.
 func (r *PostgresPaymentIntentRepository) AdminCreditExpired(ctx context.Context, id int64, adminID, creditAmountCents int, notes string) (*domain.PaymentIntent, error) {
@@ -310,10 +318,7 @@ func (r *PostgresPaymentIntentRepository) AdminCreditExpired(ctx context.Context
 			return apperrors.Internal(err)
 		}
 
-		kind := domain.LedgerKindWebhookPayPal
-		if existing.Provider == "recurrente" {
-			kind = domain.LedgerKindWebhookRecurrente
-		}
+		kind := creditLedgerKind(existing.Provider)
 		captureRef := fmt.Sprintf("admin-credit-intent-%d", id)
 		if err := insertLedgerTx(ctx, tx, ledgerRow{
 			UserID:       existing.UserID,

@@ -12,17 +12,20 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { PaymentIntentAdminResponse, PaymentIntentStatus } from "@/lib/api-types";
-import { formatDateTime, formatRelative } from "@/lib/utils";
+import { formatAmount, formatDateTime, formatRelative } from "@/lib/utils";
 import { BankTransfersTab } from "@/components/admin/BankTransfersTab";
 import {
   AdminPageHeader,
   AdminModalOverlay,
   AdminPagination,
   AdminContentState,
+  AdminRefreshButton,
   ModalHeader,
   ModalCancelButton,
   ModalErrorLine,
   InfoRow,
+  RejectNotesTextarea,
+  RejectWarningBox,
 } from "@/components/admin/shared";
 
 const PAGE_SIZE = 15;
@@ -60,13 +63,6 @@ function StatusDot({ status }: { readonly status: PaymentIntentStatus }) {
       title={status === "expired" ? "Vencido" : "Pendiente"}
     />
   );
-}
-
-function formatAmount(cents: number, currency: string): string {
-  if (currency === "USD") {
-    return `$${(cents / 100).toFixed(2)} USD`;
-  }
-  return `Q${(cents / 100).toFixed(2)}`;
 }
 
 // ── Credit modal ──────────────────────────────────────────────────────────────
@@ -212,30 +208,14 @@ function RejectIntentModal({
         <InfoRow label="Proveedor" value={item.provider} />
       </div>
 
-      <div className="space-y-1.5">
-        <label
-          htmlFor="reject-intent-notes"
-          className="block text-sm font-medium text-white/70"
-        >
-          Motivo de rechazo <span className="text-red-400">*</span>
-        </label>
-        <textarea
-          id="reject-intent-notes"
-          rows={3}
-          value={notes}
-          onChange={(e) => onNotesChange(e.target.value)}
-          placeholder="Describe el motivo del rechazo..."
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 resize-none focus:outline-none focus:ring-1 focus:ring-red-500/50"
-        />
-      </div>
+      <RejectNotesTextarea
+        id="reject-intent-notes"
+        value={notes}
+        onChange={onNotesChange}
+        placeholder="Describe el motivo del rechazo..."
+      />
 
-      <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-        <XCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
-        <p className="text-red-300 text-xs">
-          El pago será marcado como rechazado. No se acreditará ningún monto al
-          usuario.
-        </p>
-      </div>
+      <RejectWarningBox />
 
       <ModalErrorLine error={error} />
 
@@ -252,6 +232,14 @@ function RejectIntentModal({
       </div>
     </>
   );
+}
+
+function intentStatusLabel(status: PaymentIntentStatus): string {
+  if (status === "captured") return "Acreditado";
+  if (status === "rejected") return "Rechazado";
+  if (status === "expired") return "Vencido";
+  if (status === "under_review") return "En revisión";
+  return "Pendiente";
 }
 
 // ── PaymentIntentsTab ─────────────────────────────────────────────────────────
@@ -359,13 +347,7 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <p className="text-sm text-white/50">{total} pagos en total</p>
-        <button
-          onClick={() => refetch()}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm transition-colors disabled:opacity-50"
-        >
-          Actualizar
-        </button>
+        <AdminRefreshButton onClick={() => refetch()} disabled={isLoading} />
       </div>
 
       <AdminContentState
@@ -420,15 +402,7 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
                         <StatusDot status={item.status} />
                         <div>
                           <span className="text-xs text-white/60 capitalize">
-                            {item.status === "captured"
-                              ? "Acreditado"
-                              : item.status === "rejected"
-                                ? "Rechazado"
-                                : item.status === "expired"
-                                  ? "Vencido"
-                                  : item.status === "under_review"
-                                    ? "En revisión"
-                                    : "Pendiente"}
+                            {intentStatusLabel(item.status)}
                           </span>
                           {item.status === "under_review" && item.user_notes && (
                             <p

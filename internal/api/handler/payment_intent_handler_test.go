@@ -213,8 +213,11 @@ func (s *stubCheckoutCreator) CreateCheckout(_ context.Context, _, _ int, _, _, 
 type stubUploadSvc struct {
 	pending      []*domain.PaymentIntent
 	all          []*domain.PaymentIntent
+	pendingErr   error
+	allErr       error
 	uploadErr    error
 	resubmitResp *domain.PaymentIntent
+	resubmitErr  error
 }
 
 func (s *stubUploadSvc) Create(_ context.Context, _, _ int, _ string) (*domain.PaymentIntent, error) {
@@ -224,15 +227,18 @@ func (s *stubUploadSvc) CreateForRecurrente(_ context.Context, _, _ int, ref, _ 
 	return &domain.PaymentIntent{Token: ref}, nil
 }
 func (s *stubUploadSvc) ListMyPending(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
-	return s.pending, nil
+	return s.pending, s.pendingErr
 }
 func (s *stubUploadSvc) ListMyAll(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
-	return s.all, nil
+	return s.all, s.allErr
 }
 func (s *stubUploadSvc) SetComprobanteByToken(_ context.Context, _, _, _ string, _ int) error {
 	return s.uploadErr
 }
 func (s *stubUploadSvc) ResubmitForReview(_ context.Context, _ int, _ string, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
+	if s.resubmitErr != nil {
+		return nil, s.resubmitErr
+	}
 	if s.resubmitResp != nil {
 		return s.resubmitResp, nil
 	}
@@ -433,5 +439,250 @@ func TestResubmitForReview_NoFile_DoesNotCallFileStore(t *testing.T) {
 	}
 	if fs.capturedKey != "" {
 		t.Errorf("file store should not be called when no file is provided, got key %q", fs.capturedKey)
+	}
+}
+
+// ── ListMy ────────────────────────────────────────────────────────────────────
+
+func listMyRouter(t *testing.T, svc *stubUploadSvc) http.Handler {
+	t.Helper()
+	h := handler.NewPaymentIntentHandler(svc, zaptest.NewLogger(t))
+	r := chi.NewRouter()
+	r.Get("/my", h.ListMy)
+	r.Get("/my/all", h.ListMyAll)
+	return r
+}
+
+func doGet(router http.Handler, path string, user *domain.User) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if user != nil {
+		req = req.WithContext(mw.ContextWithUser(req.Context(), user))
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestListMy_NoAuth_Returns401(t *testing.T) {
+	rec := doGet(listMyRouter(t, &stubUploadSvc{}), "/my", nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestListMy_EmptyList_Returns200(t *testing.T) {
+	rec := doGet(listMyRouter(t, &stubUploadSvc{}), "/my", callerUser)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestListMy_WithPendingIntents_ReturnsList(t *testing.T) {
+	intent := &domain.PaymentIntent{Token: "abc", AmountCents: 1000, Currency: "GTQ", Provider: "paypal"}
+	svc := &stubUploadSvc{pending: []*domain.PaymentIntent{intent}}
+	rec := doGet(listMyRouter(t, svc), "/my", callerUser)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "abc") {
+		t.Errorf("expected token in response, got %s", rec.Body.String())
+	}
+}
+
+func TestListMy_ServiceError_Returns500(t *testing.T) {
+	svc := &stubUploadSvc{pendingErr: errors.New("db down")}
+	rec := doGet(listMyRouter(t, svc), "/my", callerUser)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+// ── ListMyAll ─────────────────────────────────────────────────────────────────
+
+func TestListMyAll_NoAuth_Returns401(t *testing.T) {
+	rec := doGet(listMyRouter(t, &stubUploadSvc{}), "/my/all", nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestListMyAll_EmptyList_Returns200(t *testing.T) {
+	rec := doGet(listMyRouter(t, &stubUploadSvc{}), "/my/all", callerUser)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestListMyAll_WithIntents_ReturnsList(t *testing.T) {
+	intent := &domain.PaymentIntent{Token: "xyz", AmountCents: 2000, Currency: "GTQ", Provider: "recurrente"}
+	svc := &stubUploadSvc{all: []*domain.PaymentIntent{intent}}
+	rec := doGet(listMyRouter(t, svc), "/my/all", callerUser)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "xyz") {
+		t.Errorf("expected token in response, got %s", rec.Body.String())
+	}
+}
+
+func TestListMyAll_ServiceError_Returns500(t *testing.T) {
+	svc := &stubUploadSvc{allErr: errors.New("timeout")}
+	rec := doGet(listMyRouter(t, svc), "/my/all", callerUser)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+// ── UploadComprobante – additional error paths ────────────────────────────────
+
+func TestUploadComprobante_NoAuth_Returns401(t *testing.T) {
+	router := uploadRouter(t, &stubUploadSvc{}, &stubCapturingFileStore{})
+	buf, ct := buildMultipart(t, "file", "r.jpg", "data")
+	rec := doUpload(router, "tok", "/comprobante", buf, ct, nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestUploadComprobante_FileStoreNil_Returns500(t *testing.T) {
+	h := handler.NewPaymentIntentHandler(&stubUploadSvc{}, zaptest.NewLogger(t))
+	// intentionally do NOT call h.WithFileStore → fileStore remains nil
+	r := chi.NewRouter()
+	r.Post("/{token}/comprobante", h.UploadComprobante)
+	buf, ct := buildMultipart(t, "file", "r.jpg", "data")
+	rec := doUpload(r, "tok", "/comprobante", buf, ct, callerUser)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestUploadComprobante_MissingFileField_Returns422(t *testing.T) {
+	router := uploadRouter(t, &stubUploadSvc{}, &stubCapturingFileStore{})
+	// send a multipart body with a text field, no "file" field
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("other", "value")
+	w.Close()
+	rec := doUpload(router, "tok", "/comprobante", &buf, w.FormDataContentType(), callerUser)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d", rec.Code)
+	}
+}
+
+func TestUploadComprobante_FileSizeExceedsLimit_Returns413(t *testing.T) {
+	h := handler.NewPaymentIntentHandler(&stubUploadSvc{}, zaptest.NewLogger(t))
+	h.WithFileStore(&stubCapturingFileStore{}, 3) // 3-byte limit
+	r := chi.NewRouter()
+	r.Post("/{token}/comprobante", h.UploadComprobante)
+	buf, ct := buildMultipart(t, "file", "big.jpg", "this-is-more-than-3-bytes")
+	rec := doUpload(r, "tok", "/comprobante", buf, ct, callerUser)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413, got %d", rec.Code)
+	}
+}
+
+func TestUploadComprobante_FileStorePutError_Returns500(t *testing.T) {
+	intent := &domain.PaymentIntent{
+		ID: 10, Token: "putfail", UserID: 7, Provider: "paypal",
+		Status: domain.PaymentIntentPending, CreatedAt: fixedTime,
+	}
+	svc := &stubUploadSvc{pending: []*domain.PaymentIntent{intent}}
+	fs := &stubCapturingFileStore{putErr: errors.New("storage unavailable")}
+	router := uploadRouter(t, svc, fs)
+	buf, ct := buildMultipart(t, "file", "r.jpg", "data")
+	rec := doUpload(router, "putfail", "/comprobante", buf, ct, callerUser)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestUploadComprobante_SetComprobanteError_Returns500(t *testing.T) {
+	intent := &domain.PaymentIntent{
+		ID: 11, Token: "setfail", UserID: 7, Provider: "paypal",
+		Status: domain.PaymentIntentPending, CreatedAt: fixedTime,
+	}
+	svc := &stubUploadSvc{pending: []*domain.PaymentIntent{intent}, uploadErr: errors.New("db write failed")}
+	router := uploadRouter(t, svc, &stubCapturingFileStore{})
+	buf, ct := buildMultipart(t, "file", "r.jpg", "data")
+	rec := doUpload(router, "setfail", "/comprobante", buf, ct, callerUser)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+// ── ResubmitForReview – additional error paths ────────────────────────────────
+
+func TestResubmitForReview_NoAuth_Returns401(t *testing.T) {
+	router := uploadRouter(t, &stubUploadSvc{}, &stubCapturingFileStore{})
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("notes", "test")
+	w.Close()
+	rec := doUpload(router, "tok", "/resubmit", &buf, w.FormDataContentType(), nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestResubmitForReview_EmptyNotes_Returns422(t *testing.T) {
+	intent := &domain.PaymentIntent{ID: 20, Token: "t20", UserID: 7, Provider: "paypal", CreatedAt: fixedTime}
+	svc := &stubUploadSvc{all: []*domain.PaymentIntent{intent}}
+	router := uploadRouter(t, svc, &stubCapturingFileStore{})
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	// no "notes" field or empty
+	w.Close()
+	rec := doUpload(router, "t20", "/resubmit", &buf, w.FormDataContentType(), callerUser)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d", rec.Code)
+	}
+}
+
+func TestResubmitForReview_ListMyAllError_Returns500(t *testing.T) {
+	svc := &stubUploadSvc{allErr: errors.New("db fail")}
+	router := uploadRouter(t, svc, &stubCapturingFileStore{})
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("notes", "retry")
+	w.Close()
+	rec := doUpload(router, "tok", "/resubmit", &buf, w.FormDataContentType(), callerUser)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestResubmitForReview_ServiceError_WithoutFile_Returns500(t *testing.T) {
+	intent := &domain.PaymentIntent{ID: 21, Token: "t21", UserID: 7, Provider: "paypal", CreatedAt: fixedTime}
+	svc := &stubUploadSvc{
+		all:         []*domain.PaymentIntent{intent},
+		resubmitErr: errors.New("transition not allowed"),
+	}
+	router := uploadRouter(t, svc, &stubCapturingFileStore{})
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("notes", "trying again")
+	w.Close()
+	rec := doUpload(router, "t21", "/resubmit", &buf, w.FormDataContentType(), callerUser)
+	if rec.Code != http.StatusInternalServerError && rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 500 or 422, got %d", rec.Code)
+	}
+}
+
+func TestResubmitForReview_UploadFileStorePutError_Returns500(t *testing.T) {
+	intent := &domain.PaymentIntent{ID: 22, Token: "t22", UserID: 7, Provider: "paypal", CreatedAt: fixedTime}
+	svc := &stubUploadSvc{all: []*domain.PaymentIntent{intent}}
+	fs := &stubCapturingFileStore{putErr: errors.New("put failed")}
+	router := uploadRouter(t, svc, fs)
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("notes", "trying again with proof")
+	fw, _ := mw.CreateFormFile("file", "r.jpg")
+	_, _ = io.WriteString(fw, "data")
+	mw.Close()
+
+	rec := doUpload(router, "t22", "/resubmit", &buf, mw.FormDataContentType(), callerUser)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
 	}
 }

@@ -205,3 +205,8 @@ export type AllowedUploadType = (typeof ALLOWED_UPLOAD_TYPES)[number];
 export function isAllowedUploadType(mime: string): mime is AllowedUploadType {
   return (ALLOWED_UPLOAD_TYPES as readonly string[]).includes(mime);
 }
+
+export function formatAmount(cents: number, currency: string): string {
+  if (currency === "USD") return `$${(cents / 100).toFixed(2)} USD`;
+  return `Q${(cents / 100).toFixed(2)}`;
+}

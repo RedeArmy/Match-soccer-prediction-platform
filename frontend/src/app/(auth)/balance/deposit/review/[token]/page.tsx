@@ -1,21 +1,16 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { formatAmount } from "@/lib/utils";
 import type { PaymentIntentSummary } from "@/lib/api-types";
-import { ArrowLeft, CheckCircle, ImageIcon, Send } from "lucide-react";
-
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
-
-function formatAmount(cents: number, currency: string): string {
-  if (currency === "USD") return `$${(cents / 100).toFixed(2)} USD`;
-  return `Q${(cents / 100).toFixed(2)}`;
-}
+import { ArrowLeft, CheckCircle, Send } from "lucide-react";
+import { FileDropZone } from "@/components/deposit/FileDropZone";
 
 export default function ReviewRequestPage() {
   const params = useParams<{ token: string }>();
@@ -30,7 +25,6 @@ export default function ReviewRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: intents = [], isLoading } = useQuery<PaymentIntentSummary[]>({
     queryKey: ["payment-intents", "my-all"],
@@ -41,24 +35,6 @@ export default function ReviewRequestPage() {
   });
 
   const intent = intents.find((i) => i.token === intentToken);
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.size > MAX_FILE_BYTES) {
-      setError(t("review.fileTooLarge"));
-      return;
-    }
-    setFile(f);
-    setError("");
-    if (f.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = () => setPreview(reader.result as string);
-      reader.readAsDataURL(f);
-    } else {
-      setPreview(null);
-    }
-  }
 
   async function handleSubmit() {
     if (!notes.trim()) {
@@ -90,7 +66,7 @@ export default function ReviewRequestPage() {
     );
   }
 
-  if (!intent || intent.status !== "rejected") {
+  if (intent?.status !== "rejected") {
     return (
       <div className="space-y-4 text-center py-16">
         <p className="text-text-muted">{t("review.notFound")}</p>
@@ -192,53 +168,20 @@ export default function ReviewRequestPage() {
             </span>
           </label>
 
-          <div
-            className="border-2 border-dashed border-white/20 rounded-xl p-5 text-center cursor-pointer hover:border-gold-400/50 hover:bg-white/[0.02] transition-colors"
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const f = e.dataTransfer.files?.[0];
-              if (f) {
-                const synth = {
-                  target: { files: [f] },
-                } as unknown as React.ChangeEvent<HTMLInputElement>;
-                handleFileChange(synth);
-              }
+          <FileDropZone
+            file={file}
+            preview={preview}
+            onFileSelect={(f, p) => {
+              setFile(f);
+              setPreview(p);
+              setError("");
             }}
-          >
-            {preview ? (
-              <img
-                src={preview}
-                alt="Vista previa"
-                className="max-h-40 mx-auto rounded-lg object-contain"
-              />
-            ) : (
-              <div className="flex flex-col items-center gap-2 text-text-muted">
-                <ImageIcon className="w-8 h-8 opacity-40" />
-                <p className="text-sm text-text-secondary">
-                  {t("review.clickToSelect")}
-                </p>
-                <p className="text-xs opacity-60">{t("review.fileTypes")}</p>
-              </div>
-            )}
-          </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,application/pdf"
-            className="hidden"
-            onChange={handleFileChange}
+            onError={setError}
+            tooLargeMsg={t("review.fileTooLarge")}
+            clickLabel={t("review.clickToSelect")}
+            typesLabel={t("review.fileTypes")}
+            filePrefix={t("review.filePrefix")}
           />
-
-          {file && (
-            <p className="text-xs text-text-muted">
-              {t("review.filePrefix")}{" "}
-              <span className="text-text-secondary">{file.name}</span> (
-              {(file.size / 1024).toFixed(0)} KB)
-            </p>
-          )}
         </div>
 
         {error && (

@@ -343,10 +343,7 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 				zap.String("intent_token", intentToken),
 				zap.Error(err),
 			)
-			if h.notifier != nil {
-				h.notifier.NotifyPaymentError(r.Context(), "paypal", "intent_expired",
-					"", strconv.Itoa(webhookAmountCents))
-			}
+			h.notifyPaymentError(r.Context(), "paypal", "intent_expired", "", webhookAmountCents)
 			h.recordPayment(r.Context(), "paypal", "expired", time.Since(start))
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -356,10 +353,7 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 			zap.String("intent_token", intentToken),
 			zap.Error(err),
 		)
-		if h.notifier != nil {
-			h.notifier.NotifyPaymentError(r.Context(), "paypal", err.Error(),
-				"", strconv.Itoa(webhookAmountCents))
-		}
+		h.notifyPaymentError(r.Context(), "paypal", err.Error(), "", webhookAmountCents)
 		h.recordPayment(r.Context(), "paypal", "failed", time.Since(start))
 		writeError(w, r, h.log, err)
 		return
@@ -370,6 +364,13 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 		h.notifier.NotifyBalanceCredited(r.Context(), 0, webhookAmountCents, "paypal")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// notifyPaymentError calls NotifyPaymentError on the notifier if one is wired.
+func (h *PaymentWebhookHandler) notifyPaymentError(ctx context.Context, provider, reason, token string, amountCents int) {
+	if h.notifier != nil {
+		h.notifier.NotifyPaymentError(ctx, provider, reason, token, strconv.Itoa(amountCents))
+	}
 }
 
 func (h *PaymentWebhookHandler) recordPayment(ctx context.Context, provider, status string, elapsed time.Duration) {

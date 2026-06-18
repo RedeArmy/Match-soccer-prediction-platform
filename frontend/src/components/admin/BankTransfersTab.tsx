@@ -17,11 +17,14 @@ import {
   AdminModalOverlay,
   AdminPagination,
   AdminContentState,
+  AdminRefreshButton,
   AdminTabBar,
   ModalHeader,
   ModalCancelButton,
   ModalErrorLine,
   InfoRow,
+  RejectNotesTextarea,
+  RejectWarningBox,
 } from "@/components/admin/shared";
 
 const PAGE_SIZE = 15;
@@ -35,12 +38,26 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "rejected", label: "Rechazados" },
 ];
 
-function centsToQ(cents: number): string {
-  return formatGTQ(cents);
-}
-
 function proofDownloadUrl(id: number): string {
   return `/api/v1/admin/bank-transfers/${id}/download`;
+}
+
+function ComprobanteInfoRow({ id }: { readonly id: number }) {
+  return (
+    <InfoRow
+      label="Comprobante"
+      value={
+        <a
+          href={proofDownloadUrl(id)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors text-xs"
+        >
+          Ver archivo <ExternalLink className="h-3 w-3" />
+        </a>
+      }
+    />
+  );
 }
 
 // ── Approve modal ─────────────────────────────────────────────────────────────
@@ -91,7 +108,7 @@ function ApproveModal({
         <InfoRow
           label="Monto declarado"
           value={
-            <span className="font-semibold">{centsToQ(item.amount_cents)}</span>
+            <span className="font-semibold">{formatGTQ(item.amount_cents)}</span>
           }
         />
         <InfoRow label="Moneda" value={item.currency} />
@@ -103,19 +120,7 @@ function ApproveModal({
             </span>
           }
         />
-        <InfoRow
-          label="Comprobante"
-          value={
-            <a
-              href={proofDownloadUrl(item.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors text-xs"
-            >
-              Ver archivo <ExternalLink className="h-3 w-3" />
-            </a>
-          }
-        />
+        <ComprobanteInfoRow id={item.id} />
       </div>
 
       <div className="space-y-1.5">
@@ -150,8 +155,8 @@ function ApproveModal({
           <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" />
             <p className="text-amber-300 text-xs">
-              El monto a acreditar ({centsToQ(overrideCents)}) difiere del monto
-              declarado por el usuario ({centsToQ(item.amount_cents)}).
+              El monto a acreditar ({formatGTQ(overrideCents)}) difiere del monto
+              declarado por el usuario ({formatGTQ(item.amount_cents)}).
             </p>
           </div>
         )}
@@ -180,8 +185,8 @@ function ApproveModal({
           Se acreditará{" "}
           <strong>
             {hasOverride && overrideValid && overrideCents
-              ? centsToQ(overrideCents)
-              : centsToQ(item.amount_cents)}
+              ? formatGTQ(overrideCents)
+              : formatGTQ(item.amount_cents)}
           </strong>{" "}
           al balance del usuario. Esta acción es irreversible.
         </p>
@@ -237,7 +242,7 @@ function RejectModal({
           label="Usuario"
           value={<span className="font-mono text-xs">#{item.user_id}</span>}
         />
-        <InfoRow label="Monto" value={centsToQ(item.amount_cents)} />
+        <InfoRow label="Monto" value={formatGTQ(item.amount_cents)} />
         <InfoRow
           label="Enviado"
           value={
@@ -246,45 +251,17 @@ function RejectModal({
             </span>
           }
         />
-        <InfoRow
-          label="Comprobante"
-          value={
-            <a
-              href={proofDownloadUrl(item.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors text-xs"
-            >
-              Ver archivo <ExternalLink className="h-3 w-3" />
-            </a>
-          }
-        />
+        <ComprobanteInfoRow id={item.id} />
       </div>
 
-      <div className="space-y-1.5">
-        <label
-          htmlFor="reject-notes"
-          className="block text-sm font-medium text-white/70"
-        >
-          Motivo de rechazo <span className="text-red-400">*</span>
-        </label>
-        <textarea
-          id="reject-notes"
-          rows={3}
-          value={notes}
-          onChange={(e) => onNotesChange(e.target.value)}
-          placeholder="Describe el motivo del rechazo (comprobante ilegible, monto incorrecto, etc.)..."
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 resize-none focus:outline-none focus:ring-1 focus:ring-red-500/50"
-        />
-      </div>
+      <RejectNotesTextarea
+        id="reject-notes"
+        value={notes}
+        onChange={onNotesChange}
+        placeholder="Describe el motivo del rechazo (comprobante ilegible, monto incorrecto, etc.)..."
+      />
 
-      <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-        <XCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
-        <p className="text-red-300 text-xs">
-          El pago será marcado como rechazado. No se acreditará ningún monto al
-          usuario.
-        </p>
-      </div>
+      <RejectWarningBox />
 
       <ModalErrorLine error={error} />
 
@@ -463,13 +440,7 @@ export function BankTransfersTab() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <p className="text-sm text-white/50">{transfers.length} comprobantes en total</p>
-        <button
-          onClick={() => refetch()}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm transition-colors disabled:opacity-50"
-        >
-          Actualizar
-        </button>
+        <AdminRefreshButton onClick={() => refetch()} disabled={isLoading} />
       </div>
 
       <AdminTabBar
@@ -526,7 +497,7 @@ export function BankTransfersTab() {
                       </td>
                       <td className="px-4 py-3 tabular-nums">
                         <div className="font-semibold text-white">
-                          {centsToQ(item.amount_cents)}
+                          {formatGTQ(item.amount_cents)}
                         </div>
                         <div className="text-white/30 text-xs">{item.currency}</div>
                       </td>
@@ -539,11 +510,11 @@ export function BankTransfersTab() {
                                 hasOverride ? "text-amber-400" : "text-emerald-400",
                               )}
                             >
-                              {centsToQ(effective)}
+                              {formatGTQ(effective)}
                             </div>
                             {hasOverride && (
                               <div className="text-white/30 text-xs">
-                                declarado: {centsToQ(item.amount_cents)}
+                                declarado: {formatGTQ(item.amount_cents)}
                               </div>
                             )}
                           </div>

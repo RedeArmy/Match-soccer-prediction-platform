@@ -142,7 +142,7 @@ type adminCreditIntentRequest struct {
 func (h *AdminPaymentIntentHandler) Credit(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid intent id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidIntentID))
 		return
 	}
 
@@ -195,7 +195,7 @@ type adminRejectIntentRequest struct {
 func (h *AdminPaymentIntentHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid intent id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidIntentID))
 		return
 	}
 
@@ -229,7 +229,7 @@ func (h *AdminPaymentIntentHandler) Reject(w http.ResponseWriter, r *http.Reques
 func (h *AdminPaymentIntentHandler) RequestComprobante(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid intent id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidIntentID))
 		return
 	}
 
@@ -251,7 +251,7 @@ func (h *AdminPaymentIntentHandler) RequestComprobante(w http.ResponseWriter, r 
 func (h *AdminPaymentIntentHandler) DownloadComprobante(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, r, h.log, apperrors.Validation("invalid intent id"))
+		writeError(w, r, h.log, apperrors.Validation(msgInvalidIntentID))
 		return
 	}
 
