@@ -26,8 +26,8 @@ const navItems = [
   { href: "/admin/tournaments", label: "Torneos", icon: Trophy },
   { href: "/admin/matches", label: "Partidos", icon: Swords },
   {
-    href: "/admin/bank-transfers",
-    label: "Transferencias",
+    href: "/admin/payments",
+    label: "Pagos",
     icon: ArrowLeftRight,
   },
   { href: "/admin/withdrawals", label: "Retiros", icon: Wallet },

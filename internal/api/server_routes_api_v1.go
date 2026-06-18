@@ -164,6 +164,12 @@ func (s *Server) registerPaymentRoutes(r chi.Router, d apiV1Deps) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
 		r.Use(middleware.ResolveUser(d.repos.user, s.log))
 		r.With(d.idem).Post("/", d.h.paymentIntent.Create)
+		r.Get("/my", d.h.paymentIntent.ListMy)
+		r.Get("/my/all", d.h.paymentIntent.ListMyAll)
+		// POST /{token}/comprobante accepts a multipart upload.
+		r.With(middleware.RequestBodyLimit(d.uploadSizeLimit)).Post("/{token}/comprobante", d.h.paymentIntent.UploadComprobante)
+		// POST /{token}/resubmit accepts multipart: notes (required) + file (optional).
+		r.With(middleware.RequestBodyLimit(d.uploadSizeLimit)).Post("/{token}/resubmit", d.h.paymentIntent.ResubmitForReview)
 	})
 
 	r.Route("/bank-transfers", func(r chi.Router) {
@@ -276,6 +282,13 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 		r.Get("/bank-transfers/{id}/download", d.h.bankTransfer.AdminDownloadProof)
 		r.Post("/bank-transfers/{id}/approve", d.h.bankTransfer.AdminApprove)
 		r.Post("/bank-transfers/{id}/reject", d.h.bankTransfer.AdminReject)
+
+		// PayPal / Recurrente payment intents
+		r.Get("/payment-intents", d.h.adminPaymentIntent.List)
+		r.Post("/payment-intents/{id}/credit", d.h.adminPaymentIntent.Credit)
+		r.Post("/payment-intents/{id}/reject", d.h.adminPaymentIntent.Reject)
+		r.Post("/payment-intents/{id}/request-comprobante", d.h.adminPaymentIntent.RequestComprobante)
+		r.Get("/payment-intents/{id}/comprobante", d.h.adminPaymentIntent.DownloadComprobante)
 
 		// Withdrawals
 		r.Get("/withdrawals", d.h.withdrawal.AdminListAll)

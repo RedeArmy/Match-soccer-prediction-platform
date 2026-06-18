@@ -71,8 +71,36 @@ func (r *webhookIntentRepoStub) Create(_ context.Context, intent *domain.Payment
 func (r *webhookIntentRepoStub) GetByToken(_ context.Context, _ string) (*domain.PaymentIntent, error) {
 	return r.intent, nil
 }
+func (r *webhookIntentRepoStub) GetByID(_ context.Context, _ int64) (*domain.PaymentIntent, error) {
+	return r.intent, nil
+}
 func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, _, _ string, _ int) (*domain.PaymentIntent, error) {
 	return r.intent, r.captureErr
+}
+func (r *webhookIntentRepoStub) MarkCapturedByToken(_ context.Context, _ string) error { return nil }
+func (r *webhookIntentRepoStub) SetComprobante(_ context.Context, _ int64, _, _ string, _ int) error {
+	return nil
+}
+func (r *webhookIntentRepoStub) AdminCreditExpired(_ context.Context, _ int64, _, _ int, _ string) (*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) AdminReject(_ context.Context, _ int64, _ int, _ string) (*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) ListForAdmin(_ context.Context, _ repository.PaymentIntentFilters, _ repository.Pagination) ([]*domain.PaymentIntent, int, error) {
+	return nil, 0, nil
+}
+func (r *webhookIntentRepoStub) ListByUserPending(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) ListAllByUser(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) RequestComprobante(_ context.Context, _ int64, _ int) (*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) SubmitForReview(_ context.Context, _ int64, _ int, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
+	return nil, nil
 }
 
 func newWebhookPaymentSvc(ledger *webhookLedgerRepoStub, intent *webhookIntentRepoStub) WebhookPaymentService {

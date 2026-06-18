@@ -23,6 +23,10 @@ import type {
   AdminBankResponse,
   BankTransferResponse,
   PaymentIntentResponse,
+  PaymentIntentSummary,
+  PaymentIntentAdminResponse,
+  PagedWithTotal,
+  PageMeta,
   PayPalOrderResponse,
   WithdrawalResponse,
   WithdrawalLimits,
@@ -396,6 +400,91 @@ class APIClient {
 
   getMyBankTransfers(token: string): Promise<BankTransferResponse[]> {
     return this.request("/api/v1/bank-transfers", {}, token);
+  }
+
+  listMyPendingIntents(token: string): Promise<PaymentIntentSummary[]> {
+    return this.request("/api/v1/payment-intents/my", {}, token);
+  }
+
+  listMyIntents(token: string): Promise<PaymentIntentSummary[]> {
+    return this.request("/api/v1/payment-intents/my/all", {}, token);
+  }
+
+  uploadComprobante(
+    token: string,
+    intentToken: string,
+    formData: FormData,
+  ): Promise<void> {
+    return this.requestFormData(
+      `/api/v1/payment-intents/${encodeURIComponent(intentToken)}/comprobante`,
+      formData,
+      token,
+    );
+  }
+
+  resubmitForReview(
+    token: string,
+    intentToken: string,
+    formData: FormData,
+  ): Promise<PaymentIntentSummary> {
+    return this.requestFormData(
+      `/api/v1/payment-intents/${encodeURIComponent(intentToken)}/resubmit`,
+      formData,
+      token,
+    );
+  }
+
+  adminRequestComprobante(
+    token: string,
+    id: number,
+  ): Promise<PaymentIntentAdminResponse> {
+    return this.request(
+      `/api/v1/admin/payment-intents/${id}/request-comprobante`,
+      { method: "POST" },
+      token,
+    );
+  }
+
+  // ── Admin: payment intents ─────────────────────────────────────────────────
+
+  adminListPaymentIntents(
+    token: string,
+    params?: { provider?: string; status?: string; page?: number; limit?: number },
+  ): Promise<PagedWithTotal<PaymentIntentAdminResponse> & { page: PageMeta }> {
+    const q = new URLSearchParams();
+    if (params?.provider) q.set("provider", params.provider);
+    if (params?.status) q.set("status", params.status);
+    if (params?.page) q.set("page", String(params.page));
+    if (params?.limit) q.set("limit", String(params.limit ?? 15));
+    return this.request(`/api/v1/admin/payment-intents?${q}`, {}, token);
+  }
+
+  adminCreditPaymentIntent(
+    token: string,
+    id: number,
+    notes?: string,
+  ): Promise<PaymentIntentAdminResponse> {
+    return this.request(
+      `/api/v1/admin/payment-intents/${id}/credit`,
+      { method: "POST", body: JSON.stringify({ notes: notes ?? "" }) },
+      token,
+    );
+  }
+
+  adminRejectPaymentIntent(
+    token: string,
+    id: number,
+    notes: string,
+  ): Promise<PaymentIntentAdminResponse> {
+    return this.request(
+      `/api/v1/admin/payment-intents/${id}/reject`,
+      { method: "POST", body: JSON.stringify({ notes }) },
+      token,
+    );
+  }
+
+  adminPaymentIntentComprobanteUrl(id: number): string {
+    return `/api/v1/admin/payment-intents/${id}/comprobante`;
   }
 
   // ── Withdrawals ───────────────────────────────────────────────────────────

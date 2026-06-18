@@ -1,14 +1,18 @@
 package handler_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
@@ -170,6 +174,27 @@ type stubPaymentIntentSvc struct {
 func (s *stubPaymentIntentSvc) Create(_ context.Context, _, _ int, _ string) (*domain.PaymentIntent, error) {
 	return s.intent, s.err
 }
+func (s *stubPaymentIntentSvc) CreateForRecurrente(_ context.Context, _, _ int, ref, _ string) (*domain.PaymentIntent, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.intent != nil {
+		return s.intent, nil
+	}
+	return &domain.PaymentIntent{Token: ref, AmountCents: 100, Currency: "GTQ", ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+func (s *stubPaymentIntentSvc) ListMyPending(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (s *stubPaymentIntentSvc) ListMyAll(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (s *stubPaymentIntentSvc) SetComprobanteByToken(_ context.Context, _, _, _ string, _ int) error {
+	return nil
+}
+func (s *stubPaymentIntentSvc) ResubmitForReview(_ context.Context, _ int, _ string, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
+	return nil, nil
+}
 
 // ── stubCheckoutCreator ───────────────────────────────────────────────────────
 
@@ -180,4 +205,233 @@ type stubCheckoutCreator struct {
 
 func (s *stubCheckoutCreator) CreateCheckout(_ context.Context, _, _ int, _, _, _, _ string) (string, error) {
 	return s.url, s.err
+}
+
+// ── stubUploadSvc ─────────────────────────────────────────────────────────────
+// Extends stubPaymentIntentSvc with configurable ListMyPending / ListMyAll returns.
+
+type stubUploadSvc struct {
+	pending      []*domain.PaymentIntent
+	all          []*domain.PaymentIntent
+	uploadErr    error
+	resubmitResp *domain.PaymentIntent
+}
+
+func (s *stubUploadSvc) Create(_ context.Context, _, _ int, _ string) (*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (s *stubUploadSvc) CreateForRecurrente(_ context.Context, _, _ int, ref, _ string) (*domain.PaymentIntent, error) {
+	return &domain.PaymentIntent{Token: ref}, nil
+}
+func (s *stubUploadSvc) ListMyPending(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
+	return s.pending, nil
+}
+func (s *stubUploadSvc) ListMyAll(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
+	return s.all, nil
+}
+func (s *stubUploadSvc) SetComprobanteByToken(_ context.Context, _, _, _ string, _ int) error {
+	return s.uploadErr
+}
+func (s *stubUploadSvc) ResubmitForReview(_ context.Context, _ int, _ string, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
+	if s.resubmitResp != nil {
+		return s.resubmitResp, nil
+	}
+	return &domain.PaymentIntent{Token: "tok"}, nil
+}
+
+// ── stubCapturingFileStore ────────────────────────────────────────────────────
+// Records the key passed to Put so tests can assert the storage key format.
+
+type stubCapturingFileStore struct {
+	capturedKey string
+	putErr      error
+}
+
+func (s *stubCapturingFileStore) Put(_ context.Context, key, _ string, _ io.Reader, _ int64) error {
+	s.capturedKey = key
+	return s.putErr
+}
+func (s *stubCapturingFileStore) Get(_ context.Context, _ string) (io.ReadCloser, string, error) {
+	return io.NopCloser(strings.NewReader("")), "image/jpeg", nil
+}
+func (s *stubCapturingFileStore) Delete(_ context.Context, _ string) error { return nil }
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+func buildMultipart(t *testing.T, fieldName, filename, content string) (*bytes.Buffer, string) {
+	t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	fw, err := w.CreateFormFile(fieldName, filename)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := io.WriteString(fw, content); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	w.Close()
+	return &buf, w.FormDataContentType()
+}
+
+func uploadRouter(t *testing.T, svc *stubUploadSvc, fs *stubCapturingFileStore) http.Handler {
+	t.Helper()
+	h := handler.NewPaymentIntentHandler(svc, zaptest.NewLogger(t))
+	h.WithFileStore(fs, 0)
+	r := chi.NewRouter()
+	r.Post("/{token}/comprobante", h.UploadComprobante)
+	r.Post("/{token}/resubmit", h.ResubmitForReview)
+	return r
+}
+
+func doUpload(router http.Handler, token, path string, body *bytes.Buffer, ct string, user *domain.User) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/"+token+path, body)
+	req.Header.Set("Content-Type", ct)
+	if user != nil {
+		req = req.WithContext(mw.ContextWithUser(req.Context(), user))
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+// ── UploadComprobante – storage key format ────────────────────────────────────
+
+var fixedTime = time.Date(2026, 6, 18, 15, 4, 5, 0, time.UTC)
+
+func TestUploadComprobante_StorageKeyFormat_Paypal(t *testing.T) {
+	intent := &domain.PaymentIntent{
+		ID:        42,
+		Token:     "abcdef1234567890",
+		UserID:    7,
+		Provider:  "paypal",
+		Status:    domain.PaymentIntentPending,
+		CreatedAt: fixedTime,
+	}
+	svc := &stubUploadSvc{pending: []*domain.PaymentIntent{intent}}
+	fs := &stubCapturingFileStore{}
+	router := uploadRouter(t, svc, fs)
+
+	body, ct := buildMultipart(t, "file", "receipt.jpg", "fake-image-data")
+	rec := doUpload(router, intent.Token, "/comprobante", body, ct, callerUser)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	want := "comprobantes/voucher_7_paypal_2026-06-18T15-04-05"
+	if fs.capturedKey != want {
+		t.Errorf("storage key:\n got  %q\n want %q", fs.capturedKey, want)
+	}
+}
+
+func TestUploadComprobante_StorageKeyFormat_Recurrente(t *testing.T) {
+	intent := &domain.PaymentIntent{
+		ID:        99,
+		Token:     "recurrentetoken12345678",
+		UserID:    7,
+		Provider:  "recurrente",
+		Status:    domain.PaymentIntentPending,
+		CreatedAt: time.Date(2026, 1, 5, 8, 30, 0, 0, time.UTC),
+	}
+	svc := &stubUploadSvc{pending: []*domain.PaymentIntent{intent}}
+	fs := &stubCapturingFileStore{}
+	router := uploadRouter(t, svc, fs)
+
+	body, ct := buildMultipart(t, "file", "comprobante.png", "fake-image-data")
+	rec := doUpload(router, intent.Token, "/comprobante", body, ct, callerUser)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	want := "comprobantes/voucher_7_recurrente_2026-01-05T08-30-00"
+	if fs.capturedKey != want {
+		t.Errorf("storage key:\n got  %q\n want %q", fs.capturedKey, want)
+	}
+}
+
+func TestUploadComprobante_TokenNotInPending_Returns404(t *testing.T) {
+	svc := &stubUploadSvc{pending: []*domain.PaymentIntent{}} // empty
+	fs := &stubCapturingFileStore{}
+	router := uploadRouter(t, svc, fs)
+
+	body, ct := buildMultipart(t, "file", "x.jpg", "data")
+	rec := doUpload(router, "unknowntoken00000000", "/comprobante", body, ct, callerUser)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+	if fs.capturedKey != "" {
+		t.Error("file store should not have been called for unknown token")
+	}
+}
+
+// ── ResubmitForReview – storage key format ────────────────────────────────────
+
+func TestResubmitForReview_StorageKeyFormat_WithFile(t *testing.T) {
+	intent := &domain.PaymentIntent{
+		ID:        55,
+		Token:     "rejectedtoken12345678",
+		UserID:    7,
+		Provider:  "paypal",
+		Status:    domain.PaymentIntentRejected,
+		CreatedAt: time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC),
+	}
+	svc := &stubUploadSvc{all: []*domain.PaymentIntent{intent}}
+	fs := &stubCapturingFileStore{}
+	router := uploadRouter(t, svc, fs)
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("notes", "El monto es correcto, adjunto nuevo comprobante.")
+	fw, _ := w.CreateFormFile("file", "evidence.jpg")
+	_, _ = io.WriteString(fw, "fake-image-data")
+	w.Close()
+
+	rec := doUpload(router, intent.Token, "/resubmit", &buf, w.FormDataContentType(), callerUser)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	want := "comprobantes/voucher_7_paypal_2026-03-10T09-00-00_review"
+	if fs.capturedKey != want {
+		t.Errorf("storage key:\n got  %q\n want %q", fs.capturedKey, want)
+	}
+}
+
+func TestResubmitForReview_TokenNotFound_Returns404(t *testing.T) {
+	svc := &stubUploadSvc{all: []*domain.PaymentIntent{}} // empty
+	fs := &stubCapturingFileStore{}
+	router := uploadRouter(t, svc, fs)
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("notes", "disputa")
+	w.Close()
+
+	rec := doUpload(router, "unknowntoken00000000", "/resubmit", &buf, w.FormDataContentType(), callerUser)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestResubmitForReview_NoFile_DoesNotCallFileStore(t *testing.T) {
+	intent := &domain.PaymentIntent{
+		ID: 60, Token: "tok60", UserID: 7, Provider: "paypal",
+		CreatedAt: fixedTime,
+	}
+	svc := &stubUploadSvc{all: []*domain.PaymentIntent{intent}}
+	fs := &stubCapturingFileStore{}
+	router := uploadRouter(t, svc, fs)
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("notes", "Solo agrego una nota, sin archivo nuevo.")
+	w.Close()
+
+	rec := doUpload(router, "tok60", "/resubmit", &buf, w.FormDataContentType(), callerUser)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if fs.capturedKey != "" {
+		t.Errorf("file store should not be called when no file is provided, got key %q", fs.capturedKey)
+	}
 }

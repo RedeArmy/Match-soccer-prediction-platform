@@ -16,6 +16,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // stampVerifiedBody is a test-only middleware that buffers the request body
@@ -375,6 +376,22 @@ func TestWebhookHandler_PayPal_EmptyCaptureID_Returns422(t *testing.T) {
 	rec := postJSON(t, router, "/webhooks/paypal", payload)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422 for empty capture ID, got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_PayPal_ExpiredIntent_Returns204(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{err: apperrors.NotFound("payment intent expired or unavailable")})
+	payload := map[string]any{
+		"event_type": "PAYMENT.CAPTURE.COMPLETED",
+		"resource": map[string]any{
+			"id":        "CAP-EXPIRED",
+			"custom_id": testIntentToken,
+			"amount":    map[string]any{"value": "3.00", "currency_code": "USD"},
+		},
+	}
+	rec := postJSON(t, router, "/webhooks/paypal", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 for expired intent (stop PayPal retry loop), got %d", rec.Code)
 	}
 }
 

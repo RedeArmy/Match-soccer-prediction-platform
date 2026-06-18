@@ -88,6 +88,16 @@ func (s *webhookPaymentService) CreditFromRecurrente(ctx context.Context, userID
 		domain.LedgerKindWebhookRecurrente, domain.AuditActionWebhookPaymentCredit); err != nil {
 		return err
 	}
+	// Mark the corresponding payment_intent as captured so the admin panel
+	// reflects the correct status. Failure here is non-fatal: the balance
+	// was already credited; the intent row will stay 'pending' until it
+	// expires, which is acceptable and recoverable.
+	if err := s.intentRepo.MarkCapturedByToken(ctx, reference); err != nil {
+		s.log.Warn("recurrente webhook: failed to mark intent captured",
+			zap.String("reference", reference),
+			zap.Error(err),
+		)
+	}
 	s.recordAMLIfNeeded(ctx, userID, amountCents)
 	return nil
 }

@@ -94,6 +94,7 @@ type appHandlers struct {
 	bank               *handler.BankHandler
 	adminBank          *handler.AdminBankHandler
 	adminMatchSync     *handler.AdminMatchSyncHandler
+	adminPaymentIntent *handler.AdminPaymentIntentHandler
 	systemClock        *handler.SystemClockHandler
 }
 
@@ -307,12 +308,13 @@ func (s *Server) buildHandlers(
 		withdrawal:         handler.NewWithdrawalHandler(withdrawalSvc, s.log),
 		bank:               handler.NewBankHandler(repository.NewPostgresBankRepository(s.db), repository.NewPostgresBankAccountTypeRepository(s.db), s.log),
 		adminBank:          handler.NewAdminBankHandler(repository.NewPostgresBankRepository(s.db), repository.NewPostgresBankAccountTypeRepository(s.db), s.log),
-		paymentIntent:      buildPaymentIntentHandler(paymentIntentSvc, s.cfg.Payment.RecurrenteAPIKey, s.cfg.Payment.RecurrenteBaseURL, s.cfg.Server.AppBaseURL, s.log),
+		paymentIntent:      buildPaymentIntentHandler(paymentIntentSvc, fileStore, maxUploadBytes, s.cfg.Payment.RecurrenteAPIKey, s.cfg.Payment.RecurrenteBaseURL, s.cfg.Server.AppBaseURL, s.log),
 		paymentWebhook:     handler.NewPaymentWebhookHandler(webhookPaymentSvc, s.log),
 		paypalOrder:        handler.NewPayPalOrderHandler(s.cfg.Payment.PayPalClientID, s.cfg.Payment.PayPalClientSecret, s.cfg.Payment.PayPalBaseURL, s.cfg.IsDevelopment(), paymentIntentSvc, s.log),
 		adminUser:          handler.NewAdminUserHandler(adminUserSvc, s.log),
 		adminGroup:         handler.NewAdminGroupHandler(adminGroupSvc, params, s.log),
 		adminPayment:       handler.NewAdminPaymentHandler(paymentSvc, s.log),
+		adminPaymentIntent: handler.NewAdminPaymentIntentHandler(intentRepo, fileStore, s.log),
 		adminLeaderboard:   handler.NewAdminLeaderboardHandler(adminReadSvc, params, s.log),
 		adminDLQ:           handler.NewAdminDLQHandler(dlqSvc, s.log),
 		adminAudit:         handler.NewAdminAuditHandler(auditSvc, s.log),
@@ -379,6 +381,7 @@ func (s *Server) buildHandlers(
 	}); ok {
 		wfx.SetExchangeRateService(fxSvc)
 	}
+	h.adminPaymentIntent.SetExchangeRateService(fxSvc)
 
 	return h
 }
@@ -565,10 +568,13 @@ func (s *Server) buildResilientCache(ctx context.Context, params service.SystemP
 // checkout session and returns a redirect URL.
 func buildPaymentIntentHandler(
 	svc service.PaymentIntentCreator,
+	fileStore storage.FileStore,
+	maxUploadBytes int64,
 	recurrenteAPIKey, recurrenteBaseURL, appBaseURL string,
 	log *zap.Logger,
 ) *handler.PaymentIntentHandler {
 	h := handler.NewPaymentIntentHandler(svc, log)
+	h.WithFileStore(fileStore, maxUploadBytes)
 	if recurrenteAPIKey != "" {
 		if appBaseURL == "" {
 			log.Warn("Recurrente is configured but WCQ_SERVER_APPBASEURL is not set — redirect URLs will be invalid; set it to your ngrok or production URL")

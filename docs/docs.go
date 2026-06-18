@@ -5885,63 +5885,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/payment-intents": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "For PayPal: mints an opaque single-use token to pass as PayPal custom_id.\nFor Recurrente: creates a hosted checkout session and returns a redirect URL.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "payments"
-                ],
-                "summary": "Create payment intent",
-                "parameters": [
-                    {
-                        "description": "Amount, currency and provider",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.createPaymentIntentRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.PaymentIntentResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/predictions": {
             "post": {
                 "security": [
@@ -7607,26 +7550,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_handler.PaymentIntentResponse": {
-            "type": "object",
-            "properties": {
-                "amount_cents": {
-                    "type": "integer"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "redirect_url": {
-                    "type": "string"
-                },
-                "token": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_api_handler.PaymentResponse": {
             "type": "object",
             "properties": {
@@ -8206,21 +8129,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "phase": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api_handler.createPaymentIntentRequest": {
-            "type": "object",
-            "properties": {
-                "amount_cents": {
-                    "type": "integer"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "provider": {
-                    "description": "\"recurrente\" | \"paypal\"; empty treated as \"paypal\"",
                     "type": "string"
                 }
             }

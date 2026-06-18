@@ -32,7 +32,7 @@ const navItems = [
     labelKey: "common.tournaments",
     icon: Trophy,
     public: true,
-    signedOutOnly: true,
+    signedOutOnly: false,
   },
   {
     href: "/quinielas",
