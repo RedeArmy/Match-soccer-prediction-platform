@@ -3,12 +3,7 @@
 import { useState, useMemo } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  CheckCircle,
-  XCircle,
-  ExternalLink,
-  AlertTriangle,
-} from "lucide-react";
+import { CheckCircle, XCircle, AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api";
 import type { BankTransferResponse, BankTransferStatus } from "@/lib/api-types";
 import { cn, formatGTQ, formatDateTime, formatRelative } from "@/lib/utils";
@@ -25,6 +20,8 @@ import {
   InfoRow,
   RejectNotesTextarea,
   RejectWarningBox,
+  ProofViewLink,
+  ComprobanteViewLink,
 } from "@/components/admin/shared";
 
 const PAGE_SIZE = 15;
@@ -40,24 +37,6 @@ const TABS: { key: TabKey; label: string }[] = [
 
 function proofDownloadUrl(id: number): string {
   return `/api/v1/admin/bank-transfers/${id}/download`;
-}
-
-function ComprobanteInfoRow({ id }: { readonly id: number }) {
-  return (
-    <InfoRow
-      label="Comprobante"
-      value={
-        <a
-          href={proofDownloadUrl(id)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors text-xs"
-        >
-          Ver archivo <ExternalLink className="h-3 w-3" />
-        </a>
-      }
-    />
-  );
 }
 
 // ── Approve modal ─────────────────────────────────────────────────────────────
@@ -120,7 +99,7 @@ function ApproveModal({
             </span>
           }
         />
-        <ComprobanteInfoRow id={item.id} />
+        <ComprobanteViewLink href={proofDownloadUrl(item.id)} />
       </div>
 
       <div className="space-y-1.5">
@@ -251,7 +230,7 @@ function RejectModal({
             </span>
           }
         />
-        <ComprobanteInfoRow id={item.id} />
+        <ComprobanteViewLink href={proofDownloadUrl(item.id)} />
       </div>
 
       <RejectNotesTextarea
@@ -532,15 +511,10 @@ export function BankTransfersTab() {
                         {formatRelative(item.created_at)}
                       </td>
                       <td className="px-4 py-3">
-                        <a
+                        <ProofViewLink
                           href={proofDownloadUrl(item.id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-xs transition-colors"
                           title={`Descargar comprobante #${item.id}`}
-                        >
-                          Ver <ExternalLink className="h-3 w-3" />
-                        </a>
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">

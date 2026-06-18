@@ -46,14 +46,10 @@ export function FileDropZone({
 
   return (
     <>
-      <div
-        role="button"
-        tabIndex={0}
-        className="border-2 border-dashed border-white/20 rounded-xl p-6 text-center cursor-pointer hover:border-gold-400/50 hover:bg-white/[0.02] transition-colors"
+      <button
+        type="button"
+        className="w-full border-2 border-dashed border-white/20 rounded-xl p-6 text-center cursor-pointer hover:border-gold-400/50 hover:bg-white/[0.02] transition-colors"
         onClick={() => fileInputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click();
-        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
@@ -79,7 +75,7 @@ export function FileDropZone({
             </div>
           </div>
         )}
-      </div>
+      </button>
 
       <input
         ref={fileInputRef}

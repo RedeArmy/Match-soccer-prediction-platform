@@ -7,6 +7,7 @@ import {
   X,
   XCircle,
   AlertTriangle,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -369,5 +370,36 @@ export function RejectWarningBox() {
         usuario.
       </p>
     </div>
+  );
+}
+
+// ── ProofViewLink ─────────────────────────────────────────────────────────────
+
+export function ProofViewLink({
+  href,
+  title,
+}: {
+  readonly href: string;
+  readonly title?: string;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-xs transition-colors"
+      title={title}
+    >
+      Ver <ExternalLink className="h-3 w-3" />
+    </a>
+  );
+}
+
+// ── ComprobanteViewLink ───────────────────────────────────────────────────────
+
+export function ComprobanteViewLink({ href }: { readonly href: string | null }) {
+  if (!href) return null;
+  return (
+    <InfoRow label="Comprobante" value={<ProofViewLink href={href} />} />
   );
 }

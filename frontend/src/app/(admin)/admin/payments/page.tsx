@@ -3,13 +3,7 @@
 import { useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  CheckCircle,
-  XCircle,
-  ExternalLink,
-  Bell,
-  MessageSquare,
-} from "lucide-react";
+import { CheckCircle, XCircle, Bell, MessageSquare } from "lucide-react";
 import { api } from "@/lib/api";
 import type { PaymentIntentAdminResponse, PaymentIntentStatus } from "@/lib/api-types";
 import { formatAmount, formatDateTime, formatRelative } from "@/lib/utils";
@@ -26,6 +20,8 @@ import {
   InfoRow,
   RejectNotesTextarea,
   RejectWarningBox,
+  ProofViewLink,
+  ComprobanteViewLink,
 } from "@/components/admin/shared";
 
 const PAGE_SIZE = 15;
@@ -107,21 +103,7 @@ function CreditModal({
         />
         <InfoRow label="Proveedor" value={item.provider} />
         <InfoRow label="Estado" value={item.status} />
-        {comprobanteUrl && (
-          <InfoRow
-            label="Comprobante"
-            value={
-              <a
-                href={comprobanteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors text-xs"
-              >
-                Ver <ExternalLink className="h-3 w-3" />
-              </a>
-            }
-          />
-        )}
+        <ComprobanteViewLink href={comprobanteUrl} />
       </div>
 
       <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
@@ -426,14 +408,7 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
 
                     <td className="px-4 py-3">
                       {item.has_comprobante ? (
-                        <a
-                          href={api.adminPaymentIntentComprobanteUrl(item.id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-xs transition-colors"
-                        >
-                          Ver <ExternalLink className="h-3 w-3" />
-                        </a>
+                        <ProofViewLink href={api.adminPaymentIntentComprobanteUrl(item.id)} />
                       ) : (
                         <span className="text-white/25 text-xs">—</span>
                       )}

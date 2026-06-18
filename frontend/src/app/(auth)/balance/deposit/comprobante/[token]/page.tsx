@@ -4,13 +4,21 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { formatAmount } from "@/lib/utils";
 import type { PaymentIntentSummary } from "@/lib/api-types";
-import { Upload, ArrowLeft, CheckCircle } from "lucide-react";
+import { Upload } from "lucide-react";
 import { FileDropZone } from "@/components/deposit/FileDropZone";
+import {
+  DepositLoadingSpinner,
+  DepositNotFound,
+  DepositSuccess,
+  DepositFormError,
+  DepositBackLink,
+  DepositSubmitButton,
+  providerLabel,
+} from "@/components/deposit/DepositPageState";
 
 export default function ComprobanteUploadPage() {
   const params = useParams<{ token: string }>();
@@ -33,7 +41,6 @@ export default function ComprobanteUploadPage() {
     },
   });
 
-  // Only allow comprobante upload for pending/expired intents where admin requested it
   const intent = intents.find(
     (i) =>
       i.token === token &&
@@ -62,73 +69,39 @@ export default function ComprobanteUploadPage() {
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-6 h-6 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (isLoading) return <DepositLoadingSpinner />;
 
   if (!intent) {
     return (
-      <div className="space-y-4 text-center py-16">
-        <p className="text-text-muted">{t("comprobante.notFound")}</p>
-        <Link
-          href="/balance"
-          className="inline-flex items-center gap-2 text-sm text-gold-400 hover:text-gold-300"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t("comprobante.backToBalance")}
-        </Link>
-      </div>
+      <DepositNotFound
+        message={t("comprobante.notFound")}
+        backLabel={t("comprobante.backToBalance")}
+      />
     );
   }
 
   if (success || intent?.has_comprobante) {
     return (
-      <div className="space-y-6 max-w-md mx-auto">
-        <div className="flex items-center gap-3 p-5 bg-emerald-900/40 border border-emerald-700/50 rounded-xl">
-          <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-emerald-300">
-              {t("comprobante.successTitle")}
-            </p>
-            <p className="text-xs text-emerald-400/70 mt-0.5">
-              {t("comprobante.successDesc")}
-            </p>
-          </div>
-        </div>
-        <Link
-          href="/balance"
-          className="inline-flex items-center gap-2 text-sm text-gold-400 hover:text-gold-300"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t("comprobante.backToBalance")}
-        </Link>
-      </div>
+      <DepositSuccess
+        title={t("comprobante.successTitle")}
+        desc={t("comprobante.successDesc")}
+        backLabel={t("comprobante.backToBalance")}
+      />
     );
   }
 
-  const providerLabel =
-    intent.provider === "recurrente" ? "Recurrente" : "PayPal";
+  const label = providerLabel(intent.provider);
 
   return (
     <div className="space-y-6 max-w-md mx-auto">
       <div className="flex items-center gap-3">
-        <Link
-          href="/balance"
-          className="p-2 rounded-lg hover:bg-white/5 text-text-muted hover:text-text-primary transition-colors"
-          aria-label={t("comprobante.backLabel")}
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
+        <DepositBackLink label={t("comprobante.backLabel")} />
         <div>
           <h1 className="font-display text-2xl text-white">
             {t("comprobante.title")}
           </h1>
           <p className="text-xs text-text-muted mt-0.5">
-            {t("comprobante.subtitlePrefix")} {providerLabel} —{" "}
+            {t("comprobante.subtitlePrefix")} {label} —{" "}
             <span className="font-score text-gold-400">
               {formatAmount(intent.amount_cents, intent.currency)}
             </span>
@@ -138,7 +111,7 @@ export default function ComprobanteUploadPage() {
 
       <div className="card space-y-5 p-6">
         <p className="text-sm text-text-secondary">
-          {t("comprobante.desc").replace("{provider}", providerLabel)}
+          {t("comprobante.desc").replace("{provider}", label)}
         </p>
 
         <FileDropZone
@@ -157,20 +130,16 @@ export default function ComprobanteUploadPage() {
           filePrefix={t("comprobante.filePrefix")}
         />
 
-        {error && (
-          <p className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">
-            {error}
-          </p>
-        )}
+        <DepositFormError error={error} />
 
-        <button
+        <DepositSubmitButton
           onClick={handleSubmit}
           disabled={!file || uploading}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-gold-500 hover:bg-gold-400 text-blue-950 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Upload className="w-4 h-4" />
-          {uploading ? t("comprobante.submitting") : t("comprobante.submit")}
-        </button>
+          busy={uploading}
+          busyLabel={t("comprobante.submitting")}
+          label={t("comprobante.submit")}
+          icon={<Upload className="w-4 h-4" />}
+        />
       </div>
     </div>
   );

@@ -111,53 +111,23 @@ describe("FileDropZone", () => {
     vi.unstubAllGlobals();
   });
 
-  // ── Click / keyboard ──────────────────────────────────────────────────────
+  // ── Click ─────────────────────────────────────────────────────────────────
 
-  it("triggers file input click when the drop zone is clicked", () => {
+  it("triggers file input click when the drop zone button is clicked", () => {
     const clickSpy = vi
       .spyOn(HTMLInputElement.prototype, "click")
       .mockImplementation(() => {});
-    const { container } = zone();
-    fireEvent.click(container.querySelector('[role="button"]')!);
+    zone();
+    fireEvent.click(screen.getByRole("button"));
     expect(clickSpy).toHaveBeenCalledOnce();
-    clickSpy.mockRestore();
-  });
-
-  it("triggers file input click on Enter keydown", () => {
-    const clickSpy = vi
-      .spyOn(HTMLInputElement.prototype, "click")
-      .mockImplementation(() => {});
-    const { container } = zone();
-    fireEvent.keyDown(container.querySelector('[role="button"]')!, { key: "Enter" });
-    expect(clickSpy).toHaveBeenCalledOnce();
-    clickSpy.mockRestore();
-  });
-
-  it("triggers file input click on Space keydown", () => {
-    const clickSpy = vi
-      .spyOn(HTMLInputElement.prototype, "click")
-      .mockImplementation(() => {});
-    const { container } = zone();
-    fireEvent.keyDown(container.querySelector('[role="button"]')!, { key: " " });
-    expect(clickSpy).toHaveBeenCalledOnce();
-    clickSpy.mockRestore();
-  });
-
-  it("does not trigger file input click for other keys", () => {
-    const clickSpy = vi
-      .spyOn(HTMLInputElement.prototype, "click")
-      .mockImplementation(() => {});
-    const { container } = zone();
-    fireEvent.keyDown(container.querySelector('[role="button"]')!, { key: "Tab" });
-    expect(clickSpy).not.toHaveBeenCalled();
     clickSpy.mockRestore();
   });
 
   // ── Drag and drop ─────────────────────────────────────────────────────────
 
   it("calls preventDefault on dragOver", () => {
-    const { container } = zone();
-    const dropZone = container.querySelector('[role="button"]')!;
+    zone();
+    const dropZone = screen.getByRole("button");
     const dragOverEvent = createEvent.dragOver(dropZone);
     const preventDefaultSpy = vi.spyOn(dragOverEvent, "preventDefault");
     fireEvent(dropZone, dragOverEvent);
@@ -166,8 +136,8 @@ describe("FileDropZone", () => {
 
   it("calls onFileSelect when a file is dropped on the zone", () => {
     const onFileSelect = vi.fn();
-    const { container } = zone({ onFileSelect });
-    const dropZone = container.querySelector('[role="button"]')!;
+    zone({ onFileSelect });
+    const dropZone = screen.getByRole("button");
     const pdf = new File(["content"], "proof.pdf", { type: "application/pdf" });
 
     const dropEvent = createEvent.drop(dropZone);

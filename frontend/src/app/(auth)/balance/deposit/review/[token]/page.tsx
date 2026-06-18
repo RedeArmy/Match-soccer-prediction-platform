@@ -4,13 +4,21 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { formatAmount } from "@/lib/utils";
 import type { PaymentIntentSummary } from "@/lib/api-types";
-import { ArrowLeft, CheckCircle, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import { FileDropZone } from "@/components/deposit/FileDropZone";
+import {
+  DepositLoadingSpinner,
+  DepositNotFound,
+  DepositSuccess,
+  DepositFormError,
+  DepositBackLink,
+  DepositSubmitButton,
+  providerLabel,
+} from "@/components/deposit/DepositPageState";
 
 export default function ReviewRequestPage() {
   const params = useParams<{ token: string }>();
@@ -58,73 +66,39 @@ export default function ReviewRequestPage() {
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-6 h-6 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (isLoading) return <DepositLoadingSpinner />;
 
   if (intent?.status !== "rejected") {
     return (
-      <div className="space-y-4 text-center py-16">
-        <p className="text-text-muted">{t("review.notFound")}</p>
-        <Link
-          href="/balance"
-          className="inline-flex items-center gap-2 text-sm text-gold-400 hover:text-gold-300"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t("review.backToBalance")}
-        </Link>
-      </div>
+      <DepositNotFound
+        message={t("review.notFound")}
+        backLabel={t("review.backToBalance")}
+      />
     );
   }
 
   if (success) {
     return (
-      <div className="space-y-6 max-w-md mx-auto">
-        <div className="flex items-start gap-3 p-5 bg-emerald-900/40 border border-emerald-700/50 rounded-xl">
-          <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-medium text-emerald-300">
-              {t("review.successTitle")}
-            </p>
-            <p className="text-xs text-emerald-400/70 mt-0.5">
-              {t("review.successDesc")}
-            </p>
-          </div>
-        </div>
-        <Link
-          href="/balance"
-          className="inline-flex items-center gap-2 text-sm text-gold-400 hover:text-gold-300"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t("review.backToBalance")}
-        </Link>
-      </div>
+      <DepositSuccess
+        title={t("review.successTitle")}
+        desc={t("review.successDesc")}
+        backLabel={t("review.backToBalance")}
+      />
     );
   }
 
-  const providerLabel =
-    intent.provider === "recurrente" ? "Recurrente" : "PayPal";
+  const label = providerLabel(intent.provider);
 
   return (
     <div className="space-y-6 max-w-md mx-auto">
       <div className="flex items-center gap-3">
-        <Link
-          href="/balance"
-          className="p-2 rounded-lg hover:bg-white/5 text-text-muted hover:text-text-primary transition-colors"
-          aria-label={t("review.backLabel")}
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
+        <DepositBackLink label={t("review.backLabel")} />
         <div>
           <h1 className="font-display text-2xl text-white">
             {t("review.title")}
           </h1>
           <p className="text-xs text-text-muted mt-0.5">
-            {t("comprobante.subtitlePrefix")} {providerLabel}{" "}
+            {t("comprobante.subtitlePrefix")} {label}{" "}
             {t("review.subtitleStatus")} —{" "}
             <span className="font-score text-red-400">
               {formatAmount(intent.amount_cents, intent.currency)}
@@ -136,7 +110,6 @@ export default function ReviewRequestPage() {
       <div className="card space-y-5 p-6">
         <p className="text-sm text-text-secondary">{t("review.desc")}</p>
 
-        {/* Description */}
         <div className="space-y-1.5">
           <label
             htmlFor="review-notes"
@@ -159,7 +132,6 @@ export default function ReviewRequestPage() {
           )}
         </div>
 
-        {/* Optional file */}
         <div className="space-y-2">
           <label className="block text-sm font-medium text-white/70">
             {t("review.fileLabel")}{" "}
@@ -184,20 +156,16 @@ export default function ReviewRequestPage() {
           />
         </div>
 
-        {error && (
-          <p className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">
-            {error}
-          </p>
-        )}
+        <DepositFormError error={error} />
 
-        <button
+        <DepositSubmitButton
           onClick={handleSubmit}
           disabled={!notes.trim() || notes.trim().length < 10 || submitting}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-gold-500 hover:bg-gold-400 text-blue-950 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Send className="w-4 h-4" />
-          {submitting ? t("review.submitting") : t("review.submit")}
-        </button>
+          busy={submitting}
+          busyLabel={t("review.submitting")}
+          label={t("review.submit")}
+          icon={<Send className="w-4 h-4" />}
+        />
       </div>
     </div>
   );
