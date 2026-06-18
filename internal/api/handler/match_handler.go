@@ -93,6 +93,22 @@ func (h *MatchHandler) ListMatches(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// ListPublicGroupStageMatches handles GET /api/public/matches/group-stage.
+// No authentication required. Returns all group-stage fixtures so the public
+// page can compute live standings without a user session.
+func (h *MatchHandler) ListPublicGroupStageMatches(w http.ResponseWriter, r *http.Request) {
+	matches, err := h.svc.ListMatchesByPhase(r.Context(), domain.PhaseGroupStage)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	out := make([]MatchResponse, len(matches))
+	for i, m := range matches {
+		out[i] = matchToResponse(m)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // GetMatch handles GET /api/v1/matches/{id}.
 //
 // @Summary      Get a match

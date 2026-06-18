@@ -27,7 +27,39 @@ func newMatchRouter(svc *stubMatchSvc) http.Handler {
 	r.Post("/{id}/start", h.StartMatch)
 	r.Post("/{id}/cancel", h.CancelMatch)
 	r.Post("/{id}/correct-result", h.CorrectMatchResult)
+	r.Get("/public/group-stage", h.ListPublicGroupStageMatches)
 	return r
+}
+
+// ── ListPublicGroupStageMatches ───────────────────────────────────────────
+
+func TestListPublicGroupStageMatches_Success_Returns200(t *testing.T) {
+	svc := &stubMatchSvc{matches: []*domain.Match{
+		{ID: 1, HomeTeam: homeTeam, AwayTeam: awayTeam, Phase: domain.PhaseGroupStage},
+	}}
+	w := do(newMatchRouter(svc), http.MethodGet, "/public/group-stage", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestListPublicGroupStageMatches_EmptyList_Returns200(t *testing.T) {
+	svc := &stubMatchSvc{matches: []*domain.Match{}}
+	w := do(newMatchRouter(svc), http.MethodGet, "/public/group-stage", "")
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "[]") {
+		t.Errorf("expected empty array in response, got: %s", w.Body.String())
+	}
+}
+
+func TestListPublicGroupStageMatches_ServiceError_Returns500(t *testing.T) {
+	svc := &stubMatchSvc{err: apperrors.Internal(nil)}
+	w := do(newMatchRouter(svc), http.MethodGet, "/public/group-stage", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
+	}
 }
 
 func do(router http.Handler, method, path, body string) *httptest.ResponseRecorder {

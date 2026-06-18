@@ -249,12 +249,16 @@ export function PredictionPanel() {
 
   const sortedMatches = useMemo(() => {
     const ts = (s: string | null) => (s ? new Date(s).getTime() : Infinity);
-    const liveFirst = (status: string) => (status === "in_progress" ? 0 : 1);
+    const tier = (status: string) => {
+      if (status === "in_progress") return 0;
+      if (status === "finished" || status === "cancelled") return 2;
+      return 1;
+    };
     return [...(matchesQuery.data ?? [])]
       .filter((m) => isPhaseVisible(m.phase))
       .sort((a, b) => {
-        const liveDiff = liveFirst(a.status) - liveFirst(b.status);
-        if (liveDiff !== 0) return liveDiff;
+        const tierDiff = tier(a.status) - tier(b.status);
+        if (tierDiff !== 0) return tierDiff;
         return ts(a.kickoff_at) - ts(b.kickoff_at);
       });
   }, [matchesQuery.data]);

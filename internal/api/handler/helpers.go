@@ -22,6 +22,7 @@ const (
 	msgUserNotFound          = "user account not found; please try again shortly"
 	msgInvalidWithdrawalID   = "invalid withdrawal id"
 	msgInvalidBankTransferID = "invalid bank transfer id"
+	msgInvalidIntentID       = "invalid intent id"
 )
 
 // moneyJSONBodyLimit is the per-handler body cap applied to all JSON money

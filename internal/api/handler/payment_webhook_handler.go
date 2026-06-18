@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -331,15 +332,28 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 
 	start := time.Now()
 	if err := h.svc.ResolveAndCreditPayPalIntent(r.Context(), intentToken, captureID, webhookAmountCents); err != nil {
+		// A NotFound error means the payment intent has expired or was never
+		// created for this token. Returning a non-2xx here causes PayPal to
+		// retry indefinitely, which is useless — the intent cannot be recovered
+		// automatically. Acknowledge with 204 to stop the retry loop and emit a
+		// warning so the payment can be credited manually if required.
+		if errors.Is(err, apperrors.ErrNotFound) {
+			h.log.Warn("paypal webhook: intent expired or not found — acknowledging to stop retries; manual credit may be required",
+				zap.String("capture_id", captureID),
+				zap.String("intent_token", intentToken),
+				zap.Error(err),
+			)
+			h.notifyPaymentError(r.Context(), "paypal", "intent_expired", "", webhookAmountCents)
+			h.recordPayment(r.Context(), "paypal", "expired", time.Since(start))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		h.log.Error("paypal webhook: failed to resolve intent and credit balance",
 			zap.String("capture_id", captureID),
 			zap.String("intent_token", intentToken),
 			zap.Error(err),
 		)
-		if h.notifier != nil {
-			h.notifier.NotifyPaymentError(r.Context(), "paypal", err.Error(),
-				"", strconv.Itoa(webhookAmountCents))
-		}
+		h.notifyPaymentError(r.Context(), "paypal", err.Error(), "", webhookAmountCents)
 		h.recordPayment(r.Context(), "paypal", "failed", time.Since(start))
 		writeError(w, r, h.log, err)
 		return
@@ -350,6 +364,13 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 		h.notifier.NotifyBalanceCredited(r.Context(), 0, webhookAmountCents, "paypal")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// notifyPaymentError calls NotifyPaymentError on the notifier if one is wired.
+func (h *PaymentWebhookHandler) notifyPaymentError(ctx context.Context, provider, reason, token string, amountCents int) {
+	if h.notifier != nil {
+		h.notifier.NotifyPaymentError(ctx, provider, reason, token, strconv.Itoa(amountCents))
+	}
 }
 
 func (h *PaymentWebhookHandler) recordPayment(ctx context.Context, provider, status string, elapsed time.Duration) {

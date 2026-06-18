@@ -1231,3 +1231,47 @@ describe("GET /api/geo – public IP calls ipapi.co", () => {
     expect(res.headers.get("Cache-Control")).toBe("private, max-age=3600");
   });
 });
+
+// ── /api/public/standings/route ───────────────────────────────────────────────
+
+describe("GET /api/public/standings – upstream success", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns matches from upstream", async () => {
+    const matches = [
+      { id: 1, home_team: "Brazil", away_team: "Germany", home_score: null, away_score: null, status: "scheduled", group_label: "A" },
+    ];
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(matches), { status: 200 }),
+    );
+    const { GET } = await import("@/app/api/public/standings/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.matches).toHaveLength(1);
+    expect(body.matches[0].home_team).toBe("Brazil");
+  });
+});
+
+describe("GET /api/public/standings – upstream non-ok", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns empty matches when upstream responds non-ok", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 503 }));
+    const { GET } = await import("@/app/api/public/standings/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.matches).toEqual([]);
+  });
+});
+
+describe("GET /api/public/standings – upstream throws", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns empty matches when fetch throws", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    const { GET } = await import("@/app/api/public/standings/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.matches).toEqual([]);
+  });
+});

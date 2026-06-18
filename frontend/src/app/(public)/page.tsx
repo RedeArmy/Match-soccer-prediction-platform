@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { useI18n } from "@/lib/i18n";
+import { GroupStandingsSection } from "@/components/public/GroupStandingsSection";
 
 // ── Logged-in overrides ───────────────────────────────────────────────────────
 // When the user is already signed in every sign-up/join CTA is replaced with
@@ -676,6 +677,9 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* ── Group standings ───────────────────────────────────────────── */}
+      <GroupStandingsSection />
 
       {/* ── Final CTA ─────────────────────────────────────────────────── */}
       <section className="px-4 py-20">

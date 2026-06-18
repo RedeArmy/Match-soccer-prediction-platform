@@ -100,11 +100,12 @@ describe("Footer – unauthenticated", () => {
     expect(link).toHaveAttribute("href", "/tournaments");
   });
 
-  it("shows Página Principal link to / on inner pages", () => {
+  it("does not show Página Principal link when unauthenticated", () => {
     mockUsePathname.mockReturnValue("/tournaments");
     render(<Footer />);
-    const link = screen.getByRole("link", { name: "Página Principal" });
-    expect(link).toHaveAttribute("href", "/");
+    expect(
+      screen.queryByRole("link", { name: "Página Principal" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows sign-in link", () => {
@@ -184,7 +185,7 @@ describe("Footer – loading (Clerk not yet resolved)", () => {
     mockUsePathname.mockReturnValue("/tournaments");
     render(<Footer />);
     expect(
-      screen.getByRole("link", { name: "Página Principal" }),
+      screen.getByRole("link", { name: /iniciar sesion/i }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "Dashboard" }),
@@ -218,11 +219,12 @@ describe("Header", () => {
     );
   });
 
-  it("shows Página Principal link to / for signed-out users on inner pages", () => {
+  it("always shows Fan Fest link on inner pages for signed-out users", () => {
     mockUsePathname.mockReturnValue("/tournaments");
     render(<Header />);
-    const link = screen.getByRole("link", { name: "Página Principal" });
-    expect(link).toHaveAttribute("href", "/");
+    const links = screen.getAllByRole("link", { name: "Fan Fest" });
+    expect(links.length).toBeGreaterThanOrEqual(1);
+    expect(links[0]).toHaveAttribute("href", "/tournaments");
   });
 
   it("shows Inicio nav link to / for signed-in users", () => {
@@ -255,7 +257,7 @@ describe("AdminSidebar", () => {
     expect(screen.getByText("KYC Queue")).toBeInTheDocument();
     expect(screen.getByText("Torneos")).toBeInTheDocument();
     expect(screen.getByText("Partidos")).toBeInTheDocument();
-    expect(screen.getByText("Transferencias")).toBeInTheDocument();
+    expect(screen.getByText("Pagos")).toBeInTheDocument();
     expect(screen.getByText("Retiros")).toBeInTheDocument();
     expect(screen.getByText("Tipo de cambio")).toBeInTheDocument();
     expect(screen.getByText("Observabilidad")).toBeInTheDocument();

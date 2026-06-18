@@ -1132,9 +1132,14 @@ type KYCEventRepository interface {
 	ListByProfile(ctx context.Context, profileID int, profileType domain.KYCProfileType, p CursorPage) ([]*domain.KYCEvent, string, error)
 }
 
-// PaymentIntentRepository manages server-generated payment intent records used
-// as opaque PayPal custom_id values.  The single-use token prevents a user
-// from substituting another user's ID in the PayPal order metadata.
+// PaymentIntentFilters constrains the admin list query.
+type PaymentIntentFilters struct {
+	Provider *string // "paypal" | "recurrente"; nil = all
+	Status   *domain.PaymentIntentStatus
+}
+
+// PaymentIntentRepository manages server-generated payment intent records for
+// PayPal (token = custom_id) and Recurrente (token = wcq_reference).
 type PaymentIntentRepository interface {
 	// Create persists a new pending intent. intent.ID and intent.CreatedAt are
 	// populated on success.
@@ -1143,6 +1148,8 @@ type PaymentIntentRepository interface {
 	// when no match exists. Used for pre-capture KYC gate checks so the service
 	// layer can inspect userID and amountCents before calling CaptureAndCredit.
 	GetByToken(ctx context.Context, token string) (*domain.PaymentIntent, error)
+	// GetByID returns the intent matching id, or nil when no match exists.
+	GetByID(ctx context.Context, id int64) (*domain.PaymentIntent, error)
 	// CaptureAndCredit atomically transitions a pending, non-expired intent to
 	// captured, stores captureID, and credits creditAmountCents to the user's
 	// balance in a single database transaction.
@@ -1158,6 +1165,34 @@ type PaymentIntentRepository interface {
 	// captureID (duplicate capture from a different PayPal transaction).
 	// Returns apperrors.NotFound when no pending, non-expired intent matches token.
 	CaptureAndCredit(ctx context.Context, token, captureID string, creditAmountCents int) (*domain.PaymentIntent, error)
+	// MarkCapturedByToken transitions a pending intent to captured without
+	// crediting the balance. Used by the Recurrente webhook after CreditIdempotent
+	// already handled the balance update, so the intent row reflects the final state.
+	// Silently succeeds when the intent is already captured or not found.
+	MarkCapturedByToken(ctx context.Context, token string) error
+	// SetComprobante stores the file proof metadata on the intent.
+	SetComprobante(ctx context.Context, id int64, key, contentType string, fileSize int) error
+	// AdminCreditExpired credits creditAmountCents to the user, transitions the
+	// intent to captured, records reviewedBy and notes. Works for pending, expired,
+	// and under_review statuses.
+	AdminCreditExpired(ctx context.Context, id int64, adminID, creditAmountCents int, notes string) (*domain.PaymentIntent, error)
+	// AdminReject transitions the intent to rejected and records the review.
+	// Accepts pending, expired, and under_review statuses.
+	AdminReject(ctx context.Context, id int64, adminID int, notes string) (*domain.PaymentIntent, error)
+	// RequestComprobante sets comprobante_required=true on a pending intent so
+	// the user is prompted to upload a receipt on the balance page.
+	RequestComprobante(ctx context.Context, id int64, adminID int) (*domain.PaymentIntent, error)
+	// ListForAdmin returns intents matching filters ordered by created_at DESC.
+	ListForAdmin(ctx context.Context, f PaymentIntentFilters, p Pagination) ([]*domain.PaymentIntent, int, error)
+	// ListByUserPending returns non-captured, non-rejected intents for userID
+	// ordered by created_at DESC. Used to verify ownership during comprobante upload.
+	ListByUserPending(ctx context.Context, userID int) ([]*domain.PaymentIntent, error)
+	// ListAllByUser returns all intents for userID sorted by created_at DESC.
+	// Used on the balance page to display the full payment history.
+	ListAllByUser(ctx context.Context, userID int) ([]*domain.PaymentIntent, error)
+	// SubmitForReview transitions a rejected intent to under_review, sets user_notes,
+	// and optionally updates the comprobante. userID is validated against intent.user_id.
+	SubmitForReview(ctx context.Context, id int64, userID int, comprobanteKey, contentType *string, fileSize *int, notes string) (*domain.PaymentIntent, error)
 }
 
 // NotificationTemplateRepository manages operator-editable notification content.

@@ -1,17 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { useI18n } from "@/lib/i18n";
 
 export function Footer() {
   const { t } = useI18n();
   const { isSignedIn, isLoaded } = useAuth();
-  const pathname = usePathname();
 
   const authenticated = isLoaded && isSignedIn;
-  const isHome = pathname === "/";
 
   return (
     <footer className="mt-auto border-t border-white/10 bg-[#070A0F]">
@@ -26,6 +23,12 @@ export function Footer() {
           </div>
 
           <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-text-muted">
+            <Link
+              href="/tournaments"
+              className="transition-colors hover:text-text-secondary"
+            >
+              {t("common.tournaments")}
+            </Link>
             {authenticated ? (
               <>
                 <Link
@@ -49,21 +52,6 @@ export function Footer() {
               </>
             ) : (
               <>
-                {isHome ? (
-                  <Link
-                    href="/tournaments"
-                    className="transition-colors hover:text-text-secondary"
-                  >
-                    {t("common.tournaments")}
-                  </Link>
-                ) : (
-                  <Link
-                    href="/"
-                    className="transition-colors hover:text-text-secondary"
-                  >
-                    {t("common.goHome")}
-                  </Link>
-                )}
                 <Link
                   href="/sign-in"
                   className="transition-colors hover:text-text-secondary"
