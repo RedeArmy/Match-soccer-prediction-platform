@@ -201,6 +201,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// code. Prize-winner flags and payment state are stripped by the handler.
 	r.Get("/api/public/groups/leaderboard", h.publicGroup.GetPublicLeaderboard)
 
+	// Public group-stage matches — no auth required, covered by L1 IP limiter.
+	// Returns all group-stage fixtures (teams, scores, status) so the public
+	// landing page can compute and display live FIFA standings tables.
+	r.Get("/api/public/matches/group-stage", h.match.ListPublicGroupStageMatches)
+
 	// Public system clock — returns the current application time (real or dev-overridden).
 	// No auth required; the frontend uses this to determine "today" for the HOY tab
 	// and match-locking logic.  L1 IP limiter is applied via the root router.

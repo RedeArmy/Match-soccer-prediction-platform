@@ -5,7 +5,9 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  XCircle,
   AlertTriangle,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -306,4 +308,98 @@ export function AdminContentState({
       </div>
     );
   return <>{children}</>;
+}
+
+// ── AdminRefreshButton ────────────────────────────────────────────────────────
+
+export function AdminRefreshButton({
+  onClick,
+  disabled,
+}: Readonly<{ onClick: () => void; disabled: boolean }>) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm transition-colors disabled:opacity-50"
+    >
+      Actualizar
+    </button>
+  );
+}
+
+// ── RejectNotesTextarea ───────────────────────────────────────────────────────
+
+interface RejectNotesTextareaProps {
+  readonly id: string;
+  readonly value: string;
+  readonly onChange: (v: string) => void;
+  readonly placeholder: string;
+}
+
+export function RejectNotesTextarea({
+  id,
+  value,
+  onChange,
+  placeholder,
+}: RejectNotesTextareaProps) {
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="block text-sm font-medium text-white/70">
+        Motivo de rechazo <span className="text-red-400">*</span>
+      </label>
+      <textarea
+        id={id}
+        rows={3}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 resize-none focus:outline-none focus:ring-1 focus:ring-red-500/50"
+      />
+    </div>
+  );
+}
+
+// ── RejectWarningBox ──────────────────────────────────────────────────────────
+
+export function RejectWarningBox() {
+  return (
+    <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+      <XCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+      <p className="text-red-300 text-xs">
+        El pago será marcado como rechazado. No se acreditará ningún monto al
+        usuario.
+      </p>
+    </div>
+  );
+}
+
+// ── ProofViewLink ─────────────────────────────────────────────────────────────
+
+export function ProofViewLink({
+  href,
+  title,
+}: {
+  readonly href: string;
+  readonly title?: string;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-xs transition-colors"
+      title={title}
+    >
+      Ver <ExternalLink className="h-3 w-3" />
+    </a>
+  );
+}
+
+// ── ComprobanteViewLink ───────────────────────────────────────────────────────
+
+export function ComprobanteViewLink({ href }: { readonly href: string | null }) {
+  if (!href) return null;
+  return (
+    <InfoRow label="Comprobante" value={<ProofViewLink href={href} />} />
+  );
 }

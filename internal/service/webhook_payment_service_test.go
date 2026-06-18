@@ -57,8 +57,9 @@ func (r *webhookLedgerRepoStub) CountRows(_ context.Context) (int64, error) { re
 
 // webhookIntentRepoStub is the PaymentIntentRepository stub for service tests.
 type webhookIntentRepoStub struct {
-	intent     *domain.PaymentIntent
-	captureErr error
+	intent          *domain.PaymentIntent
+	captureErr      error
+	markCapturedErr error
 }
 
 func (r *webhookIntentRepoStub) Create(_ context.Context, intent *domain.PaymentIntent) error {
@@ -71,8 +72,38 @@ func (r *webhookIntentRepoStub) Create(_ context.Context, intent *domain.Payment
 func (r *webhookIntentRepoStub) GetByToken(_ context.Context, _ string) (*domain.PaymentIntent, error) {
 	return r.intent, nil
 }
+func (r *webhookIntentRepoStub) GetByID(_ context.Context, _ int64) (*domain.PaymentIntent, error) {
+	return r.intent, nil
+}
 func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, _, _ string, _ int) (*domain.PaymentIntent, error) {
 	return r.intent, r.captureErr
+}
+func (r *webhookIntentRepoStub) MarkCapturedByToken(_ context.Context, _ string) error {
+	return r.markCapturedErr
+}
+func (r *webhookIntentRepoStub) SetComprobante(_ context.Context, _ int64, _, _ string, _ int) error {
+	return nil
+}
+func (r *webhookIntentRepoStub) AdminCreditExpired(_ context.Context, _ int64, _, _ int, _ string) (*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) AdminReject(_ context.Context, _ int64, _ int, _ string) (*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) ListForAdmin(_ context.Context, _ repository.PaymentIntentFilters, _ repository.Pagination) ([]*domain.PaymentIntent, int, error) {
+	return nil, 0, nil
+}
+func (r *webhookIntentRepoStub) ListByUserPending(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) ListAllByUser(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) RequestComprobante(_ context.Context, _ int64, _ int) (*domain.PaymentIntent, error) {
+	return nil, nil
+}
+func (r *webhookIntentRepoStub) SubmitForReview(_ context.Context, _ int64, _ int, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
+	return nil, nil
 }
 
 func newWebhookPaymentSvc(ledger *webhookLedgerRepoStub, intent *webhookIntentRepoStub) WebhookPaymentService {
@@ -408,5 +439,24 @@ func TestWebhookPaymentService_CreditFromRecurrente_CumulativeAML_AuditFlagged(t
 	}
 	if !foundCumulative {
 		t.Errorf("expected AuditActionAMLFlagged with threshold_type=cumulative; got actions=%v", audit.actions)
+	}
+}
+
+// TestWebhookPaymentService_CreditFromRecurrente_MarkCapturedError_CreditStillSucceeds
+// verifies that a failure in MarkCapturedByToken is non-fatal: the balance was
+// already credited, so the function must return nil rather than propagating the
+// mark error.
+func TestWebhookPaymentService_CreditFromRecurrente_MarkCapturedError_CreditStillSucceeds(t *testing.T) {
+	ledger := &webhookLedgerRepoStub{}
+	intent := &webhookIntentRepoStub{markCapturedErr: errors.New("db write failed")}
+	svc := newWebhookPaymentSvc(ledger, intent)
+
+	err := svc.CreditFromRecurrente(context.Background(), 5, 5000, "GTQ", "REF-MARK-ERR")
+	if err != nil {
+		t.Errorf("MarkCapturedByToken error must be non-fatal, got: %v", err)
+	}
+	// Ledger must still have been credited.
+	if ledger.capturedKind == "" {
+		t.Error("expected credit to be applied despite mark error")
 	}
 }

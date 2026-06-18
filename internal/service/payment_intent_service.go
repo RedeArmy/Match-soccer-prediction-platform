@@ -16,14 +16,25 @@ import (
 )
 
 // PaymentIntentCreator manages server-generated payment intents used as
-// opaque PayPal custom_id values. Creating an intent before the PayPal order
-// is created ensures the webhook can only credit the user who initiated the
-// session — the token is unguessable and single-use.
+// opaque PayPal custom_id values or Recurrente wcq_reference values.
 type PaymentIntentCreator interface {
-	// Create generates a new pending payment intent for userID. The returned
-	// intent's Token must be passed as custom_id when the frontend creates the
-	// PayPal order. The intent expires after DefaultPaymentIntentTTL.
+	// Create generates a new pending PayPal payment intent for userID.
 	Create(ctx context.Context, userID, amountCents int, currency string) (*domain.PaymentIntent, error)
+	// CreateForRecurrente generates a new pending intent for a Recurrente checkout.
+	CreateForRecurrente(ctx context.Context, userID, amountCents int, currency, reference string) (*domain.PaymentIntent, error)
+	// ListMyPending returns actionable (non-captured, non-rejected) intents for
+	// userID. Used to verify ownership during comprobante uploads.
+	ListMyPending(ctx context.Context, userID int) ([]*domain.PaymentIntent, error)
+	// ListMyAll returns all intents for userID sorted by created_at DESC.
+	// Used on the balance page to show the full payment history.
+	ListMyAll(ctx context.Context, userID int) ([]*domain.PaymentIntent, error)
+	// SetComprobanteByToken stores the comprobante file metadata on the intent
+	// identified by token.
+	SetComprobanteByToken(ctx context.Context, token, key, contentType string, fileSize int) error
+	// ResubmitForReview transitions a rejected intent to under_review, records
+	// user_notes, and optionally replaces the comprobante. The userID is validated
+	// against the intent so a user cannot submit on behalf of another.
+	ResubmitForReview(ctx context.Context, userID int, token string, comprobanteKey, contentType *string, fileSize *int, notes string) (*domain.PaymentIntent, error)
 }
 
 type paymentIntentService struct {
@@ -60,6 +71,7 @@ func (s *paymentIntentService) Create(ctx context.Context, userID, amountCents i
 		UserID:      userID,
 		AmountCents: amountCents,
 		Currency:    currency,
+		Provider:    "paypal",
 		Status:      domain.PaymentIntentPending,
 		ExpiresAt:   time.Now().Add(ttl),
 	}
@@ -76,9 +88,86 @@ func (s *paymentIntentService) Create(ctx context.Context, userID, amountCents i
 	return intent, nil
 }
 
-// generateIntentToken returns a 256-bit cryptographically random hex string
-// (64 lowercase hex characters). The token is used as PayPal custom_id; its
-// entropy makes it computationally infeasible to enumerate or guess.
+// CreateForRecurrente creates a pending intent for a Recurrente checkout using
+// the caller-supplied reference (wcq_reference) as the token. The token is
+// already validated to be a non-empty hex string by the caller.
+func (s *paymentIntentService) CreateForRecurrente(ctx context.Context, userID, amountCents int, currency, reference string) (*domain.PaymentIntent, error) {
+	if amountCents <= 0 {
+		return nil, apperrors.Validation("amount_cents must be positive")
+	}
+	if reference == "" {
+		return nil, apperrors.Validation("reference is required")
+	}
+	if currency == "" {
+		currency = "GTQ"
+	}
+
+	ttl := time.Duration(s.params.GetInt(ctx, domain.ParamKeyPaymentIntentTTLMinutes, domain.DefaultPaymentIntentTTLMinutes)) * time.Minute
+	intent := &domain.PaymentIntent{
+		Token:       reference,
+		UserID:      userID,
+		AmountCents: amountCents,
+		Currency:    currency,
+		Provider:    "recurrente",
+		Status:      domain.PaymentIntentPending,
+		ExpiresAt:   time.Now().Add(ttl),
+	}
+
+	if err := s.intentRepo.Create(ctx, intent); err != nil {
+		s.log.Error("payment intent: failed to create for recurrente",
+			append([]zap.Field{
+				zap.Int("user_id", userID),
+				zap.Int("amount_cents", amountCents),
+				zap.String("reference", reference),
+				zap.Error(err),
+			}, tracing.LogFields(ctx)...)...)
+		return nil, err
+	}
+	return intent, nil
+}
+
+// ListMyPending returns actionable intents for userID.
+func (s *paymentIntentService) ListMyPending(ctx context.Context, userID int) ([]*domain.PaymentIntent, error) {
+	return s.intentRepo.ListByUserPending(ctx, userID)
+}
+
+// ListMyAll returns all intents for userID.
+func (s *paymentIntentService) ListMyAll(ctx context.Context, userID int) ([]*domain.PaymentIntent, error) {
+	return s.intentRepo.ListAllByUser(ctx, userID)
+}
+
+// SetComprobanteByToken looks up the intent by token and delegates to the repo.
+func (s *paymentIntentService) SetComprobanteByToken(ctx context.Context, token, key, contentType string, fileSize int) error {
+	intent, err := s.intentRepo.GetByToken(ctx, token)
+	if err != nil {
+		return err
+	}
+	if intent == nil {
+		return apperrors.NotFound("payment intent not found")
+	}
+	return s.intentRepo.SetComprobante(ctx, intent.ID, key, contentType, fileSize)
+}
+
+// ResubmitForReview looks up the intent by token, validates ownership, and
+// transitions a rejected intent to under_review with the provided evidence.
+func (s *paymentIntentService) ResubmitForReview(ctx context.Context, userID int, token string, comprobanteKey, contentType *string, fileSize *int, notes string) (*domain.PaymentIntent, error) {
+	if notes == "" {
+		return nil, apperrors.Validation("notes are required when submitting for review")
+	}
+	intent, err := s.intentRepo.GetByToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if intent == nil || intent.UserID != userID {
+		return nil, apperrors.NotFound("payment intent not found")
+	}
+	if intent.Status != domain.PaymentIntentRejected {
+		return nil, apperrors.Validation("only rejected intents can be submitted for review")
+	}
+	return s.intentRepo.SubmitForReview(ctx, intent.ID, userID, comprobanteKey, contentType, fileSize, notes)
+}
+
+// generateIntentToken returns a 256-bit cryptographically random hex string.
 func generateIntentToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

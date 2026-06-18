@@ -388,6 +388,51 @@ export interface PaymentIntentResponse {
   redirect_url?: string; // only set for Recurrente checkouts
 }
 
+export type PaymentIntentStatus =
+  | "pending"
+  | "captured"
+  | "expired"
+  | "rejected"
+  | "under_review";
+
+export interface PaymentIntentSummary {
+  id: number;
+  token: string;
+  amount_cents: number;
+  currency: string;
+  provider: string;
+  status: PaymentIntentStatus;
+  has_comprobante: boolean;
+  comprobante_required: boolean;
+  user_notes: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface PaymentIntentAdminResponse {
+  id: number;
+  token: string;
+  user_id: number;
+  amount_cents: number;
+  currency: string;
+  provider: string;
+  status: PaymentIntentStatus;
+  capture_id: string | null;
+  has_comprobante: boolean;
+  comprobante_required: boolean;
+  user_notes: string;
+  reviewed_by: number | null;
+  review_notes: string;
+  expires_at: string;
+  rejected_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PagedWithTotal<T> extends Paged<T> {
+  total: number;
+}
+
 export interface PayPalOrderResponse {
   id: string;
 }
