@@ -83,6 +83,65 @@ function flag(name: string): string {
   return FLAGS[name.toLowerCase()] ?? "🏳️";
 }
 
+// ── Spanish team name translations ────────────────────────────────────────────
+
+const TEAM_NAMES_ES: Record<string, string> = {
+  "Algeria": "Argelia",
+  "Argentina": "Argentina",
+  "Australia": "Australia",
+  "Austria": "Austria",
+  "Belgium": "Bélgica",
+  "Bosnia and Herzegovina": "Bosnia y Herzegovina",
+  "Brazil": "Brasil",
+  "Canada": "Canadá",
+  "Cape Verde": "Cabo Verde",
+  "Colombia": "Colombia",
+  "Croatia": "Croacia",
+  "Curaçao": "Curazao",
+  "Czechia": "Chequia",
+  "DR Congo": "RD Congo",
+  "Ecuador": "Ecuador",
+  "Egypt": "Egipto",
+  "England": "Inglaterra",
+  "France": "Francia",
+  "Germany": "Alemania",
+  "Ghana": "Ghana",
+  "Haiti": "Haití",
+  "Iran": "Irán",
+  "Iraq": "Irak",
+  "Ivory Coast": "Costa de Marfil",
+  "Japan": "Japón",
+  "Jordan": "Jordania",
+  "Mexico": "México",
+  "Morocco": "Marruecos",
+  "Netherlands": "Países Bajos",
+  "New Zealand": "Nueva Zelanda",
+  "Nigeria": "Nigeria",
+  "Norway": "Noruega",
+  "Panama": "Panamá",
+  "Paraguay": "Paraguay",
+  "Portugal": "Portugal",
+  "Qatar": "Catar",
+  "Saudi Arabia": "Arabia Saudita",
+  "Scotland": "Escocia",
+  "Senegal": "Senegal",
+  "South Africa": "Sudáfrica",
+  "South Korea": "Corea del Sur",
+  "Spain": "España",
+  "Sweden": "Suecia",
+  "Switzerland": "Suiza",
+  "Tunisia": "Túnez",
+  "Türkiye": "Turquía",
+  "United States": "Estados Unidos",
+  "Uruguay": "Uruguay",
+  "Uzbekistan": "Uzbekistán",
+};
+
+function teamDisplayName(name: string, locale: string): string {
+  if (locale === "es") return TEAM_NAMES_ES[name] ?? name;
+  return name;
+}
+
 // ── Standings calculation ─────────────────────────────────────────────────────
 
 interface TeamRow {
@@ -212,10 +271,12 @@ function GroupTable({
   group,
   rows,
   t,
+  locale,
 }: Readonly<{
   group: string;
   rows: TeamRow[];
   t: (k: string) => string;
+  locale: string;
 }>) {
   return (
     <div className="card overflow-hidden">
@@ -230,7 +291,7 @@ function GroupTable({
       </div>
 
       {/* Col headers */}
-      <div className="grid grid-cols-[auto_1fr_repeat(7,_auto)] items-center gap-x-3 border-b border-white/5 px-4 py-1.5 text-[10px] uppercase tracking-wide text-text-muted">
+      <div className="grid grid-cols-[auto_max-content_repeat(7,_auto)] items-center gap-x-3 border-b border-white/5 px-4 py-1.5 text-[10px] uppercase tracking-wide text-text-muted">
         <span className="w-5" />
         <span>{t("standings.team")}</span>
         <span className="w-5 text-center">{t("standings.played")}</span>
@@ -250,7 +311,7 @@ function GroupTable({
         return (
           <div
             key={row.team}
-            className={`grid grid-cols-[auto_1fr_repeat(7,_auto)] items-center gap-x-3 border-b border-white/[0.04] px-4 py-2 last:border-0 transition-colors ${rowHighlight(pos)}`}
+            className={`grid grid-cols-[auto_max-content_repeat(7,_auto)] items-center gap-x-3 border-b border-white/[0.04] px-4 py-2 last:border-0 transition-colors ${rowHighlight(pos)}`}
           >
             {posBadge(pos)}
 
@@ -259,7 +320,7 @@ function GroupTable({
                 {flag(row.team)}
               </span>
               <span className="text-sm font-medium text-white">
-                {row.team}
+                {teamDisplayName(row.team, locale)}
               </span>
             </div>
 
@@ -315,7 +376,7 @@ function StandingsLegend({ t }: Readonly<{ t: (k: string) => string }>) {
 // ── Section ───────────────────────────────────────────────────────────────────
 
 export function GroupStandingsSection() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const { data, isLoading, isError } = useQuery<{ matches: PublicMatch[] }>({
     queryKey: ["public-standings"],
@@ -369,7 +430,7 @@ export function GroupStandingsSection() {
               ariaLabelRight={t("common.scrollRight")}
             >
               {groupKeys.map((g) => (
-                <GroupTable key={g} group={g} rows={groups[g]} t={t} />
+                <GroupTable key={g} group={g} rows={groups[g]} t={t} locale={locale} />
               ))}
             </HorizontalCarousel>
           </>

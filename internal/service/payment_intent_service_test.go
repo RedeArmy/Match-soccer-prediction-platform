@@ -34,7 +34,7 @@ func (r *stubIntentRepo) GetByToken(_ context.Context, _ string) (*domain.Paymen
 func (r *stubIntentRepo) GetByID(_ context.Context, _ int64) (*domain.PaymentIntent, error) {
 	return nil, nil
 }
-func (r *stubIntentRepo) CaptureAndCredit(_ context.Context, _, _ string, _ int) (*domain.PaymentIntent, error) {
+func (r *stubIntentRepo) CaptureAndCredit(_ context.Context, _, _ string, _ int, _ string, _ int) (*domain.PaymentIntent, error) {
 	return nil, nil
 }
 func (r *stubIntentRepo) MarkCapturedByToken(_ context.Context, _ string) error { return nil }
@@ -387,7 +387,7 @@ func (r *stubIntentRepoWithGetByToken) GetByToken(_ context.Context, _ string) (
 func (r *stubIntentRepoWithGetByToken) GetByID(_ context.Context, _ int64) (*domain.PaymentIntent, error) {
 	return r.intent, nil
 }
-func (r *stubIntentRepoWithGetByToken) CaptureAndCredit(_ context.Context, _, _ string, _ int) (*domain.PaymentIntent, error) {
+func (r *stubIntentRepoWithGetByToken) CaptureAndCredit(_ context.Context, _, _ string, _ int, _ string, _ int) (*domain.PaymentIntent, error) {
 	return nil, nil
 }
 func (r *stubIntentRepoWithGetByToken) MarkCapturedByToken(_ context.Context, _ string) error {

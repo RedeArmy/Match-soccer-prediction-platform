@@ -614,6 +614,13 @@ var paramStringConstraints = map[string]paramStringValidator{
 		}
 		return nil
 	},
+	// featflag.paypal is a bool toggle; accepted values are the standard Go bool literals.
+	domain.ParamKeyFeatFlagPaypal: func(value string) error {
+		if value == "" || value == "true" || value == "false" || value == "1" || value == "0" {
+			return nil
+		}
+		return apperrors.Validation(fmt.Sprintf("value %q is not a valid bool (accepted: true, false, 1, 0, or empty)", value))
+	},
 	// notify.admin_emails must be empty or a comma-separated list of RFC 5322 addresses.
 	domain.ParamKeyNotifyAdminEmails: func(value string) error {
 		if value == "" {

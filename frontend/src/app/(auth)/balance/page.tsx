@@ -7,12 +7,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useCurrency } from "@/hooks/useCurrency";
+import { useBalance } from "@/hooks/useBalance";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
 import { BalanceCard } from "@/components/balance/BalanceCard";
 import { LoadingState } from "@/components/shared/LoadingState";
 import {
   formatDate,
   formatGTQ,
+  formatUSD,
   usdToGTQ,
   ledgerKindKey,
   isVisibleLedgerKind,
@@ -271,7 +273,9 @@ function LedgerRow({
           <div className="shrink-0 text-right">
             <p className={`font-score text-sm font-semibold ${color}`}>
               {entry.delta_cents >= 0 ? "+" : ""}
-              {fmt(entry.delta_cents)}
+              {isUSD && entry.source_currency === "USD" && entry.source_amount_cents
+                ? formatUSD(entry.source_amount_cents)
+                : fmt(entry.delta_cents)}
             </p>
             <p className="text-[10px] text-text-muted">
               {isUSD ? "USD" : "GTQ"}
@@ -287,7 +291,9 @@ function LedgerRow({
 
 export default function BalancePage() {
   const { getToken } = useAuth();
-  const { fmt, isUSD } = useCurrency();
+  const { data: balanceData } = useBalance();
+  const balanceCurrency = balanceData?.balance_currency ?? "GTQ";
+  const { fmt, isUSD } = useCurrency(balanceCurrency);
   const { t } = useI18n();
   const queryClient = useQueryClient();
 

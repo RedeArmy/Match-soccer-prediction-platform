@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN balance_currency VARCHAR(3) NOT NULL DEFAULT 'GTQ';

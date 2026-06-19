@@ -356,6 +356,11 @@ const (
 	// ParamKeyTxRetryMaxDelayMs is the maximum backoff delay cap in milliseconds
 	// so that very high attempt counts do not wait unreasonably long.
 	ParamKeyTxRetryMaxDelayMs = "repository.tx_retry_max_delay_ms"
+
+	// Feature flags — runtime toggles for individual product features.
+	// ParamKeyFeatFlagPaypal controls whether the PayPal payment tab is shown on
+	// the deposit page. Value "0" = hidden, "1" = shown. is_runtime=TRUE.
+	ParamKeyFeatFlagPaypal = "featflag.paypal"
 )
 
 // Snapshot schema versions identify the JSONB encoding format used by
@@ -582,5 +587,7 @@ func AllParamKeys() []string {
 		ParamKeyKYCIPVelocityWindowMinutes,
 		ParamKeyKYCIPVelocityMaxSubmissions,
 		ParamKeyKYCDocRetentionYears,
+		// Feature flags (migration 000198)
+		ParamKeyFeatFlagPaypal,
 	}
 }

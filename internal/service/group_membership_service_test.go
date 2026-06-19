@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -1244,5 +1245,160 @@ func TestGroupMembershipService_WriteMembershipEvent_OutboxWriteError_BestEffort
 	// Should NOT return an error even if outbox write fails (best-effort).
 	if _, err := svc.ApproveJoin(context.Background(), 1, 99, 10); err != nil {
 		t.Fatalf("expected success despite outbox write error, got: %v", err)
+	}
+}
+
+// ── entryFeeInUserCurrency (USD conversion) ───────────────────────────────────
+
+// memberUserRepoStub is a minimal UserRepository for group membership tests
+// that require a wired userRepo (USD entry-fee conversion path).
+type memberUserRepoStub struct {
+	currency string
+}
+
+func (r *memberUserRepoStub) Create(_ context.Context, _ *domain.User) error { return nil }
+func (r *memberUserRepoStub) GetByID(_ context.Context, _ int) (*domain.User, error) {
+	return nil, nil
+}
+func (r *memberUserRepoStub) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *memberUserRepoStub) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *memberUserRepoStub) Update(_ context.Context, _ *domain.User) error { return nil }
+func (r *memberUserRepoStub) Delete(_ context.Context, _ int) error          { return nil }
+func (r *memberUserRepoStub) List(_ context.Context) ([]*domain.User, error) { return nil, nil }
+func (r *memberUserRepoStub) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return nil, nil
+}
+func (r *memberUserRepoStub) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *memberUserRepoStub) Unban(_ context.Context, _ int) error                 { return nil }
+func (r *memberUserRepoStub) ListBanned(_ context.Context) ([]*domain.User, error) { return nil, nil }
+func (r *memberUserRepoStub) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.CursorPage) ([]*domain.User, string, error) {
+	return nil, "", nil
+}
+func (r *memberUserRepoStub) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
+	return repository.UserStatusCounts{}, nil
+}
+func (r *memberUserRepoStub) GetBalance(_ context.Context, _ int) (int, int, error) { return 0, 0, nil }
+func (r *memberUserRepoStub) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
+	return r.currency, nil
+}
+func (r *memberUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
+func (r *memberUserRepoStub) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
+	return nil, nil
+}
+
+// memberFxSvcStub implements ExchangeRateService for group membership fee tests.
+type memberFxSvcStub struct {
+	usdCents int64
+	convErr  error
+}
+
+func (f *memberFxSvcStub) RefreshRate(_ context.Context) (*domain.ExchangeRates, error) {
+	return nil, nil
+}
+func (f *memberFxSvcStub) GetCurrentRates(_ context.Context) (*domain.ExchangeRates, error) {
+	return nil, nil
+}
+func (f *memberFxSvcStub) OverrideRate(_ context.Context, _ decimal.Decimal, _ string, _ int) (*domain.ExchangeRates, error) {
+	return nil, nil
+}
+func (f *memberFxSvcStub) ConvertUSDToGTQ(_ context.Context, _ int64) (int64, decimal.Decimal, error) {
+	return 0, decimal.Zero, nil
+}
+func (f *memberFxSvcStub) ConvertGTQToUSD(_ context.Context, _ int64) (int64, decimal.Decimal, error) {
+	return f.usdCents, decimal.Zero, f.convErr
+}
+func (f *memberFxSvcStub) WarmCache(_ context.Context) error { return nil }
+
+func TestGroupMembershipService_JoinWithBalance_USDUser_UsesConvertedFee(t *testing.T) {
+	q := quinielaWithCode(1, "USDCODE")
+	q.EntryFee = 775 // GTQ; should be converted to USD for USD users
+	q.Currency = "GTQ"
+
+	joinMem := pendingMembership(3, 1, 42)
+	now := time.Now()
+	paidMem := &domain.GroupMembership{
+		ID: 5, QuinielaID: 1, UserID: 42,
+		Status: domain.MembershipActive, Paid: true, JoinedAt: &now,
+	}
+	mr := &stubMemberRepo{
+		joinQuiniela:   q,
+		joinMembership: joinMem,
+		membership:     paidMem,
+	}
+	ur := &memberUserRepoStub{currency: "USD"}
+	fx := &memberFxSvcStub{usdCents: 100}
+
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		mr,
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		zap.NewNop(),
+		WithGroupMembershipFxSvc(ur, fx),
+	)
+
+	m, err := svc.JoinWithBalance(context.Background(), "USDCODE", 42)
+	if err != nil {
+		t.Fatalf("expected success for USD user JoinWithBalance, got: %v", err)
+	}
+	if m == nil {
+		t.Fatal("expected membership, got nil")
+	}
+}
+
+func TestGroupMembershipService_SetFxSvc_WiresConversionAndDoesNotPanic(t *testing.T) {
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{}, &stubMemberRepo{},
+		&noopSystemParamService{}, &noopAuditLogger{}, &noopPaymentService{},
+		zap.NewNop(),
+	)
+	ur := &memberUserRepoStub{currency: "USD"}
+	fx := &memberFxSvcStub{usdCents: 100}
+	svc.(*groupMembershipService).SetFxSvc(ur, fx)
+}
+
+func TestGroupMembershipService_JoinWithBalance_USDUser_FxConversionError_FallsBackToGTQ(t *testing.T) {
+	q := quinielaWithCode(1, "FXERRCODE")
+	q.EntryFee = 775
+	q.Currency = "GTQ"
+
+	joinMem := pendingMembership(3, 1, 42)
+	now := time.Now()
+	paidMem := &domain.GroupMembership{
+		ID: 5, QuinielaID: 1, UserID: 42,
+		Status: domain.MembershipActive, Paid: true, JoinedAt: &now,
+	}
+	mr := &stubMemberRepo{
+		joinQuiniela:   q,
+		joinMembership: joinMem,
+		membership:     paidMem,
+	}
+	ur := &memberUserRepoStub{currency: "USD"}
+	fx := &memberFxSvcStub{convErr: errors.New("fx unavailable")}
+
+	svc := NewGroupMembershipService(
+		&stubQuinielaRepo{quiniela: q},
+		mr,
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		&noopPaymentService{},
+		zap.NewNop(),
+		WithGroupMembershipFxSvc(ur, fx),
+	)
+
+	// Should still succeed using the GTQ fee as fallback.
+	m, err := svc.JoinWithBalance(context.Background(), "FXERRCODE", 42)
+	if err != nil {
+		t.Fatalf("expected success with GTQ fallback fee, got: %v", err)
+	}
+	if m == nil {
+		t.Fatal("expected membership, got nil")
 	}
 }

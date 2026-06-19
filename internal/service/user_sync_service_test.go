@@ -62,6 +62,9 @@ func (r *clerkSyncRepo) GetStatusCounts(_ context.Context) (repository.UserStatu
 	return repository.UserStatusCounts{}, nil
 }
 func (r *clerkSyncRepo) GetBalance(_ context.Context, _ int) (int, int, error) { return 0, 0, nil }
+func (r *clerkSyncRepo) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
+	return "GTQ", nil
+}
 func (r *clerkSyncRepo) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
 func (r *clerkSyncRepo) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
 	return nil, nil

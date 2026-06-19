@@ -92,7 +92,7 @@ func TestPaymentIntentRepository_CaptureAndCredit_HappyPath(t *testing.T) {
 	intent := seedPaymentIntent(t, u.ID, 3000)
 	repo := repository.NewPostgresPaymentIntentRepository(testDB)
 
-	captured, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-001", intent.AmountCents)
+	captured, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-001", intent.AmountCents, "", 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -113,7 +113,7 @@ func TestPaymentIntentRepository_CaptureAndCredit_CreditsUserBalance(t *testing.
 	intent := seedPaymentIntent(t, u.ID, 4000)
 	repo := repository.NewPostgresPaymentIntentRepository(testDB)
 
-	if _, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-002", intent.AmountCents); err != nil {
+	if _, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-002", intent.AmountCents, "", 0); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 
@@ -133,11 +133,11 @@ func TestPaymentIntentRepository_CaptureAndCredit_IdempotentReplaySameCaptureID(
 	intent := seedPaymentIntent(t, u.ID, 2500)
 	repo := repository.NewPostgresPaymentIntentRepository(testDB)
 
-	if _, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-DUP", intent.AmountCents); err != nil {
+	if _, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-DUP", intent.AmountCents, "", 0); err != nil {
 		t.Fatalf("first capture: %v", err)
 	}
 
-	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-DUP", intent.AmountCents)
+	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-DUP", intent.AmountCents, "", 0)
 	if !errors.Is(err, repository.ErrPaymentIntentAlreadyCaptured) {
 		t.Errorf("expected ErrPaymentIntentAlreadyCaptured, got %v", err)
 	}
@@ -149,11 +149,11 @@ func TestPaymentIntentRepository_CaptureAndCredit_DifferentCaptureIDReturnsConfl
 	intent := seedPaymentIntent(t, u.ID, 2500)
 	repo := repository.NewPostgresPaymentIntentRepository(testDB)
 
-	if _, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-FIRST", intent.AmountCents); err != nil {
+	if _, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-FIRST", intent.AmountCents, "", 0); err != nil {
 		t.Fatalf("first capture: %v", err)
 	}
 
-	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-SECOND", intent.AmountCents)
+	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-SECOND", intent.AmountCents, "", 0)
 	if !errors.As(err, new(*apperrors.AppError)) {
 		t.Errorf("expected AppError (conflict), got %T: %v", err, err)
 	}
@@ -163,7 +163,7 @@ func TestPaymentIntentRepository_CaptureAndCredit_TokenNotFoundReturnsNotFound(t
 	cleanTables(t)
 	repo := repository.NewPostgresPaymentIntentRepository(testDB)
 
-	_, err := repo.CaptureAndCredit(context.Background(), "nonexistent-token", "CAP-999", 0)
+	_, err := repo.CaptureAndCredit(context.Background(), "nonexistent-token", "CAP-999", 0, "", 0)
 	if !errors.As(err, new(*apperrors.AppError)) {
 		t.Errorf("expected AppError (not found), got %T: %v", err, err)
 	}
@@ -187,7 +187,7 @@ func TestPaymentIntentRepository_CaptureAndCredit_ExpiredIntentReturnsNotFound(t
 		t.Fatalf("create expired intent: %v", err)
 	}
 
-	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-EXP", intent.AmountCents)
+	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-EXP", intent.AmountCents, "", 0)
 	if !errors.As(err, new(*apperrors.AppError)) {
 		t.Errorf("expected AppError (not found/expired), got %T: %v", err, err)
 	}
@@ -207,7 +207,7 @@ func TestPaymentIntentRepository_CaptureAndCredit_SoftDeletedUserReturnsNotFound
 		t.Fatalf("soft-delete user: %v", err)
 	}
 
-	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-SOFTDEL", intent.AmountCents)
+	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-SOFTDEL", intent.AmountCents, "", 0)
 	if !errors.As(err, new(*apperrors.AppError)) {
 		t.Errorf("expected AppError (user not found), got %T: %v", err, err)
 	}
@@ -524,7 +524,7 @@ func TestPaymentIntentRepository_CancelByToken_NonPending_ReturnsNotFound(t *tes
 	repo := repository.NewPostgresPaymentIntentRepository(testDB)
 
 	// Capture the intent first so it's no longer pending.
-	if _, err := repo.CaptureAndCredit(context.Background(), pi.Token, "cap-x", u.ID); err != nil {
+	if _, err := repo.CaptureAndCredit(context.Background(), pi.Token, "cap-x", u.ID, "", 0); err != nil {
 		t.Fatalf("CaptureAndCredit: %v", err)
 	}
 	_ = admin // suppress unused-variable warning

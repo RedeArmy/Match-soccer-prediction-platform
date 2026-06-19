@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -26,7 +27,7 @@ func (s *prizeLedgerStub) Credit(_ context.Context, _ int, amount int, _ domain.
 	s.creditedAmt = amount
 	return nil
 }
-func (s *prizeLedgerStub) CreditIdempotent(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ string) (bool, error) {
+func (s *prizeLedgerStub) CreditIdempotent(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ string, _ string, _ int) (bool, error) {
 	return false, nil
 }
 func (s *prizeLedgerStub) Debit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
@@ -287,5 +288,140 @@ func TestPrizeService_NotifyFreezeOnly_OutboxWriteError_IsSwallowed(t *testing.T
 	err := svc.NotifyFreezeOnly(context.Background(), 7, 5_000, 2, "quiniela")
 	if err != nil {
 		t.Fatalf("outbox write error must not propagate from NotifyFreezeOnly; got: %v", err)
+	}
+}
+
+// ── USD prize conversion stubs ────────────────────────────────────────────────
+
+type prizeUserRepoStub struct {
+	currency string
+}
+
+func (r *prizeUserRepoStub) Create(_ context.Context, _ *domain.User) error { return nil }
+func (r *prizeUserRepoStub) GetByID(_ context.Context, _ int) (*domain.User, error) {
+	return nil, nil
+}
+func (r *prizeUserRepoStub) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *prizeUserRepoStub) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *prizeUserRepoStub) Update(_ context.Context, _ *domain.User) error { return nil }
+func (r *prizeUserRepoStub) Delete(_ context.Context, _ int) error          { return nil }
+func (r *prizeUserRepoStub) List(_ context.Context) ([]*domain.User, error) { return nil, nil }
+func (r *prizeUserRepoStub) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return nil, nil
+}
+func (r *prizeUserRepoStub) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *prizeUserRepoStub) Unban(_ context.Context, _ int) error { return nil }
+func (r *prizeUserRepoStub) ListBanned(_ context.Context) ([]*domain.User, error) {
+	return nil, nil
+}
+func (r *prizeUserRepoStub) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.CursorPage) ([]*domain.User, string, error) {
+	return nil, "", nil
+}
+func (r *prizeUserRepoStub) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
+	return repository.UserStatusCounts{}, nil
+}
+func (r *prizeUserRepoStub) GetBalance(_ context.Context, _ int) (int, int, error) { return 0, 0, nil }
+func (r *prizeUserRepoStub) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
+	return r.currency, nil
+}
+func (r *prizeUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
+func (r *prizeUserRepoStub) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
+	return nil, nil
+}
+
+type prizeConvertFxStub struct {
+	usdCents int64
+	convErr  error
+}
+
+func (f *prizeConvertFxStub) RefreshRate(_ context.Context) (*domain.ExchangeRates, error) {
+	return nil, nil
+}
+func (f *prizeConvertFxStub) GetCurrentRates(_ context.Context) (*domain.ExchangeRates, error) {
+	return nil, nil
+}
+func (f *prizeConvertFxStub) OverrideRate(_ context.Context, _ decimal.Decimal, _ string, _ int) (*domain.ExchangeRates, error) {
+	return nil, nil
+}
+func (f *prizeConvertFxStub) ConvertUSDToGTQ(_ context.Context, _ int64) (int64, decimal.Decimal, error) {
+	return 0, decimal.Zero, nil
+}
+func (f *prizeConvertFxStub) ConvertGTQToUSD(_ context.Context, _ int64) (int64, decimal.Decimal, error) {
+	return f.usdCents, decimal.Zero, f.convErr
+}
+func (f *prizeConvertFxStub) WarmCache(_ context.Context) error { return nil }
+
+// ── USD prize conversion tests ────────────────────────────────────────────────
+
+func TestPrizeService_SetFxSvc_WiresConversionAndDoesNotPanic(t *testing.T) {
+	svc := NewPrizeService(&prizeLedgerStub{}, &prizeKYCGateStub{}, &prizeKYCSvcStub{}, nil, nil, zap.NewNop())
+	ur := &prizeUserRepoStub{currency: "USD"}
+	fx := &prizeConvertFxStub{usdCents: 100}
+	svc.(*prizeService).SetFxSvc(ur, fx)
+}
+
+func TestPrizeService_CreditPrize_USDUser_CreditsConvertedAmount(t *testing.T) {
+	ledger := &prizeLedgerStub{}
+	gate := &prizeKYCGateStub{shouldFreeze: false}
+	ur := &prizeUserRepoStub{currency: "USD"}
+	fx := &prizeConvertFxStub{usdCents: 650}
+
+	svc := NewPrizeService(ledger, gate, &prizeKYCSvcStub{}, nil, nil, zap.NewNop(),
+		WithPrizeFxSvc(ur, fx))
+	credited, err := svc.CreditPrize(context.Background(), 5, 5_000, 1, "quiniela")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !credited {
+		t.Error("expected credited=true")
+	}
+	if ledger.creditedAmt != 650 {
+		t.Errorf("ledger amount: got %d, want 650 (USD cents)", ledger.creditedAmt)
+	}
+}
+
+func TestPrizeService_CreditPrize_USDUser_FxConversionError_FallsBackToGTQ(t *testing.T) {
+	ledger := &prizeLedgerStub{}
+	gate := &prizeKYCGateStub{shouldFreeze: false}
+	ur := &prizeUserRepoStub{currency: "USD"}
+	fx := &prizeConvertFxStub{convErr: errors.New("fx unavailable")}
+
+	svc := NewPrizeService(ledger, gate, &prizeKYCSvcStub{}, nil, nil, zap.NewNop(),
+		WithPrizeFxSvc(ur, fx))
+	credited, err := svc.CreditPrize(context.Background(), 5, 5_000, 1, "quiniela")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !credited {
+		t.Error("expected credited=true even when FX conversion fails")
+	}
+	if ledger.creditedAmt != 5_000 {
+		t.Errorf("ledger amount: got %d, want 5000 (GTQ fallback)", ledger.creditedAmt)
+	}
+}
+
+func TestPrizeService_CreditPrize_GTQUser_WithFxSvcWired_SkipsConversion(t *testing.T) {
+	ledger := &prizeLedgerStub{}
+	gate := &prizeKYCGateStub{shouldFreeze: false}
+	ur := &prizeUserRepoStub{currency: "GTQ"}
+	fx := &prizeConvertFxStub{usdCents: 999}
+
+	svc := NewPrizeService(ledger, gate, &prizeKYCSvcStub{}, nil, nil, zap.NewNop(),
+		WithPrizeFxSvc(ur, fx))
+	credited, err := svc.CreditPrize(context.Background(), 5, 5_000, 1, "quiniela")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !credited {
+		t.Error("expected credited=true")
+	}
+	if ledger.creditedAmt != 5_000 {
+		t.Errorf("ledger amount: got %d, want 5000 (GTQ, no conversion)", ledger.creditedAmt)
 	}
 }

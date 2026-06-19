@@ -96,6 +96,7 @@ type appHandlers struct {
 	adminMatchSync     *handler.AdminMatchSyncHandler
 	adminPaymentIntent *handler.AdminPaymentIntentHandler
 	systemClock        *handler.SystemClockHandler
+	featureFlag        *handler.FeatureFlagHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -328,6 +329,7 @@ func (s *Server) buildHandlers(
 		adminSSEStats:      handler.NewAdminSSEStatsHandler(s.notifHub, s.log),
 		user:               handler.NewUserHandler(repos.user, s.log),
 		systemClock:        handler.NewSystemClockHandler(clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log),
+		featureFlag:        handler.NewFeatureFlagHandler(params, s.log),
 	}
 
 	// ── Phase 9 observability handlers ───────────────────────────────────────
@@ -380,6 +382,21 @@ func (s *Server) buildHandlers(
 		SetExchangeRateService(service.ExchangeRateService)
 	}); ok {
 		wfx.SetExchangeRateService(fxSvc)
+	}
+	if wur, ok := webhookPaymentSvc.(interface {
+		SetUserRepository(repository.UserRepository)
+	}); ok {
+		wur.SetUserRepository(repos.user)
+	}
+	if ms, ok := memberSvc.(interface {
+		SetFxSvc(repository.UserRepository, service.ExchangeRateService)
+	}); ok {
+		ms.SetFxSvc(repos.user, fxSvc)
+	}
+	if pf, ok := prizeSvc.(interface {
+		SetFxSvc(repository.UserRepository, service.ExchangeRateService)
+	}); ok {
+		pf.SetFxSvc(repos.user, fxSvc)
 	}
 	h.adminPaymentIntent.SetExchangeRateService(fxSvc)
 

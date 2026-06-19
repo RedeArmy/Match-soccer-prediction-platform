@@ -42,12 +42,12 @@ func (h *BalanceHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
 		return
 	}
-	balanceCents, reservedCents, err := h.svc.GetBalance(r.Context(), caller.ID)
+	balanceCents, reservedCents, balanceCurrency, err := h.svc.GetBalanceWithCurrency(r.Context(), caller.ID)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, balanceToResponse(balanceCents, reservedCents))
+	writeJSON(w, http.StatusOK, balanceToResponse(balanceCents, reservedCents, balanceCurrency))
 }
 
 // GetLedger handles GET /api/v1/users/me/balance/ledger.

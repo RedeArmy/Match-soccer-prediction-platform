@@ -84,6 +84,10 @@ type UserRepository interface {
 	// userID without fetching the full user row. Returns NotFound for unknown
 	// or soft-deleted users.
 	GetBalance(ctx context.Context, userID int) (balanceCents, reservedCents int, err error)
+	// GetBalanceCurrency returns the currency code ("GTQ" or "USD") in which
+	// the user's balance_cents are denominated. Returns NotFound for unknown
+	// or soft-deleted users.
+	GetBalanceCurrency(ctx context.Context, userID int) (string, error)
 	// UpdateLocale sets the user's locale preference ("en" or "es").
 	// Returns NotFound for unknown or soft-deleted users.
 	UpdateLocale(ctx context.Context, userID int, locale string) error
@@ -901,7 +905,9 @@ type BalanceLedgerRepository interface {
 	// double-crediting the user.  Returns (true, nil) on a fresh credit,
 	// (false, nil) for a duplicate reference, or (false, err) on failure.
 	// reference must be non-empty.
-	CreditIdempotent(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, reference string) (bool, error)
+	// sourceCurrency and sourceAmountCents preserve the original payment
+	// currency/amount for non-GTQ deposits (e.g. USD); pass "" and 0 for GTQ.
+	CreditIdempotent(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, reference, sourceCurrency string, sourceAmountCents int) (bool, error)
 	// Debit subtracts deltaCents from available balance
 	// (balance_cents - reserved_cents).  Returns Conflict when insufficient.
 	Debit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error
@@ -1154,9 +1160,10 @@ type PaymentIntentRepository interface {
 	// captured, stores captureID, and credits creditAmountCents to the user's
 	// balance in a single database transaction.
 	//
-	// creditAmountCents is the platform-native (GTQ) amount to add to the
-	// balance. For GTQ intents it equals intent.AmountCents; for USD intents
-	// the caller must convert to GTQ before calling this method.
+	// creditAmountCents is in the user's balance_currency (GTQ cents for GTQ
+	// users, USD cents for USD users). sourceCurrency and sourceAmountCents
+	// record the original payment denomination for exact display; both are empty/0
+	// for GTQ credits.
 	//
 	// Returns ErrPaymentIntentAlreadyCaptured when the same captureID has
 	// already been applied to this intent — the caller should treat this as a
@@ -1164,7 +1171,7 @@ type PaymentIntentRepository interface {
 	// Returns apperrors.Conflict when the intent is captured by a different
 	// captureID (duplicate capture from a different PayPal transaction).
 	// Returns apperrors.NotFound when no pending, non-expired intent matches token.
-	CaptureAndCredit(ctx context.Context, token, captureID string, creditAmountCents int) (*domain.PaymentIntent, error)
+	CaptureAndCredit(ctx context.Context, token, captureID string, creditAmountCents int, sourceCurrency string, sourceAmountCents int) (*domain.PaymentIntent, error)
 	// MarkCapturedByToken transitions a pending intent to captured without
 	// crediting the balance. Used by the Recurrente webhook after CreditIdempotent
 	// already handled the balance update, so the intent row reflects the final state.

@@ -117,7 +117,9 @@ func (r *PostgresPaymentIntentRepository) GetByID(ctx context.Context, id int64)
 
 // CaptureAndCredit atomically transitions a pending, non-expired intent to
 // captured and credits the user's balance in a single transaction.
-func (r *PostgresPaymentIntentRepository) CaptureAndCredit(ctx context.Context, token, captureID string, creditAmountCents int) (*domain.PaymentIntent, error) {
+// creditAmountCents is in the user's balance_currency. sourceCurrency and
+// sourceAmountCents preserve the original payment denomination for display.
+func (r *PostgresPaymentIntentRepository) CaptureAndCredit(ctx context.Context, token, captureID string, creditAmountCents int, sourceCurrency string, sourceAmountCents int) (*domain.PaymentIntent, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 
@@ -132,7 +134,7 @@ func (r *PostgresPaymentIntentRepository) CaptureAndCredit(ctx context.Context, 
 			captured, err = resolveCaptureMissTx(ctx, tx, token, captureID)
 			return err
 		}
-		if err := creditUserTx(ctx, tx, intent, creditAmountCents); err != nil {
+		if err := creditUserTx(ctx, tx, intent, creditAmountCents, sourceCurrency, sourceAmountCents); err != nil {
 			return err
 		}
 		captured = intent
@@ -172,15 +174,29 @@ func captureIntentTx(ctx context.Context, tx pgx.Tx, token, captureID string) (*
 
 // creditUserTx credits creditAmountCents to the user's balance and appends a
 // ledger row inside tx. Kind is derived from intent.Provider.
-func creditUserTx(ctx context.Context, tx pgx.Tx, intent *domain.PaymentIntent, creditAmountCents int) error {
+// When sourceCurrency is non-empty the balance_currency column is set to that
+// value (only takes effect when balance_currency is still at its default 'GTQ').
+func creditUserTx(ctx context.Context, tx pgx.Tx, intent *domain.PaymentIntent, creditAmountCents int, sourceCurrency string, sourceAmountCents int) error {
 	var balanceAfter int
-	err := tx.QueryRow(ctx, `
-		UPDATE users
-		   SET balance_cents = balance_cents + $2,
-		       updated_at    = NOW()
-		 WHERE id = $1 AND deleted_at IS NULL
-		 RETURNING balance_cents
-	`, intent.UserID, creditAmountCents).Scan(&balanceAfter)
+	var err error
+	if sourceCurrency != "" {
+		err = tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents    = balance_cents + $2,
+			       balance_currency = $3,
+			       updated_at       = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING balance_cents
+		`, intent.UserID, creditAmountCents, sourceCurrency).Scan(&balanceAfter)
+	} else {
+		err = tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents = balance_cents + $2,
+			       updated_at    = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING balance_cents
+		`, intent.UserID, creditAmountCents).Scan(&balanceAfter)
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return apperrors.NotFound("user not found")
 	}
@@ -199,13 +215,15 @@ func creditUserTx(ctx context.Context, tx pgx.Tx, intent *domain.PaymentIntent, 
 	}
 
 	return insertLedgerTx(ctx, tx, ledgerRow{
-		UserID:       intent.UserID,
-		DeltaCents:   creditAmountCents,
-		Kind:         kind,
-		BalanceAfter: balanceAfter,
-		RefID:        intent.ID,
-		RefType:      "payment_intent",
-		Reference:    captureID,
+		UserID:            intent.UserID,
+		DeltaCents:        creditAmountCents,
+		Kind:              kind,
+		BalanceAfter:      balanceAfter,
+		RefID:             intent.ID,
+		RefType:           "payment_intent",
+		Reference:         captureID,
+		SourceCurrency:    sourceCurrency,
+		SourceAmountCents: sourceAmountCents,
 	})
 }
 

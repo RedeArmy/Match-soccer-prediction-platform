@@ -92,10 +92,12 @@ describe("useBalance", () => {
 
   it("returns balance data when getBalance resolves", async () => {
     const balance = {
+      balance_cents: 50000,
       available_cents: 50000,
       reserved_cents: 0,
       pending_cents: 0,
       currency: "GTQ",
+      balance_currency: "GTQ",
     };
     vi.mocked(api.getBalance).mockResolvedValueOnce(balance);
 
