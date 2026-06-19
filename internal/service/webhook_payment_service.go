@@ -161,52 +161,13 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 	}
 
 	// Fetch the pending intent once: used for both the KYC gate check and the
-	// USD→GTQ conversion decision so we avoid a second DB round-trip.
+	// credit-amount resolution so we avoid a second DB round-trip.
 	pending, err := s.fetchPendingAndCheckKYC(ctx, intentToken)
 	if err != nil {
 		return err
 	}
 
-	// Determine how much to credit and in which currency.
-	//
-	// - Users with balance_currency="USD" (outside Guatemala): credit USD cents
-	//   directly. No conversion; the balance is natively USD.
-	// - Users with balance_currency="GTQ" (Guatemala): convert the USD intent
-	//   amount to GTQ at the buy rate before crediting.
-	creditAmountCents := 0
-	sourceCurrency := ""
-	sourceAmountCents := 0
-	if pending != nil {
-		creditAmountCents = pending.AmountCents
-
-		balCurrency := "GTQ"
-		if s.userRepo != nil {
-			bc, _ := s.userRepo.GetBalanceCurrency(ctx, pending.UserID)
-			if bc != "" {
-				balCurrency = bc
-			}
-		}
-
-		if pending.Currency == "USD" {
-			if balCurrency == "GTQ" && s.fxSvc != nil {
-				gtq, _, convErr := s.fxSvc.ConvertUSDToGTQ(ctx, int64(pending.AmountCents))
-				if convErr != nil {
-					s.log.Warn("paypal: USD→GTQ conversion failed, crediting raw amount",
-						append([]zap.Field{
-							zap.Error(convErr),
-							zap.String("intent_token", intentToken),
-						}, tracing.LogFields(ctx)...)...)
-				} else {
-					creditAmountCents = int(gtq)
-				}
-			} else {
-				// USD-balance user: credit USD cents directly; record source
-				// fields so the frontend can display the exact deposited amount.
-				sourceCurrency = "USD"
-				sourceAmountCents = pending.AmountCents
-			}
-		}
-	}
+	creditAmountCents, sourceCurrency, sourceAmountCents := s.resolvePayPalCredit(ctx, intentToken, pending)
 
 	intent, err := s.intentRepo.CaptureAndCredit(ctx, intentToken, captureID, creditAmountCents, sourceCurrency, sourceAmountCents)
 	if errors.Is(err, repository.ErrPaymentIntentAlreadyCaptured) {
@@ -246,6 +207,53 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 	})
 	s.recordAMLIfNeeded(ctx, intent.UserID, creditAmountCents)
 	return nil
+}
+
+// resolvePayPalCredit returns the credit amount and optional source denomination
+// for a PayPal intent.
+//
+//   - GTQ-balance users: USD intent amount is converted to GTQ at the buy rate.
+//     On conversion failure the raw USD amount is used and a warning is logged.
+//   - USD-balance users: USD intent amount is credited directly; source fields
+//     are set so the frontend can display the exact deposited amount.
+//   - Non-USD intents: intent amount is credited as-is with no source fields.
+func (s *webhookPaymentService) resolvePayPalCredit(ctx context.Context, intentToken string, pending *domain.PaymentIntent) (creditCents int, srcCurrency string, srcAmountCents int) {
+	if pending == nil {
+		return 0, "", 0
+	}
+	if pending.Currency != "USD" {
+		return pending.AmountCents, "", 0
+	}
+
+	balCurrency := s.resolveBalanceCurrency(ctx, pending.UserID)
+	if balCurrency != "GTQ" || s.fxSvc == nil {
+		// USD-balance user: credit USD directly and record source denomination.
+		return pending.AmountCents, "USD", pending.AmountCents
+	}
+
+	gtq, _, convErr := s.fxSvc.ConvertUSDToGTQ(ctx, int64(pending.AmountCents))
+	if convErr != nil {
+		s.log.Warn("paypal: USD→GTQ conversion failed, crediting raw amount",
+			append([]zap.Field{
+				zap.Error(convErr),
+				zap.String("intent_token", intentToken),
+			}, tracing.LogFields(ctx)...)...)
+		return pending.AmountCents, "", 0
+	}
+	return int(gtq), "", 0
+}
+
+// resolveBalanceCurrency returns the user's balance_currency, defaulting to
+// "GTQ" when the user repository is not wired or the query returns empty.
+func (s *webhookPaymentService) resolveBalanceCurrency(ctx context.Context, userID int) string {
+	if s.userRepo == nil {
+		return "GTQ"
+	}
+	bc, _ := s.userRepo.GetBalanceCurrency(ctx, userID)
+	if bc == "" {
+		return "GTQ"
+	}
+	return bc
 }
 
 // fetchPendingAndCheckKYC fetches the intent for token and, when the intent
