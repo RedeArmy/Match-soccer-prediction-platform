@@ -820,7 +820,7 @@ func makeKYCDocumentPurgeJob(
 func makeCancelStaleRecurrenteJob(intentRepo repository.PaymentIntentRepository, log *zap.Logger) func(context.Context) error {
 	return func(ctx context.Context) error {
 		cutoff := time.Now().Add(-time.Hour)
-		n, err := intentRepo.CancelStalePendingRecurrente(ctx, cutoff)
+		n, err := intentRepo.CancelStalePendingCardIntents(ctx, cutoff)
 		if err != nil {
 			log.Warn("payment.cancel_stale_recurrente: failed", zap.Error(err))
 			return err

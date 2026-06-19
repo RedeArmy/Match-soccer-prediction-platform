@@ -612,12 +612,12 @@ func (r *PostgresPaymentIntentRepository) CancelByToken(ctx context.Context, tok
 	return nil
 }
 
-// CancelStalePendingRecurrente bulk-cancels Recurrente intents that are still
-// pending and were created before the given cutoff. Recurrente checkout
-// sessions expire on the provider side after ~1 hour, so any intent that old
-// will never be captured. The caller (worker scheduler) passes
-// time.Now().Add(-time.Hour) as the cutoff.
-func (r *PostgresPaymentIntentRepository) CancelStalePendingRecurrente(ctx context.Context, before time.Time) (int64, error) {
+// CancelStalePendingCardIntents bulk-cancels Recurrente and PayPal intents
+// that are still pending and were created before the given cutoff. Both
+// providers expire checkout sessions after ~1 hour, so any intent that old
+// will never be captured. Bank transfers live in a separate table and are
+// never touched by this query. The caller passes time.Now().Add(-time.Hour).
+func (r *PostgresPaymentIntentRepository) CancelStalePendingCardIntents(ctx context.Context, before time.Time) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 
@@ -625,7 +625,7 @@ func (r *PostgresPaymentIntentRepository) CancelStalePendingRecurrente(ctx conte
 		`UPDATE payment_intents
 		    SET status = 'cancelled', updated_at = NOW()
 		  WHERE status   = 'pending'
-		    AND provider = 'recurrente'
+		    AND provider IN ('recurrente', 'paypal')
 		    AND created_at < $1`,
 		before,
 	)
