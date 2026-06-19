@@ -287,6 +287,84 @@ describe("BankTransfersTab – approved transfer with override amount", () => {
   });
 });
 
+// ── Approve with override amount ──────────────────────────────────────────────
+
+describe("BankTransfersTab – approve with valid override amount", () => {
+  beforeEach(() =>
+    vi.mocked(api.adminListBankTransfers).mockResolvedValue([
+      transfer({ id: 11, status: "pending", amount_cents: 10000 }),
+    ]),
+  );
+
+  it("submits approved_amount_cents when a valid override is entered", async () => {
+    vi.mocked(api.adminApproveBankTransfer).mockResolvedValueOnce({} as never);
+
+    renderTab();
+    await waitFor(() => screen.getByRole("button", { name: /Aprobar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Aprobar/i }));
+    await waitFor(() => screen.getByText(/Aprobar Transferencia #11/i));
+
+    fireEvent.change(screen.getByLabelText(/Monto a acreditar/i), {
+      target: { value: "75.50" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Aprobar y Acreditar/i }));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.adminApproveBankTransfer)).toHaveBeenCalledWith(
+        "tok",
+        11,
+        expect.objectContaining({ approved_amount_cents: 7550 }),
+      ),
+    );
+  });
+
+  it("shows modal error when approve API call fails", async () => {
+    vi.mocked(api.adminApproveBankTransfer).mockRejectedValueOnce(
+      new Error("Fondos insuficientes"),
+    );
+
+    renderTab();
+    await waitFor(() => screen.getByRole("button", { name: /Aprobar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Aprobar/i }));
+    await waitFor(() => screen.getByText(/Aprobar Transferencia #11/i));
+    fireEvent.click(screen.getByRole("button", { name: /Aprobar y Acreditar/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Fondos insuficientes/i)).toBeInTheDocument(),
+    );
+  });
+});
+
+// ── Reject mutation error ─────────────────────────────────────────────────────
+
+describe("BankTransfersTab – reject API error", () => {
+  beforeEach(() =>
+    vi.mocked(api.adminListBankTransfers).mockResolvedValue([
+      transfer({ id: 13, status: "pending" }),
+    ]),
+  );
+
+  it("shows modal error when reject API call fails", async () => {
+    vi.mocked(api.adminRejectBankTransfer).mockRejectedValueOnce(
+      new Error("No se pudo rechazar"),
+    );
+
+    renderTab();
+    await waitFor(() => screen.getByRole("button", { name: /Rechazar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Rechazar/i }));
+    await waitFor(() => screen.getByText(/Rechazar Transferencia #13/i));
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Comprobante inválido" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Rechazar Transferencia/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/No se pudo rechazar/i)).toBeInTheDocument(),
+    );
+  });
+});
+
 // ── Refresh button ────────────────────────────────────────────────────────────
 
 describe("BankTransfersTab – refresh button", () => {

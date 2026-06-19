@@ -398,9 +398,6 @@ export function BankTransfersTab() {
       const q = Number.parseFloat(overrideRaw);
       if (!Number.isNaN(q) && q > 0) {
         data.approved_amount_cents = Math.round(q * 100);
-      } else {
-        setModalError("El monto a acreditar debe ser positivo");
-        return;
       }
     }
     approveMutation.mutate({ id: modal.item.id, data });
@@ -408,10 +405,6 @@ export function BankTransfersTab() {
 
   function submitReject() {
     if (modal?.kind !== "reject") return;
-    if (!notes.trim()) {
-      setModalError("El motivo de rechazo es requerido");
-      return;
-    }
     rejectMutation.mutate({ id: modal.item.id, notes: notes.trim() });
   }
 
