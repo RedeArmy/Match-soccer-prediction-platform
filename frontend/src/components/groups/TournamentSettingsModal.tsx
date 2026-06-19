@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { AlertTriangle, CheckCircle, Lock, Loader2, Settings, X } from "lucide-react";
@@ -103,6 +103,73 @@ export function TournamentSettingsModal({
   const isModeDirty =
     modeGeneral !== group.mode_general || modeRound !== group.mode_round;
 
+  let scoreFromZeroSection: React.ReactNode;
+  if (group.score_from_zero) {
+    scoreFromZeroSection = (
+      <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 opacity-60">
+        <Lock className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-white">{t("group.scoreFromZeroLabel")}</p>
+          <p className="mt-0.5 text-[11px] text-text-muted">
+            {t("group.scoreFromZeroLockedDesc")}
+          </p>
+        </div>
+      </div>
+    );
+  } else if (showScoreConfirm) {
+    scoreFromZeroSection = (
+      <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-400" />
+          <p className="text-sm font-semibold text-amber-300">{t("group.scoreFromZeroConfirmTitle")}</p>
+        </div>
+        <ul className="mb-4 space-y-1.5 text-[11px] leading-relaxed text-text-muted">
+          <li>· {t("group.scoreFromZeroConfirmItem1")}</li>
+          <li>· {t("group.scoreFromZeroConfirmItem2")}</li>
+          <li>· <strong className="text-amber-300">{t("group.scoreFromZeroConfirmItem3")}</strong></li>
+          <li>· {t("group.scoreFromZeroConfirmItem4")}</li>
+        </ul>
+        {scoreFromZeroMutation.isError && (
+          <p className="mb-3 text-[11px] text-red-400">
+            {t("group.scoreFromZeroActivateError")}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowScoreConfirm(false)}
+            disabled={scoreFromZeroMutation.isPending}
+            className="flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-text-muted transition-colors hover:text-white disabled:opacity-50"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={() => scoreFromZeroMutation.mutate()}
+            disabled={scoreFromZeroMutation.isPending}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-amber-500/80 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-50"
+          >
+            {scoreFromZeroMutation.isPending && (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            )}
+            {t("group.scoreFromZeroConfirmBtn")}
+          </button>
+        </div>
+      </div>
+    );
+  } else {
+    scoreFromZeroSection = (
+      <ModeToggle
+        id="score-from-zero"
+        checked={false}
+        onChange={() => setShowScoreConfirm(true)}
+        label={t("group.scoreFromZeroLabel")}
+        description={t("group.scoreFromZeroDesc")}
+        disabled={false}
+      />
+    );
+  }
+
   const tabs: { id: TabId; label: string }[] = [
     { id: "settings", label: t("group.tabSettings") },
     { id: "mode", label: t("group.tournamentMode") },
@@ -169,67 +236,7 @@ export function TournamentSettingsModal({
               disabled={false}
             />
 
-            <div className="mt-4">
-              {group.score_from_zero ? (
-                <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 opacity-60">
-                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-white">{t("group.scoreFromZeroLabel")}</p>
-                    <p className="mt-0.5 text-[11px] text-text-muted">
-                      {t("group.scoreFromZeroLockedDesc")}
-                    </p>
-                  </div>
-                </div>
-              ) : showScoreConfirm ? (
-                <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-amber-400" />
-                    <p className="text-sm font-semibold text-amber-300">{t("group.scoreFromZeroConfirmTitle")}</p>
-                  </div>
-                  <ul className="mb-4 space-y-1.5 text-[11px] leading-relaxed text-text-muted">
-                    <li>· {t("group.scoreFromZeroConfirmItem1")}</li>
-                    <li>· {t("group.scoreFromZeroConfirmItem2")}</li>
-                    <li>· <strong className="text-amber-300">{t("group.scoreFromZeroConfirmItem3")}</strong></li>
-                    <li>· {t("group.scoreFromZeroConfirmItem4")}</li>
-                  </ul>
-                  {scoreFromZeroMutation.isError && (
-                    <p className="mb-3 text-[11px] text-red-400">
-                      {t("group.scoreFromZeroActivateError")}
-                    </p>
-                  )}
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowScoreConfirm(false)}
-                      disabled={scoreFromZeroMutation.isPending}
-                      className="flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-text-muted transition-colors hover:text-white disabled:opacity-50"
-                    >
-                      {t("common.cancel")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => scoreFromZeroMutation.mutate()}
-                      disabled={scoreFromZeroMutation.isPending}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-amber-500/80 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-50"
-                    >
-                      {scoreFromZeroMutation.isPending && (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      )}
-                      {t("group.scoreFromZeroConfirmBtn")}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <ModeToggle
-                  id="score-from-zero"
-                  checked={false}
-                  onChange={() => setShowScoreConfirm(true)}
-                  label={t("group.scoreFromZeroLabel")}
-                  description={t("group.scoreFromZeroDesc")}
-                  disabled={false}
-                />
-              )}
-            </div>
+            <div className="mt-4">{scoreFromZeroSection}</div>
 
             {approvalMutation.isError && (
               <p className="mt-3 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-[11px] text-red-400">

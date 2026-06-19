@@ -135,7 +135,7 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) (*L
 		return nil, err
 	}
 	if q == nil {
-		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
 	}
 
 	pointsByUser, err := s.predRepo.TotalPointsByQuiniela(ctx, quinielaID, q.ScoreFromZero, quinielaSince(q))
@@ -161,7 +161,7 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 		return nil, err
 	}
 	if q == nil {
-		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
 	}
 
 	pointsByUser, err := s.predRepo.TotalPointsByQuinielaAndPhase(ctx, quinielaID, phase, q.ScoreFromZero, quinielaSince(q))
@@ -181,7 +181,7 @@ func (s *rankingService) GetLeaderboardWithRoundBreakdown(ctx context.Context, q
 		return nil, err
 	}
 	if q == nil {
-		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
 	}
 
 	result, err := s.GetLeaderboard(ctx, quinielaID)
