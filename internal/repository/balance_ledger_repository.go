@@ -258,6 +258,40 @@ func insertLedgerTx(ctx context.Context, tx pgx.Tx, e ledgerRow) error {
 	return nil
 }
 
+// creditUserWithCurrencyTx increments balance_cents for userID inside tx.
+// When srcCur is non-nil the balance_currency column is also updated so that
+// all future balance operations stay in the deposited currency.
+// Returns the post-credit balance_cents value, or an apperrors error.
+func creditUserWithCurrencyTx(ctx context.Context, tx pgx.Tx, userID, deltaCents int, srcCur *string) (int, error) {
+	var balanceAfter int
+	var err error
+	if srcCur != nil {
+		err = tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents    = balance_cents + $2,
+			       balance_currency = $3,
+			       updated_at       = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING balance_cents
+		`, userID, deltaCents, *srcCur).Scan(&balanceAfter)
+	} else {
+		err = tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents = balance_cents + $2,
+			       updated_at    = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING balance_cents
+		`, userID, deltaCents).Scan(&balanceAfter)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, apperrors.NotFound(errMsgUserNotFound)
+	}
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return balanceAfter, nil
+}
+
 // CreditIdempotent credits deltaCents to userID and records the ledger row,
 // exactly like Credit, but is safe for webhook re-delivery: a duplicate
 // reference silently no-ops instead of double-crediting the user.
@@ -312,30 +346,9 @@ func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, 
 		// When the payment is in a non-GTQ currency (sourceCurrency != ""), also
 		// set balance_currency on first use so that all future balance operations
 		// are denominated in the same currency as this deposit.
-		var balanceAfter int
-		if srcCur != nil && *srcCur != "" {
-			err = tx.QueryRow(ctx, `
-				UPDATE users
-				   SET balance_cents    = balance_cents + $2,
-				       balance_currency = $3,
-				       updated_at       = NOW()
-				 WHERE id = $1 AND deleted_at IS NULL
-				 RETURNING balance_cents
-			`, userID, deltaCents, *srcCur).Scan(&balanceAfter)
-		} else {
-			err = tx.QueryRow(ctx, `
-				UPDATE users
-				   SET balance_cents = balance_cents + $2,
-				       updated_at    = NOW()
-				 WHERE id = $1 AND deleted_at IS NULL
-				 RETURNING balance_cents
-			`, userID, deltaCents).Scan(&balanceAfter)
-		}
-		if errors.Is(err, pgx.ErrNoRows) {
-			return apperrors.NotFound(errMsgUserNotFound)
-		}
-		if err != nil {
-			return apperrors.Internal(err)
+		balanceAfter, creditErr := creditUserWithCurrencyTx(ctx, tx, userID, deltaCents, srcCur)
+		if creditErr != nil {
+			return creditErr
 		}
 
 		// Step 3: Backfill balance_after now that the post-credit value is known.

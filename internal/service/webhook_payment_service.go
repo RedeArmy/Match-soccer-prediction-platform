@@ -85,11 +85,13 @@ func (s *webhookPaymentService) CreditFromRecurrente(ctx context.Context, userID
 	// that all future balance operations (entry fees, prizes) are also USD-based.
 	// No GTQ conversion is performed here; display conversion is handled by the
 	// frontend using the live exchange rate.
-	sourceCurrency := ""
-	sourceAmountCents := 0
+	opts := creditDirectOpts{
+		kind:        domain.LedgerKindWebhookRecurrente,
+		auditAction: domain.AuditActionWebhookPaymentCredit,
+	}
 	if currency == "USD" {
-		sourceCurrency = "USD"
-		sourceAmountCents = amountCents
+		opts.sourceCurrency = "USD"
+		opts.sourceAmountCents = amountCents
 	}
 
 	if s.kycGate != nil {
@@ -100,9 +102,7 @@ func (s *webhookPaymentService) CreditFromRecurrente(ctx context.Context, userID
 			return err
 		}
 	}
-	if err := s.creditDirect(ctx, userID, amountCents, currency, reference,
-		domain.LedgerKindWebhookRecurrente, domain.AuditActionWebhookPaymentCredit,
-		sourceCurrency, sourceAmountCents); err != nil {
+	if err := s.creditDirect(ctx, userID, amountCents, currency, reference, opts); err != nil {
 		return err
 	}
 	// Mark the corresponding payment_intent as captured so the admin panel
@@ -119,7 +119,16 @@ func (s *webhookPaymentService) CreditFromRecurrente(ctx context.Context, userID
 	return nil
 }
 
-func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amountCents int, currency, reference string, kind domain.BalanceLedgerKind, action string, sourceCurrency string, sourceAmountCents int) error {
+// creditDirectOpts groups the per-call metadata for creditDirect, keeping its
+// parameter count within the authorised maximum of 7.
+type creditDirectOpts struct {
+	kind              domain.BalanceLedgerKind
+	auditAction       string
+	sourceCurrency    string
+	sourceAmountCents int
+}
+
+func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amountCents int, currency, reference string, opts creditDirectOpts) error {
 	if amountCents <= 0 {
 		return apperrors.Validation("amount_cents must be positive")
 	}
@@ -129,25 +138,25 @@ func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amount
 
 	// Prefix the reference with the provider kind so that identical transaction
 	// IDs from different providers cannot collide in the unique DB index.
-	scopedRef := string(kind) + ":" + reference
-	credited, err := s.ledgerRepo.CreditIdempotent(ctx, userID, amountCents, kind, scopedRef, sourceCurrency, sourceAmountCents)
+	scopedRef := string(opts.kind) + ":" + reference
+	credited, err := s.ledgerRepo.CreditIdempotent(ctx, userID, amountCents, opts.kind, scopedRef, opts.sourceCurrency, opts.sourceAmountCents)
 	if err != nil {
 		return err
 	}
 	if !credited {
 		s.log.Debug("webhook payment: idempotent re-delivery ignored",
 			zap.String("reference", scopedRef),
-			zap.String("kind", string(kind)),
+			zap.String("kind", string(opts.kind)),
 		)
 		return nil
 	}
 
 	resType := "user"
-	s.audit.Log(ctx, nil, nil, action, &resType, &userID, map[string]any{
+	s.audit.Log(ctx, nil, nil, opts.auditAction, &resType, &userID, map[string]any{
 		"amount_cents": amountCents,
 		"currency":     currency,
 		"reference":    scopedRef,
-		"kind":         string(kind),
+		"kind":         string(opts.kind),
 	})
 	return nil
 }
