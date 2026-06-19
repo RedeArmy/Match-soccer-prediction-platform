@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -87,11 +88,11 @@ type stubTotalPointsPredRepo struct {
 	roundPointsErr    error
 }
 
-func (r *stubTotalPointsPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
+func (r *stubTotalPointsPredRepo) TotalPointsByQuiniela(_ context.Context, _ int, _ bool, _ time.Time) (map[int]int, error) {
 	return r.pointsByUser, r.pointsErr
 }
 
-func (r *stubTotalPointsPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
+func (r *stubTotalPointsPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase, _ bool, _ time.Time) (map[int]int, error) {
 	if r.phasePointsByUser != nil || r.phasePointsErr != nil {
 		return r.phasePointsByUser, r.phasePointsErr
 	}
@@ -109,7 +110,7 @@ func (r *stubTotalPointsPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([
 func (r *stubTotalPointsPredRepo) ListAdmin(_ context.Context, _ repository.PredictionAdminFilters, _ repository.Pagination) ([]*domain.Prediction, error) {
 	return r.adminList, r.adminListErr
 }
-func (r *stubTotalPointsPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
+func (r *stubTotalPointsPredRepo) PointsByUserAndRound(_ context.Context, _ int, _ bool, _ time.Time) (map[int]map[string]int, error) {
 	return r.roundPoints, r.roundPointsErr
 }
 func (r *stubTotalPointsPredRepo) ListByGroupAndMatches(_ context.Context, _ int, _ []int) ([]*domain.Prediction, error) {

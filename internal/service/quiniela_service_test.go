@@ -91,6 +91,9 @@ func (r *stubQuinielaRepo) UpdateTournamentMode(_ context.Context, _ int, _, _, 
 func (r *stubQuinielaRepo) UpdateRequireApproval(_ context.Context, _ int, _ bool) (*domain.Quiniela, error) {
 	return r.quiniela, r.err
 }
+func (r *stubQuinielaRepo) UpdateScoreFromZero(_ context.Context, _ int, _ bool) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
+}
 func (r *stubQuinielaRepo) ExistsByName(_ context.Context, _ string, _ int) (bool, error) {
 	return r.nameExists, r.err
 }

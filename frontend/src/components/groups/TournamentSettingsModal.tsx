@@ -51,19 +51,30 @@ export function TournamentSettingsModal({
   const [requireApproval, setRequireApproval] = useState(
     group.require_approval,
   );
+  const [scoreFromZero, setScoreFromZero] = useState(
+    group.score_from_zero,
+  );
 
-  const approvalMutation = useMutation({
+  const isApprovalDirty = requireApproval !== group.require_approval;
+  const isScoreDirty = scoreFromZero !== group.score_from_zero;
+  const isSettingsDirty = isApprovalDirty || isScoreDirty;
+
+  const settingsMutation = useMutation({
     mutationFn: async () => {
       const token = await getToken();
-      return api.updateRequireApproval(token!, group.id, requireApproval);
+      const tasks: Promise<GroupDetailResponse>[] = [];
+      if (isApprovalDirty)
+        tasks.push(api.updateRequireApproval(token!, group.id, requireApproval));
+      if (isScoreDirty)
+        tasks.push(api.updateScoreFromZero(token!, group.id, scoreFromZero));
+      const results = await Promise.all(tasks);
+      return results[results.length - 1]!;
     },
     onSuccess: (updated) => {
       queryClient.setQueryData(["group", group.id], updated);
       onClose();
     },
   });
-
-  const isApprovalDirty = requireApproval !== group.require_approval;
 
   // ── Tab: Modo de torneo ───────────────────────────────────────────────────
   const isFree = !group.is_premium;
@@ -156,7 +167,22 @@ export function TournamentSettingsModal({
               disabled={false}
             />
 
-            {approvalMutation.isError && (
+            <div className="mt-4">
+              <ModeToggle
+                id="score-from-zero"
+                checked={scoreFromZero}
+                onChange={setScoreFromZero}
+                label="Iniciar con 0 puntos"
+                description={
+                  scoreFromZero
+                    ? "Los nuevos miembros que se unan a partir de ahora sólo acumulan puntos de partidos que inicien después de su ingreso."
+                    : "Los miembros acumulan todos sus puntos generales del torneo en este grupo."
+                }
+                disabled={false}
+              />
+            </div>
+
+            {settingsMutation.isError && (
               <p className="mt-3 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-[11px] text-red-400">
                 {t("group.settingsError")}
               </p>
@@ -164,16 +190,16 @@ export function TournamentSettingsModal({
 
             <button
               type="button"
-              disabled={!isApprovalDirty || approvalMutation.isPending}
-              onClick={() => approvalMutation.mutate()}
+              disabled={!isSettingsDirty || settingsMutation.isPending}
+              onClick={() => settingsMutation.mutate()}
               className={cn(
                 "mt-5 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
-                isApprovalDirty
+                isSettingsDirty
                   ? "bg-gold-400/80 text-bg-base hover:bg-gold-400 disabled:opacity-50"
                   : "cursor-not-allowed bg-white/5 text-text-muted",
               )}
             >
-              {approvalMutation.isPending && (
+              {settingsMutation.isPending && (
                 <Loader2 className="h-4 w-4 animate-spin" />
               )}
               {t("common.save")}

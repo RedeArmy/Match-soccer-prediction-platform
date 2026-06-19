@@ -72,7 +72,13 @@ type Quiniela struct {
 	// join via invite code are immediately activated with no approval step and
 	// no notification to existing members.
 	RequireApproval bool
-	CreatedAt       time.Time
+	// ScoreFromZero, when true, causes the leaderboard to only count
+	// predictions on matches that kicked off on or after a member's joined_at.
+	// Members who were already in the group when the flag was enabled
+	// (joined_at < ScoreFromZeroSince) are exempt and retain all their points.
+	ScoreFromZero      bool
+	ScoreFromZeroSince *time.Time // set to NOW() when ScoreFromZero is enabled; nil when disabled
+	CreatedAt          time.Time
 	UpdatedAt       time.Time
 	DeletedAt       *time.Time // nil for active groups; set when the record is soft-deleted
 }

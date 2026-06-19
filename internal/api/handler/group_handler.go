@@ -725,6 +725,42 @@ func (h *GroupHandler) UpdateRequireApproval(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, groupToResponse(q))
 }
 
+type updateScoreFromZeroRequest struct {
+	ScoreFromZero bool `json:"score_from_zero"`
+}
+
+// UpdateScoreFromZero handles PATCH /api/v1/groups/{id}/score-from-zero.
+// Only the group owner may call this. When score_from_zero is true, members
+// who join after this point accumulate points only for matches that kick off
+// after their join date (they start at 0 within this group).
+func (h *GroupHandler) UpdateScoreFromZero(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	req, err := decodeJSON[updateScoreFromZeroRequest](r)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	q, err := h.quinielaSvc.UpdateScoreFromZero(r.Context(), id, caller.ID, req.ScoreFromZero)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, groupToResponse(q))
+}
+
 // SetTournamentMode handles PATCH /api/v1/groups/{id}/tournament-mode.
 func (h *GroupHandler) SetTournamentMode(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")

@@ -221,19 +221,42 @@ func (r *PostgresPredictionRepository) ListByUserAndQuiniela(ctx context.Context
 //
 // Predictions with NULL points (match not yet scored) are excluded from the
 // sum. A member with no scored predictions appears in the map with value 0.
-func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context, quinielaID int) (map[int]int, error) {
-	rows, err := r.db.Query(ctx,
-		`SELECT gm.user_id, COALESCE(SUM(p.points), 0)
-		   FROM group_memberships gm
-		   LEFT JOIN predictions p
-		          ON p.user_id = gm.user_id
-		         AND p.points IS NOT NULL
-		  WHERE gm.quiniela_id = $1
-		    AND gm.status = 'active'
-		    AND gm.paid = TRUE
-		  GROUP BY gm.user_id`,
-		quinielaID,
+func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context, quinielaID int, scoreFromZero bool, scoreFromZeroSince time.Time) (map[int]int, error) {
+	var (
+		rows pgx.Rows
+		err  error
 	)
+	if scoreFromZero {
+		rows, err = r.db.Query(ctx,
+			`SELECT gm.user_id, COALESCE(SUM(pred.points), 0)
+			   FROM group_memberships gm
+			   LEFT JOIN (
+			       SELECT p.user_id, p.points, m.kickoff_at
+			         FROM predictions p
+			         JOIN matches m ON m.id = p.match_id
+			        WHERE p.points IS NOT NULL
+			   ) pred ON pred.user_id = gm.user_id
+			         AND (gm.joined_at IS NULL OR gm.joined_at < $2 OR pred.kickoff_at >= gm.joined_at)
+			  WHERE gm.quiniela_id = $1
+			    AND gm.status = 'active'
+			    AND gm.paid = TRUE
+			  GROUP BY gm.user_id`,
+			quinielaID, scoreFromZeroSince,
+		)
+	} else {
+		rows, err = r.db.Query(ctx,
+			`SELECT gm.user_id, COALESCE(SUM(p.points), 0)
+			   FROM group_memberships gm
+			   LEFT JOIN predictions p
+			          ON p.user_id = gm.user_id
+			         AND p.points IS NOT NULL
+			  WHERE gm.quiniela_id = $1
+			    AND gm.status = 'active'
+			    AND gm.paid = TRUE
+			  GROUP BY gm.user_id`,
+			quinielaID,
+		)
+	}
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
@@ -256,22 +279,45 @@ func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context
 // predictions row. At 500 members × 64 matches the correlated form issues up
 // to 32 000 subquery evaluations per leaderboard request; the derived-table
 // form reduces this to two sequential scans and one hash join.
-func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context.Context, quinielaID int, phase domain.MatchPhase) (map[int]int, error) {
-	rows, err := r.db.Query(ctx,
-		`SELECT gm.user_id, COALESCE(SUM(phase_pred.points), 0)
-		   FROM group_memberships gm
-		   LEFT JOIN (
-		       SELECT p.user_id, p.points
-		         FROM predictions p
-		         JOIN matches m ON m.id = p.match_id AND m.phase = $2
-		        WHERE p.points IS NOT NULL
-		   ) AS phase_pred ON phase_pred.user_id = gm.user_id
-		  WHERE gm.quiniela_id = $1
-		    AND gm.status = 'active'
-		    AND gm.paid = TRUE
-		  GROUP BY gm.user_id`,
-		quinielaID, string(phase),
+func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context.Context, quinielaID int, phase domain.MatchPhase, scoreFromZero bool, scoreFromZeroSince time.Time) (map[int]int, error) {
+	var (
+		rows pgx.Rows
+		err  error
 	)
+	if scoreFromZero {
+		rows, err = r.db.Query(ctx,
+			`SELECT gm.user_id, COALESCE(SUM(phase_pred.points), 0)
+			   FROM group_memberships gm
+			   LEFT JOIN (
+			       SELECT p.user_id, p.points, m.kickoff_at
+			         FROM predictions p
+			         JOIN matches m ON m.id = p.match_id AND m.phase = $2
+			        WHERE p.points IS NOT NULL
+			   ) AS phase_pred ON phase_pred.user_id = gm.user_id
+			                  AND (gm.joined_at IS NULL OR gm.joined_at < $3 OR phase_pred.kickoff_at >= gm.joined_at)
+			  WHERE gm.quiniela_id = $1
+			    AND gm.status = 'active'
+			    AND gm.paid = TRUE
+			  GROUP BY gm.user_id`,
+			quinielaID, string(phase), scoreFromZeroSince,
+		)
+	} else {
+		rows, err = r.db.Query(ctx,
+			`SELECT gm.user_id, COALESCE(SUM(phase_pred.points), 0)
+			   FROM group_memberships gm
+			   LEFT JOIN (
+			       SELECT p.user_id, p.points
+			         FROM predictions p
+			         JOIN matches m ON m.id = p.match_id AND m.phase = $2
+			        WHERE p.points IS NOT NULL
+			   ) AS phase_pred ON phase_pred.user_id = gm.user_id
+			  WHERE gm.quiniela_id = $1
+			    AND gm.status = 'active'
+			    AND gm.paid = TRUE
+			  GROUP BY gm.user_id`,
+			quinielaID, string(phase),
+		)
+	}
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}
@@ -283,22 +329,45 @@ func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context
 // roundKey is the round_number cast to text. Only active, paid members are
 // included; predictions with NULL points or matches without a round_number
 // are excluded.
-func (r *PostgresPredictionRepository) PointsByUserAndRound(ctx context.Context, quinielaID int) (map[int]map[string]int, error) {
-	rows, err := r.db.Query(ctx,
-		`SELECT gm.user_id,
-		        m.round_number::text AS round_key,
-		        COALESCE(SUM(p.points), 0) AS pts
-		   FROM group_memberships gm
-		   JOIN predictions  p ON p.user_id = gm.user_id
-		   JOIN matches      m ON m.id = p.match_id
-		                      AND m.round_number IS NOT NULL
-		  WHERE gm.quiniela_id = $1
-		    AND gm.status      = 'active'
-		    AND gm.paid        = TRUE
-		    AND p.points       IS NOT NULL
-		  GROUP BY gm.user_id, m.round_number`,
-		quinielaID,
+func (r *PostgresPredictionRepository) PointsByUserAndRound(ctx context.Context, quinielaID int, scoreFromZero bool, scoreFromZeroSince time.Time) (map[int]map[string]int, error) {
+	var (
+		rows pgx.Rows
+		err  error
 	)
+	if scoreFromZero {
+		rows, err = r.db.Query(ctx,
+			`SELECT gm.user_id,
+			        m.round_number::text AS round_key,
+			        COALESCE(SUM(p.points), 0) AS pts
+			   FROM group_memberships gm
+			   JOIN predictions  p ON p.user_id = gm.user_id
+			   JOIN matches      m ON m.id = p.match_id
+			                      AND m.round_number IS NOT NULL
+			  WHERE gm.quiniela_id = $1
+			    AND gm.status      = 'active'
+			    AND gm.paid        = TRUE
+			    AND p.points       IS NOT NULL
+			    AND (gm.joined_at IS NULL OR gm.joined_at < $2 OR m.kickoff_at >= gm.joined_at)
+			  GROUP BY gm.user_id, m.round_number`,
+			quinielaID, scoreFromZeroSince,
+		)
+	} else {
+		rows, err = r.db.Query(ctx,
+			`SELECT gm.user_id,
+			        m.round_number::text AS round_key,
+			        COALESCE(SUM(p.points), 0) AS pts
+			   FROM group_memberships gm
+			   JOIN predictions  p ON p.user_id = gm.user_id
+			   JOIN matches      m ON m.id = p.match_id
+			                      AND m.round_number IS NOT NULL
+			  WHERE gm.quiniela_id = $1
+			    AND gm.status      = 'active'
+			    AND gm.paid        = TRUE
+			    AND p.points       IS NOT NULL
+			  GROUP BY gm.user_id, m.round_number`,
+			quinielaID,
+		)
+	}
 	if err != nil {
 		return nil, apperrors.Internal(err)
 	}

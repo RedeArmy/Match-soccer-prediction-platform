@@ -225,6 +225,7 @@ export interface GroupDetailResponse {
   mode_general: boolean;
   mode_round: boolean;
   require_approval: boolean;
+  score_from_zero: boolean;
   created_at: string;
   updated_at: string;
 }

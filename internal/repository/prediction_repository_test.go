@@ -389,7 +389,7 @@ func TestPredictionRepository_TotalPointsByQuiniela_ReturnsSumPerUser(t *testing
 		t.Fatalf("update prediction u2: %v", err)
 	}
 
-	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID)
+	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -436,7 +436,7 @@ func TestPredictionRepository_TotalPointsByQuiniela_ExcludesUnpaidMembers(t *tes
 		t.Fatalf(fmtUpdatePredErr, err)
 	}
 
-	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID)
+	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -454,7 +454,7 @@ func TestPredictionRepository_TotalPointsByQuiniela_EmptyQuiniela_ReturnsEmptyMa
 	q := seedQuiniela(t, u.ID)
 	predRepo := repository.NewPostgresPredictionRepository(testDB)
 
-	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID)
+	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -497,7 +497,7 @@ func TestPredictionRepository_TotalPointsByQuinielaAndPhase_MatchingPhase_Return
 		t.Fatalf("update prediction u2: %v", err)
 	}
 
-	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage)
+	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -531,7 +531,7 @@ func TestPredictionRepository_TotalPointsByQuinielaAndPhase_NonMatchingPhase_Ret
 		t.Fatalf(fmtUpdatePredErr, err)
 	}
 
-	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseFinal)
+	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseFinal, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -567,7 +567,7 @@ func TestPredictionRepository_TotalPointsByQuinielaAndPhase_ExcludesUnpaidMember
 		}
 	}
 
-	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage)
+	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -609,7 +609,7 @@ func TestPredictionRepository_TotalPointsByQuinielaAndPhase_CrossPhaseIsolation(
 		t.Fatalf(fmtUpdatePredErr, err)
 	}
 
-	groupTotals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage)
+	groupTotals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -617,7 +617,7 @@ func TestPredictionRepository_TotalPointsByQuinielaAndPhase_CrossPhaseIsolation(
 		t.Errorf("group_stage total: got %d, want 5 (final points must not bleed across phases)", groupTotals[u.ID])
 	}
 
-	finalTotals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseFinal)
+	finalTotals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseFinal, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -1762,7 +1762,7 @@ func TestPredictionRepository_PointsByUserAndRound_ReturnsPoints(t *testing.T) {
 		t.Fatalf("update points: %v", err)
 	}
 
-	result, err := repo.PointsByUserAndRound(ctx, q.ID)
+	result, err := repo.PointsByUserAndRound(ctx, q.ID, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -1795,7 +1795,7 @@ func TestPredictionRepository_PointsByUserAndRound_ExcludesUnpaidMembers(t *test
 		t.Fatalf("update points: %v", err)
 	}
 
-	result, err := repo.PointsByUserAndRound(ctx, q.ID)
+	result, err := repo.PointsByUserAndRound(ctx, q.ID, false, time.Time{})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}

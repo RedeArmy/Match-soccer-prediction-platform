@@ -23,9 +23,13 @@ type GroupResponse struct {
 	ModeRound   bool `json:"mode_round"`
 	// RequireApproval mirrors the quiniela.require_approval flag. When false,
 	// users who join via invite code are auto-activated with no approval step.
-	RequireApproval bool   `json:"require_approval"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
+	RequireApproval bool `json:"require_approval"`
+	// ScoreFromZero mirrors the quiniela.score_from_zero flag. When true,
+	// members who join after the flag was enabled accumulate points only from
+	// matches that kick off on or after their join date.
+	ScoreFromZero bool   `json:"score_from_zero"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 // MyGroupResponse is the enriched view returned by GET /api/v1/groups/me.
@@ -73,6 +77,7 @@ func groupToResponse(q *domain.Quiniela) GroupResponse {
 		ModeGeneral:     q.ModeGeneral,
 		ModeRound:       q.ModeRound,
 		RequireApproval: q.RequireApproval,
+		ScoreFromZero:   q.ScoreFromZero,
 		CreatedAt:       q.CreatedAt.Format(timeFormat),
 		UpdatedAt:       q.UpdatedAt.Format(timeFormat),
 	}
