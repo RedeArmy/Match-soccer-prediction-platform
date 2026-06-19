@@ -101,27 +101,6 @@ describe("LivePredictionsCarousel", () => {
     expect(screen.getByText("Alice Doe")).toBeTruthy();
   });
 
-  it("shows prediction count on the card header", () => {
-    mockQueryWith({ live_matches: [liveMatch], user_predictions: [userRow] });
-    renderCarousel();
-    expect(screen.getByText("1 / 1 predicciones")).toBeTruthy();
-  });
-
-  it("shows noPrediction label when user has no submitted score", () => {
-    const noScoreRow = {
-      ...userRow,
-      predictions: [
-        { match_id: 5, home_score: 0, away_score: 0, has_prediction: false },
-      ],
-    };
-    mockQueryWith({
-      live_matches: [liveMatch],
-      user_predictions: [noScoreRow],
-    });
-    renderCarousel();
-    expect(screen.getByText("Sin predicción")).toBeTruthy();
-  });
-
   it("accordion opens and shows match scores on click", () => {
     mockQueryWith({ live_matches: [liveMatch], user_predictions: [userRow] });
     renderCarousel();

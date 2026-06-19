@@ -434,6 +434,14 @@ class APIClient {
     );
   }
 
+  cancelIntent(authToken: string, intentToken: string): Promise<void> {
+    return this.request(
+      `/api/v1/payment-intents/${encodeURIComponent(intentToken)}/cancel`,
+      { method: "POST" },
+      authToken,
+    );
+  }
+
   adminRequestComprobante(
     token: string,
     id: number,

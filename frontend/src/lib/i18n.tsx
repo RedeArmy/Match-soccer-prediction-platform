@@ -139,6 +139,8 @@ const translations: TranslationNode = {
     live:        { es: 'EN VIVO',                 en: 'LIVE'                 },
     scrollLeft:  { es: 'Desplazar a la izquierda', en: 'Scroll left'         },
     scrollRight: { es: 'Desplazar a la derecha',   en: 'Scroll right'        },
+    prev:        { es: 'Anterior',                  en: 'Previous'            },
+    next:        { es: 'Siguiente',                 en: 'Next'                },
   },
   group: {
     leaderboard:         { es: 'Clasificación',              en: 'Leaderboard'              },
@@ -392,6 +394,7 @@ const translations: TranslationNode = {
     comprobanteRequiredMsg:   { es: 'El equipo solicita que adjuntes un comprobante',          en: 'The team is requesting a payment receipt'                    },
     btnAdjuntar:              { es: 'Adjuntar',                                                 en: 'Attach'                                                      },
     btnResolucion:            { es: 'Resolución',                                               en: 'Dispute'                                                     },
+    btnCancel:                { es: 'Cancelar',                                                 en: 'Cancel'                                                      },
   },
   // ── Comprobante upload (pending intent receipt upload page) ───────────────────
   comprobante: {
@@ -443,6 +446,7 @@ const translations: TranslationNode = {
     withdraw: { es: 'Retirar',    en: 'Withdraw' },
   },
   deposit: {
+    label:                  { es: 'Depósito',                                                             en: 'Deposit'                                                          },
     tabRecurrente:           { es: 'Recurrente',                                                          en: 'Recurrente'                                                       },
     tabPaypal:               { es: 'PayPal',                                                              en: 'PayPal'                                                           },
     recurrenteDesc:          { es: 'Deposita con tarjeta de débito/crédito guatemalteca vía Recurrente. Serás redirigido al portal de pago.', en: 'Deposit with a Guatemalan debit/credit card via Recurrente. You will be redirected to the payment portal.' },
@@ -704,6 +708,16 @@ function getTranslation(key: string, locale: Locale): string | undefined {
   return undefined;
 }
 
+// ISO 3166-1 alpha-2 codes for Spanish-speaking countries.
+const SPANISH_COUNTRIES = new Set([
+  "AR", "BO", "CL", "CO", "CR", "CU", "DO", "EC", "ES", "GQ",
+  "GT", "HN", "MX", "NI", "PA", "PE", "PR", "PY", "SV", "UY", "VE",
+]);
+
+function localeForCountry(country: string): Locale {
+  return SPANISH_COUNTRIES.has(country.toUpperCase()) ? "es" : "en";
+}
+
 export function I18nProvider({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -711,14 +725,32 @@ export function I18nProvider({
   const [timeZone, setTimeZone] = useState("UTC");
 
   useEffect(() => {
-    const stored = globalThis.localStorage.getItem("quiniela-locale");
-    if (stored === "es" || stored === "en") {
-      setLocale(stored);
-      document.documentElement.lang = stored;
-    }
     setTimeZone(
       Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Guatemala",
     );
+
+    const stored = globalThis.localStorage.getItem("quiniela-locale");
+    if (stored === "es" || stored === "en") {
+      // Explicit user preference always wins.
+      setLocale(stored);
+      document.documentElement.lang = stored;
+      return;
+    }
+
+    // No stored preference — detect from connection country.
+    void (async () => {
+      try {
+        const r = await fetch("/api/geo", { cache: "no-store" });
+        const data = (await r.json()) as { country?: string };
+        const detected = localeForCountry(data.country ?? "GT");
+        setLocale(detected);
+        document.documentElement.lang = detected;
+        // Persist so subsequent visits skip the round-trip.
+        globalThis.localStorage.setItem("quiniela-locale", detected);
+      } catch {
+        // Geo lookup failed or not available (e.g. test env) — keep default "es".
+      }
+    })();
   }, []);
 
   const value = useMemo<I18nContextValue>(

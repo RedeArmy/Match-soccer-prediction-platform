@@ -48,6 +48,14 @@ describe("AdminPageHeader", () => {
     );
     expect(screen.getByRole("button", { name: /Actualizar/i })).toBeDisabled();
   });
+
+  it("renders no refresh button when onRefresh is omitted", () => {
+    render(<AdminPageHeader title="Sin botón" subtitle="S" />);
+    expect(
+      screen.queryByRole("button", { name: /Actualizar/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Sin botón")).toBeInTheDocument();
+  });
 });
 
 // ── AdminModalOverlay ─────────────────────────────────────────────────────────

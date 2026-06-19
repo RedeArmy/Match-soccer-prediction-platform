@@ -572,5 +572,26 @@ func buildWhere(conds []string) string {
 	return w
 }
 
+// CancelByToken transitions a pending intent owned by userID to cancelled.
+// Returns apperrors.NotFound when no matching pending intent exists.
+func (r *PostgresPaymentIntentRepository) CancelByToken(ctx context.Context, token string, userID int) error {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+
+	res, err := r.db.Exec(ctx,
+		`UPDATE payment_intents
+		    SET status = 'cancelled', updated_at = NOW()
+		  WHERE token = $1 AND user_id = $2 AND status = 'pending'`,
+		token, userID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if res.RowsAffected() == 0 {
+		return apperrors.NotFound("payment intent not found or not cancellable")
+	}
+	return nil
+}
+
 // _ asserts interface compliance at compile time.
 var _ PaymentIntentRepository = (*PostgresPaymentIntentRepository)(nil)

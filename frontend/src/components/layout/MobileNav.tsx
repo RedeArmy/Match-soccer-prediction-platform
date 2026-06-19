@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { SignedIn, SignedOut, useClerk } from "@clerk/nextjs";
 import {
+  Globe,
   Home,
   LayoutDashboard,
   LogOut,
@@ -28,13 +29,6 @@ const navItems = [
     signedOutOnly: false,
   },
   {
-    href: "/tournaments",
-    labelKey: "common.tournaments",
-    icon: Trophy,
-    public: true,
-    signedOutOnly: false,
-  },
-  {
     href: "/quinielas",
     labelKey: "common.kinielas",
     icon: Trophy,
@@ -53,6 +47,13 @@ const navItems = [
     labelKey: "common.balance",
     icon: Wallet,
     public: false,
+    signedOutOnly: false,
+  },
+  {
+    href: "/tournaments",
+    labelKey: "common.tournaments",
+    icon: Globe,
+    public: true,
     signedOutOnly: false,
   },
 ];

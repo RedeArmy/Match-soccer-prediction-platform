@@ -18,6 +18,7 @@ const (
 	PaymentIntentExpired     PaymentIntentStatus = "expired"      // TTL elapsed before capture
 	PaymentIntentRejected    PaymentIntentStatus = "rejected"     // admin rejected comprobante
 	PaymentIntentUnderReview PaymentIntentStatus = "under_review" // user disputed rejection with evidence
+	PaymentIntentCancelled   PaymentIntentStatus = "cancelled"    // user abandoned the provider checkout
 )
 
 // PaymentIntent is a server-generated, single-use record that the frontend
@@ -30,6 +31,7 @@ const (
 //	pending      →  captured     (webhook confirms payment)
 //	pending      →  expired      (TTL elapsed before capture)
 //	pending      →  rejected     (admin rejects the comprobante)
+//	pending      →  cancelled    (user abandoned the provider checkout)
 //	rejected     →  under_review (user disputes with evidence; admin re-evaluates)
 //	under_review →  captured     (admin credits after reviewing dispute)
 //	under_review →  rejected     (admin rejects dispute)

@@ -254,11 +254,11 @@ function GroupTable({
           >
             {posBadge(pos)}
 
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="text-base leading-none" aria-hidden>
+            <div className="flex items-center gap-2">
+              <span className="text-base leading-none shrink-0" aria-hidden>
                 {flag(row.team)}
               </span>
-              <span className="truncate text-sm font-medium text-white">
+              <span className="text-sm font-medium text-white">
                 {row.team}
               </span>
             </div>
@@ -335,15 +335,9 @@ export function GroupStandingsSection() {
       <div className="mx-auto max-w-7xl space-y-8">
         {/* Title */}
         <div className="text-center">
-          <p className="text-xs uppercase tracking-widest text-gold-300">
-            {t("standings.eyebrow")}
-          </p>
-          <h2 className="mt-2 font-display text-4xl text-white sm:text-5xl">
+          <h2 className="font-display text-4xl text-white sm:text-5xl">
             {t("standings.title")}
           </h2>
-          <p className="mt-3 text-sm text-text-muted">
-            {t("standings.subtitle")}
-          </p>
         </div>
 
         {isLoading && (
@@ -368,7 +362,7 @@ export function GroupStandingsSection() {
           <>
             <StandingsLegend t={t} />
             <HorizontalCarousel
-              itemWidth="w-96"
+              itemWidth="w-[520px]"
               gap="gap-4"
               scrollAmount={400}
               ariaLabelLeft={t("common.scrollLeft")}

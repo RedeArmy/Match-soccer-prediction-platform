@@ -195,6 +195,56 @@ func (s *stubPaymentIntentSvc) SetComprobanteByToken(_ context.Context, _, _, _ 
 func (s *stubPaymentIntentSvc) ResubmitForReview(_ context.Context, _ int, _ string, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
 	return nil, nil
 }
+func (s *stubPaymentIntentSvc) CancelIntent(_ context.Context, _ string, _ int) error {
+	return s.err
+}
+
+// ── Cancel handler tests ──────────────────────────────────────────────────────
+
+func cancelRouter(t *testing.T, svc *stubPaymentIntentSvc) http.Handler {
+	t.Helper()
+	h := handler.NewPaymentIntentHandler(svc, zaptest.NewLogger(t))
+	r := chi.NewRouter()
+	r.With(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			next.ServeHTTP(w, req.WithContext(mw.ContextWithUser(req.Context(), callerUser)))
+		})
+	}).Post("/api/v1/payment-intents/{token}/cancel", h.Cancel)
+	return r
+}
+
+func TestPaymentIntentHandler_Cancel_Returns204(t *testing.T) {
+	router := cancelRouter(t, &stubPaymentIntentSvc{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/payment-intents/tok123/cancel", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPaymentIntentHandler_Cancel_Unauthenticated_Returns401(t *testing.T) {
+	h := handler.NewPaymentIntentHandler(&stubPaymentIntentSvc{}, zaptest.NewLogger(t))
+	r := chi.NewRouter()
+	r.Post("/api/v1/payment-intents/{token}/cancel", h.Cancel)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/payment-intents/tok123/cancel", nil)
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestPaymentIntentHandler_Cancel_NotFound_Returns404(t *testing.T) {
+	svc := &stubPaymentIntentSvc{err: errors.New("not found")}
+	router := cancelRouter(t, svc)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/payment-intents/missing/cancel", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code == http.StatusNoContent {
+		t.Errorf("expected non-204 on service error, got 204")
+	}
+}
 
 // ── stubCheckoutCreator ───────────────────────────────────────────────────────
 
@@ -243,6 +293,9 @@ func (s *stubUploadSvc) ResubmitForReview(_ context.Context, _ int, _ string, _,
 		return s.resubmitResp, nil
 	}
 	return &domain.PaymentIntent{Token: "tok"}, nil
+}
+func (s *stubUploadSvc) CancelIntent(_ context.Context, _ string, _ int) error {
+	return nil
 }
 
 // ── stubCapturingFileStore ────────────────────────────────────────────────────
