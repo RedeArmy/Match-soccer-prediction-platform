@@ -18,17 +18,9 @@ import {
   ledgerKindKey,
   isVisibleLedgerKind,
 } from "@/lib/utils";
-import type {
-  LedgerEntry,
-  BankTransferResponse,
-} from "@/lib/api-types";
+import type { LedgerEntry, BankTransferResponse } from "@/lib/api-types";
 import { useI18n } from "@/lib/i18n";
-import {
-  CheckCircle,
-  X,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { CheckCircle, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -143,7 +135,9 @@ function LedgerRow({
           <div className="shrink-0 text-right">
             <p className={`font-score text-sm font-semibold ${color}`}>
               {entry.delta_cents >= 0 ? "+" : ""}
-              {isUSD && entry.source_currency === "USD" && entry.source_amount_cents
+              {isUSD &&
+              entry.source_currency === "USD" &&
+              entry.source_amount_cents
                 ? formatUSD(entry.source_amount_cents)
                 : fmt(entry.delta_cents)}
             </p>
@@ -263,7 +257,9 @@ export default function BalancePage() {
               <>
                 <p className="text-sm font-medium text-green-300">
                   {t("balance.paypalBannerPre")}{" "}
-                  <span className="font-score">${usdAmount.toFixed(2)} USD</span>{" "}
+                  <span className="font-score">
+                    ${usdAmount.toFixed(2)} USD
+                  </span>{" "}
                   {t("balance.paypalBannerReceived")}
                 </p>
                 {gtqEstimate !== null && (
@@ -278,7 +274,9 @@ export default function BalancePage() {
               <p className="text-sm font-medium text-green-300">
                 {t("balance.recurrenteBannerPre")}{" "}
                 {recurrenteAmountFormatted && (
-                  <span className="font-score">{recurrenteAmountFormatted}</span>
+                  <span className="font-score">
+                    {recurrenteAmountFormatted}
+                  </span>
                 )}{" "}
                 {t("balance.recurrenteBannerReceived")}
               </p>
@@ -342,8 +340,8 @@ export default function BalancePage() {
               <div className="flex items-center justify-between pt-1">
                 <p className="text-xs text-text-muted">
                   {page * PAGE_SIZE + 1}–
-                  {Math.min((page + 1) * PAGE_SIZE, allRows.length)}{" "}
-                  / {allRows.length}
+                  {Math.min((page + 1) * PAGE_SIZE, allRows.length)} /{" "}
+                  {allRows.length}
                 </p>
                 <div className="flex gap-1">
                   <button
