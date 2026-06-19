@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { AlertTriangle, CheckCircle, Loader2, Settings, X } from "lucide-react";
+import { AlertTriangle, CheckCircle, Lock, Loader2, Settings, X } from "lucide-react";
 import { api } from "@/lib/api";
 import type { GroupDetailResponse } from "@/lib/api-types";
 import { useI18n } from "@/lib/i18n";
@@ -51,28 +51,30 @@ export function TournamentSettingsModal({
   const [requireApproval, setRequireApproval] = useState(
     group.require_approval,
   );
-  const [scoreFromZero, setScoreFromZero] = useState(
-    group.score_from_zero,
-  );
+  const [showScoreConfirm, setShowScoreConfirm] = useState(false);
 
   const isApprovalDirty = requireApproval !== group.require_approval;
-  const isScoreDirty = scoreFromZero !== group.score_from_zero;
-  const isSettingsDirty = isApprovalDirty || isScoreDirty;
 
-  const settingsMutation = useMutation({
+  const approvalMutation = useMutation({
     mutationFn: async () => {
       const token = await getToken();
-      const tasks: Promise<GroupDetailResponse>[] = [];
-      if (isApprovalDirty)
-        tasks.push(api.updateRequireApproval(token!, group.id, requireApproval));
-      if (isScoreDirty)
-        tasks.push(api.updateScoreFromZero(token!, group.id, scoreFromZero));
-      const results = await Promise.all(tasks);
-      return results[results.length - 1]!;
+      return api.updateRequireApproval(token!, group.id, requireApproval);
     },
     onSuccess: (updated) => {
       queryClient.setQueryData(["group", group.id], updated);
       onClose();
+    },
+  });
+
+  // One-way activation: once set, score_from_zero cannot be reversed.
+  const scoreFromZeroMutation = useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      return api.updateScoreFromZero(token!, group.id, true);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["group", group.id], updated);
+      setShowScoreConfirm(false);
     },
   });
 
@@ -168,21 +170,68 @@ export function TournamentSettingsModal({
             />
 
             <div className="mt-4">
-              <ModeToggle
-                id="score-from-zero"
-                checked={scoreFromZero}
-                onChange={setScoreFromZero}
-                label="Iniciar con 0 puntos"
-                description={
-                  scoreFromZero
-                    ? "Los nuevos miembros que se unan a partir de ahora sólo acumulan puntos de partidos que inicien después de su ingreso."
-                    : "Los miembros acumulan todos sus puntos generales del torneo en este grupo."
-                }
-                disabled={false}
-              />
+              {group.score_from_zero ? (
+                <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 opacity-60">
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">Iniciar con 0 puntos</p>
+                    <p className="mt-0.5 text-[11px] text-text-muted">
+                      Activado · Irreversible. Los nuevos miembros ingresan con 0 puntos en este grupo.
+                    </p>
+                  </div>
+                </div>
+              ) : showScoreConfirm ? (
+                <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-400" />
+                    <p className="text-sm font-semibold text-amber-300">¿Confirmar activación?</p>
+                  </div>
+                  <ul className="mb-4 space-y-1.5 text-[11px] leading-relaxed text-text-muted">
+                    <li>· Los puntos de <strong className="text-white/90">todos los miembros actuales</strong> del grupo se reiniciarán a <strong className="text-white/90">0</strong>.</li>
+                    <li>· Los nuevos miembros que se unan también comenzarán con 0 puntos en este grupo.</li>
+                    <li>· <strong className="text-amber-300">Esta acción no puede revertirse.</strong></li>
+                    <li>· Los puntos en otros grupos no se verán afectados.</li>
+                  </ul>
+                  {scoreFromZeroMutation.isError && (
+                    <p className="mb-3 text-[11px] text-red-400">
+                      No se pudo activar. Intenta nuevamente.
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowScoreConfirm(false)}
+                      disabled={scoreFromZeroMutation.isPending}
+                      className="flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-text-muted transition-colors hover:text-white disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scoreFromZeroMutation.mutate()}
+                      disabled={scoreFromZeroMutation.isPending}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-amber-500/80 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-50"
+                    >
+                      {scoreFromZeroMutation.isPending && (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      )}
+                      Confirmar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <ModeToggle
+                  id="score-from-zero"
+                  checked={false}
+                  onChange={() => setShowScoreConfirm(true)}
+                  label="Iniciar con 0 puntos"
+                  description="Al activar, los puntos de todos los miembros se reiniciarán a 0 en este grupo. Esta acción no puede revertirse."
+                  disabled={false}
+                />
+              )}
             </div>
 
-            {settingsMutation.isError && (
+            {approvalMutation.isError && (
               <p className="mt-3 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-[11px] text-red-400">
                 {t("group.settingsError")}
               </p>
@@ -190,16 +239,16 @@ export function TournamentSettingsModal({
 
             <button
               type="button"
-              disabled={!isSettingsDirty || settingsMutation.isPending}
-              onClick={() => settingsMutation.mutate()}
+              disabled={!isApprovalDirty || approvalMutation.isPending}
+              onClick={() => approvalMutation.mutate()}
               className={cn(
                 "mt-5 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
-                isSettingsDirty
+                isApprovalDirty
                   ? "bg-gold-400/80 text-bg-base hover:bg-gold-400 disabled:opacity-50"
                   : "cursor-not-allowed bg-white/5 text-text-muted",
               )}
             >
-              {settingsMutation.isPending && (
+              {approvalMutation.isPending && (
                 <Loader2 className="h-4 w-4 animate-spin" />
               )}
               {t("common.save")}

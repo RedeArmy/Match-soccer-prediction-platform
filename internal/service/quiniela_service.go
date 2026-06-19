@@ -280,7 +280,10 @@ func (s *quinielaService) UpdateScoreFromZero(ctx context.Context, quinielaID, c
 	if err := s.authz.RequireOwner(ctx, quinielaID, callerUserID); err != nil {
 		return nil, err
 	}
-	q, err := s.repo.UpdateScoreFromZero(ctx, quinielaID, enabled)
+	if !enabled {
+		return nil, apperrors.Validation("score_from_zero cannot be disabled once activated")
+	}
+	q, err := s.repo.UpdateScoreFromZero(ctx, quinielaID, true)
 	if err != nil {
 		return nil, err
 	}
