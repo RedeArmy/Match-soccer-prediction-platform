@@ -23,6 +23,7 @@ const (
 	msgInvalidWithdrawalID   = "invalid withdrawal id"
 	msgInvalidBankTransferID = "invalid bank transfer id"
 	msgInvalidIntentID       = "invalid intent id"
+	msgTokenRequired         = "token is required"
 )
 
 // moneyJSONBodyLimit is the per-handler body cap applied to all JSON money

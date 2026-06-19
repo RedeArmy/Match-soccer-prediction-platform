@@ -203,7 +203,7 @@ func (h *PaymentIntentHandler) UploadComprobante(w http.ResponseWriter, r *http.
 
 	token := chi.URLParam(r, "token")
 	if token == "" {
-		writeError(w, r, h.log, apperrors.Validation("token is required"))
+		writeError(w, r, h.log, apperrors.Validation(msgTokenRequired))
 		return
 	}
 
@@ -392,7 +392,7 @@ func (h *PaymentIntentHandler) ResubmitForReview(w http.ResponseWriter, r *http.
 
 	token := chi.URLParam(r, "token")
 	if token == "" {
-		writeError(w, r, h.log, apperrors.Validation("token is required"))
+		writeError(w, r, h.log, apperrors.Validation(msgTokenRequired))
 		return
 	}
 
@@ -467,7 +467,7 @@ func (h *PaymentIntentHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 
 	token := chi.URLParam(r, "token")
 	if token == "" {
-		writeError(w, r, h.log, apperrors.Validation("token is required"))
+		writeError(w, r, h.log, apperrors.Validation(msgTokenRequired))
 		return
 	}
 
