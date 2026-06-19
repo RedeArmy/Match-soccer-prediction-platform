@@ -1203,6 +1203,12 @@ type PaymentIntentRepository interface {
 	// CancelByToken transitions a pending intent owned by userID to cancelled.
 	// Returns apperrors.NotFound when no matching pending intent exists for that user/token pair.
 	CancelByToken(ctx context.Context, token string, userID int) error
+	// CancelStalePendingRecurrente bulk-cancels Recurrente intents that are still
+	// in status='pending' and were created strictly before before. Used by the
+	// worker to enforce the 1-hour auto-expiry policy for Recurrente checkout
+	// sessions (which expire on the provider side after ~1 hour anyway).
+	// Returns the number of rows updated.
+	CancelStalePendingRecurrente(ctx context.Context, before time.Time) (int64, error)
 }
 
 // NotificationTemplateRepository manages operator-editable notification content.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -609,6 +610,29 @@ func (r *PostgresPaymentIntentRepository) CancelByToken(ctx context.Context, tok
 		return apperrors.NotFound("payment intent not found or not cancellable")
 	}
 	return nil
+}
+
+// CancelStalePendingRecurrente bulk-cancels Recurrente intents that are still
+// pending and were created before the given cutoff. Recurrente checkout
+// sessions expire on the provider side after ~1 hour, so any intent that old
+// will never be captured. The caller (worker scheduler) passes
+// time.Now().Add(-time.Hour) as the cutoff.
+func (r *PostgresPaymentIntentRepository) CancelStalePendingRecurrente(ctx context.Context, before time.Time) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
+	defer cancel()
+
+	tag, err := r.db.Exec(ctx,
+		`UPDATE payment_intents
+		    SET status = 'cancelled', updated_at = NOW()
+		  WHERE status   = 'pending'
+		    AND provider = 'recurrente'
+		    AND created_at < $1`,
+		before,
+	)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 // _ asserts interface compliance at compile time.

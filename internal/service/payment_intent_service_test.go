@@ -63,6 +63,9 @@ func (r *stubIntentRepo) SubmitForReview(_ context.Context, _ int64, _ int, _, _
 	return nil, nil
 }
 func (r *stubIntentRepo) CancelByToken(_ context.Context, _ string, _ int) error { return nil }
+func (r *stubIntentRepo) CancelStalePendingRecurrente(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
 
 func newIntentSvc(repo *stubIntentRepo) PaymentIntentCreator {
 	return NewPaymentIntentService(repo, &noopSystemParamService{}, zap.NewNop())
@@ -419,4 +422,7 @@ func (r *stubIntentRepoWithGetByToken) SubmitForReview(_ context.Context, _ int6
 }
 func (r *stubIntentRepoWithGetByToken) CancelByToken(_ context.Context, _ string, _ int) error {
 	return nil
+}
+func (r *stubIntentRepoWithGetByToken) CancelStalePendingRecurrente(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
 }

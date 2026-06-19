@@ -3,8 +3,7 @@
 import { useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useCurrency } from "@/hooks/useCurrency";
 import { useBalance } from "@/hooks/useBalance";
@@ -18,23 +17,17 @@ import {
   usdToGTQ,
   ledgerKindKey,
   isVisibleLedgerKind,
-  formatRelative,
 } from "@/lib/utils";
 import type {
   LedgerEntry,
-  PaymentIntentSummary,
   BankTransferResponse,
-  PaymentIntentStatus,
 } from "@/lib/api-types";
 import { useI18n } from "@/lib/i18n";
 import {
   CheckCircle,
   X,
-  Upload,
-  AlertCircle,
   ChevronLeft,
   ChevronRight,
-  XCircle,
 } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -42,17 +35,6 @@ import {
 function getLedgerColor(kind: string, deltaCents: number): string {
   if (kind === "withdrawal_release") return "text-amber-400";
   return deltaCents >= 0 ? "text-green-400" : "text-red-400";
-}
-
-function formatAmount(cents: number, currency: string): string {
-  if (currency === "USD") return `$${(cents / 100).toFixed(2)} USD`;
-  return formatGTQ(cents);
-}
-
-function intentColor(status: PaymentIntentStatus): "green" | "orange" | "red" {
-  if (status === "captured") return "green";
-  if (status === "pending" || status === "under_review") return "orange";
-  return "red"; // rejected | expired
 }
 
 function transferColor(status: string): "green" | "orange" | "red" {
@@ -78,119 +60,8 @@ const PAGE_SIZE = 10;
 // ── Unified row types ─────────────────────────────────────────────────────────
 
 type TxRow =
-  | { kind: "intent"; data: PaymentIntentSummary; date: string }
   | { kind: "transfer"; data: BankTransferResponse; date: string }
   | { kind: "ledger"; data: LedgerEntry; date: string };
-
-// ── Intent row ────────────────────────────────────────────────────────────────
-
-function IntentRow({
-  intent,
-  onCancel,
-  cancelling,
-}: {
-  readonly intent: PaymentIntentSummary;
-  readonly onCancel: (token: string) => void;
-  readonly cancelling: boolean;
-}) {
-  const { t } = useI18n();
-  const color = intentColor(intent.status);
-  const providerLabel =
-    intent.provider === "recurrente" ? "Recurrente" : "PayPal";
-  const amount = formatAmount(intent.amount_cents, intent.currency);
-
-  const showAdjuntar =
-    (intent.status === "pending" || intent.status === "expired") &&
-    !intent.has_comprobante &&
-    intent.comprobante_required;
-
-  const showResolucion = intent.status === "rejected";
-  const showCancel =
-    intent.status === "pending" && !intent.comprobante_required;
-
-  return (
-    <div className="flex gap-3 px-4 py-3.5">
-      <span
-        className={`mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 ${colorDot[color]}`}
-      />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-text-primary">
-              {t("deposit.label")} · {providerLabel}
-            </p>
-            <p className="text-xs text-text-muted mt-0.5">
-              {formatRelative(intent.created_at)} ·{" "}
-              {formatDate(intent.created_at)}
-            </p>
-          </div>
-          <div className="shrink-0 text-right">
-            <p className="font-score text-sm font-semibold text-text-primary">
-              {amount}
-            </p>
-            <span
-              className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium ring-1 ${statusBadge[color]}`}
-            >
-              {t(`status.${intent.status}`)}
-            </span>
-          </div>
-        </div>
-
-        {intent.status === "under_review" && (
-          <p className="text-xs text-amber-400/80 mt-1">
-            {t("balance.underReviewMsg")}
-          </p>
-        )}
-        {intent.status === "pending" &&
-          intent.comprobante_required &&
-          !intent.has_comprobante && (
-            <p className="text-xs text-amber-400/80 mt-1">
-              {t("balance.comprobanteRequiredMsg")}
-            </p>
-          )}
-        {intent.user_notes && (
-          <p className="text-xs text-text-muted/70 italic mt-1">
-            &ldquo;{intent.user_notes}&rdquo;
-          </p>
-        )}
-
-        {(showAdjuntar || showResolucion || showCancel) && (
-          <div className="flex flex-wrap gap-2 mt-2">
-            {showAdjuntar && (
-              <Link
-                href={`/balance/deposit/comprobante/${encodeURIComponent(intent.token)}`}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-xs font-medium transition-colors"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                {t("balance.btnAdjuntar")}
-              </Link>
-            )}
-            {showResolucion && (
-              <Link
-                href={`/balance/deposit/review/${encodeURIComponent(intent.token)}`}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs font-medium transition-colors"
-              >
-                <AlertCircle className="w-3.5 h-3.5" />
-                {t("balance.btnResolucion")}
-              </Link>
-            )}
-            {showCancel && (
-              <button
-                type="button"
-                disabled={cancelling}
-                onClick={() => onCancel(intent.token)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-text-muted text-xs font-medium transition-colors disabled:opacity-50"
-              >
-                <XCircle className="w-3.5 h-3.5" />
-                {t("balance.btnCancel")}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ── Transfer row ──────────────────────────────────────────────────────────────
 
@@ -217,7 +88,6 @@ function TransferRow({
               {t("balance.providerTransfer")}
             </p>
             <p className="text-xs text-text-muted mt-0.5">
-              {formatRelative(transfer.created_at)} ·{" "}
               {formatDate(transfer.created_at)}
             </p>
           </div>
@@ -295,7 +165,6 @@ export default function BalancePage() {
   const balanceCurrency = balanceData?.balance_currency ?? "GTQ";
   const { fmt, isUSD } = useCurrency(balanceCurrency);
   const { t } = useI18n();
-  const queryClient = useQueryClient();
 
   const searchParams = useSearchParams();
   const paypalSuccess = searchParams.get("paypal") === "success";
@@ -329,18 +198,6 @@ export default function BalancePage() {
   const recurrenteAmountFormatted =
     recurrenteAmountCents > 0 ? recurrenteAmountDisplay : null;
 
-  // Payment intents (all statuses; filter cancelled client-side)
-  const { data: myIntents = [], isLoading: intentsLoading } = useQuery<
-    PaymentIntentSummary[]
-  >({
-    queryKey: ["payment-intents", "my-all"],
-    queryFn: async () => {
-      const token = await getToken();
-      return api.listMyIntents(token!);
-    },
-    refetchInterval: refetchEnabled ? 3_000 : false,
-  });
-
   // Bank transfers
   const { data: myTransfers = [], isLoading: transfersLoading } = useQuery<
     BankTransferResponse[]
@@ -364,25 +221,9 @@ export default function BalancePage() {
     refetchInterval: refetchEnabled ? 2_000 : false,
   });
 
-  // Cancel mutation
-  const cancelMutation = useMutation({
-    mutationFn: async (intentToken: string) => {
-      const token = await getToken();
-      return api.cancelIntent(token!, intentToken);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["payment-intents", "my-all"],
-      });
-    },
-  });
-
-  // Unified sorted list — cancelled intents excluded
+  // Unified sorted list
   const allRows = useMemo<TxRow[]>(() => {
     const rows: TxRow[] = [
-      ...myIntents
-        .filter((d) => d.status !== "cancelled")
-        .map((d) => ({ kind: "intent" as const, data: d, date: d.created_at })),
       ...myTransfers.map((d) => ({
         kind: "transfer" as const,
         data: d,
@@ -399,11 +240,11 @@ export default function BalancePage() {
     return rows.sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
-  }, [myIntents, myTransfers, ledgerEntries]);
+  }, [myTransfers, ledgerEntries]);
 
   const totalPages = Math.ceil(allRows.length / PAGE_SIZE);
   const pageRows = allRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const isLoading = intentsLoading || transfersLoading || ledgerLoading;
+  const isLoading = transfersLoading || ledgerLoading;
 
   const bannerCreditText = paypalSuccess
     ? t("balance.paypalBannerCredit")
@@ -478,19 +319,6 @@ export default function BalancePage() {
           <>
             <div className="card divide-y divide-blue-800/50">
               {pageRows.map((tx, i) => {
-                if (tx.kind === "intent") {
-                  return (
-                    <IntentRow
-                      key={`intent-${tx.data.id}-${i}`}
-                      intent={tx.data}
-                      onCancel={(token) => cancelMutation.mutate(token)}
-                      cancelling={
-                        cancelMutation.isPending &&
-                        cancelMutation.variables === tx.data.token
-                      }
-                    />
-                  );
-                }
                 if (tx.kind === "transfer") {
                   return (
                     <TransferRow

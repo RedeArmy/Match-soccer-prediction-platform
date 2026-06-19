@@ -448,6 +448,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// docs/adr/0008-balance-ledger-partitioning.md triggers at ~50M rows.
 	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(db)
 	logWarnOnErr(log, "repository.RegisterLedgerRowCountGauge failed", repository.RegisterLedgerRowCountGauge(meter, ledgerRepo))
+	intentRepo := repository.NewPostgresPaymentIntentRepository(db)
 
 	// Scoring DLQ depth — exposes wcq_scoring_dlq_depth{event_type=...} so
 	// Prometheus can alert when scoring events accumulate in the Redis DLQ.
@@ -516,6 +517,11 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	dailySyncNotifier := setupObservabilityNotifier(cfg, log)
 	notifScheduler.RegisterDaily("match.daily_fixture_sync", dailySyncHour, 0,
 		makeDailyFixtureSyncJob(params, matchSyncSvc, dailySyncNotifier, log))
+
+	// Auto-cancel pending Recurrente payment intents older than 1 hour.
+	// Runs every 5 minutes; the cutoff is computed fresh on each tick.
+	notifScheduler.RegisterInterval("payment.cancel_stale_recurrente", 5*time.Minute,
+		makeCancelStaleRecurrenteJob(intentRepo, log))
 
 	// snapshotLockTTL covers the worst-case snapshot retry window with generous
 	// headroom. The lock is also released explicitly by Unlock in the happy path;
@@ -805,6 +811,23 @@ func makeKYCDocumentPurgeJob(
 			zap.Int("db_failed", dbFailed),
 			zap.Int("retention_years", retentionYears),
 		)
+		return nil
+	}
+}
+
+// makeCancelStaleRecurrenteJob returns the scheduler job that cancels pending
+// Recurrente payment intents that have been waiting longer than 1 hour.
+func makeCancelStaleRecurrenteJob(intentRepo repository.PaymentIntentRepository, log *zap.Logger) func(context.Context) error {
+	return func(ctx context.Context) error {
+		cutoff := time.Now().Add(-time.Hour)
+		n, err := intentRepo.CancelStalePendingRecurrente(ctx, cutoff)
+		if err != nil {
+			log.Warn("payment.cancel_stale_recurrente: failed", zap.Error(err))
+			return err
+		}
+		if n > 0 {
+			log.Info("payment.cancel_stale_recurrente: cancelled stale pending intents", zap.Int64("count", n))
+		}
 		return nil
 	}
 }

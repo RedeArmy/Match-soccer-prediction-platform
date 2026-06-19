@@ -105,6 +105,9 @@ func (r *webhookIntentRepoStub) RequestComprobante(_ context.Context, _ int64, _
 func (r *webhookIntentRepoStub) SubmitForReview(_ context.Context, _ int64, _ int, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
 	return nil, nil
 }
+func (r *webhookIntentRepoStub) CancelStalePendingRecurrente(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
 func (r *webhookIntentRepoStub) CancelByToken(_ context.Context, _ string, _ int) error {
 	return nil
 }
