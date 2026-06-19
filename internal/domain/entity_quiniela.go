@@ -73,9 +73,10 @@ type Quiniela struct {
 	// no notification to existing members.
 	RequireApproval bool
 	// ScoreFromZero, when true, causes the leaderboard to only count
-	// predictions on matches that kicked off on or after a member's joined_at.
-	// Members who were already in the group when the flag was enabled
-	// (joined_at < ScoreFromZeroSince) are exempt and retain all their points.
+	// predictions on matches whose kickoff_at is on or after
+	// MAX(ScoreFromZeroSince, member.joined_at). This resets all current
+	// members to 0 at the moment of activation and ensures new joiners also
+	// start fresh from their own join date.
 	ScoreFromZero      bool
 	ScoreFromZeroSince *time.Time // set to NOW() when ScoreFromZero is enabled; nil when disabled
 	CreatedAt          time.Time

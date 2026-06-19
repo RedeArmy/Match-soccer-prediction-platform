@@ -227,6 +227,10 @@ func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context
 		err  error
 	)
 	if scoreFromZero {
+		// Only count predictions for matches that kicked off on or after
+		// GREATEST(score_from_zero_since, member.joined_at). This resets all
+		// current members to 0 at the flag-activation instant and ensures new
+		// joiners cannot back-fill points from before they entered the group.
 		rows, err = r.db.Query(ctx,
 			`SELECT gm.user_id, COALESCE(SUM(pred.points), 0)
 			   FROM group_memberships gm
@@ -236,7 +240,7 @@ func (r *PostgresPredictionRepository) TotalPointsByQuiniela(ctx context.Context
 			         JOIN matches m ON m.id = p.match_id
 			        WHERE p.points IS NOT NULL
 			   ) pred ON pred.user_id = gm.user_id
-			         AND (gm.joined_at IS NULL OR gm.joined_at < $2 OR pred.kickoff_at >= gm.joined_at)
+			         AND pred.kickoff_at >= GREATEST($2, COALESCE(gm.joined_at, $2))
 			  WHERE gm.quiniela_id = $1
 			    AND gm.status = 'active'
 			    AND gm.paid = TRUE
@@ -294,7 +298,7 @@ func (r *PostgresPredictionRepository) TotalPointsByQuinielaAndPhase(ctx context
 			         JOIN matches m ON m.id = p.match_id AND m.phase = $2
 			        WHERE p.points IS NOT NULL
 			   ) AS phase_pred ON phase_pred.user_id = gm.user_id
-			                  AND (gm.joined_at IS NULL OR gm.joined_at < $3 OR phase_pred.kickoff_at >= gm.joined_at)
+			                  AND phase_pred.kickoff_at >= GREATEST($3, COALESCE(gm.joined_at, $3))
 			  WHERE gm.quiniela_id = $1
 			    AND gm.status = 'active'
 			    AND gm.paid = TRUE
@@ -347,7 +351,7 @@ func (r *PostgresPredictionRepository) PointsByUserAndRound(ctx context.Context,
 			    AND gm.status      = 'active'
 			    AND gm.paid        = TRUE
 			    AND p.points       IS NOT NULL
-			    AND (gm.joined_at IS NULL OR gm.joined_at < $2 OR m.kickoff_at >= gm.joined_at)
+			    AND m.kickoff_at   >= GREATEST($2, COALESCE(gm.joined_at, $2))
 			  GROUP BY gm.user_id, m.round_number`,
 			quinielaID, scoreFromZeroSince,
 		)
