@@ -53,11 +53,33 @@ type PrizeCrediter interface {
 
 type prizeService struct {
 	ledger       repository.BalanceLedgerRepository
+	userRepo     repository.UserRepository // nil ⇒ no USD prize conversion
 	kycGate      KYCGate
 	kycSvc       KYCService
+	fxSvc        ExchangeRateService     // nil ⇒ no USD prize conversion
 	outboxWriter outbox.Writer           // may be nil; nil falls back to legacy notifier
 	notifier     KYCWinnerFreezeNotifier // legacy; used only when outboxWriter is nil
 	log          *zap.Logger
+}
+
+// PrizeServiceOption configures optional behaviour of prizeService.
+type PrizeServiceOption func(*prizeService)
+
+// WithPrizeFxSvc enables automatic GTQ→USD prize conversion for users whose
+// balance_currency is "USD". Both userRepo and fxSvc are required; when either
+// is nil, conversion is skipped (safe for tests without a DB).
+func WithPrizeFxSvc(userRepo repository.UserRepository, fxSvc ExchangeRateService) PrizeServiceOption {
+	return func(s *prizeService) {
+		s.userRepo = userRepo
+		s.fxSvc = fxSvc
+	}
+}
+
+// SetFxSvc wires the exchange-rate service and user repository for GTQ→USD
+// prize conversion. Called once at startup, after the FX module is ready.
+func (s *prizeService) SetFxSvc(userRepo repository.UserRepository, fxSvc ExchangeRateService) {
+	s.userRepo = userRepo
+	s.fxSvc = fxSvc
 }
 
 // NewPrizeService constructs a PrizeCrediter.
@@ -71,8 +93,9 @@ func NewPrizeService(
 	outboxWriter outbox.Writer,
 	notifier KYCWinnerFreezeNotifier,
 	log *zap.Logger,
+	opts ...PrizeServiceOption,
 ) PrizeCrediter {
-	return &prizeService{
+	svc := &prizeService{
 		ledger:       ledger,
 		kycGate:      kycGate,
 		kycSvc:       kycSvc,
@@ -80,31 +103,52 @@ func NewPrizeService(
 		notifier:     notifier,
 		log:          log,
 	}
+	for _, o := range opts {
+		o(svc)
+	}
+	return svc
 }
 
 func (s *prizeService) CreditPrize(ctx context.Context, userID, prizeCents int, refID int64, refType string) (bool, error) {
-	shouldFreeze, reason, err := s.kycGate.CheckWinFreeze(ctx, userID, prizeCents)
+	// Convert the GTQ prize amount to USD cents when the winner holds a USD balance.
+	creditCents := prizeCents
+	if s.userRepo != nil && s.fxSvc != nil {
+		if balCurrency, err := s.userRepo.GetBalanceCurrency(ctx, userID); err == nil && balCurrency == "USD" {
+			usdCents, _, convErr := s.fxSvc.ConvertGTQToUSD(ctx, int64(prizeCents))
+			if convErr != nil {
+				s.log.Warn("prize: GTQ→USD conversion failed, using GTQ amount",
+					zap.Int("user_id", userID),
+					zap.Int("prize_cents", prizeCents),
+					zap.Error(convErr),
+				)
+			} else {
+				creditCents = int(usdCents)
+			}
+		}
+	}
+
+	shouldFreeze, reason, err := s.kycGate.CheckWinFreeze(ctx, userID, creditCents)
 	if err != nil {
 		return false, err
 	}
 
 	if shouldFreeze {
-		if err := s.kycSvc.FreezeBalance(ctx, userID, prizeCents, reason); err != nil {
+		if err := s.kycSvc.FreezeBalance(ctx, userID, creditCents, reason); err != nil {
 			return false, err
 		}
 
 		traceID := kycTraceID(ctx)
-		s.notifyKYCWinnerFreeze(ctx, userID, prizeCents, traceID)
+		s.notifyKYCWinnerFreeze(ctx, userID, creditCents, traceID)
 
 		s.log.Info("prize.freeze: balance frozen pending KYC verification",
 			zap.Int("user_id", userID),
-			zap.Int("prize_cents", prizeCents),
+			zap.Int("prize_cents", creditCents),
 			zap.String("trace_id", traceID),
 		)
 		return false, nil
 	}
 
-	if err := s.ledger.Credit(ctx, userID, prizeCents, domain.LedgerKindPrize, refID, refType, 0); err != nil {
+	if err := s.ledger.Credit(ctx, userID, creditCents, domain.LedgerKindPrize, refID, refType, 0); err != nil {
 		return false, err
 	}
 	return true, nil

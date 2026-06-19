@@ -257,7 +257,7 @@ func TestBalanceLedgerRepository_CreditIdempotent_HappyPath(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
 
-	credited, err := repo.CreditIdempotent(context.Background(), u.ID, 3000, domain.LedgerKindWebhookRecurrente, "REF-IDEM-001")
+	credited, err := repo.CreditIdempotent(context.Background(), u.ID, 3000, domain.LedgerKindWebhookRecurrente, "REF-IDEM-001", "", 0)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -280,11 +280,11 @@ func TestBalanceLedgerRepository_CreditIdempotent_DuplicateIsNoop(t *testing.T) 
 	u := seedUser(t)
 	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
 
-	if _, err := repo.CreditIdempotent(context.Background(), u.ID, 2000, domain.LedgerKindWebhookRecurrente, "REF-IDEM-DUP"); err != nil {
+	if _, err := repo.CreditIdempotent(context.Background(), u.ID, 2000, domain.LedgerKindWebhookRecurrente, "REF-IDEM-DUP", "", 0); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
-	credited, err := repo.CreditIdempotent(context.Background(), u.ID, 2000, domain.LedgerKindWebhookRecurrente, "REF-IDEM-DUP")
+	credited, err := repo.CreditIdempotent(context.Background(), u.ID, 2000, domain.LedgerKindWebhookRecurrente, "REF-IDEM-DUP", "", 0)
 	if err != nil {
 		t.Fatalf("duplicate call: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestBalanceLedgerRepository_CreditIdempotent_NDeliveriesProduceOneLedgerRow
 	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
 
 	for i := 0; i < 5; i++ {
-		if _, err := repo.CreditIdempotent(context.Background(), u.ID, 1500, domain.LedgerKindWebhookRecurrente, "REF-SINGLE"); err != nil {
+		if _, err := repo.CreditIdempotent(context.Background(), u.ID, 1500, domain.LedgerKindWebhookRecurrente, "REF-SINGLE", "", 0); err != nil {
 			t.Fatalf("call %d: %v", i+1, err)
 		}
 	}
@@ -327,7 +327,7 @@ func TestBalanceLedgerRepository_CreditIdempotent_EmptyReferenceReturnsValidatio
 	u := seedUser(t)
 	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
 
-	_, err := repo.CreditIdempotent(context.Background(), u.ID, 1000, domain.LedgerKindWebhookRecurrente, "")
+	_, err := repo.CreditIdempotent(context.Background(), u.ID, 1000, domain.LedgerKindWebhookRecurrente, "", "", 0)
 	if err == nil {
 		t.Fatal("expected validation error for empty reference, got nil")
 	}
@@ -337,7 +337,7 @@ func TestBalanceLedgerRepository_CreditIdempotent_UserNotFound(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
 
-	_, err := repo.CreditIdempotent(context.Background(), 999999, 1000, domain.LedgerKindWebhookRecurrente, "REF-GHOST")
+	_, err := repo.CreditIdempotent(context.Background(), 999999, 1000, domain.LedgerKindWebhookRecurrente, "REF-GHOST", "", 0)
 	if !isNotFound(err) {
 		t.Errorf("expected not-found error, got %v", err)
 	}

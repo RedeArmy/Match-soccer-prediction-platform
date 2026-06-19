@@ -8,20 +8,23 @@ import (
 
 // BalanceResponse is returned by GET /api/v1/users/me/balance.
 type BalanceResponse struct {
-	BalanceCents   int `json:"balance_cents"`
-	ReservedCents  int `json:"reserved_cents"`
-	AvailableCents int `json:"available_cents"`
+	BalanceCents    int    `json:"balance_cents"`
+	ReservedCents   int    `json:"reserved_cents"`
+	AvailableCents  int    `json:"available_cents"`
+	BalanceCurrency string `json:"balance_currency"` // "GTQ" or "USD"
 }
 
 // LedgerEntryResponse is a single immutable row from the balance ledger.
 type LedgerEntryResponse struct {
-	ID           int64   `json:"id"`
-	DeltaCents   int     `json:"delta_cents"`
-	Kind         string  `json:"kind"`
-	BalanceAfter int     `json:"balance_after"`
-	RefID        *int64  `json:"ref_id,omitempty"`
-	RefType      *string `json:"ref_type,omitempty"`
-	CreatedAt    string  `json:"created_at"`
+	ID                int64   `json:"id"`
+	DeltaCents        int     `json:"delta_cents"`
+	Kind              string  `json:"kind"`
+	BalanceAfter      int     `json:"balance_after"`
+	RefID             *int64  `json:"ref_id,omitempty"`
+	RefType           *string `json:"ref_type,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+	SourceCurrency    *string `json:"source_currency,omitempty"`
+	SourceAmountCents *int    `json:"source_amount_cents,omitempty"`
 }
 
 // BankTransferResponse is returned by bank transfer proof endpoints.
@@ -60,16 +63,17 @@ type WithdrawalResponse struct {
 	UpdatedAt     string            `json:"updated_at"`
 }
 
-func balanceToResponse(balanceCents, reservedCents int) BalanceResponse {
+func balanceToResponse(balanceCents, reservedCents int, balanceCurrency string) BalanceResponse {
 	return BalanceResponse{
-		BalanceCents:   balanceCents,
-		ReservedCents:  reservedCents,
-		AvailableCents: balanceCents - reservedCents,
+		BalanceCents:    balanceCents,
+		ReservedCents:   reservedCents,
+		AvailableCents:  balanceCents - reservedCents,
+		BalanceCurrency: balanceCurrency,
 	}
 }
 
 func ledgerEntryToResponse(e *domain.BalanceLedger) LedgerEntryResponse {
-	return LedgerEntryResponse{
+	r := LedgerEntryResponse{
 		ID:           e.ID,
 		DeltaCents:   e.DeltaCents,
 		Kind:         string(e.Kind),
@@ -78,6 +82,13 @@ func ledgerEntryToResponse(e *domain.BalanceLedger) LedgerEntryResponse {
 		RefType:      e.RefType,
 		CreatedAt:    e.CreatedAt.Format(timeFormat),
 	}
+	if e.SourceCurrency != "" {
+		c := e.SourceCurrency
+		a := e.SourceAmountCents
+		r.SourceCurrency = &c
+		r.SourceAmountCents = &a
+	}
+	return r
 }
 
 func bankTransferToResponse(p *domain.BankTransferProof) BankTransferResponse {

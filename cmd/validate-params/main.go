@@ -347,6 +347,11 @@ var allParams = []paramSpec{
 	// System clock override — dev/test only (migration 000187).
 	// Empty default = real wall-clock time. Ignored in production.
 	{key: domain.ParamKeySystemDate, defaultValue: "", paramType: "string", category: "system", isRuntime: true},
+
+	// Feature flags — runtime: frontend reads /api/feature-flags on every page load;
+	// changes propagate within the 30 s param-cache window without a restart.
+	// migration 000198: seed featflag.paypal (0 = hidden, 1 = shown).
+	{key: domain.ParamKeyFeatFlagPaypal, defaultValue: "0", paramType: "bool", category: "featflag", isRuntime: true},
 }
 
 type dbParam struct {

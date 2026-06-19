@@ -96,6 +96,7 @@ type appHandlers struct {
 	adminMatchSync     *handler.AdminMatchSyncHandler
 	adminPaymentIntent *handler.AdminPaymentIntentHandler
 	systemClock        *handler.SystemClockHandler
+	featureFlag        *handler.FeatureFlagHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -328,6 +329,7 @@ func (s *Server) buildHandlers(
 		adminSSEStats:      handler.NewAdminSSEStatsHandler(s.notifHub, s.log),
 		user:               handler.NewUserHandler(repos.user, s.log),
 		systemClock:        handler.NewSystemClockHandler(clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log),
+		featureFlag:        handler.NewFeatureFlagHandler(params, s.log),
 	}
 
 	// ── Phase 9 observability handlers ───────────────────────────────────────
@@ -376,11 +378,7 @@ func (s *Server) buildHandlers(
 
 	var fxSvc service.ExchangeRateService
 	h.adminExchangeRate, h.exchangeRate, fxSvc = s.buildFXModule(ctx, paramSvcWithAudit, auditSvc)
-	if wfx, ok := webhookPaymentSvc.(interface {
-		SetExchangeRateService(service.ExchangeRateService)
-	}); ok {
-		wfx.SetExchangeRateService(fxSvc)
-	}
+	wireFXDependencies(webhookPaymentSvc, memberSvc, prizeSvc, repos.user, fxSvc)
 	h.adminPaymentIntent.SetExchangeRateService(fxSvc)
 
 	return h
@@ -440,6 +438,39 @@ func (s *Server) buildFXModule(
 	return handler.NewAdminExchangeRateHandler(fxSvc, fxRepo, audit, s.log),
 		handler.NewExchangeRateHandler(fxSvc, s.log),
 		fxSvc
+}
+
+// wireFXDependencies late-wires the exchange-rate service and user repository
+// into the webhook payment, group membership, and prize services after the FX
+// module has been constructed. Extracted from buildHandlers to keep its
+// cognitive complexity within the allowed limit.
+func wireFXDependencies(
+	webhookSvc service.WebhookPaymentService,
+	memberSvc service.GroupMembershipService,
+	prizeSvc service.PrizeCrediter,
+	userRepo repository.UserRepository,
+	fxSvc service.ExchangeRateService,
+) {
+	if wfx, ok := webhookSvc.(interface {
+		SetExchangeRateService(service.ExchangeRateService)
+	}); ok {
+		wfx.SetExchangeRateService(fxSvc)
+	}
+	if wur, ok := webhookSvc.(interface {
+		SetUserRepository(repository.UserRepository)
+	}); ok {
+		wur.SetUserRepository(userRepo)
+	}
+	if ms, ok := memberSvc.(interface {
+		SetFxSvc(repository.UserRepository, service.ExchangeRateService)
+	}); ok {
+		ms.SetFxSvc(userRepo, fxSvc)
+	}
+	if pf, ok := prizeSvc.(interface {
+		SetFxSvc(repository.UserRepository, service.ExchangeRateService)
+	}); ok {
+		pf.SetFxSvc(userRepo, fxSvc)
+	}
 }
 
 // wireLeaderboardTTLHook registers a mutation hook so that when an admin

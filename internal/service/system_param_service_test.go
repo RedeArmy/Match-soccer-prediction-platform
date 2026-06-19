@@ -1183,3 +1183,19 @@ func TestGetHistory_RepoError_PropagatesError(t *testing.T) {
 		t.Error("expected error from ListByKey, got nil")
 	}
 }
+
+// ── featflag.paypal constraint ────────────────────────────────────────────────
+
+func TestValidateParamConstraints_FeatFlagPaypal_InvalidValue_ReturnsError(t *testing.T) {
+	if err := validateParamConstraints(domain.ParamKeyFeatFlagPaypal, "maybe", domain.SystemParamTypeString); err == nil {
+		t.Error("expected error for invalid bool value, got nil")
+	}
+}
+
+func TestValidateParamConstraints_FeatFlagPaypal_ValidValues_ReturnNil(t *testing.T) {
+	for _, v := range []string{"", "0", "1", "true", "false"} {
+		if err := validateParamConstraints(domain.ParamKeyFeatFlagPaypal, v, domain.SystemParamTypeString); err != nil {
+			t.Errorf("value %q should be valid, got: %v", v, err)
+		}
+	}
+}

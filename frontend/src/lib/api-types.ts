@@ -79,10 +79,12 @@ export interface UserStatsResponse {
 
 // ── Balance ───────────────────────────────────────────────────────────────────
 export interface BalanceResponse {
+  balance_cents: number;
   available_cents: number;
   reserved_cents: number;
   pending_cents: number;
   currency: string;
+  balance_currency: string; // "GTQ" or "USD"
 }
 
 export interface LedgerEntry {
@@ -93,6 +95,8 @@ export interface LedgerEntry {
   ref_id: number | null;
   ref_type: string | null;
   created_at: string;
+  source_currency?: string; // "USD" for non-GTQ deposits; absent for GTQ or legacy rows
+  source_amount_cents?: number; // original amount in source_currency (cents)
 }
 
 // ── Match ─────────────────────────────────────────────────────────────────────

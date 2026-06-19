@@ -43,8 +43,9 @@ type WebhookPaymentService interface {
 type webhookPaymentService struct {
 	ledgerRepo repository.BalanceLedgerRepository
 	intentRepo repository.PaymentIntentRepository
-	kycGate    KYCGate             // wired via SetKYCGate after construction; nil disables KYC checks
-	fxSvc      ExchangeRateService // wired via SetExchangeRateService; nil skips USD→GTQ conversion
+	userRepo   repository.UserRepository // wired via SetUserRepository; used to read balance_currency
+	kycGate    KYCGate                   // wired via SetKYCGate after construction; nil disables KYC checks
+	fxSvc      ExchangeRateService       // wired via SetExchangeRateService; used for GTQ-balance PayPal users
 	audit      AuditLogger
 	log        *zap.Logger
 }
@@ -69,13 +70,30 @@ func NewWebhookPaymentService(
 // CheckDeposit and AML flagging are skipped (safe for tests without a DB).
 func (s *webhookPaymentService) SetKYCGate(gate KYCGate) { s.kycGate = gate }
 
-// SetExchangeRateService wires the exchange-rate service so that USD PayPal
-// deposits are converted to GTQ at the buy rate before crediting the balance.
-// Called once at startup after the FX module is initialised. When nil, the
-// raw intent.AmountCents is credited without conversion (safe for tests).
+// SetExchangeRateService wires the exchange-rate service used when a GTQ-balance
+// user deposits via PayPal (USD→GTQ conversion). When nil, the raw USD amount
+// is credited without conversion (safe for tests without a DB).
 func (s *webhookPaymentService) SetExchangeRateService(svc ExchangeRateService) { s.fxSvc = svc }
 
+// SetUserRepository wires the user repository so that the balance_currency can
+// be read before deciding whether to convert a PayPal USD deposit.
+func (s *webhookPaymentService) SetUserRepository(repo repository.UserRepository) { s.userRepo = repo }
+
 func (s *webhookPaymentService) CreditFromRecurrente(ctx context.Context, userID, amountCents int, currency, reference string) error {
+	// Credit the amount in the payment currency directly. For USD deposits the
+	// user's balance_currency is set to "USD" atomically by CreditIdempotent, so
+	// that all future balance operations (entry fees, prizes) are also USD-based.
+	// No GTQ conversion is performed here; display conversion is handled by the
+	// frontend using the live exchange rate.
+	opts := creditDirectOpts{
+		kind:        domain.LedgerKindWebhookRecurrente,
+		auditAction: domain.AuditActionWebhookPaymentCredit,
+	}
+	if currency == "USD" {
+		opts.sourceCurrency = "USD"
+		opts.sourceAmountCents = amountCents
+	}
+
 	if s.kycGate != nil {
 		if err := s.kycGate.CheckDeposit(ctx, userID, amountCents); err != nil {
 			return err
@@ -84,8 +102,7 @@ func (s *webhookPaymentService) CreditFromRecurrente(ctx context.Context, userID
 			return err
 		}
 	}
-	if err := s.creditDirect(ctx, userID, amountCents, currency, reference,
-		domain.LedgerKindWebhookRecurrente, domain.AuditActionWebhookPaymentCredit); err != nil {
+	if err := s.creditDirect(ctx, userID, amountCents, currency, reference, opts); err != nil {
 		return err
 	}
 	// Mark the corresponding payment_intent as captured so the admin panel
@@ -102,7 +119,16 @@ func (s *webhookPaymentService) CreditFromRecurrente(ctx context.Context, userID
 	return nil
 }
 
-func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amountCents int, currency, reference string, kind domain.BalanceLedgerKind, action string) error {
+// creditDirectOpts groups the per-call metadata for creditDirect, keeping its
+// parameter count within the authorised maximum of 7.
+type creditDirectOpts struct {
+	kind              domain.BalanceLedgerKind
+	auditAction       string
+	sourceCurrency    string
+	sourceAmountCents int
+}
+
+func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amountCents int, currency, reference string, opts creditDirectOpts) error {
 	if amountCents <= 0 {
 		return apperrors.Validation("amount_cents must be positive")
 	}
@@ -112,25 +138,25 @@ func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amount
 
 	// Prefix the reference with the provider kind so that identical transaction
 	// IDs from different providers cannot collide in the unique DB index.
-	scopedRef := string(kind) + ":" + reference
-	credited, err := s.ledgerRepo.CreditIdempotent(ctx, userID, amountCents, kind, scopedRef)
+	scopedRef := string(opts.kind) + ":" + reference
+	credited, err := s.ledgerRepo.CreditIdempotent(ctx, userID, amountCents, opts.kind, scopedRef, opts.sourceCurrency, opts.sourceAmountCents)
 	if err != nil {
 		return err
 	}
 	if !credited {
 		s.log.Debug("webhook payment: idempotent re-delivery ignored",
 			zap.String("reference", scopedRef),
-			zap.String("kind", string(kind)),
+			zap.String("kind", string(opts.kind)),
 		)
 		return nil
 	}
 
 	resType := "user"
-	s.audit.Log(ctx, nil, nil, action, &resType, &userID, map[string]any{
+	s.audit.Log(ctx, nil, nil, opts.auditAction, &resType, &userID, map[string]any{
 		"amount_cents": amountCents,
 		"currency":     currency,
 		"reference":    scopedRef,
-		"kind":         string(kind),
+		"kind":         string(opts.kind),
 	})
 	return nil
 }
@@ -144,32 +170,15 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 	}
 
 	// Fetch the pending intent once: used for both the KYC gate check and the
-	// USD→GTQ conversion decision so we avoid a second DB round-trip.
+	// credit-amount resolution so we avoid a second DB round-trip.
 	pending, err := s.fetchPendingAndCheckKYC(ctx, intentToken)
 	if err != nil {
 		return err
 	}
 
-	// Determine the GTQ amount to credit. PayPal intents are always denominated
-	// in USD; convert at the current buy rate so the user's balance stays in GTQ.
-	creditAmountCents := 0
-	if pending != nil {
-		creditAmountCents = pending.AmountCents
-		if pending.Currency == "USD" && s.fxSvc != nil {
-			gtq, _, convErr := s.fxSvc.ConvertUSDToGTQ(ctx, int64(pending.AmountCents))
-			if convErr != nil {
-				s.log.Warn("paypal: USD→GTQ conversion failed, crediting raw amount",
-					append([]zap.Field{
-						zap.Error(convErr),
-						zap.String("intent_token", intentToken),
-					}, tracing.LogFields(ctx)...)...)
-			} else {
-				creditAmountCents = int(gtq)
-			}
-		}
-	}
+	creditAmountCents, sourceCurrency, sourceAmountCents := s.resolvePayPalCredit(ctx, intentToken, pending)
 
-	intent, err := s.intentRepo.CaptureAndCredit(ctx, intentToken, captureID, creditAmountCents)
+	intent, err := s.intentRepo.CaptureAndCredit(ctx, intentToken, captureID, creditAmountCents, sourceCurrency, sourceAmountCents)
 	if errors.Is(err, repository.ErrPaymentIntentAlreadyCaptured) {
 		s.log.Debug("paypal webhook: idempotent re-delivery ignored",
 			zap.String("intent_token", intentToken),
@@ -207,6 +216,53 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 	})
 	s.recordAMLIfNeeded(ctx, intent.UserID, creditAmountCents)
 	return nil
+}
+
+// resolvePayPalCredit returns the credit amount and optional source denomination
+// for a PayPal intent.
+//
+//   - GTQ-balance users: USD intent amount is converted to GTQ at the buy rate.
+//     On conversion failure the raw USD amount is used and a warning is logged.
+//   - USD-balance users: USD intent amount is credited directly; source fields
+//     are set so the frontend can display the exact deposited amount.
+//   - Non-USD intents: intent amount is credited as-is with no source fields.
+func (s *webhookPaymentService) resolvePayPalCredit(ctx context.Context, intentToken string, pending *domain.PaymentIntent) (creditCents int, srcCurrency string, srcAmountCents int) {
+	if pending == nil {
+		return 0, "", 0
+	}
+	if pending.Currency != "USD" {
+		return pending.AmountCents, "", 0
+	}
+
+	balCurrency := s.resolveBalanceCurrency(ctx, pending.UserID)
+	if balCurrency != "GTQ" || s.fxSvc == nil {
+		// USD-balance user: credit USD directly and record source denomination.
+		return pending.AmountCents, "USD", pending.AmountCents
+	}
+
+	gtq, _, convErr := s.fxSvc.ConvertUSDToGTQ(ctx, int64(pending.AmountCents))
+	if convErr != nil {
+		s.log.Warn("paypal: USD→GTQ conversion failed, crediting raw amount",
+			append([]zap.Field{
+				zap.Error(convErr),
+				zap.String("intent_token", intentToken),
+			}, tracing.LogFields(ctx)...)...)
+		return pending.AmountCents, "", 0
+	}
+	return int(gtq), "", 0
+}
+
+// resolveBalanceCurrency returns the user's balance_currency, defaulting to
+// "GTQ" when the user repository is not wired or the query returns empty.
+func (s *webhookPaymentService) resolveBalanceCurrency(ctx context.Context, userID int) string {
+	if s.userRepo == nil {
+		return "GTQ"
+	}
+	bc, _ := s.userRepo.GetBalanceCurrency(ctx, userID)
+	if bc == "" {
+		return "GTQ"
+	}
+	return bc
 }
 
 // fetchPendingAndCheckKYC fetches the intent for token and, when the intent

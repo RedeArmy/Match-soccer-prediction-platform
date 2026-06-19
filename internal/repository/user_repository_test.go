@@ -545,3 +545,29 @@ func TestUserRepository_SetRole_NotFound_ReturnsNotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound for unknown user; got %v", err)
 	}
 }
+
+// ── GetBalanceCurrency ────────────────────────────────────────────────────────
+
+func TestUserRepository_GetBalanceCurrency_Found_ReturnsGTQ(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	currency, err := repo.GetBalanceCurrency(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if currency != "GTQ" {
+		t.Errorf("balance_currency: got %q, want GTQ", currency)
+	}
+}
+
+func TestUserRepository_GetBalanceCurrency_NotFound_ReturnsErrNotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	_, err := repo.GetBalanceCurrency(context.Background(), 99999)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for unknown user; got %v", err)
+	}
+}

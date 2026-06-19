@@ -68,7 +68,7 @@ const (
 type BalanceLedger struct {
 	ID           int64
 	UserID       int
-	DeltaCents   int // positive = credit, negative = debit/reserve
+	DeltaCents   int // positive = credit, negative = debit/reserve; always in GTQ cents
 	Kind         BalanceLedgerKind
 	BalanceAfter int     // users.balance_cents after the mutation
 	RefID        *int64  // primary key of the originating record
@@ -76,6 +76,11 @@ type BalanceLedger struct {
 	CreatedBy    *int    // nil = system / webhook
 	IPAddress    *string // originating client IP; nil for system/webhook-initiated entries
 	CreatedAt    time.Time
+	// SourceCurrency and SourceAmountCents are set only for non-GTQ deposits
+	// (e.g. USD via Recurrente). They preserve the original payment amount so
+	// the frontend can display the exact deposited value without back-conversion.
+	SourceCurrency    string // "" for GTQ or legacy rows
+	SourceAmountCents int    // 0 for GTQ or legacy rows
 }
 
 // ── Bank transfer proofs ──────────────────────────────────────────────────────

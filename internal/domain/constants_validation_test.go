@@ -15,7 +15,7 @@ import (
 // that the total counts match what is expected. A count mismatch is a reminder
 // to update this test, create a migration, and add the new key to validate-params.
 func TestSystemParamConstants_AllPaired(t *testing.T) {
-	// ── ParamKey* enumeration (139 total) ─────────────────────────────────────
+	// ── ParamKey* enumeration (140 total) ─────────────────────────────────────
 	paramKeys := map[string]string{
 		// Scoring
 		"ParamKeyScoringExactScore":      ParamKeyScoringExactScore,
@@ -206,6 +206,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyMatchSyncStopAfterZeroLiveCount": ParamKeyMatchSyncStopAfterZeroLiveCount,
 		// System clock override — dev/test only (migration 000187)
 		"ParamKeySystemDate": ParamKeySystemDate,
+		// Feature flags (migration 000198)
+		"ParamKeyFeatFlagPaypal": ParamKeyFeatFlagPaypal,
 	}
 
 	// ── Default* enumeration ─────────────────────────────────────────────────
@@ -394,7 +396,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 154 // update when adding a new ParamKey* constant (+3 daily sync scheduling from 000192)
+		const expectedCount = 155 // update when adding a new ParamKey* constant (+1 featflag.paypal from 000198)
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -634,6 +636,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyMatchSyncStopAfterZeroLiveCount", ParamKeyMatchSyncStopAfterZeroLiveCount, "match"},
 		// System clock override — dev/test only (migration 000187)
 		{"ParamKeySystemDate", ParamKeySystemDate, "system"},
+		// Feature flags (migration 000198)
+		{"ParamKeyFeatFlagPaypal", ParamKeyFeatFlagPaypal, "featflag"},
 	}
 
 	for _, tc := range paramKeys {

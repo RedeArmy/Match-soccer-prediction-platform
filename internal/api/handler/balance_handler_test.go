@@ -139,3 +139,64 @@ func TestBalanceHandler_GetLedger_Empty(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
+
+func TestBalanceHandler_GetLedger_WithSourceCurrency_IncludesSourceFields(t *testing.T) {
+	t_balance = t
+	src := "USD"
+	srcAmt := 5000
+	entries := []*domain.BalanceLedger{
+		{
+			ID:                1,
+			UserID:            5,
+			DeltaCents:        38750,
+			Kind:              domain.LedgerKindWebhookPayPal,
+			CreatedAt:         time.Now().UTC(),
+			SourceCurrency:    src,
+			SourceAmountCents: srcAmt,
+		},
+	}
+	svc := &stubBalanceSvc{entries: entries}
+	router := withBalanceUser(balanceRouter(svc))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/users/me/balance/ledger", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp []handler.LedgerEntryResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp))
+	}
+	if resp[0].SourceCurrency == nil || *resp[0].SourceCurrency != "USD" {
+		t.Errorf("source_currency: got %v, want USD", resp[0].SourceCurrency)
+	}
+	if resp[0].SourceAmountCents == nil || *resp[0].SourceAmountCents != 5000 {
+		t.Errorf("source_amount_cents: got %v, want 5000", resp[0].SourceAmountCents)
+	}
+}
+
+func TestBalanceHandler_GetBalance_IncludesBalanceCurrency(t *testing.T) {
+	t_balance = t
+	svc := &stubBalanceSvc{balanceCents: 5000, reservedCents: 0}
+	router := withBalanceUser(balanceRouter(svc))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/users/me/balance", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp handler.BalanceResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.BalanceCurrency == "" {
+		t.Error("balance_currency should not be empty")
+	}
+}
