@@ -137,7 +137,7 @@ const TEAM_NAMES_ES: Record<string, string> = {
   "Uzbekistan": "Uzbekistán",
 };
 
-function teamDisplayName(name: string, locale: string): string {
+export function teamDisplayName(name: string, locale: string): string {
   if (locale === "es") return TEAM_NAMES_ES[name] ?? name;
   return name;
 }

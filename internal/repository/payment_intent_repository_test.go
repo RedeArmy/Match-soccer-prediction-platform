@@ -213,6 +213,26 @@ func TestPaymentIntentRepository_CaptureAndCredit_SoftDeletedUserReturnsNotFound
 	}
 }
 
+func TestPaymentIntentRepository_CaptureAndCredit_USDSourceCurrency_SetsBalanceCurrency(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	intent := seedPaymentIntent(t, u.ID, 5000)
+	repo := repository.NewPostgresPaymentIntentRepository(testDB)
+
+	if _, err := repo.CaptureAndCredit(context.Background(), intent.Token, "CAP-USD", intent.AmountCents, "USD", 5000); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	userRepo := repository.NewPostgresUserRepository(testDB)
+	currency, err := userRepo.GetBalanceCurrency(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GetBalanceCurrency: %v", err)
+	}
+	if currency != "USD" {
+		t.Errorf("balance_currency: got %q, want USD after USD CaptureAndCredit", currency)
+	}
+}
+
 // ── GetByToken ────────────────────────────────────────────────────────────────
 
 func TestPaymentIntentRepository_GetByToken_Found(t *testing.T) {
