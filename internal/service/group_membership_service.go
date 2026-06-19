@@ -69,14 +69,33 @@ func WithGroupMembershipClock(clk clock.Nower) GroupMembershipOption {
 	return func(s *groupMembershipService) { s.clock = clk }
 }
 
+// WithGroupMembershipFxSvc enables automatic GTQ→USD entry-fee conversion for
+// users whose balance_currency is "USD". Both userRepo and fxSvc are required;
+// when either is nil, fee conversion is skipped (safe for tests without a DB).
+func WithGroupMembershipFxSvc(userRepo repository.UserRepository, fxSvc ExchangeRateService) GroupMembershipOption {
+	return func(s *groupMembershipService) {
+		s.userRepo = userRepo
+		s.fxSvc = fxSvc
+	}
+}
+
+// SetFxSvc wires the exchange-rate service and user repository for GTQ→USD
+// entry-fee conversion. Called once at startup, after the FX module is ready.
+func (svc *groupMembershipService) SetFxSvc(userRepo repository.UserRepository, fxSvc ExchangeRateService) {
+	svc.userRepo = userRepo
+	svc.fxSvc = fxSvc
+}
+
 // groupMembershipService is the concrete implementation of GroupMembershipService.
 type groupMembershipService struct {
 	quinielaRepo repository.QuinielaRepository
 	memberRepo   repository.GroupMembershipRepository
+	userRepo     repository.UserRepository // nil ⇒ no USD entry-fee conversion
 	authz        GroupAuthz
 	params       SystemParamService
 	audit        AuditLogger
 	paymentSvc   PaymentService
+	fxSvc        ExchangeRateService // nil ⇒ no USD entry-fee conversion
 	clock        clock.Nower
 	log          *zap.Logger
 	outboxWriter outbox.Writer // nil ⇒ fan-out events not published
@@ -140,6 +159,30 @@ func (s *groupMembershipService) Join(ctx context.Context, inviteCode string, us
 // joining user. Errors are logged and swallowed: the membership is already
 // persisted and a missing payment record is a recoverable admin concern, not
 // a reason to roll back the join request.
+// entryFeeInUserCurrency returns the entry fee in the user's balance_currency.
+// When the user holds a USD balance and fxSvc is available, the GTQ fee is
+// converted to USD cents at the current sell rate. Falls back to the GTQ fee
+// when fxSvc or userRepo is nil (tests, GTQ users).
+func (s *groupMembershipService) entryFeeInUserCurrency(ctx context.Context, userID, gtqFeeCents int) (int, error) {
+	if s.userRepo == nil || s.fxSvc == nil || gtqFeeCents == 0 {
+		return gtqFeeCents, nil
+	}
+	balCurrency, err := s.userRepo.GetBalanceCurrency(ctx, userID)
+	if err != nil || balCurrency != "USD" {
+		return gtqFeeCents, nil
+	}
+	usdCents, _, convErr := s.fxSvc.ConvertGTQToUSD(ctx, int64(gtqFeeCents))
+	if convErr != nil {
+		s.log.Warn("membership: GTQ→USD fee conversion failed, using GTQ fee",
+			zap.Int("user_id", userID),
+			zap.Int("gtq_fee_cents", gtqFeeCents),
+			zap.Error(convErr),
+		)
+		return gtqFeeCents, nil
+	}
+	return int(usdCents), nil
+}
+
 func (s *groupMembershipService) createPendingPayment(ctx context.Context, quiniela *domain.Quiniela, userID int) {
 	if _, err := s.paymentSvc.CreateRecord(ctx, quiniela.ID, userID, quiniela.EntryFee, quiniela.Currency, ""); err != nil {
 		s.log.Warn("membership: failed to create pending payment record on join",
@@ -165,7 +208,11 @@ func (s *groupMembershipService) JoinWithBalance(ctx context.Context, inviteCode
 		return nil, apperrors.Conflict("this quiniela has no entry fee — use the standard join endpoint")
 	}
 
-	m2, err := s.memberRepo.DebitBalanceAndMarkPaid(ctx, quiniela.ID, userID, quiniela.EntryFee)
+	feeCents, err := s.entryFeeInUserCurrency(ctx, userID, quiniela.EntryFee)
+	if err != nil {
+		return nil, err
+	}
+	m2, err := s.memberRepo.DebitBalanceAndMarkPaid(ctx, quiniela.ID, userID, feeCents)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +220,7 @@ func (s *groupMembershipService) JoinWithBalance(ctx context.Context, inviteCode
 	resType := "membership"
 	s.audit.Log(ctx, &userID, nil, domain.AuditActionBalanceDebited, &resType, &m2.ID, map[string]any{
 		"quiniela_id":  quiniela.ID,
-		"amount_cents": quiniela.EntryFee,
+		"amount_cents": feeCents,
 		"currency":     quiniela.Currency,
 	})
 	if !quiniela.RequireApproval {
@@ -249,7 +296,11 @@ func (s *groupMembershipService) enforceApprovalFeeRules(ctx context.Context, q 
 		return nil
 	}
 	if !pending.Paid && q.EntryFee > 0 {
-		_, err := s.memberRepo.DebitBalanceAndMarkPaid(ctx, q.ID, pending.UserID, q.EntryFee)
+		feeCents, err := s.entryFeeInUserCurrency(ctx, pending.UserID, q.EntryFee)
+		if err != nil {
+			return err
+		}
+		_, err = s.memberRepo.DebitBalanceAndMarkPaid(ctx, q.ID, pending.UserID, feeCents)
 		return err
 	}
 	return nil

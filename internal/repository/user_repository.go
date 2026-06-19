@@ -372,4 +372,21 @@ func (r *PostgresUserRepository) GetBalance(ctx context.Context, userID int) (ba
 	return balanceCents, reservedCents, nil
 }
 
+// GetBalanceCurrency returns the currency code ("GTQ" or "USD") in which
+// balance_cents is denominated for userID.
+func (r *PostgresUserRepository) GetBalanceCurrency(ctx context.Context, userID int) (string, error) {
+	var currency string
+	err := r.db.QueryRow(ctx,
+		`SELECT balance_currency FROM users WHERE id = $1`+activeOnly,
+		userID,
+	).Scan(&currency)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", apperrors.NotFound(msgUserNotFound)
+	}
+	if err != nil {
+		return "", apperrors.Internal(err)
+	}
+	return currency, nil
+}
+
 var _ UserRepository = (*PostgresUserRepository)(nil)

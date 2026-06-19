@@ -34,7 +34,7 @@ func (r *stubIntentRepo) GetByToken(_ context.Context, _ string) (*domain.Paymen
 func (r *stubIntentRepo) GetByID(_ context.Context, _ int64) (*domain.PaymentIntent, error) {
 	return nil, nil
 }
-func (r *stubIntentRepo) CaptureAndCredit(_ context.Context, _, _ string, _ int) (*domain.PaymentIntent, error) {
+func (r *stubIntentRepo) CaptureAndCredit(_ context.Context, _, _ string, _ int, _ string, _ int) (*domain.PaymentIntent, error) {
 	return nil, nil
 }
 func (r *stubIntentRepo) MarkCapturedByToken(_ context.Context, _ string) error { return nil }
@@ -63,6 +63,9 @@ func (r *stubIntentRepo) SubmitForReview(_ context.Context, _ int64, _ int, _, _
 	return nil, nil
 }
 func (r *stubIntentRepo) CancelByToken(_ context.Context, _ string, _ int) error { return nil }
+func (r *stubIntentRepo) CancelStalePendingCardIntents(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
 
 func newIntentSvc(repo *stubIntentRepo) PaymentIntentCreator {
 	return NewPaymentIntentService(repo, &noopSystemParamService{}, zap.NewNop())
@@ -387,7 +390,7 @@ func (r *stubIntentRepoWithGetByToken) GetByToken(_ context.Context, _ string) (
 func (r *stubIntentRepoWithGetByToken) GetByID(_ context.Context, _ int64) (*domain.PaymentIntent, error) {
 	return r.intent, nil
 }
-func (r *stubIntentRepoWithGetByToken) CaptureAndCredit(_ context.Context, _, _ string, _ int) (*domain.PaymentIntent, error) {
+func (r *stubIntentRepoWithGetByToken) CaptureAndCredit(_ context.Context, _, _ string, _ int, _ string, _ int) (*domain.PaymentIntent, error) {
 	return nil, nil
 }
 func (r *stubIntentRepoWithGetByToken) MarkCapturedByToken(_ context.Context, _ string) error {
@@ -419,4 +422,7 @@ func (r *stubIntentRepoWithGetByToken) SubmitForReview(_ context.Context, _ int6
 }
 func (r *stubIntentRepoWithGetByToken) CancelByToken(_ context.Context, _ string, _ int) error {
 	return nil
+}
+func (r *stubIntentRepoWithGetByToken) CancelStalePendingCardIntents(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
 }

@@ -161,7 +161,7 @@ func (r *PostgresBalanceLedgerRepository) CommitReservation(ctx context.Context,
 func (r *PostgresBalanceLedgerRepository) ListByUser(ctx context.Context, userID int, p Pagination) ([]*domain.BalanceLedger, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
 	defer cancel()
-	q := `SELECT id, user_id, delta_cents, kind, balance_after, ref_id, ref_type, created_by, created_at
+	q := `SELECT id, user_id, delta_cents, kind, balance_after, ref_id, ref_type, created_by, created_at, COALESCE(source_currency, ''), COALESCE(source_amount_cents, 0)
 		  FROM balance_ledger WHERE user_id = $1 ORDER BY created_at DESC`
 	q, args, _, err := applyPagination(q, []any{userID}, 2, p)
 	if err != nil {
@@ -204,15 +204,17 @@ func (r *PostgresBalanceLedgerRepository) SumTransactionsByUserAndPeriod(ctx con
 // Grouping these fields avoids exceeding the per-function parameter limit and
 // makes call sites self-documenting via named fields.
 type ledgerRow struct {
-	UserID       int
-	DeltaCents   int
-	Kind         domain.BalanceLedgerKind
-	BalanceAfter int
-	RefID        int64  // 0 → stored as NULL
-	RefType      string // "" → stored as NULL
-	Reference    string // "" → stored as NULL; non-empty values are unique (webhook idempotency key)
-	CreatorID    int    // 0 → stored as NULL (system/webhook origin)
-	IPAddress    string // "" → stored as NULL; client IP from context
+	UserID            int
+	DeltaCents        int
+	Kind              domain.BalanceLedgerKind
+	BalanceAfter      int
+	RefID             int64  // 0 → stored as NULL
+	RefType           string // "" → stored as NULL
+	Reference         string // "" → stored as NULL; non-empty values are unique (webhook idempotency key)
+	CreatorID         int    // 0 → stored as NULL (system/webhook origin)
+	IPAddress         string // "" → stored as NULL; client IP from context
+	SourceCurrency    string // "" → stored as NULL; ISO 4217 code for non-GTQ deposits
+	SourceAmountCents int    // 0 → stored as NULL; original amount in SourceCurrency minor units
 }
 
 // insertLedgerTx inserts one immutable balance_ledger row inside tx.
@@ -237,15 +239,57 @@ func insertLedgerTx(ctx context.Context, tx pgx.Tx, e ledgerRow) error {
 	if e.IPAddress != "" {
 		ip = &e.IPAddress
 	}
+	var srcCur *string
+	if e.SourceCurrency != "" {
+		srcCur = &e.SourceCurrency
+	}
+	var srcAmt *int
+	if e.SourceAmountCents != 0 {
+		srcAmt = &e.SourceAmountCents
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO balance_ledger
-		      (user_id, delta_cents, kind, balance_after, ref_id, ref_type, reference, created_by, ip_address)
-		VALUES ($1,     $2,          $3,   $4,            $5,     $6,       $7,        $8,          $9)
-	`, e.UserID, e.DeltaCents, e.Kind, e.BalanceAfter, rid, rtype, ref, creator, ip)
+		      (user_id, delta_cents, kind, balance_after, ref_id, ref_type, reference, created_by, ip_address, source_currency, source_amount_cents)
+		VALUES ($1,     $2,          $3,   $4,            $5,     $6,       $7,        $8,          $9,         $10,             $11)
+	`, e.UserID, e.DeltaCents, e.Kind, e.BalanceAfter, rid, rtype, ref, creator, ip, srcCur, srcAmt)
 	if err != nil {
 		return apperrors.Internal(err)
 	}
 	return nil
+}
+
+// creditUserWithCurrencyTx increments balance_cents for userID inside tx.
+// When srcCur is non-nil the balance_currency column is also updated so that
+// all future balance operations stay in the deposited currency.
+// Returns the post-credit balance_cents value, or an apperrors error.
+func creditUserWithCurrencyTx(ctx context.Context, tx pgx.Tx, userID, deltaCents int, srcCur *string) (int, error) {
+	var balanceAfter int
+	var err error
+	if srcCur != nil {
+		err = tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents    = balance_cents + $2,
+			       balance_currency = $3,
+			       updated_at       = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING balance_cents
+		`, userID, deltaCents, *srcCur).Scan(&balanceAfter)
+	} else {
+		err = tx.QueryRow(ctx, `
+			UPDATE users
+			   SET balance_cents = balance_cents + $2,
+			       updated_at    = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING balance_cents
+		`, userID, deltaCents).Scan(&balanceAfter)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, apperrors.NotFound(errMsgUserNotFound)
+	}
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return balanceAfter, nil
 }
 
 // CreditIdempotent credits deltaCents to userID and records the ledger row,
@@ -259,12 +303,20 @@ func insertLedgerTx(ctx context.Context, tx pgx.Tx, e ledgerRow) error {
 //
 // Returns (true, nil) when the credit was applied, (false, nil) when reference
 // was already processed, or (false, err) on failure.
-func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, reference string) (bool, error) {
+func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, reference, sourceCurrency string, sourceAmountCents int) (bool, error) {
 	if reference == "" {
 		return false, apperrors.Validation("reference is required for idempotent credit")
 	}
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
+	var srcCur *string
+	if sourceCurrency != "" {
+		srcCur = &sourceCurrency
+	}
+	var srcAmt *int
+	if sourceAmountCents != 0 {
+		srcAmt = &sourceAmountCents
+	}
 	var credited bool
 	err := withRetryTx(ctx, r.db, "BalanceLedgerRepository.CreditIdempotent", func(tx pgx.Tx) error {
 		// Step 1: Race-free idempotency gate. The partial unique index on
@@ -272,11 +324,11 @@ func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, 
 		// caller inserts a row for this reference; the other gets ErrNoRows.
 		var insertedID int64
 		err := tx.QueryRow(ctx, `
-			INSERT INTO balance_ledger (user_id, delta_cents, kind, balance_after, reference)
-			VALUES ($1, $2, $3, 0, $4)
+			INSERT INTO balance_ledger (user_id, delta_cents, kind, balance_after, reference, source_currency, source_amount_cents)
+			VALUES ($1, $2, $3, 0, $4, $5, $6)
 			ON CONFLICT (reference) WHERE reference IS NOT NULL DO NOTHING
 			RETURNING id
-		`, userID, deltaCents, kind, reference).Scan(&insertedID)
+		`, userID, deltaCents, kind, reference, srcCur, srcAmt).Scan(&insertedID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Duplicate reference — idempotent no-op.
 			return nil
@@ -291,19 +343,12 @@ func (r *PostgresBalanceLedgerRepository) CreditIdempotent(ctx context.Context, 
 		}
 
 		// Step 2: Credit the user. Only reached when step 1 won the race.
-		var balanceAfter int
-		err = tx.QueryRow(ctx, `
-			UPDATE users
-			   SET balance_cents = balance_cents + $2,
-			       updated_at    = NOW()
-			 WHERE id = $1 AND deleted_at IS NULL
-			 RETURNING balance_cents
-		`, userID, deltaCents).Scan(&balanceAfter)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return apperrors.NotFound(errMsgUserNotFound)
-		}
-		if err != nil {
-			return apperrors.Internal(err)
+		// When the payment is in a non-GTQ currency (sourceCurrency != ""), also
+		// set balance_currency on first use so that all future balance operations
+		// are denominated in the same currency as this deposit.
+		balanceAfter, creditErr := creditUserWithCurrencyTx(ctx, tx, userID, deltaCents, srcCur)
+		if creditErr != nil {
+			return creditErr
 		}
 
 		// Step 3: Backfill balance_after now that the post-credit value is known.
@@ -345,6 +390,7 @@ func scanBalanceLedgerFields(s rowScanner) (*domain.BalanceLedger, error) {
 	return l, s.Scan(
 		&l.ID, &l.UserID, &l.DeltaCents, &l.Kind, &l.BalanceAfter,
 		&l.RefID, &l.RefType, &l.CreatedBy, &l.CreatedAt,
+		&l.SourceCurrency, &l.SourceAmountCents,
 	)
 }
 

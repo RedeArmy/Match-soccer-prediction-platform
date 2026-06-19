@@ -349,11 +349,14 @@ const translations: TranslationNode = {
     predCount:             { es: 'predicciones',                                             en: 'predictions'                                                   },
   },
   ledger: {
-    credit:     { es: 'Crédito',          en: 'Credit'      },
-    withdrawal: { es: 'Retiro',           en: 'Withdrawal'  },
-    refund:     { es: 'Reembolso',        en: 'Refund'      },
-    earning:    { es: 'Ganancia',         en: 'Earning'     },
-    entryFee:   { es: 'Pago',             en: 'Payment'     },
+    credit:           { es: 'Crédito',              en: 'Credit'             },
+    creditRecurrente: { es: 'Crédito · Recurrente', en: 'Credit · Recurrente' },
+    creditPayPal:     { es: 'Crédito · PayPal',     en: 'Credit · PayPal'    },
+    creditBank:       { es: 'Crédito · Banco',      en: 'Credit · Bank'      },
+    withdrawal:       { es: 'Retiro',               en: 'Withdrawal'         },
+    refund:           { es: 'Reembolso',            en: 'Refund'             },
+    earning:          { es: 'Ganancia',             en: 'Earning'            },
+    entryFee:         { es: 'Pago',                 en: 'Payment'            },
   },
   dashboard: {
     hello:              { es: 'Hola',                          en: 'Hello'                        },
@@ -710,8 +713,27 @@ function getTranslation(key: string, locale: Locale): string | undefined {
 
 // ISO 3166-1 alpha-2 codes for Spanish-speaking countries.
 const SPANISH_COUNTRIES = new Set([
-  "AR", "BO", "CL", "CO", "CR", "CU", "DO", "EC", "ES", "GQ",
-  "GT", "HN", "MX", "NI", "PA", "PE", "PR", "PY", "SV", "UY", "VE",
+  "AR",
+  "BO",
+  "CL",
+  "CO",
+  "CR",
+  "CU",
+  "DO",
+  "EC",
+  "ES",
+  "GQ",
+  "GT",
+  "HN",
+  "MX",
+  "NI",
+  "PA",
+  "PE",
+  "PR",
+  "PY",
+  "SV",
+  "UY",
+  "VE",
 ]);
 
 function localeForCountry(country: string): Locale {

@@ -191,6 +191,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// these routes are registered by registerPublicRoutes without the IP limiter.
 	s.registerPublicRoutes(r)
 
+	// Public feature flags — no auth required, covered by L1 IP limiter.
+	// Returns all featflag.* system params as a key-value map so the frontend
+	// can gate features at runtime without a deployment.
+	r.Get("/api/feature-flags", h.featureFlag.GetAll)
+
 	// Public exchange rate display — no auth required, covered by L1 IP limiter.
 	// Registered outside /api/v1 (which enforces RequireAuth) so unauthenticated
 	// frontend clients can display current buy/sell rates.

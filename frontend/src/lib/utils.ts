@@ -123,13 +123,9 @@ export function isVisibleLedgerKind(kind: string): boolean {
 }
 
 export function ledgerKindKey(kind: string): string {
-  if (
-    kind === "webhook_recurrente" ||
-    kind === "webhook_paypal" ||
-    kind === "bank_transfer"
-  ) {
-    return "ledger.credit";
-  }
+  if (kind === "webhook_recurrente") return "ledger.creditRecurrente";
+  if (kind === "webhook_paypal") return "ledger.creditPayPal";
+  if (kind === "bank_transfer") return "ledger.creditBank";
   if (kind === "withdrawal_release") return "ledger.refund";
   if (kind.startsWith("withdrawal_")) return "ledger.withdrawal";
   if (kind === "prize") return "ledger.earning";

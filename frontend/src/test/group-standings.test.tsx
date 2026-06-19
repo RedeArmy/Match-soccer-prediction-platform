@@ -18,7 +18,7 @@ vi.mock("@/components/shared/HorizontalCarousel", () => ({
 }));
 
 import { useQuery } from "@tanstack/react-query";
-import { GroupStandingsSection } from "@/components/public/GroupStandingsSection";
+import { GroupStandingsSection, teamDisplayName } from "@/components/public/GroupStandingsSection";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -42,6 +42,22 @@ function renderSection() {
     </I18nProvider>,
   );
 }
+
+// ── teamDisplayName (pure function) ──────────────────────────────────────────
+
+describe("teamDisplayName", () => {
+  it("returns Spanish name when locale is es", () => {
+    expect(teamDisplayName("Brazil", "es")).toBe("Brasil");
+  });
+
+  it("returns original name when locale is not es", () => {
+    expect(teamDisplayName("Brazil", "en")).toBe("Brazil");
+  });
+
+  it("returns original name when team is unknown in Spanish dictionary", () => {
+    expect(teamDisplayName("Obscuristan", "es")).toBe("Obscuristan");
+  });
+});
 
 // ── buildGroupStandings (pure function) ───────────────────────────────────────
 
@@ -232,16 +248,16 @@ describe("GroupStandingsSection – with group data", () => {
     expect(screen.getByTestId("carousel")).toBeInTheDocument();
   });
 
-  it("shows team names from the matches", () => {
+  it("shows team names from the matches in Spanish (default locale)", () => {
     renderSection();
-    expect(screen.getByText("Brazil")).toBeInTheDocument();
-    expect(screen.getByText("Germany")).toBeInTheDocument();
+    expect(screen.getByText("Brasil")).toBeInTheDocument();
+    expect(screen.getByText("Alemania")).toBeInTheDocument();
   });
 
   it("renders multiple groups", () => {
     renderSection();
-    expect(screen.getByText("Mexico")).toBeInTheDocument();
-    expect(screen.getByText("Canada")).toBeInTheDocument();
+    expect(screen.getByText("México")).toBeInTheDocument();
+    expect(screen.getByText("Canadá")).toBeInTheDocument();
   });
 
   it("shows flag emoji for known team (Brazil = 🇧🇷)", () => {

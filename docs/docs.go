@@ -6731,6 +6731,10 @@ const docTemplate = `{
                 "balance_cents": {
                     "type": "integer"
                 },
+                "balance_currency": {
+                    "description": "\"GTQ\" or \"USD\"",
+                    "type": "string"
+                },
                 "reserved_cents": {
                     "type": "integer"
                 }
@@ -7251,6 +7255,12 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "ref_type": {
+                    "type": "string"
+                },
+                "source_amount_cents": {
+                    "type": "integer"
+                },
+                "source_currency": {
                     "type": "string"
                 }
             }

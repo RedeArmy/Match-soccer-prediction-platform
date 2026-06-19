@@ -15,9 +15,11 @@ import (
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type balanceSvcUserRepo struct {
-	balance  int
-	reserved int
-	err      error
+	balance     int
+	reserved    int
+	balCurrency string
+	currencyErr error
+	err         error
 }
 
 func (r *balanceSvcUserRepo) Create(_ context.Context, _ *domain.User) error { return r.err }
@@ -54,6 +56,15 @@ func (r *balanceSvcUserRepo) GetStatusCounts(_ context.Context) (repository.User
 func (r *balanceSvcUserRepo) GetBalance(_ context.Context, _ int) (int, int, error) {
 	return r.balance, r.reserved, r.err
 }
+func (r *balanceSvcUserRepo) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
+	if r.currencyErr != nil {
+		return "", r.currencyErr
+	}
+	if r.balCurrency != "" {
+		return r.balCurrency, nil
+	}
+	return "GTQ", nil
+}
 func (r *balanceSvcUserRepo) UpdateLocale(_ context.Context, _ int, _ string) error { return r.err }
 func (r *balanceSvcUserRepo) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
 	return nil, r.err
@@ -82,7 +93,7 @@ func (r *balanceLedgerRepoStub) CommitReservation(_ context.Context, _ int, _ in
 func (r *balanceLedgerRepoStub) ListByUser(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
 	return r.entries, r.err
 }
-func (r *balanceLedgerRepoStub) CreditIdempotent(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ string) (bool, error) {
+func (r *balanceLedgerRepoStub) CreditIdempotent(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ string, _ string, _ int) (bool, error) {
 	return true, nil
 }
 func (r *balanceLedgerRepoStub) SumTransactionsByUserAndPeriod(_ context.Context, _ int, _ []domain.BalanceLedgerKind, _ time.Time) (int64, error) {
@@ -168,5 +179,58 @@ func TestBalanceService_GetLedger_PropagatesRepoError(t *testing.T) {
 	_, err := svc.GetLedger(context.Background(), 5, repository.Pagination{Limit: 50})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+// ── GetBalanceWithCurrency ─────────────────────────────────────────────────────
+
+func TestBalanceService_GetBalanceWithCurrency_ReturnsBalanceAndGTQ(t *testing.T) {
+	svc := newBalanceSvc(&balanceSvcUserRepo{balance: 10000, reserved: 500}, &balanceLedgerRepoStub{})
+
+	bal, res, cur, err := svc.GetBalanceWithCurrency(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if bal != 10000 {
+		t.Errorf("balance: got %d, want 10000", bal)
+	}
+	if res != 500 {
+		t.Errorf("reserved: got %d, want 500", res)
+	}
+	if cur != "GTQ" {
+		t.Errorf("currency: got %q, want GTQ", cur)
+	}
+}
+
+func TestBalanceService_GetBalanceWithCurrency_ReturnsUSDCurrency(t *testing.T) {
+	svc := newBalanceSvc(&balanceSvcUserRepo{balance: 500, balCurrency: "USD"}, &balanceLedgerRepoStub{})
+
+	_, _, cur, err := svc.GetBalanceWithCurrency(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cur != "USD" {
+		t.Errorf("currency: got %q, want USD", cur)
+	}
+}
+
+func TestBalanceService_GetBalanceWithCurrency_PropagatesGetBalanceError(t *testing.T) {
+	svc := newBalanceSvc(&balanceSvcUserRepo{err: errors.New("db down")}, &balanceLedgerRepoStub{})
+
+	_, _, _, err := svc.GetBalanceWithCurrency(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error from GetBalance, got nil")
+	}
+}
+
+func TestBalanceService_GetBalanceWithCurrency_PropagatesGetBalanceCurrencyError(t *testing.T) {
+	svc := newBalanceSvc(
+		&balanceSvcUserRepo{balance: 100, currencyErr: errors.New("currency query failed")},
+		&balanceLedgerRepoStub{},
+	)
+
+	_, _, _, err := svc.GetBalanceWithCurrency(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error from GetBalanceCurrency, got nil")
 	}
 }

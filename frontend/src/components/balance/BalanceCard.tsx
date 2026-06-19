@@ -9,7 +9,7 @@ import { useI18n } from "@/lib/i18n";
 
 export function BalanceCard() {
   const { data: balance, isLoading } = useBalance();
-  const { fmt } = useCurrency();
+  const { fmt } = useCurrency(balance?.balance_currency ?? "GTQ");
   const { t } = useI18n();
 
   if (isLoading) return <LoadingState rows={1} className="h-40" />;

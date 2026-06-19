@@ -50,6 +50,9 @@ func (r *stubUserRepo) GetStatusCounts(_ context.Context) (repository.UserStatus
 func (r *stubUserRepo) GetBalance(_ context.Context, _ int) (int, int, error) {
 	return 0, 0, r.err
 }
+func (r *stubUserRepo) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
+	return "GTQ", r.err
+}
 func (r *stubUserRepo) UpdateLocale(_ context.Context, _ int, _ string) error { return r.err }
 func (r *stubUserRepo) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
 	return r.user, r.err
@@ -325,6 +328,9 @@ type stubBalanceSvc struct {
 
 func (s *stubBalanceSvc) GetBalance(_ context.Context, _ int) (int, int, error) {
 	return s.balanceCents, s.reservedCents, s.err
+}
+func (s *stubBalanceSvc) GetBalanceWithCurrency(_ context.Context, _ int) (int, int, string, error) {
+	return s.balanceCents, s.reservedCents, "GTQ", s.err
 }
 func (s *stubBalanceSvc) GetLedger(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
 	return s.entries, s.err

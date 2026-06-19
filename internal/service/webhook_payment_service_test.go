@@ -27,7 +27,7 @@ type webhookLedgerRepoStub struct {
 func (r *webhookLedgerRepoStub) Credit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
 	return nil
 }
-func (r *webhookLedgerRepoStub) CreditIdempotent(_ context.Context, _ int, _ int, kind domain.BalanceLedgerKind, reference string) (bool, error) {
+func (r *webhookLedgerRepoStub) CreditIdempotent(_ context.Context, _ int, _ int, kind domain.BalanceLedgerKind, reference string, _ string, _ int) (bool, error) {
 	r.capturedKind = kind
 	r.capturedReference = reference
 	if r.creditErr != nil {
@@ -75,7 +75,7 @@ func (r *webhookIntentRepoStub) GetByToken(_ context.Context, _ string) (*domain
 func (r *webhookIntentRepoStub) GetByID(_ context.Context, _ int64) (*domain.PaymentIntent, error) {
 	return r.intent, nil
 }
-func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, _, _ string, _ int) (*domain.PaymentIntent, error) {
+func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, _, _ string, _ int, _ string, _ int) (*domain.PaymentIntent, error) {
 	return r.intent, r.captureErr
 }
 func (r *webhookIntentRepoStub) MarkCapturedByToken(_ context.Context, _ string) error {
@@ -104,6 +104,9 @@ func (r *webhookIntentRepoStub) RequestComprobante(_ context.Context, _ int64, _
 }
 func (r *webhookIntentRepoStub) SubmitForReview(_ context.Context, _ int64, _ int, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
 	return nil, nil
+}
+func (r *webhookIntentRepoStub) CancelStalePendingCardIntents(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
 }
 func (r *webhookIntentRepoStub) CancelByToken(_ context.Context, _ string, _ int) error {
 	return nil
@@ -461,5 +464,86 @@ func TestWebhookPaymentService_CreditFromRecurrente_MarkCapturedError_CreditStil
 	// Ledger must still have been credited.
 	if ledger.capturedKind == "" {
 		t.Error("expected credit to be applied despite mark error")
+	}
+}
+
+// ── USD-balance user path (SetUserRepository) ─────────────────────────────────
+
+// webhookUserRepoStub is a minimal UserRepository returning a configurable
+// balance_currency. Wired via SetUserRepository to test the USD-balance
+// PayPal credit path in ResolveAndCreditPayPalIntent.
+type webhookUserRepoStub struct {
+	balCurrency string
+}
+
+func (r *webhookUserRepoStub) Create(_ context.Context, _ *domain.User) error { return nil }
+func (r *webhookUserRepoStub) GetByID(_ context.Context, _ int) (*domain.User, error) {
+	return nil, nil
+}
+func (r *webhookUserRepoStub) GetByExternalSubject(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *webhookUserRepoStub) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *webhookUserRepoStub) Update(_ context.Context, _ *domain.User) error { return nil }
+func (r *webhookUserRepoStub) Delete(_ context.Context, _ int) error          { return nil }
+func (r *webhookUserRepoStub) List(_ context.Context) ([]*domain.User, error) { return nil, nil }
+func (r *webhookUserRepoStub) ListByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return nil, nil
+}
+func (r *webhookUserRepoStub) Ban(_ context.Context, _, _ int, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (r *webhookUserRepoStub) Unban(_ context.Context, _ int) error { return nil }
+func (r *webhookUserRepoStub) ListBanned(_ context.Context) ([]*domain.User, error) {
+	return nil, nil
+}
+func (r *webhookUserRepoStub) ListFiltered(_ context.Context, _ repository.UserFilters, _ repository.CursorPage) ([]*domain.User, string, error) {
+	return nil, "", nil
+}
+func (r *webhookUserRepoStub) GetStatusCounts(_ context.Context) (repository.UserStatusCounts, error) {
+	return repository.UserStatusCounts{}, nil
+}
+func (r *webhookUserRepoStub) GetBalance(_ context.Context, _ int) (int, int, error) {
+	return 0, 0, nil
+}
+func (r *webhookUserRepoStub) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
+	return r.balCurrency, nil
+}
+func (r *webhookUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
+func (r *webhookUserRepoStub) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
+	return nil, nil
+}
+
+func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_USDBalanceUser_CreditsUSDDirectly(t *testing.T) {
+	// When the user has balance_currency="USD", the PayPal USD amount is credited
+	// directly without GTQ conversion, even when fxSvc is wired.
+	intent := &domain.PaymentIntent{
+		ID: 10, UserID: 7, AmountCents: 1000,
+		Currency: "USD", Status: domain.PaymentIntentPending,
+	}
+	intentRepo := &webhookIntentRepoStub{intent: intent}
+	fx := &fxSvcStub{gtqCents: 7800}
+	ur := &webhookUserRepoStub{balCurrency: "USD"}
+
+	svc := newWebhookPaymentSvcWithFX(&webhookLedgerRepoStub{}, intentRepo, fx)
+	svc.(*webhookPaymentService).SetUserRepository(ur)
+
+	if err := svc.ResolveAndCreditPayPalIntent(context.Background(), "tok", "CAP-USD-USER", 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWebhookPaymentService_CreditFromRecurrente_USDCurrency_SetsSourceFields(t *testing.T) {
+	// Recurrente USD payment: sourceCurrency must be set, no conversion applied.
+	ledger := &webhookLedgerRepoStub{}
+	svc := newWebhookPaymentSvc(ledger, nil)
+
+	if err := svc.CreditFromRecurrente(context.Background(), 5, 500, "USD", "REF-USD"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ledger.capturedKind != domain.LedgerKindWebhookRecurrente {
+		t.Errorf("expected kind %q, got %q", domain.LedgerKindWebhookRecurrente, ledger.capturedKind)
 	}
 }

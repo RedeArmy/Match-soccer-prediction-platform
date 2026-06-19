@@ -92,10 +92,12 @@ describe("useBalance", () => {
 
   it("returns balance data when getBalance resolves", async () => {
     const balance = {
+      balance_cents: 50000,
       available_cents: 50000,
       reserved_cents: 0,
       pending_cents: 0,
       currency: "GTQ",
+      balance_currency: "GTQ",
     };
     vi.mocked(api.getBalance).mockResolvedValueOnce(balance);
 
@@ -257,5 +259,35 @@ describe("useCurrency", () => {
     });
     expect(result.current.isUSD).toBe(true);
     expect(result.current.fmt(780)).toContain("$");
+  });
+
+  it("formats USD balance in USD when locale is en", () => {
+    vi.mocked(useI18n).mockReturnValue({ locale: "en" } as never);
+
+    const { result } = renderHook(() => useCurrency("USD"), {
+      wrapper: makeWrapper(),
+    });
+    expect(result.current.isUSD).toBe(true);
+    expect(result.current.fmt(500)).toContain("$");
+  });
+
+  it("converts USD balance to GTQ when locale is es", async () => {
+    vi.mocked(useI18n).mockReturnValue({ locale: "es" } as never);
+
+    const { result } = renderHook(() => useCurrency("USD"), {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() => expect(result.current.fmt(100)).toContain("Q"));
+  });
+
+  it("uses FALLBACK_BUY_RATE when exchange rate is unavailable", () => {
+    vi.mocked(useI18n).mockReturnValue({ locale: "es" } as never);
+    vi.mocked(api.getExchangeRate).mockRejectedValue(new Error("offline"));
+
+    const { result } = renderHook(() => useCurrency("USD"), {
+      wrapper: makeWrapper(),
+    });
+    // With FALLBACK_BUY_RATE = 7.75, 100 cents USD → 775 GTQ cents → "Q 7.75"
+    expect(result.current.fmt(100)).toContain("Q");
   });
 });

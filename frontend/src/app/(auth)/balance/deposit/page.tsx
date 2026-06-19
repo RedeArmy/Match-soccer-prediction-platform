@@ -32,6 +32,7 @@ import { SubmitButton } from "@/components/shared/SubmitButton";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Method = "recurrente" | "paypal" | "bank";
+type FeatureFlags = Record<string, string>;
 type PayPalActions = { order?: { capture: () => Promise<unknown> } };
 type FeedbackKind = "error" | "warning" | "success";
 interface Feedback { kind: FeedbackKind; message: string }
@@ -75,6 +76,16 @@ function useCountry(): { country: string | null; isLoading: boolean } {
     retry: false,
   });
   return { country: data?.country ?? null, isLoading };
+}
+
+function useFeatureFlags(): FeatureFlags {
+  const { data } = useQuery<FeatureFlags>({
+    queryKey: ["feature-flags"],
+    queryFn: () => fetch("/api/feature-flags").then((r) => r.json()),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  return data ?? {};
 }
 
 // ── DepositAlert ──────────────────────────────────────────────────────────────
@@ -128,6 +139,8 @@ export default function DepositPage() {
 
   const { country, isLoading: geoLoading } = useCountry();
   const isGuatemala = country === "GT";
+  const flags = useFeatureFlags();
+  const paypalEnabled = flags["paypal"] === "1";
 
   const [method, setMethod]       = useState<Method>("recurrente");
   const [amountGTQ, setAmountGTQ] = useState("");
@@ -138,12 +151,13 @@ export default function DepositPage() {
 
   const clearFeedback = () => setFeedback(null);
 
-  // When geo resolves, drop the active tab if it is no longer available.
+  // When geo or flags resolve, drop the active tab if it is no longer available.
   useEffect(() => {
     if (geoLoading) return;
     if (isGuatemala && method === "paypal") setMethod("recurrente");
     if (!isGuatemala && method === "bank")  setMethod("recurrente");
-  }, [geoLoading, isGuatemala]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!paypalEnabled && method === "paypal") setMethod("recurrente");
+  }, [geoLoading, isGuatemala, paypalEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gtqEquiv =
     rate && amountUSD
@@ -157,10 +171,18 @@ export default function DepositPage() {
   const recurrenteMutation = useMutation({
     mutationFn: async () => {
       const token = await getToken();
-      const cents = Math.round(Number.parseFloat(amountGTQ) * 100);
+      if (isGuatemala) {
+        const cents = Math.round(Number.parseFloat(amountGTQ) * 100);
+        return api.createPaymentIntent(
+          token!,
+          { amount_cents: cents, currency: "GTQ", provider: "recurrente" },
+          crypto.randomUUID(),
+        );
+      }
+      const cents = Math.round(Number.parseFloat(amountUSD) * 100);
       return api.createPaymentIntent(
         token!,
-        { amount_cents: cents, currency: "GTQ", provider: "recurrente" },
+        { amount_cents: cents, currency: "USD", provider: "recurrente" },
         crypto.randomUUID(),
       );
     },
@@ -229,7 +251,9 @@ export default function DepositPage() {
   } else if (isGuatemala) {
     visibleTabs = allTabs.filter((tab) => tab.id !== "paypal");
   } else {
-    visibleTabs = allTabs.filter((tab) => tab.id !== "bank");
+    visibleTabs = allTabs.filter(
+      (tab) => tab.id !== "bank" && (tab.id !== "paypal" || paypalEnabled),
+    );
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -275,28 +299,53 @@ export default function DepositPage() {
             <p className="text-sm text-text-secondary">
               {t("deposit.recurrenteDesc")}
             </p>
-            <div>
-              <label
-                htmlFor="deposit-gtq-amount"
-                className="block text-sm text-text-secondary mb-1.5"
-              >
-                {t("deposit.amountGTQLabel")}
-              </label>
-              <input
-                id="deposit-gtq-amount"
-                type="number"
-                min="10"
-                max="100000"
-                step="0.01"
-                value={amountGTQ}
-                onChange={(e) => { setAmountGTQ(e.target.value); clearFeedback(); }}
-                placeholder="100.00"
-                className="input-base"
-              />
-            </div>
+            {isGuatemala ? (
+              <div>
+                <label
+                  htmlFor="deposit-gtq-amount"
+                  className="block text-sm text-text-secondary mb-1.5"
+                >
+                  {t("deposit.amountGTQLabel")}
+                </label>
+                <input
+                  id="deposit-gtq-amount"
+                  type="number"
+                  min="10"
+                  max="100000"
+                  step="0.01"
+                  value={amountGTQ}
+                  onChange={(e) => { setAmountGTQ(e.target.value); clearFeedback(); }}
+                  placeholder="100.00"
+                  className="input-base"
+                />
+              </div>
+            ) : (
+              <div>
+                <label
+                  htmlFor="deposit-usd-amount-recurrente"
+                  className="block text-sm text-text-secondary mb-1.5"
+                >
+                  {t("deposit.amountUSDLabel")}
+                </label>
+                <input
+                  id="deposit-usd-amount-recurrente"
+                  type="number"
+                  min="1"
+                  max="10000"
+                  step="0.01"
+                  value={amountUSD}
+                  onChange={(e) => { setAmountUSD(e.target.value); clearFeedback(); }}
+                  placeholder="50.00"
+                  className="input-base"
+                />
+                {gtqEquiv && (
+                  <p className="text-xs text-text-muted mt-1.5">≈ {gtqEquiv} GTQ</p>
+                )}
+              </div>
+            )}
             <SubmitButton
               isPending={recurrenteMutation.isPending}
-              disabled={!amountGTQ}
+              disabled={isGuatemala ? !amountGTQ : !amountUSD}
               onClick={() => recurrenteMutation.mutate()}
             >
               {t("deposit.recurrenteContinue")}

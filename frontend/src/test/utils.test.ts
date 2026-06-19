@@ -198,16 +198,16 @@ describe("isVisibleLedgerKind", () => {
 // ── ledgerKindKey ─────────────────────────────────────────────────────────────
 
 describe("ledgerKindKey", () => {
-  it("maps webhook_recurrente to ledger.credit", () => {
-    expect(ledgerKindKey("webhook_recurrente")).toBe("ledger.credit");
+  it("maps webhook_recurrente to ledger.creditRecurrente", () => {
+    expect(ledgerKindKey("webhook_recurrente")).toBe("ledger.creditRecurrente");
   });
 
-  it("maps webhook_paypal to ledger.credit", () => {
-    expect(ledgerKindKey("webhook_paypal")).toBe("ledger.credit");
+  it("maps webhook_paypal to ledger.creditPayPal", () => {
+    expect(ledgerKindKey("webhook_paypal")).toBe("ledger.creditPayPal");
   });
 
-  it("maps bank_transfer to ledger.credit", () => {
-    expect(ledgerKindKey("bank_transfer")).toBe("ledger.credit");
+  it("maps bank_transfer to ledger.creditBank", () => {
+    expect(ledgerKindKey("bank_transfer")).toBe("ledger.creditBank");
   });
 
   it("maps withdrawal_release to ledger.refund", () => {
