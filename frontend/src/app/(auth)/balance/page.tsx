@@ -112,7 +112,7 @@ function IntentRow({ intent }: { readonly intent: PaymentIntentSummary }) {
             )}
           {intent.user_notes && intent.status === "under_review" && (
             <p className="text-xs text-text-muted/70 italic truncate max-w-[220px] mt-0.5">
-              "{intent.user_notes}"
+              &ldquo;{intent.user_notes}&rdquo;
             </p>
           )}
         </div>
@@ -164,7 +164,7 @@ function TransferRow({ transfer }: { readonly transfer: BankTransferResponse }) 
           </p>
           {transfer.notes && transfer.status !== "pending" && (
             <p className="text-xs text-text-muted/70 italic truncate max-w-[220px] mt-0.5">
-              "{transfer.notes}"
+              &ldquo;{transfer.notes}&rdquo;
             </p>
           )}
         </div>
