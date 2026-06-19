@@ -170,6 +170,8 @@ func (s *Server) registerPaymentRoutes(r chi.Router, d apiV1Deps) {
 		r.With(middleware.RequestBodyLimit(d.uploadSizeLimit)).Post("/{token}/comprobante", d.h.paymentIntent.UploadComprobante)
 		// POST /{token}/resubmit accepts multipart: notes (required) + file (optional).
 		r.With(middleware.RequestBodyLimit(d.uploadSizeLimit)).Post("/{token}/resubmit", d.h.paymentIntent.ResubmitForReview)
+		// POST /{token}/cancel marks a pending intent as cancelled (user abandoned checkout).
+		r.Post("/{token}/cancel", d.h.paymentIntent.Cancel)
 	})
 
 	r.Route("/bank-transfers", func(r chi.Router) {

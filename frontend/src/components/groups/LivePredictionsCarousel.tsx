@@ -94,8 +94,6 @@ function UserPredictionCard({ row, liveMatches, t }: CardProps) {
     .map((w) => w[0]?.toUpperCase() ?? "")
     .join("");
 
-  const hasPredictions = row.predictions.some((p) => p.has_prediction);
-
   return (
     <article className="flex flex-col rounded-2xl border border-white/10 bg-[#0d1f35] overflow-hidden">
       {/* Live pulse bar */}
@@ -117,11 +115,6 @@ function UserPredictionCard({ row, liveMatches, t }: CardProps) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-white">
             {row.display_name}
-          </p>
-          <p className="text-[11px] text-text-muted">
-            {hasPredictions
-              ? `${row.predictions.filter((p) => p.has_prediction).length} / ${liveMatches.length} ${t("groups.predCount")}`
-              : t("groups.noPrediction")}
           </p>
         </div>
 

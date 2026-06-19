@@ -53,6 +53,14 @@ function StatusDot({ status }: { readonly status: PaymentIntentStatus }) {
       />
     );
   }
+  if (status === "cancelled") {
+    return (
+      <span
+        className="inline-block w-2.5 h-2.5 rounded-full bg-orange-400"
+        title="Cancelado"
+      />
+    );
+  }
   return (
     <span
       className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400"
@@ -221,6 +229,7 @@ function intentStatusLabel(status: PaymentIntentStatus): string {
   if (status === "rejected") return "Rechazado";
   if (status === "expired") return "Vencido";
   if (status === "under_review") return "En revisión";
+  if (status === "cancelled") return "Cancelado";
   return "Pendiente";
 }
 
@@ -351,14 +360,14 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
                   <th className="px-4 py-3 font-medium">Estado</th>
                   <th className="px-4 py-3 font-medium">Fecha</th>
                   <th className="px-4 py-3 font-medium">Comprobante</th>
-                  <th className="px-4 py-3 font-medium text-right">Acciones</th>
+                  <th className="px-4 py-3 font-medium text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {intents.map((item) => (
                   <tr
                     key={item.id}
-                    className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+                    className={`border-b border-white/5 hover:bg-white/[0.03] transition-colors${item.status === "cancelled" ? " bg-orange-500/[0.04]" : ""}`}
                   >
                     <td className="px-4 py-3 text-white/40 font-mono text-xs">
                       #{item.id}
@@ -383,7 +392,7 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
                       <div className="flex items-center gap-2">
                         <StatusDot status={item.status} />
                         <div>
-                          <span className="text-xs text-white/60 capitalize">
+                          <span className={`text-xs capitalize ${item.status === "cancelled" ? "text-orange-400" : "text-white/60"}`}>
                             {intentStatusLabel(item.status)}
                           </span>
                           {item.status === "under_review" && item.user_notes && (
@@ -415,47 +424,53 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2 flex-wrap">
-                        {item.status === "pending" && !item.comprobante_required && (
-                          <button
-                            onClick={() =>
-                              requestComprobanteMutation.mutate({ id: item.id })
-                            }
-                            disabled={requestComprobanteMutation.isPending}
-                            title="Solicitar comprobante al usuario"
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-xs font-medium transition-colors disabled:opacity-50"
-                          >
-                            <Bell className="h-3.5 w-3.5" />
-                            Comprobante
-                          </button>
-                        )}
-                        {canAct(item.status) && (
-                          <>
+                      {item.status === "cancelled" ? (
+                        <div className="flex justify-center">
+                          <span className="text-orange-400/50 text-xs">—</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-2 flex-wrap">
+                          {item.status === "pending" && !item.comprobante_required && (
                             <button
-                              onClick={() => openCredit(item)}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium transition-colors"
+                              onClick={() =>
+                                requestComprobanteMutation.mutate({ id: item.id })
+                              }
+                              disabled={requestComprobanteMutation.isPending}
+                              title="Solicitar comprobante al usuario"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-xs font-medium transition-colors disabled:opacity-50"
                             >
-                              <CheckCircle className="h-3.5 w-3.5" />
-                              Acreditar
+                              <Bell className="h-3.5 w-3.5" />
+                              Comprobante
                             </button>
-                            <button
-                              onClick={() => openReject(item)}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs font-medium transition-colors"
+                          )}
+                          {canAct(item.status) && (
+                            <>
+                              <button
+                                onClick={() => openCredit(item)}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium transition-colors"
+                              >
+                                <CheckCircle className="h-3.5 w-3.5" />
+                                Acreditar
+                              </button>
+                              <button
+                                onClick={() => openReject(item)}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs font-medium transition-colors"
+                              >
+                                <XCircle className="h-3.5 w-3.5" />
+                                Rechazar
+                              </button>
+                            </>
+                          )}
+                          {!canAct(item.status) && item.review_notes && (
+                            <span
+                              className="text-white/30 text-xs italic max-w-[120px] truncate"
+                              title={item.review_notes}
                             >
-                              <XCircle className="h-3.5 w-3.5" />
-                              Rechazar
-                            </button>
-                          </>
-                        )}
-                        {!canAct(item.status) && item.review_notes && (
-                          <span
-                            className="text-white/30 text-xs italic max-w-[120px] truncate"
-                            title={item.review_notes}
-                          >
-                            {item.review_notes}
-                          </span>
-                        )}
-                      </div>
+                              {item.review_notes}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -530,8 +545,6 @@ export default function AdminPaymentsPage() {
       <AdminPageHeader
         title="Pagos"
         subtitle="Pagos de Recurrente, PayPal y transferencias bancarias"
-        onRefresh={() => {}}
-        isLoading={false}
       />
 
       {/* Main tab bar */}

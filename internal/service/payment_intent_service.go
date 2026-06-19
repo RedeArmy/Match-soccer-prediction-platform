@@ -35,6 +35,9 @@ type PaymentIntentCreator interface {
 	// user_notes, and optionally replaces the comprobante. The userID is validated
 	// against the intent so a user cannot submit on behalf of another.
 	ResubmitForReview(ctx context.Context, userID int, token string, comprobanteKey, contentType *string, fileSize *int, notes string) (*domain.PaymentIntent, error)
+	// CancelIntent transitions a pending intent to cancelled when the user
+	// abandons the provider checkout. userID is validated against the intent.
+	CancelIntent(ctx context.Context, token string, userID int) error
 }
 
 type paymentIntentService struct {
@@ -165,6 +168,11 @@ func (s *paymentIntentService) ResubmitForReview(ctx context.Context, userID int
 		return nil, apperrors.Validation("only rejected intents can be submitted for review")
 	}
 	return s.intentRepo.SubmitForReview(ctx, intent.ID, userID, comprobanteKey, contentType, fileSize, notes)
+}
+
+// CancelIntent transitions a pending intent owned by userID to cancelled.
+func (s *paymentIntentService) CancelIntent(ctx context.Context, token string, userID int) error {
+	return s.intentRepo.CancelByToken(ctx, token, userID)
 }
 
 // generateIntentToken returns a 256-bit cryptographically random hex string.
