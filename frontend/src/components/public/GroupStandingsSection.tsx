@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useI18n } from "@/lib/i18n";
 import { HorizontalCarousel } from "@/components/shared/HorizontalCarousel";
@@ -239,10 +240,20 @@ export function buildGroupStandings(
 // ── Position badge ─────────────────────────────────────────────────────────────
 // Top 2 advance for sure, 3rd place might advance (8 best 3rd-place teams).
 
-function rowHighlight(pos: number): string {
-  if (pos <= 2) return "border-l-2 border-l-emerald-400 bg-emerald-500/[0.06]";
-  if (pos === 3) return "border-l-2 border-l-amber-400 bg-amber-500/[0.04]";
-  return "opacity-50";
+// Per-cell helpers — the flat grid has no row wrapper to style, so each helper
+// is applied to every cell in the row individually.
+function rowBg(pos: number): string {
+  if (pos <= 2) return "bg-emerald-500/[0.06]";
+  if (pos === 3) return "bg-amber-500/[0.04]";
+  return "";
+}
+function rowAccent(pos: number): string {
+  if (pos <= 2) return "border-l-2 border-l-emerald-400";
+  if (pos === 3) return "border-l-2 border-l-amber-400";
+  return "";
+}
+function rowDim(pos: number): string {
+  return pos > 3 ? "opacity-50" : "";
 }
 
 function posBadge(pos: number) {
@@ -266,6 +277,16 @@ function posBadge(pos: number) {
 }
 
 // ── Group table ───────────────────────────────────────────────────────────────
+// Single flat grid: header cells and all row cells are direct children of the
+// same grid container so CSS shares one column-sizing pass across every row,
+// guaranteeing perfect alignment without per-row grids diverging.
+//
+// Columns: pos-badge | team-name (1fr) | J | G | E | P | GF | GA | PTS
+// The 1fr team-name column is identical in every row because the outer card
+// has a fixed pixel width, so 1fr resolves to the same value for all rows.
+// "Bosnia and Herzegovina" (the longest name) may be truncated by `truncate`;
+// all shorter names — including "Costa de Marfil" / "Estados Unidos" — display
+// in full.
 
 function GroupTable({
   group,
@@ -278,9 +299,14 @@ function GroupTable({
   t: (k: string) => string;
   locale: string;
 }>) {
+  const COL = "grid-cols-[20px_1fr_28px_28px_28px_28px_28px_28px_32px]";
+  const HDR =
+    "border-b border-white/5 py-1.5 text-[10px] uppercase tracking-wide text-text-muted";
+  const NUM = "flex items-center justify-center tabular-nums text-xs";
+
   return (
     <div className="card overflow-hidden">
-      {/* Header */}
+      {/* Group label */}
       <div className="flex items-center gap-2 border-b border-white/8 bg-white/[0.02] px-4 py-2.5">
         <span className="flex h-6 w-6 items-center justify-center rounded bg-gold-500/20 text-xs font-bold text-gold-300">
           {group}
@@ -290,64 +316,84 @@ function GroupTable({
         </span>
       </div>
 
-      {/* Col headers */}
-      <div className="grid grid-cols-[auto_max-content_repeat(7,_auto)] items-center gap-x-3 border-b border-white/5 px-4 py-1.5 text-[10px] uppercase tracking-wide text-text-muted">
-        <span className="w-5" />
-        <span>{t("standings.team")}</span>
-        <span className="w-5 text-center">{t("standings.played")}</span>
-        <span className="w-5 text-center">{t("standings.won")}</span>
-        <span className="w-5 text-center">{t("standings.drawn")}</span>
-        <span className="w-5 text-center">{t("standings.lost")}</span>
-        <span className="w-6 text-center">{t("standings.gf")}</span>
-        <span className="w-6 text-center">{t("standings.ga")}</span>
-        <span className="w-7 text-center font-semibold text-white/40">
+      {/* Single shared grid — header + all data rows */}
+      <div className={`grid ${COL} gap-x-2 px-4`}>
+        {/* Column headers (9 cells) */}
+        <span className={HDR} />
+        <span className={HDR}>{t("standings.team")}</span>
+        <span className={`${HDR} text-center`}>{t("standings.played")}</span>
+        <span className={`${HDR} text-center`}>{t("standings.won")}</span>
+        <span className={`${HDR} text-center`}>{t("standings.drawn")}</span>
+        <span className={`${HDR} text-center`}>{t("standings.lost")}</span>
+        <span className={`${HDR} text-center`}>{t("standings.gf")}</span>
+        <span className={`${HDR} text-center`}>{t("standings.ga")}</span>
+        <span className={`${HDR} text-center font-semibold text-white/40`}>
           {t("standings.pts")}
         </span>
+
+        {/* Data rows — React.Fragment lets cells be direct grid children */}
+        {rows.map((row, idx) => {
+          const pos = idx + 1;
+          const sep =
+            idx < rows.length - 1 ? "border-b border-white/[0.04]" : "";
+          const bg = rowBg(pos);
+          const dim = rowDim(pos);
+          const accent = rowAccent(pos);
+
+          return (
+            <Fragment key={row.team}>
+              <div
+                className={`flex items-center py-2 ${sep} ${bg} ${accent} ${dim}`}
+              >
+                {posBadge(pos)}
+              </div>
+              <div
+                className={`flex min-w-0 items-center gap-2 overflow-hidden py-2 ${sep} ${bg} ${dim}`}
+              >
+                <span className="shrink-0 text-base leading-none" aria-hidden>
+                  {flag(row.team)}
+                </span>
+                <span className="truncate text-sm font-medium text-white">
+                  {teamDisplayName(row.team, locale)}
+                </span>
+              </div>
+              <div className={`${NUM} py-2 text-text-muted ${sep} ${bg} ${dim}`}>
+                {row.played}
+              </div>
+              <div
+                className={`${NUM} py-2 text-text-secondary ${sep} ${bg} ${dim}`}
+              >
+                {row.won}
+              </div>
+              <div
+                className={`${NUM} py-2 text-text-secondary ${sep} ${bg} ${dim}`}
+              >
+                {row.drawn}
+              </div>
+              <div
+                className={`${NUM} py-2 text-text-secondary ${sep} ${bg} ${dim}`}
+              >
+                {row.lost}
+              </div>
+              <div
+                className={`${NUM} py-2 text-text-secondary ${sep} ${bg} ${dim}`}
+              >
+                {row.gf}
+              </div>
+              <div
+                className={`${NUM} py-2 text-text-secondary ${sep} ${bg} ${dim}`}
+              >
+                {row.ga}
+              </div>
+              <div
+                className={`flex items-center justify-center py-2 font-score tabular-nums text-sm font-bold text-white ${sep} ${bg} ${dim}`}
+              >
+                {row.pts}
+              </div>
+            </Fragment>
+          );
+        })}
       </div>
-
-      {/* Rows */}
-      {rows.map((row, idx) => {
-        const pos = idx + 1;
-        return (
-          <div
-            key={row.team}
-            className={`grid grid-cols-[auto_max-content_repeat(7,_auto)] items-center gap-x-3 border-b border-white/[0.04] px-4 py-2 last:border-0 transition-colors ${rowHighlight(pos)}`}
-          >
-            {posBadge(pos)}
-
-            <div className="flex items-center gap-2">
-              <span className="text-base leading-none shrink-0" aria-hidden>
-                {flag(row.team)}
-              </span>
-              <span className="text-sm font-medium text-white">
-                {teamDisplayName(row.team, locale)}
-              </span>
-            </div>
-
-            <span className="w-5 text-center tabular-nums text-xs text-text-muted">
-              {row.played}
-            </span>
-            <span className="w-5 text-center tabular-nums text-xs text-text-secondary">
-              {row.won}
-            </span>
-            <span className="w-5 text-center tabular-nums text-xs text-text-secondary">
-              {row.drawn}
-            </span>
-            <span className="w-5 text-center tabular-nums text-xs text-text-secondary">
-              {row.lost}
-            </span>
-            <span className="w-6 text-center tabular-nums text-xs text-text-secondary">
-              {row.gf}
-            </span>
-            <span className="w-6 text-center tabular-nums text-xs text-text-secondary">
-              {row.ga}
-            </span>
-            <span className="w-7 text-center font-score tabular-nums text-sm font-bold text-white">
-              {row.pts}
-            </span>
-          </div>
-        );
-      })}
     </div>
   );
 }
