@@ -1193,6 +1193,9 @@ type PaymentIntentRepository interface {
 	// SubmitForReview transitions a rejected intent to under_review, sets user_notes,
 	// and optionally updates the comprobante. userID is validated against intent.user_id.
 	SubmitForReview(ctx context.Context, id int64, userID int, comprobanteKey, contentType *string, fileSize *int, notes string) (*domain.PaymentIntent, error)
+	// CancelByToken transitions a pending intent owned by userID to cancelled.
+	// Returns apperrors.NotFound when no matching pending intent exists for that user/token pair.
+	CancelByToken(ctx context.Context, token string, userID int) error
 }
 
 // NotificationTemplateRepository manages operator-editable notification content.

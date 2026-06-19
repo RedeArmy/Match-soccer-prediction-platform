@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import React from "react";
 import { I18nProvider } from "@/lib/i18n";
@@ -33,6 +33,12 @@ import type { TodayFixture } from "@/app/api/live/today/route";
 
 const mockFetch = vi.fn<typeof fetch>();
 vi.stubGlobal("fetch", mockFetch);
+
+// Pre-seed locale so I18nProvider skips the /api/geo round-trip and doesn't
+// consume a queued mockFetch response before the component under test can.
+beforeAll(() => {
+  globalThis.localStorage.setItem("quiniela-locale", "es");
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

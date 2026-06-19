@@ -393,7 +393,8 @@ export type PaymentIntentStatus =
   | "captured"
   | "expired"
   | "rejected"
-  | "under_review";
+  | "under_review"
+  | "cancelled";
 
 export interface PaymentIntentSummary {
   id: number;

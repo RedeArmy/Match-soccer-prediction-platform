@@ -56,10 +56,12 @@ export function Header() {
             </SignedIn>
 
             <nav className="hidden items-center gap-1 rounded border border-white/10 bg-white/[0.03] p-1 md:flex">
-              <Link href="/tournaments" className={NAV_LINK_CLASS}>
-                <Globe className="h-3.5 w-3.5" />
-                {t("common.tournaments")}
-              </Link>
+              <SignedOut>
+                <Link href="/tournaments" className={NAV_LINK_CLASS}>
+                  <Globe className="h-3.5 w-3.5" />
+                  {t("common.tournaments")}
+                </Link>
+              </SignedOut>
               <SignedIn>
                 <Link href="/" className={NAV_LINK_CLASS}>
                   <Home className="h-3.5 w-3.5" />
@@ -76,6 +78,10 @@ export function Header() {
                 <Link href="/balance" className={NAV_LINK_CLASS}>
                   <Wallet className="h-3.5 w-3.5" />
                   {t("common.balance")}
+                </Link>
+                <Link href="/tournaments" className={NAV_LINK_CLASS}>
+                  <Globe className="h-3.5 w-3.5" />
+                  {t("common.tournaments")}
                 </Link>
               </SignedIn>
             </nav>

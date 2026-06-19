@@ -483,6 +483,58 @@ func TestPaymentIntentRepository_SubmitForReview_NotFound(t *testing.T) {
 	}
 }
 
+// ── CancelByToken ─────────────────────────────────────────────────────────────
+
+func TestPaymentIntentRepository_CancelByToken_SetsCancelled(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	pi := seedPaymentIntent(t, u.ID, 3000)
+	repo := repository.NewPostgresPaymentIntentRepository(testDB)
+
+	if err := repo.CancelByToken(context.Background(), pi.Token, u.ID); err != nil {
+		t.Fatalf("CancelByToken: %v", err)
+	}
+	got, err := repo.GetByToken(context.Background(), pi.Token)
+	if err != nil {
+		t.Fatalf("GetByToken after cancel: %v", err)
+	}
+	if got.Status != domain.PaymentIntentCancelled {
+		t.Errorf("status: got %q, want cancelled", got.Status)
+	}
+}
+
+func TestPaymentIntentRepository_CancelByToken_WrongUser_ReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	other := seedUser(t)
+	pi := seedPaymentIntent(t, u.ID, 1000)
+	repo := repository.NewPostgresPaymentIntentRepository(testDB)
+
+	err := repo.CancelByToken(context.Background(), pi.Token, other.ID)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestPaymentIntentRepository_CancelByToken_NonPending_ReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	pi := seedPaymentIntent(t, u.ID, 2000)
+	repo := repository.NewPostgresPaymentIntentRepository(testDB)
+
+	// Capture the intent first so it's no longer pending.
+	if _, err := repo.CaptureAndCredit(context.Background(), pi.Token, "cap-x", u.ID); err != nil {
+		t.Fatalf("CaptureAndCredit: %v", err)
+	}
+	_ = admin // suppress unused-variable warning
+
+	err := repo.CancelByToken(context.Background(), pi.Token, u.ID)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
 // ── AdminCreditExpired ────────────────────────────────────────────────────────
 
 func TestPaymentIntentRepository_AdminCreditExpired_Credits(t *testing.T) {

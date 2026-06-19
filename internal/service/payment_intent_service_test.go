@@ -62,6 +62,7 @@ func (r *stubIntentRepo) RequestComprobante(_ context.Context, _ int64, _ int) (
 func (r *stubIntentRepo) SubmitForReview(_ context.Context, _ int64, _ int, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
 	return nil, nil
 }
+func (r *stubIntentRepo) CancelByToken(_ context.Context, _ string, _ int) error { return nil }
 
 func newIntentSvc(repo *stubIntentRepo) PaymentIntentCreator {
 	return NewPaymentIntentService(repo, &noopSystemParamService{}, zap.NewNop())
@@ -340,6 +341,33 @@ func TestPaymentIntentService_ResubmitForReview_HappyPath(t *testing.T) {
 	}
 }
 
+// ── CancelIntent ─────────────────────────────────────────────────────────────
+
+func TestPaymentIntentService_CancelIntent_HappyPath(t *testing.T) {
+	svc := newIntentSvc(&stubIntentRepo{})
+	if err := svc.CancelIntent(context.Background(), "tok-cancel", 42); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPaymentIntentService_CancelIntent_RepoErrorPropagates(t *testing.T) {
+	repoErr := errors.New("not found")
+	repo := &stubCancelRepo{err: repoErr}
+	svc := NewPaymentIntentService(repo, &noopSystemParamService{}, zap.NewNop())
+	err := svc.CancelIntent(context.Background(), "tok-missing", 42)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+// stubCancelRepo wraps stubIntentRepo and returns a configurable error from CancelByToken.
+type stubCancelRepo struct {
+	stubIntentRepo
+	err error
+}
+
+func (r *stubCancelRepo) CancelByToken(_ context.Context, _ string, _ int) error { return r.err }
+
 // ── extended stub supporting GetByToken responses ─────────────────────────
 
 type stubIntentRepoWithGetByToken struct {
@@ -388,4 +416,7 @@ func (r *stubIntentRepoWithGetByToken) RequestComprobante(_ context.Context, _ i
 }
 func (r *stubIntentRepoWithGetByToken) SubmitForReview(_ context.Context, _ int64, _ int, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
 	return r.submitResponse, nil
+}
+func (r *stubIntentRepoWithGetByToken) CancelByToken(_ context.Context, _ string, _ int) error {
+	return nil
 }

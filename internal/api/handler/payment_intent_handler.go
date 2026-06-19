@@ -456,6 +456,29 @@ func (h *PaymentIntentHandler) ResubmitForReview(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, intentToSummary(updated))
 }
 
+// Cancel handles POST /api/v1/payment-intents/{token}/cancel.
+// Transitions a pending intent to cancelled when the user abandons the provider checkout.
+func (h *PaymentIntentHandler) Cancel(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		writeError(w, r, h.log, apperrors.Validation("token is required"))
+		return
+	}
+
+	if err := h.svc.CancelIntent(r.Context(), token, caller.ID); err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // generateCheckoutReference returns a 16-byte hex string used as wcq_reference.
 func generateCheckoutReference() (string, error) {
 	b := make([]byte, 16)
