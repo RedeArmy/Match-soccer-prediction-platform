@@ -80,8 +80,8 @@ type Quiniela struct {
 	ScoreFromZero      bool
 	ScoreFromZeroSince *time.Time // set to NOW() when ScoreFromZero is enabled; nil when disabled
 	CreatedAt          time.Time
-	UpdatedAt       time.Time
-	DeletedAt       *time.Time // nil for active groups; set when the record is soft-deleted
+	UpdatedAt          time.Time
+	DeletedAt          *time.Time // nil for active groups; set when the record is soft-deleted
 }
 
 // ── Group membership ──────────────────────────────────────────────────────────
