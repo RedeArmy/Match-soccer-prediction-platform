@@ -104,8 +104,8 @@ export function TournamentSettingsModal({
     modeGeneral !== group.mode_general || modeRound !== group.mode_round;
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: "settings", label: "Ajustes" },
-    { id: "mode", label: "Modo de torneo" },
+    { id: "settings", label: t("group.tabSettings") },
+    { id: "mode", label: t("group.tournamentMode") },
   ];
 
   return (
@@ -160,11 +160,11 @@ export function TournamentSettingsModal({
               id="require-approval"
               checked={requireApproval}
               onChange={setRequireApproval}
-              label="Requerir aprobación"
+              label={t("group.requireApprovalLabel")}
               description={
                 requireApproval
-                  ? "Los nuevos miembros deben ser aprobados por un miembro activo antes de unirse."
-                  : "Los usuarios se unen automáticamente al presentar el código de invitación, sin esperar aprobación."
+                  ? t("group.requireApprovalOnDesc")
+                  : t("group.requireApprovalOffDesc")
               }
               disabled={false}
             />
@@ -174,9 +174,9 @@ export function TournamentSettingsModal({
                 <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 opacity-60">
                   <Lock className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" />
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-white">Iniciar con 0 puntos</p>
+                    <p className="text-sm font-medium text-white">{t("group.scoreFromZeroLabel")}</p>
                     <p className="mt-0.5 text-[11px] text-text-muted">
-                      Activado · Irreversible. Los nuevos miembros ingresan con 0 puntos en este grupo.
+                      {t("group.scoreFromZeroLockedDesc")}
                     </p>
                   </div>
                 </div>
@@ -184,17 +184,17 @@ export function TournamentSettingsModal({
                 <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-4">
                   <div className="mb-3 flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 text-amber-400" />
-                    <p className="text-sm font-semibold text-amber-300">¿Confirmar activación?</p>
+                    <p className="text-sm font-semibold text-amber-300">{t("group.scoreFromZeroConfirmTitle")}</p>
                   </div>
                   <ul className="mb-4 space-y-1.5 text-[11px] leading-relaxed text-text-muted">
-                    <li>· Los puntos de <strong className="text-white/90">todos los miembros actuales</strong> del grupo se reiniciarán a <strong className="text-white/90">0</strong>.</li>
-                    <li>· Los nuevos miembros que se unan también comenzarán con 0 puntos en este grupo.</li>
-                    <li>· <strong className="text-amber-300">Esta acción no puede revertirse.</strong></li>
-                    <li>· Los puntos en otros grupos no se verán afectados.</li>
+                    <li>· {t("group.scoreFromZeroConfirmItem1")}</li>
+                    <li>· {t("group.scoreFromZeroConfirmItem2")}</li>
+                    <li>· <strong className="text-amber-300">{t("group.scoreFromZeroConfirmItem3")}</strong></li>
+                    <li>· {t("group.scoreFromZeroConfirmItem4")}</li>
                   </ul>
                   {scoreFromZeroMutation.isError && (
                     <p className="mb-3 text-[11px] text-red-400">
-                      No se pudo activar. Intenta nuevamente.
+                      {t("group.scoreFromZeroActivateError")}
                     </p>
                   )}
                   <div className="flex gap-2">
@@ -204,7 +204,7 @@ export function TournamentSettingsModal({
                       disabled={scoreFromZeroMutation.isPending}
                       className="flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-text-muted transition-colors hover:text-white disabled:opacity-50"
                     >
-                      Cancelar
+                      {t("common.cancel")}
                     </button>
                     <button
                       type="button"
@@ -215,7 +215,7 @@ export function TournamentSettingsModal({
                       {scoreFromZeroMutation.isPending && (
                         <Loader2 className="h-3 w-3 animate-spin" />
                       )}
-                      Confirmar
+                      {t("group.scoreFromZeroConfirmBtn")}
                     </button>
                   </div>
                 </div>
@@ -224,8 +224,8 @@ export function TournamentSettingsModal({
                   id="score-from-zero"
                   checked={false}
                   onChange={() => setShowScoreConfirm(true)}
-                  label="Iniciar con 0 puntos"
-                  description="Al activar, los puntos de todos los miembros se reiniciarán a 0 en este grupo. Esta acción no puede revertirse."
+                  label={t("group.scoreFromZeroLabel")}
+                  description={t("group.scoreFromZeroDesc")}
                   disabled={false}
                 />
               )}
