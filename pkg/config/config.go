@@ -144,6 +144,15 @@ type N8nConfig struct {
 	// observability endpoints under /api/admin/observability/n8n/*.
 	// Set via WCQ_N8N_APIKEY.
 	APIKey string `mapstructure:"apiKey"`
+	// InternalKey is a shared secret that n8n (and other internal services)
+	// present in the "Authorization: Bearer <key>" header when calling
+	// /api/internal/* routes.  These routes bypass Clerk JWT auth and are
+	// protected exclusively by this key.
+	// An empty value causes the InternalServiceAuth middleware to return 503
+	// on every request, making the misconfiguration immediately visible.
+	// Generate with:  openssl rand -hex 32
+	// Set via WCQ_N8N_INTERNALKEY.
+	InternalKey string `mapstructure:"internalKey"`
 }
 
 // WebPushConfig holds secrets required for RFC 8292 Web Push via VAPID.
