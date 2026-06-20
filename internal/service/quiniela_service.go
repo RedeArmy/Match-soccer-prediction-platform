@@ -44,6 +44,11 @@ type QuinielaService interface {
 	// users who join via invite code are auto-activated with no approval step and
 	// no notification to existing members. Returns the updated Quiniela.
 	UpdateRequireApproval(ctx context.Context, quinielaID, callerUserID int, requireApproval bool) (*domain.Quiniela, error)
+	// UpdateScoreFromZero sets the score_from_zero flag for a group. Only the
+	// group owner may call this. When enabled, new members who join after the
+	// flag is set accumulate points only from matches that kick off after their
+	// join date, effectively starting with 0 points in this group.
+	UpdateScoreFromZero(ctx context.Context, quinielaID, callerUserID int, enabled bool) (*domain.Quiniela, error)
 }
 
 // quinielaService is the concrete implementation of QuinielaService.
@@ -265,6 +270,20 @@ func (s *quinielaService) UpdateRequireApproval(ctx context.Context, quinielaID,
 		return nil, err
 	}
 	q, err := s.repo.UpdateRequireApproval(ctx, quinielaID, requireApproval)
+	if err != nil {
+		return nil, err
+	}
+	return q, nil
+}
+
+func (s *quinielaService) UpdateScoreFromZero(ctx context.Context, quinielaID, callerUserID int, enabled bool) (*domain.Quiniela, error) {
+	if err := s.authz.RequireOwner(ctx, quinielaID, callerUserID); err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, apperrors.Validation("score_from_zero cannot be disabled once activated")
+	}
+	q, err := s.repo.UpdateScoreFromZero(ctx, quinielaID, true)
 	if err != nil {
 		return nil, err
 	}

@@ -72,10 +72,10 @@ func (r *stubPredRepo) UpdateManyPoints(_ context.Context, points map[int]int) e
 	}
 	return r.err
 }
-func (r *stubPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
+func (r *stubPredRepo) TotalPointsByQuiniela(_ context.Context, _ int, _ bool, _ time.Time) (map[int]int, error) {
 	return nil, r.err
 }
-func (r *stubPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
+func (r *stubPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase, _ bool, _ time.Time) (map[int]int, error) {
 	return nil, r.err
 }
 func (r *stubPredRepo) PredictionStatsByQuiniela(_ context.Context, _ int) (map[int]*domain.UserPredictionStats, error) {
@@ -118,7 +118,7 @@ func (r *stubPredRepo) ScoreMatchBatch(_ context.Context, _ int, scorer func([]*
 	}
 	return r.err
 }
-func (r *stubPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
+func (r *stubPredRepo) PointsByUserAndRound(_ context.Context, _ int, _ bool, _ time.Time) (map[int]map[string]int, error) {
 	return nil, nil
 }
 func (r *stubPredRepo) ListByGroupAndMatches(_ context.Context, _ int, _ []int) ([]*domain.Prediction, error) {

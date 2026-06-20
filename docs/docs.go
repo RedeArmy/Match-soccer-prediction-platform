@@ -7170,6 +7170,10 @@ const docTemplate = `{
                     "description": "RequireApproval mirrors the quiniela.require_approval flag. When false,\nusers who join via invite code are auto-activated with no approval step.",
                     "type": "boolean"
                 },
+                "score_from_zero": {
+                    "description": "ScoreFromZero mirrors the quiniela.score_from_zero flag. When true,\nmembers who join after the flag was enabled accumulate points only from\nmatches that kick off on or after their join date.",
+                    "type": "boolean"
+                },
                 "status": {
                     "description": "Status is system-managed: \"active\" when the group has ≥ 5 active members,\n\"inactive\" otherwise. Only active groups are eligible for payment processing\nand prize distribution.",
                     "type": "string"

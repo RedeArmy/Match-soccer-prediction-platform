@@ -179,6 +179,23 @@ const translations: TranslationNode = {
     settingsError:           { es: 'No se pudo guardar la configuración.', en: 'Could not save settings.' },
     settingsErrorMinMembers: { es: 'Se necesitan al menos {min} miembros activos para activar Premium.', en: 'At least {min} active members are required to activate Premium.' },
     settingsErrorBalance:    { es: 'Uno o más miembros no tienen saldo suficiente para la cuota.', en: 'One or more members have insufficient balance for the entry fee.' },
+    // Ajustes tab labels
+    tabSettings:             { es: 'Ajustes',                             en: 'Settings'                   },
+    // Require-approval toggle
+    requireApprovalLabel:    { es: 'Requerir aprobación',                 en: 'Require approval'            },
+    requireApprovalOnDesc:   { es: 'Los nuevos miembros deben ser aprobados por un miembro activo antes de unirse.', en: 'New members must be approved by an active member before joining.' },
+    requireApprovalOffDesc:  { es: 'Los usuarios se unen automáticamente al presentar el código de invitación, sin esperar aprobación.', en: 'Users join automatically when they present the invite code, without waiting for approval.' },
+    // Score-from-zero feature
+    scoreFromZeroLabel:          { es: 'Iniciar con 0 puntos',            en: 'Start from zero points'      },
+    scoreFromZeroDesc:           { es: 'Al activar, los puntos de todos los miembros se reiniciarán a 0 en este grupo. Esta acción no puede revertirse.', en: "When activated, all members' points in this group will be reset to 0. This action cannot be reversed." },
+    scoreFromZeroLockedDesc:     { es: 'Activado · Irreversible. Los nuevos miembros ingresan con 0 puntos en este grupo.', en: 'Activated · Irreversible. New members join with 0 points in this group.' },
+    scoreFromZeroConfirmTitle:   { es: '¿Confirmar activación?',          en: 'Confirm activation?'         },
+    scoreFromZeroConfirmItem1:   { es: 'Los puntos de todos los miembros actuales del grupo se reiniciarán a 0.', en: "All current members' points in this group will be reset to 0." },
+    scoreFromZeroConfirmItem2:   { es: 'Los nuevos miembros que se unan también comenzarán con 0 puntos en este grupo.', en: 'New members who join will also start with 0 points in this group.' },
+    scoreFromZeroConfirmItem3:   { es: 'Esta acción no puede revertirse.', en: 'This action cannot be reversed.' },
+    scoreFromZeroConfirmItem4:   { es: 'Los puntos en otros grupos no se verán afectados.', en: 'Points in other groups will not be affected.' },
+    scoreFromZeroConfirmBtn:     { es: 'Confirmar',                       en: 'Confirm'                     },
+    scoreFromZeroActivateError:  { es: 'No se pudo activar. Intenta nuevamente.', en: 'Could not activate. Please try again.' },
   },
   status: {
     active:       { es: 'Activo',         en: 'Active'       },

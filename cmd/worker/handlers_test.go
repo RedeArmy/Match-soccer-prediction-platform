@@ -283,10 +283,10 @@ func (r *stubWorkerPredRepo) ListByMatch(_ context.Context, _ int) ([]*domain.Pr
 	return nil, nil
 }
 func (r *stubWorkerPredRepo) UpdateManyPoints(_ context.Context, _ map[int]int) error { return nil }
-func (r *stubWorkerPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
+func (r *stubWorkerPredRepo) TotalPointsByQuiniela(_ context.Context, _ int, _ bool, _ time.Time) (map[int]int, error) {
 	return nil, nil
 }
-func (r *stubWorkerPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
+func (r *stubWorkerPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase, _ bool, _ time.Time) (map[int]int, error) {
 	return nil, nil
 }
 func (r *stubWorkerPredRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, error) {
@@ -323,7 +323,7 @@ func (r *stubWorkerPredRepo) ScoreMatchBatch(_ context.Context, _ int, scorer fu
 func (r *stubWorkerPredRepo) GetScoringCfgSnapshot(_ context.Context, _ int) (*domain.ScoringCfgSnapshot, error) {
 	return nil, nil
 }
-func (r *stubWorkerPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
+func (r *stubWorkerPredRepo) PointsByUserAndRound(_ context.Context, _ int, _ bool, _ time.Time) (map[int]map[string]int, error) {
 	return nil, nil
 }
 func (r *stubWorkerPredRepo) ListByGroupAndMatches(_ context.Context, _ int, _ []int) ([]*domain.Prediction, error) {

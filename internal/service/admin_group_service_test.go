@@ -313,6 +313,9 @@ func (r *captureDistributeRepo) UpdateTournamentMode(_ context.Context, _ int, _
 func (r *captureDistributeRepo) UpdateRequireApproval(_ context.Context, _ int, _ bool) (*domain.Quiniela, error) {
 	return nil, r.err
 }
+func (r *captureDistributeRepo) UpdateScoreFromZero(_ context.Context, _ int, _ bool) (*domain.Quiniela, error) {
+	return nil, r.err
+}
 func (r *captureDistributeRepo) ExistsByName(_ context.Context, _ string, _ int) (bool, error) {
 	return false, r.err
 }

@@ -181,6 +181,9 @@ func (s *stubQuinielaSvc) SetTournamentMode(_ context.Context, _, _ int, _, _ bo
 func (s *stubQuinielaSvc) UpdateRequireApproval(_ context.Context, _, _ int, _ bool) (*domain.Quiniela, error) {
 	return s.quiniela, s.err
 }
+func (s *stubQuinielaSvc) UpdateScoreFromZero(_ context.Context, _, _ int, _ bool) (*domain.Quiniela, error) {
+	return s.quiniela, s.err
+}
 func (s *stubQuinielaSvc) IsNameAvailable(_ context.Context, _ string, _ int) (bool, error) {
 	return s.nameAvailable, s.err
 }
@@ -515,13 +518,13 @@ func (r *stubPredRepo) UpdateManyPoints(_ context.Context, _ map[int]int) error 
 func (r *stubPredRepo) ScoreMatchBatch(_ context.Context, _ int, _ func([]*domain.Prediction) (map[int]int, error), _ int) error {
 	return r.err
 }
-func (r *stubPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
+func (r *stubPredRepo) TotalPointsByQuiniela(_ context.Context, _ int, _ bool, _ time.Time) (map[int]int, error) {
 	return nil, r.err
 }
-func (r *stubPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
+func (r *stubPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase, _ bool, _ time.Time) (map[int]int, error) {
 	return nil, r.err
 }
-func (r *stubPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
+func (r *stubPredRepo) PointsByUserAndRound(_ context.Context, _ int, _ bool, _ time.Time) (map[int]map[string]int, error) {
 	return nil, r.err
 }
 func (r *stubPredRepo) ListQuinielaIDsByMatch(_ context.Context, _ int) ([]int, error) {

@@ -64,7 +64,7 @@ func (r *PostgresQuinielaRepository) RegisterMetrics(meter metric.Meter) error {
 	return nil
 }
 
-const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, status, is_premium, mode_general, mode_round, require_approval, created_at, updated_at, deleted_at"
+const quinielaColumns = "id, name, owner_id, invite_code, invite_code_expires_at, entry_fee, currency, status, is_premium, mode_general, mode_round, require_approval, score_from_zero, score_from_zero_since, created_at, updated_at, deleted_at"
 
 const msgQuinielaNotFound = "quiniela not found"
 
@@ -74,6 +74,7 @@ func scanQuiniela(row pgx.Row) (*domain.Quiniela, error) {
 		&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
 		&q.EntryFee, &q.Currency, &q.Status,
 		&q.IsPremium, &q.ModeGeneral, &q.ModeRound, &q.RequireApproval,
+		&q.ScoreFromZero, &q.ScoreFromZeroSince,
 		&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -272,6 +273,7 @@ func collectQuinielas(rows pgx.Rows) ([]*domain.Quiniela, error) {
 			&q.ID, &q.Name, &q.OwnerID, &q.InviteCode, &q.InviteCodeExpiresAt,
 			&q.EntryFee, &q.Currency, &q.Status,
 			&q.IsPremium, &q.ModeGeneral, &q.ModeRound, &q.RequireApproval,
+			&q.ScoreFromZero, &q.ScoreFromZeroSince,
 			&q.CreatedAt, &q.UpdatedAt, &q.DeletedAt,
 		); err != nil {
 			return nil, apperrors.Internal(err)
@@ -345,6 +347,30 @@ func (r *PostgresQuinielaRepository) UpdateRequireApproval(ctx context.Context, 
 		  WHERE id = $2`+activeOnly+`
 		  RETURNING `+quinielaColumns,
 		requireApproval, quinielaID,
+	)
+	result, err := scanQuiniela(row)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, apperrors.NotFound(msgQuinielaNotFound)
+	}
+	return result, nil
+}
+
+// UpdateScoreFromZero sets the score_from_zero flag on the quiniela.
+// When enabled is true, score_from_zero_since is set to NOW() so that members
+// who joined before that timestamp are exempt from the join-date filter.
+// When enabled is false, score_from_zero_since is cleared to NULL.
+func (r *PostgresQuinielaRepository) UpdateScoreFromZero(ctx context.Context, quinielaID int, enabled bool) (*domain.Quiniela, error) {
+	row := r.db.QueryRow(ctx,
+		`UPDATE quinielas
+		    SET score_from_zero       = $1,
+		        score_from_zero_since = CASE WHEN $1 THEN NOW() ELSE NULL END,
+		        updated_at            = NOW()
+		  WHERE id = $2`+activeOnly+`
+		  RETURNING `+quinielaColumns,
+		enabled, quinielaID,
 	)
 	result, err := scanQuiniela(row)
 	if err != nil {
