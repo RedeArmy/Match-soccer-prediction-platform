@@ -29,13 +29,45 @@ interface AFEvent {
   detail: string; // "Normal Goal" | "Yellow Card" | "Red Card" | …
 }
 
+// /venues?id=X — stadium details including country
+interface AFVenue {
+  id: number;
+  name: string | null;
+  city: string | null;
+  country: string | null;
+}
+
+// State/province for each FIFA 2026 host city. API-Football /venues does not
+// return a state field, so we resolve it from the city name returned by /fixtures.
+const FIFA_2026_CITY_STATE: Record<string, string> = {
+  // USA
+  "East Rutherford": "New Jersey",
+  Inglewood: "California",
+  Arlington: "Texas",
+  "Santa Clara": "California",
+  Seattle: "Washington",
+  "Miami Gardens": "Florida",
+  Foxborough: "Massachusetts",
+  "Kansas City": "Missouri",
+  Houston: "Texas",
+  Philadelphia: "Pennsylvania",
+  Atlanta: "Georgia",
+  // Canada
+  Toronto: "Ontario",
+  Vancouver: "British Columbia",
+  // Mexico
+  "Mexico City": "Ciudad de México",
+  Guadalajara: "Jalisco",
+  Monterrey: "Nuevo León",
+};
+
 // /fixtures?id=X — basic match data only (id must be used alone)
 interface AFFixtureBase {
   fixture: {
     id: number;
     date: string;
     status: { short: string; elapsed: number | null };
-    venue: { name: string | null; city: string | null };
+    venue: { id: number | null; name: string | null; city: string | null };
   };
   league: { round: string; country: string };
   teams: {
@@ -86,6 +118,7 @@ export interface FixtureDetail {
   round: string;
   venue: string | null;
   city: string | null;
+  state: string | null;
   country: string | null;
   lineups: FixtureLineup[];
   events: FixtureEvent[];
@@ -151,6 +184,8 @@ export async function GET(
     );
   }
 
+  // Parse fixture first so we can extract the venue ID for the country lookup.
+  // The /fixtures endpoint omits the venue country; /venues provides it.
   const fixtureData: { response: AFFixtureBase[] } = await fixtureRes.json();
   const item = fixtureData.response?.[0];
   if (!item) {
@@ -160,6 +195,25 @@ export async function GET(
       JSON.stringify(fixtureData),
     );
     return NextResponse.json({ error: "Fixture not found" }, { status: 404 });
+  }
+
+  // Fetch venue country (best-effort). The /fixtures endpoint only returns
+  // league.country which is "World" for the FIFA World Cup — useless for display.
+  // /venues returns the actual host country (USA, Canada, Mexico).
+  let venueCountry: string | null = null;
+  const venueId = item.fixture.venue?.id;
+  if (venueId) {
+    const venueUrl = new URL("/venues", BASE_URL);
+    venueUrl.searchParams.set("id", String(venueId));
+    try {
+      const venueRes = await fetch(venueUrl.toString(), { headers: af, cache: "no-store" });
+      if (venueRes.ok) {
+        const vd: { response?: AFVenue[] } = await venueRes.json().catch(() => ({}));
+        venueCountry = vd.response?.[0]?.country ?? null;
+      }
+    } catch {
+      // best-effort — country display degrades gracefully to null
+    }
   }
 
   // Events and lineups are best-effort — if the sub-endpoint fails or the plan
@@ -216,7 +270,8 @@ export async function GET(
     round: item.league.round,
     venue: item.fixture.venue?.name ?? null,
     city: item.fixture.venue?.city ?? null,
-    country: item.league.country ?? null,
+    state: FIFA_2026_CITY_STATE[item.fixture.venue?.city ?? ""] ?? null,
+    country: venueCountry,
     lineups,
     events,
   };

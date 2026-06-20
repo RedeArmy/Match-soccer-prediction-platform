@@ -148,8 +148,29 @@ services:
       # Read in workflows as:  $env.ADMIN_EMAIL  /  process.env.ADMIN_EMAIL
       ADMIN_EMAIL:             ${N8N_ADMIN_EMAIL}
       COMPLIANCE_EMAIL:        ${N8N_COMPLIANCE_EMAIL}
+      # Specialist recipients — used by escalation / alert workflows.
+      OPS_EMAIL:                   ${N8N_OPS_EMAIL}
+      SENIOR_COMPLIANCE_EMAIL:     ${N8N_SENIOR_COMPLIANCE_EMAIL}
+      SANCTIONS_COMPLIANCE_EMAIL:  ${N8N_SANCTIONS_COMPLIANCE_EMAIL}
       # process.env.APP_BASE_URL used in user-facing email links (e.g. kyc-approved)
       APP_BASE_URL:            ${FRONTEND_PUBLIC_URL}
+      # ADMIN_BASE_URL is used in KYC/compliance email bodies to build deep-links
+      # into the admin panel (e.g. process.env.ADMIN_BASE_URL + "/admin/kyc/queue").
+      # Typically identical to APP_BASE_URL when the admin panel is part of the
+      # same Next.js app; override separately when it lives on a different domain.
+      ADMIN_BASE_URL:          ${N8N_ADMIN_BASE_URL:-${FRONTEND_PUBLIC_URL}}
+      # API_BASE_URL is the internal backend URL n8n uses to call the REST API.
+      # Within the Docker network this is always http://api:8080; set
+      # N8N_API_BASE_URL only if you need to override it (e.g. in local dev
+      # where n8n runs outside Docker and must reach the host).
+      API_BASE_URL:            ${N8N_API_BASE_URL:-http://api:8080}
+      # INTERNAL_API_KEY is a shared secret that n8n presents in the
+      # "Authorization: Bearer <key>" header when polling the backend on its
+      # scheduled workflows (e.g. kyc-review-reminder).
+      # Generate with:  openssl rand -hex 32
+      # The backend must validate this key on the affected routes; see the
+      # WCQ_N8N_INTERNALKEY env var on the api / worker services.
+      INTERNAL_API_KEY:        ${N8N_INTERNAL_API_KEY}
       # ── Webhook HMAC signing ─────────────────────────────────────────────
       # Must match WCQ_N8N_WEBHOOKSECRET on the backend side.
       N8N_WEBHOOK_SECRET:      ${N8N_WEBHOOK_SECRET}

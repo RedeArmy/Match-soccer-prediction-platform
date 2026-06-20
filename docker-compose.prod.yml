@@ -90,6 +90,7 @@ services:
       # HMAC-SHA256 key for signing outbound webhook calls to n8n.
       # Must match N8N_WEBHOOK_SECRET in docker-compose.observability.yml.
       WCQ_N8N_WEBHOOKSECRET:  ${N8N_WEBHOOK_SECRET}
+      WCQ_N8N_INTERNALKEY:    ${N8N_INTERNAL_API_KEY}
       # ── API-Football ─────────────────────────────────────────────────────────
       WCQ_FOOTBALLPROVIDER_APIKEY: ${FOOTBALL_API_KEY}
       # ── GC tuning — API budget ~2 GB on Hetzner CX53 ────────────────────────
@@ -130,6 +131,7 @@ services:
       WCQ_N8N_WEBHOOKURL:         http://n8n:5678/webhook
       WCQ_N8N_APIKEY:             ${N8N_API_KEY}
       WCQ_N8N_WEBHOOKSECRET:      ${N8N_WEBHOOK_SECRET}
+      WCQ_N8N_INTERNALKEY:        ${N8N_INTERNAL_API_KEY}
       # ── Email ────────────────────────────────────────────────────────────────
       WCQ_EMAIL_RESENDAPIKEY:     ${RESEND_API_KEY}
       # ── Web Push ─────────────────────────────────────────────────────────────
