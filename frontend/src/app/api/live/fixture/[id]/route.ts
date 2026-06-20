@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BASE_URL = "https://v3.football.api-sports.io";
 
-// ── API-Football v3 detailed response types ────────────────────────────────────
+// ── API-Football v3 response types ────────────────────────────────────────────
 
 interface AFPlayerItem {
   player: {
@@ -29,7 +29,8 @@ interface AFEvent {
   detail: string; // "Normal Goal" | "Yellow Card" | "Red Card" | …
 }
 
-interface AFFixtureDetail {
+// /fixtures?id=X — basic match data only (id must be used alone)
+interface AFFixtureBase {
   fixture: {
     id: number;
     date: string;
@@ -43,12 +44,6 @@ interface AFFixtureDetail {
   };
   goals: { home: number | null; away: number | null };
   score: { halftime: { home: number | null; away: number | null } };
-  lineups: AFLineup[];
-  events: AFEvent[];
-}
-
-interface AFDetailResponse {
-  response: AFFixtureDetail[];
 }
 
 // ── Public shape returned to the browser ─────────────────────────────────────
@@ -117,46 +112,69 @@ export async function GET(
     );
   }
 
-  const url = new URL("/fixtures", BASE_URL);
-  url.searchParams.set("id", String(fixtureId));
-  url.searchParams.set("events", "true");
-  url.searchParams.set("lineups", "true");
+  const af = { "x-apisports-key": apiKey };
 
-  let upstream: Response;
+  // API-Football v3: the `id` param must be used alone on /fixtures.
+  // Events and lineups live on their own sub-endpoints.
+  const fixtureUrl = new URL("/fixtures", BASE_URL);
+  fixtureUrl.searchParams.set("id", String(fixtureId));
+
+  const eventsUrl = new URL("/fixtures/events", BASE_URL);
+  eventsUrl.searchParams.set("fixture", String(fixtureId));
+
+  const lineupsUrl = new URL("/fixtures/lineups", BASE_URL);
+  lineupsUrl.searchParams.set("fixture", String(fixtureId));
+
+  let fixtureRes: Response, eventsRes: Response, lineupsRes: Response;
   try {
-    upstream = await fetch(url.toString(), {
-      headers: { "x-apisports-key": apiKey },
-      cache: "no-store", // fixture detail must always be fresh
-    });
+    [fixtureRes, eventsRes, lineupsRes] = await Promise.all([
+      fetch(fixtureUrl.toString(), { headers: af, cache: "no-store" }),
+      fetch(eventsUrl.toString(), { headers: af, cache: "no-store" }),
+      fetch(lineupsUrl.toString(), { headers: af, cache: "no-store" }),
+    ]);
   } catch (err) {
-    console.error("[live/fixture] fetch error", err);
+    console.error("[live/fixture] fetch error", fixtureId, err);
     return NextResponse.json(
       { error: "Upstream unavailable" },
       { status: 502 },
     );
   }
 
-  if (!upstream.ok) {
-    const errorBody = await upstream.text().catch(() => "");
-    console.error(
-      "[live/fixture] upstream error",
-      fixtureId,
-      upstream.status,
-      errorBody,
-    );
+  if (!fixtureRes.ok) {
+    const body = await fixtureRes.text().catch(() => "");
+    console.error("[live/fixture] upstream error", fixtureId, fixtureRes.status, body);
     return NextResponse.json(
       { error: "Upstream error" },
-      { status: upstream.status },
+      { status: fixtureRes.status },
     );
   }
 
-  const data: AFDetailResponse = await upstream.json();
-  const item = data.response?.[0];
+  const fixtureData: { response: AFFixtureBase[] } = await fixtureRes.json();
+  const item = fixtureData.response?.[0];
   if (!item) {
+    console.error(
+      "[live/fixture] empty response from API-Football",
+      fixtureId,
+      JSON.stringify(fixtureData),
+    );
     return NextResponse.json({ error: "Fixture not found" }, { status: 404 });
   }
 
-  const lineups: FixtureLineup[] = (item.lineups ?? []).map((l) => ({
+  // Events and lineups are best-effort — if the sub-endpoint fails or the plan
+  // doesn't include them, we return the base fixture data with empty arrays.
+  let rawEvents: AFEvent[] = [];
+  let rawLineups: AFLineup[] = [];
+
+  if (eventsRes.ok) {
+    const d: { response?: AFEvent[] } = await eventsRes.json().catch(() => ({}));
+    rawEvents = d.response ?? [];
+  }
+  if (lineupsRes.ok) {
+    const d: { response?: AFLineup[] } = await lineupsRes.json().catch(() => ({}));
+    rawLineups = d.response ?? [];
+  }
+
+  const lineups: FixtureLineup[] = rawLineups.map((l) => ({
     teamName: l.team?.name ?? "",
     formation: l.formation ?? "",
     startXI: (l.startXI ?? []).map((p) => ({
@@ -171,7 +189,7 @@ export async function GET(
     })),
   }));
 
-  const events: FixtureEvent[] = (item.events ?? []).map((ev) => ({
+  const events: FixtureEvent[] = rawEvents.map((ev) => ({
     elapsed: ev.time?.elapsed ?? 0,
     team: ev.team?.name ?? "",
     player: ev.player?.name ?? "",
