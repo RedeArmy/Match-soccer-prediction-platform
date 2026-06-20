@@ -16,6 +16,7 @@ const defaults = {
   clickLabel: "Haz clic aquí",
   typesLabel: "PNG, JPG, PDF",
   filePrefix: "Archivo:",
+  dragLabel: undefined as string | undefined,
 };
 
 function zone(overrides: Partial<typeof defaults> = {}) {

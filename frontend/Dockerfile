@@ -38,7 +38,10 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs --chmod=444 /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs --chmod=444 /app/.next/static ./.next/static
 # Directories need the execute bit for traversal; files stay read-only (444).
-RUN find /app -type d -exec chmod 555 {} \;
+RUN find /app -type d -exec chmod 555 {} \; \
+ && mkdir -p /app/.next/cache \
+ && chown nextjs:nodejs /app/.next/cache \
+ && chmod 755 /app/.next/cache
 
 USER nextjs
 EXPOSE 3000
