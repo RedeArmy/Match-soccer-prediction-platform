@@ -713,6 +713,26 @@ describe("GET /api/live/fixture/[id] – invalid id", () => {
   });
 });
 
+// Helper: set up the 3 parallel fetch mocks the fixture route now uses.
+// API-Football v3 requires id to be used alone; events and lineups are
+// fetched from separate sub-endpoints (/fixtures/events, /fixtures/lineups).
+function mockFixtureCalls(
+  fixturePayload: object,
+  eventsPayload: object = { response: [] },
+  lineupsPayload: object = { response: [] },
+) {
+  mockFetch
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify(fixturePayload), { status: 200 }),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify(eventsPayload), { status: 200 }),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify(lineupsPayload), { status: 200 }),
+    );
+}
+
 describe("GET /api/live/fixture/[id] – upstream OK", () => {
   beforeEach(() => {
     mockFetch.mockReset();
@@ -720,7 +740,7 @@ describe("GET /api/live/fixture/[id] – upstream OK", () => {
   });
 
   it("returns mapped FixtureDetail on success", async () => {
-    const afPayload = {
+    const fixturePayload = {
       response: [
         {
           fixture: {
@@ -736,32 +756,34 @@ describe("GET /api/live/fixture/[id] – upstream OK", () => {
           },
           goals: { home: 1, away: 0 },
           score: { halftime: { home: null, away: null } },
-          lineups: [
-            {
-              team: { name: "Brazil" },
-              formation: "4-3-3",
-              startXI: [
-                { player: { id: 1, name: "Alisson", number: 1, pos: "G" } },
-              ],
-              substitutes: [],
-            },
-          ],
-          events: [
-            {
-              time: { elapsed: 22, extra: null },
-              team: { name: "Brazil" },
-              player: { name: "Vinicius Jr." },
-              assist: { name: "Rodrygo" },
-              type: "Goal",
-              detail: "Normal Goal",
-            },
-          ],
         },
       ],
     };
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify(afPayload), { status: 200 }),
-    );
+    const eventsPayload = {
+      response: [
+        {
+          time: { elapsed: 22, extra: null },
+          team: { name: "Brazil" },
+          player: { name: "Vinicius Jr." },
+          assist: { name: "Rodrygo" },
+          type: "Goal",
+          detail: "Normal Goal",
+        },
+      ],
+    };
+    const lineupsPayload = {
+      response: [
+        {
+          team: { name: "Brazil" },
+          formation: "4-3-3",
+          startXI: [
+            { player: { id: 1, name: "Alisson", number: 1, pos: "G" } },
+          ],
+          substitutes: [],
+        },
+      ],
+    };
+    mockFixtureCalls(fixturePayload, eventsPayload, lineupsPayload);
     const { GET } = await import("@/app/api/live/fixture/[id]/route");
     const res = await GET(
       makeReq("http://localhost/api/live/fixture/42"),
@@ -839,7 +861,7 @@ describe("GET /api/live/fixture/[id] – null inner fields (pre-match)", () => {
   });
 
   it("handles null startXI / substitutes inside lineups without crashing", async () => {
-    const payload = {
+    const fixturePayload = {
       response: [
         {
           fixture: {
@@ -855,21 +877,20 @@ describe("GET /api/live/fixture/[id] – null inner fields (pre-match)", () => {
           },
           goals: { home: null, away: null },
           score: null,
-          lineups: [
-            {
-              team: { name: "USA" },
-              formation: null,
-              startXI: null,
-              substitutes: null,
-            },
-          ],
-          events: null,
         },
       ],
     };
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify(payload), { status: 200 }),
-    );
+    const lineupsPayload = {
+      response: [
+        {
+          team: { name: "USA" },
+          formation: null,
+          startXI: null,
+          substitutes: null,
+        },
+      ],
+    };
+    mockFixtureCalls(fixturePayload, { response: [] }, lineupsPayload);
     const { GET } = await import("@/app/api/live/fixture/[id]/route");
     const res = await GET(
       makeReq("http://localhost/api/live/fixture/99"),
@@ -896,7 +917,7 @@ describe("GET /api/live/fixture/[id] – null assist and halftime numbers", () =
 
   it("maps null assist to null in the assist field", async () => {
     // Covers the ev.assist?.name ?? null branch where assist is null.
-    const payload = {
+    const fixturePayload = {
       response: [
         {
           fixture: {
@@ -912,23 +933,22 @@ describe("GET /api/live/fixture/[id] – null assist and halftime numbers", () =
           },
           goals: { home: 2, away: 1 },
           score: { halftime: { home: 1, away: 0 } },
-          lineups: [],
-          events: [
-            {
-              time: { elapsed: 34, extra: null },
-              team: { name: "Spain" },
-              player: { name: "Morata" },
-              assist: null, // null assist — must not throw
-              type: "Goal",
-              detail: "Normal Goal",
-            },
-          ],
         },
       ],
     };
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify(payload), { status: 200 }),
-    );
+    const eventsPayload = {
+      response: [
+        {
+          time: { elapsed: 34, extra: null },
+          team: { name: "Spain" },
+          player: { name: "Morata" },
+          assist: null, // null assist — must not throw
+          type: "Goal",
+          detail: "Normal Goal",
+        },
+      ],
+    };
+    mockFixtureCalls(fixturePayload, eventsPayload);
     const { GET } = await import("@/app/api/live/fixture/[id]/route");
     const res = await GET(
       makeReq("http://localhost/api/live/fixture/200"),
@@ -944,7 +964,7 @@ describe("GET /api/live/fixture/[id] – null assist and halftime numbers", () =
 
   it("maps venue name null inside venue object to null", async () => {
     // Covers item.fixture.venue?.name ?? null when venue exists but name is null.
-    const payload = {
+    const fixturePayload = {
       response: [
         {
           fixture: {
@@ -960,14 +980,10 @@ describe("GET /api/live/fixture/[id] – null assist and halftime numbers", () =
           },
           goals: { home: null, away: null },
           score: { halftime: { home: null, away: null } },
-          lineups: [],
-          events: [],
         },
       ],
     };
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify(payload), { status: 200 }),
-    );
+    mockFixtureCalls(fixturePayload);
     const { GET } = await import("@/app/api/live/fixture/[id]/route");
     const res = await GET(
       makeReq("http://localhost/api/live/fixture/201"),
@@ -989,7 +1005,7 @@ describe("GET /api/live/fixture/[id] – event with missing optional fields", ()
     // Covers the ?? fallback branches in events.map:
     // ev.time?.elapsed ?? 0, ev.team?.name ?? "", ev.player?.name ?? "",
     // ev.type ?? "", ev.detail ?? ""
-    const payload = {
+    const fixturePayload = {
       response: [
         {
           fixture: {
@@ -1005,23 +1021,22 @@ describe("GET /api/live/fixture/[id] – event with missing optional fields", ()
           },
           goals: { home: 0, away: 0 },
           score: { halftime: { home: 0, away: 0 } },
-          lineups: [],
-          events: [
-            {
-              time: null,
-              team: null,
-              player: null,
-              assist: null,
-              type: null,
-              detail: null,
-            },
-          ],
         },
       ],
     };
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify(payload), { status: 200 }),
-    );
+    const eventsPayload = {
+      response: [
+        {
+          time: null,
+          team: null,
+          player: null,
+          assist: null,
+          type: null,
+          detail: null,
+        },
+      ],
+    };
+    mockFixtureCalls(fixturePayload, eventsPayload);
     const { GET } = await import("@/app/api/live/fixture/[id]/route");
     const res = await GET(
       makeReq("http://localhost/api/live/fixture/203"),
@@ -1046,7 +1061,7 @@ describe("GET /api/live/fixture/[id] – lineups with substitutes", () => {
   });
 
   it("maps substitute players in lineup", async () => {
-    const payload = {
+    const fixturePayload = {
       response: [
         {
           fixture: {
@@ -1062,29 +1077,24 @@ describe("GET /api/live/fixture/[id] – lineups with substitutes", () => {
           },
           goals: { home: 1, away: 1 },
           score: { halftime: { home: 1, away: 0 } },
-          lineups: [
-            {
-              team: { name: "Mexico" },
-              formation: "4-4-2",
-              startXI: [
-                {
-                  player: { id: 10, name: "Memo Ochoa", number: 13, pos: "G" },
-                },
-              ],
-              substitutes: [
-                {
-                  player: { id: 20, name: "Raul Jimenez", number: 9, pos: "F" },
-                },
-              ],
-            },
-          ],
-          events: [],
         },
       ],
     };
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify(payload), { status: 200 }),
-    );
+    const lineupsPayload = {
+      response: [
+        {
+          team: { name: "Mexico" },
+          formation: "4-4-2",
+          startXI: [
+            { player: { id: 10, name: "Memo Ochoa", number: 13, pos: "G" } },
+          ],
+          substitutes: [
+            { player: { id: 20, name: "Raul Jimenez", number: 9, pos: "F" } },
+          ],
+        },
+      ],
+    };
+    mockFixtureCalls(fixturePayload, { response: [] }, lineupsPayload);
     const { GET } = await import("@/app/api/live/fixture/[id]/route");
     const res = await GET(
       makeReq("http://localhost/api/live/fixture/202"),
@@ -1096,6 +1106,70 @@ describe("GET /api/live/fixture/[id] – lineups with substitutes", () => {
     expect(body.fixture.lineups[0].substitutes[0].name).toBe("Raul Jimenez");
     expect(body.fixture.lineups[0].substitutes[0].number).toBe(9);
     expect(body.fixture.lineups[0].substitutes[0].pos).toBe("F");
+  });
+});
+
+describe("GET /api/live/fixture/[id] – sub-endpoint failures are best-effort", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    process.env.FOOTBALL_API_KEY = "test_key_fixture";
+  });
+
+  const baseFixture = {
+    response: [
+      {
+        fixture: {
+          id: 300,
+          date: "2026-06-20T18:00:00Z",
+          status: { short: "1H", elapsed: 20 },
+          venue: { name: "SoFi Stadium", city: "Inglewood" },
+        },
+        league: { round: "Group Stage - 1" },
+        teams: {
+          home: { name: "Argentina", logo: "" },
+          away: { name: "Chile", logo: "" },
+        },
+        goals: { home: 0, away: 0 },
+        score: { halftime: { home: null, away: null } },
+      },
+    ],
+  };
+
+  it("returns base fixture with empty events/lineups when sub-endpoints are non-OK", async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(baseFixture), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValueOnce(new Response("", { status: 503 }));
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/300"),
+      makeFixtureCtx("300"),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fixture.id).toBe(300);
+    expect(body.fixture.events).toEqual([]);
+    expect(body.fixture.lineups).toEqual([]);
+  });
+
+  it("returns base fixture with empty arrays when sub-endpoint json() throws", async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(baseFixture), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response("not-json", { status: 200 }))
+      .mockResolvedValueOnce(new Response("not-json", { status: 200 }));
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/300"),
+      makeFixtureCtx("300"),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fixture.events).toEqual([]);
+    expect(body.fixture.lineups).toEqual([]);
   });
 });
 

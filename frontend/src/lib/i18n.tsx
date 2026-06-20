@@ -155,6 +155,7 @@ const translations: TranslationNode = {
     tournamentModeFree:  { es: 'Gratis — sin premios en efectivo', en: 'Free — no cash prizes' },
     upgradeToPremium:    { es: 'Activar Premium',            en: 'Activate Premium'         },
     ownerLabel:          { es: 'Líder',                      en: 'Leader'                   },
+    creatorLabel:        { es: 'Creador',                    en: 'Creator'                  },
     modeGeneral:         { es: 'General (cuota única)',       en: 'General (single entry fee)' },
     modeGeneralDesc:     { es: 'Premio al final del torneo para los mejores clasificados.', en: 'Prize at the end of the tournament for top finishers.' },
     modeRound:           { es: 'Por jornada',                en: 'Per matchday'             },
