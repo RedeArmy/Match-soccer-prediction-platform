@@ -1996,3 +1996,177 @@ func TestPredictionRepository_ListByGroupAndMatches_MultipleMatches(t *testing.T
 		t.Errorf("expected 2 predictions for 2 matches, got %d", len(got))
 	}
 }
+
+// ── scoreFromZero branch: TotalPointsByQuiniela ───────────────────────────────
+
+func TestPredictionRepository_TotalPointsByQuiniela_ScoreFromZero_IncludesPointsAfterSince(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	m := seedMatch(t) // kickoff_at = now+24h
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 5
+	p.Points = &pts
+	if err := predRepo.Update(context.Background(), p); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	since := time.Now().Add(-time.Hour) // threshold in the past — match is after it
+	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID, true, since)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if totals[u.ID] != 5 {
+		t.Errorf("expected 5 points, got %d", totals[u.ID])
+	}
+}
+
+func TestPredictionRepository_TotalPointsByQuiniela_ScoreFromZero_ExcludesPointsBeforeSince(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	m := seedMatch(t) // kickoff_at = now+24h
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 5
+	p.Points = &pts
+	if err := predRepo.Update(context.Background(), p); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	since := time.Now().Add(48 * time.Hour) // threshold in the future — match is before it
+	totals, err := predRepo.TotalPointsByQuiniela(context.Background(), q.ID, true, since)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if totals[u.ID] != 0 {
+		t.Errorf("expected 0 points (excluded by since), got %d", totals[u.ID])
+	}
+}
+
+// ── scoreFromZero branch: TotalPointsByQuinielaAndPhase ──────────────────────
+
+func TestPredictionRepository_TotalPointsByQuinielaAndPhase_ScoreFromZero_IncludesPointsAfterSince(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	m := seedMatchWithPhase(t, domain.PhaseGroupStage) // kickoff_at = now+24h
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 3
+	p.Points = &pts
+	if err := predRepo.Update(context.Background(), p); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	since := time.Now().Add(-time.Hour)
+	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage, true, since)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if totals[u.ID] != 3 {
+		t.Errorf("expected 3 points, got %d", totals[u.ID])
+	}
+}
+
+func TestPredictionRepository_TotalPointsByQuinielaAndPhase_ScoreFromZero_ExcludesPointsBeforeSince(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	m := seedMatchWithPhase(t, domain.PhaseGroupStage) // kickoff_at = now+24h
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 2, AwayScore: 1}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 3
+	p.Points = &pts
+	if err := predRepo.Update(context.Background(), p); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	since := time.Now().Add(48 * time.Hour)
+	totals, err := predRepo.TotalPointsByQuinielaAndPhase(context.Background(), q.ID, domain.PhaseGroupStage, true, since)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if totals[u.ID] != 0 {
+		t.Errorf("expected 0 points (excluded), got %d", totals[u.ID])
+	}
+}
+
+// ── scoreFromZero branch: PointsByUserAndRound ────────────────────────────────
+
+func TestPredictionRepository_PointsByUserAndRound_ScoreFromZero_IncludesPointsAfterSince(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	m := seedMatch(t) // kickoff_at = now+24h
+	if _, err := testDB.Exec(context.Background(), `UPDATE matches SET round_number=1 WHERE id=$1`, m.ID); err != nil {
+		t.Fatalf("set round_number: %v", err)
+	}
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 4
+	p.Points = &pts
+	if err := predRepo.Update(context.Background(), p); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	since := time.Now().Add(-time.Hour)
+	result, err := predRepo.PointsByUserAndRound(context.Background(), q.ID, true, since)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if result[u.ID]["1"] != 4 {
+		t.Errorf("expected 4 points in round 1, got %d", result[u.ID]["1"])
+	}
+}
+
+func TestPredictionRepository_PointsByUserAndRound_ScoreFromZero_ExcludesPointsBeforeSince(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	m := seedMatch(t) // kickoff_at = now+24h
+	if _, err := testDB.Exec(context.Background(), `UPDATE matches SET round_number=1 WHERE id=$1`, m.ID); err != nil {
+		t.Fatalf("set round_number: %v", err)
+	}
+	predRepo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: u.ID, MatchID: m.ID, HomeScore: 1, AwayScore: 0}
+	if err := predRepo.Create(context.Background(), p); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	pts := 4
+	p.Points = &pts
+	if err := predRepo.Update(context.Background(), p); err != nil {
+		t.Fatalf(fmtUpdatePredErr, err)
+	}
+
+	since := time.Now().Add(48 * time.Hour)
+	result, err := predRepo.PointsByUserAndRound(context.Background(), q.ID, true, since)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty result (excluded by since), got %v", result)
+	}
+}

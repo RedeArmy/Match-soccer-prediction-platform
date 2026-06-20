@@ -779,3 +779,36 @@ func TestQuinielaRepository_ExistsByName_ExcludeID_StillFindsDifferentGroup(t *t
 		t.Error("expected true: q1 has the same name and is not excluded")
 	}
 }
+
+// ── UpdateScoreFromZero ────────────────────────────────────────────────────────
+
+func TestQuinielaRepository_UpdateScoreFromZero_Enable_SetsSince(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	got, err := repo.UpdateScoreFromZero(context.Background(), q.ID, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected updated quiniela, got nil")
+	}
+	if !got.ScoreFromZero {
+		t.Error("expected score_from_zero=true")
+	}
+	if got.ScoreFromZeroSince == nil {
+		t.Error("expected score_from_zero_since to be non-nil")
+	}
+}
+
+func TestQuinielaRepository_UpdateScoreFromZero_NotFound_ReturnsError(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresQuinielaRepository(testDB)
+
+	_, err := repo.UpdateScoreFromZero(context.Background(), 99999, true)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}

@@ -1171,6 +1171,68 @@ func TestGroupUpdateRequireApproval_Returns422OnServiceError(t *testing.T) {
 	}
 }
 
+// ── UpdateScoreFromZero ────────────────────────────────────────────────────────
+
+const scoreFromZeroPath = "/groups/1/score-from-zero"
+
+func buildScoreFromZeroRouter(h *handler.GroupHandler, user *domain.User) http.Handler {
+	r := chi.NewRouter()
+	if user != nil {
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				ctx := middleware.ContextWithUser(req.Context(), user)
+				next.ServeHTTP(w, req.WithContext(ctx))
+			})
+		})
+	}
+	r.Patch("/groups/{id}/score-from-zero", h.UpdateScoreFromZero)
+	return r
+}
+
+func TestGroupUpdateScoreFromZero_Returns200(t *testing.T) {
+	q := fixedQuiniela()
+	h := newGroupHandler(t, &stubQuinielaSvc{quiniela: q}, &stubMemberSvc{})
+	body := `{"score_from_zero":true}`
+	req := httptest.NewRequest(http.MethodPatch, scoreFromZeroPath, bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	buildScoreFromZeroRouter(h, &domain.User{ID: 10}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestGroupUpdateScoreFromZero_Returns4xxOnInvalidJSON(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	req := httptest.NewRequest(http.MethodPatch, scoreFromZeroPath, bytes.NewBufferString("not-json"))
+	rec := httptest.NewRecorder()
+	buildScoreFromZeroRouter(h, &domain.User{ID: 10}).ServeHTTP(rec, req)
+	if rec.Code < 400 || rec.Code >= 500 {
+		t.Errorf("expected 4xx for invalid JSON, got %d", rec.Code)
+	}
+}
+
+func TestGroupUpdateScoreFromZero_Returns401WhenNoUser(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{}, &stubMemberSvc{})
+	body := `{"score_from_zero":true}`
+	req := httptest.NewRequest(http.MethodPatch, scoreFromZeroPath, bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	buildScoreFromZeroRouter(h, nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestGroupUpdateScoreFromZero_Returns422OnServiceError(t *testing.T) {
+	h := newGroupHandler(t, &stubQuinielaSvc{err: errors.New(errDBDown)}, &stubMemberSvc{})
+	body := `{"score_from_zero":true}`
+	req := httptest.NewRequest(http.MethodPatch, scoreFromZeroPath, bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	buildScoreFromZeroRouter(h, &domain.User{ID: 10}).ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected non-200 on service error, got 200")
+	}
+}
+
 // ── CheckName ─────────────────────────────────────────────────────────────────
 
 func TestCheckName_Available_Returns200WithTrue(t *testing.T) {

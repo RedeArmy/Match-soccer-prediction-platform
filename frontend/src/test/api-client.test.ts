@@ -1253,3 +1253,17 @@ describe("api – adminSearchLogs", () => {
     expect(result.errors[0].trace_id).toBe("abc123");
   });
 });
+
+describe("api.updateScoreFromZero", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("sends PATCH to /api/v1/groups/{id}/score-from-zero with score_from_zero flag", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 1, score_from_zero: true }));
+    await api.updateScoreFromZero("tok_abc", 42, true);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/api/v1/groups/42/score-from-zero");
+    expect((init as RequestInit).method).toBe("PATCH");
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.score_from_zero).toBe(true);
+  });
+});

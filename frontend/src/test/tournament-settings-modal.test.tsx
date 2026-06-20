@@ -508,6 +508,19 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     expect(checkboxes.length).toBe(1);
   });
 
+  it("score_from_zero shows error message when mutation fails", () => {
+    let callCount = 0;
+    vi.mocked(useMutation).mockImplementation(() => {
+      callCount++;
+      const isError = callCount % 3 === 2;
+      return { mutate: vi.fn(), isPending: false, isError, error: null } as never;
+    });
+    renderModal({ group: makeGroup({ score_from_zero: false }) });
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText(/No se pudo activar/i)).toBeInTheDocument();
+  });
+
   it("approval save button onClick fires mutate when dirty", () => {
     const mutate = vi.fn();
     vi.mocked(useMutation).mockReturnValue({
