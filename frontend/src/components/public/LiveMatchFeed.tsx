@@ -308,14 +308,14 @@ function FixtureDetailPanel({
         </div>
       )}
 
-      {/* Row 2: venue, city, country */}
+      {/* Row 2: venue + city (top), state + country (bottom) */}
       {fixture.venue && (
-        <p className="text-center text-[11px] text-text-muted">
-          📍{" "}
-          {[fixture.venue, fixture.city, fixture.country]
-            .filter(Boolean)
-            .join(", ")}
-        </p>
+        <div className="flex flex-col items-center gap-0.5 text-[11px] text-text-muted">
+          <span>📍 {[fixture.venue, fixture.city].filter(Boolean).join(", ")}</span>
+          {(fixture.state || fixture.country) && (
+            <span>{[fixture.state, fixture.country].filter(Boolean).join(", ")}</span>
+          )}
+        </div>
       )}
 
       {/* Events */}
