@@ -720,8 +720,9 @@ function mockFixtureCalls(
   fixturePayload: object,
   eventsPayload: object = { response: [] },
   lineupsPayload: object = { response: [] },
+  venuePayload?: object,
 ) {
-  mockFetch
+  const chain = mockFetch
     .mockResolvedValueOnce(
       new Response(JSON.stringify(fixturePayload), { status: 200 }),
     )
@@ -731,6 +732,11 @@ function mockFixtureCalls(
     .mockResolvedValueOnce(
       new Response(JSON.stringify(lineupsPayload), { status: 200 }),
     );
+  if (venuePayload !== undefined) {
+    chain.mockResolvedValueOnce(
+      new Response(JSON.stringify(venuePayload), { status: 200 }),
+    );
+  }
 }
 
 describe("GET /api/live/fixture/[id] – upstream OK", () => {
@@ -795,12 +801,92 @@ describe("GET /api/live/fixture/[id] – upstream OK", () => {
     expect(body.fixture.homeTeam).toBe("Brazil");
     expect(body.fixture.venue).toBe("AT&T Stadium");
     expect(body.fixture.city).toBe("Arlington");
-    expect(body.fixture.country).toBe("World");
+    expect(body.fixture.country).toBeNull(); // no venue.id in payload → country lookup skipped
+    expect(body.fixture.state).toBe("Texas"); // city "Arlington" → state from FIFA_2026_CITY_STATE lookup
     expect(body.fixture.lineups).toHaveLength(1);
     expect(body.fixture.lineups[0].formation).toBe("4-3-3");
     expect(body.fixture.events).toHaveLength(1);
     expect(body.fixture.events[0].player).toBe("Vinicius Jr.");
     expect(body.fixture.events[0].assist).toBe("Rodrygo");
+  });
+});
+
+describe("GET /api/live/fixture/[id] – venue country lookup", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    process.env.FOOTBALL_API_KEY = "test_key_fixture";
+  });
+
+  it("resolves country from /venues when venue.id is present", async () => {
+    const fixturePayload = {
+      response: [
+        {
+          fixture: {
+            id: 55,
+            date: "2026-06-12T20:00:00Z",
+            status: { short: "1H", elapsed: 22 },
+            venue: { id: 9876, name: "MetLife Stadium", city: "East Rutherford" },
+          },
+          league: { round: "Group Stage - 1", country: "World" },
+          teams: {
+            home: { name: "USA", logo: "" },
+            away: { name: "Canada", logo: "" },
+          },
+          goals: { home: 0, away: 0 },
+          score: { halftime: { home: null, away: null } },
+        },
+      ],
+    };
+    const venuePayload = {
+      response: [{ id: 9876, name: "MetLife Stadium", city: "East Rutherford", country: "USA" }],
+    };
+    mockFixtureCalls(fixturePayload, { response: [] }, { response: [] }, venuePayload);
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/55"),
+      makeFixtureCtx("55"),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fixture.country).toBe("USA");
+    expect(body.fixture.city).toBe("East Rutherford");
+    expect(body.fixture.state).toBe("New Jersey");
+  });
+
+  it("returns null country when /venues call fails", async () => {
+    const fixturePayload = {
+      response: [
+        {
+          fixture: {
+            id: 56,
+            date: "2026-06-13T20:00:00Z",
+            status: { short: "NS", elapsed: null },
+            venue: { id: 9999, name: "Azteca", city: "Mexico City" },
+          },
+          league: { round: "Group Stage - 2", country: "World" },
+          teams: {
+            home: { name: "Mexico", logo: "" },
+            away: { name: "Argentina", logo: "" },
+          },
+          goals: { home: null, away: null },
+          score: { halftime: { home: null, away: null } },
+        },
+      ],
+    };
+    // fixture + events + lineups succeed; venue call returns 500
+    mockFetch
+      .mockResolvedValueOnce(new Response(JSON.stringify(fixturePayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ response: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ response: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("", { status: 500 }));
+    const { GET } = await import("@/app/api/live/fixture/[id]/route");
+    const res = await GET(
+      makeReq("http://localhost/api/live/fixture/56"),
+      makeFixtureCtx("56"),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fixture.country).toBeNull();
   });
 });
 

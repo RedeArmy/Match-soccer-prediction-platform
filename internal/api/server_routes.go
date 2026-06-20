@@ -345,6 +345,14 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		s.registerAdminRoutes(r, d, adminRateStore)
 	})
 
+	// Internal service routes — authenticated by static shared key (WCQ_N8N_INTERNALKEY).
+	// Used by n8n scheduled workflows to call the API without a Clerk user session.
+	// Covered by the L1 IP rate limiter applied at the root router.
+	r.Route("/api/internal", func(r chi.Router) {
+		r.Use(middleware.InternalServiceAuth(s.cfg.N8n.InternalKey, s.log))
+		r.Get("/kyc/queue", h.adminKYC.ListQueue)
+	})
+
 	return otelhttp.NewHandler(r, "world-cup-quiniela.api",
 		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
 	)
