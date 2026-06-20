@@ -606,7 +606,7 @@ describe("LiveMatchFeed – FixtureDetailPanel missing fixture", () => {
   });
 });
 
-describe("LiveMatchFeed – FixtureDetailPanel with halftime score", () => {
+describe("LiveMatchFeed – FixtureDetailPanel row-1 score and period", () => {
   beforeEach(() => {
     vi.mocked(useQuery).mockImplementation(
       ({ queryKey }: { queryKey: readonly unknown[] }) => {
@@ -618,8 +618,9 @@ describe("LiveMatchFeed – FixtureDetailPanel with halftime score", () => {
               fixtures: [
                 makeFixture({
                   id: 53,
-                  status: "FT",
-                  homeScore: 3,
+                  status: "2H",
+                  elapsed: 67,
+                  homeScore: 2,
                   awayScore: 1,
                 }),
               ],
@@ -635,12 +636,12 @@ describe("LiveMatchFeed – FixtureDetailPanel with halftime score", () => {
               awayTeam: "Germany",
               homeLogo: "",
               awayLogo: "",
-              homeScore: 3,
+              homeScore: 2,
               awayScore: 1,
               halftimeHome: 1,
               halftimeAway: 0,
-              status: "FT",
-              elapsed: null,
+              status: "2H",
+              elapsed: 67,
               kickoffAt: "2026-06-10T20:00:00Z",
               round: "Group Stage",
               venue: null,
@@ -653,11 +654,11 @@ describe("LiveMatchFeed – FixtureDetailPanel with halftime score", () => {
     );
   });
 
-  it("renders the halftime score section", async () => {
+  it("renders period label '2T' for 2H status in detail panel", async () => {
     renderFeed();
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() =>
-      expect(screen.getByText(/Medio tiempo/)).toBeInTheDocument(),
+      expect(screen.getByText("2T")).toBeInTheDocument(),
     );
   });
 
@@ -889,13 +890,19 @@ describe("LiveMatchFeed – LineupPanel with formation and substitutes", () => {
     expect(screen.getByText("Neymar")).toBeInTheDocument();
   });
 
-  it("renders substitutes summary with count", async () => {
+  it("renders unified substitutes toggle and expands on click", async () => {
     renderFeed();
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() =>
       expect(screen.getByText("Alineaciones")).toBeInTheDocument(),
     );
-    expect(screen.getByText(/Suplentes \(1\)/)).toBeInTheDocument();
+    // Toggle button is visible (no count — unified design)
+    const subsBtn = screen.getByRole("button", { name: /Suplentes/i });
+    expect(subsBtn).toBeInTheDocument();
+    // Substitute name is hidden until the toggle is clicked
+    expect(screen.queryByText("Gabriel Jesus")).toBeNull();
+    fireEvent.click(subsBtn);
+    expect(screen.getByText("Gabriel Jesus")).toBeInTheDocument();
   });
 });
 

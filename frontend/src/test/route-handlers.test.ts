@@ -485,7 +485,7 @@ describe("GET /api/live/today – upstream OK", () => {
             status: { short: "1H", elapsed: 30 },
             venue: { name: "Estadio X", city: null },
           },
-          league: { round: "Group Stage - 1" },
+          league: { round: "Group Stage - 1", country: "World" },
           teams: {
             home: { id: 1, name: "Brazil", logo: "https://logo/br.png" },
             away: { id: 2, name: "Germany", logo: "https://logo/de.png" },
@@ -749,7 +749,7 @@ describe("GET /api/live/fixture/[id] – upstream OK", () => {
             status: { short: "1H", elapsed: 35 },
             venue: { name: "AT&T Stadium", city: "Arlington" },
           },
-          league: { round: "Group Stage - 1" },
+          league: { round: "Group Stage - 1", country: "World" },
           teams: {
             home: { name: "Brazil", logo: "https://logo/br.png" },
             away: { name: "Germany", logo: "https://logo/de.png" },
@@ -793,6 +793,9 @@ describe("GET /api/live/fixture/[id] – upstream OK", () => {
     const body = await res.json();
     expect(body.fixture.id).toBe(42);
     expect(body.fixture.homeTeam).toBe("Brazil");
+    expect(body.fixture.venue).toBe("AT&T Stadium");
+    expect(body.fixture.city).toBe("Arlington");
+    expect(body.fixture.country).toBe("World");
     expect(body.fixture.lineups).toHaveLength(1);
     expect(body.fixture.lineups[0].formation).toBe("4-3-3");
     expect(body.fixture.events).toHaveLength(1);
@@ -870,7 +873,7 @@ describe("GET /api/live/fixture/[id] – null inner fields (pre-match)", () => {
             status: { short: "NS", elapsed: null },
             venue: null,
           },
-          league: { round: "Group Stage - 3" },
+          league: { round: "Group Stage - 3", country: "World" },
           teams: {
             home: { name: "USA", logo: "" },
             away: { name: "Mexico", logo: "" },
@@ -926,7 +929,7 @@ describe("GET /api/live/fixture/[id] – null assist and halftime numbers", () =
             status: { short: "FT", elapsed: 90 },
             venue: { name: "Stadium X", city: "City" },
           },
-          league: { round: "Quarter-final" },
+          league: { round: "Quarter-final", country: "World" },
           teams: {
             home: { name: "Spain", logo: "" },
             away: { name: "Portugal", logo: "" },
@@ -973,7 +976,7 @@ describe("GET /api/live/fixture/[id] – null assist and halftime numbers", () =
             status: { short: "NS", elapsed: null },
             venue: { name: null, city: "Unknown City" },
           },
-          league: { round: "Group Stage - 1" },
+          league: { round: "Group Stage - 1", country: "World" },
           teams: {
             home: { name: "Japan", logo: "" },
             away: { name: "Korea", logo: "" },
@@ -1014,7 +1017,7 @@ describe("GET /api/live/fixture/[id] – event with missing optional fields", ()
             status: { short: "HT", elapsed: 45 },
             venue: { name: "Rose Bowl", city: "Pasadena" },
           },
-          league: { round: "Semi-final" },
+          league: { round: "Semi-final", country: "World" },
           teams: {
             home: { name: "France", logo: "" },
             away: { name: "England", logo: "" },
@@ -1070,7 +1073,7 @@ describe("GET /api/live/fixture/[id] – lineups with substitutes", () => {
             status: { short: "2H", elapsed: 60 },
             venue: { name: "Estadio Azteca", city: "Mexico City" },
           },
-          league: { round: "Group Stage - 2" },
+          league: { round: "Group Stage - 2", country: "World" },
           teams: {
             home: { name: "Mexico", logo: "" },
             away: { name: "USA", logo: "" },
@@ -1124,7 +1127,7 @@ describe("GET /api/live/fixture/[id] – sub-endpoint failures are best-effort",
           status: { short: "1H", elapsed: 20 },
           venue: { name: "SoFi Stadium", city: "Inglewood" },
         },
-        league: { round: "Group Stage - 1" },
+        league: { round: "Group Stage - 1", country: "World" },
         teams: {
           home: { name: "Argentina", logo: "" },
           away: { name: "Chile", logo: "" },

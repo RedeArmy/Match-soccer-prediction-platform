@@ -37,7 +37,7 @@ interface AFFixtureBase {
     status: { short: string; elapsed: number | null };
     venue: { name: string | null; city: string | null };
   };
-  league: { round: string };
+  league: { round: string; country: string };
   teams: {
     home: { name: string; logo: string };
     away: { name: string; logo: string };
@@ -85,6 +85,8 @@ export interface FixtureDetail {
   kickoffAt: string;
   round: string;
   venue: string | null;
+  city: string | null;
+  country: string | null;
   lineups: FixtureLineup[];
   events: FixtureEvent[];
 }
@@ -213,6 +215,8 @@ export async function GET(
     kickoffAt: item.fixture.date,
     round: item.league.round,
     venue: item.fixture.venue?.name ?? null,
+    city: item.fixture.venue?.city ?? null,
+    country: item.league.country ?? null,
     lineups,
     events,
   };
