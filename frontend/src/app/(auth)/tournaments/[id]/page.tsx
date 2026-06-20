@@ -329,11 +329,6 @@ export default function TournamentDetailPage() {
                     key={member.id}
                     className="flex items-center gap-2 rounded-lg px-2 py-2"
                   >
-                    {isCreator && (
-                      <span className="shrink-0 rounded-full border border-blue-400/30 bg-blue-400/10 px-2 py-0.5 text-[9px] font-semibold uppercase text-blue-300">
-                        {t("group.creatorLabel")}
-                      </span>
-                    )}
                     {isLeader && (
                       <Crown className="h-3.5 w-3.5 shrink-0 text-gold-400" />
                     )}
@@ -345,6 +340,11 @@ export default function TournamentDetailPage() {
                     >
                       {member.display_name}
                     </span>
+                    {isCreator && (
+                      <span className="shrink-0 rounded-full border border-blue-400/30 bg-blue-400/10 px-2 py-0.5 text-[9px] font-semibold uppercase text-blue-300">
+                        {t("group.creatorLabel")}
+                      </span>
+                    )}
                   </div>
                 );
               })}

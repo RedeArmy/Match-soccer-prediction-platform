@@ -18,6 +18,18 @@ import type {
 const LIVE_STATUSES = new Set(["1H", "HT", "2H", "ET", "PEN_LIVE", "BT"]);
 const DONE_STATUSES = new Set(["FT", "AET", "PEN"]);
 
+const PERIOD_LABELS: Record<string, string> = {
+  "1H": "1T",
+  HT: "MT",
+  "2H": "2T",
+  ET: "ET",
+  BT: "ET",
+  PEN_LIVE: "PEN",
+  FT: "FT",
+  AET: "AET",
+  PEN: "PEN",
+};
+
 function isLive(status: string) {
   return LIVE_STATUSES.has(status);
 }
@@ -120,7 +132,7 @@ interface LineupPanelProps {
 }
 
 function LineupPanel({ lineup }: LineupPanelProps) {
-  const { t, teamName } = useI18n();
+  const { teamName } = useI18n();
 
   const posSortOrder: Record<string, number> = { G: 0, D: 1, M: 2, F: 3 };
   const sorted = [...lineup.startXI].sort(
@@ -158,24 +170,23 @@ function LineupPanel({ lineup }: LineupPanelProps) {
           </div>
         ))}
       </div>
-      {lineup.substitutes.length > 0 && (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-[10px] text-text-muted hover:text-text-secondary">
-            {t("tournaments.liveSubs")} ({lineup.substitutes.length})
-          </summary>
-          <div className="mt-1 space-y-0.5 pl-2">
-            {lineup.substitutes.map((p) => (
-              <div
-                key={`sub-${p.number}-${p.name}`}
-                className="flex items-center gap-1.5 text-xs text-text-muted"
-              >
-                <span className="w-5 text-center tabular-nums">{p.number}</span>
-                <span className="truncate">{p.name}</span>
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
+    </div>
+  );
+}
+
+function SubstituteColumn({ lineup }: LineupPanelProps) {
+  return (
+    <div className="flex-1 min-w-0 space-y-0.5">
+      {lineup.substitutes.map((p) => (
+        <div
+          key={`sub-${p.number}-${p.name}`}
+          className="flex items-center gap-1.5 text-xs text-text-muted"
+        >
+          <span className="w-5 text-center tabular-nums">{p.number}</span>
+          <span className="truncate">{p.name}</span>
+          <span className="ml-auto shrink-0 text-[9px]">{p.pos}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -228,6 +239,8 @@ function FixtureDetailPanel({
   fixtureId,
 }: Readonly<{ fixtureId: number }>) {
   const { t } = useI18n();
+  const [showSubs, setShowSubs] = useState(false);
+
   const { data, isLoading, isError } = useQuery<{ fixture?: FixtureDetail }>({
     queryKey: ["live-fixture", fixtureId],
     queryFn: () =>
@@ -263,49 +276,60 @@ function FixtureDetailPanel({
 
   const { fixture } = data;
   const live = isLive(fixture.status);
+  const hasSubs = fixture.lineups.some((l) => l.substitutes.length > 0);
 
   return (
     <div className="border-t border-white/10 px-4 pb-4 pt-3 space-y-4">
-      {/* Elapsed time — only visible while the match is in progress */}
-      {live && fixture.elapsed != null && (
-        <div className="flex items-center justify-center gap-1.5">
-          <span className="relative flex h-1.5 w-1.5 shrink-0">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+      {/* Row 1: elapsed time · current score · period label */}
+      {(live || isDone(fixture.status)) && (
+        <div className="flex items-center justify-center gap-3">
+          {live && fixture.elapsed != null && (
+            <div className="flex items-center gap-1.5">
+              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+              </span>
+              <span className="text-xs font-bold tabular-nums text-green-300">
+                {fixture.elapsed}&apos;
+              </span>
+            </div>
+          )}
+          <span
+            className={cn(
+              "text-sm font-bold tabular-nums",
+              live ? "text-green-300" : "text-white",
+            )}
+          >
+            {fixture.homeScore ?? 0} – {fixture.awayScore ?? 0}
           </span>
-          <span className="text-xs font-bold tabular-nums text-green-300">
-            {fixture.elapsed}&apos;
+          <span className="text-[11px] font-semibold text-text-muted">
+            {PERIOD_LABELS[fixture.status] ?? fixture.status}
           </span>
         </div>
       )}
 
-      {/* Venue */}
+      {/* Row 2: venue, city, country */}
       {fixture.venue && (
         <p className="text-center text-[11px] text-text-muted">
-          📍 {fixture.venue}
+          📍{" "}
+          {[fixture.venue, fixture.city, fixture.country]
+            .filter(Boolean)
+            .join(", ")}
         </p>
       )}
 
-      {/* Halftime score */}
-      {(fixture.halftimeHome != null || fixture.halftimeAway != null) && (
-        <p className="text-center text-[11px] text-text-muted">
-          {t("tournaments.liveHalftime")}: {fixture.halftimeHome ?? 0} –{" "}
-          {fixture.halftimeAway ?? 0}
-        </p>
-      )}
-
-      {/* Events — always rendered; EventsList shows its own empty state */}
+      {/* Events */}
       <section>
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+        <p className="mb-2 text-center text-[10px] font-bold uppercase tracking-wide text-text-muted">
           {t("tournaments.liveEvents")}
         </p>
         <EventsList events={fixture.events} />
       </section>
 
-      {/* Lineups — only when the API provided them */}
+      {/* Lineups */}
       {fixture.lineups.length > 0 && (
         <section>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+          <p className="mb-2 text-center text-[10px] font-bold uppercase tracking-wide text-text-muted">
             {t("tournaments.liveLineups")}
           </p>
           <div className="flex gap-4">
@@ -313,6 +337,26 @@ function FixtureDetailPanel({
               <LineupPanel key={l.teamName} lineup={l} />
             ))}
           </div>
+
+          {/* Unified substitutes toggle */}
+          {hasSubs && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setShowSubs((v) => !v)}
+                className="w-full text-center text-[10px] font-bold uppercase tracking-wide text-text-muted transition-colors hover:text-text-secondary"
+              >
+                {t("tournaments.liveSubs")} {showSubs ? "▲" : "▼"}
+              </button>
+              {showSubs && (
+                <div className="mt-2 flex gap-4">
+                  {fixture.lineups.map((l) => (
+                    <SubstituteColumn key={`subs-${l.teamName}`} lineup={l} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </section>
       )}
     </div>
