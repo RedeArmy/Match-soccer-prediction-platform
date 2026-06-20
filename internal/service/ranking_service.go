@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -134,10 +135,10 @@ func (s *rankingService) GetLeaderboard(ctx context.Context, quinielaID int) (*L
 		return nil, err
 	}
 	if q == nil {
-		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
 	}
 
-	pointsByUser, err := s.predRepo.TotalPointsByQuiniela(ctx, quinielaID)
+	pointsByUser, err := s.predRepo.TotalPointsByQuiniela(ctx, quinielaID, q.ScoreFromZero, quinielaSince(q))
 	if err != nil {
 		return nil, err
 	}
@@ -160,10 +161,10 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 		return nil, err
 	}
 	if q == nil {
-		return nil, apperrors.NotFound(fmt.Sprintf("quiniela %d not found", quinielaID))
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
 	}
 
-	pointsByUser, err := s.predRepo.TotalPointsByQuinielaAndPhase(ctx, quinielaID, phase)
+	pointsByUser, err := s.predRepo.TotalPointsByQuinielaAndPhase(ctx, quinielaID, phase, q.ScoreFromZero, quinielaSince(q))
 	if err != nil {
 		return nil, err
 	}
@@ -175,6 +176,14 @@ func (s *rankingService) GetPhaseLeaderboard(ctx context.Context, quinielaID int
 // per-round points. It calls GetLeaderboard and then enriches each entry's
 // RoundPoints map via a second aggregation query.
 func (s *rankingService) GetLeaderboardWithRoundBreakdown(ctx context.Context, quinielaID int) (*LeaderboardResult, error) {
+	q, err := s.quinielaRepo.GetByID(ctx, quinielaID)
+	if err != nil {
+		return nil, err
+	}
+	if q == nil {
+		return nil, apperrors.NotFound(fmt.Sprintf(errQuinielaNotFound, quinielaID))
+	}
+
 	result, err := s.GetLeaderboard(ctx, quinielaID)
 	if err != nil {
 		return nil, err
@@ -183,7 +192,7 @@ func (s *rankingService) GetLeaderboardWithRoundBreakdown(ctx context.Context, q
 		return result, nil
 	}
 
-	roundPts, err := s.predRepo.PointsByUserAndRound(ctx, quinielaID)
+	roundPts, err := s.predRepo.PointsByUserAndRound(ctx, quinielaID, q.ScoreFromZero, quinielaSince(q))
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +204,15 @@ func (s *rankingService) GetLeaderboardWithRoundBreakdown(ctx context.Context, q
 		}
 	}
 	return result, nil
+}
+
+// quinielaSince returns the ScoreFromZeroSince value as a plain time.Time,
+// using the zero value when the pointer is nil.
+func quinielaSince(q *domain.Quiniela) time.Time {
+	if q.ScoreFromZeroSince == nil {
+		return time.Time{}
+	}
+	return *q.ScoreFromZeroSince
 }
 
 // buildLeaderboard is the shared core of GetLeaderboard and GetPhaseLeaderboard.

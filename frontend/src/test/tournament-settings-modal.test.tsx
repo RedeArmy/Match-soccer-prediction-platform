@@ -31,6 +31,7 @@ vi.mock("next/link", () => ({
 vi.mock("@/lib/api", () => ({
   api: {
     updateRequireApproval: vi.fn().mockResolvedValue({}),
+    updateScoreFromZero: vi.fn().mockResolvedValue({}),
     setTournamentMode: vi.fn().mockResolvedValue({}),
   },
 }));
@@ -60,6 +61,7 @@ function makeGroup(
     mode_general: false,
     mode_round: false,
     require_approval: true,
+    score_from_zero: false,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -365,8 +367,9 @@ describe("TournamentSettingsModal – mutation states (settings tab)", () => {
 // paths that the mock otherwise prevents from running.
 
 describe("TournamentSettingsModal – mutation callbacks", () => {
-  it("approvalMutation mutationFn calls api.updateRequireApproval", async () => {
-    // Capture the options passed to the FIRST useMutation call (approvalMutation)
+  // useMutation call order per render: 1=approvalMutation, 2=scoreFromZeroMutation, 3=modeMutation
+
+  it("approvalMutation mutationFn calls api.updateRequireApproval with current state", async () => {
     let approvalOptions: Record<string, unknown> | null = null;
     let callCount = 0;
     vi.mocked(useMutation).mockImplementation((opts: unknown) => {
@@ -377,11 +380,7 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     renderModal({ group: makeGroup({ require_approval: false }) });
     expect(approvalOptions).not.toBeNull();
     await (approvalOptions!.mutationFn as () => Promise<unknown>)();
-    expect(vi.mocked(api.updateRequireApproval)).toHaveBeenCalledWith(
-      "tok",
-      1,
-      false,
-    );
+    expect(vi.mocked(api.updateRequireApproval)).toHaveBeenCalledWith("tok", 1, false);
   });
 
   it("approvalMutation onSuccess calls queryClient.setQueryData and onClose", () => {
@@ -402,13 +401,44 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("scoreFromZeroMutation mutationFn calls api.updateScoreFromZero with true", async () => {
+    // scoreFromZeroMutation is the SECOND useMutation call in the component
+    let scoreOptions: Record<string, unknown> | null = null;
+    let callCount = 0;
+    vi.mocked(useMutation).mockImplementation((opts: unknown) => {
+      callCount++;
+      if (callCount === 2) scoreOptions = opts as Record<string, unknown>;
+      return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
+    });
+    renderModal({ group: makeGroup({ score_from_zero: false }) });
+    expect(scoreOptions).not.toBeNull();
+    await (scoreOptions!.mutationFn as () => Promise<unknown>)();
+    expect(vi.mocked(api.updateScoreFromZero)).toHaveBeenCalledWith("tok", 1, true);
+  });
+
+  it("scoreFromZeroMutation onSuccess updates cache and hides confirmation panel", () => {
+    const setQueryData = vi.fn();
+    vi.mocked(useQueryClient).mockReturnValue({ setQueryData, invalidateQueries: vi.fn() } as never);
+    let scoreOptions: Record<string, unknown> | null = null;
+    let callCount = 0;
+    vi.mocked(useMutation).mockImplementation((opts: unknown) => {
+      callCount++;
+      if (callCount === 2) scoreOptions = opts as Record<string, unknown>;
+      return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
+    });
+    renderModal({ group: makeGroup() });
+    const updated = makeGroup({ score_from_zero: true });
+    (scoreOptions!.onSuccess as (u: GroupDetailResponse) => void)(updated);
+    expect(setQueryData).toHaveBeenCalledWith(["group", 1], updated);
+  });
+
   it("modeMutation mutationFn calls api.setTournamentMode", async () => {
-    // The modeMutation is the SECOND useMutation call in the component
+    // modeMutation is the THIRD useMutation call in the component
     let modeOptions: Record<string, unknown> | null = null;
     let callCount = 0;
     vi.mocked(useMutation).mockImplementation((opts: unknown) => {
       callCount++;
-      if (callCount === 2) modeOptions = opts as Record<string, unknown>;
+      if (callCount === 3) modeOptions = opts as Record<string, unknown>;
       return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
     });
     renderModal({ group: makeGroup({ mode_general: false, mode_round: false }) });
@@ -429,7 +459,7 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     let callCount = 0;
     vi.mocked(useMutation).mockImplementation((opts: unknown) => {
       callCount++;
-      if (callCount === 2) modeOptions = opts as Record<string, unknown>;
+      if (callCount === 3) modeOptions = opts as Record<string, unknown>;
       return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
     });
     renderModal({ group: makeGroup(), onClose });
@@ -437,6 +467,58 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     (modeOptions!.onSuccess as (u: GroupDetailResponse) => void)(updated);
     expect(setQueryData).toHaveBeenCalledWith(["group", 1], updated);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("score_from_zero toggle shows confirmation panel when clicked", () => {
+    noopMutation();
+    renderModal({ group: makeGroup({ score_from_zero: false }) });
+    const checkboxes = screen.getAllByRole("checkbox");
+    // Second checkbox is the score_from_zero toggle
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText(/Confirmar activación/i)).toBeInTheDocument();
+  });
+
+  it("score_from_zero confirmation panel shows all required warnings", () => {
+    noopMutation();
+    renderModal({ group: makeGroup({ score_from_zero: false }) });
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText(/todos los miembros actuales/i)).toBeInTheDocument();
+    expect(screen.getByText(/Esta acción no puede revertirse/i)).toBeInTheDocument();
+    expect(screen.getByText(/también comenzarán con 0 puntos en este grupo/i)).toBeInTheDocument();
+    expect(screen.getByText(/otros grupos no se verán afectados/i)).toBeInTheDocument();
+  });
+
+  it("score_from_zero Cancelar button hides the confirmation panel", () => {
+    noopMutation();
+    renderModal({ group: makeGroup({ score_from_zero: false }) });
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText(/Confirmar activación/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Cancelar/i }));
+    expect(screen.queryByText(/Confirmar activación/i)).toBeNull();
+  });
+
+  it("score_from_zero shows locked state when already active", () => {
+    noopMutation();
+    renderModal({ group: makeGroup({ score_from_zero: true }) });
+    expect(screen.getByText(/Activado · Irreversible/i)).toBeInTheDocument();
+    // No checkbox for score_from_zero in locked state — only require_approval checkbox
+    const checkboxes = screen.getAllByRole("checkbox");
+    expect(checkboxes.length).toBe(1);
+  });
+
+  it("score_from_zero shows error message when mutation fails", () => {
+    let callCount = 0;
+    vi.mocked(useMutation).mockImplementation(() => {
+      callCount++;
+      const isError = callCount % 3 === 2;
+      return { mutate: vi.fn(), isPending: false, isError, error: null } as never;
+    });
+    renderModal({ group: makeGroup({ score_from_zero: false }) });
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText(/No se pudo activar/i)).toBeInTheDocument();
   });
 
   it("approval save button onClick fires mutate when dirty", () => {

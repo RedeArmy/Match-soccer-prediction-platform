@@ -91,6 +91,9 @@ func (r *stubQuinielaRepo) UpdateTournamentMode(_ context.Context, _ int, _, _, 
 func (r *stubQuinielaRepo) UpdateRequireApproval(_ context.Context, _ int, _ bool) (*domain.Quiniela, error) {
 	return r.quiniela, r.err
 }
+func (r *stubQuinielaRepo) UpdateScoreFromZero(_ context.Context, _ int, _ bool) (*domain.Quiniela, error) {
+	return r.quiniela, r.err
+}
 func (r *stubQuinielaRepo) ExistsByName(_ context.Context, _ string, _ int) (bool, error) {
 	return r.nameExists, r.err
 }
@@ -703,6 +706,46 @@ func TestQuinielaService_UpdateRequireApproval_Success_ReturnsQuiniela(t *testin
 func TestQuinielaService_UpdateRequireApproval_RepoError_Propagates(t *testing.T) {
 	svc := newQuinielaSvc(&stubQuinielaRepo{err: errors.New("db error")}, &stubGroupAuthz{})
 	_, err := svc.UpdateRequireApproval(context.Background(), 1, 1, false)
+	if err == nil {
+		t.Error("expected repo error to propagate")
+	}
+}
+
+// ── UpdateScoreFromZero ───────────────────────────────────────────────────────
+
+func TestQuinielaService_UpdateScoreFromZero_AuthzError_Propagates(t *testing.T) {
+	authz := &stubGroupAuthz{requireOwnerErr: errors.New("forbidden")}
+	svc := newQuinielaSvc(&stubQuinielaRepo{}, authz)
+	_, err := svc.UpdateScoreFromZero(context.Background(), 1, 99, true)
+	if err == nil || err.Error() != "forbidden" {
+		t.Errorf("expected authz error, got %v", err)
+	}
+}
+
+func TestQuinielaService_UpdateScoreFromZero_DisableReturnsValidationError(t *testing.T) {
+	svc := newQuinielaSvc(&stubQuinielaRepo{}, &stubGroupAuthz{})
+	_, err := svc.UpdateScoreFromZero(context.Background(), 1, 1, false)
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected ErrValidation when disabling, got %v", err)
+	}
+}
+
+func TestQuinielaService_UpdateScoreFromZero_Success_ReturnsQuiniela(t *testing.T) {
+	now := time.Now()
+	q := &domain.Quiniela{ID: 1, Name: "Pool", ScoreFromZero: true, ScoreFromZeroSince: &now}
+	svc := newQuinielaSvc(&stubQuinielaRepo{quiniela: q}, &stubGroupAuthz{})
+	got, err := svc.UpdateScoreFromZero(context.Background(), 1, 1, true)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if got == nil || !got.ScoreFromZero {
+		t.Error("expected updated quiniela with ScoreFromZero=true")
+	}
+}
+
+func TestQuinielaService_UpdateScoreFromZero_RepoError_Propagates(t *testing.T) {
+	svc := newQuinielaSvc(&stubQuinielaRepo{err: errors.New("db error")}, &stubGroupAuthz{})
+	_, err := svc.UpdateScoreFromZero(context.Background(), 1, 1, true)
 	if err == nil {
 		t.Error("expected repo error to propagate")
 	}

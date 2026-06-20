@@ -575,10 +575,10 @@ func (r *failOnUpdateRepo) ListByMatch(_ context.Context, _ int) ([]*domain.Pred
 func (r *failOnUpdateRepo) UpdateManyPoints(_ context.Context, _ map[int]int) error {
 	return r.updateErr
 }
-func (r *failOnUpdateRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
+func (r *failOnUpdateRepo) TotalPointsByQuiniela(_ context.Context, _ int, _ bool, _ time.Time) (map[int]int, error) {
 	return nil, nil
 }
-func (r *failOnUpdateRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
+func (r *failOnUpdateRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase, _ bool, _ time.Time) (map[int]int, error) {
 	return nil, nil
 }
 func (r *failOnUpdateRepo) ListByUserAndQuiniela(_ context.Context, _, _ int) ([]*domain.Prediction, error) {
@@ -618,7 +618,7 @@ func (r *failOnUpdateRepo) ScoreMatchBatch(_ context.Context, _ int, scorer func
 	}
 	return r.updateErr
 }
-func (r *failOnUpdateRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
+func (r *failOnUpdateRepo) PointsByUserAndRound(_ context.Context, _ int, _ bool, _ time.Time) (map[int]map[string]int, error) {
 	return nil, nil
 }
 func (r *failOnUpdateRepo) ListByGroupAndMatches(_ context.Context, _ int, _ []int) ([]*domain.Prediction, error) {

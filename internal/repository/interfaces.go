@@ -198,19 +198,25 @@ type PredictionRepository interface {
 	// every active, paid member of the given quiniela. It is used exclusively
 	// by the ranking service to compute leaderboard standings in a single query,
 	// avoiding N+1 database round-trips when the group is large.
-	TotalPointsByQuiniela(ctx context.Context, quinielaID int) (map[int]int, error)
+	//
+	// When scoreFromZero is true, only predictions for matches whose kickoff_at
+	// is on or after a member's joined_at are counted. Members whose joined_at
+	// predates scoreFromZeroSince are exempt (their full point history counts).
+	TotalPointsByQuiniela(ctx context.Context, quinielaID int, scoreFromZero bool, scoreFromZeroSince time.Time) (map[int]int, error)
 	// TotalPointsByQuinielaAndPhase is the phase-scoped variant of
 	// TotalPointsByQuiniela. It restricts the point aggregation to predictions
 	// on matches belonging to phase, enabling per-phase leaderboards (e.g. a
 	// "group stage" standings table). Only active, paid members are included;
 	// predictions with NULL points are excluded from the sum.
-	TotalPointsByQuinielaAndPhase(ctx context.Context, quinielaID int, phase domain.MatchPhase) (map[int]int, error)
+	// The scoreFromZero semantics are identical to TotalPointsByQuiniela.
+	TotalPointsByQuinielaAndPhase(ctx context.Context, quinielaID int, phase domain.MatchPhase, scoreFromZero bool, scoreFromZeroSince time.Time) (map[int]int, error)
 	// PointsByUserAndRound returns a two-level map
 	//   userID → roundKey → points
 	// where roundKey is the match round_number cast to text ("1"–"9"). It drives
 	// the per-round leaderboard breakdown. Only active, paid members are included;
 	// predictions with NULL points and matches without a round_number are excluded.
-	PointsByUserAndRound(ctx context.Context, quinielaID int) (map[int]map[string]int, error)
+	// The scoreFromZero semantics are identical to TotalPointsByQuiniela.
+	PointsByUserAndRound(ctx context.Context, quinielaID int, scoreFromZero bool, scoreFromZeroSince time.Time) (map[int]map[string]int, error)
 	// ListQuinielaIDsByMatch returns the distinct IDs of every quiniela that has
 	// at least one active, paid member who submitted a prediction for matchID.
 	// Called by the scoring worker after ScoreMatch to determine which quinielas
@@ -316,6 +322,13 @@ type QuinielaRepository interface {
 	// a pending step or join-request notification. Returns NotFound when the
 	// group is absent or soft-deleted.
 	UpdateRequireApproval(ctx context.Context, quinielaID int, requireApproval bool) (*domain.Quiniela, error)
+	// UpdateScoreFromZero sets the score_from_zero flag on a quiniela.
+	// When enabled is true the implementation atomically records the current
+	// timestamp in score_from_zero_since; when false it clears that timestamp.
+	// Members whose joined_at predates score_from_zero_since are exempt from
+	// the filter — only newcomers start with 0 points. Returns NotFound when
+	// the group is absent or soft-deleted.
+	UpdateScoreFromZero(ctx context.Context, quinielaID int, enabled bool) (*domain.Quiniela, error)
 	// DeleteByAdmin soft-deletes a quiniela on behalf of an administrator.
 	// The audit trail is the caller's responsibility via AuditLogRepository.
 	DeleteByAdmin(ctx context.Context, quinielaID, adminID int) error

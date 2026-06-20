@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -87,11 +88,11 @@ type stubTotalPointsPredRepo struct {
 	roundPointsErr    error
 }
 
-func (r *stubTotalPointsPredRepo) TotalPointsByQuiniela(_ context.Context, _ int) (map[int]int, error) {
+func (r *stubTotalPointsPredRepo) TotalPointsByQuiniela(_ context.Context, _ int, _ bool, _ time.Time) (map[int]int, error) {
 	return r.pointsByUser, r.pointsErr
 }
 
-func (r *stubTotalPointsPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase) (map[int]int, error) {
+func (r *stubTotalPointsPredRepo) TotalPointsByQuinielaAndPhase(_ context.Context, _ int, _ domain.MatchPhase, _ bool, _ time.Time) (map[int]int, error) {
 	if r.phasePointsByUser != nil || r.phasePointsErr != nil {
 		return r.phasePointsByUser, r.phasePointsErr
 	}
@@ -109,7 +110,7 @@ func (r *stubTotalPointsPredRepo) GlobalLeaderboard(_ context.Context, _ int) ([
 func (r *stubTotalPointsPredRepo) ListAdmin(_ context.Context, _ repository.PredictionAdminFilters, _ repository.Pagination) ([]*domain.Prediction, error) {
 	return r.adminList, r.adminListErr
 }
-func (r *stubTotalPointsPredRepo) PointsByUserAndRound(_ context.Context, _ int) (map[int]map[string]int, error) {
+func (r *stubTotalPointsPredRepo) PointsByUserAndRound(_ context.Context, _ int, _ bool, _ time.Time) (map[int]map[string]int, error) {
 	return r.roundPoints, r.roundPointsErr
 }
 func (r *stubTotalPointsPredRepo) ListByGroupAndMatches(_ context.Context, _ int, _ []int) ([]*domain.Prediction, error) {
@@ -943,6 +944,123 @@ func TestGetLeaderboardWithRoundBreakdown_PointsByUserAndRoundError_Propagates(t
 	_, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 1)
 	if err == nil {
 		t.Fatal("expected error from PointsByUserAndRound, got nil")
+	}
+}
+
+func TestGetLeaderboardWithRoundBreakdown_NoRoundPointsForUser_SetsEmptyMap(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: rankingTestQuiniela, Status: domain.QuinielaStatusActive}
+	userA := &domain.User{ID: 1, Name: rankingAlice}
+	predRepo := &stubTotalPointsPredRepo{
+		pointsByUser: map[int]int{1: 10},
+		roundPoints:  map[int]map[string]int{}, // user 1 absent from round data
+	}
+	svc := newRankingSvc(q, predRepo, []*domain.User{userA})
+
+	result, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 1)
+	if err != nil {
+		t.Fatalf(rankingUnexpectedErrorFmt, err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(result.Entries))
+	}
+	if result.Entries[0].RoundPoints == nil {
+		t.Error("expected empty RoundPoints map, got nil")
+	}
+}
+
+// ── GetByID error branches ───────────────────────────────────────────────────
+
+func TestGetLeaderboard_GetByIDError_Propagates(t *testing.T) {
+	dbErr := errors.New(rankingDBError)
+	svc := NewRankingService(
+		&stubQuinielaRepo{err: dbErr},
+		&stubTotalPointsPredRepo{},
+		&stubUserRepo{},
+		&stubMemberRepo{},
+		&stubTiebreakerRepo{},
+		&stubTiebreakerCfgRepo{},
+		zap.NewNop(),
+	)
+	_, err := svc.GetLeaderboard(context.Background(), 1)
+	if !errors.Is(err, dbErr) {
+		t.Errorf("expected dbErr, got %v", err)
+	}
+}
+
+func TestGetPhaseLeaderboard_GetByIDError_Propagates(t *testing.T) {
+	dbErr := errors.New(rankingDBError)
+	svc := NewRankingService(
+		&stubQuinielaRepo{err: dbErr},
+		&stubTotalPointsPredRepo{},
+		&stubUserRepo{},
+		&stubMemberRepo{},
+		&stubTiebreakerRepo{},
+		&stubTiebreakerCfgRepo{},
+		zap.NewNop(),
+	)
+	_, err := svc.GetPhaseLeaderboard(context.Background(), 1, domain.PhaseGroupStage)
+	if !errors.Is(err, dbErr) {
+		t.Errorf("expected dbErr, got %v", err)
+	}
+}
+
+func TestGetLeaderboardWithRoundBreakdown_GetByIDError_Propagates(t *testing.T) {
+	dbErr := errors.New(rankingDBError)
+	svc := NewRankingService(
+		&stubQuinielaRepo{err: dbErr},
+		&stubTotalPointsPredRepo{},
+		&stubUserRepo{},
+		&stubMemberRepo{},
+		&stubTiebreakerRepo{},
+		&stubTiebreakerCfgRepo{},
+		zap.NewNop(),
+	)
+	_, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 1)
+	if !errors.Is(err, dbErr) {
+		t.Errorf("expected dbErr, got %v", err)
+	}
+}
+
+func TestGetLeaderboardWithRoundBreakdown_QuinielaNotFound_ReturnsNotFoundError(t *testing.T) {
+	svc := NewRankingService(
+		&stubQuinielaRepo{quiniela: nil},
+		&stubTotalPointsPredRepo{},
+		&stubUserRepo{},
+		&stubMemberRepo{},
+		&stubTiebreakerRepo{},
+		&stubTiebreakerCfgRepo{},
+		zap.NewNop(),
+	)
+	_, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 99)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestGetLeaderboardWithRoundBreakdown_GetLeaderboardError_Propagates(t *testing.T) {
+	q := &domain.Quiniela{ID: 1, Name: rankingTestQuiniela, Status: domain.QuinielaStatusActive}
+	predErr := errors.New(rankingDBError)
+	svc := NewRankingService(
+		&stubQuinielaRepo{quiniela: q},
+		&stubTotalPointsPredRepo{pointsErr: predErr},
+		&stubUserRepo{},
+		&stubMemberRepo{},
+		&stubTiebreakerRepo{},
+		&stubTiebreakerCfgRepo{},
+		zap.NewNop(),
+	)
+	_, err := svc.GetLeaderboardWithRoundBreakdown(context.Background(), 1)
+	if !errors.Is(err, predErr) {
+		t.Errorf("expected predErr, got %v", err)
+	}
+}
+
+func Test_quinielaSince_NonNilSince_ReturnsValue(t *testing.T) {
+	ts := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	q := &domain.Quiniela{ScoreFromZeroSince: &ts}
+	got := quinielaSince(q)
+	if !got.Equal(ts) {
+		t.Errorf("expected %v, got %v", ts, got)
 	}
 }
 

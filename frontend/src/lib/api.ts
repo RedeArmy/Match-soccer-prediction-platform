@@ -174,6 +174,18 @@ class APIClient {
     );
   }
 
+  updateScoreFromZero(
+    token: string,
+    id: number,
+    scoreFromZero: boolean,
+  ): Promise<GroupDetailResponse> {
+    return this.request(
+      `/api/v1/groups/${id}/score-from-zero`,
+      { method: "PATCH", body: JSON.stringify({ score_from_zero: scoreFromZero }) },
+      token,
+    );
+  }
+
   getGroupMembers(token: string, id: number): Promise<MemberResponse[]> {
     return this.request<{ data: MemberResponse[] }>(
       `/api/v1/groups/${id}/members`,
