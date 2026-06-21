@@ -102,15 +102,20 @@ services:
   n8n:
     image: n8nio/n8n:1.49.0
     restart: unless-stopped
-    # Override the default CMD to auto-import all workflow JSON files before
+    # Override entrypoint + command to import workflow JSON files before
     # starting n8n. The `--active` flag marks imported workflows as active so
     # n8n registers their webhooks and schedulers on startup.
     #
+    # entrypoint must be overridden because n8n 1.49 uses
+    # `tini -- /docker-entrypoint.sh` as its default ENTRYPOINT, which passes
+    # compose `command` args directly to the n8n CLI — `sh` is not a valid n8n
+    # subcommand.  Setting entrypoint to ["sh", "-c"] bypasses the n8n wrapper
+    # and runs the shell script directly.
+    #
     # Idempotent: n8n 1.49 updates existing workflows by name on re-import.
     # To skip updates on subsequent restarts, append `--skipExisting`.
+    entrypoint: ["sh", "-c"]
     command:
-      - sh
-      - -c
       - |
         echo '==> importing n8n workflows...'
         for f in /opt/n8n-workflows/*.json; do

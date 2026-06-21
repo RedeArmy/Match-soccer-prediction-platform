@@ -134,6 +134,7 @@ services:
       WCQ_N8N_INTERNALKEY:        ${N8N_INTERNAL_API_KEY}
       # ── Email ────────────────────────────────────────────────────────────────
       WCQ_EMAIL_RESENDAPIKEY:     ${RESEND_API_KEY}
+      WCQ_EMAIL_FROMADDRESS:      ${WCQ_EMAIL_FROMADDRESS}
       # ── Web Push ─────────────────────────────────────────────────────────────
       WCQ_WEBPUSH_VAPIDPRIVATEKEY: ${VAPID_PRIVATE_KEY}
       # ── API-Football ─────────────────────────────────────────────────────────
