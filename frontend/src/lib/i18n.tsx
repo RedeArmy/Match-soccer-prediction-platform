@@ -769,15 +769,18 @@ export function I18nProvider({
       Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Guatemala",
     );
 
-    const stored = globalThis.localStorage.getItem("quiniela-locale");
-    if (stored === "es" || stored === "en") {
-      // Explicit user preference always wins.
-      setLocale(stored);
-      document.documentElement.lang = stored;
+    // Only skip geo detection when the user has explicitly chosen a language.
+    // Auto-detected locales are not persisted so that geo data is re-evaluated
+    // on each session (prevents stale/wrong country from being locked in forever).
+    const storedSource = globalThis.localStorage.getItem("quiniela-locale-source");
+    const storedLocale = globalThis.localStorage.getItem("quiniela-locale");
+    if (storedSource === "explicit" && (storedLocale === "es" || storedLocale === "en")) {
+      setLocale(storedLocale);
+      document.documentElement.lang = storedLocale;
       return;
     }
 
-    // No stored preference — detect from connection country.
+    // No explicit preference — detect from connection country on every session.
     void (async () => {
       try {
         const r = await fetch("/api/geo", { cache: "no-store" });
@@ -785,8 +788,6 @@ export function I18nProvider({
         const detected = localeForCountry(data.country ?? "GT");
         setLocale(detected);
         document.documentElement.lang = detected;
-        // Persist so subsequent visits skip the round-trip.
-        globalThis.localStorage.setItem("quiniela-locale", detected);
       } catch {
         // Geo lookup failed or not available (e.g. test env) — keep default "es".
       }
@@ -800,6 +801,7 @@ export function I18nProvider({
       setLocale: (nextLocale) => {
         setLocale(nextLocale);
         globalThis.localStorage.setItem("quiniela-locale", nextLocale);
+        globalThis.localStorage.setItem("quiniela-locale-source", "explicit");
         document.documentElement.lang = nextLocale;
       },
       t: (key) =>

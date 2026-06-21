@@ -17,30 +17,23 @@ function renderProvider() {
   );
 }
 
-const GEO_GT = new Response(JSON.stringify({ country: "GT" }), {
-  status: 200,
-  headers: { "Content-Type": "application/json" },
-});
-const GEO_MX = new Response(JSON.stringify({ country: "MX" }), {
-  status: 200,
-  headers: { "Content-Type": "application/json" },
-});
-const GEO_DE = new Response(JSON.stringify({ country: "DE" }), {
-  status: 200,
-  headers: { "Content-Type": "application/json" },
-});
-const GEO_US = new Response(JSON.stringify({ country: "US" }), {
-  status: 200,
-  headers: { "Content-Type": "application/json" },
-});
+function geoRes(country: string) {
+  return new Response(JSON.stringify({ country }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+// ── Explicit stored preference ────────────────────────────────────────────────
 
 describe("I18nProvider – stored preference", () => {
   beforeEach(() => globalThis.localStorage.clear());
   afterEach(cleanup);
 
-  it("applies stored 'en' locale without fetching geo", async () => {
+  it("applies explicit 'en' locale without fetching geo", async () => {
     const spy = vi.spyOn(globalThis, "fetch");
     globalThis.localStorage.setItem("quiniela-locale", "en");
+    globalThis.localStorage.setItem("quiniela-locale-source", "explicit");
 
     renderProvider();
 
@@ -51,9 +44,10 @@ describe("I18nProvider – stored preference", () => {
     spy.mockRestore();
   });
 
-  it("applies stored 'es' locale without fetching geo", async () => {
+  it("applies explicit 'es' locale without fetching geo", async () => {
     const spy = vi.spyOn(globalThis, "fetch");
     globalThis.localStorage.setItem("quiniela-locale", "es");
+    globalThis.localStorage.setItem("quiniela-locale-source", "explicit");
 
     renderProvider();
 
@@ -63,24 +57,15 @@ describe("I18nProvider – stored preference", () => {
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
-});
 
-describe("I18nProvider – geo detection (Hispanic countries → es)", () => {
-  beforeEach(() => globalThis.localStorage.clear());
-  afterEach(cleanup);
+  it("re-runs geo detection when locale was auto-detected (no explicit source)", async () => {
+    // Locale stored but source is NOT "explicit" → should re-fetch geo and update
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(geoRes("GT"));
+    globalThis.localStorage.setItem("quiniela-locale", "en"); // stale auto-detected value
+    // quiniela-locale-source is NOT set
 
-  it("sets 'es' for Guatemala (GT)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(GEO_GT.clone());
     renderProvider();
-    await waitFor(() =>
-      expect(screen.getByTestId("locale")).toHaveTextContent("es"),
-    );
-    vi.restoreAllMocks();
-  });
 
-  it("sets 'es' for Mexico (MX)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(GEO_MX.clone());
-    renderProvider();
     await waitFor(() =>
       expect(screen.getByTestId("locale")).toHaveTextContent("es"),
     );
@@ -88,50 +73,143 @@ describe("I18nProvider – geo detection (Hispanic countries → es)", () => {
   });
 });
 
-describe("I18nProvider – geo detection (non-Hispanic countries → en)", () => {
+// ── Spanish-speaking countries → "es" ────────────────────────────────────────
+// All 21 ISO 3166-1 alpha-2 codes where Spanish is an official language must
+// produce locale "es" so the UI is displayed in Spanish by default.
+
+describe("I18nProvider – geo detection (all Spanish-speaking countries → es)", () => {
   beforeEach(() => globalThis.localStorage.clear());
   afterEach(cleanup);
 
-  it("sets 'en' for Germany (DE)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(GEO_DE.clone());
+  const hispanicCountries: Array<[string, string]> = [
+    ["AR", "Argentina"],
+    ["BO", "Bolivia"],
+    ["CL", "Chile"],
+    ["CO", "Colombia"],
+    ["CR", "Costa Rica"],
+    ["CU", "Cuba"],
+    ["DO", "Dominican Republic"],
+    ["EC", "Ecuador"],
+    ["ES", "Spain"],
+    ["GQ", "Equatorial Guinea"],
+    ["GT", "Guatemala"],
+    ["HN", "Honduras"],
+    ["MX", "Mexico"],
+    ["NI", "Nicaragua"],
+    ["PA", "Panama"],
+    ["PE", "Peru"],
+    ["PR", "Puerto Rico"],
+    ["PY", "Paraguay"],
+    ["SV", "El Salvador"],
+    ["UY", "Uruguay"],
+    ["VE", "Venezuela"],
+  ];
+
+  it.each(hispanicCountries)("sets 'es' for %s (%s)", async (code) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(geoRes(code));
     renderProvider();
     await waitFor(() =>
-      expect(screen.getByTestId("locale")).toHaveTextContent("en"),
+      expect(screen.getByTestId("locale")).toHaveTextContent("es"),
     );
     vi.restoreAllMocks();
+    cleanup();
   });
 
-  it("sets 'en' for United States (US)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(GEO_US.clone());
+  it("handles lowercase country code (e.g. 'gt' from a geo provider variant)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(geoRes("gt"));
     renderProvider();
     await waitFor(() =>
-      expect(screen.getByTestId("locale")).toHaveTextContent("en"),
+      expect(screen.getByTestId("locale")).toHaveTextContent("es"),
     );
     vi.restoreAllMocks();
   });
 });
+
+// ── Non-Spanish-speaking countries → "en" ────────────────────────────────────
+// Users from any country NOT in the Spanish-speaking set must see English.
+// Includes important non-obvious cases: Brazil (Portuguese, not Spanish),
+// Philippines (Filipino+English) and Portugal (Portuguese).
+
+describe("I18nProvider – geo detection (non-Spanish-speaking countries → en)", () => {
+  beforeEach(() => globalThis.localStorage.clear());
+  afterEach(cleanup);
+
+  const nonHispanicCountries: Array<[string, string]> = [
+    ["US", "United States"],
+    ["CA", "Canada"],
+    ["GB", "United Kingdom"],
+    ["DE", "Germany"],
+    ["FR", "France"],
+    ["IT", "Italy"],
+    ["JP", "Japan"],
+    ["CN", "China"],
+    ["KR", "South Korea"],
+    ["IN", "India"],
+    ["AU", "Australia"],
+    ["BR", "Brazil (Portuguese, not Spanish)"],
+    ["PT", "Portugal (Portuguese, not Spanish)"],
+    ["PH", "Philippines"],
+    ["NG", "Nigeria"],
+    ["ZA", "South Africa"],
+    ["RU", "Russia"],
+    ["NL", "Netherlands"],
+    ["SE", "Sweden"],
+    ["PL", "Poland"],
+  ];
+
+  it.each(nonHispanicCountries)("sets 'en' for %s (%s)", async (code) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(geoRes(code));
+    renderProvider();
+    await waitFor(() =>
+      expect(screen.getByTestId("locale")).toHaveTextContent("en"),
+    );
+    vi.restoreAllMocks();
+    cleanup();
+  });
+});
+
+// ── Fallback and persistence behaviour ───────────────────────────────────────
 
 describe("I18nProvider – geo detection fallback", () => {
   beforeEach(() => globalThis.localStorage.clear());
   afterEach(cleanup);
 
-  it("keeps default 'es' when fetch throws", async () => {
+  it("keeps default 'es' when fetch throws (safe fallback for GT-primary app)", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
       new Error("network error"),
     );
     renderProvider();
-    // Give the failed async IIFE time to settle.
     await new Promise((r) => setTimeout(r, 30));
     expect(screen.getByTestId("locale")).toHaveTextContent("es");
     vi.restoreAllMocks();
   });
 
-  it("persists detected locale to localStorage", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(GEO_DE.clone());
+  it("keeps default 'es' when geo returns no country field", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({}), { status: 200 }),
+    );
+    renderProvider();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.getByTestId("locale")).toHaveTextContent("es");
+    vi.restoreAllMocks();
+  });
+
+  it("does NOT persist auto-detected locale as explicit preference", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(geoRes("DE"));
     renderProvider();
     await waitFor(() =>
-      expect(globalThis.localStorage.getItem("quiniela-locale")).toBe("en"),
+      expect(screen.getByTestId("locale")).toHaveTextContent("en"),
     );
+    // locale-source must remain absent so next session re-runs geo detection
+    expect(globalThis.localStorage.getItem("quiniela-locale-source")).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it("initial render shows 'es' before geo resolves (React default state)", () => {
+    // fetch never resolves in this test — validates the synchronous default
+    vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => undefined));
+    renderProvider();
+    expect(screen.getByTestId("locale")).toHaveTextContent("es");
     vi.restoreAllMocks();
   });
 });

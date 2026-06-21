@@ -430,19 +430,22 @@ describe("LanguageSwitcher", () => {
     expect(screen.getByRole("button", { name: "en" })).toBeInTheDocument();
   });
 
-  it("calling setLocale persists locale to localStorage", () => {
+  it("calling setLocale persists locale and marks it as explicit in localStorage", () => {
     render(<LanguageSwitcher />);
     fireEvent.click(screen.getByRole("button", { name: "en" }));
     expect(localStorage.getItem("quiniela-locale")).toBe("en");
+    expect(localStorage.getItem("quiniela-locale-source")).toBe("explicit");
     localStorage.removeItem("quiniela-locale");
+    localStorage.removeItem("quiniela-locale-source");
   });
 });
 
 // ── I18nProvider locale restoration ──────────────────────────────────────────
 
 describe("I18nProvider", () => {
-  it("restores locale from localStorage on mount", async () => {
+  it("restores explicit locale from localStorage on mount (skips geo detection)", async () => {
     localStorage.setItem("quiniela-locale", "en");
+    localStorage.setItem("quiniela-locale-source", "explicit");
 
     function TestLocale() {
       const { locale } = useI18n();
@@ -455,6 +458,7 @@ describe("I18nProvider", () => {
     });
 
     localStorage.removeItem("quiniela-locale");
+    localStorage.removeItem("quiniela-locale-source");
   });
 });
 
