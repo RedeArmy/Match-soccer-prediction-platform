@@ -34,10 +34,11 @@ import type { TodayFixture } from "@/app/api/live/today/route";
 const mockFetch = vi.fn<typeof fetch>();
 vi.stubGlobal("fetch", mockFetch);
 
-// Pre-seed locale so I18nProvider skips the /api/geo round-trip and doesn't
-// consume a queued mockFetch response before the component under test can.
+// Pre-seed locale as explicit so I18nProvider skips the /api/geo round-trip
+// and doesn't consume a queued mockFetch response before the component under test can.
 beforeAll(() => {
   globalThis.localStorage.setItem("quiniela-locale", "es");
+  globalThis.localStorage.setItem("quiniela-locale-source", "explicit");
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -6,6 +6,39 @@ function isPrivateIP(ip: string): boolean {
   return PRIVATE_PREFIXES.some((prefix) => ip.startsWith(prefix));
 }
 
+// ip-api.com — free HTTP endpoint, 45 req/min, higher accuracy for Latin American ISPs.
+// Returns { "countryCode": "GT", "status": "success" } or { "status": "fail" }.
+async function lookupIpApi(ip: string): Promise<string | null> {
+  try {
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=countryCode,status`, {
+      headers: { "User-Agent": "WCQ/1.0 geo-lookup" },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { status?: string; countryCode?: string };
+    if (data.status !== "success" || !data.countryCode) return null;
+    return data.countryCode;
+  } catch {
+    return null;
+  }
+}
+
+// ipapi.co — HTTPS fallback. Free tier: 1 000 req/day without a key.
+// Returns { "country_code": "GT", ... } on success.
+async function lookupIpapiCo(ip: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://ipapi.co/${ip}/json/`, {
+      headers: { "User-Agent": "WCQ/1.0 geo-lookup" },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { country_code?: string };
+    return data.country_code ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const forwarded = req.headers.get("x-forwarded-for");
   const ip = forwarded?.split(",")[0]?.trim() ?? "";
@@ -15,18 +48,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return respond("GT");
   }
 
-  try {
-    const upstream = await fetch(`https://ipapi.co/${ip}/json/`, {
-      headers: { "User-Agent": "WCQ/1.0 geo-lookup" },
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!upstream.ok) throw new Error(`ipapi.co ${upstream.status}`);
-    const data = (await upstream.json()) as { country_code?: string };
-    return respond(data.country_code ?? "GT");
-  } catch (err) {
-    console.error("[geo] lookup failed", ip, err);
+  // Try ip-api.com first (better accuracy for Latin American ISPs such as Claro and Tigo
+  // Guatemala, which use IP blocks registered to international parent companies).
+  const country =
+    (await lookupIpApi(ip)) ??
+    (await lookupIpapiCo(ip)) ??
+    "GT";
+
+  if (country === "GT" || !country) {
     return respond("GT");
   }
+
+  console.info("[geo] detected", { ip: ip.slice(0, 8) + "…", country });
+  return respond(country);
 }
 
 function respond(country: string): NextResponse {
