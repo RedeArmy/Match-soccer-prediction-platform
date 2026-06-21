@@ -69,12 +69,15 @@ function apiErrorMessage(
 }
 
 function useCountry(): { country: string | null; isLoading: boolean } {
-  const { data, isLoading } = useQuery<{ country: string }>({
+  const { data, isLoading, isError } = useQuery<{ country: string }>({
     queryKey: ["geo-country"],
     queryFn: () => fetch("/api/geo").then((r) => r.json()),
-    staleTime: 60 * 60 * 1000,
-    retry: false,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
   });
+  // When the geo lookup fails, default to GT so Guatemalan users are not
+  // incorrectly shown non-GT payment options due to a transient network error.
+  if (isError) return { country: "GT", isLoading: false };
   return { country: data?.country ?? null, isLoading };
 }
 

@@ -1311,12 +1311,12 @@ describe("GET /api/geo – private / loopback IP returns GT", () => {
   });
 });
 
-describe("GET /api/geo – public IP calls ipapi.co", () => {
+describe("GET /api/geo – public IP, ip-api.com primary", () => {
   beforeEach(() => mockFetch.mockReset());
 
-  it("returns country_code from ipapi.co for a public IP", async () => {
+  it("returns countryCode from ip-api.com for a public IP", async () => {
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ country_code: "US" }), { status: 200 }),
+      new Response(JSON.stringify({ status: "success", countryCode: "US" }), { status: 200 }),
     );
     const { GET } = await import("@/app/api/geo/route");
     const req = makeReq("http://localhost/api/geo", {
@@ -1327,12 +1327,13 @@ describe("GET /api/geo – public IP calls ipapi.co", () => {
     expect(body.country).toBe("US");
     expect(mockFetch).toHaveBeenCalledOnce();
     const [calledUrl] = mockFetch.mock.calls[0];
+    expect(String(calledUrl)).toContain("ip-api.com");
     expect(String(calledUrl)).toContain("8.8.8.8");
   });
 
   it("uses the first IP when X-Forwarded-For contains multiple addresses", async () => {
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ country_code: "MX" }), { status: 200 }),
+      new Response(JSON.stringify({ status: "success", countryCode: "MX" }), { status: 200 }),
     );
     const { GET } = await import("@/app/api/geo/route");
     const req = makeReq("http://localhost/api/geo", {
@@ -1345,10 +1346,61 @@ describe("GET /api/geo – public IP calls ipapi.co", () => {
     expect(String(calledUrl)).toContain("201.100.1.5");
   });
 
-  it("falls back to GT when ipapi.co returns non-OK status", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response("Service Unavailable", { status: 503 }),
-    );
+  it("falls back to ipapi.co when ip-api.com returns non-OK status", async () => {
+    // ip-api.com fails → ipapi.co succeeds
+    mockFetch
+      .mockResolvedValueOnce(new Response("Service Unavailable", { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ country_code: "DE" }), { status: 200 }),
+      );
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "8.8.8.8" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("DE");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const secondUrl = String(mockFetch.mock.calls[1][0]);
+    expect(secondUrl).toContain("ipapi.co");
+  });
+
+  it("falls back to ipapi.co when ip-api.com returns status=fail", async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "fail", message: "private range" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ country_code: "GB" }), { status: 200 }),
+      );
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "8.8.8.8" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("GB");
+  });
+
+  it("falls back to ipapi.co when ip-api.com fetch throws", async () => {
+    mockFetch
+      .mockRejectedValueOnce(new Error("network timeout"))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ country_code: "FR" }), { status: 200 }),
+      );
+    const { GET } = await import("@/app/api/geo/route");
+    const req = makeReq("http://localhost/api/geo", {
+      headers: { "x-forwarded-for": "8.8.8.8" },
+    });
+    const res = await GET(req as never);
+    const body = await res.json();
+    expect(body.country).toBe("FR");
+  });
+
+  it("falls back to GT when both providers fail", async () => {
+    mockFetch
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockRejectedValueOnce(new Error("timeout"));
     const { GET } = await import("@/app/api/geo/route");
     const req = makeReq("http://localhost/api/geo", {
       headers: { "x-forwarded-for": "8.8.8.8" },
@@ -1358,21 +1410,14 @@ describe("GET /api/geo – public IP calls ipapi.co", () => {
     expect(body.country).toBe("GT");
   });
 
-  it("falls back to GT when ipapi.co fetch throws", async () => {
-    mockFetch.mockRejectedValueOnce(new Error("network timeout"));
-    const { GET } = await import("@/app/api/geo/route");
-    const req = makeReq("http://localhost/api/geo", {
-      headers: { "x-forwarded-for": "8.8.8.8" },
-    });
-    const res = await GET(req as never);
-    const body = await res.json();
-    expect(body.country).toBe("GT");
-  });
-
-  it("falls back to GT when ipapi.co returns no country_code field", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ ip: "8.8.8.8" }), { status: 200 }),
-    );
+  it("falls back to GT when ip-api.com returns no countryCode and ipapi.co returns no country_code", async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "success" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ip: "8.8.8.8" }), { status: 200 }),
+      );
     const { GET } = await import("@/app/api/geo/route");
     const req = makeReq("http://localhost/api/geo", {
       headers: { "x-forwarded-for": "8.8.8.8" },
@@ -1384,7 +1429,7 @@ describe("GET /api/geo – public IP calls ipapi.co", () => {
 
   it("sets Cache-Control: private, max-age=3600", async () => {
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ country_code: "GT" }), { status: 200 }),
+      new Response(JSON.stringify({ status: "success", countryCode: "GT" }), { status: 200 }),
     );
     const { GET } = await import("@/app/api/geo/route");
     const req = makeReq("http://localhost/api/geo", {
