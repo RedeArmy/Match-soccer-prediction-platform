@@ -37,7 +37,8 @@
         "toEmail": "={{$env.ADMIN_EMAIL}}",
         "subject": "={{$json.subject}}",
         "emailType": "text",
-        "message": "={{$json.body}}"
+        "message": "={{$json.body}}",
+        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}"
       },
       "id": "kyc-sub-email",
       "name": "Send Admin Email",
