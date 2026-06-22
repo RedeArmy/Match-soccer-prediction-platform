@@ -113,11 +113,6 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "tags": [
-    "kyc",
-    "compliance",
-    "scheduler"
-  ],
   "meta": {
     "n8n_version": "1.49.0"
   }

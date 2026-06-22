@@ -75,11 +75,6 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "tags": [
-    "observability",
-    "payments",
-    "alerting"
-  ],
   "meta": {
     "n8n_version": "1.49.0"
   },

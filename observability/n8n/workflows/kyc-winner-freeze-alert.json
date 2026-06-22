@@ -1,5 +1,5 @@
 {
-  "name": "KYC Winner Freeze — Compliance Alert",
+  "name": "KYC Winner Freeze \u2014 Compliance Alert",
   "nodes": [
     {
       "parameters": {
@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const p = $input.first().json;\nconst amountGTQ = (p.amount_cents / 100).toFixed(2);\nreturn [{\n  json: {\n    subject: `[COMPLIANCE] Prize frozen pending KYC — Q${amountGTQ} GTQ (User ${p.user_id})`,\n    body: `A prize credit has been frozen because the winner has not completed KYC verification.\\n\\nUser ID: ${p.user_id}\\nPrize amount: Q${amountGTQ} GTQ\\nTrace ID: ${p.trace_id}\\n\\nThe user has been notified to submit their identity documents.\\nFunds will be released automatically once the compliance team approves the KYC submission.\\n\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/frozen-balances`\n  }\n}];"
+        "jsCode": "const p = $input.first().json;\nconst amountGTQ = (p.amount_cents / 100).toFixed(2);\nreturn [{\n  json: {\n    subject: `[COMPLIANCE] Prize frozen pending KYC \u2014 Q${amountGTQ} GTQ (User ${p.user_id})`,\n    body: `A prize credit has been frozen because the winner has not completed KYC verification.\\n\\nUser ID: ${p.user_id}\\nPrize amount: Q${amountGTQ} GTQ\\nTrace ID: ${p.trace_id}\\n\\nThe user has been notified to submit their identity documents.\\nFunds will be released automatically once the compliance team approves the KYC submission.\\n\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/frozen-balances`\n  }\n}];"
       },
       "id": "kyc-wf-format",
       "name": "Format Alert",
@@ -76,11 +76,6 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "tags": [
-    "kyc",
-    "compliance",
-    "prize"
-  ],
   "meta": {
     "n8n_version": "1.49.0"
   }
