@@ -108,11 +108,6 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "tags": [
-    "observability",
-    "alerting",
-    "circuit-breaker"
-  ],
   "meta": {
     "n8n_version": "1.49.0"
   },

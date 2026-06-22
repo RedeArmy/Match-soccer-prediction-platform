@@ -120,7 +120,7 @@ services:
         echo '==> importing n8n workflows...'
         for f in /opt/n8n-workflows/*.json; do
           printf '  %s\n' "$$f"
-          tmp=$$(mktemp /tmp/wf-XXXXXX.json)
+          tmp=$$(mktemp)
           printf '[' > "$$tmp" && cat "$$f" >> "$$tmp" && printf ']' >> "$$tmp"
           n8n import:workflow --input="$$tmp" 2>&1 | tail -n1 || true
           rm -f "$$tmp"

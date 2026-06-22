@@ -1,5 +1,5 @@
 {
-  "name": "KYC Rejected — User Notify",
+  "name": "KYC Rejected \u2014 User Notify",
   "nodes": [
     {
       "parameters": {
@@ -76,11 +76,6 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "tags": [
-    "kyc",
-    "compliance",
-    "user-notification"
-  ],
   "meta": {
     "n8n_version": "1.49.0"
   }
