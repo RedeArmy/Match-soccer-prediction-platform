@@ -263,14 +263,15 @@ func TestBuildUserContent_ActionURL_PopulatedForKnownEvents(t *testing.T) {
 		payload any
 		want    string
 	}{
-		{notification.EventPredictionConfirmed, notification.PredictionConfirmedPayload{UserID: 1, MatchID: 3}, "/api/v1/predictions/me"},
-		{notification.EventPredictionDeadlineApproach, notification.PredictionDeadlinePayload{UserID: 1, MatchID: 7}, "/api/v1/matches/7"},
-		{notification.EventPredictionMissingReminder, notification.PredictionDeadlinePayload{UserID: 1, MatchID: 8}, "/api/v1/matches/8"},
-		{notification.EventPredictionLocked, notification.PredictionLockedPayload{UserID: 1, MatchID: 9}, "/api/v1/matches/9"},
-		{notification.EventPredictionScored, notification.PredictionScoredPayload{UserID: 1, MatchID: 2}, "/api/v1/predictions/me"},
-		{notification.EventMatchResultEntered, notification.MatchEventPayload{MatchID: 11}, "/api/v1/matches/11"},
-		{notification.EventMatchPostponed, notification.MatchEventPayload{MatchID: 12}, "/api/v1/matches/12"},
-		{notification.EventMatchCancelled, notification.MatchEventPayload{MatchID: 13}, "/api/v1/matches/13"},
+		{notification.EventPredictionConfirmed, notification.PredictionConfirmedPayload{UserID: 1, MatchID: 3}, "/dashboard"},
+		{notification.EventPredictionDeadlineApproach, notification.PredictionDeadlinePayload{UserID: 1, MatchID: 7}, "/dashboard"},
+		{notification.EventPredictionMissingReminder, notification.PredictionDeadlinePayload{UserID: 1, MatchID: 8}, "/dashboard"},
+		{notification.EventPredictionLocked, notification.PredictionLockedPayload{UserID: 1, MatchID: 9}, "/dashboard"},
+		{notification.EventPredictionScored, notification.PredictionScoredPayload{UserID: 1, MatchID: 2}, "/dashboard"},
+		{notification.EventMatchResultEntered, notification.MatchEventPayload{MatchID: 11}, "/dashboard"},
+		{notification.EventMatchPostponed, notification.MatchEventPayload{MatchID: 12}, "/dashboard"},
+		{notification.EventMatchCancelled, notification.MatchEventPayload{MatchID: 13}, "/dashboard"},
+		{notification.EventPredictionDailyReminder, notification.PredictionDailyReminderPayload{UserID: 1, Date: "2026-06-15", Matches: []notification.DailyReminderMatch{{MatchID: 5, HomeTeam: "A", AwayTeam: "B"}}}, "/dashboard"},
 		{notification.EventGroupJoinApproved, notification.GroupJoinPayload{UserID: 1, QuinielaID: 5}, "/api/v1/groups/5"},
 		{notification.EventGroupJoinRejected, notification.GroupJoinPayload{UserID: 1, QuinielaID: 6}, "/api/v1/groups/me"},
 		{notification.EventGroupDisbanded, notification.GroupDisbandedPayload{QuinielaID: 7}, "/api/v1/groups/me"},

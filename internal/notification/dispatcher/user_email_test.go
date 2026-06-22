@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -515,6 +516,84 @@ func TestUserDispatcher_EmailHTMLTmpl_RendersCustomTemplate(t *testing.T) {
 	html := mailer.messages[0].HTML
 	if !strings.Contains(html, "<h1>") {
 		t.Errorf("HTML should contain <h1> from custom email_html_tmpl; got: %s", html)
+	}
+}
+
+func TestUserDispatcher_EmptyFromAddr_UsesDefaultFrom(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Alice"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true},
+	}
+
+	// FromAddr deliberately empty and no params → fallback "Kiniela <...>" must be used.
+	d := dispatcher.NewUserDispatcher(dispatcher.UserDispatcherConfig{
+		NotifRepo:     &notifRepo,
+		PrefRepo:      &prefRepo,
+		DLQRepo:       &recordingDLQRepo{},
+		Mailer:        mailer,
+		EmailResolver: resolver,
+		FromAddr:      "",
+		Log:           zap.NewNop(),
+	})
+
+	if err := d.Dispatch(context.Background(), buildPaymentConfirmedEntry()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+	if mailer.messages[0].From != "Kiniela <noreply@quiniela.example.com>" {
+		t.Errorf("From: got %q; want %q", mailer.messages[0].From, "Kiniela <noreply@quiniela.example.com>")
+	}
+}
+
+func TestUserDispatcher_DailyReminderEmail_ContainsMatchList(t *testing.T) {
+	t.Parallel()
+
+	mailer := &captureMailer{}
+	resolver := &stubEmailResolver{email: "u@test.com", name: "Pedro"}
+	notifRepo := stubNotifRepo{inserted: true}
+	prefRepo := stubPrefRepo{
+		pref: &domain.NotificationPreference{ChannelEmail: true, ChannelInApp: true},
+	}
+
+	d := newMinimalUserDispatcher(notifRepo, prefRepo, mailer, resolver, &recordingDLQRepo{})
+
+	p := notification.PredictionDailyReminderPayload{
+		UserID: 42,
+		Date:   "2026-06-22",
+		Matches: []notification.DailyReminderMatch{
+			{MatchID: 5, HomeTeam: "Mexico", AwayTeam: "USA", KickoffAt: time.Date(2026, 6, 22, 21, 0, 0, 0, time.UTC)},
+			{MatchID: 6, HomeTeam: "Brazil", AwayTeam: "Germany", KickoffAt: time.Date(2026, 6, 22, 23, 0, 0, 0, time.UTC)},
+		},
+	}
+	raw, _ := json.Marshal(p)
+	entry := &notification.OutboxEntry{
+		ID:          10,
+		EventType:   notification.EventPredictionDailyReminder,
+		AggregateID: "42",
+		Payload:     raw,
+	}
+
+	if err := d.Dispatch(context.Background(), entry); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(mailer.messages) != 1 {
+		t.Fatalf("emails sent: got %d; want 1", len(mailer.messages))
+	}
+	html := mailer.messages[0].HTML
+	if !strings.Contains(html, "México") && !strings.Contains(html, "Mexico") {
+		t.Errorf("rendered HTML should contain home team name; got: %s", html)
+	}
+	if !strings.Contains(html, "<ul") {
+		t.Errorf("rendered HTML should contain match list <ul>; got: %s", html)
+	}
+	if !strings.Contains(html, "21:00") {
+		t.Errorf("rendered HTML should contain kickoff time 21:00; got: %s", html)
 	}
 }
 

@@ -2,23 +2,105 @@ package dispatcher
 
 import (
 	"fmt"
+	"html"
+	"html/template"
+	"strings"
 
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
+
+// teamNamesES maps English FIFA team names to their Spanish equivalents.
+// Names not present in the map are returned unchanged (many are identical).
+var teamNamesES = map[string]string{
+	// UEFA
+	"Germany":        "Alemania",
+	"France":         "Francia",
+	"Spain":          "España",
+	"England":        "Inglaterra",
+	"Netherlands":    "Países Bajos",
+	"Belgium":        "Bélgica",
+	"Italy":          "Italia",
+	"Poland":         "Polonia",
+	"Switzerland":    "Suiza",
+	"Croatia":        "Croacia",
+	"Denmark":        "Dinamarca",
+	"Turkey":         "Turquía",
+	"Scotland":       "Escocia",
+	"Hungary":        "Hungría",
+	"Czech Republic": "República Checa",
+	"Romania":        "Rumanía",
+	"Slovakia":       "Eslovaquia",
+	"Slovenia":       "Eslovenia",
+	"Norway":         "Noruega",
+	"Sweden":         "Suecia",
+	"Finland":        "Finlandia",
+	"Greece":         "Grecia",
+	"Albania":        "Albania",
+	"Serbia":         "Serbia",
+	"Austria":        "Austria",
+	"Portugal":       "Portugal",
+	// CONMEBOL
+	"Brazil": "Brasil",
+	"Peru":   "Perú",
+	// CONCACAF
+	"United States": "Estados Unidos",
+	"USA":           "Estados Unidos",
+	"Canada":        "Canadá",
+	"Mexico":        "México",
+	"Panama":        "Panamá",
+	// CAF
+	"Morocco":      "Marruecos",
+	"Cameroon":     "Camerún",
+	"Egypt":        "Egipto",
+	"South Africa": "Sudáfrica",
+	"Ivory Coast":  "Costa de Marfil",
+	"DR Congo":     "RD Congo",
+	"Algeria":      "Argelia",
+	"Tunisia":      "Túnez",
+	"Mali":         "Malí",
+	"Kenya":        "Kenia",
+	"Ethiopia":     "Etiopía",
+	// AFC
+	"Japan":        "Japón",
+	"South Korea":  "Corea del Sur",
+	"Iran":         "Irán",
+	"Saudi Arabia": "Arabia Saudita",
+	"Uzbekistan":   "Uzbekistán",
+	"Qatar":        "Catar",
+	"Iraq":         "Irak",
+	"Jordan":       "Jordania",
+	"Bahrain":      "Baréin",
+	// OFC
+	"New Zealand": "Nueva Zelanda",
+}
+
+// translateTeamName returns the Spanish name for a team when locale is Spanish,
+// falling back to the original name if no translation is registered.
+func translateTeamName(name string, locale Locale) string {
+	if locale != LocaleES {
+		return name
+	}
+	if es, ok := teamNamesES[name]; ok {
+		return es
+	}
+	return name
+}
 
 func buildPredictionConfirmedContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PredictionConfirmedPayload
 	if err := entry.DecodePayload(&p); err != nil {
 		return userContent{}, err
 	}
+	home := translateTeamName(p.HomeTeam, locale)
+	away := translateTeamName(p.AwayTeam, locale)
 	return userContent{
 		title: localeStr("Prediction confirmed", "Predicción confirmada", locale),
 		body: localeStr(
-			fmt.Sprintf("Your prediction for %s vs %s has been recorded.", p.HomeTeam, p.AwayTeam),
-			fmt.Sprintf("Tu predicción para %s vs %s ha sido registrada.", p.HomeTeam, p.AwayTeam),
+			fmt.Sprintf("Your prediction for %s vs %s has been recorded.", home, away),
+			fmt.Sprintf("Tu predicción para %s vs %s ha sido registrada.", home, away),
 			locale,
 		),
-		actionURL: "/api/v1/predictions/me",
+		actionURL: urlDashboard,
 	}, nil
 }
 
@@ -46,14 +128,16 @@ func buildPredictionDeadlineContent(entry *notification.OutboxEntry, locale Loca
 	if err := entry.DecodePayload(&p); err != nil {
 		return userContent{}, err
 	}
+	home := translateTeamName(p.HomeTeam, locale)
+	away := translateTeamName(p.AwayTeam, locale)
 	return userContent{
 		title: localeStr(enTitle, esTitle, locale),
 		body: localeStr(
-			fmt.Sprintf(enBodyFmt, p.HomeTeam, p.AwayTeam, p.MinutesLeft),
-			fmt.Sprintf(esBodyFmt, p.HomeTeam, p.AwayTeam, p.MinutesLeft),
+			fmt.Sprintf(enBodyFmt, home, away, p.MinutesLeft),
+			fmt.Sprintf(esBodyFmt, home, away, p.MinutesLeft),
 			locale,
 		),
-		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
+		actionURL: urlDashboard,
 	}, nil
 }
 
@@ -62,14 +146,16 @@ func buildPredictionLockedContent(entry *notification.OutboxEntry, locale Locale
 	if err := entry.DecodePayload(&p); err != nil {
 		return userContent{}, err
 	}
+	home := translateTeamName(p.HomeTeam, locale)
+	away := translateTeamName(p.AwayTeam, locale)
 	return userContent{
 		title: localeStr("Predictions locked", "Predicciones cerradas", locale),
 		body: localeStr(
-			fmt.Sprintf("Predictions for %s vs %s are now locked.", p.HomeTeam, p.AwayTeam),
-			fmt.Sprintf("Las predicciones para %s vs %s ya están cerradas.", p.HomeTeam, p.AwayTeam),
+			fmt.Sprintf("Predictions for %s vs %s are now locked.", home, away),
+			fmt.Sprintf("Las predicciones para %s vs %s ya están cerradas.", home, away),
 			locale,
 		),
-		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
+		actionURL: urlDashboard,
 	}, nil
 }
 
@@ -78,14 +164,16 @@ func buildPredictionScoredContent(entry *notification.OutboxEntry, locale Locale
 	if err := entry.DecodePayload(&p); err != nil {
 		return userContent{}, err
 	}
+	home := translateTeamName(p.HomeTeam, locale)
+	away := translateTeamName(p.AwayTeam, locale)
 	return userContent{
 		title: localeStr("Match scored", "Partido puntuado", locale),
 		body: localeStr(
-			fmt.Sprintf("%s vs %s finished %d-%d. You earned %d points.", p.HomeTeam, p.AwayTeam, p.HomeScore, p.AwayScore, p.PointsEarned),
-			fmt.Sprintf("%s vs %s terminó %d-%d. Ganaste %d puntos.", p.HomeTeam, p.AwayTeam, p.HomeScore, p.AwayScore, p.PointsEarned),
+			fmt.Sprintf("%s vs %s finished %d-%d. You earned %d points.", home, away, p.HomeScore, p.AwayScore, p.PointsEarned),
+			fmt.Sprintf("%s vs %s terminó %d-%d. Ganaste %d puntos.", home, away, p.HomeScore, p.AwayScore, p.PointsEarned),
 			locale,
 		),
-		actionURL: "/api/v1/predictions/me",
+		actionURL: urlDashboard,
 	}, nil
 }
 
@@ -121,13 +209,52 @@ func buildMatchEventContent(entry *notification.OutboxEntry, locale Locale, enTi
 	if err := entry.DecodePayload(&p); err != nil {
 		return userContent{}, err
 	}
+	home := translateTeamName(p.HomeTeam, locale)
+	away := translateTeamName(p.AwayTeam, locale)
 	return userContent{
 		title: localeStr(enTitle, esTitle, locale),
 		body: localeStr(
-			fmt.Sprintf(enBodyFmt, p.HomeTeam, p.AwayTeam),
-			fmt.Sprintf(esBodyFmt, p.HomeTeam, p.AwayTeam),
+			fmt.Sprintf(enBodyFmt, home, away),
+			fmt.Sprintf(esBodyFmt, home, away),
 			locale,
 		),
-		actionURL: fmt.Sprintf(urlMatchDetail, p.MatchID),
+		actionURL: urlDashboard,
+	}, nil
+}
+
+func buildPredictionDailyReminderContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
+	var p notification.PredictionDailyReminderPayload
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
+
+	count := len(p.Matches)
+	var matchListHTML template.HTML
+	if count > 0 {
+		var sb strings.Builder
+		sb.WriteString(`<ul style="padding-left:20px;color:#444;line-height:2.2;margin-top:12px">`)
+		for _, m := range p.Matches {
+			home := html.EscapeString(translateTeamName(m.HomeTeam, locale))
+			away := html.EscapeString(translateTeamName(m.AwayTeam, locale))
+			kickoff := m.KickoffAt.UTC().Format("15:04")
+			fmt.Fprintf(&sb, "<li><strong>%s vs %s</strong> &mdash; %s UTC</li>", home, away, kickoff)
+		}
+		sb.WriteString("</ul>")
+		matchListHTML = template.HTML(sb.String()) //nolint:gosec // G203: all dynamic values are sanitised with html.EscapeString before insertion
+	}
+
+	return userContent{
+		title: localeStr(
+			"Daily prediction reminder",
+			"Recordatorio de predicciones del día",
+			locale,
+		),
+		body: localeStr(
+			fmt.Sprintf("You have %d match(es) without a prediction today. Submit before kick-off:", count),
+			fmt.Sprintf("Tienes %d partido(s) sin predecir hoy. Envía tu predicción antes del inicio:", count),
+			locale,
+		),
+		actionURL:     urlDashboard,
+		matchListHTML: matchListHTML,
 	}, nil
 }

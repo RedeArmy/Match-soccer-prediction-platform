@@ -871,9 +871,9 @@ func buildNotifScheduler(
 		Location: schedulerLoc,
 		Log:      log,
 	})
-	s.RegisterInterval("prediction.deadline_approaching",
+	s.RegisterInterval("prediction.match_reminder",
 		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPredDeadlineIntervalSec, domain.DefaultWorkerSchedPredDeadlineIntervalSec))*time.Second,
-		jobs.PredictionDeadlineApproaching)
+		jobs.PredictionDailyReminder)
 	s.RegisterInterval("admin.match_result_pending",
 		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedMatchResultIntervalSec, domain.DefaultWorkerSchedMatchResultIntervalSec))*time.Second,
 		jobs.AdminMatchResultPending)

@@ -67,7 +67,7 @@ var baseTemplate = template.Must(template.New("base").Parse(`<!DOCTYPE html>
 <body>
 <div class="wrap">
   <div class="header">
-    <h1>World Cup Quiniela &mdash; Admin Alert<span class="badge">{{.EventType}}</span></h1>
+    <h1>Kiniela &mdash; Admin Alert<span class="badge">{{.EventType}}</span></h1>
   </div>
   <div class="content">
     <h2>{{.Headline}}</h2>

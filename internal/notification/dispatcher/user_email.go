@@ -39,6 +39,7 @@ type userEmailData struct {
 	Subject          string
 	Headline         string
 	Body             string
+	MatchListHTML    template.HTML // optional HTML block rendered below the body paragraph
 	ActionURL        string
 	ActionLabel      string
 	UnsubscribeURL   string // empty omits the unsubscribe link from the footer
@@ -68,15 +69,16 @@ var userBaseTemplate = template.Must(template.New("user-base").Parse(`<!DOCTYPE 
 <body>
 <div class="wrap">
   <div class="header">
-    <h1>World Cup Quiniela</h1>
+    <h1>Kiniela</h1>
   </div>
   <div class="content">
     <h2>{{.Headline}}</h2>
     <p>{{.Body}}</p>
+    {{if .MatchListHTML}}{{.MatchListHTML}}{{end}}
     {{if .ActionURL}}<a class="cta" href="{{.ActionURL}}">{{.ActionLabel}}</a>{{end}}
   </div>
   <div class="footer">
-    Sent at {{.GeneratedAt}} &bull; You are receiving this because you have an account on World Cup Quiniela.
+    Sent at {{.GeneratedAt}} &bull; You are receiving this because you have an account on Kiniela.
     {{if .UnsubscribeURL}}&bull; <a href="{{.UnsubscribeURL}}">{{.UnsubscribeLabel}}</a>{{end}}
   </div>
 </div>
@@ -132,7 +134,7 @@ func (d *UserDispatcher) deliverEmail(
 		from = d.params.GetString(ctx, domain.ParamKeyNotifyFromAddress, d.fromAddr)
 	}
 	if from == "" {
-		from = "World Cup Quiniela <noreply@quiniela.example.com>"
+		from = "Kiniela <noreply@quiniela.example.com>"
 	}
 	renderTimeout := time.Duration(renderTimeoutMs) * time.Millisecond
 
@@ -226,6 +228,7 @@ func buildUserEmailData(content userContent, name, unsubURL string) userEmailDat
 		Subject:          subject,
 		Headline:         content.title,
 		Body:             fmt.Sprintf("%s %s, %s", hi, greeting, content.body),
+		MatchListHTML:    content.matchListHTML,
 		ActionURL:        content.actionURL,
 		ActionLabel:      localeStr("Open app", "Abrir aplicación", locale),
 		UnsubscribeURL:   unsubURL,
