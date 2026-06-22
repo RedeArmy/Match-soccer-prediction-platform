@@ -1,5 +1,6 @@
 {
-  "name": "KYC Rejected \u2014 User Notify",
+  "id": "78da9fe6-c16b-555e-b67d-2ced54000415",
+  "name": "KYC Rejected — User Notify",
   "nodes": [
     {
       "parameters": {

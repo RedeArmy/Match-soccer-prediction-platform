@@ -1,5 +1,6 @@
 {
-  "name": "KYC Approved \u2014 User Notify",
+  "id": "57ca6d2e-a717-5783-a1e2-5d9b102a8da5",
+  "name": "KYC Approved — User Notify",
   "nodes": [
     {
       "parameters": {
@@ -20,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const p = $input.first().json;\nconst tierLabels = { 1: 'Tier 1 (Phone Verified)', 2: 'Tier 2 (ID + Selfie)', 3: 'Tier 3 (Full KYC)' };\nconst tierName = tierLabels[p.tier] || `Tier ${p.tier}`;\nreturn [{\n  json: {\n    to: p.user_email,\n    subject: `Your identity verification has been approved \u2014 ${tierName}`,\n    body: `Congratulations! Your KYC verification has been approved.\\n\\nVerification level: ${tierName}\\nApproved at: ${p.reviewed_at}\\n\\nYou can now use the platform features unlocked by your verification level.\\nLog in to your account: ${process.env.APP_BASE_URL}`\n  }\n}];"
+        "jsCode": "const p = $input.first().json;\nconst tierLabels = { 1: 'Tier 1 (Phone Verified)', 2: 'Tier 2 (ID + Selfie)', 3: 'Tier 3 (Full KYC)' };\nconst tierName = tierLabels[p.tier] || `Tier ${p.tier}`;\nreturn [{\n  json: {\n    to: p.user_email,\n    subject: `Your identity verification has been approved — ${tierName}`,\n    body: `Congratulations! Your KYC verification has been approved.\\n\\nVerification level: ${tierName}\\nApproved at: ${p.reviewed_at}\\n\\nYou can now use the platform features unlocked by your verification level.\\nLog in to your account: ${process.env.APP_BASE_URL}`\n  }\n}];"
       },
       "id": "kyc-app-format",
       "name": "Format Email",
