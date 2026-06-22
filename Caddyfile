@@ -19,7 +19,7 @@
 {$APP_DOMAIN} {
     encode gzip zstd
 
-    reverse_proxy localhost:3000
+    reverse_proxy 127.0.0.1:3000
 
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
@@ -35,7 +35,7 @@
 {$API_DOMAIN} {
     encode gzip
 
-    reverse_proxy localhost:8080
+    reverse_proxy 127.0.0.1:8080
 
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -46,10 +46,10 @@
 
 # ── Grafana (restrict to VPN/office IP in production if needed) ───────────────
 {$GRAFANA_DOMAIN} {
-    reverse_proxy localhost:3001
+    reverse_proxy 127.0.0.1:3001
 }
 
 # ── n8n automation (restrict access in production if needed) ──────────────────
 {$N8N_DOMAIN} {
-    reverse_proxy localhost:5678
+    reverse_proxy 127.0.0.1:5678
 }

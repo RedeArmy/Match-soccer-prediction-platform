@@ -1,4 +1,5 @@
 {
+  "id": "6cd3b83c-85bc-5fc6-8381-bef86fedea04",
   "name": "Bank Transfer Admin Notify",
   "nodes": [
     {
@@ -20,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const payload = $input.first().json;\nconst amountFormatted = (payload.amount_claimed_cents / 100).toFixed(2);\n\nreturn [{\n  json: {\n    subject: `[ACTION REQUIRED] Bank transfer proof uploaded \u2014 Q${amountFormatted}`,\n    body: `A user has uploaded a bank transfer proof requiring admin review.\\n\\nUser ID: ${payload.user_id}\\nAmount claimed: Q${amountFormatted} GTQ\\nFile key: ${payload.file_url}\\nUploaded at: ${payload.timestamp}\\n\\nLog in to the admin panel to review and approve or reject this transfer.`,\n    user_id: payload.user_id,\n    amount_claimed_cents: payload.amount_claimed_cents,\n    file_url: payload.file_url,\n    timestamp: payload.timestamp\n  }\n}];"
+        "jsCode": "const payload = $input.first().json;\nconst amountFormatted = (payload.amount_claimed_cents / 100).toFixed(2);\n\nreturn [{\n  json: {\n    subject: `[ACTION REQUIRED] Bank transfer proof uploaded — Q${amountFormatted}`,\n    body: `A user has uploaded a bank transfer proof requiring admin review.\\n\\nUser ID: ${payload.user_id}\\nAmount claimed: Q${amountFormatted} GTQ\\nFile key: ${payload.file_url}\\nUploaded at: ${payload.timestamp}\\n\\nLog in to the admin panel to review and approve or reject this transfer.`,\n    user_id: payload.user_id,\n    amount_claimed_cents: payload.amount_claimed_cents,\n    file_url: payload.file_url,\n    timestamp: payload.timestamp\n  }\n}];"
       },
       "id": "format-notification",
       "name": "Format Notification",
