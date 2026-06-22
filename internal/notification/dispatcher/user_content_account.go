@@ -12,7 +12,7 @@ func buildAccountWelcomeContent(entry *notification.OutboxEntry, locale Locale) 
 		return userContent{}, err
 	}
 	return userContent{
-		title: localeStr("Welcome to World Cup Quiniela!", "¡Bienvenido a World Cup Quiniela!", locale),
+		title: localeStr("Welcome to Kiniela!", "¡Bienvenido a Kiniela!", locale),
 		body: localeStr(
 			fmt.Sprintf("Hi %s! Your account is ready. Start predicting now.", p.UserName),
 			fmt.Sprintf("¡Hola %s! Tu cuenta está lista. Empieza a predecir ahora.", p.UserName),

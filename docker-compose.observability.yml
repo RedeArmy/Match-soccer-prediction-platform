@@ -159,6 +159,10 @@ services:
       N8N_SMTP_PASS:           ${N8N_SMTP_PASS}
       N8N_SMTP_SENDER:         ${N8N_SMTP_SENDER}
       N8N_SMTP_SSL:            "false"
+      # Allow workflow expressions to read process env vars via $env.<VAR>.
+      # Required for fromEmail, toEmail, and other nodes that reference
+      # N8N_SMTP_SENDER, ADMIN_EMAIL, etc. at execution time.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       # ── Workflow runtime variables ────────────────────────────────────────
       # Read in workflows as:  $env.ADMIN_EMAIL  /  process.env.ADMIN_EMAIL
       ADMIN_EMAIL:             ${N8N_ADMIN_EMAIL}
