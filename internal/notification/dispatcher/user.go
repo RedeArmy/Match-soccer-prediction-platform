@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -27,9 +28,10 @@ type userContent struct {
 	title         string
 	body          string
 	actionURL     string
-	emailSubject  string // overrides title as email subject when non-empty
-	emailHTMLTmpl string // raw html/template string; non-empty replaces userBaseTemplate
-	locale        Locale // propagated to email renderer for greeting/CTA localisation
+	emailSubject  string        // overrides title as email subject when non-empty
+	emailHTMLTmpl string        // raw html/template string; non-empty replaces userBaseTemplate
+	matchListHTML template.HTML // optional HTML block rendered below the body paragraph
+	locale        Locale        // propagated to email renderer for greeting/CTA localisation
 }
 
 // minUserPayload extracts only the user_id field from any outbox payload.

@@ -72,6 +72,13 @@ type Store interface {
 	// ListStaleWithdrawals returns pending withdrawal requests whose created_at
 	// is strictly before the given cutoff, ordered by created_at ascending.
 	ListStaleWithdrawals(ctx context.Context, before time.Time) ([]*domain.WithdrawalRequest, error)
+
+	// ListUnpredictedUpcomingMatchesByUsers returns, for each user ID in the
+	// provided slice, the complete list of scheduled matches with kickoff_at
+	// strictly after `after` for which the user has submitted no prediction.
+	// Results are sorted by kickoff_at ascending.  Used to build the full match
+	// list inside a reminder email after the trigger match has been identified.
+	ListUnpredictedUpcomingMatchesByUsers(ctx context.Context, userIDs []int, after time.Time) (map[int][]notification.DailyReminderMatch, error)
 }
 
 // DailySummaryRow carries the aggregated stats returned by Store.DailySummary.
@@ -231,6 +238,103 @@ func (j *Jobs) PredictionDeadlineApproaching(ctx context.Context) error {
 					zap.Int("match_id", dm.Match.ID),
 					zap.Int("user_id", uid),
 					zap.Int("bucket_min", bucketMin),
+				)
+			}
+		}
+	}
+	return nil
+}
+
+// PredictionDailyReminder fires 60 minutes before each scheduled match and
+// sends every affected user one email listing ALL their currently unpredicted
+// upcoming matches (finished matches and already-submitted predictions are
+// excluded from the list).  No email is sent when the user has nothing left
+// to predict.
+//
+// Trigger: any match whose kickoff_at falls within [now+55min, now+65min].
+// Content: every scheduled match with kickoff_at > now that the user has not
+//
+//	yet predicted (not only the trigger match).
+//
+// Dedup:   one outbox row per (user, trigger_match) prevents re-emission when
+//
+//	the 5-minute job tick fires multiple times within the same bucket.
+//
+// Intended to run every 5 minutes (bucketToleranceMin = 5).
+func (j *Jobs) PredictionDailyReminder(ctx context.Context) error {
+	const leadMin = 60
+	now := j.clock.Now()
+
+	// Find matches starting in 60 ± 5 minutes.
+	window := time.Duration(leadMin+bucketToleranceMin) * time.Minute
+	upcoming, err := j.store.ListUpcomingMatchesWithDeadline(ctx, window)
+	if err != nil {
+		return fmt.Errorf("scheduler: match reminder: list upcoming: %w", err)
+	}
+
+	// Collect trigger matches and their unique affected user IDs.
+	type trigger struct {
+		matchID    int
+		missingIDs []int
+	}
+	var triggers []trigger
+	seen := make(map[int]bool)
+	var allUserIDs []int
+	for _, dm := range upcoming {
+		if !inBucket(dm.MinutesLeft, leadMin) {
+			continue
+		}
+		triggers = append(triggers, trigger{matchID: dm.Match.ID, missingIDs: dm.MissingUserIDs})
+		for _, uid := range dm.MissingUserIDs {
+			if !seen[uid] {
+				seen[uid] = true
+				allUserIDs = append(allUserIDs, uid)
+			}
+		}
+	}
+	if len(triggers) == 0 {
+		return nil
+	}
+
+	// Fetch every unpredicted upcoming match for those users in one query.
+	byUser, err := j.store.ListUnpredictedUpcomingMatchesByUsers(ctx, allUserIDs, now.UTC())
+	if err != nil {
+		return fmt.Errorf("scheduler: match reminder: list unpredicted: %w", err)
+	}
+
+	dateStr := now.UTC().Format(dateOnlyLayout)
+
+	// Emit one outbox entry per (user, trigger_match).  The dedup key prevents
+	// duplicate rows if the job fires again within the same 5-minute window.
+	for _, t := range triggers {
+		for _, uid := range t.missingIDs {
+			userMatches := byUser[uid]
+			if len(userMatches) == 0 {
+				continue // user has no unpredicted matches left — skip
+			}
+			dedupKey := fmt.Sprintf("prediction.match_reminder:user:%d:match:%d", uid, t.matchID)
+			payload := notification.PredictionDailyReminderPayload{
+				UserID:  uid,
+				Date:    dateStr,
+				Matches: userMatches,
+			}
+			written, err := j.writer.WriteDedup(ctx,
+				dedupKey,
+				notification.EventPredictionDailyReminder,
+				"user",
+				fmt.Sprintf("%d", uid),
+				payload,
+			)
+			if err != nil {
+				j.log.Warn("scheduler: match reminder: write outbox",
+					zap.Int("user_id", uid),
+					zap.Int("trigger_match_id", t.matchID),
+					zap.Error(err),
+				)
+			} else if !written {
+				j.log.Debug("scheduler: match reminder: dedup skipped",
+					zap.Int("user_id", uid),
+					zap.Int("trigger_match_id", t.matchID),
 				)
 			}
 		}

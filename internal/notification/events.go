@@ -24,6 +24,11 @@ const (
 	EventPredictionMissingReminder  EventType = "prediction.missing_reminder"
 	EventPredictionLocked           EventType = "prediction.locked"
 	EventPredictionScored           EventType = "prediction.scored"
+	// EventPredictionDailyReminder is sent once per day at 09:00 in the
+	// scheduler timezone, listing every match the user has not yet predicted
+	// for that day.  Replaces the per-match missing-reminder approach to
+	// avoid sending multiple emails per day.
+	EventPredictionDailyReminder EventType = "prediction.daily_reminder"
 )
 
 // User-facing match events.
@@ -164,6 +169,21 @@ type PredictionDeadlinePayload struct {
 	AwayTeam    string    `json:"away_team"`
 	DeadlineAt  time.Time `json:"deadline_at"`
 	MinutesLeft int       `json:"minutes_left"`
+}
+
+// PredictionDailyReminderPayload is the payload for EventPredictionDailyReminder.
+type PredictionDailyReminderPayload struct {
+	UserID  int                  `json:"user_id"`
+	Date    string               `json:"date"`    // YYYY-MM-DD in scheduler timezone
+	Matches []DailyReminderMatch `json:"matches"` // unpredicted matches for the day
+}
+
+// DailyReminderMatch carries the minimal details about one unpredicted match.
+type DailyReminderMatch struct {
+	MatchID   int       `json:"match_id"`
+	HomeTeam  string    `json:"home_team"`
+	AwayTeam  string    `json:"away_team"`
+	KickoffAt time.Time `json:"kickoff_at"`
 }
 
 // PredictionLockedPayload is the payload for EventPredictionLocked.

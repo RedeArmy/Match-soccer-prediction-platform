@@ -10,6 +10,10 @@ const (
 	urlBalance      = "/api/v1/users/me/balance"
 	urlWithdrawals  = "/api/v1/withdrawals"
 	urlGroupMembers = "/api/v1/groups/%d/members"
+	// urlDashboard is the frontend authenticated home page where users can see
+	// today's matches and submit predictions.  Used instead of bare API paths
+	// so that email CTA buttons land on a page the browser can render.
+	urlDashboard = "/dashboard"
 )
 
 // contentBuilderFunc renders the notification content for a specific event type.
@@ -30,6 +34,7 @@ func init() {
 		notification.EventPredictionMissingReminder:  buildPredictionMissingReminderContent,
 		notification.EventPredictionLocked:           buildPredictionLockedContent,
 		notification.EventPredictionScored:           buildPredictionScoredContent,
+		notification.EventPredictionDailyReminder:    buildPredictionDailyReminderContent,
 		// Matches
 		notification.EventMatchResultEntered: buildMatchResultEnteredContent,
 		notification.EventMatchPostponed:     buildMatchPostponedContent,

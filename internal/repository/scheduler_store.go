@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/internal/notification/scheduler"
 )
 
@@ -229,6 +230,56 @@ func (s *PostgresSchedulerStore) ListStaleWithdrawals(ctx context.Context, befor
 		reqs = append(reqs, r)
 	}
 	return reqs, rows.Err()
+}
+
+// ListUnpredictedUpcomingMatchesByUsers returns, for each user ID in the provided
+// slice, every scheduled match with kickoff_at > after for which no prediction
+// has been submitted.  Results per user are ordered by kickoff_at ascending.
+func (s *PostgresSchedulerStore) ListUnpredictedUpcomingMatchesByUsers(ctx context.Context, userIDs []int, after time.Time) (map[int][]notification.DailyReminderMatch, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]int32, len(userIDs))
+	for i, id := range userIDs {
+		ids[i] = int32(id)
+	}
+
+	rows, err := s.db.Query(ctx, `
+		SELECT DISTINCT m.id, m.home_team, m.away_team, m.kickoff_at, u.id
+		FROM matches m
+		JOIN quinielas q ON TRUE
+		JOIN group_memberships gm ON gm.quiniela_id = q.id AND gm.status = 'active'
+		JOIN users u ON u.id = gm.user_id
+		LEFT JOIN predictions p ON p.match_id = m.id AND p.user_id = u.id
+		WHERE m.status = 'scheduled'
+		  AND m.kickoff_at > $1
+		  AND u.id = ANY($2)
+		  AND p.id IS NULL
+		ORDER BY m.kickoff_at ASC, u.id ASC`,
+		after, ids,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int][]notification.DailyReminderMatch)
+	for rows.Next() {
+		var matchID, userID int
+		var homeTeam, awayTeam string
+		var kickoffAt time.Time
+		if err := rows.Scan(&matchID, &homeTeam, &awayTeam, &kickoffAt, &userID); err != nil {
+			return nil, err
+		}
+		result[userID] = append(result[userID], notification.DailyReminderMatch{
+			MatchID:   matchID,
+			HomeTeam:  homeTeam,
+			AwayTeam:  awayTeam,
+			KickoffAt: kickoffAt,
+		})
+	}
+	return result, rows.Err()
 }
 
 // ListUpcomingMatchesWithDeadline returns matches whose kickoff is within

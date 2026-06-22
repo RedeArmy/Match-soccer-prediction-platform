@@ -57,6 +57,13 @@ func buildEventSamples() map[EventType]json.RawMessage {
 			UserID: 1, MatchID: 5, HomeTeam: "Guatemala", AwayTeam: "Mexico",
 			DeadlineAt: deadline, MinutesLeft: 30,
 		}),
+		EventPredictionDailyReminder: enc(PredictionDailyReminderPayload{
+			UserID: 1, Date: "2026-06-15",
+			Matches: []DailyReminderMatch{
+				{MatchID: 5, HomeTeam: "Guatemala", AwayTeam: "Mexico", KickoffAt: deadline},
+				{MatchID: 6, HomeTeam: "Argentina", AwayTeam: "Brazil", KickoffAt: finished},
+			},
+		}),
 		EventPredictionLocked: enc(PredictionLockedPayload{
 			UserID: 1, MatchID: 5, HomeTeam: "Guatemala", AwayTeam: "Mexico",
 		}),

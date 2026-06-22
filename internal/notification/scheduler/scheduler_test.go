@@ -76,14 +76,16 @@ func (s *stubParams) GetInt(_ context.Context, key string, defaultVal int) int {
 
 // stubStore is a minimal Store for tests.
 type stubStore struct {
-	pendingTransfers   int
-	pendingWithdrawals int
-	oldest             time.Time
-	oldestErr          error
-	finishedMatches    []*domain.Match
-	deadlineMatches    []scheduler.DeadlineMatch
-	staleBankTransfers []*domain.BankTransferProof
-	staleWithdrawals   []*domain.WithdrawalRequest
+	pendingTransfers     int
+	pendingWithdrawals   int
+	oldest               time.Time
+	oldestErr            error
+	finishedMatches      []*domain.Match
+	deadlineMatches      []scheduler.DeadlineMatch
+	staleBankTransfers   []*domain.BankTransferProof
+	staleWithdrawals     []*domain.WithdrawalRequest
+	unpredictedByUser    map[int][]notification.DailyReminderMatch
+	unpredictedByUserErr error
 }
 
 func (s *stubStore) CountPendingTransfers(_ context.Context) (int, error) {
@@ -112,6 +114,9 @@ func (s *stubStore) ListStaleBankTransfers(_ context.Context, _ time.Time) ([]*d
 }
 func (s *stubStore) ListStaleWithdrawals(_ context.Context, _ time.Time) ([]*domain.WithdrawalRequest, error) {
 	return s.staleWithdrawals, nil
+}
+func (s *stubStore) ListUnpredictedUpcomingMatchesByUsers(_ context.Context, _ []int, _ time.Time) (map[int][]notification.DailyReminderMatch, error) {
+	return s.unpredictedByUser, s.unpredictedByUserErr
 }
 
 // ── Scheduler unit tests ──────────────────────────────────────────────────────
@@ -855,6 +860,154 @@ func TestSchedulerRegisterMetrics_StartupGraceEmitsZero(t *testing.T) {
 	val := findSchedulerGauge(t, rm, "never-ran")
 	if val != 0 {
 		t.Errorf("startup grace: wcq_scheduler_job_overdue = %d; want 0", val)
+	}
+}
+
+// ── PredictionDailyReminder tests ────────────────────────────────────────────
+
+func TestJobs_PredictionDailyReminder_NoTriggerMatches_NoEvents(t *testing.T) {
+	t.Parallel()
+
+	// MinutesLeft=30 is not in the 60±5 min bucket — no reminder should fire.
+	m := &domain.Match{ID: 1, HomeTeam: "Mexico", AwayTeam: "USA", KickoffAt: time.Now().Add(30 * time.Minute)}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: m, MissingUserIDs: []int{10}, MinutesLeft: 30},
+		},
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
+
+	if err := jobs.PredictionDailyReminder(context.Background()); err != nil {
+		t.Fatalf("PredictionDailyReminder: %v", err)
+	}
+	if len(writer.events) != 0 {
+		t.Errorf("events: got %d; want 0 (no trigger matches in bucket)", len(writer.events))
+	}
+}
+
+func TestJobs_PredictionDailyReminder_EmitsPerUserTrigger(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 20, 0, 0, 0, time.UTC)
+	triggerMatch := &domain.Match{
+		ID: 5, HomeTeam: "Brazil", AwayTeam: "France",
+		KickoffAt: now.Add(60 * time.Minute),
+	}
+	unpredicted := map[int][]notification.DailyReminderMatch{
+		100: {
+			{MatchID: 5, HomeTeam: "Brazil", AwayTeam: "France", KickoffAt: now.Add(60 * time.Minute)},
+			{MatchID: 6, HomeTeam: "Germany", AwayTeam: "Spain", KickoffAt: now.Add(90 * time.Minute)},
+		},
+		101: {
+			{MatchID: 5, HomeTeam: "Brazil", AwayTeam: "France", KickoffAt: now.Add(60 * time.Minute)},
+		},
+	}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: triggerMatch, MissingUserIDs: []int{100, 101}, MinutesLeft: 60},
+		},
+		unpredictedByUser: unpredicted,
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.PredictionDailyReminder(context.Background()); err != nil {
+		t.Fatalf("PredictionDailyReminder: %v", err)
+	}
+	// One event per (user, trigger_match): 2 users × 1 trigger = 2 events.
+	if len(writer.events) != 2 {
+		t.Errorf("events: got %d; want 2", len(writer.events))
+	}
+	for _, et := range writer.events {
+		if et != notification.EventPredictionDailyReminder {
+			t.Errorf("unexpected event type: %s", et)
+		}
+	}
+}
+
+func TestJobs_PredictionDailyReminder_SkipsUserWithNoUnpredictedMatches(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 20, 0, 0, 0, time.UTC)
+	triggerMatch := &domain.Match{
+		ID: 7, HomeTeam: "Italy", AwayTeam: "Portugal",
+		KickoffAt: now.Add(60 * time.Minute),
+	}
+	// User 200 has unpredicted matches; user 201 has none (all already predicted).
+	unpredicted := map[int][]notification.DailyReminderMatch{
+		200: {
+			{MatchID: 7, HomeTeam: "Italy", AwayTeam: "Portugal", KickoffAt: now.Add(60 * time.Minute)},
+		},
+		// 201 not in map → empty slice → skip
+	}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: triggerMatch, MissingUserIDs: []int{200, 201}, MinutesLeft: 60},
+		},
+		unpredictedByUser: unpredicted,
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.PredictionDailyReminder(context.Background()); err != nil {
+		t.Fatalf("PredictionDailyReminder: %v", err)
+	}
+	// Only user 200 gets an event; user 201 is skipped.
+	if len(writer.events) != 1 {
+		t.Errorf("events: got %d; want 1", len(writer.events))
+	}
+}
+
+func TestJobs_PredictionDailyReminder_DedupPreventsDoubleEmit(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 20, 0, 0, 0, time.UTC)
+	triggerMatch := &domain.Match{
+		ID: 9, HomeTeam: "Japan", AwayTeam: "Morocco",
+		KickoffAt: now.Add(60 * time.Minute),
+	}
+	unpredicted := map[int][]notification.DailyReminderMatch{
+		300: {{MatchID: 9, HomeTeam: "Japan", AwayTeam: "Morocco", KickoffAt: now.Add(60 * time.Minute)}},
+	}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: triggerMatch, MissingUserIDs: []int{300}, MinutesLeft: 60},
+		},
+		unpredictedByUser: unpredicted,
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	// First run: 1 event emitted.
+	if err := jobs.PredictionDailyReminder(context.Background()); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if len(writer.events) != 1 {
+		t.Fatalf("first run: events=%d; want 1", len(writer.events))
+	}
+
+	// Second run: same dedup key → writer returns written=false → no new event.
+	if err := jobs.PredictionDailyReminder(context.Background()); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if len(writer.events) != 1 {
+		t.Errorf("second run: events=%d; want 1 (dedup should prevent re-emit)", len(writer.events))
 	}
 }
 
