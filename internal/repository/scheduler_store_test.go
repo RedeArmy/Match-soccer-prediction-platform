@@ -9,6 +9,17 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
+// seedPrediction inserts a prediction for the given user+match and returns it.
+func seedPrediction(t *testing.T, userID, matchID int) *domain.Prediction {
+	t.Helper()
+	repo := repository.NewPostgresPredictionRepository(testDB)
+	p := &domain.Prediction{UserID: userID, MatchID: matchID, HomeScore: 1, AwayScore: 0}
+	if err := repo.Create(context.Background(), p); err != nil {
+		t.Fatalf("seedPrediction: %v", err)
+	}
+	return p
+}
+
 // ── PostgresSchedulerStore ────────────────────────────────────────────────────
 
 func TestSchedulerStore_CountPendingTransfers_Empty(t *testing.T) {
@@ -375,5 +386,142 @@ func TestSchedulerStore_ListUpcomingMatchesWithDeadline_UserMissingPrediction(t 
 	}
 	if !found {
 		t.Errorf("match %d not found in deadline results", m.ID)
+	}
+}
+
+// ── ListUnpredictedUpcomingMatchesByUsers ─────────────────────────────────────
+
+func TestSchedulerStore_ListUnpredictedUpcomingMatchesByUsers_EmptyInput(t *testing.T) {
+	cleanTables(t)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	result, err := store.ListUnpredictedUpcomingMatchesByUsers(context.Background(), nil, time.Now())
+	if err != nil {
+		t.Fatalf("ListUnpredictedUpcomingMatchesByUsers: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil for empty userIDs; got %v", result)
+	}
+}
+
+func TestSchedulerStore_ListUnpredictedUpcomingMatchesByUsers_ReturnsUnpredictedMatch(t *testing.T) {
+	cleanTables(t)
+
+	u := seedUser(t)
+	m := seedMatch(t) // scheduled, kickoff_at = now+24h
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+
+	// No prediction for this user+match — expect it to appear.
+	store := repository.NewPostgresSchedulerStore(testDB)
+	result, err := store.ListUnpredictedUpcomingMatchesByUsers(context.Background(), []int{u.ID}, time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("ListUnpredictedUpcomingMatchesByUsers: %v", err)
+	}
+
+	matches, ok := result[u.ID]
+	if !ok || len(matches) == 0 {
+		t.Fatalf("expected ≥1 unpredicted match for user %d; got %v", u.ID, result)
+	}
+
+	found := false
+	for _, dm := range matches {
+		if dm.MatchID == m.ID {
+			found = true
+			if dm.HomeTeam == "" || dm.AwayTeam == "" {
+				t.Errorf("match %d: expected non-empty team names", dm.MatchID)
+			}
+			if dm.KickoffAt.IsZero() {
+				t.Errorf("match %d: expected non-zero kickoff", dm.MatchID)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("match %d not returned in unpredicted list for user %d", m.ID, u.ID)
+	}
+}
+
+func TestSchedulerStore_ListUnpredictedUpcomingMatchesByUsers_ExcludesPredictedMatch(t *testing.T) {
+	cleanTables(t)
+
+	u := seedUser(t)
+	m := seedMatch(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	seedPrediction(t, u.ID, m.ID) // user already predicted this match
+
+	store := repository.NewPostgresSchedulerStore(testDB)
+	result, err := store.ListUnpredictedUpcomingMatchesByUsers(context.Background(), []int{u.ID}, time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("ListUnpredictedUpcomingMatchesByUsers: %v", err)
+	}
+
+	if matches, ok := result[u.ID]; ok && len(matches) > 0 {
+		for _, dm := range matches {
+			if dm.MatchID == m.ID {
+				t.Errorf("match %d should be excluded (already predicted)", m.ID)
+			}
+		}
+	}
+}
+
+func TestSchedulerStore_ListUnpredictedUpcomingMatchesByUsers_ExcludesMatchBeforeAfter(t *testing.T) {
+	cleanTables(t)
+
+	u := seedUser(t)
+	m := seedMatch(t) // kickoff_at = now+24h
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+
+	// after = now+48h → match at now+24h is before after, must be excluded
+	store := repository.NewPostgresSchedulerStore(testDB)
+	result, err := store.ListUnpredictedUpcomingMatchesByUsers(context.Background(), []int{u.ID}, time.Now().Add(48*time.Hour))
+	if err != nil {
+		t.Fatalf("ListUnpredictedUpcomingMatchesByUsers: %v", err)
+	}
+
+	if matches, ok := result[u.ID]; ok {
+		for _, dm := range matches {
+			if dm.MatchID == m.ID {
+				t.Errorf("match %d (kickoff +24h) should be excluded when after=+48h", m.ID)
+			}
+		}
+	}
+}
+
+func TestSchedulerStore_ListUnpredictedUpcomingMatchesByUsers_MultipleUsers(t *testing.T) {
+	cleanTables(t)
+
+	u1 := seedUser(t)
+	u2 := seedUser(t)
+	m := seedMatch(t)
+	q := seedQuiniela(t, u1.ID)
+	seedMembership(t, q.ID, u1.ID, domain.MembershipActive, true)
+	seedMembership(t, q.ID, u2.ID, domain.MembershipActive, true)
+	// u1 predicted; u2 did not
+	seedPrediction(t, u1.ID, m.ID)
+
+	store := repository.NewPostgresSchedulerStore(testDB)
+	result, err := store.ListUnpredictedUpcomingMatchesByUsers(context.Background(), []int{u1.ID, u2.ID}, time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("ListUnpredictedUpcomingMatchesByUsers: %v", err)
+	}
+
+	// u1 should have no unpredicted matches (already predicted)
+	for _, dm := range result[u1.ID] {
+		if dm.MatchID == m.ID {
+			t.Errorf("user %d already predicted match %d — should not appear", u1.ID, m.ID)
+		}
+	}
+
+	// u2 should see the unpredicted match
+	found := false
+	for _, dm := range result[u2.ID] {
+		if dm.MatchID == m.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("match %d should appear for user %d (no prediction)", m.ID, u2.ID)
 	}
 }
