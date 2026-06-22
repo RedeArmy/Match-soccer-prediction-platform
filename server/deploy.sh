@@ -118,6 +118,12 @@ if [[ -f "${WCQ_DIR}/docker-compose.observability.yml" ]]; then
 
   echo "==> reconciling observability stack..."
   $OBS_COMPOSE up -d
+
+  # Force-recreate n8n so the startup import script re-runs and picks up any
+  # workflow JSON changes committed alongside this deploy.  The import is
+  # idempotent (updates by stable ID), so this is always safe.
+  echo "==> restarting n8n to sync workflow JSONs..."
+  $OBS_COMPOSE up -d --no-deps --force-recreate n8n
 fi
 
 # ── 6. Prune old images (keep last 2 per repo via `latest` + previous SHA) ───
