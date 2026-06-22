@@ -39,6 +39,4 @@ metrics_generator:
         send_exemplars: true
   processor:
     service_graphs:
-      enabled: true
     span_metrics:
-      enabled: true
