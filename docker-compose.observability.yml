@@ -100,7 +100,7 @@ services:
       - wcq-net
 
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:2.26.8
     restart: unless-stopped
     # Override entrypoint + command to import workflow JSON files before
     # starting n8n. The `--active` flag marks imported workflows as active so
@@ -122,16 +122,22 @@ services:
           printf '  %s\n' "$$f"
           tmp=$$(mktemp)
           printf '[' > "$$tmp" && cat "$$f" >> "$$tmp" && printf ']' >> "$$tmp"
-          n8n import:workflow --input="$$tmp" 2>&1 | tail -n1 || true
+          n8n import:workflow --input="$$tmp" --userId="$${N8N_OWNER_USER_ID}" 2>&1 | tail -n1 || true
           rm -f "$$tmp"
         done
-        echo '==> activating workflows...'
-        n8n update:workflow --all --active=true 2>&1 | tail -n1 || true
+        echo '==> publishing (activating) workflows...'
+        for f in /opt/n8n-workflows/*.json; do
+          wf_id=$$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).id" "$$f" 2>/dev/null || true)
+          [ -n "$$wf_id" ] && n8n publish:workflow --id="$$wf_id" 2>&1 | tail -n1 || true
+        done
         echo '==> starting n8n...'
         exec n8n start
     environment:
       # ── Core ──────────────────────────────────────────────────────────────
       DB_TYPE:                 sqlite
+      # Owner user ID assigned to imported workflows (n8n 2.x SharedWorkflow).
+      # Obtain after first-run wizard: curl -H "X-N8N-API-KEY: <key>" https://<n8n-domain>/api/v1/users
+      N8N_OWNER_USER_ID:       ${N8N_OWNER_USER_ID}
       N8N_BASIC_AUTH_ACTIVE:   "true"
       N8N_BASIC_AUTH_USER:     ${N8N_BASIC_AUTH_USER:-admin}
       N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASS:-changeme}
@@ -142,7 +148,6 @@ services:
       # WEBHOOK_URL is the public-facing base URL n8n uses when generating
       # webhook URLs in the UI. In production set to the public HTTPS domain.
       WEBHOOK_URL:             ${N8N_WEBHOOK_URL:-http://localhost:5678/}
-      EXECUTIONS_PROCESS:      main
       N8N_LOG_LEVEL:           info
       # ── SMTP (used by emailSend nodes in all notification workflows) ──────
       # n8n self-hosted exposes process.env.* to Code nodes and $env.* to
