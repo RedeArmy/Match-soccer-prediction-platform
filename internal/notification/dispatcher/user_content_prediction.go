@@ -237,10 +237,10 @@ func buildPredictionDailyReminderContent(entry *notification.OutboxEntry, locale
 			home := html.EscapeString(translateTeamName(m.HomeTeam, locale))
 			away := html.EscapeString(translateTeamName(m.AwayTeam, locale))
 			kickoff := m.KickoffAt.UTC().Format("15:04")
-			sb.WriteString(fmt.Sprintf("<li><strong>%s vs %s</strong> &mdash; %s UTC</li>", home, away, kickoff))
+			fmt.Fprintf(&sb, "<li><strong>%s vs %s</strong> &mdash; %s UTC</li>", home, away, kickoff)
 		}
 		sb.WriteString("</ul>")
-		matchListHTML = template.HTML(sb.String())
+		matchListHTML = template.HTML(sb.String()) //nolint:gosec // G203: all dynamic values are sanitised with html.EscapeString before insertion
 	}
 
 	return userContent{

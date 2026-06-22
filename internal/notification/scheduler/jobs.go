@@ -265,26 +265,47 @@ func (j *Jobs) PredictionDailyReminder(ctx context.Context) error {
 	const leadMin = 60
 	now := j.clock.Now()
 
-	// Find matches starting in 60 ± 5 minutes.
 	window := time.Duration(leadMin+bucketToleranceMin) * time.Minute
 	upcoming, err := j.store.ListUpcomingMatchesWithDeadline(ctx, window)
 	if err != nil {
 		return fmt.Errorf("scheduler: match reminder: list upcoming: %w", err)
 	}
 
-	// Collect trigger matches and their unique affected user IDs.
-	type trigger struct {
-		matchID    int
-		missingIDs []int
+	triggers, allUserIDs := collectReminderTriggers(upcoming, leadMin)
+	if len(triggers) == 0 {
+		return nil
 	}
-	var triggers []trigger
+
+	byUser, err := j.store.ListUnpredictedUpcomingMatchesByUsers(ctx, allUserIDs, now.UTC())
+	if err != nil {
+		return fmt.Errorf("scheduler: match reminder: list unpredicted: %w", err)
+	}
+
+	dateStr := now.UTC().Format(dateOnlyLayout)
+	for _, t := range triggers {
+		for _, uid := range t.missingIDs {
+			j.emitMatchReminder(ctx, uid, t.matchID, byUser[uid], dateStr)
+		}
+	}
+	return nil
+}
+
+// reminderTrigger pairs a trigger match ID with the users who still need to
+// submit a prediction for it.
+type reminderTrigger struct {
+	matchID    int
+	missingIDs []int
+}
+
+// collectReminderTriggers filters deadline matches to those in the leadMin
+// bucket and returns the trigger list alongside a deduplicated user-ID slice.
+func collectReminderTriggers(matches []DeadlineMatch, leadMin int) (triggers []reminderTrigger, allUserIDs []int) {
 	seen := make(map[int]bool)
-	var allUserIDs []int
-	for _, dm := range upcoming {
+	for _, dm := range matches {
 		if !inBucket(dm.MinutesLeft, leadMin) {
 			continue
 		}
-		triggers = append(triggers, trigger{matchID: dm.Match.ID, missingIDs: dm.MissingUserIDs})
+		triggers = append(triggers, reminderTrigger{matchID: dm.Match.ID, missingIDs: dm.MissingUserIDs})
 		for _, uid := range dm.MissingUserIDs {
 			if !seen[uid] {
 				seen[uid] = true
@@ -292,54 +313,40 @@ func (j *Jobs) PredictionDailyReminder(ctx context.Context) error {
 			}
 		}
 	}
-	if len(triggers) == 0 {
-		return nil
-	}
+	return
+}
 
-	// Fetch every unpredicted upcoming match for those users in one query.
-	byUser, err := j.store.ListUnpredictedUpcomingMatchesByUsers(ctx, allUserIDs, now.UTC())
+// emitMatchReminder writes a single dedup-guarded outbox entry for the given
+// (user, trigger match) pair.  It is a no-op when userMatches is empty.
+func (j *Jobs) emitMatchReminder(ctx context.Context, uid, matchID int, userMatches []notification.DailyReminderMatch, dateStr string) {
+	if len(userMatches) == 0 {
+		return
+	}
+	dedupKey := fmt.Sprintf("prediction.match_reminder:user:%d:match:%d", uid, matchID)
+	payload := notification.PredictionDailyReminderPayload{
+		UserID:  uid,
+		Date:    dateStr,
+		Matches: userMatches,
+	}
+	written, err := j.writer.WriteDedup(ctx,
+		dedupKey,
+		notification.EventPredictionDailyReminder,
+		"user",
+		fmt.Sprintf("%d", uid),
+		payload,
+	)
 	if err != nil {
-		return fmt.Errorf("scheduler: match reminder: list unpredicted: %w", err)
+		j.log.Warn("scheduler: match reminder: write outbox",
+			zap.Int("user_id", uid),
+			zap.Int("trigger_match_id", matchID),
+			zap.Error(err),
+		)
+	} else if !written {
+		j.log.Debug("scheduler: match reminder: dedup skipped",
+			zap.Int("user_id", uid),
+			zap.Int("trigger_match_id", matchID),
+		)
 	}
-
-	dateStr := now.UTC().Format(dateOnlyLayout)
-
-	// Emit one outbox entry per (user, trigger_match).  The dedup key prevents
-	// duplicate rows if the job fires again within the same 5-minute window.
-	for _, t := range triggers {
-		for _, uid := range t.missingIDs {
-			userMatches := byUser[uid]
-			if len(userMatches) == 0 {
-				continue // user has no unpredicted matches left — skip
-			}
-			dedupKey := fmt.Sprintf("prediction.match_reminder:user:%d:match:%d", uid, t.matchID)
-			payload := notification.PredictionDailyReminderPayload{
-				UserID:  uid,
-				Date:    dateStr,
-				Matches: userMatches,
-			}
-			written, err := j.writer.WriteDedup(ctx,
-				dedupKey,
-				notification.EventPredictionDailyReminder,
-				"user",
-				fmt.Sprintf("%d", uid),
-				payload,
-			)
-			if err != nil {
-				j.log.Warn("scheduler: match reminder: write outbox",
-					zap.Int("user_id", uid),
-					zap.Int("trigger_match_id", t.matchID),
-					zap.Error(err),
-				)
-			} else if !written {
-				j.log.Debug("scheduler: match reminder: dedup skipped",
-					zap.Int("user_id", uid),
-					zap.Int("trigger_match_id", t.matchID),
-				)
-			}
-		}
-	}
-	return nil
 }
 
 // AdminPendingReminder counts pending bank transfers and withdrawals and emits
