@@ -100,7 +100,7 @@ services:
       - wcq-net
 
   n8n:
-    image: n8nio/n8n:1.49.0
+    image: n8nio/n8n:latest
     restart: unless-stopped
     # Override entrypoint + command to import workflow JSON files before
     # starting n8n. The `--active` flag marks imported workflows as active so
