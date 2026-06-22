@@ -63,7 +63,8 @@
         "toEmail": "={{$env.COMPLIANCE_EMAIL}}",
         "subject": "=[KYC] Re-verification reminder: {{$json.id}} (User {{$json.user_id}})",
         "emailType": "text",
-        "message": "=KYC profile {{$json.id}} for User {{$json.user_id}} is due for re-verification before {{$json.next_review_at}}.\n\nCurrent status: {{$json.status}}\nCurrent tier: {{$json.tier}}\n\nAdmin panel: {{$env.ADMIN_BASE_URL}}/admin/kyc/profiles/{{$json.id}}"
+        "message": "=KYC profile {{$json.id}} for User {{$json.user_id}} is due for re-verification before {{$json.next_review_at}}.\n\nCurrent status: {{$json.status}}\nCurrent tier: {{$json.tier}}\n\nAdmin panel: {{$env.ADMIN_BASE_URL}}/admin/kyc/profiles/{{$json.id}}",
+        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}"
       },
       "id": "kyc-rem-email",
       "name": "Send Reminder",
