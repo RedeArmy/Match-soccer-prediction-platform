@@ -33,8 +33,8 @@ func (l *stubLeader) TryAcquire(_ context.Context) bool { return l.leader }
 // WriteDedup tracks seen dedup keys so a second call with the same key returns
 // written=false, mirroring the production DB behaviour.
 type stubWriter struct {
-	events       []notification.EventType
-	seenDedup    map[string]bool
+	events        []notification.EventType
+	seenDedup     map[string]bool
 	writeDedupErr error
 }
 
