@@ -737,5 +737,83 @@ func TestSchedulerStore_ListDailySummaryTargets_UnpaidMember_Excluded(t *testing
 	}
 }
 
+func TestSchedulerStore_ListDailySummaryTargets_UserWithoutPrediction_Excluded(t *testing.T) {
+	cleanTables(t)
+	today := time.Now().UTC()
+	m := seedMatchOnDate(t, today)
+
+	mrepo := repository.NewPostgresMatchRepository(testDB)
+	home, away := 2, 1
+	m.Status = domain.MatchStatusFinished
+	m.HomeScore = &home
+	m.AwayScore = &away
+	if err := mrepo.Update(context.Background(), m); err != nil {
+		t.Fatalf("set match result: %v", err)
+	}
+	_, err := testDB.Exec(context.Background(),
+		`UPDATE matches SET updated_at = NOW() - INTERVAL '2 hours' WHERE id = $1`, m.ID)
+	if err != nil {
+		t.Fatalf("back-date match: %v", err)
+	}
+
+	// Active paid member with NO predictions for the day.
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+
+	store := repository.NewPostgresSchedulerStore(testDB)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected no payloads for user with no predictions; got %d", len(result))
+	}
+}
+
+func TestSchedulerStore_ListDailySummaryTargets_OnlyUsersWithPredictionsIncluded(t *testing.T) {
+	cleanTables(t)
+	today := time.Now().UTC()
+	m := seedMatchOnDate(t, today)
+
+	mrepo := repository.NewPostgresMatchRepository(testDB)
+	home, away := 1, 1
+	m.Status = domain.MatchStatusFinished
+	m.HomeScore = &home
+	m.AwayScore = &away
+	if err := mrepo.Update(context.Background(), m); err != nil {
+		t.Fatalf("set match result: %v", err)
+	}
+	_, err := testDB.Exec(context.Background(),
+		`UPDATE matches SET updated_at = NOW() - INTERVAL '2 hours' WHERE id = $1`, m.ID)
+	if err != nil {
+		t.Fatalf("back-date match: %v", err)
+	}
+
+	// uWith: paid active member who submitted a prediction.
+	uWith := seedUser(t)
+	qWith := seedQuiniela(t, uWith.ID)
+	seedMembership(t, qWith.ID, uWith.ID, domain.MembershipActive, true)
+	seedPrediction(t, uWith.ID, m.ID)
+
+	// uWithout: paid active member with no prediction for the same match.
+	uWithout := seedUser(t)
+	qWithout := seedQuiniela(t, uWithout.ID)
+	seedMembership(t, qWithout.ID, uWithout.ID, domain.MembershipActive, true)
+	_ = uWithout // not used further; included to confirm exclusion by absence
+
+	store := repository.NewPostgresSchedulerStore(testDB)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected exactly 1 payload (user with prediction); got %d", len(result))
+	}
+	if result[0].UserID != uWith.ID {
+		t.Errorf("payload user_id: got %d; want %d", result[0].UserID, uWith.ID)
+	}
+}
+
 // Ensure the notification package import compiles (type assertion).
 var _ []notification.DailySummaryPayload
