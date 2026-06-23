@@ -42,7 +42,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const payload = $input.first().json;\nreturn [{\n  json: {\n    subject: `[ALERT] Circuit breaker OPEN: ${payload.backend}`,\n    body: `The ${payload.backend} circuit breaker has opened.\\nState: ${payload.state}\\nOpened at: ${payload.last_trip_at}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nStorage operations via ${payload.backend} are degraded until the circuit recovers.`,\n    backend: payload.backend,\n    state: payload.state,\n    last_trip_at: payload.last_trip_at,\n    trace_id: payload.trace_id\n  }\n}];"
+        "jsCode": "const payload = ($input.first().json.body ?? $input.first().json);\nreturn [{\n  json: {\n    subject: `[ALERT] Circuit breaker OPEN: ${payload.backend}`,\n    emailBody: `The ${payload.backend} circuit breaker has opened.\\nState: ${payload.state}\\nOpened at: ${payload.last_trip_at}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nStorage operations via ${payload.backend} are degraded until the circuit recovers.`,\n    backend: payload.backend,\n    state: payload.state,\n    last_trip_at: payload.last_trip_at,\n    trace_id: payload.trace_id\n  }\n}];"
       },
       "id": "format-alert",
       "name": "Format Alert",
@@ -58,8 +58,8 @@
         "toEmail": "={{$env.ADMIN_EMAIL}}",
         "subject": "={{$json.subject}}",
         "emailType": "text",
-        "message": "={{$json.body}}",
-        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}"
+        "fromEmail": "alerts@mail.kiniela.uk",
+        "text": "={{$json.emailBody}}"
       },
       "id": "send-email",
       "name": "Send Email Alert",
@@ -68,7 +68,13 @@
       "position": [
         850,
         200
-      ]
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "TiFq2ldHfdDdhEvf",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
   "connections": {
