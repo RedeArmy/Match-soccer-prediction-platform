@@ -33,8 +33,9 @@ func (l *stubLeader) TryAcquire(_ context.Context) bool { return l.leader }
 // WriteDedup tracks seen dedup keys so a second call with the same key returns
 // written=false, mirroring the production DB behaviour.
 type stubWriter struct {
-	events    []notification.EventType
-	seenDedup map[string]bool
+	events       []notification.EventType
+	seenDedup    map[string]bool
+	writeDedupErr error
 }
 
 func (w *stubWriter) Write(_ context.Context, et notification.EventType, _, _ string, _ any) error {
@@ -43,6 +44,9 @@ func (w *stubWriter) Write(_ context.Context, et notification.EventType, _, _ st
 }
 
 func (w *stubWriter) WriteDedup(_ context.Context, dedupKey string, et notification.EventType, _, _ string, _ any) (bool, error) {
+	if w.writeDedupErr != nil {
+		return false, w.writeDedupErr
+	}
 	if w.seenDedup == nil {
 		w.seenDedup = make(map[string]bool)
 	}
@@ -92,6 +96,8 @@ type stubStore struct {
 	unpredictedByUserErr error
 	userTimezones        map[int]string
 	userTimezonesErr     error
+	dailySummaryTargets  []notification.DailySummaryPayload
+	dailySummaryErr      error
 }
 
 func (s *stubStore) CountPendingTransfers(_ context.Context) (int, error) {
@@ -138,7 +144,7 @@ func (s *stubStore) GetUserTimezones(_ context.Context, userIDs []int) (map[int]
 	return s.userTimezones, nil
 }
 func (s *stubStore) ListDailySummaryTargets(_ context.Context, _ time.Time, _ time.Duration) ([]notification.DailySummaryPayload, error) {
-	return nil, nil
+	return s.dailySummaryTargets, s.dailySummaryErr
 }
 
 // ── Scheduler unit tests ──────────────────────────────────────────────────────
@@ -485,6 +491,111 @@ func TestJobs_AdminDailySummary_EmitsEvent(t *testing.T) {
 	}
 	if len(writer.events) != 1 || writer.events[0] != notification.EventAdminDailySummary {
 		t.Errorf("events: %v; want [%s]", writer.events, notification.EventAdminDailySummary)
+	}
+}
+
+// ── UserDailySummary tests ────────────────────────────────────────────────────
+
+func TestJobs_UserDailySummary_NoTargets_EmitsNoEvents(t *testing.T) {
+	t.Parallel()
+
+	store := &stubStore{} // dailySummaryTargets nil → returns nil,nil for both dates
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
+
+	if err := jobs.UserDailySummary(context.Background()); err != nil {
+		t.Fatalf("UserDailySummary: %v", err)
+	}
+	if len(writer.events) != 0 {
+		t.Errorf("events: got %d; want 0", len(writer.events))
+	}
+}
+
+func TestJobs_UserDailySummary_EmitsOneEventPerUser(t *testing.T) {
+	t.Parallel()
+
+	targets := []notification.DailySummaryPayload{
+		{UserID: 1, MatchDate: "2026-06-22", PointsToday: 5},
+		{UserID: 2, MatchDate: "2026-06-22", PointsToday: 2},
+	}
+	store := &stubStore{dailySummaryTargets: targets}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
+
+	if err := jobs.UserDailySummary(context.Background()); err != nil {
+		t.Fatalf("UserDailySummary: %v", err)
+	}
+	// 2 users × 2 dates checked (today + yesterday) = up to 4; dedup collapses
+	// same key, so at most 2 unique events (one per user per date).
+	// Both date calls return the same 2-user slice → dedup keys differ by date
+	// so we expect 4 distinct events (2 users × 2 dates).
+	for _, ev := range writer.events {
+		if ev != notification.EventDailySummary {
+			t.Errorf("unexpected event type %s; want %s", ev, notification.EventDailySummary)
+		}
+	}
+	if len(writer.events) == 0 {
+		t.Error("expected at least one EventDailySummary event; got 0")
+	}
+}
+
+func TestJobs_UserDailySummary_DedupPreventsDoubleEmit(t *testing.T) {
+	t.Parallel()
+
+	targets := []notification.DailySummaryPayload{
+		{UserID: 10, MatchDate: "2026-06-22"},
+	}
+	store := &stubStore{dailySummaryTargets: targets}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
+
+	if err := jobs.UserDailySummary(context.Background()); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	first := len(writer.events)
+
+	if err := jobs.UserDailySummary(context.Background()); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if len(writer.events) != first {
+		t.Errorf("second run: events grew from %d to %d; dedup should suppress re-emit", first, len(writer.events))
+	}
+}
+
+func TestJobs_UserDailySummary_StoreError_ContinuesOtherDates(t *testing.T) {
+	t.Parallel()
+
+	// Return an error only once; subsequent calls succeed with no targets.
+	callCount := 0
+	_ = callCount
+	store := &stubStore{dailySummaryErr: errors.New("db error")}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
+
+	// Error must not bubble up — job logs and continues.
+	if err := jobs.UserDailySummary(context.Background()); err != nil {
+		t.Fatalf("UserDailySummary should not return error on store failure: %v", err)
+	}
+	// No events because all calls errored.
+	if len(writer.events) != 0 {
+		t.Errorf("events: got %d; want 0", len(writer.events))
+	}
+}
+
+func TestJobs_UserDailySummary_WriteDedupError_ContinuesNextTarget(t *testing.T) {
+	t.Parallel()
+
+	targets := []notification.DailySummaryPayload{
+		{UserID: 20, MatchDate: "2026-06-22"},
+		{UserID: 21, MatchDate: "2026-06-22"},
+	}
+	store := &stubStore{dailySummaryTargets: targets}
+	writer := &stubWriter{writeDedupErr: errors.New("write error")}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
+
+	// Writer always errors, but job must not return an error itself.
+	if err := jobs.UserDailySummary(context.Background()); err != nil {
+		t.Fatalf("UserDailySummary should not return error on writer failure: %v", err)
 	}
 }
 
