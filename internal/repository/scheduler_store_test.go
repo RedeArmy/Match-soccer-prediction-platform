@@ -525,3 +525,50 @@ func TestSchedulerStore_ListUnpredictedUpcomingMatchesByUsers_MultipleUsers(t *t
 		t.Errorf("match %d should appear for user %d (no prediction)", m.ID, u2.ID)
 	}
 }
+
+// ── GetUserTimezones ──────────────────────────────────────────────────────────
+
+func TestSchedulerStore_GetUserTimezones_EmptyInput_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	result, err := store.GetUserTimezones(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result for empty input; got %v", result)
+	}
+}
+
+func TestSchedulerStore_GetUserTimezones_ReturnsStoredTimezone(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+	if err := repo.UpdateTimezone(context.Background(), u.ID, "America/New_York"); err != nil {
+		t.Fatalf("seed timezone: %v", err)
+	}
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	result, err := store.GetUserTimezones(context.Background(), []int{u.ID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tz := result[u.ID]; tz != "America/New_York" {
+		t.Errorf("timezone for user %d: got %q; want \"America/New_York\"", u.ID, tz)
+	}
+}
+
+func TestSchedulerStore_GetUserTimezones_OmitsUnknownUser(t *testing.T) {
+	cleanTables(t)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	const unknownID = 999999
+	result, err := store.GetUserTimezones(context.Background(), []int{unknownID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := result[unknownID]; ok {
+		t.Errorf("unknown user %d should not appear in result", unknownID)
+	}
+}

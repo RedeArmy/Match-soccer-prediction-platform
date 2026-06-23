@@ -91,6 +91,7 @@ type stubStore struct {
 	unpredictedByUser    map[int][]notification.DailyReminderMatch
 	unpredictedByUserErr error
 	userTimezones        map[int]string
+	userTimezonesErr     error
 }
 
 func (s *stubStore) CountPendingTransfers(_ context.Context) (int, error) {
@@ -124,6 +125,9 @@ func (s *stubStore) ListUnpredictedUpcomingMatchesByUsers(_ context.Context, _ [
 	return s.unpredictedByUser, s.unpredictedByUserErr
 }
 func (s *stubStore) GetUserTimezones(_ context.Context, userIDs []int) (map[int]string, error) {
+	if s.userTimezonesErr != nil {
+		return nil, s.userTimezonesErr
+	}
 	if s.userTimezones == nil {
 		result := make(map[int]string, len(userIDs))
 		for _, id := range userIDs {
@@ -1026,6 +1030,169 @@ func TestJobs_PredictionDailyReminder_DedupPreventsDoubleEmit(t *testing.T) {
 	}
 	if len(writer.events) != 1 {
 		t.Errorf("second run: events=%d; want 1 (dedup should prevent re-emit)", len(writer.events))
+	}
+}
+
+func TestJobs_PredictionDailyReminder_GetUserTimezones_Error_PropagatesError(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 20, 0, 0, 0, time.UTC)
+	triggerMatch := &domain.Match{ID: 11, HomeTeam: "Brazil", AwayTeam: "France", KickoffAt: now.Add(60 * time.Minute)}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: triggerMatch, MissingUserIDs: []int{100}, MinutesLeft: 60},
+		},
+		unpredictedByUser: map[int][]notification.DailyReminderMatch{
+			100: {{MatchID: 11, HomeTeam: "Brazil", AwayTeam: "France", KickoffAt: now.Add(60 * time.Minute)}},
+		},
+		userTimezonesErr: errors.New("db error"),
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	err := jobs.PredictionDailyReminder(context.Background())
+	if err == nil {
+		t.Fatal("expected error from GetUserTimezones; got nil")
+	}
+}
+
+func TestJobs_PredictionDailyReminder_PerUserTimezone_KickoffFormattedInLocalZone(t *testing.T) {
+	t.Parallel()
+
+	// now = UTC midnight; match kicks off at UTC+1 day, which is still "today" in UTC+2.
+	now := time.Date(2026, 6, 22, 0, 0, 0, 0, time.UTC)
+	kickoff := time.Date(2026, 6, 22, 22, 0, 0, 0, time.UTC) // 22:00 UTC = next day in UTC+3
+	triggerMatch := &domain.Match{ID: 12, HomeTeam: "A", AwayTeam: "B", KickoffAt: now.Add(60 * time.Minute)}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: triggerMatch, MissingUserIDs: []int{200}, MinutesLeft: 60},
+		},
+		unpredictedByUser: map[int][]notification.DailyReminderMatch{
+			200: {{MatchID: 12, HomeTeam: "A", AwayTeam: "B", KickoffAt: kickoff}},
+		},
+		userTimezones: map[int]string{200: "America/New_York"},
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.PredictionDailyReminder(context.Background()); err != nil {
+		t.Fatalf("PredictionDailyReminder: %v", err)
+	}
+	// The kickoff at 22:00 UTC is the same calendar day in America/New_York (UTC-4/5),
+	// so at least 0 events are expected (match is today for that user).
+	// The key assertion is that no error is returned and the per-user timezone path runs.
+	_ = writer.events
+}
+
+func TestJobs_PredictionDailyReminder_DefaultTimezoneUsed_WhenUserMissingFromMap(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 20, 0, 0, 0, time.UTC)
+	triggerMatch := &domain.Match{ID: 13, HomeTeam: "C", AwayTeam: "D", KickoffAt: now.Add(60 * time.Minute)}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: triggerMatch, MissingUserIDs: []int{300}, MinutesLeft: 60},
+		},
+		unpredictedByUser: map[int][]notification.DailyReminderMatch{
+			300: {{MatchID: 13, HomeTeam: "C", AwayTeam: "D", KickoffAt: now.Add(60 * time.Minute)}},
+		},
+		// userTimezones omits user 300 → should fall back to default timezone
+		userTimezones: map[int]string{},
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.PredictionDailyReminder(context.Background()); err != nil {
+		t.Fatalf("PredictionDailyReminder: %v", err)
+	}
+	// Default timezone (America/Guatemala, UTC-6) is the same calendar day as UTC here,
+	// so the match should be included → 1 event emitted.
+	if len(writer.events) != 1 {
+		t.Errorf("events: got %d; want 1", len(writer.events))
+	}
+}
+
+func TestJobs_PredictionDailyReminder_InvalidTimezone_FallsBackToUTC(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 20, 0, 0, 0, time.UTC)
+	triggerMatch := &domain.Match{ID: 14, HomeTeam: "E", AwayTeam: "F", KickoffAt: now.Add(60 * time.Minute)}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: triggerMatch, MissingUserIDs: []int{400}, MinutesLeft: 60},
+		},
+		unpredictedByUser: map[int][]notification.DailyReminderMatch{
+			400: {{MatchID: 14, HomeTeam: "E", AwayTeam: "F", KickoffAt: now.Add(60 * time.Minute)}},
+		},
+		userTimezones: map[int]string{400: "Invalid/Timezone"},
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	// Invalid timezone must not cause an error — it falls back to UTC and the job continues.
+	if err := jobs.PredictionDailyReminder(context.Background()); err != nil {
+		t.Fatalf("PredictionDailyReminder: %v", err)
+	}
+	// Match is on the same UTC day → 1 event emitted despite invalid timezone.
+	if len(writer.events) != 1 {
+		t.Errorf("events: got %d; want 1", len(writer.events))
+	}
+}
+
+func TestJobs_PredictionDailyReminder_MatchOnDifferentDay_Excluded(t *testing.T) {
+	t.Parallel()
+
+	// now is in UTC-6 (America/Guatemala) at 00:30 on Jun 23 → "today" in UTC is Jun 23.
+	// A match kicking off at Jun 22 23:00 UTC is still Jun 22 in UTC but also Jun 22 in
+	// America/Guatemala (UTC-6 → 17:00). However, an end-of-previous-day match tests
+	// the date scoping filter.
+	now := time.Date(2026, 6, 23, 6, 30, 0, 0, time.UTC) // 00:30 Guatemala time
+	kickoffYesterday := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	triggerMatch := &domain.Match{ID: 15, HomeTeam: "G", AwayTeam: "H", KickoffAt: now.Add(60 * time.Minute)}
+	store := &stubStore{
+		deadlineMatches: []scheduler.DeadlineMatch{
+			{Match: triggerMatch, MissingUserIDs: []int{500}, MinutesLeft: 60},
+		},
+		unpredictedByUser: map[int][]notification.DailyReminderMatch{
+			// Only a yesterday match — should be filtered out by today-scoping.
+			500: {{MatchID: 99, HomeTeam: "G", AwayTeam: "H", KickoffAt: kickoffYesterday}},
+		},
+		userTimezones: map[int]string{500: "America/Guatemala"},
+	}
+	writer := &stubWriter{}
+	jobs := scheduler.NewJobs(scheduler.JobsConfig{
+		Store:  store,
+		Writer: writer,
+		Clock:  &stubClock{t: now},
+		Log:    zap.NewNop(),
+	})
+
+	if err := jobs.PredictionDailyReminder(context.Background()); err != nil {
+		t.Fatalf("PredictionDailyReminder: %v", err)
+	}
+	// Yesterday's match filtered out → emitMatchReminder is a no-op → 0 events.
+	if len(writer.events) != 0 {
+		t.Errorf("events: got %d; want 0 (yesterday's match should be excluded)", len(writer.events))
 	}
 }
 

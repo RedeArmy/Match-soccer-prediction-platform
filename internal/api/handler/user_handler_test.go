@@ -233,3 +233,67 @@ func TestUserHandler_UpdateMe_500_RepoError(t *testing.T) {
 		t.Errorf(fmtExpect500, rr.Code)
 	}
 }
+
+// ── PATCH /users/me – timezone ────────────────────────────────────────────────
+
+func TestUserHandler_UpdateMe_204_ValidTimezone(t *testing.T) {
+	t.Parallel()
+
+	u := sampleUser()
+	h := handler.NewUserHandler(&stubUserRepo{user: u}, zaptest.NewLogger(t))
+	router := testUserRouter(h, u)
+
+	body := strings.NewReader(`{"timezone":"America/Guatemala"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Errorf(fmtExpect204, rr.Code)
+	}
+}
+
+func TestUserHandler_UpdateMe_422_InvalidTimezone(t *testing.T) {
+	t.Parallel()
+
+	u := sampleUser()
+	h := handler.NewUserHandler(&stubUserRepo{user: u}, zaptest.NewLogger(t))
+	router := testUserRouter(h, u)
+
+	body := strings.NewReader(`{"timezone":"Not/ATimezone"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, rr.Code)
+	}
+
+	var resp handler.ErrorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if resp.Error.Code != "VALIDATION" {
+		t.Errorf("error code: got %q; want \"VALIDATION\"", resp.Error.Code)
+	}
+}
+
+func TestUserHandler_UpdateMe_500_TimezoneRepoError(t *testing.T) {
+	t.Parallel()
+
+	u := sampleUser()
+	h := handler.NewUserHandler(&stubUserRepo{user: u, err: errors.New("db error")}, zaptest.NewLogger(t))
+	router := testUserRouter(h, u)
+
+	body := strings.NewReader(`{"timezone":"America/New_York"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rr.Code)
+	}
+}
