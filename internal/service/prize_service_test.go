@@ -330,7 +330,8 @@ func (r *prizeUserRepoStub) GetBalance(_ context.Context, _ int) (int, int, erro
 func (r *prizeUserRepoStub) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
 	return r.currency, nil
 }
-func (r *prizeUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
+func (r *prizeUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error   { return nil }
+func (r *prizeUserRepoStub) UpdateTimezone(_ context.Context, _ int, _ string) error { return nil }
 func (r *prizeUserRepoStub) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
 	return nil, nil
 }

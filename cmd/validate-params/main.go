@@ -279,6 +279,8 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyWorkerSchedPendingReminderIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPendingReminderIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerSchedStaleEscalationIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedStaleEscalationIntervalSec), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerSchedPushPruneIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedPushPruneIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerSchedDailySummaryIntervalSec, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedDailySummaryIntervalSec), paramType: "int", category: "worker", isRuntime: false},
+	{key: domain.ParamKeyWorkerSchedDailySummaryResultDelayMin, defaultValue: strconv.Itoa(domain.DefaultWorkerSchedDailySummaryResultDelayMin), paramType: "int", category: "worker", isRuntime: false},
 	// Leaderboard broadcaster retry policy (migration 000160); not runtime — worker restart required.
 	{key: domain.ParamKeyWorkerLeaderboardPublishMaxAttempts, defaultValue: strconv.Itoa(domain.DefaultWorkerLeaderboardPublishMaxAttempts), paramType: "int", category: "worker", isRuntime: false},
 	{key: domain.ParamKeyWorkerLeaderboardPublishBaseDelayMs, defaultValue: strconv.Itoa(domain.DefaultWorkerLeaderboardPublishBaseDelayMs), paramType: "int", category: "worker", isRuntime: false},

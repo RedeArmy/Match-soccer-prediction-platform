@@ -475,6 +475,8 @@ func AllParamKeys() []string {
 		ParamKeyWorkerSchedPendingReminderIntervalSec,
 		ParamKeyWorkerSchedStaleEscalationIntervalSec,
 		ParamKeyWorkerSchedPushPruneIntervalSec,
+		ParamKeyWorkerSchedDailySummaryIntervalSec,
+		ParamKeyWorkerSchedDailySummaryResultDelayMin,
 		ParamKeyWorkerLeaderboardPublishMaxAttempts,
 		ParamKeyWorkerLeaderboardPublishBaseDelayMs,
 		// System

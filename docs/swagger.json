@@ -7362,6 +7362,9 @@
                 },
                 "role": {
                     "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
                 }
             }
         },
@@ -8590,6 +8593,9 @@
             "type": "object",
             "properties": {
                 "locale": {
+                    "type": "string"
+                },
+                "timezone": {
                     "type": "string"
                 }
             }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
@@ -525,3 +526,216 @@ func TestSchedulerStore_ListUnpredictedUpcomingMatchesByUsers_MultipleUsers(t *t
 		t.Errorf("match %d should appear for user %d (no prediction)", m.ID, u2.ID)
 	}
 }
+
+// ── GetUserTimezones ──────────────────────────────────────────────────────────
+
+func TestSchedulerStore_GetUserTimezones_EmptyInput_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	result, err := store.GetUserTimezones(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result for empty input; got %v", result)
+	}
+}
+
+func TestSchedulerStore_GetUserTimezones_ReturnsStoredTimezone(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+	if err := repo.UpdateTimezone(context.Background(), u.ID, "America/New_York"); err != nil {
+		t.Fatalf("seed timezone: %v", err)
+	}
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	result, err := store.GetUserTimezones(context.Background(), []int{u.ID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tz := result[u.ID]; tz != "America/New_York" {
+		t.Errorf("timezone for user %d: got %q; want \"America/New_York\"", u.ID, tz)
+	}
+}
+
+func TestSchedulerStore_GetUserTimezones_OmitsUnknownUser(t *testing.T) {
+	cleanTables(t)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	const unknownID = 999999
+	result, err := store.GetUserTimezones(context.Background(), []int{unknownID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := result[unknownID]; ok {
+		t.Errorf("unknown user %d should not appear in result", unknownID)
+	}
+}
+
+// ── ListDailySummaryTargets ───────────────────────────────────────────────────
+
+// seedMatchOnDate inserts a match with its kickoff set to noon on the given date.
+func seedMatchOnDate(t *testing.T, date time.Time) *domain.Match {
+	t.Helper()
+	skipIfNoDB(t)
+	mrepo := repository.NewPostgresMatchRepository(testDB)
+	kickoff := time.Date(date.Year(), date.Month(), date.Day(), 12, 0, 0, 0, time.UTC)
+	m := &domain.Match{
+		HomeTeam:  "Home",
+		AwayTeam:  "Away",
+		Status:    domain.MatchStatusScheduled,
+		Phase:     domain.PhaseGroupStage,
+		KickoffAt: kickoff,
+	}
+	label := "A"
+	m.GroupLabel = &label
+	if err := mrepo.Create(context.Background(), m); err != nil {
+		t.Fatalf("seedMatchOnDate: %v", err)
+	}
+	return m
+}
+
+func TestSchedulerStore_ListDailySummaryTargets_NoMatches_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	store := repository.NewPostgresSchedulerStore(testDB)
+
+	result, err := store.ListDailySummaryTargets(context.Background(), time.Now().UTC(), 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected no payloads when DB is empty; got %d", len(result))
+	}
+}
+
+func TestSchedulerStore_ListDailySummaryTargets_MatchWithoutResult_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	today := time.Now().UTC()
+	seedMatchOnDate(t, today) // no scores set → not all results in
+
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+
+	store := repository.NewPostgresSchedulerStore(testDB)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected no payloads when match has no result; got %d", len(result))
+	}
+}
+
+func TestSchedulerStore_ListDailySummaryTargets_AllResultsIn_ReturnsPaidUsers(t *testing.T) {
+	cleanTables(t)
+	today := time.Now().UTC()
+	m := seedMatchOnDate(t, today)
+
+	// Set a final result with updated_at well in the past (> resultDelay).
+	mrepo := repository.NewPostgresMatchRepository(testDB)
+	home, away := 2, 1
+	m.Status = domain.MatchStatusFinished
+	m.HomeScore = &home
+	m.AwayScore = &away
+	if err := mrepo.Update(context.Background(), m); err != nil {
+		t.Fatalf("set match result: %v", err)
+	}
+	// Back-date updated_at so it passes the resultDelay check (cutoff = now - delay).
+	_, err := testDB.Exec(context.Background(),
+		`UPDATE matches SET updated_at = NOW() - INTERVAL '2 hours' WHERE id = $1`, m.ID)
+	if err != nil {
+		t.Fatalf("back-date match: %v", err)
+	}
+
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	seedPrediction(t, u.ID, m.ID)
+
+	store := repository.NewPostgresSchedulerStore(testDB)
+	// resultDelay = 1 hour; last_result_at is 2 hours ago → eligible.
+	result, err := store.ListDailySummaryTargets(context.Background(), today, time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 payload; got %d", len(result))
+	}
+	if result[0].UserID != u.ID {
+		t.Errorf("payload user_id: got %d; want %d", result[0].UserID, u.ID)
+	}
+	if len(result[0].Matches) != 1 {
+		t.Errorf("payload matches: got %d; want 1", len(result[0].Matches))
+	}
+}
+
+func TestSchedulerStore_ListDailySummaryTargets_ResultTooRecent_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	today := time.Now().UTC()
+	m := seedMatchOnDate(t, today)
+
+	mrepo := repository.NewPostgresMatchRepository(testDB)
+	home, away := 1, 0
+	m.Status = domain.MatchStatusFinished
+	m.HomeScore = &home
+	m.AwayScore = &away
+	if err := mrepo.Update(context.Background(), m); err != nil {
+		t.Fatalf("set match result: %v", err)
+	}
+	// updated_at is NOW() (just inserted) — within the 30-minute delay.
+
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
+	seedPrediction(t, u.ID, m.ID)
+
+	store := repository.NewPostgresSchedulerStore(testDB)
+	// resultDelay = 30 minutes; result was entered moments ago → not eligible yet.
+	result, err := store.ListDailySummaryTargets(context.Background(), today, 30*time.Minute)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected no payloads when result is too recent; got %d", len(result))
+	}
+}
+
+func TestSchedulerStore_ListDailySummaryTargets_UnpaidMember_Excluded(t *testing.T) {
+	cleanTables(t)
+	today := time.Now().UTC()
+	m := seedMatchOnDate(t, today)
+
+	mrepo := repository.NewPostgresMatchRepository(testDB)
+	home, away := 1, 0
+	m.Status = domain.MatchStatusFinished
+	m.HomeScore = &home
+	m.AwayScore = &away
+	if err := mrepo.Update(context.Background(), m); err != nil {
+		t.Fatalf("set match result: %v", err)
+	}
+	_, err := testDB.Exec(context.Background(),
+		`UPDATE matches SET updated_at = NOW() - INTERVAL '2 hours' WHERE id = $1`, m.ID)
+	if err != nil {
+		t.Fatalf("back-date match: %v", err)
+	}
+
+	u := seedUser(t)
+	q := seedQuiniela(t, u.ID)
+	seedMembership(t, q.ID, u.ID, domain.MembershipActive, false) // paid=false
+	seedPrediction(t, u.ID, m.ID)
+
+	store := repository.NewPostgresSchedulerStore(testDB)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected no payloads for unpaid member; got %d", len(result))
+	}
+}
+
+// Ensure the notification package import compiles (type assertion).
+var _ []notification.DailySummaryPayload

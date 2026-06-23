@@ -282,6 +282,37 @@ func (s *PostgresSchedulerStore) ListUnpredictedUpcomingMatchesByUsers(ctx conte
 	return result, rows.Err()
 }
 
+// GetUserTimezones returns the IANA timezone string stored for each active user
+// in userIDs. Users not found or soft-deleted are omitted from the result map.
+func (s *PostgresSchedulerStore) GetUserTimezones(ctx context.Context, userIDs []int) (map[int]string, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]int32, len(userIDs))
+	for i, id := range userIDs {
+		ids[i] = int32(id)
+	}
+	rows, err := s.db.Query(ctx,
+		`SELECT id, timezone FROM users WHERE id = ANY($1) AND deleted_at IS NULL`,
+		ids,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int]string, len(userIDs))
+	for rows.Next() {
+		var uid int
+		var tz string
+		if err := rows.Scan(&uid, &tz); err != nil {
+			return nil, err
+		}
+		result[uid] = tz
+	}
+	return result, rows.Err()
+}
+
 // ListUpcomingMatchesWithDeadline returns matches whose kickoff is within
 // deadlineWindow and that have users with no prediction submitted.
 func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Context, deadlineWindow time.Duration) ([]scheduler.DeadlineMatch, error) {
@@ -342,4 +373,118 @@ func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Con
 		result = append(result, *byMatch[id])
 	}
 	return result, nil
+}
+
+// ListDailySummaryTargets returns one DailySummaryPayload per active, paid
+// user who has at least one prediction for any match on date, regardless of
+// how many quinielas they belong to. Returns nil when no matches exist on
+// date, not all matches have final results, or the most-recent result was
+// entered less than resultDelay ago.
+func (s *PostgresSchedulerStore) ListDailySummaryTargets(ctx context.Context, date time.Time, resultDelay time.Duration) ([]notification.DailySummaryPayload, error) {
+	cutoff := time.Now().UTC().Add(-resultDelay)
+	dateStr := date.Format("2006-01-02")
+
+	rows, err := s.db.Query(ctx, `
+WITH day_matches AS (
+    SELECT m.id, m.home_team, m.away_team,
+           m.home_score, m.away_score, m.kickoff_at, m.updated_at
+    FROM   matches m
+    WHERE  m.kickoff_at::date = $1::date
+    ORDER  BY m.kickoff_at
+),
+eligibility AS (
+    SELECT COUNT(*)                                                AS total,
+           SUM(CASE WHEN home_score IS NOT NULL THEN 1 ELSE 0 END) AS with_result,
+           MAX(updated_at)                                         AS last_result_at
+    FROM day_matches
+),
+eligible AS (
+    SELECT 1 FROM eligibility
+    WHERE  total > 0
+      AND  total = with_result
+      AND  last_result_at < $2
+),
+targets AS (
+    SELECT DISTINCT gm.user_id
+    FROM   group_memberships gm
+    WHERE  gm.status = 'active'
+      AND  gm.paid   = TRUE
+      AND  EXISTS (SELECT 1 FROM eligible)
+      AND  EXISTS (
+               SELECT 1 FROM predictions p
+               WHERE  p.user_id  = gm.user_id
+                 AND  p.match_id IN (SELECT id FROM day_matches)
+           )
+)
+SELECT
+    t.user_id,
+    dm.id           AS match_id,
+    dm.home_team,
+    dm.away_team,
+    dm.home_score   AS result_home,
+    dm.away_score   AS result_away,
+    dm.kickoff_at,
+    p.home_score    AS pred_home,
+    p.away_score    AS pred_away,
+    COALESCE(p.points, 0) AS points_earned
+FROM   targets t
+CROSS  JOIN day_matches dm
+LEFT   JOIN predictions p ON p.user_id = t.user_id AND p.match_id = dm.id
+ORDER  BY t.user_id, dm.kickoff_at`,
+		dateStr, cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	index := make(map[int]int) // userID → index in payloads
+	var payloads []notification.DailySummaryPayload
+
+	for rows.Next() {
+		var (
+			userID                 int
+			matchID                int
+			homeTeam, awayTeam     string
+			resultHome, resultAway int
+			kickoffAt              time.Time
+			predHome, predAway     *int
+			pointsEarned           int
+		)
+		if err := rows.Scan(
+			&userID,
+			&matchID, &homeTeam, &awayTeam,
+			&resultHome, &resultAway, &kickoffAt,
+			&predHome, &predAway, &pointsEarned,
+		); err != nil {
+			return nil, err
+		}
+
+		idx, ok := index[userID]
+		if !ok {
+			payloads = append(payloads, notification.DailySummaryPayload{
+				UserID:    userID,
+				MatchDate: dateStr,
+			})
+			idx = len(payloads) - 1
+			index[userID] = idx
+		}
+
+		row := notification.DailySummaryMatchRow{
+			MatchID:      matchID,
+			HomeTeam:     homeTeam,
+			AwayTeam:     awayTeam,
+			KickoffAt:    kickoffAt,
+			HomeScore:    resultHome,
+			AwayScore:    resultAway,
+			PredHome:     predHome,
+			PredAway:     predAway,
+			PointsEarned: pointsEarned,
+		}
+		payloads[idx].Matches = append(payloads[idx].Matches, row)
+		if predHome != nil {
+			payloads[idx].PointsToday += pointsEarned
+		}
+	}
+	return payloads, rows.Err()
 }

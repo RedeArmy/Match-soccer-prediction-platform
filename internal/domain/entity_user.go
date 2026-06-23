@@ -28,6 +28,7 @@ type User struct {
 	ReservedCents   int     // funds locked for pending withdrawal requests
 	KYCTier         KYCTier // denormalised from kyc_profiles.tier; updated by KYCService
 	Locale          string  // BCP-47 tag ("es" or "en"); defaults to "es" for new users
+	Timezone        string  // IANA timezone (e.g. "America/Guatemala"); defaults to "America/Guatemala"
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	DeletedAt       *time.Time // nil for active users; set when the record is soft-deleted

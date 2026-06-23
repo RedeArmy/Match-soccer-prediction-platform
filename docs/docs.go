@@ -7365,6 +7365,9 @@ const docTemplate = `{
                 },
                 "role": {
                     "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
                 }
             }
         },
@@ -8593,6 +8596,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "locale": {
+                    "type": "string"
+                },
+                "timezone": {
                     "type": "string"
                 }
             }

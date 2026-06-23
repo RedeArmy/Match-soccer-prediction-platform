@@ -29,6 +29,12 @@ const (
 	// for that day.  Replaces the per-match missing-reminder approach to
 	// avoid sending multiple emails per day.
 	EventPredictionDailyReminder EventType = "prediction.daily_reminder"
+	// EventDailySummary is sent once per user approximately 30 minutes after all
+	// matches of a day have final results. It contains a results table (match,
+	// official result, user prediction, points earned), the day's point total,
+	// and an encouraging message. One email regardless of how many quinielas the
+	// user belongs to. Delivered via email only.
+	EventDailySummary EventType = "prediction.daily_summary"
 )
 
 // User-facing match events.
@@ -173,9 +179,10 @@ type PredictionDeadlinePayload struct {
 
 // PredictionDailyReminderPayload is the payload for EventPredictionDailyReminder.
 type PredictionDailyReminderPayload struct {
-	UserID  int                  `json:"user_id"`
-	Date    string               `json:"date"`    // YYYY-MM-DD in scheduler timezone
-	Matches []DailyReminderMatch `json:"matches"` // unpredicted matches for the day
+	UserID   int                  `json:"user_id"`
+	Date     string               `json:"date"`     // YYYY-MM-DD in scheduler timezone
+	Timezone string               `json:"timezone"` // IANA timezone for displaying kickoff times
+	Matches  []DailyReminderMatch `json:"matches"`  // unpredicted matches for the day
 }
 
 // DailyReminderMatch carries the minimal details about one unpredicted match.
@@ -204,6 +211,31 @@ type PredictionScoredPayload struct {
 	HomeScore    int    `json:"home_score"`
 	AwayScore    int    `json:"away_score"`
 	PointsEarned int    `json:"points_earned"`
+}
+
+// DailySummaryMatchRow is one row in the per-day results table included in
+// EventDailySummary emails. PredHome/PredAway are nil when the user did not
+// submit a prediction for this match.
+type DailySummaryMatchRow struct {
+	MatchID      int       `json:"match_id"`
+	HomeTeam     string    `json:"home_team"`
+	AwayTeam     string    `json:"away_team"`
+	KickoffAt    time.Time `json:"kickoff_at"`
+	HomeScore    int       `json:"home_score"`
+	AwayScore    int       `json:"away_score"`
+	PredHome     *int      `json:"pred_home"`
+	PredAway     *int      `json:"pred_away"`
+	PointsEarned int       `json:"points_earned"`
+}
+
+// DailySummaryPayload is the payload for EventDailySummary.
+// It carries all data needed to render the email without additional DB queries.
+// One payload per user per day — independent of quiniela membership.
+type DailySummaryPayload struct {
+	UserID      int                    `json:"user_id"`
+	MatchDate   string                 `json:"match_date"` // "2026-06-22"
+	Matches     []DailySummaryMatchRow `json:"matches"`
+	PointsToday int                    `json:"points_today"`
 }
 
 // MatchEventPayload is shared by EventMatchResultEntered, EventMatchPostponed,

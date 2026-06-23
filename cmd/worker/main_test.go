@@ -1048,6 +1048,9 @@ func (r *stubUserRepoForWorker) GetBalanceCurrency(_ context.Context, _ int) (st
 	return "GTQ", nil
 }
 func (r *stubUserRepoForWorker) UpdateLocale(_ context.Context, _ int, _ string) error { return r.err }
+func (r *stubUserRepoForWorker) UpdateTimezone(_ context.Context, _ int, _ string) error {
+	return r.err
+}
 func (r *stubUserRepoForWorker) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
 	return nil, r.err
 }

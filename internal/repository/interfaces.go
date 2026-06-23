@@ -91,6 +91,9 @@ type UserRepository interface {
 	// UpdateLocale sets the user's locale preference ("en" or "es").
 	// Returns NotFound for unknown or soft-deleted users.
 	UpdateLocale(ctx context.Context, userID int, locale string) error
+	// UpdateTimezone sets the user's IANA timezone (e.g. "America/Guatemala").
+	// Returns NotFound for unknown or soft-deleted users.
+	UpdateTimezone(ctx context.Context, userID int, timezone string) error
 	// SetRole updates the role field for a single user.
 	// Returns NotFound for unknown or soft-deleted users.
 	SetRole(ctx context.Context, userID int, role domain.UserRole) (*domain.User, error)

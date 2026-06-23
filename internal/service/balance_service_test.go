@@ -65,7 +65,8 @@ func (r *balanceSvcUserRepo) GetBalanceCurrency(_ context.Context, _ int) (strin
 	}
 	return "GTQ", nil
 }
-func (r *balanceSvcUserRepo) UpdateLocale(_ context.Context, _ int, _ string) error { return r.err }
+func (r *balanceSvcUserRepo) UpdateLocale(_ context.Context, _ int, _ string) error   { return r.err }
+func (r *balanceSvcUserRepo) UpdateTimezone(_ context.Context, _ int, _ string) error { return r.err }
 func (r *balanceSvcUserRepo) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
 	return nil, r.err
 }

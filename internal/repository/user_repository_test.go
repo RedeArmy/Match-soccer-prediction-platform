@@ -511,6 +511,36 @@ func TestUserRepository_UpdateLocale_NotFound_ReturnsNotFound(t *testing.T) {
 	}
 }
 
+// ── UpdateTimezone ────────────────────────────────────────────────────────────
+
+func TestUserRepository_UpdateTimezone_ChangesStoredValue(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	if err := repo.UpdateTimezone(context.Background(), u.ID, "America/New_York"); err != nil {
+		t.Fatalf("UpdateTimezone: %v", err)
+	}
+
+	got, err := repo.GetByID(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.Timezone != "America/New_York" {
+		t.Errorf("Timezone after update: got %q; want \"America/New_York\"", got.Timezone)
+	}
+}
+
+func TestUserRepository_UpdateTimezone_NotFound_ReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+
+	err := repo.UpdateTimezone(context.Background(), 99999, "America/New_York")
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for unknown user; got %v", err)
+	}
+}
+
 // ── SetRole ───────────────────────────────────────────────────────────────────
 
 func TestUserRepository_SetRole_ChangesStoredRole(t *testing.T) {
