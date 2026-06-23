@@ -235,12 +235,11 @@ func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (u
 	// Build the match-results table with inline styles (email-client safe).
 	var sb strings.Builder
 
-	// Introductory sentence about the quiniela.
-	qName := html.EscapeString(p.QuinielaName)
+	// Introductory sentence.
 	if locale == LocaleES {
-		fmt.Fprintf(&sb, `<p style="color:#444;margin:0 0 16px">Resultados de la jornada del <strong>%s</strong> en <strong>%s</strong>:</p>`, p.MatchDate, qName)
+		fmt.Fprintf(&sb, `<p style="color:#444;margin:0 0 16px">Resultados de la jornada del <strong>%s</strong>:</p>`, p.MatchDate)
 	} else {
-		fmt.Fprintf(&sb, `<p style="color:#444;margin:0 0 16px">Here are your results for <strong>%s</strong> in <strong>%s</strong>:</p>`, p.MatchDate, qName)
+		fmt.Fprintf(&sb, `<p style="color:#444;margin:0 0 16px">Here are your results for <strong>%s</strong>:</p>`, p.MatchDate)
 	}
 
 	// Table header
@@ -318,21 +317,6 @@ func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (u
 	sb.WriteString(`</tr>`)
 	sb.WriteString(`</tbody></table>`)
 
-	// Accumulated total card
-	if locale == LocaleES {
-		fmt.Fprintf(&sb,
-			`<div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:14px 18px;border-radius:0 4px 4px 0;margin-bottom:20px">
-  <span style="color:#1a1a2e;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Total acumulado en %s</span><br>
-  <span style="color:#1a1a2e;font-size:28px;font-weight:700">%d pts</span>
-</div>`, qName, p.TotalPoints)
-	} else {
-		fmt.Fprintf(&sb,
-			`<div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:14px 18px;border-radius:0 4px 4px 0;margin-bottom:20px">
-  <span style="color:#1a1a2e;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Total accumulated in %s</span><br>
-  <span style="color:#1a1a2e;font-size:28px;font-weight:700">%d pts</span>
-</div>`, qName, p.TotalPoints)
-	}
-
 	// Encouraging message (rotated by day-of-week for variety)
 	encouragingES := []string{
 		"¡Sigue así! Cada partido es una nueva oportunidad de subir en el marcador.",
@@ -362,8 +346,8 @@ func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (u
 	fmt.Fprintf(&sb, `<p style="color:#555;font-style:italic;margin:0">%s</p>`, html.EscapeString(encourageMsg))
 
 	subject := localeStr(
-		fmt.Sprintf("Your daily summary — %s | +%d pts today", p.QuinielaName, p.PointsToday),
-		fmt.Sprintf("Resumen del día — %s | +%d pts hoy", p.QuinielaName, p.PointsToday),
+		fmt.Sprintf("Your daily summary — %s | +%d pts today", p.MatchDate, p.PointsToday),
+		fmt.Sprintf("Resumen del día — %s | +%d pts hoy", p.MatchDate, p.PointsToday),
 		locale,
 	)
 	headline := localeStr(
@@ -373,8 +357,8 @@ func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (u
 	)
 
 	pushBody := localeStr(
-		fmt.Sprintf("+%d pts today · %d total in %s", p.PointsToday, p.TotalPoints, p.QuinielaName),
-		fmt.Sprintf("+%d pts hoy · %d total en %s", p.PointsToday, p.TotalPoints, p.QuinielaName),
+		fmt.Sprintf("+%d pts today", p.PointsToday),
+		fmt.Sprintf("+%d pts hoy", p.PointsToday),
 		locale,
 	)
 	return userContent{

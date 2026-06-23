@@ -73,8 +73,7 @@ func buildEventSamples() map[EventType]json.RawMessage {
 			HomeScore: 2, AwayScore: 1, PointsEarned: 3,
 		}),
 		EventDailySummary: enc(DailySummaryPayload{
-			UserID: 1, QuinielaID: 3, QuinielaName: sampleQuinielaName,
-			MatchDate: "2026-06-22", PointsToday: 8, TotalPoints: 47,
+			UserID: 1, MatchDate: "2026-06-22", PointsToday: 8,
 			Matches: []DailySummaryMatchRow{
 				{
 					MatchID: 5, HomeTeam: "Guatemala", AwayTeam: "Mexico",

@@ -29,11 +29,11 @@ const (
 	// for that day.  Replaces the per-match missing-reminder approach to
 	// avoid sending multiple emails per day.
 	EventPredictionDailyReminder EventType = "prediction.daily_reminder"
-	// EventDailySummary is sent per-user per-quiniela approximately 30 minutes
-	// after all matches of a day have final results. It contains a results table
-	// (match, official result, user prediction, points earned), today's point
-	// total, the user's accumulated points in the quiniela, and an encouraging
-	// message. Delivered via email only.
+	// EventDailySummary is sent once per user approximately 30 minutes after all
+	// matches of a day have final results. It contains a results table (match,
+	// official result, user prediction, points earned), the day's point total,
+	// and an encouraging message. One email regardless of how many quinielas the
+	// user belongs to. Delivered via email only.
 	EventDailySummary EventType = "prediction.daily_summary"
 )
 
@@ -229,14 +229,12 @@ type DailySummaryMatchRow struct {
 
 // DailySummaryPayload is the payload for EventDailySummary.
 // It carries all data needed to render the email without additional DB queries.
+// One payload per user per day — independent of quiniela membership.
 type DailySummaryPayload struct {
-	UserID       int                    `json:"user_id"`
-	QuinielaID   int                    `json:"quiniela_id"`
-	QuinielaName string                 `json:"quiniela_name"`
-	MatchDate    string                 `json:"match_date"` // "2026-06-22"
-	Matches      []DailySummaryMatchRow `json:"matches"`
-	PointsToday  int                    `json:"points_today"`
-	TotalPoints  int                    `json:"total_points"`
+	UserID      int                    `json:"user_id"`
+	MatchDate   string                 `json:"match_date"` // "2026-06-22"
+	Matches     []DailySummaryMatchRow `json:"matches"`
+	PointsToday int                    `json:"points_today"`
 }
 
 // MatchEventPayload is shared by EventMatchResultEntered, EventMatchPostponed,

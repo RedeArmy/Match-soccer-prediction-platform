@@ -532,12 +532,12 @@ func (j *Jobs) AdminMatchResultPending(ctx context.Context) error {
 	return nil
 }
 
-// UserDailySummary sends per-user per-quiniela daily score summary emails.
-// It runs on a configurable interval (default every 15 minutes) and checks
-// both today's and yesterday's match date to handle late-night fixtures.
-// For each eligible date (all results in, 30+ minutes elapsed), it writes one
-// dedup-keyed outbox event per user-quiniela pair; duplicates are silently
-// dropped by the ON CONFLICT DO NOTHING outbox constraint.
+// UserDailySummary sends one daily score summary email per user, regardless
+// of how many quinielas they belong to. It runs on a configurable interval
+// (default every 15 minutes) and checks both today's and yesterday's match
+// date to handle late-night fixtures. For each eligible date (all results in,
+// 30+ minutes elapsed), it writes one dedup-keyed outbox event per user;
+// duplicates are silently dropped by the ON CONFLICT DO NOTHING outbox constraint.
 func (j *Jobs) UserDailySummary(ctx context.Context) error {
 	delayMin := j.getInt(ctx, domain.ParamKeyWorkerSchedDailySummaryResultDelayMin, domain.DefaultWorkerSchedDailySummaryResultDelayMin)
 	resultDelay := time.Duration(delayMin) * time.Minute
@@ -560,8 +560,8 @@ func (j *Jobs) UserDailySummary(ctx context.Context) error {
 			continue
 		}
 		for _, target := range targets {
-			dedupKey := fmt.Sprintf("daily_summary:%s:%d:%d",
-				target.MatchDate, target.UserID, target.QuinielaID)
+			dedupKey := fmt.Sprintf("daily_summary:%s:%d",
+				target.MatchDate, target.UserID)
 			inserted, err := j.writer.WriteDedup(ctx, dedupKey,
 				notification.EventDailySummary,
 				"user", fmt.Sprintf("%d", target.UserID),

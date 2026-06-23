@@ -345,9 +345,10 @@ func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Con
 }
 
 // ListDailySummaryTargets returns one DailySummaryPayload per active, paid
-// user-quiniela pair that has at least one prediction for any match on date.
-// Returns nil when no matches exist on date, not all matches have final
-// results, or the most-recent result was entered less than resultDelay ago.
+// user who has at least one prediction for any match on date, regardless of
+// how many quinielas they belong to. Returns nil when no matches exist on
+// date, not all matches have final results, or the most-recent result was
+// entered less than resultDelay ago.
 func (s *PostgresSchedulerStore) ListDailySummaryTargets(ctx context.Context, date time.Time, resultDelay time.Duration) ([]notification.DailySummaryPayload, error) {
 	cutoff := time.Now().UTC().Add(-resultDelay)
 	dateStr := date.Format("2006-01-02")
@@ -373,9 +374,8 @@ eligible AS (
       AND  last_result_at < $2
 ),
 targets AS (
-    SELECT DISTINCT gm.user_id, gm.quiniela_id, q.name AS quiniela_name
+    SELECT DISTINCT gm.user_id
     FROM   group_memberships gm
-    JOIN   quinielas q ON q.id = gm.quiniela_id
     WHERE  gm.status = 'active'
       AND  gm.paid   = TRUE
       AND  EXISTS (SELECT 1 FROM eligible)
@@ -384,23 +384,9 @@ targets AS (
                WHERE  p.user_id  = gm.user_id
                  AND  p.match_id IN (SELECT id FROM day_matches)
            )
-),
-total_points AS (
-    SELECT gm.user_id, gm.quiniela_id,
-           COALESCE(SUM(p.points), 0) AS total_pts
-    FROM   group_memberships gm
-    JOIN   targets t ON t.user_id = gm.user_id AND t.quiniela_id = gm.quiniela_id
-    LEFT   JOIN predictions p ON p.user_id  = gm.user_id
-                              AND p.points  IS NOT NULL
-    LEFT   JOIN matches m     ON m.id        = p.match_id
-                              AND m.kickoff_at >= COALESCE(gm.joined_at, '2000-01-01')
-    WHERE  gm.status = 'active'
-    GROUP  BY gm.user_id, gm.quiniela_id
 )
 SELECT
     t.user_id,
-    t.quiniela_id,
-    t.quiniela_name,
     dm.id           AS match_id,
     dm.home_team,
     dm.away_team,
@@ -409,13 +395,11 @@ SELECT
     dm.kickoff_at,
     p.home_score    AS pred_home,
     p.away_score    AS pred_away,
-    COALESCE(p.points, 0) AS points_earned,
-    COALESCE(tp.total_pts, 0) AS total_pts
+    COALESCE(p.points, 0) AS points_earned
 FROM   targets t
 CROSS  JOIN day_matches dm
-LEFT   JOIN predictions p  ON p.user_id   = t.user_id AND p.match_id = dm.id
-LEFT   JOIN total_points tp ON tp.user_id  = t.user_id AND tp.quiniela_id = t.quiniela_id
-ORDER  BY t.user_id, t.quiniela_id, dm.kickoff_at`,
+LEFT   JOIN predictions p ON p.user_id = t.user_id AND p.match_id = dm.id
+ORDER  BY t.user_id, dm.kickoff_at`,
 		dateStr, cutoff,
 	)
 	if err != nil {
@@ -423,43 +407,36 @@ ORDER  BY t.user_id, t.quiniela_id, dm.kickoff_at`,
 	}
 	defer rows.Close()
 
-	type key struct{ userID, quinielaID int }
-	index := make(map[key]int) // key → index in payloads
+	index := make(map[int]int) // userID → index in payloads
 	var payloads []notification.DailySummaryPayload
 
 	for rows.Next() {
 		var (
-			userID, quinielaID    int
-			quinielaName          string
+			userID                int
 			matchID               int
 			homeTeam, awayTeam    string
 			resultHome, resultAway int
 			kickoffAt             time.Time
 			predHome, predAway    *int
 			pointsEarned          int
-			totalPts              int
 		)
 		if err := rows.Scan(
-			&userID, &quinielaID, &quinielaName,
+			&userID,
 			&matchID, &homeTeam, &awayTeam,
 			&resultHome, &resultAway, &kickoffAt,
-			&predHome, &predAway, &pointsEarned, &totalPts,
+			&predHome, &predAway, &pointsEarned,
 		); err != nil {
 			return nil, err
 		}
 
-		k := key{userID, quinielaID}
-		idx, ok := index[k]
+		idx, ok := index[userID]
 		if !ok {
 			payloads = append(payloads, notification.DailySummaryPayload{
-				UserID:       userID,
-				QuinielaID:   quinielaID,
-				QuinielaName: quinielaName,
-				MatchDate:    dateStr,
-				TotalPoints:  totalPts,
+				UserID:    userID,
+				MatchDate: dateStr,
 			})
 			idx = len(payloads) - 1
-			index[k] = idx
+			index[userID] = idx
 		}
 
 		row := notification.DailySummaryMatchRow{
