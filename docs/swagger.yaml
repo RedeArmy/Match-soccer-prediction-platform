@@ -561,6 +561,8 @@ definitions:
         type: integer
       role:
         type: string
+      timezone:
+        type: string
     type: object
   internal_api_handler.MemberResponse:
     properties:
@@ -1368,6 +1370,8 @@ definitions:
   internal_api_handler.updateMeRequest:
     properties:
       locale:
+        type: string
+      timezone:
         type: string
     type: object
   internal_api_handler.updatePredictionRequest:
