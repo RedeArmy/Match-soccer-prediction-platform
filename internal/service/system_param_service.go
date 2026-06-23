@@ -363,6 +363,8 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyWorkerSchedPendingReminderIntervalSec: {60, 86_400},     // 1 min – 24 h
 	domain.ParamKeyWorkerSchedStaleEscalationIntervalSec: {60, 86_400},     // 1 min – 24 h
 	domain.ParamKeyWorkerSchedPushPruneIntervalSec:       {3_600, 604_800}, // 1 h – 7 days
+	domain.ParamKeyWorkerSchedDailySummaryIntervalSec:    {60, 3_600},      // 1 min – 1 h
+	domain.ParamKeyWorkerSchedDailySummaryResultDelayMin: {1, 120},         // 1 – 120 min
 	// Leaderboard broadcaster retry policy (migration 000160, is_runtime=FALSE).
 	domain.ParamKeyWorkerLeaderboardPublishMaxAttempts: {1, 10},     // 1 – 10 PUBLISH attempts
 	domain.ParamKeyWorkerLeaderboardPublishBaseDelayMs: {10, 5_000}, // 10 ms – 5 s base backoff

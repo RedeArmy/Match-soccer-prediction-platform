@@ -23,6 +23,8 @@ const (
 	DefaultWorkerSchedPendingReminderIntervalSec = 14400 // worker.sched_pending_reminder_interval_sec — 4 h
 	DefaultWorkerSchedStaleEscalationIntervalSec = 1800  // worker.sched_stale_escalation_interval_sec — 30 min
 	DefaultWorkerSchedPushPruneIntervalSec       = 86400 // worker.sched_push_prune_interval_sec — 24 h
+	DefaultWorkerSchedDailySummaryIntervalSec    = 900   // worker.sched_daily_summary_interval_sec — 15 min
+	DefaultWorkerSchedDailySummaryResultDelayMin = 30    // worker.sched_daily_summary_result_delay_min — 30 min
 
 	// Leaderboard broadcaster retry policy.
 	// DefaultWorkerLeaderboardPublishMaxAttempts is the maximum number of Redis
@@ -97,6 +99,8 @@ const (
 	ParamKeyWorkerSchedPendingReminderIntervalSec = "worker.sched_pending_reminder_interval_sec"
 	ParamKeyWorkerSchedStaleEscalationIntervalSec = "worker.sched_stale_escalation_interval_sec"
 	ParamKeyWorkerSchedPushPruneIntervalSec       = "worker.sched_push_prune_interval_sec"
+	ParamKeyWorkerSchedDailySummaryIntervalSec    = "worker.sched_daily_summary_interval_sec"
+	ParamKeyWorkerSchedDailySummaryResultDelayMin = "worker.sched_daily_summary_result_delay_min"
 
 	// Leaderboard broadcaster retry policy (is_runtime=FALSE: worker restart required).
 	// ParamKeyWorkerLeaderboardPublishMaxAttempts is the maximum Redis PUBLISH

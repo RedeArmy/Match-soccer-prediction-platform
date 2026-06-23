@@ -18,6 +18,7 @@ const dateOnlyLayout = "2006-01-02"
 // ParamReader is the subset of SystemParamService consumed by Jobs.
 type ParamReader interface {
 	GetInt(ctx context.Context, key string, defaultVal int) int
+	GetString(ctx context.Context, key, defaultVal string) string
 }
 
 // OutboxWriter is the write-side contract consumed by scheduler jobs.
@@ -79,6 +80,17 @@ type Store interface {
 	// Results are sorted by kickoff_at ascending.  Used to build the full match
 	// list inside a reminder email after the trigger match has been identified.
 	ListUnpredictedUpcomingMatchesByUsers(ctx context.Context, userIDs []int, after time.Time) (map[int][]notification.DailyReminderMatch, error)
+
+	// GetUserTimezones returns the IANA timezone string stored for each user ID.
+	// Missing or soft-deleted users are omitted from the result map.
+	GetUserTimezones(ctx context.Context, userIDs []int) (map[int]string, error)
+
+	// ListDailySummaryTargets returns one DailySummaryPayload per active,
+	// paid user-quiniela pair that has at least one prediction for any match
+	// played on date. Returns nil when no matches exist on date, not all
+	// matches on date have final results, or the last result was entered less
+	// than resultDelay ago (30-minute cooling period).
+	ListDailySummaryTargets(ctx context.Context, date time.Time, resultDelay time.Duration) ([]notification.DailySummaryPayload, error)
 }
 
 // DailySummaryRow carries the aggregated stats returned by Store.DailySummary.
@@ -152,6 +164,14 @@ func (j *Jobs) getInt(ctx context.Context, key string, def int) int {
 		return def
 	}
 	return j.params.GetInt(ctx, key, def)
+}
+
+// getString reads a string param, returning def when params is nil.
+func (j *Jobs) getString(ctx context.Context, key, def string) string {
+	if j.params == nil {
+		return def
+	}
+	return j.params.GetString(ctx, key, def)
 }
 
 // inBucket reports whether minutesLeft falls within [leadMin±bucketToleranceMin].
@@ -281,13 +301,47 @@ func (j *Jobs) PredictionDailyReminder(ctx context.Context) error {
 		return fmt.Errorf("scheduler: match reminder: list unpredicted: %w", err)
 	}
 
-	dateStr := now.UTC().Format(dateOnlyLayout)
+	userTZs, err := j.store.GetUserTimezones(ctx, allUserIDs)
+	if err != nil {
+		return fmt.Errorf("scheduler: match reminder: get user timezones: %w", err)
+	}
+
+	defaultTZ := j.getString(ctx, domain.ParamKeyNotifySchedulerTimezone, domain.DefaultNotifySchedulerTimezone)
 	for _, t := range triggers {
 		for _, uid := range t.missingIDs {
-			j.emitMatchReminder(ctx, uid, t.matchID, byUser[uid], dateStr)
+			matches, dateStr, tz := j.resolveUserReminder(uid, now, userTZs, defaultTZ, byUser)
+			j.emitMatchReminder(ctx, uid, t.matchID, matches, dateStr, tz)
 		}
 	}
 	return nil
+}
+
+// resolveUserReminder returns today's matches and timezone string for a single
+// user, applying a fallback to defaultTZ when the user has no stored timezone,
+// and falling back to UTC when the stored value is not a valid IANA name.
+func (j *Jobs) resolveUserReminder(
+	uid int,
+	now time.Time,
+	userTZs map[int]string,
+	defaultTZ string,
+	byUser map[int][]notification.DailyReminderMatch,
+) (todayMatches []notification.DailyReminderMatch, dateStr, tz string) {
+	tz = userTZs[uid]
+	if tz == "" {
+		tz = defaultTZ
+	}
+	loc, lerr := time.LoadLocation(tz)
+	if lerr != nil {
+		loc = time.UTC
+		tz = "UTC"
+	}
+	dateStr = now.In(loc).Format(dateOnlyLayout)
+	for _, m := range byUser[uid] {
+		if m.KickoffAt.In(loc).Format(dateOnlyLayout) == dateStr {
+			todayMatches = append(todayMatches, m)
+		}
+	}
+	return
 }
 
 // reminderTrigger pairs a trigger match ID with the users who still need to
@@ -318,15 +372,16 @@ func collectReminderTriggers(matches []DeadlineMatch, leadMin int) (triggers []r
 
 // emitMatchReminder writes a single dedup-guarded outbox entry for the given
 // (user, trigger match) pair.  It is a no-op when userMatches is empty.
-func (j *Jobs) emitMatchReminder(ctx context.Context, uid, matchID int, userMatches []notification.DailyReminderMatch, dateStr string) {
+func (j *Jobs) emitMatchReminder(ctx context.Context, uid, matchID int, userMatches []notification.DailyReminderMatch, dateStr, tz string) {
 	if len(userMatches) == 0 {
 		return
 	}
 	dedupKey := fmt.Sprintf("prediction.match_reminder:user:%d:match:%d", uid, matchID)
 	payload := notification.PredictionDailyReminderPayload{
-		UserID:  uid,
-		Date:    dateStr,
-		Matches: userMatches,
+		UserID:   uid,
+		Date:     dateStr,
+		Timezone: tz,
+		Matches:  userMatches,
 	}
 	written, err := j.writer.WriteDedup(ctx,
 		dedupKey,
@@ -520,6 +575,59 @@ func (j *Jobs) AdminMatchResultPending(ctx context.Context) error {
 				zap.Int("match_id", m.ID),
 				zap.Error(err),
 			)
+		}
+	}
+	return nil
+}
+
+// UserDailySummary sends one daily score summary email per user, regardless
+// of how many quinielas they belong to. It runs on a configurable interval
+// (default every 15 minutes) and checks both today's and yesterday's match
+// date to handle late-night fixtures. For each eligible date (all results in,
+// 30+ minutes elapsed), it writes one dedup-keyed outbox event per user;
+// duplicates are silently dropped by the ON CONFLICT DO NOTHING outbox constraint.
+func (j *Jobs) UserDailySummary(ctx context.Context) error {
+	delayMin := j.getInt(ctx, domain.ParamKeyWorkerSchedDailySummaryResultDelayMin, domain.DefaultWorkerSchedDailySummaryResultDelayMin)
+	resultDelay := time.Duration(delayMin) * time.Minute
+
+	now := j.clock.Now()
+	// Check today and yesterday so late-night fixtures are caught by the first
+	// job run after midnight.
+	dates := []time.Time{
+		time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()),
+		time.Date(now.Year(), now.Month(), now.Day()-1, 0, 0, 0, 0, now.Location()),
+	}
+
+	for _, date := range dates {
+		targets, err := j.store.ListDailySummaryTargets(ctx, date, resultDelay)
+		if err != nil {
+			j.log.Error("scheduler: user daily summary: store query failed",
+				zap.Time("date", date),
+				zap.Error(err),
+			)
+			continue
+		}
+		for _, target := range targets {
+			dedupKey := fmt.Sprintf("daily_summary:%s:%d",
+				target.MatchDate, target.UserID)
+			inserted, err := j.writer.WriteDedup(ctx, dedupKey,
+				notification.EventDailySummary,
+				"user", fmt.Sprintf("%d", target.UserID),
+				target,
+			)
+			if err != nil {
+				j.log.Error("scheduler: user daily summary: outbox write failed",
+					zap.String("dedup_key", dedupKey),
+					zap.Error(err),
+				)
+				continue
+			}
+			if inserted {
+				j.log.Info("scheduler: user daily summary: queued",
+					zap.String("dedup_key", dedupKey),
+					zap.Int("points_today", target.PointsToday),
+				)
+			}
 		}
 	}
 	return nil

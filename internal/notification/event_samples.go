@@ -72,6 +72,26 @@ func buildEventSamples() map[EventType]json.RawMessage {
 			HomeTeam: "Guatemala", AwayTeam: "Mexico",
 			HomeScore: 2, AwayScore: 1, PointsEarned: 3,
 		}),
+		EventDailySummary: enc(DailySummaryPayload{
+			UserID: 1, MatchDate: "2026-06-22", PointsToday: 8,
+			Matches: []DailySummaryMatchRow{
+				{
+					MatchID: 5, HomeTeam: "Guatemala", AwayTeam: "Mexico",
+					KickoffAt: finished, HomeScore: 2, AwayScore: 1,
+					PredHome: &homeScore, PredAway: &awayScore, PointsEarned: 5,
+				},
+				{
+					MatchID: 6, HomeTeam: "Argentina", AwayTeam: "Brazil",
+					KickoffAt: finished, HomeScore: 1, AwayScore: 0,
+					PredHome: nil, PredAway: nil, PointsEarned: 0,
+				},
+				{
+					MatchID: 7, HomeTeam: "Spain", AwayTeam: "France",
+					KickoffAt: finished, HomeScore: 3, AwayScore: 1,
+					PredHome: &homeScore, PredAway: &awayScore, PointsEarned: 3,
+				},
+			},
+		}),
 
 		// ── Match ────────────────────────────────────────────────────────────────
 

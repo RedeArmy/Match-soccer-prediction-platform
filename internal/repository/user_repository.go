@@ -27,7 +27,7 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 // password_hash was removed in migration 000010: authentication is delegated
 // to Clerk and no credential is stored in the application database.
 const (
-	userColumns     = "id, name, username, email, role, external_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason, balance_cents, reserved_cents, kyc_tier, locale"
+	userColumns     = "id, name, username, email, role, external_subject, created_at, updated_at, deleted_at, banned_at, banned_by, ban_reason, balance_cents, reserved_cents, kyc_tier, locale, timezone"
 	msgUserNotFound = "user not found"
 )
 
@@ -43,7 +43,7 @@ func scanUserFields(s rowScanner) (*domain.User, error) {
 		&u.ID, &u.Name, &username, &u.Email, &u.Role, &externalSubject,
 		&u.CreatedAt, &u.UpdatedAt, &u.DeletedAt,
 		&u.BannedAt, &u.BannedBy, &u.BanReason,
-		&u.BalanceCents, &u.ReservedCents, &kycTier, &u.Locale,
+		&u.BalanceCents, &u.ReservedCents, &kycTier, &u.Locale, &u.Timezone,
 	); err != nil {
 		return nil, err
 	}
@@ -148,6 +148,22 @@ func (r *PostgresUserRepository) UpdateLocale(ctx context.Context, userID int, l
 	tag, err := r.db.Exec(ctx,
 		`UPDATE users SET locale=$1, updated_at=NOW() WHERE id=$2`+activeOnly,
 		locale, userID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.NotFound(msgUserNotFound)
+	}
+	return nil
+}
+
+// UpdateTimezone sets the IANA timezone for userID (e.g. "America/Guatemala").
+// Returns NotFound for unknown or soft-deleted users.
+func (r *PostgresUserRepository) UpdateTimezone(ctx context.Context, userID int, timezone string) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE users SET timezone=$1, updated_at=NOW() WHERE id=$2`+activeOnly,
+		timezone, userID,
 	)
 	if err != nil {
 		return apperrors.Internal(err)

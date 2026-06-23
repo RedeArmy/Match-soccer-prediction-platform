@@ -883,6 +883,9 @@ func buildNotifScheduler(
 	s.RegisterInterval("admin.stale_escalation",
 		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedStaleEscalationIntervalSec, domain.DefaultWorkerSchedStaleEscalationIntervalSec))*time.Second,
 		jobs.StaleEscalation)
+	s.RegisterInterval("user.daily_summary",
+		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedDailySummaryIntervalSec, domain.DefaultWorkerSchedDailySummaryIntervalSec))*time.Second,
+		jobs.UserDailySummary)
 	s.RegisterDaily("admin.daily_summary", 8, 0, jobs.AdminDailySummary)
 	s.RegisterWeekly("admin.weekly_report", time.Monday, 8, 0, jobs.AdminWeeklyReport)
 	s.RegisterInterval("push.subscription_prune",

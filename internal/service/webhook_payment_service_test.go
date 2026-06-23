@@ -511,7 +511,8 @@ func (r *webhookUserRepoStub) GetBalance(_ context.Context, _ int) (int, int, er
 func (r *webhookUserRepoStub) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
 	return r.balCurrency, nil
 }
-func (r *webhookUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
+func (r *webhookUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error   { return nil }
+func (r *webhookUserRepoStub) UpdateTimezone(_ context.Context, _ int, _ string) error { return nil }
 func (r *webhookUserRepoStub) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
 	return nil, nil
 }

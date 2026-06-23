@@ -51,6 +51,7 @@ var priorityTable = map[EventType]Priority{
 	EventPredictionMissingReminder:  PriorityP1High,
 	EventPredictionDailyReminder:    PriorityP1High,
 	EventPredictionScored:           PriorityP1High,
+	EventDailySummary:               PriorityP1High,
 	EventMatchResultEntered:         PriorityP1High,
 	EventMatchPostponed:             PriorityP1High,
 	EventMatchCancelled:             PriorityP1High,

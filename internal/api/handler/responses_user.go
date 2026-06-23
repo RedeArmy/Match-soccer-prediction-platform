@@ -19,6 +19,7 @@ type MeResponse struct {
 	ReservedCents int    `json:"reserved_cents"`
 	KYCTier       int    `json:"kyc_tier"`
 	Locale        string `json:"locale"`
+	Timezone      string `json:"timezone"`
 	CreatedAt     string `json:"created_at"`
 }
 
@@ -32,6 +33,7 @@ func meToResponse(u *domain.User) MeResponse {
 		ReservedCents: u.ReservedCents,
 		KYCTier:       int(u.KYCTier),
 		Locale:        u.Locale,
+		Timezone:      u.Timezone,
 		CreatedAt:     u.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }

@@ -100,7 +100,7 @@ class APIClient {
 
   updateMe(
     token: string,
-    data: Partial<Pick<UserResponse, "display_name">>,
+    data: Partial<Pick<UserResponse, "display_name" | "timezone">>,
   ): Promise<UserResponse> {
     return this.request(
       "/api/v1/users/me",

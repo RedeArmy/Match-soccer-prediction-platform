@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { I18nProvider } from "@/lib/i18n";
+import { TimezoneSync } from "@/components/shared/TimezoneSync";
 
 export function Providers({
   children,
@@ -23,7 +24,10 @@ export function Providers({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <I18nProvider>{children}</I18nProvider>
+      <I18nProvider>
+        <TimezoneSync />
+        {children}
+      </I18nProvider>
     </QueryClientProvider>
   );
 }
