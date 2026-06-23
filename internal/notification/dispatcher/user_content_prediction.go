@@ -250,8 +250,8 @@ func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (u
 		locale,
 	)
 	pushBody := localeStr(
-		fmt.Sprintf("+%d pts today", p.PointsToday),
-		fmt.Sprintf("+%d pts hoy", p.PointsToday),
+		fmt.Sprintf("you earned %d pts today", p.PointsToday),
+		fmt.Sprintf("esta jornada obtuviste %dpts hoy", p.PointsToday),
 		locale,
 	)
 	return userContent{
@@ -265,7 +265,7 @@ func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (u
 
 func dailySummaryIntroHTML(locale Locale, matchDate string) string {
 	if locale == LocaleES {
-		return fmt.Sprintf(`<p style="color:#444;margin:0 0 16px">Resultados de la jornada del <strong>%s</strong>:</p>`, matchDate)
+		return ""
 	}
 	return fmt.Sprintf(`<p style="color:#444;margin:0 0 16px">Here are your results for <strong>%s</strong>:</p>`, matchDate)
 }
@@ -309,8 +309,7 @@ func dailySummaryMatchRowHTML(idx int, m notification.DailySummaryMatchRow, loca
 	}
 	h := html.EscapeString(translateTeamName(m.HomeTeam, locale))
 	aw := html.EscapeString(translateTeamName(m.AwayTeam, locale))
-	kickoff := m.KickoffAt.UTC().Format("15:04")
-	matchCell := fmt.Sprintf(`%s vs %s <span style="color:#888;font-size:12px">(%s UTC)</span>`, h, aw, kickoff)
+	matchCell := fmt.Sprintf(`%s vs %s`, h, aw)
 	result := fmt.Sprintf(`<strong>%d – %d</strong>`, m.HomeScore, m.AwayScore)
 
 	var predCell, pointsBadge string
