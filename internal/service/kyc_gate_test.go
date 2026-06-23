@@ -91,7 +91,8 @@ func (r *kycUserRepoStub) GetBalance(_ context.Context, _ int) (int, int, error)
 func (r *kycUserRepoStub) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
 	return "GTQ", nil
 }
-func (r *kycUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
+func (r *kycUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error   { return nil }
+func (r *kycUserRepoStub) UpdateTimezone(_ context.Context, _ int, _ string) error { return nil }
 func (r *kycUserRepoStub) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
 	return nil, nil
 }

@@ -244,7 +244,7 @@ describe("PredictionPanel", () => {
     await screen.findByText("Canadá"); // wait for data to load
 
     // Switch to by-day view
-    fireEvent.click(screen.getByRole("button", { name: "Hoy" }));
+    fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
 
     // No matches today → noTodayMatches empty state
     expect(
@@ -319,7 +319,7 @@ describe("PredictionPanel", () => {
     await screen.findByText("Canadá");
 
     // Switch to by-day, then pending — all today's matches have predictions
-    fireEvent.click(screen.getByRole("button", { name: "Hoy" }));
+    fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
     fireEvent.click(screen.getByRole("button", { name: "Pendientes" }));
 
     expect(

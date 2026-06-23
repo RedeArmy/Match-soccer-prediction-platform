@@ -18,6 +18,7 @@ const dateOnlyLayout = "2006-01-02"
 // ParamReader is the subset of SystemParamService consumed by Jobs.
 type ParamReader interface {
 	GetInt(ctx context.Context, key string, defaultVal int) int
+	GetString(ctx context.Context, key, defaultVal string) string
 }
 
 // OutboxWriter is the write-side contract consumed by scheduler jobs.
@@ -79,6 +80,10 @@ type Store interface {
 	// Results are sorted by kickoff_at ascending.  Used to build the full match
 	// list inside a reminder email after the trigger match has been identified.
 	ListUnpredictedUpcomingMatchesByUsers(ctx context.Context, userIDs []int, after time.Time) (map[int][]notification.DailyReminderMatch, error)
+
+	// GetUserTimezones returns the IANA timezone string stored for each user ID.
+	// Missing or soft-deleted users are omitted from the result map.
+	GetUserTimezones(ctx context.Context, userIDs []int) (map[int]string, error)
 
 	// ListDailySummaryTargets returns one DailySummaryPayload per active,
 	// paid user-quiniela pair that has at least one prediction for any match
@@ -159,6 +164,14 @@ func (j *Jobs) getInt(ctx context.Context, key string, def int) int {
 		return def
 	}
 	return j.params.GetInt(ctx, key, def)
+}
+
+// getString reads a string param, returning def when params is nil.
+func (j *Jobs) getString(ctx context.Context, key, def string) string {
+	if j.params == nil {
+		return def
+	}
+	return j.params.GetString(ctx, key, def)
 }
 
 // inBucket reports whether minutesLeft falls within [leadMin±bucketToleranceMin].
@@ -288,10 +301,31 @@ func (j *Jobs) PredictionDailyReminder(ctx context.Context) error {
 		return fmt.Errorf("scheduler: match reminder: list unpredicted: %w", err)
 	}
 
-	dateStr := now.UTC().Format(dateOnlyLayout)
+	userTZs, err := j.store.GetUserTimezones(ctx, allUserIDs)
+	if err != nil {
+		return fmt.Errorf("scheduler: match reminder: get user timezones: %w", err)
+	}
+
+	defaultTZ := j.getString(ctx, domain.ParamKeyNotifySchedulerTimezone, domain.DefaultNotifySchedulerTimezone)
 	for _, t := range triggers {
 		for _, uid := range t.missingIDs {
-			j.emitMatchReminder(ctx, uid, t.matchID, byUser[uid], dateStr)
+			tz := userTZs[uid]
+			if tz == "" {
+				tz = defaultTZ
+			}
+			loc, lerr := time.LoadLocation(tz)
+			if lerr != nil {
+				loc = time.UTC
+				tz = "UTC"
+			}
+			dateStr := now.In(loc).Format(dateOnlyLayout)
+			var todayMatches []notification.DailyReminderMatch
+			for _, m := range byUser[uid] {
+				if m.KickoffAt.In(loc).Format(dateOnlyLayout) == dateStr {
+					todayMatches = append(todayMatches, m)
+				}
+			}
+			j.emitMatchReminder(ctx, uid, t.matchID, todayMatches, dateStr, tz)
 		}
 	}
 	return nil
@@ -325,15 +359,16 @@ func collectReminderTriggers(matches []DeadlineMatch, leadMin int) (triggers []r
 
 // emitMatchReminder writes a single dedup-guarded outbox entry for the given
 // (user, trigger match) pair.  It is a no-op when userMatches is empty.
-func (j *Jobs) emitMatchReminder(ctx context.Context, uid, matchID int, userMatches []notification.DailyReminderMatch, dateStr string) {
+func (j *Jobs) emitMatchReminder(ctx context.Context, uid, matchID int, userMatches []notification.DailyReminderMatch, dateStr, tz string) {
 	if len(userMatches) == 0 {
 		return
 	}
 	dedupKey := fmt.Sprintf("prediction.match_reminder:user:%d:match:%d", uid, matchID)
 	payload := notification.PredictionDailyReminderPayload{
-		UserID:  uid,
-		Date:    dateStr,
-		Matches: userMatches,
+		UserID:   uid,
+		Date:     dateStr,
+		Timezone: tz,
+		Matches:  userMatches,
 	}
 	written, err := j.writer.WriteDedup(ctx,
 		dedupKey,

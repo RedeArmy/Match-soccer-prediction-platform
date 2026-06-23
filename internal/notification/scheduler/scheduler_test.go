@@ -74,6 +74,10 @@ func (s *stubParams) GetInt(_ context.Context, key string, defaultVal int) int {
 	return defaultVal
 }
 
+func (s *stubParams) GetString(_ context.Context, _ string, defaultVal string) string {
+	return defaultVal
+}
+
 // stubStore is a minimal Store for tests.
 type stubStore struct {
 	pendingTransfers     int
@@ -86,6 +90,7 @@ type stubStore struct {
 	staleWithdrawals     []*domain.WithdrawalRequest
 	unpredictedByUser    map[int][]notification.DailyReminderMatch
 	unpredictedByUserErr error
+	userTimezones        map[int]string
 }
 
 func (s *stubStore) CountPendingTransfers(_ context.Context) (int, error) {
@@ -117,6 +122,16 @@ func (s *stubStore) ListStaleWithdrawals(_ context.Context, _ time.Time) ([]*dom
 }
 func (s *stubStore) ListUnpredictedUpcomingMatchesByUsers(_ context.Context, _ []int, _ time.Time) (map[int][]notification.DailyReminderMatch, error) {
 	return s.unpredictedByUser, s.unpredictedByUserErr
+}
+func (s *stubStore) GetUserTimezones(_ context.Context, userIDs []int) (map[int]string, error) {
+	if s.userTimezones == nil {
+		result := make(map[int]string, len(userIDs))
+		for _, id := range userIDs {
+			result[id] = "America/Guatemala"
+		}
+		return result, nil
+	}
+	return s.userTimezones, nil
 }
 func (s *stubStore) ListDailySummaryTargets(_ context.Context, _ time.Time, _ time.Duration) ([]notification.DailySummaryPayload, error) {
 	return nil, nil

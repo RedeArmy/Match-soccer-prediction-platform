@@ -179,9 +179,10 @@ type PredictionDeadlinePayload struct {
 
 // PredictionDailyReminderPayload is the payload for EventPredictionDailyReminder.
 type PredictionDailyReminderPayload struct {
-	UserID  int                  `json:"user_id"`
-	Date    string               `json:"date"`    // YYYY-MM-DD in scheduler timezone
-	Matches []DailyReminderMatch `json:"matches"` // unpredicted matches for the day
+	UserID   int                  `json:"user_id"`
+	Date     string               `json:"date"`     // YYYY-MM-DD in scheduler timezone
+	Timezone string               `json:"timezone"` // IANA timezone for displaying kickoff times
+	Matches  []DailyReminderMatch `json:"matches"`  // unpredicted matches for the day
 }
 
 // DailyReminderMatch carries the minimal details about one unpredicted match.

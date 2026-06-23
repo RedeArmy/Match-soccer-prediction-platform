@@ -282,6 +282,37 @@ func (s *PostgresSchedulerStore) ListUnpredictedUpcomingMatchesByUsers(ctx conte
 	return result, rows.Err()
 }
 
+// GetUserTimezones returns the IANA timezone string stored for each active user
+// in userIDs. Users not found or soft-deleted are omitted from the result map.
+func (s *PostgresSchedulerStore) GetUserTimezones(ctx context.Context, userIDs []int) (map[int]string, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]int32, len(userIDs))
+	for i, id := range userIDs {
+		ids[i] = int32(id)
+	}
+	rows, err := s.db.Query(ctx,
+		`SELECT id, timezone FROM users WHERE id = ANY($1) AND deleted_at IS NULL`,
+		ids,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int]string, len(userIDs))
+	for rows.Next() {
+		var uid int
+		var tz string
+		if err := rows.Scan(&uid, &tz); err != nil {
+			return nil, err
+		}
+		result[uid] = tz
+	}
+	return result, rows.Err()
+}
+
 // ListUpcomingMatchesWithDeadline returns matches whose kickoff is within
 // deadlineWindow and that have users with no prediction submitted.
 func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Context, deadlineWindow time.Duration) ([]scheduler.DeadlineMatch, error) {
@@ -412,13 +443,13 @@ ORDER  BY t.user_id, dm.kickoff_at`,
 
 	for rows.Next() {
 		var (
-			userID                int
-			matchID               int
-			homeTeam, awayTeam    string
+			userID                 int
+			matchID                int
+			homeTeam, awayTeam     string
 			resultHome, resultAway int
-			kickoffAt             time.Time
-			predHome, predAway    *int
-			pointsEarned          int
+			kickoffAt              time.Time
+			predHome, predAway     *int
+			pointsEarned           int
 		)
 		if err := rows.Scan(
 			&userID,

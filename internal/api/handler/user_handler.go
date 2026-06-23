@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -45,7 +46,8 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 
 // updateMeRequest is the body accepted by PATCH /api/v1/users/me.
 type updateMeRequest struct {
-	Locale *string `json:"locale"`
+	Locale   *string `json:"locale"`
+	Timezone *string `json:"timezone"`
 }
 
 // UpdateMe handles PATCH /api/v1/users/me.
@@ -85,6 +87,19 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.userRepo.UpdateLocale(r.Context(), caller.ID, string(locale)); err != nil {
+			middleware.WriteError(w, r, h.log, err)
+			return
+		}
+	}
+
+	if req.Timezone != nil {
+		tz := *req.Timezone
+		if _, err := time.LoadLocation(tz); err != nil {
+			middleware.WriteError(w, r, h.log,
+				apperrors.Validation("timezone must be a valid IANA timezone (e.g. \"America/Guatemala\")"))
+			return
+		}
+		if err := h.userRepo.UpdateTimezone(r.Context(), caller.ID, tz); err != nil {
 			middleware.WriteError(w, r, h.log, err)
 			return
 		}

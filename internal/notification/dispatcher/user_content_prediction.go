@@ -229,121 +229,15 @@ func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (u
 		return userContent{}, err
 	}
 
-	home := translateTeamName
-	away := translateTeamName
-
-	// Build the match-results table with inline styles (email-client safe).
 	var sb strings.Builder
-
-	// Introductory sentence.
-	if locale == LocaleES {
-		fmt.Fprintf(&sb, `<p style="color:#444;margin:0 0 16px">Resultados de la jornada del <strong>%s</strong>:</p>`, p.MatchDate)
-	} else {
-		fmt.Fprintf(&sb, `<p style="color:#444;margin:0 0 16px">Here are your results for <strong>%s</strong>:</p>`, p.MatchDate)
-	}
-
-	// Table header
-	if locale == LocaleES {
-		sb.WriteString(`<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px">`)
-		sb.WriteString(`<thead><tr style="background:#1a1a2e;color:#fff">`)
-		sb.WriteString(`<th style="padding:10px 12px;text-align:left;font-weight:600">Partido</th>`)
-		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Resultado</th>`)
-		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Tu predicción</th>`)
-		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Puntos</th>`)
-		sb.WriteString(`</tr></thead><tbody>`)
-	} else {
-		sb.WriteString(`<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px">`)
-		sb.WriteString(`<thead><tr style="background:#1a1a2e;color:#fff">`)
-		sb.WriteString(`<th style="padding:10px 12px;text-align:left;font-weight:600">Match</th>`)
-		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Result</th>`)
-		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Your prediction</th>`)
-		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Points</th>`)
-		sb.WriteString(`</tr></thead><tbody>`)
-	}
-
+	sb.WriteString(dailySummaryIntroHTML(locale, p.MatchDate))
+	sb.WriteString(dailySummaryTableHeaderHTML(locale))
 	for i, m := range p.Matches {
-		rowBg := "#fff"
-		if i%2 == 1 {
-			rowBg = "#f8f9fa"
-		}
-		h := html.EscapeString(home(m.HomeTeam, locale))
-		aw := html.EscapeString(away(m.AwayTeam, locale))
-		kickoff := m.KickoffAt.UTC().Format("15:04")
-		match := fmt.Sprintf(`%s vs %s <span style="color:#888;font-size:12px">(%s UTC)</span>`, h, aw, kickoff)
-		result := fmt.Sprintf(`<strong>%d – %d</strong>`, m.HomeScore, m.AwayScore)
-
-		var predCell string
-		var pointsBadge string
-		if m.PredHome != nil && m.PredAway != nil {
-			predCell = fmt.Sprintf(`%d – %d`, *m.PredHome, *m.PredAway)
-			badgeColor := "#e74c3c"
-			if m.PointsEarned >= 5 {
-				badgeColor = "#27ae60" // exact score
-			} else if m.PointsEarned >= 3 {
-				badgeColor = "#f39c12" // outcome/diff
-			} else if m.PointsEarned > 0 {
-				badgeColor = "#e67e22"
-			}
-			pointsBadge = fmt.Sprintf(`<span style="display:inline-block;background:%s;color:#fff;border-radius:12px;padding:2px 10px;font-weight:700;font-size:13px">+%d</span>`, badgeColor, m.PointsEarned)
-		} else {
-			if locale == LocaleES {
-				predCell = `<span style="color:#bbb">Sin predicción</span>`
-			} else {
-				predCell = `<span style="color:#bbb">No prediction</span>`
-			}
-			pointsBadge = `<span style="color:#bbb">—</span>`
-		}
-
-		fmt.Fprintf(&sb,
-			`<tr style="background:%s;border-bottom:1px solid #eee">
-  <td style="padding:10px 12px;color:#333">%s</td>
-  <td style="padding:10px 12px;text-align:center;color:#333">%s</td>
-  <td style="padding:10px 12px;text-align:center;color:#333">%s</td>
-  <td style="padding:10px 12px;text-align:center">%s</td>
-</tr>`,
-			rowBg, match, result, predCell, pointsBadge,
-		)
+		sb.WriteString(dailySummaryMatchRowHTML(i, m, locale))
 	}
-
-	// Totals row
-	sb.WriteString(`<tr style="background:#1a1a2e;color:#fff;font-weight:700">`)
-	if locale == LocaleES {
-		fmt.Fprintf(&sb, `<td colspan="3" style="padding:10px 12px">Puntos de hoy</td>`)
-		fmt.Fprintf(&sb, `<td style="padding:10px 12px;text-align:center;font-size:16px">+%d</td>`, p.PointsToday)
-	} else {
-		fmt.Fprintf(&sb, `<td colspan="3" style="padding:10px 12px">Today's points</td>`)
-		fmt.Fprintf(&sb, `<td style="padding:10px 12px;text-align:center;font-size:16px">+%d</td>`, p.PointsToday)
-	}
-	sb.WriteString(`</tr>`)
-	sb.WriteString(`</tbody></table>`)
-
-	// Encouraging message (rotated by day-of-week for variety)
-	encouragingES := []string{
-		"¡Sigue así! Cada partido es una nueva oportunidad de subir en el marcador.",
-		"¡Buen trabajo hoy! Mañana hay más partidos — no olvides tus predicciones.",
-		"¡El torneo apenas empieza! Sigue prediciendo para escalar posiciones.",
-		"¡Cada punto cuenta! Mantén el ritmo y sigue compitiendo fuerte.",
-		"¡Ánimo! Los mejores predictores no se rinden — prepárate para la siguiente jornada.",
-		"¡Genial! Revisa el marcador y planea tu estrategia para los próximos partidos.",
-		"¡Vas por buen camino! Sigue prediciendo y demuestra tu conocimiento futbolero.",
-	}
-	encouragingEN := []string{
-		"Keep it up! Every match is a new chance to climb the leaderboard.",
-		"Great day! More matches tomorrow — don't forget your predictions.",
-		"The tournament is just getting started! Keep predicting to move up the ranks.",
-		"Every point counts! Stay consistent and keep competing.",
-		"Don't give up! The best predictors never quit — get ready for the next round.",
-		"Nice work! Check the leaderboard and plan your strategy for upcoming matches.",
-		"You're on the right track! Keep predicting and show off your football knowledge.",
-	}
-	dayIdx := int(time.Now().Weekday())
-	var encourageMsg string
-	if locale == LocaleES {
-		encourageMsg = encouragingES[dayIdx%len(encouragingES)]
-	} else {
-		encourageMsg = encouragingEN[dayIdx%len(encouragingEN)]
-	}
-	fmt.Fprintf(&sb, `<p style="color:#555;font-style:italic;margin:0">%s</p>`, html.EscapeString(encourageMsg))
+	sb.WriteString(dailySummaryTotalsHTML(locale, p.PointsToday))
+	fmt.Fprintf(&sb, `<p style="color:#555;font-style:italic;margin:0">%s</p>`,
+		html.EscapeString(dailySummaryEncouragement(locale)))
 
 	subject := localeStr(
 		fmt.Sprintf("Your daily summary — %s | +%d pts today", p.MatchDate, p.PointsToday),
@@ -355,7 +249,6 @@ func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (u
 		fmt.Sprintf("Resumen de la jornada — %s", p.MatchDate),
 		locale,
 	)
-
 	pushBody := localeStr(
 		fmt.Sprintf("+%d pts today", p.PointsToday),
 		fmt.Sprintf("+%d pts hoy", p.PointsToday),
@@ -370,10 +263,131 @@ func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (u
 	}, nil
 }
 
+func dailySummaryIntroHTML(locale Locale, matchDate string) string {
+	if locale == LocaleES {
+		return fmt.Sprintf(`<p style="color:#444;margin:0 0 16px">Resultados de la jornada del <strong>%s</strong>:</p>`, matchDate)
+	}
+	return fmt.Sprintf(`<p style="color:#444;margin:0 0 16px">Here are your results for <strong>%s</strong>:</p>`, matchDate)
+}
+
+func dailySummaryTableHeaderHTML(locale Locale) string {
+	const open = `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px">` +
+		`<thead><tr style="background:#1a1a2e;color:#fff">`
+	if locale == LocaleES {
+		return open +
+			`<th style="padding:10px 12px;text-align:left;font-weight:600">Partido</th>` +
+			`<th style="padding:10px 12px;text-align:center;font-weight:600">Resultado</th>` +
+			`<th style="padding:10px 12px;text-align:center;font-weight:600">Tu predicción</th>` +
+			`<th style="padding:10px 12px;text-align:center;font-weight:600">Puntos</th>` +
+			`</tr></thead><tbody>`
+	}
+	return open +
+		`<th style="padding:10px 12px;text-align:left;font-weight:600">Match</th>` +
+		`<th style="padding:10px 12px;text-align:center;font-weight:600">Result</th>` +
+		`<th style="padding:10px 12px;text-align:center;font-weight:600">Your prediction</th>` +
+		`<th style="padding:10px 12px;text-align:center;font-weight:600">Points</th>` +
+		`</tr></thead><tbody>`
+}
+
+func dailySummaryBadgeColor(pts int) string {
+	switch {
+	case pts >= 5:
+		return "#27ae60" // exact score
+	case pts >= 3:
+		return "#f39c12" // outcome/diff
+	case pts > 0:
+		return "#e67e22"
+	default:
+		return "#e74c3c"
+	}
+}
+
+func dailySummaryMatchRowHTML(idx int, m notification.DailySummaryMatchRow, locale Locale) string {
+	rowBg := "#fff"
+	if idx%2 == 1 {
+		rowBg = "#f8f9fa"
+	}
+	h := html.EscapeString(translateTeamName(m.HomeTeam, locale))
+	aw := html.EscapeString(translateTeamName(m.AwayTeam, locale))
+	kickoff := m.KickoffAt.UTC().Format("15:04")
+	matchCell := fmt.Sprintf(`%s vs %s <span style="color:#888;font-size:12px">(%s UTC)</span>`, h, aw, kickoff)
+	result := fmt.Sprintf(`<strong>%d – %d</strong>`, m.HomeScore, m.AwayScore)
+
+	var predCell, pointsBadge string
+	if m.PredHome != nil && m.PredAway != nil {
+		predCell = fmt.Sprintf(`%d – %d`, *m.PredHome, *m.PredAway)
+		pointsBadge = fmt.Sprintf(
+			`<span style="display:inline-block;background:%s;color:#fff;border-radius:12px;padding:2px 10px;font-weight:700;font-size:13px">+%d</span>`,
+			dailySummaryBadgeColor(m.PointsEarned), m.PointsEarned,
+		)
+	} else {
+		if locale == LocaleES {
+			predCell = `<span style="color:#bbb">Sin predicción</span>`
+		} else {
+			predCell = `<span style="color:#bbb">No prediction</span>`
+		}
+		pointsBadge = `<span style="color:#bbb">—</span>`
+	}
+
+	return fmt.Sprintf(
+		`<tr style="background:%s;border-bottom:1px solid #eee">`+
+			`<td style="padding:10px 12px;color:#333">%s</td>`+
+			`<td style="padding:10px 12px;text-align:center;color:#333">%s</td>`+
+			`<td style="padding:10px 12px;text-align:center;color:#333">%s</td>`+
+			`<td style="padding:10px 12px;text-align:center">%s</td>`+
+			`</tr>`,
+		rowBg, matchCell, result, predCell, pointsBadge,
+	)
+}
+
+func dailySummaryTotalsHTML(locale Locale, pts int) string {
+	const open = `<tr style="background:#1a1a2e;color:#fff;font-weight:700">`
+	ptsTD := fmt.Sprintf(`<td style="padding:10px 12px;text-align:center;font-size:16px">+%d</td>`, pts)
+	if locale == LocaleES {
+		return open + `<td colspan="3" style="padding:10px 12px">Puntos de hoy</td>` + ptsTD + `</tr></tbody></table>`
+	}
+	return open + `<td colspan="3" style="padding:10px 12px">Today's points</td>` + ptsTD + `</tr></tbody></table>`
+}
+
+func dailySummaryEncouragement(locale Locale) string {
+	msgs := [2][7]string{
+		{ // ES
+			"¡Sigue así! Cada partido es una nueva oportunidad de subir en el marcador.",
+			"¡Buen trabajo hoy! Mañana hay más partidos — no olvides tus predicciones.",
+			"¡El torneo apenas empieza! Sigue prediciendo para escalar posiciones.",
+			"¡Cada punto cuenta! Mantén el ritmo y sigue compitiendo fuerte.",
+			"¡Ánimo! Los mejores predictores no se rinden — prepárate para la siguiente jornada.",
+			"¡Genial! Revisa el marcador y planea tu estrategia para los próximos partidos.",
+			"¡Vas por buen camino! Sigue prediciendo y demuestra tu conocimiento futbolero.",
+		},
+		{ // EN
+			"Keep it up! Every match is a new chance to climb the leaderboard.",
+			"Great day! More matches tomorrow — don't forget your predictions.",
+			"The tournament is just getting started! Keep predicting to move up the ranks.",
+			"Every point counts! Stay consistent and keep competing.",
+			"Don't give up! The best predictors never quit — get ready for the next round.",
+			"Nice work! Check the leaderboard and plan your strategy for upcoming matches.",
+			"You're on the right track! Keep predicting and show off your football knowledge.",
+		},
+	}
+	idx := int(time.Now().Weekday())
+	if locale == LocaleES {
+		return msgs[0][idx%7]
+	}
+	return msgs[1][idx%7]
+}
+
 func buildPredictionDailyReminderContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
 	var p notification.PredictionDailyReminderPayload
 	if err := entry.DecodePayload(&p); err != nil {
 		return userContent{}, err
+	}
+
+	loc := time.UTC
+	if p.Timezone != "" {
+		if l, err := time.LoadLocation(p.Timezone); err == nil {
+			loc = l
+		}
 	}
 
 	count := len(p.Matches)
@@ -384,8 +398,8 @@ func buildPredictionDailyReminderContent(entry *notification.OutboxEntry, locale
 		for _, m := range p.Matches {
 			home := html.EscapeString(translateTeamName(m.HomeTeam, locale))
 			away := html.EscapeString(translateTeamName(m.AwayTeam, locale))
-			kickoff := m.KickoffAt.UTC().Format("15:04")
-			fmt.Fprintf(&sb, "<li><strong>%s vs %s</strong> &mdash; %s UTC</li>", home, away, kickoff)
+			kickoff := m.KickoffAt.In(loc).Format("15:04")
+			fmt.Fprintf(&sb, "<li><strong>%s vs %s</strong> &mdash; %s</li>", home, away, kickoff)
 		}
 		sb.WriteString("</ul>")
 		matchListHTML = template.HTML(sb.String()) //nolint:gosec // G203: all dynamic values are sanitised with html.EscapeString before insertion

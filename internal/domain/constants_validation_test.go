@@ -151,9 +151,9 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyWorkerSchedMatchResultIntervalSec":     ParamKeyWorkerSchedMatchResultIntervalSec,
 		"ParamKeyWorkerSchedPendingReminderIntervalSec": ParamKeyWorkerSchedPendingReminderIntervalSec,
 		"ParamKeyWorkerSchedStaleEscalationIntervalSec": ParamKeyWorkerSchedStaleEscalationIntervalSec,
-		"ParamKeyWorkerSchedPushPruneIntervalSec":          ParamKeyWorkerSchedPushPruneIntervalSec,
-		"ParamKeyWorkerSchedDailySummaryIntervalSec":        ParamKeyWorkerSchedDailySummaryIntervalSec,
-		"ParamKeyWorkerSchedDailySummaryResultDelayMin":     ParamKeyWorkerSchedDailySummaryResultDelayMin,
+		"ParamKeyWorkerSchedPushPruneIntervalSec":       ParamKeyWorkerSchedPushPruneIntervalSec,
+		"ParamKeyWorkerSchedDailySummaryIntervalSec":    ParamKeyWorkerSchedDailySummaryIntervalSec,
+		"ParamKeyWorkerSchedDailySummaryResultDelayMin": ParamKeyWorkerSchedDailySummaryResultDelayMin,
 		// Leaderboard broadcaster retry policy (migration 000160)
 		"ParamKeyWorkerLeaderboardPublishMaxAttempts": ParamKeyWorkerLeaderboardPublishMaxAttempts,
 		"ParamKeyWorkerLeaderboardPublishBaseDelayMs": ParamKeyWorkerLeaderboardPublishBaseDelayMs,

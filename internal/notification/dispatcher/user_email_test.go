@@ -564,8 +564,9 @@ func TestUserDispatcher_DailyReminderEmail_ContainsMatchList(t *testing.T) {
 	d := newMinimalUserDispatcher(notifRepo, prefRepo, mailer, resolver, &recordingDLQRepo{})
 
 	p := notification.PredictionDailyReminderPayload{
-		UserID: 42,
-		Date:   "2026-06-22",
+		UserID:   42,
+		Date:     "2026-06-22",
+		Timezone: "America/Guatemala",
 		Matches: []notification.DailyReminderMatch{
 			{MatchID: 5, HomeTeam: "Mexico", AwayTeam: "USA", KickoffAt: time.Date(2026, 6, 22, 21, 0, 0, 0, time.UTC)},
 			{MatchID: 6, HomeTeam: "Brazil", AwayTeam: "Germany", KickoffAt: time.Date(2026, 6, 22, 23, 0, 0, 0, time.UTC)},
@@ -592,8 +593,9 @@ func TestUserDispatcher_DailyReminderEmail_ContainsMatchList(t *testing.T) {
 	if !strings.Contains(html, "<ul") {
 		t.Errorf("rendered HTML should contain match list <ul>; got: %s", html)
 	}
-	if !strings.Contains(html, "21:00") {
-		t.Errorf("rendered HTML should contain kickoff time 21:00; got: %s", html)
+	// 21:00 UTC → 15:00 America/Guatemala (UTC-6)
+	if !strings.Contains(html, "15:00") {
+		t.Errorf("rendered HTML should contain kickoff in Guatemala time (15:00); got: %s", html)
 	}
 }
 

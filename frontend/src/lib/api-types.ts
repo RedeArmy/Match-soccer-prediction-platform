@@ -67,6 +67,7 @@ export interface UserResponse {
   kyc_tier: number;
   banned_at: string | null;
   created_at: string;
+  timezone?: string;
 }
 
 export interface UserStatsResponse {

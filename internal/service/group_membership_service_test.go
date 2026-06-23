@@ -1287,7 +1287,8 @@ func (r *memberUserRepoStub) GetBalance(_ context.Context, _ int) (int, int, err
 func (r *memberUserRepoStub) GetBalanceCurrency(_ context.Context, _ int) (string, error) {
 	return r.currency, nil
 }
-func (r *memberUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error { return nil }
+func (r *memberUserRepoStub) UpdateLocale(_ context.Context, _ int, _ string) error   { return nil }
+func (r *memberUserRepoStub) UpdateTimezone(_ context.Context, _ int, _ string) error { return nil }
 func (r *memberUserRepoStub) SetRole(_ context.Context, _ int, _ domain.UserRole) (*domain.User, error) {
 	return nil, nil
 }
