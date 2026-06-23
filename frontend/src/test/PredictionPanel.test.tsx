@@ -499,6 +499,50 @@ describe("PredictionPanel", () => {
     void nextBtn;
   });
 
+  it("closes calendar dropdown when clicking outside the container", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    await screen.findByText("Canadá");
+
+    fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Abrir calendario" }));
+    expect(screen.getByRole("button", { name: "Mes siguiente" })).toBeInTheDocument();
+
+    // Simulate a mousedown outside the calendar container
+    fireEvent.mouseDown(document.body);
+
+    expect(screen.queryByRole("button", { name: "Mes siguiente" })).toBeNull();
+  });
+
+  it("shows Partidos de hoy button when a non-today date is selected and resets to today on click", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    await screen.findByText("Canadá");
+
+    fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Abrir calendario" }));
+
+    // Today is pre-selected → button should not be visible
+    expect(screen.queryByRole("button", { name: "Partidos de hoy" })).toBeNull();
+
+    const todayLocal = new Date().toLocaleDateString("sv");
+    const futureDays = screen
+      .getAllByRole("button", { name: (name) => /^\d{4}-\d{2}-\d{2}$/.test(name) })
+      .filter((btn) => !btn.hasAttribute("disabled") && btn.getAttribute("aria-label") !== todayLocal);
+
+    if (futureDays.length > 0) {
+      fireEvent.click(futureDays[0]);
+      expect(screen.getByRole("button", { name: "Partidos de hoy" })).toBeInTheDocument();
+      // Clicking it resets the selection to today
+      fireEvent.click(screen.getByRole("button", { name: "Partidos de hoy" }));
+      expect(screen.queryByRole("button", { name: "Partidos de hoy" })).toBeNull();
+    }
+  });
+
   it("disables score editing for locked matches and filters pending matches", async () => {
     vi.mocked(api.getMatches).mockResolvedValueOnce([
       scheduledMatch,
