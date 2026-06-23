@@ -309,26 +309,39 @@ func (j *Jobs) PredictionDailyReminder(ctx context.Context) error {
 	defaultTZ := j.getString(ctx, domain.ParamKeyNotifySchedulerTimezone, domain.DefaultNotifySchedulerTimezone)
 	for _, t := range triggers {
 		for _, uid := range t.missingIDs {
-			tz := userTZs[uid]
-			if tz == "" {
-				tz = defaultTZ
-			}
-			loc, lerr := time.LoadLocation(tz)
-			if lerr != nil {
-				loc = time.UTC
-				tz = "UTC"
-			}
-			dateStr := now.In(loc).Format(dateOnlyLayout)
-			var todayMatches []notification.DailyReminderMatch
-			for _, m := range byUser[uid] {
-				if m.KickoffAt.In(loc).Format(dateOnlyLayout) == dateStr {
-					todayMatches = append(todayMatches, m)
-				}
-			}
-			j.emitMatchReminder(ctx, uid, t.matchID, todayMatches, dateStr, tz)
+			matches, dateStr, tz := j.resolveUserReminder(uid, now, userTZs, defaultTZ, byUser)
+			j.emitMatchReminder(ctx, uid, t.matchID, matches, dateStr, tz)
 		}
 	}
 	return nil
+}
+
+// resolveUserReminder returns today's matches and timezone string for a single
+// user, applying a fallback to defaultTZ when the user has no stored timezone,
+// and falling back to UTC when the stored value is not a valid IANA name.
+func (j *Jobs) resolveUserReminder(
+	uid int,
+	now time.Time,
+	userTZs map[int]string,
+	defaultTZ string,
+	byUser map[int][]notification.DailyReminderMatch,
+) (todayMatches []notification.DailyReminderMatch, dateStr, tz string) {
+	tz = userTZs[uid]
+	if tz == "" {
+		tz = defaultTZ
+	}
+	loc, lerr := time.LoadLocation(tz)
+	if lerr != nil {
+		loc = time.UTC
+		tz = "UTC"
+	}
+	dateStr = now.In(loc).Format(dateOnlyLayout)
+	for _, m := range byUser[uid] {
+		if m.KickoffAt.In(loc).Format(dateOnlyLayout) == dateStr {
+			todayMatches = append(todayMatches, m)
+		}
+	}
+	return
 }
 
 // reminderTrigger pairs a trigger match ID with the users who still need to

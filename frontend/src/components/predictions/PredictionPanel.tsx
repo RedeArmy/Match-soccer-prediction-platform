@@ -439,9 +439,9 @@ export function PredictionPanel() {
                 ["all", t("predictions.filterAll")],
                 ["pending", t("predictions.filterPending")],
                 ["saved", t("predictions.filterSaved")],
-                ...(!isByDay
-                  ? ([["past", t("predictions.filterPast")]] as const)
-                  : []),
+                ...(isByDay
+                  ? []
+                  : ([["past", t("predictions.filterPast")]] as const)),
               ] as Array<[Filter, string]>
             ).map(([key, label]) => (
               <button
@@ -763,6 +763,25 @@ function normalizeGroup(group: string | null | undefined): GroupLabel | null {
   return GROUPS.includes(value as GroupLabel) ? (value as GroupLabel) : null;
 }
 
+// ── Calendar helpers ───────────────────────────────────────────────────────────
+
+function fmtDate(y: number, m: number, d: number): string {
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function getDayClass(
+  isPast: boolean,
+  isSelected: boolean,
+  isInRange: boolean,
+  isToday: boolean,
+): string {
+  if (isPast) return "cursor-not-allowed text-text-muted opacity-30";
+  if (isSelected) return "bg-gold-400 font-bold text-blue-950";
+  if (isInRange) return "bg-gold-400/25 text-gold-200";
+  if (isToday) return "ring-1 ring-gold-400 text-white hover:bg-white/10";
+  return "text-text-secondary hover:bg-white/10 hover:text-white";
+}
+
 // ── Match Calendar ─────────────────────────────────────────────────────────────
 
 interface MatchCalendarProps {
@@ -798,10 +817,6 @@ function MatchCalendar({
   // Monday-first offset (0=Mon … 6=Sun)
   const startOffset = (firstDayOfMonth.getDay() + 6) % 7;
 
-  function fmtDate(y: number, m: number, d: number): string {
-    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  }
-
   function handleDayClick(dateStr: string) {
     if (dateStr < todayStr) return;
 
@@ -818,14 +833,11 @@ function MatchCalendar({
     }
   }
 
-  function prevMonth() {
-    if (month === 1) setViewMonth(`${year - 1}-12`);
-    else setViewMonth(`${year}-${String(month - 1).padStart(2, "0")}`);
-  }
-
-  function nextMonth() {
-    if (month === 12) setViewMonth(`${year + 1}-01`);
-    else setViewMonth(`${year}-${String(month + 1).padStart(2, "0")}`);
+  function shiftMonth(delta: number) {
+    const m2 = month + delta;
+    if (m2 < 1) setViewMonth(`${year - 1}-12`);
+    else if (m2 > 12) setViewMonth(`${year + 1}-01`);
+    else setViewMonth(`${year}-${String(m2).padStart(2, "0")}`);
   }
 
   const canGoPrev = viewMonth > todayMonth;
@@ -837,10 +849,10 @@ function MatchCalendar({
 
   const dayHeaders = t("predictions.calendarDayHdrs").split(",");
 
-  // Build day cells: null = blank filler, string = YYYY-MM-DD
-  const cells: (string | null)[] = [];
-  for (let i = 0; i < startOffset; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(fmtDate(year, month, d));
+  type CalendarCell = { blank: true; key: string } | { blank: false; dateStr: string };
+  const cells: CalendarCell[] = [];
+  for (let i = 0; i < startOffset; i++) cells.push({ blank: true, key: `${viewMonth}-f${i}` });
+  for (let d = 1; d <= daysInMonth; d++) cells.push({ blank: false, dateStr: fmtDate(year, month, d) });
 
   const isRangeMode = selectedStart !== selectedEnd;
   const isSelectionToday = selectedStart === todayStr && selectedEnd === todayStr;
@@ -851,7 +863,7 @@ function MatchCalendar({
       <div className="mb-3 flex items-center justify-between">
         <button
           type="button"
-          onClick={prevMonth}
+          onClick={() => shiftMonth(-1)}
           disabled={!canGoPrev}
           aria-label={t("predictions.calendarPrevMonth")}
           className={cn(
@@ -870,7 +882,7 @@ function MatchCalendar({
 
         <button
           type="button"
-          onClick={nextMonth}
+          onClick={() => shiftMonth(1)}
           aria-label={t("predictions.calendarNextMonth")}
           className="rounded p-1.5 text-text-secondary transition-colors hover:bg-white/10 hover:text-white"
         >
@@ -892,9 +904,10 @@ function MatchCalendar({
 
       {/* Day grid */}
       <div className="grid grid-cols-7 gap-y-0.5">
-        {cells.map((dateStr, i) => {
-          if (!dateStr) return <span key={`blank-${i}`} />;
+        {cells.map((cell) => {
+          if (cell.blank) return <span key={cell.key} />;
 
+          const { dateStr } = cell;
           const isPast = dateStr < todayStr;
           const isToday = dateStr === todayStr;
           const isSelected = dateStr === selectedStart || dateStr === selectedEnd;
@@ -913,15 +926,7 @@ function MatchCalendar({
                 aria-pressed={isSelected || isInRange}
                 className={cn(
                   "h-8 w-8 rounded text-xs font-medium transition-colors",
-                  isPast
-                    ? "cursor-not-allowed text-text-muted opacity-30"
-                    : isSelected
-                      ? "bg-gold-400 font-bold text-blue-950"
-                      : isInRange
-                        ? "bg-gold-400/25 text-gold-200"
-                        : isToday
-                          ? "ring-1 ring-gold-400 text-white hover:bg-white/10"
-                          : "text-text-secondary hover:bg-white/10 hover:text-white",
+                  getDayClass(isPast, isSelected, isInRange, isToday),
                 )}
               >
                 {day}
