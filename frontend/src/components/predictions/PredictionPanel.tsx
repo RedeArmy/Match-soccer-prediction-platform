@@ -820,14 +820,11 @@ function MatchCalendar({
   function handleDayClick(dateStr: string) {
     if (dateStr < todayStr) return;
 
-    if (pendingStart === null) {
-      setPendingStart(dateStr);
-      onRangeChange(dateStr, dateStr);
-    } else if (dateStr >= pendingStart) {
+    if (pendingStart !== null && dateStr >= pendingStart) {
       onRangeChange(pendingStart, dateStr);
       setPendingStart(null);
     } else {
-      // Clicked before pending start → restart range from this day
+      // No pending start, or clicked before it → start a new single-day selection
       setPendingStart(dateStr);
       onRangeChange(dateStr, dateStr);
     }
