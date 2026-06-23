@@ -21,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const p = $input.first().json;\nconst amountGTQ = (p.frozen_amount_cents / 100).toFixed(2);\nreturn [{\n  json: {\n    subject: `[COMPLIANCE] KYC balance frozen — Q${amountGTQ} GTQ (User ${p.user_id})`,\n    body: `A user's balance has been automatically frozen pending KYC verification.\\n\\nUser ID: ${p.user_id}\\nFrozen amount: Q${amountGTQ} GTQ\\nReason: ${p.reason}\\nTrace ID: ${p.trace_id}\\n\\nAction required: Review the user's KYC submission and release the freeze after approval.\\nAdmin panel: ${process.env.ADMIN_BASE_URL}/admin/kyc/frozen-balances`\n  }\n}];"
+        "jsCode": "const p = ($input.first().json.body ?? $input.first().json);\nconst amountGTQ = (p.frozen_amount_cents / 100).toFixed(2);\nreturn [{\n  json: {\n    subject: `[COMPLIANCE] KYC balance frozen — Q${amountGTQ} GTQ (User ${p.user_id})`,\n    emailBody: `A user's balance has been automatically frozen pending KYC verification.\\n\\nUser ID: ${p.user_id}\\nFrozen amount: Q${amountGTQ} GTQ\\nReason: ${p.reason}\\nTrace ID: ${p.trace_id}\\n\\nAction required: Review the user's KYC submission and release the freeze after approval.\\nAdmin panel: ${'https://kiniela.uk'}/admin/kyc/frozen-balances`\n  }\n}];"
       },
       "id": "kyc-frz-format",
       "name": "Format Alert",
@@ -37,8 +37,8 @@
         "toEmail": "={{$env.COMPLIANCE_EMAIL}}",
         "subject": "={{$json.subject}}",
         "emailType": "text",
-        "message": "={{$json.body}}",
-        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}"
+        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}",
+        "text": "={{$json.emailBody}}"
       },
       "id": "kyc-frz-email",
       "name": "Send Compliance Alert",
@@ -47,7 +47,13 @@
       "position": [
         650,
         300
-      ]
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "TiFq2ldHfdDdhEvf",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
   "connections": {
