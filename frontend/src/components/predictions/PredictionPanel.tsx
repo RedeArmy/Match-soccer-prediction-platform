@@ -7,6 +7,7 @@ import {
   Calendar,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   MapPin,
@@ -770,6 +771,12 @@ function fmtDate(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
+function fmtTriggerDate(dateStr: string, locale: Locale): string {
+  const [y, m, d] = dateStr.split("-");
+  if (locale === "es") return `${d}/${m}/${y}`;   // dd/mm/yyyy
+  return `${m}/${d}/${y}`;                          // MM/DD/YYYY (US)
+}
+
 function getDayClass(
   isPast: boolean,
   isSelected: boolean,
@@ -868,26 +875,40 @@ function MatchCalendar({
   const isSelectionToday = selectedStart === todayStr && selectedEnd === todayStr;
 
   const triggerLabel =
-    selectedStart === selectedEnd ? selectedStart : `${selectedStart} – ${selectedEnd}`;
+    selectedStart === selectedEnd
+      ? fmtTriggerDate(selectedStart, locale)
+      : `${fmtTriggerDate(selectedStart, locale)} – ${fmtTriggerDate(selectedEnd, locale)}`;
 
   return (
-    <div ref={containerRef} className="relative mb-5">
-      {/* Toggle button */}
-      <button
-        type="button"
-        onClick={() => setIsOpen((v) => !v)}
-        aria-label={t("predictions.calendarToggle")}
-        aria-expanded={isOpen}
-        aria-haspopup="true"
-        className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-text-secondary transition-colors hover:border-white/20 hover:text-white"
-      >
-        <Calendar className="h-4 w-4 shrink-0" />
-        <span className="text-xs tabular-nums">{triggerLabel}</span>
-      </button>
+    <div ref={containerRef} className="mb-5 flex justify-center">
+      <div className="relative">
+        {/* Toggle button — date-input style */}
+        <button
+          type="button"
+          onClick={() => setIsOpen((v) => !v)}
+          aria-label={t("predictions.calendarToggle")}
+          aria-expanded={isOpen}
+          aria-haspopup="true"
+          className={cn(
+            "flex min-w-[220px] items-center gap-3 rounded-lg border px-4 py-2.5 transition-colors",
+            isOpen
+              ? "border-gold-400/60 bg-white/[0.10] text-white"
+              : "border-white/30 bg-white/[0.06] text-text-secondary hover:border-white/50 hover:bg-white/[0.09] hover:text-white",
+          )}
+        >
+          <Calendar className="h-4 w-4 shrink-0 text-gold-300" />
+          <span className="flex-1 text-center text-sm font-medium tabular-nums">{triggerLabel}</span>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 text-text-muted transition-transform duration-200",
+              isOpen && "rotate-180",
+            )}
+          />
+        </button>
 
-      {/* Floating dropdown */}
-      {isOpen && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-white/10 bg-[#07111F] p-3 shadow-xl shadow-black/40">
+        {/* Floating dropdown — centred under the trigger */}
+        {isOpen && (
+          <div className="absolute left-1/2 top-full z-50 mt-1 w-72 -translate-x-1/2 rounded-2xl border border-white/10 bg-[#07111F] p-3 shadow-xl shadow-black/40">
           {/* Month navigation */}
           <div className="mb-3 flex items-center justify-between">
             <button
@@ -991,7 +1012,8 @@ function MatchCalendar({
             )}
           </div>
         </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
