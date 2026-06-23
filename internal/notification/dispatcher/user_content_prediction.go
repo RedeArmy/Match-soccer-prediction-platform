@@ -5,6 +5,7 @@ import (
 	"html"
 	"html/template"
 	"strings"
+	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/notification"
 )
@@ -219,6 +220,169 @@ func buildMatchEventContent(entry *notification.OutboxEntry, locale Locale, enTi
 			locale,
 		),
 		actionURL: urlDashboard,
+	}, nil
+}
+
+func buildDailySummaryContent(entry *notification.OutboxEntry, locale Locale) (userContent, error) {
+	var p notification.DailySummaryPayload
+	if err := entry.DecodePayload(&p); err != nil {
+		return userContent{}, err
+	}
+
+	home := translateTeamName
+	away := translateTeamName
+
+	// Build the match-results table with inline styles (email-client safe).
+	var sb strings.Builder
+
+	// Introductory sentence about the quiniela.
+	qName := html.EscapeString(p.QuinielaName)
+	if locale == LocaleES {
+		fmt.Fprintf(&sb, `<p style="color:#444;margin:0 0 16px">Resultados de la jornada del <strong>%s</strong> en <strong>%s</strong>:</p>`, p.MatchDate, qName)
+	} else {
+		fmt.Fprintf(&sb, `<p style="color:#444;margin:0 0 16px">Here are your results for <strong>%s</strong> in <strong>%s</strong>:</p>`, p.MatchDate, qName)
+	}
+
+	// Table header
+	if locale == LocaleES {
+		sb.WriteString(`<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px">`)
+		sb.WriteString(`<thead><tr style="background:#1a1a2e;color:#fff">`)
+		sb.WriteString(`<th style="padding:10px 12px;text-align:left;font-weight:600">Partido</th>`)
+		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Resultado</th>`)
+		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Tu predicción</th>`)
+		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Puntos</th>`)
+		sb.WriteString(`</tr></thead><tbody>`)
+	} else {
+		sb.WriteString(`<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px">`)
+		sb.WriteString(`<thead><tr style="background:#1a1a2e;color:#fff">`)
+		sb.WriteString(`<th style="padding:10px 12px;text-align:left;font-weight:600">Match</th>`)
+		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Result</th>`)
+		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Your prediction</th>`)
+		sb.WriteString(`<th style="padding:10px 12px;text-align:center;font-weight:600">Points</th>`)
+		sb.WriteString(`</tr></thead><tbody>`)
+	}
+
+	for i, m := range p.Matches {
+		rowBg := "#fff"
+		if i%2 == 1 {
+			rowBg = "#f8f9fa"
+		}
+		h := html.EscapeString(home(m.HomeTeam, locale))
+		aw := html.EscapeString(away(m.AwayTeam, locale))
+		kickoff := m.KickoffAt.UTC().Format("15:04")
+		match := fmt.Sprintf(`%s vs %s <span style="color:#888;font-size:12px">(%s UTC)</span>`, h, aw, kickoff)
+		result := fmt.Sprintf(`<strong>%d – %d</strong>`, m.HomeScore, m.AwayScore)
+
+		var predCell string
+		var pointsBadge string
+		if m.PredHome != nil && m.PredAway != nil {
+			predCell = fmt.Sprintf(`%d – %d`, *m.PredHome, *m.PredAway)
+			badgeColor := "#e74c3c"
+			if m.PointsEarned >= 5 {
+				badgeColor = "#27ae60" // exact score
+			} else if m.PointsEarned >= 3 {
+				badgeColor = "#f39c12" // outcome/diff
+			} else if m.PointsEarned > 0 {
+				badgeColor = "#e67e22"
+			}
+			pointsBadge = fmt.Sprintf(`<span style="display:inline-block;background:%s;color:#fff;border-radius:12px;padding:2px 10px;font-weight:700;font-size:13px">+%d</span>`, badgeColor, m.PointsEarned)
+		} else {
+			if locale == LocaleES {
+				predCell = `<span style="color:#bbb">Sin predicción</span>`
+			} else {
+				predCell = `<span style="color:#bbb">No prediction</span>`
+			}
+			pointsBadge = `<span style="color:#bbb">—</span>`
+		}
+
+		fmt.Fprintf(&sb,
+			`<tr style="background:%s;border-bottom:1px solid #eee">
+  <td style="padding:10px 12px;color:#333">%s</td>
+  <td style="padding:10px 12px;text-align:center;color:#333">%s</td>
+  <td style="padding:10px 12px;text-align:center;color:#333">%s</td>
+  <td style="padding:10px 12px;text-align:center">%s</td>
+</tr>`,
+			rowBg, match, result, predCell, pointsBadge,
+		)
+	}
+
+	// Totals row
+	sb.WriteString(`<tr style="background:#1a1a2e;color:#fff;font-weight:700">`)
+	if locale == LocaleES {
+		fmt.Fprintf(&sb, `<td colspan="3" style="padding:10px 12px">Puntos de hoy</td>`)
+		fmt.Fprintf(&sb, `<td style="padding:10px 12px;text-align:center;font-size:16px">+%d</td>`, p.PointsToday)
+	} else {
+		fmt.Fprintf(&sb, `<td colspan="3" style="padding:10px 12px">Today's points</td>`)
+		fmt.Fprintf(&sb, `<td style="padding:10px 12px;text-align:center;font-size:16px">+%d</td>`, p.PointsToday)
+	}
+	sb.WriteString(`</tr>`)
+	sb.WriteString(`</tbody></table>`)
+
+	// Accumulated total card
+	if locale == LocaleES {
+		fmt.Fprintf(&sb,
+			`<div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:14px 18px;border-radius:0 4px 4px 0;margin-bottom:20px">
+  <span style="color:#1a1a2e;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Total acumulado en %s</span><br>
+  <span style="color:#1a1a2e;font-size:28px;font-weight:700">%d pts</span>
+</div>`, qName, p.TotalPoints)
+	} else {
+		fmt.Fprintf(&sb,
+			`<div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:14px 18px;border-radius:0 4px 4px 0;margin-bottom:20px">
+  <span style="color:#1a1a2e;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Total accumulated in %s</span><br>
+  <span style="color:#1a1a2e;font-size:28px;font-weight:700">%d pts</span>
+</div>`, qName, p.TotalPoints)
+	}
+
+	// Encouraging message (rotated by day-of-week for variety)
+	encouragingES := []string{
+		"¡Sigue así! Cada partido es una nueva oportunidad de subir en el marcador.",
+		"¡Buen trabajo hoy! Mañana hay más partidos — no olvides tus predicciones.",
+		"¡El torneo apenas empieza! Sigue prediciendo para escalar posiciones.",
+		"¡Cada punto cuenta! Mantén el ritmo y sigue compitiendo fuerte.",
+		"¡Ánimo! Los mejores predictores no se rinden — prepárate para la siguiente jornada.",
+		"¡Genial! Revisa el marcador y planea tu estrategia para los próximos partidos.",
+		"¡Vas por buen camino! Sigue prediciendo y demuestra tu conocimiento futbolero.",
+	}
+	encouragingEN := []string{
+		"Keep it up! Every match is a new chance to climb the leaderboard.",
+		"Great day! More matches tomorrow — don't forget your predictions.",
+		"The tournament is just getting started! Keep predicting to move up the ranks.",
+		"Every point counts! Stay consistent and keep competing.",
+		"Don't give up! The best predictors never quit — get ready for the next round.",
+		"Nice work! Check the leaderboard and plan your strategy for upcoming matches.",
+		"You're on the right track! Keep predicting and show off your football knowledge.",
+	}
+	dayIdx := int(time.Now().Weekday())
+	var encourageMsg string
+	if locale == LocaleES {
+		encourageMsg = encouragingES[dayIdx%len(encouragingES)]
+	} else {
+		encourageMsg = encouragingEN[dayIdx%len(encouragingEN)]
+	}
+	fmt.Fprintf(&sb, `<p style="color:#555;font-style:italic;margin:0">%s</p>`, html.EscapeString(encourageMsg))
+
+	subject := localeStr(
+		fmt.Sprintf("Your daily summary — %s | +%d pts today", p.QuinielaName, p.PointsToday),
+		fmt.Sprintf("Resumen del día — %s | +%d pts hoy", p.QuinielaName, p.PointsToday),
+		locale,
+	)
+	headline := localeStr(
+		fmt.Sprintf("Match day summary — %s", p.MatchDate),
+		fmt.Sprintf("Resumen de la jornada — %s", p.MatchDate),
+		locale,
+	)
+
+	pushBody := localeStr(
+		fmt.Sprintf("+%d pts today · %d total in %s", p.PointsToday, p.TotalPoints, p.QuinielaName),
+		fmt.Sprintf("+%d pts hoy · %d total en %s", p.PointsToday, p.TotalPoints, p.QuinielaName),
+		locale,
+	)
+	return userContent{
+		title:         headline,
+		emailSubject:  subject,
+		body:          pushBody,
+		matchListHTML: template.HTML(sb.String()), //nolint:gosec // G203: all dynamic values escaped via html.EscapeString
+		actionURL:     urlDashboard,
 	}, nil
 }
 

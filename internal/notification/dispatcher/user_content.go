@@ -35,6 +35,7 @@ func init() {
 		notification.EventPredictionLocked:           buildPredictionLockedContent,
 		notification.EventPredictionScored:           buildPredictionScoredContent,
 		notification.EventPredictionDailyReminder:    buildPredictionDailyReminderContent,
+		notification.EventDailySummary:               buildDailySummaryContent,
 		// Matches
 		notification.EventMatchResultEntered: buildMatchResultEnteredContent,
 		notification.EventMatchPostponed:     buildMatchPostponedContent,

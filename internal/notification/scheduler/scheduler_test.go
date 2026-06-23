@@ -118,6 +118,9 @@ func (s *stubStore) ListStaleWithdrawals(_ context.Context, _ time.Time) ([]*dom
 func (s *stubStore) ListUnpredictedUpcomingMatchesByUsers(_ context.Context, _ []int, _ time.Time) (map[int][]notification.DailyReminderMatch, error) {
 	return s.unpredictedByUser, s.unpredictedByUserErr
 }
+func (s *stubStore) ListDailySummaryTargets(_ context.Context, _ time.Time, _ time.Duration) ([]notification.DailySummaryPayload, error) {
+	return nil, nil
+}
 
 // ── Scheduler unit tests ──────────────────────────────────────────────────────
 

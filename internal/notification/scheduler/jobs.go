@@ -79,6 +79,13 @@ type Store interface {
 	// Results are sorted by kickoff_at ascending.  Used to build the full match
 	// list inside a reminder email after the trigger match has been identified.
 	ListUnpredictedUpcomingMatchesByUsers(ctx context.Context, userIDs []int, after time.Time) (map[int][]notification.DailyReminderMatch, error)
+
+	// ListDailySummaryTargets returns one DailySummaryPayload per active,
+	// paid user-quiniela pair that has at least one prediction for any match
+	// played on date. Returns nil when no matches exist on date, not all
+	// matches on date have final results, or the last result was entered less
+	// than resultDelay ago (30-minute cooling period).
+	ListDailySummaryTargets(ctx context.Context, date time.Time, resultDelay time.Duration) ([]notification.DailySummaryPayload, error)
 }
 
 // DailySummaryRow carries the aggregated stats returned by Store.DailySummary.
@@ -520,6 +527,59 @@ func (j *Jobs) AdminMatchResultPending(ctx context.Context) error {
 				zap.Int("match_id", m.ID),
 				zap.Error(err),
 			)
+		}
+	}
+	return nil
+}
+
+// UserDailySummary sends per-user per-quiniela daily score summary emails.
+// It runs on a configurable interval (default every 15 minutes) and checks
+// both today's and yesterday's match date to handle late-night fixtures.
+// For each eligible date (all results in, 30+ minutes elapsed), it writes one
+// dedup-keyed outbox event per user-quiniela pair; duplicates are silently
+// dropped by the ON CONFLICT DO NOTHING outbox constraint.
+func (j *Jobs) UserDailySummary(ctx context.Context) error {
+	delayMin := j.getInt(ctx, domain.ParamKeyWorkerSchedDailySummaryResultDelayMin, domain.DefaultWorkerSchedDailySummaryResultDelayMin)
+	resultDelay := time.Duration(delayMin) * time.Minute
+
+	now := j.clock.Now()
+	// Check today and yesterday so late-night fixtures are caught by the first
+	// job run after midnight.
+	dates := []time.Time{
+		time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()),
+		time.Date(now.Year(), now.Month(), now.Day()-1, 0, 0, 0, 0, now.Location()),
+	}
+
+	for _, date := range dates {
+		targets, err := j.store.ListDailySummaryTargets(ctx, date, resultDelay)
+		if err != nil {
+			j.log.Error("scheduler: user daily summary: store query failed",
+				zap.Time("date", date),
+				zap.Error(err),
+			)
+			continue
+		}
+		for _, target := range targets {
+			dedupKey := fmt.Sprintf("daily_summary:%s:%d:%d",
+				target.MatchDate, target.UserID, target.QuinielaID)
+			inserted, err := j.writer.WriteDedup(ctx, dedupKey,
+				notification.EventDailySummary,
+				"user", fmt.Sprintf("%d", target.UserID),
+				target,
+			)
+			if err != nil {
+				j.log.Error("scheduler: user daily summary: outbox write failed",
+					zap.String("dedup_key", dedupKey),
+					zap.Error(err),
+				)
+				continue
+			}
+			if inserted {
+				j.log.Info("scheduler: user daily summary: queued",
+					zap.String("dedup_key", dedupKey),
+					zap.Int("points_today", target.PointsToday),
+				)
+			}
 		}
 	}
 	return nil
