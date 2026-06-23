@@ -418,12 +418,11 @@ describe("PredictionPanel", () => {
     await screen.findByText("Canadá");
 
     fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Abrir calendario" }));
 
     // Click a far-future day to set start, then click another to set range end
-    // Use aria-label to pick a day button in the calendar
-    const todayLocal = new Date().toLocaleDateString("sv");
-    // Navigate forward to get a month with a date that has no matches
-    // Clicking tomorrow-or-later creates a range with no matches in it
+    // Use aria-label to pick a day button in the calendar; clicking
+    // non-match days creates a range with no matches in it.
     const dayButtons = screen
       .getAllByRole("button", {
         name: (name) => /^\d{4}-\d{2}-\d{2}$/.test(name),
@@ -473,6 +472,7 @@ describe("PredictionPanel", () => {
     await screen.findByText("Canadá");
 
     fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Abrir calendario" }));
 
     const nextBtn = screen.getByRole("button", {
       name: (name) => /next|siguiente|próximo/i.test(name) || name === "",

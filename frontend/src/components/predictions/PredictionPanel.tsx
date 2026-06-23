@@ -1,9 +1,10 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Calendar,
   CalendarClock,
   CheckCircle2,
   ChevronLeft,
@@ -416,7 +417,7 @@ export function PredictionPanel() {
   }
 
   return (
-    <section className="panel overflow-hidden">
+    <section className="panel">
       <div className="wc26-stripe" />
       <div className="p-4 sm:p-5">
         <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
@@ -803,10 +804,23 @@ function MatchCalendar({
   t,
   onRangeChange,
 }: MatchCalendarProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+
   const todayMonth = todayStr.slice(0, 7);
   const [viewMonth, setViewMonth] = useState<string>(todayMonth);
-  // pendingStart tracks the first click of a two-click range selection
   const [pendingStart, setPendingStart] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function onMouseDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [isOpen]);
 
   const [yearStr, monthStr] = viewMonth.split("-");
   const year = Number(yearStr);
@@ -814,12 +828,10 @@ function MatchCalendar({
 
   const firstDayOfMonth = new Date(year, month - 1, 1);
   const daysInMonth = new Date(year, month, 0).getDate();
-  // Monday-first offset (0=Mon … 6=Sun)
   const startOffset = (firstDayOfMonth.getDay() + 6) % 7;
 
   function handleDayClick(dateStr: string) {
     if (dateStr < todayStr) return;
-
     if (pendingStart !== null && dateStr >= pendingStart) {
       onRangeChange(pendingStart, dateStr);
       setPendingStart(null);
@@ -839,10 +851,11 @@ function MatchCalendar({
 
   const canGoPrev = viewMonth > todayMonth;
 
-  const monthLabel = new Intl.DateTimeFormat(locale === "es" ? "es-GT" : "en-GB", {
+  // Format month name and year separately to avoid locale connectors (e.g. "de")
+  const monthName = new Intl.DateTimeFormat(locale === "es" ? "es-GT" : "en-GB", {
     month: "long",
-    year: "numeric",
   }).format(firstDayOfMonth);
+  const monthLabel = `${monthName} ${year}`;
 
   const dayHeaders = t("predictions.calendarDayHdrs").split(",");
 
@@ -854,115 +867,131 @@ function MatchCalendar({
   const isRangeMode = selectedStart !== selectedEnd;
   const isSelectionToday = selectedStart === todayStr && selectedEnd === todayStr;
 
+  const triggerLabel =
+    selectedStart === selectedEnd ? selectedStart : `${selectedStart} – ${selectedEnd}`;
+
   return (
-    <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
-      {/* Month navigation */}
-      <div className="mb-3 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => shiftMonth(-1)}
-          disabled={!canGoPrev}
-          aria-label={t("predictions.calendarPrevMonth")}
-          className={cn(
-            "rounded p-1.5 transition-colors",
-            canGoPrev
-              ? "text-text-secondary hover:bg-white/10 hover:text-white"
-              : "cursor-not-allowed text-text-muted opacity-30",
-          )}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
+    <div ref={containerRef} className="relative mb-5">
+      {/* Toggle button */}
+      <button
+        type="button"
+        onClick={() => setIsOpen((v) => !v)}
+        aria-label={t("predictions.calendarToggle")}
+        aria-expanded={isOpen}
+        aria-haspopup="true"
+        className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-text-secondary transition-colors hover:border-white/20 hover:text-white"
+      >
+        <Calendar className="h-4 w-4 shrink-0" />
+        <span className="text-xs tabular-nums">{triggerLabel}</span>
+      </button>
 
-        <span className="text-sm font-semibold capitalize text-white">
-          {monthLabel}
-        </span>
+      {/* Floating dropdown */}
+      {isOpen && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-white/10 bg-[#07111F] p-3 shadow-xl shadow-black/40">
+          {/* Month navigation */}
+          <div className="mb-3 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => shiftMonth(-1)}
+              disabled={!canGoPrev}
+              aria-label={t("predictions.calendarPrevMonth")}
+              className={cn(
+                "rounded p-1.5 transition-colors",
+                canGoPrev
+                  ? "text-text-secondary hover:bg-white/10 hover:text-white"
+                  : "cursor-not-allowed text-text-muted opacity-30",
+              )}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-sm font-semibold capitalize text-white">
+              {monthLabel}
+            </span>
+            <button
+              type="button"
+              onClick={() => shiftMonth(1)}
+              aria-label={t("predictions.calendarNextMonth")}
+              className="rounded p-1.5 text-text-secondary transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
 
-        <button
-          type="button"
-          onClick={() => shiftMonth(1)}
-          aria-label={t("predictions.calendarNextMonth")}
-          className="rounded p-1.5 text-text-secondary transition-colors hover:bg-white/10 hover:text-white"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      </div>
+          {/* Day-of-week headers */}
+          <div className="mb-1 grid grid-cols-7 text-center">
+            {dayHeaders.map((d) => (
+              <span
+                key={d}
+                className="py-1 text-[10px] font-medium uppercase tracking-wide text-text-muted"
+              >
+                {d}
+              </span>
+            ))}
+          </div>
 
-      {/* Day-of-week headers */}
-      <div className="mb-1 grid grid-cols-7 text-center">
-        {dayHeaders.map((d) => (
-          <span
-            key={d}
-            className="py-1 text-[10px] font-medium uppercase tracking-wide text-text-muted"
-          >
-            {d}
-          </span>
-        ))}
-      </div>
+          {/* Day grid */}
+          <div className="grid grid-cols-7 gap-y-0.5">
+            {cells.map((cell) => {
+              if (cell.blank) return <span key={cell.key} />;
+              const { dateStr } = cell;
+              const isPast = dateStr < todayStr;
+              const isToday = dateStr === todayStr;
+              const isSelected = dateStr === selectedStart || dateStr === selectedEnd;
+              const isInRange =
+                isRangeMode && dateStr > selectedStart && dateStr < selectedEnd;
+              const hasMatch = matchDates.has(dateStr);
+              const day = Number(dateStr.slice(-2));
+              return (
+                <div key={dateStr} className="relative flex flex-col items-center">
+                  <button
+                    type="button"
+                    onClick={() => handleDayClick(dateStr)}
+                    disabled={isPast}
+                    aria-label={dateStr}
+                    aria-pressed={isSelected || isInRange}
+                    className={cn(
+                      "h-8 w-8 rounded text-xs font-medium transition-colors",
+                      getDayClass(isPast, isSelected, isInRange, isToday),
+                    )}
+                  >
+                    {day}
+                  </button>
+                  {hasMatch && (
+                    <span
+                      className={cn(
+                        "mt-0.5 h-1 w-1 rounded-full",
+                        isSelected ? "bg-blue-950" : "bg-gold-400/70",
+                      )}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
-      {/* Day grid */}
-      <div className="grid grid-cols-7 gap-y-0.5">
-        {cells.map((cell) => {
-          if (cell.blank) return <span key={cell.key} />;
-
-          const { dateStr } = cell;
-          const isPast = dateStr < todayStr;
-          const isToday = dateStr === todayStr;
-          const isSelected = dateStr === selectedStart || dateStr === selectedEnd;
-          const isInRange =
-            isRangeMode && dateStr > selectedStart && dateStr < selectedEnd;
-          const hasMatch = matchDates.has(dateStr);
-          const day = Number(dateStr.slice(-2));
-
-          return (
-            <div key={dateStr} className="relative flex flex-col items-center">
+          {/* Footer: "Partidos de hoy" first, range hint below */}
+          <div className="mt-3 flex flex-col items-center gap-1">
+            {!isSelectionToday && (
               <button
                 type="button"
-                onClick={() => handleDayClick(dateStr)}
-                disabled={isPast}
-                aria-label={dateStr}
-                aria-pressed={isSelected || isInRange}
-                className={cn(
-                  "h-8 w-8 rounded text-xs font-medium transition-colors",
-                  getDayClass(isPast, isSelected, isInRange, isToday),
-                )}
+                onClick={() => {
+                  setPendingStart(null);
+                  setViewMonth(todayMonth);
+                  onRangeChange(todayStr, todayStr);
+                }}
+                className="text-[10px] text-text-muted underline underline-offset-2 hover:text-text-secondary"
               >
-                {day}
+                {t("predictions.calendarGoToday")}
               </button>
-              {/* Match dot indicator */}
-              {hasMatch && (
-                <span
-                  className={cn(
-                    "mt-0.5 h-1 w-1 rounded-full",
-                    isSelected ? "bg-blue-950" : "bg-gold-400/70",
-                  )}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Range selection hint / go-to-today link */}
-      <div className="mt-3 flex min-h-[1.25rem] items-center justify-center gap-4">
-        {pendingStart && (
-          <p className="text-[10px] text-gold-300">
-            {t("predictions.calendarRangeHint")}
-          </p>
-        )}
-        {!isSelectionToday && (
-          <button
-            type="button"
-            onClick={() => {
-              setPendingStart(null);
-              setViewMonth(todayMonth);
-              onRangeChange(todayStr, todayStr);
-            }}
-            className="text-[10px] text-text-muted underline underline-offset-2 hover:text-text-secondary"
-          >
-            {t("predictions.calendarGoToday")}
-          </button>
-        )}
-      </div>
+            )}
+            {pendingStart && (
+              <p className="text-[10px] text-gold-300">
+                {t("predictions.calendarRangeHint")}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
