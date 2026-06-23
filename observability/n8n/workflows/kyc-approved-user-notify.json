@@ -21,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const p = $input.first().json;\nconst tierLabels = { 1: 'Tier 1 (Phone Verified)', 2: 'Tier 2 (ID + Selfie)', 3: 'Tier 3 (Full KYC)' };\nconst tierName = tierLabels[p.tier] || `Tier ${p.tier}`;\nreturn [{\n  json: {\n    to: p.user_email,\n    subject: `Your identity verification has been approved — ${tierName}`,\n    body: `Congratulations! Your KYC verification has been approved.\\n\\nVerification level: ${tierName}\\nApproved at: ${p.reviewed_at}\\n\\nYou can now use the platform features unlocked by your verification level.\\nLog in to your account: ${process.env.APP_BASE_URL}`\n  }\n}];"
+        "jsCode": "const p = ($input.first().json.body ?? $input.first().json);\nconst tierLabels = { 1: 'Tier 1 (Phone Verified)', 2: 'Tier 2 (ID + Selfie)', 3: 'Tier 3 (Full KYC)' };\nconst tierName = tierLabels[p.tier] || `Tier ${p.tier}`;\nreturn [{\n  json: {\n    to: p.user_email,\n    subject: `Your identity verification has been approved — ${tierName}`,\n    emailBody: `Congratulations! Your KYC verification has been approved.\\n\\nVerification level: ${tierName}\\nApproved at: ${p.reviewed_at}\\n\\nYou can now use the platform features unlocked by your verification level.\\nLog in to your account: ${'https://kiniela.uk'}`\n  }\n}];"
       },
       "id": "kyc-app-format",
       "name": "Format Email",
@@ -37,8 +37,8 @@
         "toEmail": "={{$json.to}}",
         "subject": "={{$json.subject}}",
         "emailType": "text",
-        "message": "={{$json.body}}",
-        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}"
+        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}",
+        "text": "={{$json.emailBody}}"
       },
       "id": "kyc-app-email",
       "name": "Send User Email",
@@ -47,7 +47,13 @@
       "position": [
         650,
         300
-      ]
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "TiFq2ldHfdDdhEvf",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
   "connections": {

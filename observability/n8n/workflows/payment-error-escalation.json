@@ -21,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const payload = $input.first().json;\nconst userInfo = payload.user_id ? `User ID: ${payload.user_id}` : 'User ID: unknown';\nconst amountInfo = payload.amount ? `Amount: ${payload.amount} (minor units)` : '';\n\nreturn [{\n  json: {\n    subject: `[ALERT] Payment error via ${payload.provider}: ${payload.error_code}`,\n    body: `A payment processing error occurred.\\nProvider: ${payload.provider}\\nError: ${payload.error_code}\\n${userInfo}\\n${amountInfo}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nCheck the payment logs and verify the user's balance was not affected.`,\n    provider: payload.provider,\n    error_code: payload.error_code,\n    user_id: payload.user_id,\n    amount: payload.amount,\n    trace_id: payload.trace_id\n  }\n}];"
+        "jsCode": "const payload = ($input.first().json.body ?? $input.first().json);\nconst userInfo = payload.user_id ? `User ID: ${payload.user_id}` : 'User ID: unknown';\nconst amountInfo = payload.amount ? `Amount: ${payload.amount} (minor units)` : '';\n\nreturn [{\n  json: {\n    subject: `[ALERT] Payment error via ${payload.provider}: ${payload.error_code}`,\n    emailBody: `A payment processing error occurred.\\nProvider: ${payload.provider}\\nError: ${payload.error_code}\\n${userInfo}\\n${amountInfo}\\nTrace ID: ${payload.trace_id || 'n/a'}\\n\\nCheck the payment logs and verify the user's balance was not affected.`,\n    provider: payload.provider,\n    error_code: payload.error_code,\n    user_id: payload.user_id,\n    amount: payload.amount,\n    trace_id: payload.trace_id\n  }\n}];"
       },
       "id": "format-alert",
       "name": "Format Alert",
@@ -37,8 +37,8 @@
         "toEmail": "={{$env.ADMIN_EMAIL}}",
         "subject": "={{$json.subject}}",
         "emailType": "text",
-        "message": "={{$json.body}}",
-        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}"
+        "fromEmail": "alerts@mail.kiniela.uk",
+        "text": "={{$json.emailBody}}"
       },
       "id": "send-email",
       "name": "Send Email Alert",
@@ -47,7 +47,13 @@
       "position": [
         650,
         300
-      ]
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "TiFq2ldHfdDdhEvf",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
   "connections": {

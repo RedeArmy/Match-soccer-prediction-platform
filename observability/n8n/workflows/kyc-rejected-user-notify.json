@@ -21,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const p = $input.first().json;\nreturn [{\n  json: {\n    to: p.user_email,\n    subject: 'Your identity verification could not be approved',\n    body: `We were unable to approve your identity verification submission.\\n\\nReason: ${p.rejection_reason || 'Please contact support for details.'}\\n\\nYou may resubmit with corrected information. Log in to your account: ${process.env.APP_BASE_URL}\\n\\nIf you believe this is an error, please contact our support team.`\n  }\n}];"
+        "jsCode": "const p = ($input.first().json.body ?? $input.first().json);\nreturn [{\n  json: {\n    to: p.user_email,\n    subject: 'Your identity verification could not be approved',\n    emailBody: `We were unable to approve your identity verification submission.\\n\\nReason: ${p.rejection_reason || 'Please contact support for details.'}\\n\\nYou may resubmit with corrected information. Log in to your account: ${'https://kiniela.uk'}\\n\\nIf you believe this is an error, please contact our support team.`\n  }\n}];"
       },
       "id": "kyc-rej-format",
       "name": "Format Email",
@@ -37,8 +37,8 @@
         "toEmail": "={{$json.to}}",
         "subject": "={{$json.subject}}",
         "emailType": "text",
-        "message": "={{$json.body}}",
-        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}"
+        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}",
+        "text": "={{$json.emailBody}}"
       },
       "id": "kyc-rej-email",
       "name": "Send User Email",
@@ -47,7 +47,13 @@
       "position": [
         650,
         300
-      ]
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "TiFq2ldHfdDdhEvf",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
   "connections": {

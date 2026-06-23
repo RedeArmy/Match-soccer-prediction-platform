@@ -122,7 +122,7 @@ services:
           printf '  %s\n' "$$f"
           tmp=$$(mktemp)
           printf '[' > "$$tmp" && cat "$$f" >> "$$tmp" && printf ']' >> "$$tmp"
-          n8n import:workflow --input="$$tmp" --userId="$${N8N_OWNER_USER_ID}" 2>&1 | tail -n1 || true
+          n8n import:workflow --input="$$tmp" --userId="$${N8N_OWNER_USER_ID}" --skipExisting 2>&1 | tail -n1 || true
           rm -f "$$tmp"
         done
         echo '==> publishing (activating) workflows...'

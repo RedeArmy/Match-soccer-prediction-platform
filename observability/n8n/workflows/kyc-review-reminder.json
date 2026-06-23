@@ -47,7 +47,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const profiles = $input.first().json;\nconst now = new Date();\nconst thirtyDaysBefore = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);\n\nconst due = profiles.filter(p => {\n  if (!p.next_review_at) return false;\n  const d = new Date(p.next_review_at);\n  return d <= thirtyDaysBefore;\n});\n\nreturn due.map(p => ({ json: p }));"
+        "jsCode": "const profiles = ($input.first().json.body ?? $input.first().json);\nconst now = new Date();\nconst thirtyDaysBefore = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);\n\nconst due = profiles.filter(p => {\n  if (!p.next_review_at) return false;\n  const d = new Date(p.next_review_at);\n  return d <= thirtyDaysBefore;\n});\n\nreturn due.map(p => ({ json: p }));"
       },
       "id": "kyc-rem-filter",
       "name": "Filter Due in 30 Days",
@@ -63,8 +63,8 @@
         "toEmail": "={{$env.COMPLIANCE_EMAIL}}",
         "subject": "=[KYC] Re-verification reminder: {{$json.id}} (User {{$json.user_id}})",
         "emailType": "text",
-        "message": "=KYC profile {{$json.id}} for User {{$json.user_id}} is due for re-verification before {{$json.next_review_at}}.\n\nCurrent status: {{$json.status}}\nCurrent tier: {{$json.tier}}\n\nAdmin panel: {{$env.ADMIN_BASE_URL}}/admin/kyc/profiles/{{$json.id}}",
-        "fromEmail": "={{ $env.N8N_SMTP_SENDER }}"
+        "fromEmail": "alerts@mail.kiniela.uk",
+        "text": "=KYC profile {{$json.id}} for User {{$json.user_id}} is due for re-verification before {{$json.next_review_at}}.\n\nCurrent status: {{$json.status}}\nCurrent tier: {{$json.tier}}\n\nAdmin panel: {{$env.ADMIN_BASE_URL}}/admin/kyc/profiles/{{$json.id}}"
       },
       "id": "kyc-rem-email",
       "name": "Send Reminder",
@@ -73,7 +73,13 @@
       "position": [
         850,
         300
-      ]
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "TiFq2ldHfdDdhEvf",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
   "connections": {
