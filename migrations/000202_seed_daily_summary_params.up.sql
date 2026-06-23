@@ -6,8 +6,8 @@
 -- the summary emails are dispatched — gives scorers time to finish all results.
 
 INSERT INTO system_params (key, value, default_value, type, category, is_runtime, description) VALUES
-    ('worker.sched_daily_summary_interval_sec', '900', '900', 'int', 'worker', TRUE,
-     'How often (seconds) the daily-summary email scheduler job runs. Runtime: yes.'),
-    ('worker.sched_daily_summary_result_delay_min', '30', '30', 'int', 'worker', TRUE,
-     'Minutes to wait after all match results of the day are entered before sending daily summary emails. Runtime: yes.')
+    ('worker.sched_daily_summary_interval_sec', '900', '900', 'int', 'worker', FALSE,
+     'How often (seconds) the daily-summary email scheduler job runs.'),
+    ('worker.sched_daily_summary_result_delay_min', '30', '30', 'int', 'worker', FALSE,
+     'Minutes to wait after all match results of the day are entered before sending daily summary emails.')
 ON CONFLICT (key) DO NOTHING;
