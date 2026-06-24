@@ -601,7 +601,7 @@ func TestSchedulerStore_ListDailySummaryTargets_NoMatches_ReturnsNil(t *testing.
 	cleanTables(t)
 	store := repository.NewPostgresSchedulerStore(testDB)
 
-	result, err := store.ListDailySummaryTargets(context.Background(), time.Now().UTC(), 0)
+	result, err := store.ListDailySummaryTargets(context.Background(), time.Now().UTC(), "UTC", 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -620,7 +620,7 @@ func TestSchedulerStore_ListDailySummaryTargets_MatchWithoutResult_ReturnsNil(t 
 	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
 
 	store := repository.NewPostgresSchedulerStore(testDB)
-	result, err := store.ListDailySummaryTargets(context.Background(), today, 0)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, "UTC", 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -657,7 +657,7 @@ func TestSchedulerStore_ListDailySummaryTargets_AllResultsIn_ReturnsPaidUsers(t 
 
 	store := repository.NewPostgresSchedulerStore(testDB)
 	// resultDelay = 1 hour; last_result_at is 2 hours ago → eligible.
-	result, err := store.ListDailySummaryTargets(context.Background(), today, time.Hour)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, "UTC", time.Hour)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -694,7 +694,7 @@ func TestSchedulerStore_ListDailySummaryTargets_ResultTooRecent_ReturnsNil(t *te
 
 	store := repository.NewPostgresSchedulerStore(testDB)
 	// resultDelay = 30 minutes; result was entered moments ago → not eligible yet.
-	result, err := store.ListDailySummaryTargets(context.Background(), today, 30*time.Minute)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, "UTC", 30*time.Minute)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -728,7 +728,7 @@ func TestSchedulerStore_ListDailySummaryTargets_UnpaidMember_Excluded(t *testing
 	seedPrediction(t, u.ID, m.ID)
 
 	store := repository.NewPostgresSchedulerStore(testDB)
-	result, err := store.ListDailySummaryTargets(context.Background(), today, time.Hour)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, "UTC", time.Hour)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -762,7 +762,7 @@ func TestSchedulerStore_ListDailySummaryTargets_UserWithoutPrediction_Excluded(t
 	seedMembership(t, q.ID, u.ID, domain.MembershipActive, true)
 
 	store := repository.NewPostgresSchedulerStore(testDB)
-	result, err := store.ListDailySummaryTargets(context.Background(), today, time.Hour)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, "UTC", time.Hour)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -803,7 +803,7 @@ func TestSchedulerStore_ListDailySummaryTargets_OnlyUsersWithPredictionsIncluded
 	_ = uWithout // not used further; included to confirm exclusion by absence
 
 	store := repository.NewPostgresSchedulerStore(testDB)
-	result, err := store.ListDailySummaryTargets(context.Background(), today, time.Hour)
+	result, err := store.ListDailySummaryTargets(context.Background(), today, "UTC", time.Hour)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

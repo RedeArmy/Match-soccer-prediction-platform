@@ -376,62 +376,76 @@ func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Con
 }
 
 // ListDailySummaryTargets returns one DailySummaryPayload per active, paid
-// user who has at least one prediction for any match on date, regardless of
-// how many quinielas they belong to. Returns nil when no matches exist on
-// date, not all matches have final results, or the most-recent result was
-// entered less than resultDelay ago.
-func (s *PostgresSchedulerStore) ListDailySummaryTargets(ctx context.Context, date time.Time, resultDelay time.Duration) ([]notification.DailySummaryPayload, error) {
-	cutoff := time.Now().UTC().Add(-resultDelay)
-	dateStr := date.Format("2006-01-02")
+// user who has at least one prediction for any match on their local "today"
+// (derived from now and their stored IANA timezone). Returns an empty slice
+// when no eligible user-day pairs exist or results are not yet ready.
+// defaultTZ is used as a fallback for users who have no stored timezone.
+func (s *PostgresSchedulerStore) ListDailySummaryTargets(ctx context.Context, now time.Time, defaultTZ string, resultDelay time.Duration) ([]notification.DailySummaryPayload, error) {
+	cutoff := now.Add(-resultDelay)
 
 	rows, err := s.db.Query(ctx, `
-WITH day_matches AS (
-    SELECT m.id, m.home_team, m.away_team,
-           m.home_score, m.away_score, m.kickoff_at, m.updated_at
-    FROM   matches m
-    WHERE  m.kickoff_at::date = $1::date
-    ORDER  BY m.kickoff_at
+WITH
+-- Resolve per-user timezone, falling back to the server default.
+user_ctx AS (
+    SELECT DISTINCT gm.user_id,
+        COALESCE(NULLIF(u.timezone, ''), $3) AS tz
+    FROM group_memberships gm
+    JOIN users u ON u.id = gm.user_id AND u.deleted_at IS NULL
+    WHERE gm.status = 'active' AND gm.paid = TRUE
 ),
-eligibility AS (
-    SELECT COUNT(*)                                                AS total,
-           SUM(CASE WHEN home_score IS NOT NULL THEN 1 ELSE 0 END) AS with_result,
-           MAX(updated_at)                                         AS last_result_at
-    FROM day_matches
+-- For each user, find every match that falls on their local today.
+user_day_matches AS (
+    SELECT uc.user_id, uc.tz,
+           m.id          AS match_id,
+           m.home_team,
+           m.away_team,
+           m.home_score,
+           m.away_score,
+           m.kickoff_at,
+           m.updated_at
+    FROM user_ctx uc
+    JOIN matches m
+      ON (m.kickoff_at AT TIME ZONE uc.tz)::date
+       = ($1 AT TIME ZONE uc.tz)::date
 ),
-eligible AS (
-    SELECT 1 FROM eligibility
-    WHERE  total > 0
-      AND  total = with_result
-      AND  last_result_at < $2
+-- Per-user eligibility: every match on their local today has a result
+-- and the most-recent result was entered more than resultDelay ago.
+eligible_users AS (
+    SELECT udm.user_id
+    FROM user_day_matches udm
+    GROUP BY udm.user_id
+    HAVING COUNT(*) > 0
+       AND COUNT(*) = SUM(CASE WHEN udm.home_score IS NOT NULL THEN 1 ELSE 0 END)
+       AND MAX(udm.updated_at) < $2
 ),
+-- Narrow to users who predicted at least one of their day's matches.
 targets AS (
-    SELECT DISTINCT gm.user_id
-    FROM   group_memberships gm
-    WHERE  gm.status = 'active'
-      AND  gm.paid   = TRUE
-      AND  EXISTS (SELECT 1 FROM eligible)
-      AND  EXISTS (
-               SELECT 1 FROM predictions p
-               WHERE  p.user_id  = gm.user_id
-                 AND  p.match_id IN (SELECT id FROM day_matches)
-           )
+    SELECT DISTINCT udm.user_id, udm.tz
+    FROM user_day_matches udm
+    WHERE udm.user_id IN (SELECT user_id FROM eligible_users)
+      AND EXISTS (
+          SELECT 1 FROM predictions p
+          WHERE p.user_id = udm.user_id AND p.match_id = udm.match_id
+      )
 )
 SELECT
     t.user_id,
-    dm.id           AS match_id,
-    dm.home_team,
-    dm.away_team,
-    dm.home_score   AS result_home,
-    dm.away_score   AS result_away,
-    dm.kickoff_at,
-    p.home_score    AS pred_home,
-    p.away_score    AS pred_away,
+    ($1 AT TIME ZONE t.tz)::date::text  AS match_date,
+    t.tz                                AS timezone,
+    udm.match_id,
+    udm.home_team,
+    udm.away_team,
+    udm.home_score   AS result_home,
+    udm.away_score   AS result_away,
+    udm.kickoff_at,
+    p.home_score     AS pred_home,
+    p.away_score     AS pred_away,
     COALESCE(p.points, 0) AS points_earned
-FROM   targets t
-CROSS  JOIN day_matches dm
-LEFT   JOIN predictions p ON p.user_id = t.user_id AND p.match_id = dm.id
-ORDER  BY t.user_id, dm.kickoff_at`,
-		dateStr, cutoff,
+FROM targets t
+JOIN user_day_matches udm ON udm.user_id = t.user_id
+LEFT JOIN predictions p ON p.user_id = t.user_id AND p.match_id = udm.match_id
+ORDER BY t.user_id, udm.kickoff_at`,
+		now, cutoff, defaultTZ,
 	)
 	if err != nil {
 		return nil, err
@@ -444,6 +458,7 @@ ORDER  BY t.user_id, dm.kickoff_at`,
 	for rows.Next() {
 		var (
 			userID                 int
+			matchDate, timezone    string
 			matchID                int
 			homeTeam, awayTeam     string
 			resultHome, resultAway int
@@ -453,6 +468,7 @@ ORDER  BY t.user_id, dm.kickoff_at`,
 		)
 		if err := rows.Scan(
 			&userID,
+			&matchDate, &timezone,
 			&matchID, &homeTeam, &awayTeam,
 			&resultHome, &resultAway, &kickoffAt,
 			&predHome, &predAway, &pointsEarned,
@@ -464,7 +480,8 @@ ORDER  BY t.user_id, dm.kickoff_at`,
 		if !ok {
 			payloads = append(payloads, notification.DailySummaryPayload{
 				UserID:    userID,
-				MatchDate: dateStr,
+				MatchDate: matchDate,
+				Timezone:  timezone,
 			})
 			idx = len(payloads) - 1
 			index[userID] = idx

@@ -143,7 +143,7 @@ func (s *stubStore) GetUserTimezones(_ context.Context, userIDs []int) (map[int]
 	}
 	return s.userTimezones, nil
 }
-func (s *stubStore) ListDailySummaryTargets(_ context.Context, _ time.Time, _ time.Duration) ([]notification.DailySummaryPayload, error) {
+func (s *stubStore) ListDailySummaryTargets(_ context.Context, _ time.Time, _ string, _ time.Duration) ([]notification.DailySummaryPayload, error) {
 	return s.dailySummaryTargets, s.dailySummaryErr
 }
 
@@ -499,7 +499,7 @@ func TestJobs_AdminDailySummary_EmitsEvent(t *testing.T) {
 func TestJobs_UserDailySummary_NoTargets_EmitsNoEvents(t *testing.T) {
 	t.Parallel()
 
-	store := &stubStore{} // dailySummaryTargets nil → returns nil,nil for both dates
+	store := &stubStore{} // dailySummaryTargets nil → returns nil,nil
 	writer := &stubWriter{}
 	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
 
@@ -525,10 +525,7 @@ func TestJobs_UserDailySummary_EmitsOneEventPerUser(t *testing.T) {
 	if err := jobs.UserDailySummary(context.Background()); err != nil {
 		t.Fatalf("UserDailySummary: %v", err)
 	}
-	// 2 users × 2 dates checked (today + yesterday) = up to 4; dedup collapses
-	// same key, so at most 2 unique events (one per user per date).
-	// Both date calls return the same 2-user slice → dedup keys differ by date
-	// so we expect 4 distinct events (2 users × 2 dates).
+	// One store call returns 2 users → 2 events (one per user).
 	for _, ev := range writer.events {
 		if ev != notification.EventDailySummary {
 			t.Errorf("unexpected event type %s; want %s", ev, notification.EventDailySummary)
@@ -562,21 +559,18 @@ func TestJobs_UserDailySummary_DedupPreventsDoubleEmit(t *testing.T) {
 	}
 }
 
-func TestJobs_UserDailySummary_StoreError_ContinuesOtherDates(t *testing.T) {
+func TestJobs_UserDailySummary_StoreError_ReturnsNoError(t *testing.T) {
 	t.Parallel()
 
-	// Return an error only once; subsequent calls succeed with no targets.
-	callCount := 0
-	_ = callCount
 	store := &stubStore{dailySummaryErr: errors.New("db error")}
 	writer := &stubWriter{}
 	jobs := scheduler.NewJobs(scheduler.JobsConfig{Store: store, Writer: writer, Log: zap.NewNop()})
 
-	// Error must not bubble up — job logs and continues.
+	// Store error must not bubble up — the job logs it and returns nil so
+	// the scheduler retries on its next tick.
 	if err := jobs.UserDailySummary(context.Background()); err != nil {
 		t.Fatalf("UserDailySummary should not return error on store failure: %v", err)
 	}
-	// No events because all calls errored.
 	if len(writer.events) != 0 {
 		t.Errorf("events: got %d; want 0", len(writer.events))
 	}
