@@ -24,7 +24,8 @@ func NewTournamentHandler(svc service.TournamentService, log *zap.Logger) *Tourn
 }
 
 type createSlotRequest struct {
-	Label string `json:"label"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
 }
 
 type confirmSlotRequest struct {
@@ -88,7 +89,7 @@ func (h *TournamentHandler) CreateSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slot, err := h.svc.CreateSlot(r.Context(), req.Label)
+	slot, err := h.svc.CreateSlot(r.Context(), req.Label, req.Description)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

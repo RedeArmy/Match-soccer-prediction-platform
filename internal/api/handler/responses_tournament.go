@@ -27,6 +27,7 @@ type TournamentStandingsResponse struct {
 type TournamentSlotResponse struct {
 	ID                int     `json:"id"`
 	Label             string  `json:"label"`
+	Description       string  `json:"description"`
 	Team              *string `json:"team"`
 	ConfirmedAt       *string `json:"confirmed_at,omitempty"`
 	ConfirmedByUserID *int    `json:"confirmed_by_user_id,omitempty"`
@@ -65,6 +66,7 @@ func slotToResponse(s *domain.TournamentSlot) TournamentSlotResponse {
 	resp := TournamentSlotResponse{
 		ID:                s.ID,
 		Label:             s.Label,
+		Description:       s.Description,
 		Team:              s.Team,
 		ConfirmedByUserID: s.ConfirmedByUserID,
 		CreatedAt:         s.CreatedAt.Format(timeFormat),

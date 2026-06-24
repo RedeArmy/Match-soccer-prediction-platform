@@ -112,6 +112,9 @@ func (s *stubInnerMatchSvc) GetMatch(_ context.Context, _ int) (*domain.Match, e
 	s.called++
 	return s.match, s.err
 }
+func (s *stubInnerMatchSvc) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
+	return s.match, s.err
+}
 
 // ── ListMatches ───────────────────────────────────────────────────────────────
 

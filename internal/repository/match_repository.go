@@ -26,11 +26,11 @@ func NewPostgresMatchRepository(db *pgxpool.Pool) *PostgresMatchRepository {
 const errMatchNotFound = "match not found"
 
 // matchColumns is used in RETURNING clauses for INSERT/UPDATE (no table alias).
-const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, group_label, win_method, stadium_id, kickoff_at, created_at, updated_at, external_provider, external_match_id, last_synced_at"
+const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, group_label, win_method, stadium_id, kickoff_at, created_at, updated_at, external_provider, external_match_id, last_synced_at, home_slot_id, away_slot_id"
 
 // matchReadColumns selects match + full stadium location hierarchy for read
 // queries that LEFT JOIN stadiums, cities, states, and countries.
-const matchReadColumns = "m.id, m.home_team, m.away_team, m.home_score, m.away_score, m.status, m.phase, m.group_label, m.win_method, m.stadium_id, m.kickoff_at, m.created_at, m.updated_at, m.external_provider, m.external_match_id, m.last_synced_at," +
+const matchReadColumns = "m.id, m.home_team, m.away_team, m.home_score, m.away_score, m.status, m.phase, m.group_label, m.win_method, m.stadium_id, m.kickoff_at, m.created_at, m.updated_at, m.external_provider, m.external_match_id, m.last_synced_at, m.home_slot_id, m.away_slot_id," +
 	" s.id, s.name, s.capacity, ci.id, ci.name, st.id, st.name, st.code, co.id, co.name, co.code"
 
 const matchFromStadium = " FROM matches m" +
@@ -48,6 +48,7 @@ func scanMatch(row pgx.Row) (*domain.Match, error) {
 		&m.Status, &m.Phase, &m.GroupLabel, &m.WinMethod, &m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
 		&m.ExternalProvider, &m.ExternalMatchID, &m.LastSyncedAt,
+		&m.HomeSlotID, &m.AwaySlotID,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -96,6 +97,7 @@ func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 		&m.Status, &m.Phase, &m.GroupLabel, &m.WinMethod, &m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
 		&m.ExternalProvider, &m.ExternalMatchID, &m.LastSyncedAt,
+		&m.HomeSlotID, &m.AwaySlotID,
 		&sc.sID, &sc.sName, &sc.sCapacity,
 		&sc.ciID, &sc.ciName,
 		&sc.stID, &sc.stName, &sc.stCode,
@@ -112,11 +114,18 @@ func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 }
 
 func (r *PostgresMatchRepository) Create(ctx context.Context, m *domain.Match) error {
-	row := r.db.QueryRow(ctx,
-		`INSERT INTO matches (home_team, away_team, status, phase, group_label, win_method, stadium_id, kickoff_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	row := tx.QueryRow(ctx,
+		`INSERT INTO matches (home_team, away_team, status, phase, group_label, win_method, stadium_id, kickoff_at, home_slot_id, away_slot_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 RETURNING `+matchColumns,
 		m.HomeTeam, m.AwayTeam, m.Status, m.Phase, m.GroupLabel, m.WinMethod, m.StadiumID, m.KickoffAt,
+		m.HomeSlotID, m.AwaySlotID,
 	)
 	result, err := scanMatch(row)
 	if err != nil {
@@ -124,6 +133,27 @@ func (r *PostgresMatchRepository) Create(ctx context.Context, m *domain.Match) e
 			return apperrors.Conflict("a match between these teams at this kickoff time already exists")
 		}
 		return err
+	}
+
+	if m.HomeSlotID != nil && m.HomeTeam != "" {
+		if _, err := tx.Exec(ctx,
+			`UPDATE tournament_slots SET team=$1, confirmed_at=NOW(), updated_at=NOW() WHERE id=$2`,
+			m.HomeTeam, *m.HomeSlotID,
+		); err != nil {
+			return apperrors.Internal(err)
+		}
+	}
+	if m.AwaySlotID != nil && m.AwayTeam != "" {
+		if _, err := tx.Exec(ctx,
+			`UPDATE tournament_slots SET team=$1, confirmed_at=NOW(), updated_at=NOW() WHERE id=$2`,
+			m.AwayTeam, *m.AwaySlotID,
+		); err != nil {
+			return apperrors.Internal(err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return apperrors.Internal(err)
 	}
 	*m = *result
 	return nil
@@ -310,6 +340,7 @@ func collectMatches(rows pgx.Rows) ([]*domain.Match, error) {
 			&m.Status, &m.Phase, &m.GroupLabel, &m.WinMethod, &m.StadiumID, &m.KickoffAt,
 			&m.CreatedAt, &m.UpdatedAt,
 			&m.ExternalProvider, &m.ExternalMatchID, &m.LastSyncedAt,
+			&m.HomeSlotID, &m.AwaySlotID,
 			&sc.sID, &sc.sName, &sc.sCapacity,
 			&sc.ciID, &sc.ciName,
 			&sc.stID, &sc.stName, &sc.stCode,
@@ -324,6 +355,28 @@ func collectMatches(rows pgx.Rows) ([]*domain.Match, error) {
 		return nil, apperrors.Internal(err)
 	}
 	return matches, nil
+}
+
+func (r *PostgresMatchRepository) UpdateSlots(ctx context.Context, matchID int, homeSlotID, awaySlotID *int) (*domain.Match, error) {
+	row := r.db.QueryRow(ctx, `
+		UPDATE matches
+		SET home_slot_id = $1,
+		    away_slot_id = $2,
+		    home_team = COALESCE((SELECT team FROM tournament_slots WHERE id = $1 AND team IS NOT NULL), home_team),
+		    away_team = COALESCE((SELECT team FROM tournament_slots WHERE id = $2 AND team IS NOT NULL), away_team),
+		    updated_at = NOW()
+		WHERE id = $3
+		RETURNING `+matchColumns,
+		homeSlotID, awaySlotID, matchID,
+	)
+	result, err := scanMatch(row)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, apperrors.NotFound(errMatchNotFound)
+	}
+	return result, nil
 }
 
 var _ MatchRepository = (*PostgresMatchRepository)(nil)

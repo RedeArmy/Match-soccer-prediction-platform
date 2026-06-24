@@ -156,4 +156,14 @@ func (s *cachedMatchService) invalidateMatchLists(ctx context.Context, phase dom
 	}
 }
 
+// UpdateSlots delegates directly to the inner service and invalidates the cache.
+func (s *cachedMatchService) UpdateSlots(ctx context.Context, matchID int, homeSlotID, awaySlotID *int) (*domain.Match, error) {
+	match, err := s.inner.UpdateSlots(ctx, matchID, homeSlotID, awaySlotID)
+	if err != nil {
+		return nil, err
+	}
+	s.invalidateMatchLists(ctx, match.Phase, match.Status)
+	return match, nil
+}
+
 var _ MatchService = (*cachedMatchService)(nil)

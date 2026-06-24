@@ -150,8 +150,13 @@ describe("isPhaseVisible", () => {
     expect(isPhaseVisible("group_stage")).toBe(true);
   });
 
-  it("returns false for a known knockout phase when flag is off", () => {
-    expect(isPhaseVisible("round_of_16")).toBe(false);
+  it("returns true for all known knockout phases (all flags enabled)", () => {
+    expect(isPhaseVisible("round_of_16")).toBe(true);
+    expect(isPhaseVisible("round_of_32")).toBe(true);
+    expect(isPhaseVisible("quarter_final")).toBe(true);
+    expect(isPhaseVisible("semi_final")).toBe(true);
+    expect(isPhaseVisible("third_place")).toBe(true);
+    expect(isPhaseVisible("final")).toBe(true);
   });
 
   it("returns false for an unrecognised phase", () => {

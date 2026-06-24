@@ -41,6 +41,8 @@ func (s *Server) registerMatchRoutes(r chi.Router, d apiV1Deps) {
 		// External provider linking — admin only.
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/{id}/external-link", d.h.adminMatchSync.LinkExternal)
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Delete("/{id}/external-link", d.h.adminMatchSync.UnlinkExternal)
+		// Bracket slot linking — admin only.
+		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Patch("/{id}/slots", d.h.match.UpdateSlots)
 	})
 }
 

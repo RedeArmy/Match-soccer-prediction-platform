@@ -57,6 +57,9 @@ func (r *stubMatchRepoTournament) FindByTeams(_ context.Context, _, _ string) (*
 func (r *stubMatchRepoTournament) UpdateKickoff(_ context.Context, _ int, _ time.Time) error {
 	return nil
 }
+func (r *stubMatchRepoTournament) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
+	return nil, r.err
+}
 
 type stubTournamentRepo struct {
 	slot  *domain.TournamentSlot
@@ -64,7 +67,7 @@ type stubTournamentRepo struct {
 	err   error
 }
 
-func (r *stubTournamentRepo) CreateSlot(_ context.Context, label string) (*domain.TournamentSlot, error) {
+func (r *stubTournamentRepo) CreateSlot(_ context.Context, label, _ string) (*domain.TournamentSlot, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -258,7 +261,7 @@ func TestTournamentService_GetGroupStanding_UnknownGroup_ReturnsNotFound(t *test
 func TestTournamentService_CreateSlot_ReturnsSlot(t *testing.T) {
 	svc := newTournamentSvc(nil, &stubTournamentRepo{})
 
-	slot, err := svc.CreateSlot(context.Background(), tournamentWinnerGroupA)
+	slot, err := svc.CreateSlot(context.Background(), tournamentWinnerGroupA, "")
 	if err != nil {
 		t.Fatalf(tournamentUnexpectedErr, err)
 	}
@@ -269,7 +272,7 @@ func TestTournamentService_CreateSlot_ReturnsSlot(t *testing.T) {
 
 func TestTournamentService_CreateSlot_EmptyLabel_ReturnsValidation(t *testing.T) {
 	svc := newTournamentSvc(nil, &stubTournamentRepo{})
-	_, err := svc.CreateSlot(context.Background(), "")
+	_, err := svc.CreateSlot(context.Background(), "", "")
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf(tournamentValidationFmt, err)
 	}

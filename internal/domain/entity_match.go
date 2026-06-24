@@ -97,6 +97,9 @@ type Match struct {
 	ExternalProvider *string
 	ExternalMatchID  *int64
 	LastSyncedAt     *time.Time
+
+	HomeSlotID *int // nil for group-stage matches; links to tournament_slots for knockout
+	AwaySlotID *int // nil for group-stage matches; links to tournament_slots for knockout
 }
 
 // ── Scoring rule ──────────────────────────────────────────────────────────────
@@ -179,6 +182,7 @@ type GroupStanding struct {
 type TournamentSlot struct {
 	ID                int
 	Label             string     // human-readable bracket position
+	Description       string     // Spanish display name seeded by migration
 	Team              *string    // nil until confirmed
 	ConfirmedAt       *time.Time // nil until confirmed
 	ConfirmedByUserID *int       // nil until confirmed

@@ -46,6 +46,8 @@ type createMatchRequest struct {
 	Phase      string    `json:"phase"`
 	GroupLabel *string   `json:"group_label"`
 	KickoffAt  time.Time `json:"kickoff_at"`
+	HomeSlotID *int      `json:"home_slot_id"`
+	AwaySlotID *int      `json:"away_slot_id"`
 }
 
 // updateResultRequest is the JSON body accepted by PATCH /api/v1/matches/{id}.
@@ -161,6 +163,8 @@ func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 		GroupLabel: req.GroupLabel,
 		KickoffAt:  req.KickoffAt,
 	}
+	match.HomeSlotID = req.HomeSlotID
+	match.AwaySlotID = req.AwaySlotID
 	if err := h.svc.CreateMatch(r.Context(), match); err != nil {
 		writeError(w, r, h.log, err)
 		return
@@ -316,4 +320,30 @@ func pathID(r *http.Request, param string) (int, error) {
 		return 0, decodeError(err)
 	}
 	return id, nil
+}
+
+type updateSlotsRequest struct {
+	HomeSlotID *int `json:"home_slot_id"`
+	AwaySlotID *int `json:"away_slot_id"`
+}
+
+// UpdateSlots handles PATCH /api/v1/matches/{id}/slots (admin only).
+// Links a knockout match to its bracket slots and propagates confirmed team names.
+func (h *MatchHandler) UpdateSlots(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	req, err := decodeJSON[updateSlotsRequest](r)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	match, err := h.svc.UpdateSlots(r.Context(), id, req.HomeSlotID, req.AwaySlotID)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, matchToResponse(match))
 }

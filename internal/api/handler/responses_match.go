@@ -21,6 +21,8 @@ type MatchResponse struct {
 	ExternalMatchID *int64           `json:"external_match_id,omitempty"`
 	CreatedAt       string           `json:"created_at"`
 	UpdatedAt       string           `json:"updated_at"`
+	HomeSlotID      *int             `json:"home_slot_id,omitempty"`
+	AwaySlotID      *int             `json:"away_slot_id,omitempty"`
 }
 
 // matchStatusToAPI maps domain status values to the API contract string.
@@ -49,6 +51,8 @@ func matchToResponse(m *domain.Match) MatchResponse {
 		CreatedAt:       m.CreatedAt.Format(timeFormat),
 		UpdatedAt:       m.UpdatedAt.Format(timeFormat),
 	}
+	resp.HomeSlotID = m.HomeSlotID
+	resp.AwaySlotID = m.AwaySlotID
 	if m.WinMethod != nil {
 		wm := string(*m.WinMethod)
 		resp.WinMethod = &wm

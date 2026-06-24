@@ -36,6 +36,8 @@ type MatchService interface {
 	// CancelMatch marks a scheduled or live match as cancelled. Cancelled matches
 	// are excluded from prediction scoring and cannot transition to any other status.
 	CancelMatch(ctx context.Context, id int) (*domain.Match, error)
+	// UpdateSlots links a knockout match to its two bracket slots.
+	UpdateSlots(ctx context.Context, matchID int, homeSlotID, awaySlotID *int) (*domain.Match, error)
 }
 
 // matchService is the concrete implementation of MatchService.
@@ -250,6 +252,11 @@ func (s *matchService) CancelMatch(ctx context.Context, id int) (*domain.Match, 
 	resType := "match"
 	s.audit.Log(ctx, nil, nil, domain.AuditActionMatchCancelled, &resType, &id, nil)
 	return m, nil
+}
+
+// UpdateSlots links a knockout match to its two bracket slots.
+func (s *matchService) UpdateSlots(ctx context.Context, matchID int, homeSlotID, awaySlotID *int) (*domain.Match, error) {
+	return s.repo.UpdateSlots(ctx, matchID, homeSlotID, awaySlotID)
 }
 
 // winMethodString converts a nullable WinMethod pointer to its string

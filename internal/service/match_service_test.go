@@ -66,6 +66,9 @@ func (r *stubMatchRepo) FindByTeams(_ context.Context, _, _ string) (*domain.Mat
 	return nil, nil
 }
 func (r *stubMatchRepo) UpdateKickoff(_ context.Context, _ int, _ time.Time) error { return nil }
+func (r *stubMatchRepo) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
+	return r.match, r.err
+}
 
 // stubPublisher records published envelopes without delivering them.
 type stubPublisher struct {
