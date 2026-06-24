@@ -233,7 +233,8 @@ type DailySummaryMatchRow struct {
 // One payload per user per day — independent of quiniela membership.
 type DailySummaryPayload struct {
 	UserID      int                    `json:"user_id"`
-	MatchDate   string                 `json:"match_date"` // "2026-06-22"
+	MatchDate   string                 `json:"match_date"` // "2026-06-22" in the user's local timezone
+	Timezone    string                 `json:"timezone"`   // IANA timezone used to compute MatchDate
 	Matches     []DailySummaryMatchRow `json:"matches"`
 	PointsToday int                    `json:"points_today"`
 }

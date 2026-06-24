@@ -86,11 +86,12 @@ type Store interface {
 	GetUserTimezones(ctx context.Context, userIDs []int) (map[int]string, error)
 
 	// ListDailySummaryTargets returns one DailySummaryPayload per active,
-	// paid user-quiniela pair that has at least one prediction for any match
-	// played on date. Returns nil when no matches exist on date, not all
-	// matches on date have final results, or the last result was entered less
-	// than resultDelay ago (30-minute cooling period).
-	ListDailySummaryTargets(ctx context.Context, date time.Time, resultDelay time.Duration) ([]notification.DailySummaryPayload, error)
+	// paid user who has at least one prediction for any match on their local
+	// "today" (resolved from now using each user's stored IANA timezone;
+	// defaultTZ is the fallback). Returns an empty slice when no eligible
+	// user-day pairs exist, results are not yet final, or the most-recent
+	// result was entered less than resultDelay ago.
+	ListDailySummaryTargets(ctx context.Context, now time.Time, defaultTZ string, resultDelay time.Duration) ([]notification.DailySummaryPayload, error)
 }
 
 // DailySummaryRow carries the aggregated stats returned by Store.DailySummary.
@@ -582,52 +583,44 @@ func (j *Jobs) AdminMatchResultPending(ctx context.Context) error {
 
 // UserDailySummary sends one daily score summary email per user, regardless
 // of how many quinielas they belong to. It runs on a configurable interval
-// (default every 15 minutes) and checks both today's and yesterday's match
-// date to handle late-night fixtures. For each eligible date (all results in,
-// 30+ minutes elapsed), it writes one dedup-keyed outbox event per user;
+// (default every 15 minutes). Each user's "today" is resolved from the
+// current time using their stored IANA timezone so that a user in UTC-6
+// always receives results for their local calendar day, not the server's UTC
+// date. For each eligible user, it writes one dedup-keyed outbox event;
 // duplicates are silently dropped by the ON CONFLICT DO NOTHING outbox constraint.
 func (j *Jobs) UserDailySummary(ctx context.Context) error {
 	delayMin := j.getInt(ctx, domain.ParamKeyWorkerSchedDailySummaryResultDelayMin, domain.DefaultWorkerSchedDailySummaryResultDelayMin)
 	resultDelay := time.Duration(delayMin) * time.Minute
+	defaultTZ := j.getString(ctx, domain.ParamKeyNotifySchedulerTimezone, domain.DefaultNotifySchedulerTimezone)
 
 	now := j.clock.Now()
-	// Check today and yesterday so late-night fixtures are caught by the first
-	// job run after midnight.
-	dates := []time.Time{
-		time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()),
-		time.Date(now.Year(), now.Month(), now.Day()-1, 0, 0, 0, 0, now.Location()),
+	targets, err := j.store.ListDailySummaryTargets(ctx, now, defaultTZ, resultDelay)
+	if err != nil {
+		j.log.Error("scheduler: user daily summary: store query failed",
+			zap.Time("now", now),
+			zap.Error(err),
+		)
+		return nil // non-fatal: the scheduler will retry on its next tick
 	}
-
-	for _, date := range dates {
-		targets, err := j.store.ListDailySummaryTargets(ctx, date, resultDelay)
+	for _, target := range targets {
+		dedupKey := fmt.Sprintf("daily_summary:%s:%d", target.MatchDate, target.UserID)
+		inserted, err := j.writer.WriteDedup(ctx, dedupKey,
+			notification.EventDailySummary,
+			"user", fmt.Sprintf("%d", target.UserID),
+			target,
+		)
 		if err != nil {
-			j.log.Error("scheduler: user daily summary: store query failed",
-				zap.Time("date", date),
+			j.log.Error("scheduler: user daily summary: outbox write failed",
+				zap.String("dedup_key", dedupKey),
 				zap.Error(err),
 			)
 			continue
 		}
-		for _, target := range targets {
-			dedupKey := fmt.Sprintf("daily_summary:%s:%d",
-				target.MatchDate, target.UserID)
-			inserted, err := j.writer.WriteDedup(ctx, dedupKey,
-				notification.EventDailySummary,
-				"user", fmt.Sprintf("%d", target.UserID),
-				target,
+		if inserted {
+			j.log.Info("scheduler: user daily summary: queued",
+				zap.String("dedup_key", dedupKey),
+				zap.Int("points_today", target.PointsToday),
 			)
-			if err != nil {
-				j.log.Error("scheduler: user daily summary: outbox write failed",
-					zap.String("dedup_key", dedupKey),
-					zap.Error(err),
-				)
-				continue
-			}
-			if inserted {
-				j.log.Info("scheduler: user daily summary: queued",
-					zap.String("dedup_key", dedupKey),
-					zap.Int("points_today", target.PointsToday),
-				)
-			}
 		}
 	}
 	return nil
