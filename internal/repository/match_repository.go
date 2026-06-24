@@ -39,17 +39,25 @@ const matchFromStadium = " FROM matches m" +
 	" LEFT JOIN states    st ON st.id = ci.state_id" +
 	" LEFT JOIN countries co ON co.id = st.country_id"
 
-// scanMatch scans a row returned by INSERT/UPDATE RETURNING (no stadium columns).
-func scanMatch(row pgx.Row) (*domain.Match, error) {
-	m := &domain.Match{}
-	err := row.Scan(
+// matchScanDests returns the ordered scan destinations for the core match
+// columns (matchColumns / matchReadColumns prefix). Used by scanMatch,
+// scanMatchWithStadium, and collectMatches to avoid repeating the same
+// 18-field list.
+func matchScanDests(m *domain.Match) []any {
+	return []any{
 		&m.ID, &m.HomeTeam, &m.AwayTeam,
 		&m.HomeScore, &m.AwayScore,
 		&m.Status, &m.Phase, &m.GroupLabel, &m.WinMethod, &m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
 		&m.ExternalProvider, &m.ExternalMatchID, &m.LastSyncedAt,
 		&m.HomeSlotID, &m.AwaySlotID,
-	)
+	}
+}
+
+// scanMatch scans a row returned by INSERT/UPDATE RETURNING (no stadium columns).
+func scanMatch(row pgx.Row) (*domain.Match, error) {
+	m := &domain.Match{}
+	err := row.Scan(matchScanDests(m)...)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -91,18 +99,12 @@ func hydrateStadium(c stadiumCols) *domain.Stadium {
 func scanMatchWithStadium(row pgx.Row) (*domain.Match, error) {
 	m := &domain.Match{}
 	var sc stadiumCols
-	err := row.Scan(
-		&m.ID, &m.HomeTeam, &m.AwayTeam,
-		&m.HomeScore, &m.AwayScore,
-		&m.Status, &m.Phase, &m.GroupLabel, &m.WinMethod, &m.StadiumID, &m.KickoffAt,
-		&m.CreatedAt, &m.UpdatedAt,
-		&m.ExternalProvider, &m.ExternalMatchID, &m.LastSyncedAt,
-		&m.HomeSlotID, &m.AwaySlotID,
+	err := row.Scan(append(matchScanDests(m),
 		&sc.sID, &sc.sName, &sc.sCapacity,
 		&sc.ciID, &sc.ciName,
 		&sc.stID, &sc.stName, &sc.stCode,
 		&sc.coID, &sc.coName, &sc.coCode,
-	)
+	)...)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -334,18 +336,12 @@ func collectMatches(rows pgx.Rows) ([]*domain.Match, error) {
 	for rows.Next() {
 		m := &domain.Match{}
 		var sc stadiumCols
-		if err := rows.Scan(
-			&m.ID, &m.HomeTeam, &m.AwayTeam,
-			&m.HomeScore, &m.AwayScore,
-			&m.Status, &m.Phase, &m.GroupLabel, &m.WinMethod, &m.StadiumID, &m.KickoffAt,
-			&m.CreatedAt, &m.UpdatedAt,
-			&m.ExternalProvider, &m.ExternalMatchID, &m.LastSyncedAt,
-			&m.HomeSlotID, &m.AwaySlotID,
+		if err := rows.Scan(append(matchScanDests(m),
 			&sc.sID, &sc.sName, &sc.sCapacity,
 			&sc.ciID, &sc.ciName,
 			&sc.stID, &sc.stName, &sc.stCode,
 			&sc.coID, &sc.coName, &sc.coCode,
-		); err != nil {
+		)...); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		m.Stadium = hydrateStadium(sc)

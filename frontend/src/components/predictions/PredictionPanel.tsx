@@ -28,7 +28,6 @@ import { type Locale, useI18n } from "@/lib/i18n";
 type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved" | "past";
 const PAGE_SIZE = 6;
-type ViewMode = string;
 type GroupLabel =
   | "A"
   | "B"
@@ -109,7 +108,7 @@ export function PredictionPanel() {
   const { t, timeZone, locale } = useI18n();
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
-  const [viewMode, setViewMode] = useState<ViewMode>("by-group");
+  const [viewMode, setViewMode] = useState<string>("by-group");
   const [drafts, setDrafts] = useState<DraftScores>({});
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
