@@ -543,6 +543,50 @@ describe("PredictionPanel", () => {
     }
   });
 
+  it("shows knockout phase tab when matches with that phase are present", async () => {
+    const koMatch = {
+      ...scheduledMatch,
+      id: 20,
+      home_team: "Argentina",
+      away_team: "Brazil",
+      phase: "round_of_16",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch, koMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    await screen.findByText("Canadá");
+    // The round_of_16 tab renders as "Octavos" in Spanish
+    expect(screen.getByRole("button", { name: /Octavos/i })).toBeInTheDocument();
+  });
+
+  it("filters matches by knockout phase when tab is clicked", async () => {
+    const koMatch = {
+      ...scheduledMatch,
+      id: 20,
+      home_team: "Argentina",
+      away_team: "Brazil",
+      phase: "round_of_16",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch, koMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    await screen.findByText("Canadá");
+    fireEvent.click(screen.getByRole("button", { name: /Octavos/i }));
+
+    // After switching to round_of_16 tab, the knockout match teams are shown
+    expect(await screen.findByText("Argentina")).toBeInTheDocument();
+    // Group stage match is no longer visible in the phase filter view
+    expect(screen.queryByText("Canadá")).toBeNull();
+  });
+
   it("disables score editing for locked matches and filters pending matches", async () => {
     vi.mocked(api.getMatches).mockResolvedValueOnce([
       scheduledMatch,

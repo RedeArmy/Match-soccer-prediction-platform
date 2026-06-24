@@ -480,3 +480,35 @@ func TestCachedMatchService_CorrectResult_PropagatesInnerError(t *testing.T) {
 		t.Fatal("expected error from inner, got nil")
 	}
 }
+
+// ── UpdateSlots ───────────────────────────────────────────────────────────────
+
+func TestCachedMatchService_UpdateSlots_Success_InvalidatesCache(t *testing.T) {
+	st := newStubCache()
+	home, away := 1, 2
+	m := &domain.Match{ID: 7, HomeSlotID: &home, AwaySlotID: &away}
+	inner := &stubInnerMatchSvc{match: m}
+
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
+	got, err := svc.UpdateSlots(context.Background(), 7, &home, &away)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got == nil || got.ID != 7 {
+		t.Errorf("expected match ID 7, got %v", got)
+	}
+	if len(st.deleted) == 0 {
+		t.Error("expected cache keys to be invalidated after UpdateSlots")
+	}
+}
+
+func TestCachedMatchService_UpdateSlots_InnerError_Propagated(t *testing.T) {
+	st := newStubCache()
+	inner := &stubInnerMatchSvc{err: errors.New(errDBMsg)}
+
+	svc := NewCachedMatchService(inner, st, 5*time.Minute, zap.NewNop())
+	_, err := svc.UpdateSlots(context.Background(), 7, nil, nil)
+	if err == nil {
+		t.Fatal("expected error from inner UpdateSlots, got nil")
+	}
+}

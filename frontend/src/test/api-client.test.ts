@@ -1267,3 +1267,72 @@ describe("api.updateScoreFromZero", () => {
     expect(body.score_from_zero).toBe(true);
   });
 });
+
+// ── Tournament slots ───────────────────────────────────────────────────────────
+
+describe("api.getSlots", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("fetches slots without Authorization header when no token provided", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]));
+    await api.getSlots();
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/api/v1/tournament/slots");
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["Authorization"]).toBeUndefined();
+  });
+
+  it("includes Authorization header when token is provided", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]));
+    await api.getSlots("tok_admin");
+    const [, init] = mockFetch.mock.calls[0];
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Bearer tok_admin");
+  });
+
+  it("returns the slot list from the response", async () => {
+    const slots = [{ id: 1, label: "fin_01_a", description: "Campeón", team: "Argentina" }];
+    mockFetch.mockResolvedValueOnce(makeResponse(slots));
+    const result = await api.getSlots("tok");
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe("fin_01_a");
+  });
+});
+
+describe("api.adminConfirmSlot", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("sends PATCH to /api/v1/tournament/slots/:id with team in body", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 3, label: "qf_01_a", team: "France" }));
+    await api.adminConfirmSlot("tok_admin", 3, "France");
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/api/v1/tournament/slots/3");
+    expect((init as RequestInit).method).toBe("PATCH");
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.team).toBe("France");
+  });
+});
+
+describe("api.adminUpdateMatchSlots", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("sends PATCH to /api/v1/matches/:id/slots with home and away slot IDs", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 10, home_slot_id: 1, away_slot_id: 2 }));
+    await api.adminUpdateMatchSlots("tok_admin", 10, 1, 2);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/api/v1/matches/10/slots");
+    expect((init as RequestInit).method).toBe("PATCH");
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.home_slot_id).toBe(1);
+    expect(body.away_slot_id).toBe(2);
+  });
+
+  it("allows null slot IDs to clear assignment", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse({ id: 10, home_slot_id: null, away_slot_id: null }));
+    await api.adminUpdateMatchSlots("tok_admin", 10, null, null);
+    const [, init] = mockFetch.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.home_slot_id).toBeNull();
+    expect(body.away_slot_id).toBeNull();
+  });
+});

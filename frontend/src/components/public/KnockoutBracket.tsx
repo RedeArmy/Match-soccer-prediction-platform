@@ -26,12 +26,12 @@ function phasePrefix(label: string): string {
 
 function matchNum(label: string): number {
   const parts = label.split("_");
-  return Number(parts[parts.length - 2]);
+  return Number(parts.at(-2));
 }
 
 function side(label: string): string {
   const parts = label.split("_");
-  return parts[parts.length - 1] ?? "a";
+  return parts.at(-1) ?? "a";
 }
 
 function groupByPhase(

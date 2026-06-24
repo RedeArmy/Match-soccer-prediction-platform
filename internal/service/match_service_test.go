@@ -565,3 +565,32 @@ func TestCancelMatch_NotFound_ReturnsNotFound(t *testing.T) {
 		t.Errorf("expected not-found error, got %v", err)
 	}
 }
+
+// ── UpdateSlots ───────────────────────────────────────────────────────────────
+
+func TestMatchService_UpdateSlots_DelegatesToRepo(t *testing.T) {
+	home := 1
+	away := 2
+	match := &domain.Match{ID: 5, HomeSlotID: &home, AwaySlotID: &away}
+	svc, _ := newMatchSvc(match)
+
+	got, err := svc.UpdateSlots(context.Background(), 5, &home, &away)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	if got.ID != 5 {
+		t.Errorf("expected match ID 5, got %d", got.ID)
+	}
+}
+
+func TestMatchService_UpdateSlots_RepoError_Propagated(t *testing.T) {
+	svc := NewMatchService(
+		&stubMatchRepo{err: apperrors.NotFound("match not found")},
+		&stubPublisher{}, &stubScorer{}, &noopAuditLogger{}, zap.NewNop(),
+	)
+
+	_, err := svc.UpdateSlots(context.Background(), 99, nil, nil)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found error, got %v", err)
+	}
+}

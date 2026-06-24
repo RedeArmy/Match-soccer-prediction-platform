@@ -28,7 +28,7 @@ import { type Locale, useI18n } from "@/lib/i18n";
 type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved" | "past";
 const PAGE_SIZE = 6;
-type ViewMode = "by-group" | "by-day" | string;
+type ViewMode = string;
 type GroupLabel =
   | "A"
   | "B"
@@ -305,18 +305,21 @@ export function PredictionPanel() {
   const isByGroup = viewMode === "by-group";
   const isKnockoutPhase = !isByDay && !isByGroup;
 
-  const baseMatches = isByDay
-    ? sortedMatches.filter((match) => {
-        if (!match.kickoff_at) return false;
-        if (match.status === "finished" || match.status === "cancelled") return false;
-        const matchDate = new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone });
-        return matchDate >= effectiveStart && matchDate <= effectiveEnd;
-      })
-    : isKnockoutPhase
-      ? sortedMatches.filter((match) => match.phase === viewMode)
-      : sortedMatches.filter(
-          (match) => normalizeGroup(match.group_label) === selectedGroup,
-        );
+  let baseMatches;
+  if (isByDay) {
+    baseMatches = sortedMatches.filter((match) => {
+      if (!match.kickoff_at) return false;
+      if (match.status === "finished" || match.status === "cancelled") return false;
+      const matchDate = new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone });
+      return matchDate >= effectiveStart && matchDate <= effectiveEnd;
+    });
+  } else if (isKnockoutPhase) {
+    baseMatches = sortedMatches.filter((match) => match.phase === viewMode);
+  } else {
+    baseMatches = sortedMatches.filter(
+      (match) => normalizeGroup(match.group_label) === selectedGroup,
+    );
+  }
 
   const visibleMatches = baseMatches.filter((match) => {
     const hasPrediction = predictionByMatch.has(match.id);
