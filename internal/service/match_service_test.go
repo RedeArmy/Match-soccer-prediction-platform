@@ -66,6 +66,9 @@ func (r *stubMatchRepo) FindByTeams(_ context.Context, _, _ string) (*domain.Mat
 	return nil, nil
 }
 func (r *stubMatchRepo) UpdateKickoff(_ context.Context, _ int, _ time.Time) error { return nil }
+func (r *stubMatchRepo) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
+	return r.match, r.err
+}
 
 // stubPublisher records published envelopes without delivering them.
 type stubPublisher struct {
@@ -558,6 +561,35 @@ func TestCancelMatch_NotFound_ReturnsNotFound(t *testing.T) {
 	svc, _ := newMatchSvc(nil)
 
 	_, err := svc.CancelMatch(context.Background(), 99)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Errorf("expected not-found error, got %v", err)
+	}
+}
+
+// ── UpdateSlots ───────────────────────────────────────────────────────────────
+
+func TestMatchService_UpdateSlots_DelegatesToRepo(t *testing.T) {
+	home := 1
+	away := 2
+	match := &domain.Match{ID: 5, HomeSlotID: &home, AwaySlotID: &away}
+	svc, _ := newMatchSvc(match)
+
+	got, err := svc.UpdateSlots(context.Background(), 5, &home, &away)
+	if err != nil {
+		t.Fatalf(fmtExpectNilErr, err)
+	}
+	if got.ID != 5 {
+		t.Errorf("expected match ID 5, got %d", got.ID)
+	}
+}
+
+func TestMatchService_UpdateSlots_RepoError_Propagated(t *testing.T) {
+	svc := NewMatchService(
+		&stubMatchRepo{err: apperrors.NotFound("match not found")},
+		&stubPublisher{}, &stubScorer{}, &noopAuditLogger{}, zap.NewNop(),
+	)
+
+	_, err := svc.UpdateSlots(context.Background(), 99, nil, nil)
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		t.Errorf("expected not-found error, got %v", err)
 	}

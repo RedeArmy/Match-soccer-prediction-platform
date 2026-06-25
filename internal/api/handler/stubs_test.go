@@ -118,6 +118,9 @@ func (s *stubMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *doma
 func (s *stubMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
 	return s.match, s.err
 }
+func (s *stubMatchSvc) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
+	return s.match, s.err
+}
 
 // stubPredSvc implements service.PredictionService with configurable returns.
 type stubPredSvc struct {
@@ -283,7 +286,7 @@ func (s *stubTournamentSvc) GetAllStandings(_ context.Context) (map[string][]*do
 func (s *stubTournamentSvc) GetGroupStanding(_ context.Context, _ string) ([]*domain.GroupStanding, error) {
 	return s.entries, s.err
 }
-func (s *stubTournamentSvc) CreateSlot(_ context.Context, _ string) (*domain.TournamentSlot, error) {
+func (s *stubTournamentSvc) CreateSlot(_ context.Context, _, _ string) (*domain.TournamentSlot, error) {
 	return s.slot, s.err
 }
 func (s *stubTournamentSvc) ConfirmSlot(_ context.Context, _, _ int, _ string) (*domain.TournamentSlot, error) {

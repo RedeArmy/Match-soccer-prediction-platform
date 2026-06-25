@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { MatchResponse, PredictionResponse } from "@/lib/api-types";
-import { isPhaseVisible } from "@/lib/feature-flags";
+import { visibleKnockoutPhases } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -28,7 +28,6 @@ import { type Locale, useI18n } from "@/lib/i18n";
 type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved" | "past";
 const PAGE_SIZE = 6;
-type ViewMode = "by-group" | "by-day";
 type GroupLabel =
   | "A"
   | "B"
@@ -89,13 +88,27 @@ function getEmptyState(params: {
   return { title: t("predictions.noMatches"), desc: t("predictions.noMatchesDesc") };
 }
 
+const PHASE_KEY_MAP: Record<string, string> = {
+  round_of_32: "phaseRoundOf32",
+  round_of_16: "phaseRoundOf16",
+  quarter_final: "phaseQuarterFinal",
+  semi_final: "phaseSemiF",
+  third_place: "phaseThirdPlace",
+  final: "phaseFinal",
+};
+
+function phaseShortLabel(phase: string, t: (key: string) => string): string {
+  const key = PHASE_KEY_MAP[phase];
+  return key ? t(key) : phase;
+}
+
 export function PredictionPanel() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
   const { t, timeZone, locale } = useI18n();
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
-  const [viewMode, setViewMode] = useState<ViewMode>("by-group");
+  const [viewMode, setViewMode] = useState<string>("by-group");
   const [drafts, setDrafts] = useState<DraftScores>({});
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -265,13 +278,17 @@ export function PredictionPanel() {
       return 1;
     };
     return [...(matchesQuery.data ?? [])]
-      .filter((m) => isPhaseVisible(m.phase))
       .sort((a, b) => {
         const tierDiff = tier(a.status) - tier(b.status);
         if (tierDiff !== 0) return tierDiff;
         return ts(a.kickoff_at) - ts(b.kickoff_at);
       });
   }, [matchesQuery.data]);
+
+  const knockoutPhases = useMemo(
+    () => visibleKnockoutPhases(sortedMatches),
+    [sortedMatches],
+  );
 
   // Dates (YYYY-MM-DD) that have at least one match — used for calendar dot indicators
   const matchDates = useMemo(() => {
@@ -284,17 +301,24 @@ export function PredictionPanel() {
   }, [sortedMatches, timeZone]);
 
   const isByDay = viewMode === "by-day";
+  const isByGroup = viewMode === "by-group";
+  const isKnockoutPhase = !isByDay && !isByGroup;
 
-  const baseMatches = isByDay
-    ? sortedMatches.filter((match) => {
-        if (!match.kickoff_at) return false;
-        if (match.status === "finished" || match.status === "cancelled") return false;
-        const matchDate = new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone });
-        return matchDate >= effectiveStart && matchDate <= effectiveEnd;
-      })
-    : sortedMatches.filter(
-        (match) => normalizeGroup(match.group_label) === selectedGroup,
-      );
+  let baseMatches;
+  if (isByDay) {
+    baseMatches = sortedMatches.filter((match) => {
+      if (!match.kickoff_at) return false;
+      if (match.status === "finished" || match.status === "cancelled") return false;
+      const matchDate = new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone });
+      return matchDate >= effectiveStart && matchDate <= effectiveEnd;
+    });
+  } else if (isKnockoutPhase) {
+    baseMatches = sortedMatches.filter((match) => match.phase === viewMode);
+  } else {
+    baseMatches = sortedMatches.filter(
+      (match) => normalizeGroup(match.group_label) === selectedGroup,
+    );
+  }
 
   const visibleMatches = baseMatches.filter((match) => {
     const hasPrediction = predictionByMatch.has(match.id);
@@ -463,7 +487,22 @@ export function PredictionPanel() {
           </div>
         </div>
 
-        <div className="mb-4 inline-flex gap-1 rounded-xl border border-white/10 bg-white/[0.035] p-1">
+        <div className="mb-4 inline-flex flex-wrap gap-1 rounded-xl border border-white/10 bg-white/[0.035] p-1">
+          {knockoutPhases.map((phase) => (
+            <button
+              key={phase}
+              type="button"
+              onClick={() => setViewMode(phase)}
+              className={cn(
+                "rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
+                viewMode === phase
+                  ? "bg-gold-400 text-blue-950"
+                  : "text-text-muted hover:text-text-primary",
+              )}
+            >
+              {phaseShortLabel(phase, t)}
+            </button>
+          ))}
           {(
             [
               ["by-group", t("predictions.viewByGroup")],
@@ -493,7 +532,7 @@ export function PredictionPanel() {
           ))}
         </div>
 
-        {viewMode === "by-group" && (
+        {isByGroup && (
           <div className="mb-5 rounded-2xl border border-white/10 bg-[#07111F] p-3 sm:p-4">
             <div className="grid grid-cols-6 gap-2 lg:grid-cols-12">
               {GROUPS.map((group) => (
@@ -508,7 +547,7 @@ export function PredictionPanel() {
           </div>
         )}
 
-        {viewMode === "by-day" && (
+        {isByDay && (
           <MatchCalendar
             todayStr={todayStr}
             selectedStart={effectiveStart}

@@ -91,6 +91,7 @@ jobs:
     needs: guard
     permissions:
       contents: read
+      pull-requests: read
 
     steps:
       - name: Checkout

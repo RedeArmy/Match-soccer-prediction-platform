@@ -642,6 +642,15 @@ const translations: TranslationNode = {
     exactHint:    { es: 'Los marcadores se cierran al iniciar el partido.', en: 'Scores lock when the match starts.' },
     points:       { es: 'pts',                       en: 'pts'                        },
   },
+  bracket:           { es: 'Llave',                                en: 'Bracket'                                },
+  bracketTitle:      { es: 'Llave del Torneo',                     en: 'Tournament Bracket'                     },
+  bracketNoSlots:    { es: 'La llave se irá llenando conforme avancen las rondas.', en: 'The bracket will fill in as rounds progress.' },
+  phaseRoundOf32:    { es: 'Dieciseisavos',                        en: 'Round of 32'                            },
+  phaseRoundOf16:    { es: 'Octavos',                              en: 'Round of 16'                            },
+  phaseQuarterFinal: { es: 'Cuartos',                              en: 'Quarter-finals'                         },
+  phaseSemiF:        { es: 'Semis',                                en: 'Semi-finals'                            },
+  phaseThirdPlace:   { es: '3.er Lugar',                           en: '3rd Place'                              },
+  phaseFinal:        { es: 'Final',                                en: 'Final'                                  },
   // ── Group standings (public landing page) ────────────────────────────────────
   standings: {
     eyebrow:          { es: 'Copa del Mundo FIFA 2026',                                        en: 'FIFA World Cup 2026'                                           },

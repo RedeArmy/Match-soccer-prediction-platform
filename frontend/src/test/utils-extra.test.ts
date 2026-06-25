@@ -8,7 +8,7 @@ import {
   initials,
   cn,
 } from "@/lib/utils";
-import { isPhaseVisible } from "@/lib/feature-flags";
+import { isPhaseVisible, visibleKnockoutPhases } from "@/lib/feature-flags";
 
 describe("cn (class name merger)", () => {
   it("merges class names", () => {
@@ -150,11 +150,48 @@ describe("isPhaseVisible", () => {
     expect(isPhaseVisible("group_stage")).toBe(true);
   });
 
-  it("returns false for a known knockout phase when flag is off", () => {
-    expect(isPhaseVisible("round_of_16")).toBe(false);
+  it("returns true for all known knockout phases (all flags enabled)", () => {
+    expect(isPhaseVisible("round_of_16")).toBe(true);
+    expect(isPhaseVisible("round_of_32")).toBe(true);
+    expect(isPhaseVisible("quarter_final")).toBe(true);
+    expect(isPhaseVisible("semi_final")).toBe(true);
+    expect(isPhaseVisible("third_place")).toBe(true);
+    expect(isPhaseVisible("final")).toBe(true);
   });
 
   it("returns false for an unrecognised phase", () => {
     expect(isPhaseVisible("unknown_phase")).toBe(false);
+  });
+});
+
+describe("visibleKnockoutPhases", () => {
+  it("returns empty array when given no matches", () => {
+    expect(visibleKnockoutPhases([])).toEqual([]);
+  });
+
+  it("returns empty array when only group_stage matches present", () => {
+    expect(visibleKnockoutPhases([{ phase: "group_stage" }, { phase: null }])).toEqual([]);
+  });
+
+  it("returns phases in canonical order regardless of input order", () => {
+    const matches = [
+      { phase: "quarter_final" },
+      { phase: "round_of_16" },
+      { phase: "semi_final" },
+    ];
+    expect(visibleKnockoutPhases(matches)).toEqual([
+      "round_of_16",
+      "quarter_final",
+      "semi_final",
+    ]);
+  });
+
+  it("deduplicates repeated phase values", () => {
+    const matches = [{ phase: "final" }, { phase: "final" }, { phase: "third_place" }];
+    expect(visibleKnockoutPhases(matches)).toEqual(["third_place", "final"]);
+  });
+
+  it("ignores unrecognised phase strings", () => {
+    expect(visibleKnockoutPhases([{ phase: "unknown_phase" }])).toEqual([]);
   });
 });
