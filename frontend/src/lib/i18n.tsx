@@ -786,6 +786,13 @@ function localeForCountry(country: string): Locale {
 //   "Mejor 3.° (p.N)"   → "Best 3rd (p.N)"
 //   "Ganador PHASE MNN"  → "Winner PHASE MNN"
 //   "Perdedor PHASE MNN" → "Loser PHASE MNN"
+function englishOrdinal(n: number): string {
+  if (n === 1) return "1st";
+  if (n === 2) return "2nd";
+  if (n === 3) return "3rd";
+  return `${n}th`;
+}
+
 function translateSlotDescription(
   desc: string | null | undefined,
   locale: Locale,
@@ -793,21 +800,18 @@ function translateSlotDescription(
   if (!desc) return "—";
   if (locale === "es") return desc;
 
-  const groupMatch = desc.match(/^(\d+)\.° Grupo ([A-L])$/);
+  const groupMatch = /^(\d+)\.° Grupo ([A-L])$/.exec(desc);
   if (groupMatch) {
-    const n = Number(groupMatch[1]);
-    const ordinal =
-      n === 1 ? "1st" : n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`;
-    return `${ordinal} Group ${groupMatch[2]}`;
+    return `${englishOrdinal(Number(groupMatch[1]))} Group ${groupMatch[2]}`;
   }
 
-  const best3rd = desc.match(/^Mejor 3\.° \(p\.(\d+)\)$/);
+  const best3rd = /^Mejor 3\.° \(p\.(\d+)\)$/.exec(desc);
   if (best3rd) return `Best 3rd (p.${best3rd[1]})`;
 
-  const winner = desc.match(/^Ganador (.+)$/);
+  const winner = /^Ganador (.+)$/.exec(desc);
   if (winner) return `Winner ${winner[1]}`;
 
-  const loser = desc.match(/^Perdedor (.+)$/);
+  const loser = /^Perdedor (.+)$/.exec(desc);
   if (loser) return `Loser ${loser[1]}`;
 
   return desc;

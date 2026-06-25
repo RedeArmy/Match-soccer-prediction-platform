@@ -341,6 +341,57 @@ function ResultModal({
   );
 }
 
+// ── Shared pagination control ─────────────────────────────────────────────────
+
+interface PaginationBarProps {
+  readonly page: number;
+  readonly totalPages: number;
+  readonly start: number;
+  readonly end: number;
+  readonly total: number;
+  readonly unit: string;
+  readonly onPrev: () => void;
+  readonly onNext: () => void;
+}
+
+function PaginationBar({
+  page,
+  totalPages,
+  start,
+  end,
+  total,
+  unit,
+  onPrev,
+  onNext,
+}: PaginationBarProps) {
+  return (
+    <div className="flex items-center justify-between px-1">
+      <p className="text-xs text-white/40">
+        {start}–{end} de {total} {unit}
+      </p>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={onPrev}
+          disabled={page === 1}
+          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="px-3 py-1 text-xs text-white/60 tabular-nums">
+          {page} / {totalPages}
+        </span>
+        <button
+          onClick={onNext}
+          disabled={page === totalPages}
+          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Bracket tab ──────────────────────────────────────────────────────────────
 
 interface ConfirmSlotModalProps {
@@ -531,32 +582,16 @@ function BracketTab({ getToken }: BracketTabProps) {
         </div>
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-1">
-            <p className="text-xs text-white/40">
-              {(page - 1) * BRACKET_PAGE_SIZE + 1}–
-              {Math.min(page * BRACKET_PAGE_SIZE, slots.length)} de{" "}
-              {slots.length} slots
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="px-3 py-1 text-xs text-white/60 tabular-nums">
-                {page} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            start={(page - 1) * BRACKET_PAGE_SIZE + 1}
+            end={Math.min(page * BRACKET_PAGE_SIZE, slots.length)}
+            total={slots.length}
+            unit="slots"
+            onPrev={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+          />
         )}
       </div>
 
@@ -1128,32 +1163,16 @@ export default function AdminMatchesPage() {
             </div>
 
             {tab === "all" && totalPages > 1 && (
-              <div className="flex items-center justify-between px-1">
-                <p className="text-xs text-white/40">
-                  {(page - 1) * PAGE_SIZE + 1}–
-                  {Math.min(page * PAGE_SIZE, filtered.length)} de{" "}
-                  {filtered.length} partidos
-                </p>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="px-3 py-1 text-xs text-white/60 tabular-nums">
-                    {page} / {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+              <PaginationBar
+                page={page}
+                totalPages={totalPages}
+                start={(page - 1) * PAGE_SIZE + 1}
+                end={Math.min(page * PAGE_SIZE, filtered.length)}
+                total={filtered.length}
+                unit="partidos"
+                onPrev={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
             )}
           </div>
         </AdminContentState>

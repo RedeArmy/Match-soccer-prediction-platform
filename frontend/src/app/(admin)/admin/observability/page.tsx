@@ -397,7 +397,7 @@ export default function AdminObservabilityPage() {
                             rel="noopener noreferrer"
                             className="flex items-center gap-1 font-mono text-xs text-blue-400 hover:text-blue-300"
                           >
-                            {e.trace_id.slice(0, 16)}…
+                            {`${e.trace_id.slice(0, 16)}…`}
                             <ExternalLink className="h-3 w-3" />
                           </a>
                         ) : (
@@ -409,7 +409,7 @@ export default function AdminObservabilityPage() {
                               navigator.clipboard.writeText(e.trace_id)
                             }
                           >
-                            {e.trace_id.slice(0, 16)}…
+                            {`${e.trace_id.slice(0, 16)}…`}
                           </button>
                         )}
                       </td>
