@@ -72,7 +72,7 @@ func (r *PostgresTournamentRepository) ListSlots(ctx context.Context) ([]*domain
 	var slots []*domain.TournamentSlot
 	for rows.Next() {
 		s := &domain.TournamentSlot{}
-		if err := rows.Scan(&s.ID, &s.Label, &s.Description, &s.Team, &s.ConfirmedAt, &s.ConfirmedByUserID, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Label, &s.Description, &s.Team, &s.AutoSource, &s.ConfirmedAt, &s.ConfirmedByUserID, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		slots = append(slots, s)
