@@ -18,7 +18,10 @@ vi.mock("@/components/shared/HorizontalCarousel", () => ({
 }));
 
 import { useQuery } from "@tanstack/react-query";
-import { GroupStandingsSection, teamDisplayName } from "@/components/public/GroupStandingsSection";
+import {
+  GroupStandingsSection,
+  teamDisplayName,
+} from "@/components/public/GroupStandingsSection";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -74,7 +77,11 @@ describe("buildGroupStandings – empty input", () => {
 
 describe("buildGroupStandings – scheduled matches (no scores)", () => {
   it("seeds teams with zero stats when match is scheduled", () => {
-    const m = match({ status: "scheduled", home_score: null, away_score: null });
+    const m = match({
+      status: "scheduled",
+      home_score: null,
+      away_score: null,
+    });
     const groups = buildGroupStandings([m]);
     const rows = groups["A"];
     expect(rows).toHaveLength(2);
@@ -148,8 +155,22 @@ describe("buildGroupStandings – finished matches", () => {
 
   it("sorts by pts DESC, gd DESC, gf DESC", () => {
     const matches: PublicMatch[] = [
-      match({ id: 1, home_team: "A", away_team: "B", status: "finished", home_score: 0, away_score: 1 }),
-      match({ id: 2, home_team: "C", away_team: "D", status: "finished", home_score: 3, away_score: 0 }),
+      match({
+        id: 1,
+        home_team: "A",
+        away_team: "B",
+        status: "finished",
+        home_score: 0,
+        away_score: 1,
+      }),
+      match({
+        id: 2,
+        home_team: "C",
+        away_team: "D",
+        status: "finished",
+        home_score: 3,
+        away_score: 0,
+      }),
     ];
     const groups = buildGroupStandings(matches);
     const rows = groups["A"];
@@ -235,9 +256,33 @@ describe("GroupStandingsSection – with group data", () => {
       isError: false,
       data: {
         matches: [
-          match({ id: 1, home_team: "Brazil", away_team: "Germany", group_label: "A", status: "finished", home_score: 2, away_score: 1 }),
-          match({ id: 2, home_team: "France", away_team: "Spain", group_label: "A", status: "finished", home_score: 0, away_score: 0 }),
-          match({ id: 3, home_team: "Mexico", away_team: "Canada", group_label: "B", status: "scheduled", home_score: null, away_score: null }),
+          match({
+            id: 1,
+            home_team: "Brazil",
+            away_team: "Germany",
+            group_label: "A",
+            status: "finished",
+            home_score: 2,
+            away_score: 1,
+          }),
+          match({
+            id: 2,
+            home_team: "France",
+            away_team: "Spain",
+            group_label: "A",
+            status: "finished",
+            home_score: 0,
+            away_score: 0,
+          }),
+          match({
+            id: 3,
+            home_team: "Mexico",
+            away_team: "Canada",
+            group_label: "B",
+            status: "scheduled",
+            home_score: null,
+            away_score: null,
+          }),
         ],
       },
     } as never);
@@ -272,7 +317,12 @@ describe("GroupStandingsSection – with group data", () => {
       isError: false,
       data: {
         matches: [
-          match({ home_team: "Obscuristan", away_team: "Testland", group_label: "Z", status: "scheduled" }),
+          match({
+            home_team: "Obscuristan",
+            away_team: "Testland",
+            group_label: "Z",
+            status: "scheduled",
+          }),
         ],
       },
     } as never);

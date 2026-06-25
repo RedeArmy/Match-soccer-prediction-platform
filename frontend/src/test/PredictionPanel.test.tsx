@@ -340,7 +340,9 @@ describe("PredictionPanel", () => {
       phase: null,
       group_label: "C",
     };
-    vi.mocked(api.getMatches).mockResolvedValueOnce([pastKickoffMatch] as never);
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      pastKickoffMatch,
+    ] as never);
     vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
 
     renderPanel();
@@ -496,7 +498,9 @@ describe("PredictionPanel", () => {
       fireEvent.click(prevMonthBtn);
     }
     // Calendar still renders without error
-    expect(screen.getByRole("button", { name: "Partidos" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Partidos" }),
+    ).toBeInTheDocument();
     void nextBtn;
   });
 
@@ -509,7 +513,9 @@ describe("PredictionPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
     fireEvent.click(screen.getByRole("button", { name: "Abrir calendario" }));
-    expect(screen.getByRole("button", { name: "Mes siguiente" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Mes siguiente" }),
+    ).toBeInTheDocument();
 
     // Simulate a mousedown outside the calendar container
     fireEvent.mouseDown(document.body);
@@ -528,19 +534,31 @@ describe("PredictionPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Abrir calendario" }));
 
     // Today is pre-selected → button should not be visible
-    expect(screen.queryByRole("button", { name: "Partidos de hoy" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Partidos de hoy" }),
+    ).toBeNull();
 
     const todayLocal = new Date().toLocaleDateString("sv");
     const futureDays = screen
-      .getAllByRole("button", { name: (name) => /^\d{4}-\d{2}-\d{2}$/.test(name) })
-      .filter((btn) => !btn.hasAttribute("disabled") && btn.getAttribute("aria-label") !== todayLocal);
+      .getAllByRole("button", {
+        name: (name) => /^\d{4}-\d{2}-\d{2}$/.test(name),
+      })
+      .filter(
+        (btn) =>
+          !btn.hasAttribute("disabled") &&
+          btn.getAttribute("aria-label") !== todayLocal,
+      );
 
     if (futureDays.length > 0) {
       fireEvent.click(futureDays[0]);
-      expect(screen.getByRole("button", { name: "Partidos de hoy" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Partidos de hoy" }),
+      ).toBeInTheDocument();
       // Clicking it resets the selection to today
       fireEvent.click(screen.getByRole("button", { name: "Partidos de hoy" }));
-      expect(screen.queryByRole("button", { name: "Partidos de hoy" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Partidos de hoy" }),
+      ).toBeNull();
     }
   });
 
@@ -554,14 +572,19 @@ describe("PredictionPanel", () => {
       group_label: null,
       kickoff_at: futureKickoff,
     };
-    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch, koMatch] as never);
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      scheduledMatch,
+      koMatch,
+    ] as never);
     vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
 
     renderPanel();
 
     await screen.findByText("Canadá");
     // The round_of_16 tab renders as "Octavos" in Spanish
-    expect(screen.getByRole("button", { name: /Octavos/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Octavos/i }),
+    ).toBeInTheDocument();
   });
 
   it("filters matches by knockout phase when tab is clicked", async () => {
@@ -574,7 +597,10 @@ describe("PredictionPanel", () => {
       group_label: null,
       kickoff_at: futureKickoff,
     };
-    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch, koMatch] as never);
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      scheduledMatch,
+      koMatch,
+    ] as never);
     vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
 
     renderPanel();
@@ -608,13 +634,18 @@ describe("PredictionPanel", () => {
       group_label: null,
       kickoff_at: futureKickoff,
     };
-    vi.mocked(api.getMatches).mockResolvedValueOnce([confirmedKo, pendingKo] as never);
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      confirmedKo,
+      pendingKo,
+    ] as never);
     vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
 
     renderPanel();
 
     // Tab appears because at least one match is confirmed
-    expect(await screen.findByRole("button", { name: /Octavos/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /Octavos/i }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Octavos/i }));
 
     // Only the confirmed match renders — the empty-team one is suppressed
@@ -643,7 +674,11 @@ describe("PredictionPanel", () => {
       group_label: null,
       kickoff_at: futureKickoff,
     };
-    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch, placeholderMatch1, placeholderMatch2] as never);
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      scheduledMatch,
+      placeholderMatch1,
+      placeholderMatch2,
+    ] as never);
     vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
 
     renderPanel();
@@ -672,13 +707,18 @@ describe("PredictionPanel", () => {
       group_label: null,
       kickoff_at: futureKickoff,
     };
-    vi.mocked(api.getMatches).mockResolvedValueOnce([confirmedKo, placeholderKo] as never);
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      confirmedKo,
+      placeholderKo,
+    ] as never);
     vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
 
     renderPanel();
 
     // Tab appears because at least one match is confirmed
-    expect(await screen.findByRole("button", { name: /Dieciseisavos/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /Dieciseisavos/i }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Dieciseisavos/i }));
 
     // Only the confirmed match renders
@@ -723,6 +763,70 @@ describe("PredictionPanel", () => {
 
     expect(await screen.findByText("México")).toBeInTheDocument();
     expect(screen.queryByText("1A")).toBeNull();
+  });
+
+  it("hides placeholder-team matches in by-day view", async () => {
+    const todayLocal = new Date().toLocaleDateString("sv");
+    const todayKickoff = `${todayLocal}T14:00:00`;
+    const confirmedMatch = {
+      ...scheduledMatch,
+      id: 80,
+      home_team: "Brazil",
+      away_team: "Argentina",
+      phase: "round_of_32",
+      group_label: null,
+      kickoff_at: todayKickoff,
+    };
+    const placeholderMatch = {
+      ...scheduledMatch,
+      id: 81,
+      home_team: "W73",
+      away_team: "1A",
+      phase: "round_of_32",
+      group_label: null,
+      kickoff_at: todayKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      confirmedMatch,
+      placeholderMatch,
+    ] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
+
+    // Confirmed teams appear; placeholder match is suppressed
+    expect(await screen.findByText("Brasil")).toBeInTheDocument();
+    expect(screen.queryByText("W73")).toBeNull();
+    expect(screen.queryByText("1A")).toBeNull();
+  });
+
+  it("omits calendar dot for days where all matches have placeholder teams", async () => {
+    const todayLocal = new Date().toLocaleDateString("sv");
+    const todayKickoff = `${todayLocal}T14:00:00`;
+    const placeholderOnlyMatch = {
+      ...scheduledMatch,
+      id: 82,
+      home_team: "2C",
+      away_team: "3ABCDF",
+      phase: "round_of_32",
+      group_label: null,
+      kickoff_at: todayKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      placeholderOnlyMatch,
+    ] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
+
+    // Calendar opens — today's cell must not have the gold dot
+    fireEvent.click(screen.getByRole("button", { name: "Abrir calendario" }));
+    const todayBtn = screen.getByRole("button", { name: todayLocal });
+    const cell = todayBtn.closest("div");
+    // The dot is a <span> sibling inside the cell; it must not exist
+    expect(cell?.querySelector("span.rounded-full")).toBeNull();
   });
 
   it("disables score editing for locked matches and filters pending matches", async () => {

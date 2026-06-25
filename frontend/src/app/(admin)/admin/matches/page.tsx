@@ -33,6 +33,7 @@ import {
 type TabKey = "all" | "today" | "bracket" | MatchStatus;
 
 const PAGE_SIZE = 15;
+const BRACKET_PAGE_SIZE = 10;
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "all", label: "Todos" },
@@ -412,6 +413,7 @@ function BracketTab({ getToken }: BracketTabProps) {
     null,
   );
   const [slotError, setSlotError] = useState("");
+  const [page, setPage] = useState(1);
 
   const {
     data: slots = [],
@@ -464,61 +466,98 @@ function BracketTab({ getToken }: BracketTabProps) {
     );
   }
 
+  const totalPages = Math.max(1, Math.ceil(slots.length / BRACKET_PAGE_SIZE));
+  const paginatedSlots = slots.slice(
+    (page - 1) * BRACKET_PAGE_SIZE,
+    page * BRACKET_PAGE_SIZE,
+  );
+
   return (
     <>
-      <div className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-white/10 bg-white/5 text-white/50 text-left">
-              <th className="px-4 py-3 font-medium">Slot</th>
-              <th className="px-4 py-3 font-medium">Descripción</th>
-              <th className="px-4 py-3 font-medium">Equipo</th>
-              <th className="px-4 py-3 font-medium">Confirmado</th>
-              <th className="px-4 py-3 font-medium text-right">Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {slots.map((slot) => (
-              <tr
-                key={slot.id}
-                className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
-              >
-                <td className="px-4 py-3 font-mono text-xs text-white/60">
-                  {slot.label}
-                </td>
-                <td className="px-4 py-3 text-white/60 text-xs">
-                  {slot.description || "—"}
-                </td>
-                <td className="px-4 py-3 text-white font-medium">
-                  {slot.team ?? (
-                    <span className="text-white/30 italic">Sin equipo</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-xs">
-                  {slot.confirmed_at ? (
-                    <span className="text-green-400">
-                      ✓ {new Date(slot.confirmed_at).toLocaleDateString("sv")}
-                    </span>
-                  ) : (
-                    <span className="text-white/30">—</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => {
-                      setConfirmSlot(slot);
-                      setSlotError("");
-                    }}
-                    className="flex items-center gap-1 ml-auto px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
-                  >
-                    <Edit3 className="h-3.5 w-3.5" />
-                    {slot.team ? "Corregir" : "Confirmar"}
-                  </button>
-                </td>
+      <div className="space-y-3">
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/5 text-white/50 text-left">
+                <th className="px-4 py-3 font-medium">Slot</th>
+                <th className="px-4 py-3 font-medium">Descripción</th>
+                <th className="px-4 py-3 font-medium">Equipo</th>
+                <th className="px-4 py-3 font-medium">Confirmado</th>
+                <th className="px-4 py-3 font-medium text-right">Acción</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {paginatedSlots.map((slot) => (
+                <tr
+                  key={slot.id}
+                  className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+                >
+                  <td className="px-4 py-3 font-mono text-xs text-white/60">
+                    {slot.label}
+                  </td>
+                  <td className="px-4 py-3 text-white/60 text-xs">
+                    {slot.description || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-white font-medium">
+                    {slot.team ?? (
+                      <span className="text-white/30 italic">Sin equipo</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {slot.confirmed_at ? (
+                      <span className="text-green-400">
+                        ✓ {new Date(slot.confirmed_at).toLocaleDateString("sv")}
+                      </span>
+                    ) : (
+                      <span className="text-white/30">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => {
+                        setConfirmSlot(slot);
+                        setSlotError("");
+                      }}
+                      className="flex items-center gap-1 ml-auto px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                      {slot.team ? "Corregir" : "Confirmar"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-1">
+            <p className="text-xs text-white/40">
+              {(page - 1) * BRACKET_PAGE_SIZE + 1}–
+              {Math.min(page * BRACKET_PAGE_SIZE, slots.length)} de{" "}
+              {slots.length} slots
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="px-3 py-1 text-xs text-white/60 tabular-nums">
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {confirmSlot && (

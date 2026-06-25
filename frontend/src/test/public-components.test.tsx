@@ -658,9 +658,7 @@ describe("LiveMatchFeed – FixtureDetailPanel row-1 score and period", () => {
   it("renders period label '2T' for 2H status in detail panel", async () => {
     renderFeed();
     fireEvent.click(screen.getByRole("button"));
-    await waitFor(() =>
-      expect(screen.getByText("2T")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("2T")).toBeInTheDocument());
   });
 
   it("shows empty-events message when both events and lineups are empty", async () => {

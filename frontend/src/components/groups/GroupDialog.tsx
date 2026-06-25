@@ -33,7 +33,8 @@ function joinErrorKey(
   const msg = (e.message ?? "").toLowerCase();
   if (msg.includes("pending")) return t("groups.joinErrorPending");
   if (msg.includes("already a member")) return t("groups.joinErrorMember");
-  if (msg.includes("limit") || msg.includes("maximum")) return t("groups.joinErrorFull");
+  if (msg.includes("limit") || msg.includes("maximum"))
+    return t("groups.joinErrorFull");
   return t("groups.joinError");
 }
 

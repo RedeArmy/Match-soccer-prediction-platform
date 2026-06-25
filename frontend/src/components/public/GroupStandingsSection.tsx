@@ -87,55 +87,55 @@ function flag(name: string): string {
 // ── Spanish team name translations ────────────────────────────────────────────
 
 const TEAM_NAMES_ES: Record<string, string> = {
-  "Algeria": "Argelia",
-  "Argentina": "Argentina",
-  "Australia": "Australia",
-  "Austria": "Austria",
-  "Belgium": "Bélgica",
+  Algeria: "Argelia",
+  Argentina: "Argentina",
+  Australia: "Australia",
+  Austria: "Austria",
+  Belgium: "Bélgica",
   "Bosnia and Herzegovina": "Bosnia y Herzegovina",
-  "Brazil": "Brasil",
-  "Canada": "Canadá",
+  Brazil: "Brasil",
+  Canada: "Canadá",
   "Cape Verde": "Cabo Verde",
-  "Colombia": "Colombia",
-  "Croatia": "Croacia",
-  "Curaçao": "Curazao",
-  "Czechia": "Chequia",
+  Colombia: "Colombia",
+  Croatia: "Croacia",
+  Curaçao: "Curazao",
+  Czechia: "Chequia",
   "DR Congo": "RD Congo",
-  "Ecuador": "Ecuador",
-  "Egypt": "Egipto",
-  "England": "Inglaterra",
-  "France": "Francia",
-  "Germany": "Alemania",
-  "Ghana": "Ghana",
-  "Haiti": "Haití",
-  "Iran": "Irán",
-  "Iraq": "Irak",
+  Ecuador: "Ecuador",
+  Egypt: "Egipto",
+  England: "Inglaterra",
+  France: "Francia",
+  Germany: "Alemania",
+  Ghana: "Ghana",
+  Haiti: "Haití",
+  Iran: "Irán",
+  Iraq: "Irak",
   "Ivory Coast": "Costa de Marfil",
-  "Japan": "Japón",
-  "Jordan": "Jordania",
-  "Mexico": "México",
-  "Morocco": "Marruecos",
-  "Netherlands": "Países Bajos",
+  Japan: "Japón",
+  Jordan: "Jordania",
+  Mexico: "México",
+  Morocco: "Marruecos",
+  Netherlands: "Países Bajos",
   "New Zealand": "Nueva Zelanda",
-  "Nigeria": "Nigeria",
-  "Norway": "Noruega",
-  "Panama": "Panamá",
-  "Paraguay": "Paraguay",
-  "Portugal": "Portugal",
-  "Qatar": "Catar",
+  Nigeria: "Nigeria",
+  Norway: "Noruega",
+  Panama: "Panamá",
+  Paraguay: "Paraguay",
+  Portugal: "Portugal",
+  Qatar: "Catar",
   "Saudi Arabia": "Arabia Saudita",
-  "Scotland": "Escocia",
-  "Senegal": "Senegal",
+  Scotland: "Escocia",
+  Senegal: "Senegal",
   "South Africa": "Sudáfrica",
   "South Korea": "Corea del Sur",
-  "Spain": "España",
-  "Sweden": "Suecia",
-  "Switzerland": "Suiza",
-  "Tunisia": "Túnez",
-  "Türkiye": "Turquía",
+  Spain: "España",
+  Sweden: "Suecia",
+  Switzerland: "Suiza",
+  Tunisia: "Túnez",
+  Türkiye: "Turquía",
   "United States": "Estados Unidos",
-  "Uruguay": "Uruguay",
-  "Uzbekistan": "Uzbekistán",
+  Uruguay: "Uruguay",
+  Uzbekistan: "Uzbekistán",
 };
 
 export function teamDisplayName(name: string, locale: string): string {
@@ -357,7 +357,9 @@ function GroupTable({
                   {teamDisplayName(row.team, locale)}
                 </span>
               </div>
-              <div className={`${NUM} py-2 text-text-muted ${sep} ${bg} ${dim}`}>
+              <div
+                className={`${NUM} py-2 text-text-muted ${sep} ${bg} ${dim}`}
+              >
                 {row.played}
               </div>
               <div
@@ -431,9 +433,7 @@ export function GroupStandingsSection() {
     refetchInterval: 120_000,
   });
 
-  const groups = data?.matches
-    ? buildGroupStandings(data.matches)
-    : null;
+  const groups = data?.matches ? buildGroupStandings(data.matches) : null;
 
   const groupKeys = groups ? Object.keys(groups) : [];
 
@@ -476,7 +476,13 @@ export function GroupStandingsSection() {
               ariaLabelRight={t("common.scrollRight")}
             >
               {groupKeys.map((g) => (
-                <GroupTable key={g} group={g} rows={groups[g]} t={t} locale={locale} />
+                <GroupTable
+                  key={g}
+                  group={g}
+                  rows={groups[g]}
+                  t={t}
+                  locale={locale}
+                />
               ))}
             </HorizontalCarousel>
           </>

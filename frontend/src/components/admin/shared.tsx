@@ -400,9 +400,11 @@ export function ProofViewLink({
 
 // ── ComprobanteViewLink ───────────────────────────────────────────────────────
 
-export function ComprobanteViewLink({ href }: { readonly href: string | null }) {
+export function ComprobanteViewLink({
+  href,
+}: {
+  readonly href: string | null;
+}) {
   if (!href) return null;
-  return (
-    <InfoRow label="Comprobante" value={<ProofViewLink href={href} />} />
-  );
+  return <InfoRow label="Comprobante" value={<ProofViewLink href={href} />} />;
 }

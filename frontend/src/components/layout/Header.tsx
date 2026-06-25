@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { UserButton, SignedIn, SignedOut } from "@clerk/nextjs";
-import { Globe, Home, LayoutDashboard, Menu, Trophy, Wallet } from "lucide-react";
+import {
+  Globe,
+  Home,
+  LayoutDashboard,
+  Menu,
+  Trophy,
+  Wallet,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { MobileNav } from "./MobileNav";

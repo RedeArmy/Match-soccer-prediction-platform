@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState, LoadingSpinner } from "@/components/shared/LoadingState";
@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { FormFeedback } from "@/components/shared/FormFeedback";
 import { FormField } from "@/components/shared/FormField";
 import { FileUploadField } from "@/components/shared/FileUploadField";
+import { HorizontalCarousel } from "@/components/shared/HorizontalCarousel";
 import { SubmitButton } from "@/components/shared/SubmitButton";
 import { I18nProvider } from "@/lib/i18n";
 
@@ -220,6 +221,48 @@ describe("FileUploadField", () => {
     fireEvent.change(input, { target: { files: [] } });
     expect(handler).toHaveBeenCalledOnce();
   });
+
+  it("calls onRemove when the remove button is clicked", () => {
+    const onRemove = vi.fn();
+    render(
+      <FileUploadField
+        label="Upload"
+        fileName="photo.jpg"
+        hasFile
+        onRemove={onRemove}
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar archivo" }));
+    expect(onRemove).toHaveBeenCalledOnce();
+  });
+
+  it("renders preview image when previewUrl is provided", () => {
+    const { container } = render(
+      <FileUploadField
+        label="Upload"
+        fileName="img.jpg"
+        previewUrl="blob:http://localhost/abc"
+        onChange={() => {}}
+      />,
+    );
+    expect(container.querySelector("img")).toBeInTheDocument();
+  });
+
+  it("shows pending clock icon in preview mode", () => {
+    const { container } = render(
+      <FileUploadField
+        label="Upload"
+        fileName="doc.pdf"
+        previewUrl="blob:http://localhost/xyz"
+        isPending
+        pendingLabel="En revisión"
+        onChange={() => {}}
+      />,
+    );
+    // pending label text appears below the filename
+    expect(container.textContent).toContain("En revisión");
+  });
 });
 
 // ── SubmitButton ──────────────────────────────────────────────────────────────
@@ -264,5 +307,78 @@ describe("SubmitButton", () => {
     );
     fireEvent.click(screen.getByRole("button"));
     expect(handler).toHaveBeenCalledOnce();
+  });
+});
+
+// ── HorizontalCarousel ────────────────────────────────────────────────────────
+
+describe("HorizontalCarousel", () => {
+  it("renders children wrapped in scroll containers", () => {
+    render(
+      <HorizontalCarousel>
+        <div>Item A</div>
+        <div>Item B</div>
+      </HorizontalCarousel>,
+    );
+    expect(screen.getByText("Item A")).toBeInTheDocument();
+    expect(screen.getByText("Item B")).toBeInTheDocument();
+  });
+
+  it("hides scroll buttons when content does not overflow", () => {
+    render(
+      <HorizontalCarousel ariaLabelLeft="Anterior" ariaLabelRight="Siguiente">
+        <div>Item</div>
+      </HorizontalCarousel>,
+    );
+    // canLeft and canRight are both false on initial render in JSDOM
+    expect(screen.queryByRole("button", { name: "Anterior" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Siguiente" })).toBeNull();
+  });
+
+  it("shows scroll buttons and calls scrollBy when content overflows", async () => {
+    const { container } = render(
+      <HorizontalCarousel ariaLabelLeft="Anterior" ariaLabelRight="Siguiente">
+        <div>Item 1</div>
+        <div>Item 2</div>
+      </HorizontalCarousel>,
+    );
+
+    const track = container.querySelector(".overflow-x-auto") as HTMLElement;
+
+    // Simulate overflow: scrollLeft > 4 and clientWidth < scrollWidth
+    Object.defineProperty(track, "scrollLeft", {
+      value: 10,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(track, "clientWidth", {
+      value: 200,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(track, "scrollWidth", {
+      value: 800,
+      configurable: true,
+      writable: true,
+    });
+
+    await act(async () => {
+      track.dispatchEvent(new Event("scroll"));
+    });
+
+    const leftBtn = screen.getByRole("button", { name: "Anterior" });
+    const rightBtn = screen.getByRole("button", { name: "Siguiente" });
+
+    const scrollBy = vi.fn();
+    Object.defineProperty(track, "scrollBy", {
+      value: scrollBy,
+      configurable: true,
+    });
+
+    fireEvent.click(leftBtn);
+    expect(scrollBy).toHaveBeenCalledWith({ left: -300, behavior: "smooth" });
+
+    fireEvent.click(rightBtn);
+    expect(scrollBy).toHaveBeenCalledWith({ left: 300, behavior: "smooth" });
   });
 });

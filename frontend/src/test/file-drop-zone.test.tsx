@@ -1,7 +1,10 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, createEvent } from "@testing-library/react";
 import React from "react";
-import { FileDropZone, MAX_FILE_BYTES } from "@/components/deposit/FileDropZone";
+import {
+  FileDropZone,
+  MAX_FILE_BYTES,
+} from "@/components/deposit/FileDropZone";
 
 vi.mock("lucide-react", () => ({
   ImageIcon: () => <svg data-testid="image-icon" />,

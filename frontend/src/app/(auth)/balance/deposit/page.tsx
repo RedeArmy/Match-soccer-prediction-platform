@@ -35,7 +35,10 @@ type Method = "recurrente" | "paypal" | "bank";
 type FeatureFlags = Record<string, string>;
 type PayPalActions = { order?: { capture: () => Promise<unknown> } };
 type FeedbackKind = "error" | "warning" | "success";
-interface Feedback { kind: FeedbackKind; message: string }
+interface Feedback {
+  kind: FeedbackKind;
+  message: string;
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -43,15 +46,15 @@ const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
 
 const paypalErrorKeyByCode: Record<string, string> = {
   SERVICE_UNAVAILABLE: "deposit.paypalServiceUnavailable",
-  UPSTREAM_ERROR:      "deposit.paypalUpstreamError",
-  VALIDATION:          "deposit.paypalInvalidRequest",
-  UNAUTHORISED:        "deposit.paypalSessionExpired",
+  UPSTREAM_ERROR: "deposit.paypalUpstreamError",
+  VALIDATION: "deposit.paypalInvalidRequest",
+  UNAUTHORISED: "deposit.paypalSessionExpired",
 };
 
 const recurrenteErrorKeyByCode: Record<string, string> = {
   UNAUTHORISED: "deposit.recurrenteSessionExpired",
-  VALIDATION:   "deposit.recurrenteUnavailable",
-  INTERNAL:     "deposit.recurrenteError",
+  VALIDATION: "deposit.recurrenteUnavailable",
+  INTERNAL: "deposit.recurrenteError",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -98,22 +101,22 @@ const alertConfig: Record<
   { bg: string; border: string; text: string; icon: React.ReactNode }
 > = {
   error: {
-    bg:     "bg-red-500/10",
+    bg: "bg-red-500/10",
     border: "border-red-500/30",
-    text:   "text-red-300",
-    icon:   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />,
+    text: "text-red-300",
+    icon: <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />,
   },
   warning: {
-    bg:     "bg-amber-400/10",
+    bg: "bg-amber-400/10",
     border: "border-amber-400/25",
-    text:   "text-amber-200",
-    icon:   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />,
+    text: "text-amber-200",
+    icon: <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />,
   },
   success: {
-    bg:     "bg-emerald-500/10",
+    bg: "bg-emerald-500/10",
     border: "border-emerald-500/30",
-    text:   "text-emerald-300",
-    icon:   <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />,
+    text: "text-emerald-300",
+    icon: <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />,
   },
 };
 
@@ -145,12 +148,12 @@ export default function DepositPage() {
   const flags = useFeatureFlags();
   const paypalEnabled = flags["paypal"] === "1";
 
-  const [method, setMethod]       = useState<Method>("recurrente");
+  const [method, setMethod] = useState<Method>("recurrente");
   const [amountGTQ, setAmountGTQ] = useState("");
   const [amountUSD, setAmountUSD] = useState("");
-  const [file, setFile]           = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
-  const [feedback, setFeedback]   = useState<Feedback | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   const clearFeedback = () => setFeedback(null);
 
@@ -158,14 +161,16 @@ export default function DepositPage() {
   useEffect(() => {
     if (geoLoading) return;
     if (isGuatemala && method === "paypal") setMethod("recurrente");
-    if (!isGuatemala && method === "bank")  setMethod("recurrente");
+    if (!isGuatemala && method === "bank") setMethod("recurrente");
     if (!paypalEnabled && method === "paypal") setMethod("recurrente");
   }, [geoLoading, isGuatemala, paypalEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gtqEquiv =
     rate && amountUSD
       ? formatGTQ(
-          Math.round(usdToGTQ(Number.parseFloat(amountUSD), rate.buy_rate) * 100),
+          Math.round(
+            usdToGTQ(Number.parseFloat(amountUSD), rate.buy_rate) * 100,
+          ),
         )
       : null;
 
@@ -195,7 +200,12 @@ export default function DepositPage() {
     onError: (e: Error) =>
       setFeedback({
         kind: "error",
-        message: apiErrorMessage(e, t, recurrenteErrorKeyByCode, "deposit.recurrenteError"),
+        message: apiErrorMessage(
+          e,
+          t,
+          recurrenteErrorKeyByCode,
+          "deposit.recurrenteError",
+        ),
       }),
   });
 
@@ -204,7 +214,10 @@ export default function DepositPage() {
       if (!file) throw new Error(t("deposit.bankFileNoAttach"));
       const token = await getToken();
       const fd = new FormData();
-      fd.append("amount_cents", String(Math.round(Number.parseFloat(amountGTQ) * 100)));
+      fd.append(
+        "amount_cents",
+        String(Math.round(Number.parseFloat(amountGTQ) * 100)),
+      );
       fd.append("currency", "GTQ");
       fd.append("file", file);
       return api.uploadBankTransfer(token!, fd, crypto.randomUUID());
@@ -243,9 +256,21 @@ export default function DepositPage() {
   type TabDef = { id: Method; label: string; icon: React.ReactNode };
 
   const allTabs: TabDef[] = [
-    { id: "recurrente", label: t("deposit.tabRecurrente"), icon: <CreditCard className="w-4 h-4" /> },
-    { id: "paypal",     label: t("deposit.tabPaypal"),     icon: <CreditCard className="w-4 h-4" /> },
-    { id: "bank",       label: t("deposit.tabBank"),       icon: <Building2  className="w-4 h-4" /> },
+    {
+      id: "recurrente",
+      label: t("deposit.tabRecurrente"),
+      icon: <CreditCard className="w-4 h-4" />,
+    },
+    {
+      id: "paypal",
+      label: t("deposit.tabPaypal"),
+      icon: <CreditCard className="w-4 h-4" />,
+    },
+    {
+      id: "bank",
+      label: t("deposit.tabBank"),
+      icon: <Building2 className="w-4 h-4" />,
+    },
   ];
 
   let visibleTabs: TabDef[];
@@ -295,7 +320,6 @@ export default function DepositPage() {
       </div>
 
       <div className="card p-6 space-y-5">
-
         {/* ── Recurrente ── */}
         {method === "recurrente" && (
           <>
@@ -317,7 +341,10 @@ export default function DepositPage() {
                   max="100000"
                   step="0.01"
                   value={amountGTQ}
-                  onChange={(e) => { setAmountGTQ(e.target.value); clearFeedback(); }}
+                  onChange={(e) => {
+                    setAmountGTQ(e.target.value);
+                    clearFeedback();
+                  }}
                   placeholder="100.00"
                   className="input-base"
                 />
@@ -337,12 +364,17 @@ export default function DepositPage() {
                   max="10000"
                   step="0.01"
                   value={amountUSD}
-                  onChange={(e) => { setAmountUSD(e.target.value); clearFeedback(); }}
+                  onChange={(e) => {
+                    setAmountUSD(e.target.value);
+                    clearFeedback();
+                  }}
                   placeholder="50.00"
                   className="input-base"
                 />
                 {gtqEquiv && (
-                  <p className="text-xs text-text-muted mt-1.5">≈ {gtqEquiv} GTQ</p>
+                  <p className="text-xs text-text-muted mt-1.5">
+                    ≈ {gtqEquiv} GTQ
+                  </p>
                 )}
               </div>
             )}
@@ -384,12 +416,17 @@ export default function DepositPage() {
                 max="10000"
                 step="0.01"
                 value={amountUSD}
-                onChange={(e) => { setAmountUSD(e.target.value); clearFeedback(); }}
+                onChange={(e) => {
+                  setAmountUSD(e.target.value);
+                  clearFeedback();
+                }}
                 placeholder="50.00"
                 className="input-base"
               />
               {gtqEquiv && (
-                <p className="text-xs text-text-muted mt-1.5">≈ {gtqEquiv} GTQ</p>
+                <p className="text-xs text-text-muted mt-1.5">
+                  ≈ {gtqEquiv} GTQ
+                </p>
               )}
             </div>
 
@@ -398,7 +435,9 @@ export default function DepositPage() {
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
                   {t("deposit.paypalNotConfiguredPre")}{" "}
-                  <code className="font-mono text-xs">NEXT_PUBLIC_PAYPAL_CLIENT_ID</code>{" "}
+                  <code className="font-mono text-xs">
+                    NEXT_PUBLIC_PAYPAL_CLIENT_ID
+                  </code>{" "}
                   {t("deposit.paypalNotConfiguredPost")}
                 </span>
               </div>
@@ -416,15 +455,22 @@ export default function DepositPage() {
                 <PayPalButtons
                   key={String(paypalAmountCents)}
                   fundingSource={FUNDING.PAYPAL}
-                  style={{ color: "gold", shape: "rect", label: "paypal", height: 44 }}
+                  style={{
+                    color: "gold",
+                    shape: "rect",
+                    label: "paypal",
+                    height: 44,
+                  }}
                   createOrder={async () => {
                     const token = await getToken();
-                    if (!token) throw new Error(t("deposit.paypalSessionExpired"));
+                    if (!token)
+                      throw new Error(t("deposit.paypalSessionExpired"));
                     const order = await api.createPayPalOrder(token, {
                       amount_cents: paypalAmountCents,
                       currency: "USD",
                     });
-                    if (!order.id) throw new Error(t("deposit.paypalNoOrderId"));
+                    if (!order.id)
+                      throw new Error(t("deposit.paypalNoOrderId"));
                     return order.id;
                   }}
                   onApprove={async (_data: unknown, actions: PayPalActions) => {
@@ -432,19 +478,29 @@ export default function DepositPage() {
                     await Promise.all([
                       queryClient.invalidateQueries({ queryKey: ["balance"] }),
                       queryClient.invalidateQueries({ queryKey: ["ledger"] }),
-                      queryClient.invalidateQueries({ queryKey: ["ledger-preview"] }),
+                      queryClient.invalidateQueries({
+                        queryKey: ["ledger-preview"],
+                      }),
                     ]);
                     const usd = (paypalAmountCents / 100).toFixed(2);
                     router.replace(`/balance?paypal=success&usd=${usd}`);
                   }}
                   onCancel={() =>
-                    setFeedback({ kind: "warning", message: t("deposit.paypalCancelled") })
+                    setFeedback({
+                      kind: "warning",
+                      message: t("deposit.paypalCancelled"),
+                    })
                   }
                   onError={(err: unknown) => {
                     console.error("[PayPal] onError:", err);
                     setFeedback({
                       kind: "error",
-                      message: apiErrorMessage(err, t, paypalErrorKeyByCode, "deposit.paypalError"),
+                      message: apiErrorMessage(
+                        err,
+                        t,
+                        paypalErrorKeyByCode,
+                        "deposit.paypalError",
+                      ),
                     });
                   }}
                 />
@@ -487,7 +543,10 @@ export default function DepositPage() {
                 max="1000000"
                 step="0.01"
                 value={amountGTQ}
-                onChange={(e) => { setAmountGTQ(e.target.value); clearFeedback(); }}
+                onChange={(e) => {
+                  setAmountGTQ(e.target.value);
+                  clearFeedback();
+                }}
                 placeholder="500.00"
                 className="input-base"
               />
@@ -522,7 +581,6 @@ export default function DepositPage() {
 
         {/* ── Inline feedback alert ── */}
         <DepositAlert feedback={feedback} />
-
       </div>
     </div>
   );

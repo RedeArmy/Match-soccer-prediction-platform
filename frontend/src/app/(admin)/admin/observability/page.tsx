@@ -237,7 +237,9 @@ export default function AdminObservabilityPage() {
                 type="text"
                 value={customQuery}
                 onChange={(e) => setCustomQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && setActiveQuery(customQuery)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && setActiveQuery(customQuery)
+                }
                 placeholder="sum(rate(http_server_request_duration_seconds_count[5m]))"
                 className="flex-1 rounded-lg border border-blue-700/50 bg-blue-950 px-3 py-2 font-mono text-sm text-white placeholder:text-text-muted focus:border-blue-500 focus:outline-none"
               />
@@ -447,14 +449,23 @@ export default function AdminObservabilityPage() {
             <div className="card p-6 space-y-3">
               <p className="font-medium text-white">Grafana no configurado</p>
               <p className="text-sm text-text-muted">
-                Agrega <code className="rounded bg-blue-800 px-1 text-xs">NEXT_PUBLIC_GRAFANA_URL</code> como
-                variable en GitHub Actions → Settings → Variables → Actions y haz redeploy.
+                Agrega{" "}
+                <code className="rounded bg-blue-800 px-1 text-xs">
+                  NEXT_PUBLIC_GRAFANA_URL
+                </code>{" "}
+                como variable en GitHub Actions → Settings → Variables → Actions
+                y haz redeploy.
               </p>
               <p className="text-sm text-text-muted">
                 Grafana ya está expuesto públicamente vía{" "}
-                <code className="rounded bg-blue-800 px-1 text-xs">$GRAFANA_DOMAIN</code> en el Caddyfile.
-                El valor debería ser algo como{" "}
-                <code className="rounded bg-blue-800 px-1 text-xs">https://grafana.kiniela.uk</code>.
+                <code className="rounded bg-blue-800 px-1 text-xs">
+                  $GRAFANA_DOMAIN
+                </code>{" "}
+                en el Caddyfile. El valor debería ser algo como{" "}
+                <code className="rounded bg-blue-800 px-1 text-xs">
+                  https://grafana.kiniela.uk
+                </code>
+                .
               </p>
             </div>
           )}
@@ -473,9 +484,18 @@ export default function AdminObservabilityPage() {
             {sseStats && (
               <div className="grid gap-4 sm:grid-cols-3">
                 {[
-                  { label: "Usuarios conectados", value: sseStats.connected_users },
-                  { label: "Conexiones totales", value: sseStats.total_connections },
-                  { label: "Eventos descartados", value: sseStats.dropped_events },
+                  {
+                    label: "Usuarios conectados",
+                    value: sseStats.connected_users,
+                  },
+                  {
+                    label: "Conexiones totales",
+                    value: sseStats.total_connections,
+                  },
+                  {
+                    label: "Eventos descartados",
+                    value: sseStats.dropped_events,
+                  },
                 ].map(({ label, value }) => (
                   <div key={label} className="card p-4">
                     <p className="text-xs text-text-muted">{label}</p>
@@ -493,7 +513,9 @@ export default function AdminObservabilityPage() {
             </h2>
             {breakersLoading && <LoadingState rows={2} />}
             {!breakersLoading && (breakers?.length ?? 0) === 0 && (
-              <p className="text-sm text-text-muted">Sin circuit breakers registrados.</p>
+              <p className="text-sm text-text-muted">
+                Sin circuit breakers registrados.
+              </p>
             )}
             {!breakersLoading && (breakers?.length ?? 0) > 0 && (
               <div className="card divide-y divide-blue-800/50">
@@ -503,8 +525,12 @@ export default function AdminObservabilityPage() {
                     className="flex items-center justify-between gap-3 px-4 py-3"
                   >
                     <div>
-                      <p className="font-mono text-sm text-text-primary">{b.name}</p>
-                      <p className="text-xs text-text-muted">Fallos: {b.failures}</p>
+                      <p className="font-mono text-sm text-text-primary">
+                        {b.name}
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        Fallos: {b.failures}
+                      </p>
                     </div>
                     <StatusBadge
                       status={CB_BADGE_STATUS[b.state] ?? "pending"}

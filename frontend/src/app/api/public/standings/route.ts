@@ -12,8 +12,7 @@ export interface PublicMatch {
 }
 
 export async function GET(): Promise<NextResponse> {
-  const base =
-    process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8080";
+  const base = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8080";
 
   try {
     const res = await fetch(`${base}/api/public/matches/group-stage`, {

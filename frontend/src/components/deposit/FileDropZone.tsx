@@ -91,9 +91,8 @@ export function FileDropZone({
 
       {file && (
         <p className="text-xs text-text-muted">
-          {filePrefix}{" "}
-          <span className="text-text-secondary">{file.name}</span> (
-          {(file.size / 1024).toFixed(0)} KB)
+          {filePrefix} <span className="text-text-secondary">{file.name}</span>{" "}
+          ({(file.size / 1024).toFixed(0)} KB)
         </p>
       )}
     </>

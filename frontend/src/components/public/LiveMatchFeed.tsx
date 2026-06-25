@@ -235,9 +235,7 @@ function EventsList({ events }: Readonly<{ events: FixtureEvent[] }>) {
 
 // ── Fixture detail panel ──────────────────────────────────────────────────────
 
-function FixtureDetailPanel({
-  fixtureId,
-}: Readonly<{ fixtureId: number }>) {
+function FixtureDetailPanel({ fixtureId }: Readonly<{ fixtureId: number }>) {
   const { t } = useI18n();
   const [showSubs, setShowSubs] = useState(false);
 
@@ -311,9 +309,13 @@ function FixtureDetailPanel({
       {/* Row 2: venue + city (top), state + country (bottom) */}
       {fixture.venue && (
         <div className="flex flex-col items-center gap-0.5 text-[11px] text-text-muted">
-          <span>📍 {[fixture.venue, fixture.city].filter(Boolean).join(", ")}</span>
+          <span>
+            📍 {[fixture.venue, fixture.city].filter(Boolean).join(", ")}
+          </span>
           {(fixture.state || fixture.country) && (
-            <span>{[fixture.state, fixture.country].filter(Boolean).join(", ")}</span>
+            <span>
+              {[fixture.state, fixture.country].filter(Boolean).join(", ")}
+            </span>
           )}
         </div>
       )}
@@ -453,7 +455,9 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
             <span
               className={cn(
                 "shrink-0 w-12 text-center font-bold tabular-nums",
-                live || done ? cn("text-base", scoreClass) : "text-xs text-text-muted",
+                live || done
+                  ? cn("text-base", scoreClass)
+                  : "text-xs text-text-muted",
               )}
             >
               {live || done

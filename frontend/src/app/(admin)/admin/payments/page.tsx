@@ -5,7 +5,10 @@ import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, XCircle, Bell, MessageSquare } from "lucide-react";
 import { api } from "@/lib/api";
-import type { PaymentIntentAdminResponse, PaymentIntentStatus } from "@/lib/api-types";
+import type {
+  PaymentIntentAdminResponse,
+  PaymentIntentStatus,
+} from "@/lib/api-types";
 import { formatAmount, formatDateTime, formatRelative } from "@/lib/utils";
 import { BankTransfersTab } from "@/components/admin/BankTransfersTab";
 import {
@@ -240,7 +243,11 @@ type IntentModalState =
   | { kind: "reject"; item: PaymentIntentAdminResponse }
   | null;
 
-function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "paypal" }) {
+function PaymentIntentsTab({
+  provider,
+}: {
+  readonly provider: "recurrente" | "paypal";
+}) {
   const { getToken } = useAuth();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
@@ -308,7 +315,9 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
       closeModal();
     },
     onError: (e: unknown) => {
-      setModalError(e instanceof Error ? e.message : "Error al acreditar el pago");
+      setModalError(
+        e instanceof Error ? e.message : "Error al acreditar el pago",
+      );
     },
   });
 
@@ -322,7 +331,9 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
       closeModal();
     },
     onError: (e: unknown) => {
-      setModalError(e instanceof Error ? e.message : "Error al rechazar el pago");
+      setModalError(
+        e instanceof Error ? e.message : "Error al rechazar el pago",
+      );
     },
   });
 
@@ -360,7 +371,9 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
                   <th className="px-4 py-3 font-medium">Estado</th>
                   <th className="px-4 py-3 font-medium">Fecha</th>
                   <th className="px-4 py-3 font-medium">Comprobante</th>
-                  <th className="px-4 py-3 font-medium text-center">Acciones</th>
+                  <th className="px-4 py-3 font-medium text-center">
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -383,27 +396,33 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
                       <div className="font-semibold text-white">
                         {formatAmount(item.amount_cents, item.currency)}
                       </div>
-                      {item.status === "captured" && item.currency === "USD" && (
-                        <div className="text-white/30 text-xs">convertido a GTQ</div>
-                      )}
+                      {item.status === "captured" &&
+                        item.currency === "USD" && (
+                          <div className="text-white/30 text-xs">
+                            convertido a GTQ
+                          </div>
+                        )}
                     </td>
 
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <StatusDot status={item.status} />
                         <div>
-                          <span className={`text-xs capitalize ${item.status === "cancelled" ? "text-orange-400" : "text-white/60"}`}>
+                          <span
+                            className={`text-xs capitalize ${item.status === "cancelled" ? "text-orange-400" : "text-white/60"}`}
+                          >
                             {intentStatusLabel(item.status)}
                           </span>
-                          {item.status === "under_review" && item.user_notes && (
-                            <p
-                              className="text-xs text-white/40 italic truncate max-w-[140px]"
-                              title={item.user_notes}
-                            >
-                              <MessageSquare className="inline h-3 w-3 mr-0.5" />
-                              {item.user_notes}
-                            </p>
-                          )}
+                          {item.status === "under_review" &&
+                            item.user_notes && (
+                              <p
+                                className="text-xs text-white/40 italic truncate max-w-[140px]"
+                                title={item.user_notes}
+                              >
+                                <MessageSquare className="inline h-3 w-3 mr-0.5" />
+                                {item.user_notes}
+                              </p>
+                            )}
                         </div>
                       </div>
                     </td>
@@ -417,7 +436,9 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
 
                     <td className="px-4 py-3">
                       {item.has_comprobante ? (
-                        <ProofViewLink href={api.adminPaymentIntentComprobanteUrl(item.id)} />
+                        <ProofViewLink
+                          href={api.adminPaymentIntentComprobanteUrl(item.id)}
+                        />
                       ) : (
                         <span className="text-white/25 text-xs">—</span>
                       )}
@@ -430,19 +451,22 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
                         </div>
                       ) : (
                         <div className="flex items-center justify-center gap-2 flex-wrap">
-                          {item.status === "pending" && !item.comprobante_required && (
-                            <button
-                              onClick={() =>
-                                requestComprobanteMutation.mutate({ id: item.id })
-                              }
-                              disabled={requestComprobanteMutation.isPending}
-                              title="Solicitar comprobante al usuario"
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-xs font-medium transition-colors disabled:opacity-50"
-                            >
-                              <Bell className="h-3.5 w-3.5" />
-                              Comprobante
-                            </button>
-                          )}
+                          {item.status === "pending" &&
+                            !item.comprobante_required && (
+                              <button
+                                onClick={() =>
+                                  requestComprobanteMutation.mutate({
+                                    id: item.id,
+                                  })
+                                }
+                                disabled={requestComprobanteMutation.isPending}
+                                title="Solicitar comprobante al usuario"
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-xs font-medium transition-colors disabled:opacity-50"
+                              >
+                                <Bell className="h-3.5 w-3.5" />
+                                Comprobante
+                              </button>
+                            )}
                           {canAct(item.status) && (
                             <>
                               <button
@@ -524,7 +548,10 @@ function PaymentIntentsTab({ provider }: { readonly provider: "recurrente" | "pa
                   setModalError("El motivo de rechazo es requerido");
                   return;
                 }
-                rejectMutation.mutate({ id: modal.item.id, notes: notes.trim() });
+                rejectMutation.mutate({
+                  id: modal.item.id,
+                  notes: notes.trim(),
+                });
               }}
               onClose={closeModal}
             />

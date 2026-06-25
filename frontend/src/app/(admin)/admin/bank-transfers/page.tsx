@@ -8,7 +8,11 @@ import { api } from "@/lib/api";
 
 export default function AdminBankTransfersPage() {
   const { getToken } = useAuth();
-  const { data: transfers = [], isLoading, refetch } = useQuery({
+  const {
+    data: transfers = [],
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ["admin", "bank-transfers"],
     queryFn: async () => {
       const token = await getToken();
