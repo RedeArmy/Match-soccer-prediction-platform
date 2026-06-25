@@ -114,7 +114,7 @@ describe("TournamentSettingsModal – tab navigation", () => {
     renderModal({ group: makeGroup({ is_premium: false }), memberCount: 6 });
     goToModeTab();
     const checkboxes = screen.getAllByRole("checkbox");
-    expect(checkboxes.length).toBe(2);
+    expect(checkboxes).toHaveLength(2);
   });
 
   it("backdrop click calls onClose from any tab", () => {
@@ -557,7 +557,7 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     expect(screen.getByText(/Activado · Irreversible/i)).toBeInTheDocument();
     // No checkbox for score_from_zero in locked state — only require_approval checkbox
     const checkboxes = screen.getAllByRole("checkbox");
-    expect(checkboxes.length).toBe(1);
+    expect(checkboxes).toHaveLength(1);
   });
 
   it("score_from_zero shows error message when mutation fails", () => {
